@@ -141,6 +141,17 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   lands; `tests/test_derived_views.py` runs both views as pure probes and holds the
   end-to-end case as an expected failure.
 
+* **The world protocol** (WHOLENESS §1; objects6). `world/lib/World.obend` is the `protocol
+  world:` declaration (KERNEL-HANDOFF §17) with `Message {object, method, argument}` and one
+  closed result sum per method, `refused {clause}` on each and `denied {}` on reads. Only
+  the methods the host answers today are lines (`spell`, `subscribe`, `unsubscribe`,
+  `viewDerived`, `viewAt` join when it answers them). `tests/test_world_protocol.py` compiles
+  a message-dialect object against it. Migrating objects waits on the host: a message turn
+  is refused "plan is not a variant" (measured: a `bump` doing `write {count: add 1n}`)
+  until `answer` dispatches on the method name (WHOLENESS §4 host day 2). The spell
+  deletions (§2) wait on `Host/Spell.lean`, the observer deletions (§3) on `subscribe` and
+  `changed`.
+
 ## 2. Limits found
 
 - An await only proves that some turn with that identity was admitted. A turn suspended on an object resumes refused `staleRoot` if anything wrote that object meanwhile, unless its writes are all keep/add/append (they commute).

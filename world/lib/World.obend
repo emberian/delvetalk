@@ -1,0 +1,111 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+# The world as an object (docs/WHOLENESS.md section 1): the controller every object's
+# activity asks, by one message type, through the methods of `protocol world` below. An
+# activity is `Activity<A>` and calls `world.X(arg)`, or `world.X::<T>(arg)` where the
+# result's type parameter cannot be inferred (`view`, `call` when its result is read,
+# `interpret`); `write {f: op v}` is `world.write(edits)`. Each method's result is a closed
+# sum of its own, so the response type belongs to the call site, as a function's result
+# does. A protocol line is a promise the host keeps: `spell`, `subscribe`/`unsubscribe`,
+# `viewDerived` and `viewAt` join when the host answers them.
+record Message:
+  object: Plans.Reference
+  method: String
+  argument: Data
+type Forms = Lists.List<Form.Form>
+sum Viewed<S>:
+  viewed: {version: Nat, state: S}
+  denied: {}
+  refused: {clause: String}
+sum Written:
+  written: {}
+  refused: {clause: String}
+sum Judged:
+  judged: {admitted: Bool, clause: String}
+  refused: {clause: String}
+sum Returned<R>:
+  returned: {result: R}
+  denied: {}
+  refused: {clause: String}
+sum Sent:
+  delivery: {id: String}
+  refused: {clause: String}
+sum Created:
+  created: {object: Plans.Reference}
+  refused: {clause: String}
+sum Awaited:
+  reply: {receipt: Plans.Receipt}
+  unknown: {}
+  timedOut: {}
+  broken: {}
+  refused: {clause: String}
+sum Interpreted<R>:
+  proposal: {method: String, argument: R}
+  unclear: {needs: Document.Names}
+  replied: {text: String}
+  timedOut: {}
+  refused: {clause: String}
+sum Offered:
+  offered: {}
+  refused: {clause: String}
+sum Published:
+  published: {post: String}
+  refused: {clause: String}
+sum Programmed:
+  reprogrammed: {pin: String}
+  refused: {clause: String}
+sum Amended:
+  amended: {}
+  refused: {clause: String}
+sum Inspected:
+  inspected: {pin: String, law: String, source: String, methods: Forms}
+  denied: {}
+  refused: {clause: String}
+sum Checked:
+  checked: {diagnostics: Document.Names}
+  refused: {clause: String}
+sum Granted:
+  granted: {id: String}
+  refused: {clause: String}
+sum Revoked:
+  revoked: {}
+  refused: {clause: String}
+sum Listed:
+  listed: {ids: Document.Names, more: Bool}
+  refused: {clause: String}
+sum Carded:
+  carded: {document: Document.Document}
+  denied: {}
+  refused: {clause: String}
+protocol world:
+  view<S>({object: Plans.Reference}) -> Viewed<S>
+  viewField<S>({object: Plans.Reference, field: String}) -> Viewed<S>
+  write<E>(E) -> Written
+  judge<E>(E) -> Judged
+  call<R>({object: Plans.Reference, method: String, argument: Data}) -> Returned<R>
+  callVia<R>({object: Plans.Reference, method: String, argument: Data, via: String}) -> Returned<R>
+  run<R>({object: Plans.Reference, method: String, argument: Data, handler: Plans.Reference}) -> Returned<R>
+  send({object: Plans.Reference, method: String, argument: Data}) -> Sent
+  sendVia({object: Plans.Reference, method: String, argument: Data, via: String}) -> Sent
+  create({package: String, seed: Data, law: String, requireAbsent: Plans.Reference}) -> Created
+  createUnder({package: String, seed: Data, law: String, requireAbsent: Plans.Reference, supervisor: Plans.Reference}) -> Created
+  await({slot: Plans.Slot, patience: Nat}) -> Awaited
+  awaitUntil({slot: Plans.Slot, until: Nat}) -> Awaited
+  awaitPost({post: String, patience: Nat}) -> Awaited
+  awaitPostUntil({post: String, until: Nat}) -> Awaited
+  interpret<R>({utterance: String, offers: Forms, policy: Plans.Reference, model: String}) -> Interpreted<R>
+  offer({to: String, document: Document.Document}) -> Offered
+  publish({page: String, section: String, body: String}) -> Published
+  reprogram({object: Plans.Reference, package: String, migration: String}) -> Programmed
+  extend({object: Plans.Reference, package: String, migration: String}) -> Programmed
+  amend({object: Plans.Reference, law: String}) -> Amended
+  inspect({object: Plans.Reference}) -> Inspected
+  check({package: String}) -> Checked
+  grant({to: String, object: Plans.Reference, method: String, until: Nat}) -> Granted
+  grantWith({to: String, object: Plans.Reference, method: String, until: Nat, fixed: Data, uses: Nat}) -> Granted
+  revoke({id: String}) -> Revoked
+  objects({prefix: String, after: String}) -> Listed
+  card({object: Plans.Reference}) -> Carded
