@@ -195,7 +195,7 @@ account's credentials file is mounted for that one command only:
       python3 -m transport.post --state /data/state post --text-file /data/welcome.txt \
       --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
 
-`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt` at the deployed commit, placed in the data directory by hand
+`/data/welcome.txt` is `docs/previews/gsb-welcome-v6.txt` at the deployed commit, placed in the data directory by hand
 (owner 10425, mode 0400); compare its SHA-256 with the repository's after any edit of the preview, since a re-genesis that
 carries the old data directory's copy forward carries the old text. `--state /data/state` is
 the hand's: the hourly quota is counted in `<state>/post-log.json`, so every post names the same state directory. Without

@@ -72,7 +72,10 @@ section 2); the at-uri is for readers who follow it.
   linked list of entries by CID, so `getRepo`, `getLatestCommit`, `getBlocks`, `listBlobs` and `getBlob` are
   not served, and `sync.getRecord`'s CAR carries the record block without a commit or an MST proof path.
 - **The firehose.** No `com.atproto.sync.subscribeRepos`; a follower pages `listRecords` of receipts by
-  height (`cursor` is a journal height), which is what the chain is.
+  height (`cursor` is a journal height), which is what the chain is. Sources, publications and grants
+  share heights (one library entry holds many modules), so a page that ends inside an entry skips the
+  rest of it on the next request: page with a `limit` above an entry's items until cursors carry the
+  item too (review transport 12, open; FOUNDATION §12).
 - **Signing.** No repository signing key, so the DID document has no `#atproto` verification method and
   no record is signed; a receipt's integrity is its CID and the chain, checked by replay.
 - **Checkpoints and pending sends.** `blocks[].cid`, `activity.checkpoint` and `sends[]` appear only in a
