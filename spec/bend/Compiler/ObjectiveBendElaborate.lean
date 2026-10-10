@@ -133,6 +133,8 @@ structure Module where
   /-- The module's top-level enforced laws (`law NAME: EXPR`), in source order. They are not
   terms: the elaborator never sees them; the front end hands the entry module's to the artifact. -/
   laws : List (String × ObjectiveBendLaw.LawExpr) := []
+  /-- `layer over ./X.obend`: the module this one is a layer over (its `Super`). -/
+  layerOver : Option String := none
   deriving Inhabited
 
 /-! ## Reading the parsed surface -/
@@ -208,7 +210,8 @@ def ofSurface (name : String) (imports : List (String × String)) (m : Objective
       laws := laws ++ [(lawName, ← ObjectiveBendLaw.parse source)]
     else decls := decls ++ [← Surface.decl d]
   ObjectiveBendLaw.checkNames laws
-  return ⟨name, imports, decls, laws⟩
+  let layerOver := m.layerOver.bind fun _ => (imports.find? (·.1 == "Super")).map (·.2)
+  return ⟨name, imports, decls, laws, layerOver⟩
 
 /-! ## Proposal types (the `Ty` JSON wire of Theory.ObjectiveBendTyping.typeJson, plus `variant`) -/
 
@@ -453,6 +456,11 @@ structure Ctx where
   declIndex : Std.HashMap String (Decl × Module) := {}
   recordIndex : Std.HashMap String Decl := {}
   sumIndex : Std.HashMap String Decl := {}
+  /-- A layer stack (the entry module and the modules it is `layer over`, transitively),
+  bottom first; empty for an unlayered package. -/
+  stack : Array String := #[]
+  /-- Each declaration a layer above overrides, to the nearest overriding declaration. -/
+  overrides : Std.HashMap String String := {}
 
 /-- The record declared under `key`, as `records.find?` would return it. -/
 def Ctx.record? (c : Ctx) (key : String) : Option (String × Decl) := (c.recordIndex[key]?).map (key, ·)
@@ -644,6 +652,37 @@ def lookupGlobal (c : Ctx) (name : String) (m : Module) : Option String :=
   if c.declIndex.contains key then some key else none
 
 def declOf (c : Ctx) (key : String) : Option (Decl × Module) := c.declIndex[key]?
+
+/-! ## Layer stacks: late binding through the knot
+
+Every reference to a declaration is a read of the package knot through `self`, so the knot
+already binds late; a layer stack only has to say which field answers a name. For each
+definition `B.f` a layer above overrides, the field `B.f` holds `self.L.f` (`L.f` the
+nearest override, itself aliased further up when overridden again) and `B.f`'s own body
+moves to `B.f#below`. A reference from a layer to a module below it (`Super.f`, or any alias
+of a lower module) names the version of `f` at that module's level: the topmost definition
+at or below it, through its `#below` field when something above overrides it. -/
+
+def belowSuffix : String := "#below"
+
+/-- The level of a module in the layer stack (0 = bottom). -/
+def Ctx.level (c : Ctx) (module : String) : Option Nat := c.stack.findIdx? (· == module)
+
+/-- The field a reference from module `from` to `module.name` reads: late bound unless
+`module` is below `from` in the stack. Also the key whose declaration types it. -/
+def Ctx.resolve (c : Ctx) (from_ module name : String) : String × String :=
+  let key := module ++ "." ++ name
+  match c.level from_, c.level module with
+  | some l, some k =>
+    if k < l then
+      -- The topmost definition of `name` at or below level `k`.
+      let found := (List.range (k + 1)).reverse.findSome? fun j =>
+        c.stack[j]?.bind fun m => let d := m ++ "." ++ name; if c.declIndex.contains d then some d else none
+      match found with
+      | some d => if c.overrides.contains d then (d ++ belowSuffix, d) else (d, d)
+      | none => (key, key)
+    else (key, key)
+  | _, _ => (key, key)
 
 inductive ResultSpec where
   | source (text : String)
@@ -1089,7 +1128,7 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
       if let .var alias := target then
         if !env.any (·.name == alias) then
           if let some importedModule := importOf m alias then
-            return ← globalType c fuel (importedModule ++ "." ++ name)
+            return ← globalType c fuel (c.resolve m.name importedModule name).2
       let targetType ← synth c fuel target env m
       return lookupRowBounded (← get).sumBounds fuel targetType name
     | .record fields =>
@@ -1654,9 +1693,9 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
       if let .var alias := target then
         if !env.any (·.name == alias) then
           if let some importedModule := importOf m alias then
-            let key := importedModule ++ "." ++ name
-            if (declOf c key).isNone then fail ("missing imported declaration " ++ key)
-            return ← globalRef env key
+            let (field, key) := c.resolve m.name importedModule name
+            if (declOf c key).isNone then fail ("missing imported declaration " ++ importedModule ++ "." ++ name)
+            return ← globalRef env field
       if let .var "self" := target then
         if let some b := env.find? (·.name == "self") then
           if let some (.variable k) := b.ty then
@@ -2361,7 +2400,16 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
     match (← get).openBounds.lookup key with
     | some (.variable k, .variable j) => modify fun st => { st with templates := st.templates ++ [(key, [k, j], value)] }
     | _ => fail ("open declaration " ++ key ++ ": its Self variable is unresolved")
-  let mut fields := fields ++ [(key, value)]
+  let mut fields := fields
+  match c.overrides[key]? with
+  | some over =>
+    -- Overridden by a layer above: the field answers with the override; the body stays
+    -- reachable below it (for `Super`).
+    let below := key ++ belowSuffix
+    let mine ← globalType c fuel key
+    modify fun st => { st with globalTypes := st.globalTypes.insertIfNew below mine }
+    fields := fields ++ [(key, ← globalRef outerEnv over), (below, value)]
+  | none => fields := fields ++ [(key, value)]
   for (name, value, type) in (← get).hidden do
     fields := fields ++ [(name, value)]
     modify fun st => { st with globalTypes := st.globalTypes.insertIfNew name type }
@@ -2415,8 +2463,47 @@ def Elaborated.reachable (e : Elaborated) (entryKey : String) : List (String × 
     | _ => false
   return e.fields.filter fun (key, _) => seen.contains key || claimed key
 
+/-- A proposal type in surface syntax (structural: rows and sums spelled out). -/
+partial def typeText : PTy → String
+  | .natural => "Nat" | .boolean => "Bool" | .label => "String" | .data => "Data" | .emptyRow => "{}"
+  | .variable i => "T" ++ toString i
+  | .arrow _ _ d c => "(" ++ typeText d ++ ") -> " ++ typeText c
+  | t@(.field ..) =>
+    let rec fields : PTy → List String
+      | .field n m rest => (n ++ ": " ++ typeText m) :: fields rest
+      | .emptyRow => []
+      | other => ["..." ++ typeText other]
+    "{" ++ ", ".intercalate (fields t) ++ "}"
+  | .variant row =>
+    let rec cases : PTy → List String
+      | .field n m rest => (n ++ ": " ++ typeText m) :: cases rest
+      | .emptyRow => []
+      | other => ["..." ++ typeText other]
+    "(" ++ " | ".intercalate (cases row) ++ ")"
+  | .computation p r a => "Activity<" ++ typeText p ++ ", " ++ typeText r ++ ", " ++ typeText a ++ ">"
+  | .specification m e => "Specification<" ++ typeText m ++ ", " ++ typeText e ++ ">"
+  | .prototype sp t => "Prototype<" ++ typeText sp ++ ", " ++ typeText t ++ ">"
+
+/-- An override keeps the declared type of what it overrides; refused by name, at the override. -/
+def checkOverrides (c : Ctx) (fuel : Nat) : M Unit := do
+  for (below, over) in c.overrides.toList do
+    let mine ← globalType c fuel below
+    let theirs ← globalType c fuel over
+    unless sameTy mine theirs do
+      let shown := fun (t : Option PTy) => match t with
+        | some t => typeText t
+        | none => "unresolved"
+      let loc : Option Loc := match declOf c over with
+        | some (.function _ _ _ body, m) => some ⟨m.name, over, body.span⟩
+        | _ => none
+      failAt loc ("refused (layer-override): " ++ over ++ " is " ++ shown theirs ++ ", but it overrides " ++ below ++
+        ", which is " ++ shown mine ++ "; an override keeps the type it overrides")
+        (some ("give " ++ over ++ " the signature of " ++ below ++ ", or name it differently to add a method"))
+        (shown mine) (shown theirs)
+
 def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × PTy) × List String) := do
   let fuel := 100000
+  checkOverrides c fuel
   let mut fields : List (String × ATerm) := []
   for m in c.modules do
     for d in m.decls do
@@ -2452,6 +2539,10 @@ def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : St
     (mode : String) : Except String Output := do
   let some entry := e.ctx.modules[entryModule]? | throw "missing selected entry"
   let entryKey := entry.name ++ "." ++ entryDefinition
+  -- A layer's entry it does not define is the topmost definition below it.
+  let entryKey := if (declOf e.ctx entryKey).isSome then entryKey else
+    (e.ctx.stack.toList.reverse.findSome? fun m =>
+      let k := m ++ "." ++ entryDefinition; if (declOf e.ctx k).isSome then some k else none).getD entryKey
   if (declOf e.ctx entryKey).isNone then throw "missing selected entry"
   let knot := e.reachable entryKey
   let kept : Std.HashSet String := knot.foldl (fun set (k, _) => set.insert k) {}
@@ -2523,7 +2614,30 @@ def context (modules : List Module) : Except String Ctx := do
   let index := fun {α : Type} (entries : List (String × α)) =>
     entries.foldl (fun (map : Std.HashMap String α) (key, value) =>
       if map.contains key then map else map.insert key value) {}
-  return { modules, decls, records, sums, declIndex := index decls, recordIndex := index records, sumIndex := index sums }
+  -- The layer stack: its top is the last layer no other layer is over (the entry module;
+  -- the generics pass appends its generated module after it), then what each is over.
+  let mut stack : List String := []
+  let mut current := (modules.filter fun m => m.layerOver.isSome &&
+    !modules.any (·.layerOver == some m.name)).getLast?
+  for _ in [0:modules.length] do
+    let some m := current | break
+    if stack.contains m.name then throw ("refused (layer-cycle): " ++ m.name ++ " is a layer over itself")
+    stack := m.name :: stack
+    current := m.layerOver.bind fun below => modules.find? (·.name == below)
+  if stack.length < 2 then stack := []
+  let declIndex := index decls
+  let functionsOf := fun (name : String) => match modules.find? (·.name == name) with
+    | some m => m.decls.filterMap fun (d : Decl) => match d with | .function f .. => some f | _ => none
+    | none => []
+  let mut overrides : Std.HashMap String String := {}
+  for i in [1:stack.length] do
+    let some layer := stack[i]? | continue
+    for f in functionsOf layer do
+      let below := (List.range i).reverse.findSome? fun j =>
+        stack[j]?.bind fun m => if (functionsOf m).contains f then some (m ++ "." ++ f) else none
+      if let some b := below then overrides := overrides.insert b (layer ++ "." ++ f)
+  return { modules, decls, records, sums, declIndex, recordIndex := index records, sumIndex := index sums,
+           stack := stack.toArray, overrides }
 
 /-- Elaborate every declaration of a closure once; a refusal says where it was raised. -/
 def elaboratePackageLocated (modules : List Module) : Except Refusal Elaborated := do
