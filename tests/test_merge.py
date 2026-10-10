@@ -14,7 +14,7 @@ Refuted by: a stranger's merge or forged write moving pageCheckpoint; the owner'
 import unittest
 
 from tests import test_chain
-from tests.test_chain import garden_seed
+from tests.test_chain import garden_seed, town_kinds
 from tests.test_objects import closure
 from tests.test_turn_world import label, record
 
@@ -30,6 +30,7 @@ class Merge(test_chain.Chain):
     def setUp(self):
         super().setUp()
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
 
     def field(self, name):
         return [f["value"]["value"] for f in self.state("garden")["fields"] if f["name"] == name][0]

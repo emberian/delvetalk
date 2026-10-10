@@ -44,11 +44,11 @@ class Genesis(unittest.TestCase):
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
-        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 10))
+        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (7, 9))
         made_names = {m['object'] for m in made}
         self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if to and to not in made_names], [])  # every door with an object resolves
         self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if not to], ['STUDIO'])
-        self.assertEqual([d[0] for d in genesis.DOORS], ['GARDEN', 'ROOMS', 'WORKSHOP', 'TIDE', 'ANTHOLOGY', 'STUDIO'])
+        self.assertEqual([d[0] for d in genesis.DOORS], ['GARDEN', 'ROOMS', 'WORKSHOP', 'TIDE', 'ANTHOLOGY', 'KINDS', 'STUDIO'])
         said = {}
         for word in ('ROOMS', 'STUDIO'):
             got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'directory', 'method': 'receive',
@@ -76,16 +76,6 @@ class Genesis(unittest.TestCase):
             self.host.send({'op': 'world-deliver', 'principal': 'transport', 'limit': 64})
         self.assertEqual(ticks(), '2')
 
-    def test_the_cistern_carries_its_level_law(self):
-        law = self.host.send({'op': 'world-inspect', 'principal': genesis.OPENER, 'object': 'cistern', 'source': False})['law']
-        self.assertIn('monotone(level)', law)
-        # Created with the law (`world-create {law}`), with its readings; nothing amends it in afterwards.
-        created = self.host.send({'op': 'world-receipt', 'principal': genesis.OPENER, 'identity': 'genesis-cistern'})['receipt']
-        self.assertEqual(created['outcome']['law'], genesis.cistern_law(genesis.OPENER))
-        self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': genesis.OPENER, 'identity': 'genesis-cistern-law'}).get('status'), 'receipt')
-        record = self.host.send({'op': 'world-object', 'principal': genesis.OPENER, 'object': 'cistern'})
-        self.assertIn('the level only rises', str(record['record']['readings']))
-
     def test_kinds_is_shaped_and_makes_the_root_and_town_kinds(self):
         kinds = next(m for m in self.made if m['object'] == 'kinds')
         self.assertEqual((kinds['shape'], kinds['made']), ('admitted', ['admitted'] * len(genesis.KINDS)), kinds)
@@ -101,9 +91,9 @@ class Genesis(unittest.TestCase):
         law = self.host.send({'op': 'world-inspect', 'principal': genesis.OPENER, 'object': 'anthology', 'source': False})['law']
         self.assertIn('insertOnly(lines)', law)
 
-    def test_six_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
+    def test_every_door_with_an_object_publishes_its_page_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
-        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'rooms', 'tide', 'workshop'], pages)
+        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'kinds', 'rooms', 'tide', 'workshop'], pages)
         card = json.dumps(self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'anthology'}))
         self.assertIn('ember.delve.town', card)
 
@@ -145,11 +135,11 @@ class MenuFromState(unittest.TestCase):
 
     def test_the_counts_follow_the_world_and_a_reader_meets_their_last_door_first(self):
         directory = next(m for m in self.made if m['object'] == 'directory')
-        self.assertEqual(directory['doors'], ['admitted'] * 6, directory)
+        self.assertEqual(directory['doors'], ['admitted'] * 7, directory)
         stranger, glm, kimi = 'did:plc:stranger', 'did:plc:glm', 'did:plc:kimi'
         # Before anything happens: every watched door shows its standing count.
         fresh = self.menu()
-        for line in ('GARDEN · 0 planted\n', 'ROOMS · 0 here\n', 'WORKSHOP · 0 held\n', 'TIDE · tick 0\n', 'ANTHOLOGY · 0 lines\n'):
+        for line in ('GARDEN · 0 planted\n', 'ROOMS · 0 here\n', 'WORKSHOP · 0 held\n', 'TIDE · tick 0\n', 'ANTHOLOGY · 0 lines\n', 'KINDS · 3 made\n'):
             self.assertIn(line, fresh)
         for n, colour in enumerate(('silver', 'amber', 'violet'), 1):
             self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for the %d / colour: %s' % (n, colour), 'plant-%d' % n)
@@ -178,8 +168,7 @@ class MenuFromState(unittest.TestCase):
         self.assertEqual(later, (
             "✾ DELVETALK · ROOT\n"
             "\n"
-            "Six doors. Indented lines are typed back whole; » is what comes back. Words reach the interpreter, which shows the spell first; delvetalk <card> ? lists its spells.\n"
-            "\n"
+            "Seven doors. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.\n"
             "GARDEN · 3 planted\n"
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n"
@@ -190,10 +179,8 @@ class MenuFromState(unittest.TestCase):
             "  delvetalk rooms choose / choice: Open\n"
             "  » the passage moves; a ```spween block here makes your own\n"
             "WORKSHOP · 0 held\n"
-            "  delvetalk workshop check / target: garden/bell/1\n"
-            "  » checked: clean, or a hint per mistake\n"
-            "  delvetalk workshop propose / target: garden/bell/1\n"
-            "  » plus a ```obend block; refused is held as #n for the owner to adopt\n"
+            "  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n"
+            "  » hob drafts the Bend; checked, held as #n for you to adopt\n"
             "TIDE · tick " + ticks + "\n"
             "  delvetalk tide subscribe / every: 3 / note: first light\n"
             "  delvetalk tide tick\n"
@@ -201,11 +188,14 @@ class MenuFromState(unittest.TestCase):
             "ANTHOLOGY · 4 lines\n"
             "  delvetalk anthology write / text: the bell kept both of us\n"
             "  » numbered, [pending] until the keeper admits\n"
-            "STUDIO · your heap and REPL: " + ORIGIN + "/AGENTS.md\n"
+            "KINDS · 3 made\n"
+            "  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80\n"
+            "  » kind/lamp, a kind anyone makes\n"
+            "STUDIO · heap and REPL: " + ORIGIN + "/AGENTS.md\n"
             "\n"
             "  delvetalk env observe\n"
-            "  » what addressed you since you last looked\n"
-            "Every reply is a receipt, admitted or refused <clause>: <reading>. No reply: ask for the receipt; never repost.\n"))
+            "  » what addressed you since you looked\n"
+            "Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"))
         self.assertLess(len(later), 1400)
         self.assertGreaterEqual(int(ticks), 3)
         # A reader whose field line the directory passed to the anthology meets ANTHOLOGY first.
@@ -223,7 +213,7 @@ class MenuFromState(unittest.TestCase):
         after = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'directory'})
         self.assertEqual(after['version'], version)
         news = {f['name']: f['value'] for f in after['state']['fields']}['news']['payload']['fields'][0]['value']['items']
-        self.assertEqual(sorted(r['fields'][0]['value']['value'] for r in news), ['anthology', 'rooms', 'tide', 'workshop'])
+        self.assertEqual(sorted(r['fields'][0]['value']['value'] for r in news), ['anthology', 'kinds', 'rooms', 'tide', 'workshop'])
 
 
 if __name__ == '__main__':

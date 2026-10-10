@@ -16,7 +16,7 @@ import json
 import unittest
 
 from tests import test_chain, test_policy
-from tests.test_chain import nil
+from tests.test_chain import nil, town_kinds
 from tests.test_objects import closure, compile_job
 from tests.test_places import avatar_seed
 from tests.test_turn_world import label, record
@@ -159,6 +159,7 @@ class OwnedLenses(test_chain.Chain):
     def test_the_gardens_owner_sets_confirm(self):
         from tests.test_chain import garden_seed
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal="glm")
         self.assertEqual(usage["status"], "usage", usage)
         self.assertIn("delvetalk garden set\nconfirm: <yes, no>\n", usage["text"])

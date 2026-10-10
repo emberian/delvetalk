@@ -79,8 +79,12 @@ class Library(unittest.TestCase):
 
     def test_a_cards_law_is_shown_with_its_readings(self):
         self.assertIn('no card', self.offer(self.spell('delvetalk library laws / card: nowhere')).lower())
-        # A law given at creation has no readings in the host's form: the clauses and expressions.
-        self.assertIn('  level\n    monotone(level)\n', self.offer(self.spell('delvetalk library laws / card: cistern')))
+        # A law given at creation has no readings in the host's form: the clauses and expressions. A cistern dug in
+        # the garden is a record (kind/cistern's), under the record's law.
+        dug = self.host.send({'op': 'world-turn', 'principal': 'did:plc:digger', 'object': 'garden', 'method': 'cistern', 'identity': 'dig-1',
+                              'argument': genesis.rec(name=genesis.lab(''))})
+        self.assertEqual(dug['status'], 'admitted', dug)
+        self.assertIn('  kept\n    (((insertOnly(lines)) and (insertOnly(admitted)))', self.offer(self.spell('delvetalk library laws / card: garden/cistern/1')))
 
     def test_only_the_owner_shelves(self):
         got = self.spell('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine')

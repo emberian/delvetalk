@@ -7,7 +7,7 @@ the checker; asking for one through the host waits for the host's `viewDerived`
 """
 import unittest
 
-from tests.test_chain import Chain, garden_seed
+from tests.test_chain import Chain, garden_seed, town_kinds
 from tests.test_objects import closure, run_pure
 from tests.test_replay import rows
 from tests.test_turn_world import label, nat, record
@@ -19,14 +19,14 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
-import ./Bell.obend as Bell
+import ./Rows.obend as Rows
 import ./Garden.obend as O
-def child(n: Nat, colour: Bell.Colour) -> O.Child:
+def child(n: Nat, colour: Rows.Colour) -> O.Child:
   {world: "", object: "garden/bell/{natText(n)}", colour: colour}
 def counted(n: Nat) -> String:
-  let children = Relations.Relation.rows({items: Lists.List.cons({head: child(1n, Bell.Colour.violet({})), tail: Lists.List.cons({head: child(2n, Bell.Colour.amber({})), tail: Lists.List.cons({head: child(3n, Bell.Colour.violet({})), tail: Lists.List.nil({})})})})})
+  let children = Relations.Relation.rows({items: Lists.List.cons({head: child(1n, Rows.Colour.violet({})), tail: Lists.List.cons({head: child(2n, Rows.Colour.amber({})), tail: Lists.List.cons({head: child(3n, Rows.Colour.violet({})), tail: Lists.List.nil({})})})})})
   let state: O.State = extend(O.initial(), {children: children})
-  textJoin(Lists.map(Relations.rows(O.byColour(state, Card.stranger())), fn(t: O.Tally) -> String: "{Bell.colourName(t.colour)} {natText(t.count)}"), ", ")
+  textJoin(Lists.map(Relations.rows(O.byColour(state, Card.stranger())), fn(t: O.Tally) -> String: "{O.colourName(t.colour)} {natText(t.count)}"), ", ")
 """)
 
 PLACE = declared("""edition ObjectiveBend 1
@@ -60,6 +60,7 @@ class DerivedViews(Chain):
 
     def test_another_object_asks_the_garden_for_by_colour(self):
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         planted = self.turn("garden", "plant", record(colour=label("violet"), seed=label("a moth")), principal="glm")
         self.assertEqual(planted["status"], "admitted", planted)
         asker = declared("""edition ObjectiveBend 1

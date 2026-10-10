@@ -172,7 +172,10 @@ def turn_line(r):
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
-        w = (out.get('writes') or [None])[0]
+        # the turn's own object's write when it made one (a garden's planting writes kind/bell first)
+        root = ((rc.get('roots') or [{}])[0]).get('object')
+        writes = out.get('writes') or [None]
+        w = next((x for x in writes if x and x.get('object') == root), writes[0])
         return f"admitted {w['object']} v{w.get('version')}, entry {rc.get('height')}, receipt {rc.get('slug')}" if w else \
             f"admitted, entry {rc.get('height')}, receipt {rc.get('slug')}"
     if r.get('status') == 'refused':

@@ -28,8 +28,6 @@ record Mark:
 record Field:
   name: String
   value: String
-# A rain on a bell is a line on it (keyed {author, at, n} while the Bell is its own package).
-type Rain = Line
 # An event an Env took in (world/lib/Event.obend's Event with `n`), keyed {at, actor, uri, n}.
 record Sensed:
   kind: String
@@ -50,8 +48,9 @@ record Child:
   world: String
   object: String
   colour: Colour
-# A proposal a workshop's target refused, held for the target's owner (its `held`, keyed {n},
-# numbered in order).
+# A proposal a workshop's target refused, held for the target's owner, or a draft made from a
+# description (`target` "", `name` the id it is made at), held for its describer (its `held`,
+# keyed {n}, numbered in order). `intent` is the holding turn's, for the made thing's lineage.
 record Held:
   n: Nat
   target: String
@@ -59,6 +58,8 @@ record Held:
   migration: String
   proposer: String
   proposerHandle: String
+  name: String
+  intent: String
 # A principal the directory's menu has gone to once, keyed {principal}.
 record Greeting:
   principal: String
@@ -117,6 +118,8 @@ def lineColumns(r: Line) -> Columns:
   one(text("author", r.author), one(text("handle", r.handle), one(text("text", r.text), one(nat("at", r.at), one(nat("n", r.n), none())))))
 def sensedColumns(s: Sensed) -> Columns:
   one(text("kind", s.kind), one(text("actor", s.actor), one(text("handle", s.handle), one(text("uri", s.uri), one(text("cid", s.cid), one(text("text", s.text), one(text("replyTo", s.replyTo), one(nat("at", s.at), one(nat("n", s.n), none())))))))))
+def markColumns(m: Mark) -> Columns:
+  one(text("name", m.name), one(text("who", m.who), one(text("handle", m.handle), one(nat("at", m.at), none()))))
 def greetingColumns(g: Greeting) -> Columns:
   one(text("principal", g.principal), none())
 def traceColumns(t: Trace) -> Columns:

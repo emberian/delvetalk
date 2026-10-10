@@ -263,6 +263,8 @@ class ToldWithoutPosting(HostCase):
         r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden", modules=closure("Garden"),
                            entry="initial", seed=record(owner={"tag": "label", "value": "ember"}))
         self.assertEqual(r["status"], "created", r)
+        from tests.test_chain import town_kinds
+        town_kinds(self.host.send)
 
     def inbox(self, did=DID):
         from tests.test_replay import get, rows
@@ -298,7 +300,7 @@ class ToldWithoutPosting(HostCase):
         self.assertEqual(self.inbox(), ["garden.planted is 1", "garden.planted is 2"])
         rung = self.host.send(op="world-turn", principal="ember", object="garden/bell/2", method="ring", argument=record(), identity="r1")
         self.assertEqual(rung["status"], "admitted", rung)
-        self.assertEqual(self.inbox(), ["garden.planted is 1", "garden.planted is 2", "garden/bell/2.rung turned true"])
+        self.assertEqual(self.inbox(), ["garden.planted is 1", "garden.planted is 2", "garden/bell/2.marks: 1 new row matched"])
         # Ember has no wake: the planting stands, and nobody hears bell 1 ring.
         self.assertEqual(self.host.send(op="world-turn", principal="ember", object="garden/bell/1", method="ring", argument=record(), identity="r2")["status"], "admitted")
         self.assertEqual(len(self.inbox()), 3)

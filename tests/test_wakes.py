@@ -11,7 +11,7 @@ by the one who installs it, and theirs admit only the owner.
 """
 import unittest
 
-from tests.test_chain import Chain, boolean, nil, reference
+from tests.test_chain import Chain, boolean, nil, reference, town_kinds
 from tests.test_objects import closure
 from tests.test_places import avatar_seed
 from tests.test_replay import get, items, relation, rows
@@ -284,27 +284,21 @@ class Wakes(Chain):
         ninth = self.turn(wake, "schedule", record(at=nat(0), every=nat(60), action=variant("notify")), principal=OWNER)
         self.assertEqual(get(ninth["result"]["payload"], "clause"), label("schedulesFull"))
 
-    def test_the_flood_a_wake_hears_the_cistern_pass_forty(self):
-        """SEEDING §4, the flood: the town pours, the level only rises (its law), and a wake
-        watching `level` passing 40 acts once."""
-        from deploy import genesis
-        from tests.test_objects import run_pure
-        law = run_pure("Cistern", "lawText", label("ember"))["value"]["value"]
-        self.assertEqual(law, genesis.cistern_law("ember"))   # genesis passes the package's own law
-        self.create("cistern", "Cistern", record(level=nat(0)))
-        amended = self.host.send(op="world-amend", principal="ember", identity="cistern-law", object="cistern", version=0, law=law)
-        self.assertEqual(amended["status"], "admitted", amended)
+    def test_the_flood_a_wake_hears_the_cistern_pass_a_mark(self):
+        """SEEDING §4, the flood: the town pours refusals into a cistern (kind/cistern's: a record whose level is
+        its count of lines, `next` less one, which only rises), and a wake watching `next` pass a mark acts once."""
+        town_kinds(self.host.send)
+        self.assertEqual(self.turn("kind/cistern", "make", principal=OWNER)["status"], "admitted")
         wake = self.wake()
         self.avatar(OWNER)
-        w = self.turn(wake, "watch", record(event=variant("writes", object=label("cistern"), field=label("level"), above=nat(40)), action=variant("notify")), principal=OWNER)
+        w = self.turn(wake, "watch", record(event=variant("writes", object=label("cistern/1"), field=label("next"), above=nat(4)), action=variant("notify")), principal=OWNER)
         self.assertEqual(self.label_of(w), "watching", w)
-        for n, amount in enumerate((20, 20, 1, 5)):
-            poured = self.turn("cistern", "pour", record(amount=nat(amount)), principal="did:plc:zero", identity="pour%d" % n)
+        for n in range(5):
+            poured = self.turn("cistern/1", "pour", record(text=label("refused tooSoon %d" % n)), principal="did:plc:zero", identity="pour%d" % n)
             self.assertEqual(poured["status"], "admitted", poured)
             self.deliver_all()
-        self.assertEqual((poured["result"]["label"], get(poured["result"]["payload"], "level")), ("poured", nat(46)))
-        self.assertTrue(poured["offers"][0]["text"].startswith("Cistern, level 46. Pour: delvetalk cistern pour / amount: <1 to 20>.\n"), poured["offers"])
-        self.assertEqual(self.inbox(OWNER), [(OWNER, "cistern.level is 41")])
+        self.assertIn("level 5. Pour a refusal in:", poured["offers"][0]["text"])
+        self.assertEqual(self.inbox(OWNER), [(OWNER, "cistern/1.next is 5")])
         # 21 is past the pour form's declared 1..20: the host refuses it as the spell path does (codex host 12).
         big = self.turn("cistern", "pour", record(amount=nat(21)), principal="did:plc:zero", identity="big")
         self.assertEqual((big["status"], big["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), big)
@@ -326,6 +320,7 @@ class Wakes(Chain):
         from tests.test_chain import garden_state
         self.tide()
         self.create("garden", "Garden", garden_state(planted=9))
+        town_kinds(self.host.send)
         wake = self.wake()
         writes = {"tag": "variant", "label": "writes", "payload": record(object=label("garden"), field=label("planted"), above=nat(10))}
         call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
@@ -341,25 +336,26 @@ class Wakes(Chain):
             self.assertEqual(ticks(), [0, 1, 1][i], i)
 
     def test_a_rows_rule_on_a_bells_rains_ticks_the_tide_when_its_author_rains(self):
-        """A Wake as a rule: When a row inserted into bell's rains has author OTHER, Wish a tick.
-        The wake subscribes to the bell's rains; the host delivers each rain to its typed receiver."""
-        from tests.test_replay import bell_seed
+        """A Wake as a rule: When a row inserted into a bell's lines (its rains) has author OTHER, Wish a tick.
+        The wake subscribes to the bell's lines; the host delivers each rain to its typed receiver."""
         self.tide()
-        self.make("bell", closure("Bell"), bell_seed())
+        town_kinds(self.host.send, names=("bell",))
+        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell")), principal=OWNER)
+        self.assertEqual(made["status"], "admitted", made)
         wake = self.wake()
         where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": record(column=label("author"), equals={"tag": "variant", "label": "text", "payload": record(value=label(OTHER))})}]}
-        rule = {"tag": "variant", "label": "rows", "payload": record(object=label("bell"), field=label("rains"), where=where, atLeast=nat(1))}
+        rule = {"tag": "variant", "label": "rows", "payload": record(object=label("bell/1"), field=label("lines"), where=where, atLeast=nat(1))}
         call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
         self.assertEqual(self.label_of(self.turn(wake, "watch", record(event=rule, action=call), principal=OWNER)), "watching")
         self.deliver_all()
         ticks = lambda: int(get(self.state("tide"), "ticks")["value"])
         for who, expected in ((OWNER, 0), (OTHER, 1)):
-            r = self.turn("bell", "rain", record(text=label("a drizzle")), principal=who)
+            r = self.turn("bell/1", "rain", record(text=label("a drizzle")), principal=who)
             self.assertEqual(r["status"], "admitted", r)
             self.deliver_all()
             self.assertEqual(ticks(), expected, who)
         card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        self.assertIn("on 1 new rows of bell.rains where author = %s: call tide tick" % OTHER, card)
+        self.assertIn("on 1 new rows of bell/1.lines where author = %s: call tide tick" % OTHER, card)
 
     def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
         """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,

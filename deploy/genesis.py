@@ -42,15 +42,16 @@ DOORS = [
      [('delvetalk rooms enter', ''),
       ('delvetalk rooms choose / choice: Open', 'the passage moves; a ```spween block here makes your own')]),
     ('WORKSHOP', "Read what a thing runs; write Bend; the checker answers; offer the change to its owner's law.", 'workshop', 'held',
-     [('delvetalk workshop check / target: garden/bell/1', 'checked: clean, or a hint per mistake'),
-      ('delvetalk workshop propose / target: garden/bell/1', 'plus a ```obend block; refused is held as #n for the owner to adopt')]),
+     [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('TIDE', 'Subscribe yourself to a cadence; anyone may tick; too soon is refused by name.', 'tide', 'ticks',
      [('delvetalk tide subscribe / every: 3 / note: first light', ''),
       ('delvetalk tide tick', 'sooner than the gap: refused tooSoon; a due tick notes your avatar')]),
     ('ANTHOLOGY', 'Write a line; the keeper admits; the card numbers them.', 'anthology', 'lines',
      [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
+    ('KINDS', 'Make a kind; anyone makes one of it.', 'kinds', 'count',
+     [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
     # A link door: no object (the empty reference); its description is its line.
-    ('STUDIO', f'your heap and REPL: {ORIGIN}/AGENTS.md', '', '', []),
+    ('STUDIO', f'heap and REPL: {ORIGIN}/AGENTS.md', '', '', []),
 ]
 
 
@@ -96,12 +97,6 @@ def page_body(name):
     return (ROOT / 'capsules' / 'pages' / (name + '.txt')).read_text()
 
 
-def cistern_law(opener):
-    """Cistern.lawText(opener) (world/objects/Cistern.obend): a law cannot sit in a package its creator imports."""
-    return (f'law owner "its own methods write it, or its creator": request.kind == 0 or request.subject == "{opener}"\n'
-            'law level "the level only rises": monotone(level)')
-
-
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
 # package it makes; its creator passes it (tests/test_genesis.py compares the two).
 RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the doors or the code; anyone else only by its spells": '
@@ -119,7 +114,7 @@ KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the la
 
 
 # The law each package's objects are created with, where its source declares none.
-LAWS = {'Cistern': cistern_law, 'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
+LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
 
 
 # The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's bell and
@@ -141,11 +136,10 @@ def seeds(opener):
             ('directory', 'Directory', rec(owner=lab(opener), policy=ref('policy'))),  # its doors are added once their objects exist
             ('garden', 'Garden', rec(owner=lab(opener), ownerHandle=lab(HANDLE), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
-            ('workshop', 'Workshop', rec(title=lab('Workshop'))),
+            ('workshop', 'Workshop', rec(title=lab('Workshop'), policy=ref('policy'))),
             ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM))),  # shaped, then makes KINDS
             ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
-            ('cistern', 'Cistern', rec(level=nat(0))),  # created with cistern_law(opener)
             ('rooms', 'Scene', moss_gate(opener))]
 
 

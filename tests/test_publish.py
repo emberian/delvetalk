@@ -13,7 +13,7 @@ publication twice; a merge reply to the page post going anywhere but the garden.
 import unittest
 
 from tests.test_bridge import BridgeCase
-from tests.test_chain import garden_state
+from tests.test_chain import garden_state, town_kinds
 from tests.test_transport import DID, mk
 from tests.test_turn_world import closure, label, record
 from transport import bridge, post
@@ -24,6 +24,7 @@ class Publishing(BridgeCase):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state()})
         self.assertEqual(r['status'], 'created', r)
+        town_kinds(lambda **q: self.host.send(q))
         for i in range(20):
             r = self.host.send({'op': 'world-turn', 'principal': 'glm', 'object': 'garden', 'method': 'plant',
                                 'argument': record(colour=label('silver'), seed=label('bell %02d' % i)), 'identity': f'plant-{i}'})
