@@ -22,6 +22,7 @@ from transport.delve import Client, FixtureTransport, canonical, http_transport
 from transport.hostd import CLOCK
 from transport.identity import ORIGIN
 from transport.hostproc import add_host_args, connect
+from transport import observe
 from transport.observe import SCHEMA, Observer
 
 DELIVER_ROUNDS = 8
@@ -414,6 +415,7 @@ def main(argv=None, out=None):
     r.add_argument('--zuliprc', metavar='PATH', help='--source zulip: the bot\'s .zuliprc')
     r.add_argument('--stream', default='delvetalk', help='--source zulip: the stream to observe')
     r.add_argument('--origin', default=ORIGIN, help='the front\'s origin, for the short links drafts cite')
+    r.add_argument('--since', metavar='ISO', help='observe posts created at or after this time (a deliberate replay). Without it a state that has observed nothing starts from now')
     r.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default: the wall clock)')
     o = sub.add_parser('outbox')
     o.add_argument('--state', required=True)
@@ -441,17 +443,19 @@ def main(argv=None, out=None):
         host = connect(a)
         try:
             poll, after = None, lambda: {}
+            since = observe.start_cursor(a.state, a.since, a.now) if (a.source == 'zulip' or a.observe or a.poll or a.mock) else None
             if a.source == 'zulip':
                 from transport import zulip
                 if not a.zuliprc:
                     ap.error('--source zulip needs --zuliprc')
                 client = zulip.Client(a.zuliprc)
                 poll = lambda ob: ob.poll()
-                poll.client, poll.observer = client, lambda state, c: zulip.ZulipObserver(state, c, a.stream)
+                poll.client, poll.observer = client, lambda state, c: zulip.ZulipObserver(state, c, a.stream, since)
                 after = lambda: zulip.post_drafts(a.state, host, client, a.stream)
             elif a.observe or a.poll or a.mock:
                 poll = lambda ob: ob.poll()
                 poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
+                poll.observer = lambda state, c: Observer(state, c, since)
             if a.once:
                 out.write(canonical({**run(a.state, host, poll, now=a.now, origin=a.origin), **after()}) + '\n')
             else:

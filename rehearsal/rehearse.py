@@ -193,7 +193,7 @@ class Run:
         before = self.children()
         sock = str(self.state / 'host.sock')
         bridged = self.program('-m', 'transport.bridge', 'run', '--once', '--mock', str(self.mock), '--state', str(self.state),
-                               '--host-socket', sock, '--now', str(now), what='bridge')
+                               '--host-socket', sock, '--now', str(now), '--since', '1970-01-01T00:00:00Z', what='bridge')
         pending = self.fixtures_for_pending(texts)
         interpreted = self.program('-m', 'transport.interpret', 'run', '--once', '--mock', str(self.models), '--state', str(self.state),
                                    '--host-socket', sock, what='interpret') if pending else []

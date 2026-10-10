@@ -103,8 +103,8 @@ class ZulipObserver(Observer):
     """Observer over one stream. Same tables as Observer (posts, observations, emitted); a topic's last message is
     kept for replyTo, and the owner's own messages (drafts we posted) extend the thread but are never observed."""
 
-    def __init__(self, state_dir, client, stream=STREAM):
-        super().__init__(state_dir, client)
+    def __init__(self, state_dir, client, stream=STREAM, since=None):
+        super().__init__(state_dir, client, since)
         self.stream, self.me = stream, None
         self.db.executescript(SCHEMA)
 
@@ -132,7 +132,7 @@ class ZulipObserver(Observer):
                 self.db.execute('COMMIT')
                 return False
             fresh = False
-            if m.get('sender_id') != me['user_id']:
+            if m.get('sender_id') != me['user_id'] and not self.before_start(created_at(m)):  # older messages extend the thread, unobserved
                 if len(m['content'].encode()) > MAX_TEXT:
                     self.refused.append(('post_body_too_large', uri))
                 else:

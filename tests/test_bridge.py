@@ -103,6 +103,40 @@ class BridgeCase(unittest.TestCase):
         return bridge.run(self.state, self.host)
 
 
+class Cursor(BridgeCase):
+    def main(self, *more, state=None):
+        self.host  # starts this test's hostd
+        out = io.StringIO()
+        bridge.main(['run', '--once', '--state', str(state or self.state), '--host-socket', str(Path(self.tmp.name) / 'hostd' / 'host.sock'), '--mock', str(Path(__file__).parent / 'fixtures' / 'delve'),
+                     *more], out)
+        return json.loads(out.getvalue())
+
+    def observed(self):
+        return len(observe.Observer(self.state, None).db.execute('SELECT 1 FROM observations').fetchall())
+
+    def test_a_fresh_state_observes_nothing_older_than_its_start_and_journals_since(self):
+        before = time.time()
+        got = self.main()
+        self.assertEqual((got['turns'], self.observed()), ([], 0))
+        since = (self.state / 'since').read_text().strip()
+        self.assertGreaterEqual(observe.instant(since), int(before) - 1)
+        self.assertEqual(self.main()['turns'], [])  # the second run keeps the same start
+        self.assertEqual((self.state / 'since').read_text().strip(), since)
+
+    def test_since_overrides_for_a_deliberate_replay_and_the_fixture_replays(self):
+        got = self.main('--since', '1970-01-01T00:00:00Z')
+        self.assertGreater(self.observed(), 20)
+        self.assertEqual((self.state / 'since').read_text().strip(), '1970-01-01T00:00:00Z')
+
+    def test_a_state_that_already_observed_keeps_observing_everything_without_a_since(self):
+        self.main('--since', '1970-01-01T00:00:00Z')
+        (self.state / 'since').unlink()
+        n = self.observed()
+        self.main()
+        self.assertFalse((self.state / 'since').exists())  # it predates the cursor: no start is invented for it
+        self.assertEqual(self.observed(), n)
+
+
 class Bridging(BridgeCase):
     def test_a_bell_spell_in_a_fresh_post_routes_to_the_bell(self):
         self.make('garden/bell/1')

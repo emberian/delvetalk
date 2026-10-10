@@ -7,6 +7,8 @@ import hashlib
 import re
 import sqlite3
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -119,15 +121,42 @@ def posts_of(page):
     yield from page.get('posts') or []
 
 
+def instant(stamp):
+    """An ISO-8601 time as UNIX seconds."""
+    return datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
+
+
+def start_cursor(state_dir, explicit=None, now=None):
+    """The state's `since`: where this bridge's observing begins. An explicit time (a deliberate replay) is written and
+    wins; else the file the state already holds; else, for a state that has observed nothing yet, now. A state that already
+    has observations and no `since` predates the cursor and observes everything it is shown. -> ISO time or None."""
+    path = Path(state_dir) / 'since'
+    if explicit:
+        instant(explicit)  # refuses what is not a time
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path.write_text(explicit + '\n')
+    elif not path.exists() and not (Path(state_dir) / 'observe.sqlite').exists():
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path.write_text(datetime.fromtimestamp(now if now is not None else time.time(), tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') + '\n')
+    return path.read_text().strip() if path.exists() else None
+
+
 class Observer:
-    def __init__(self, state_dir, client):
+    def __init__(self, state_dir, client, since=None):
         self.dir = Path(state_dir)
         self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.since = instant(since) if since else None  # posts created before it are not observed
         self.db = sqlite3.connect(self.dir / 'observe.sqlite', isolation_level=None)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('PRAGMA synchronous=NORMAL')
         self.db.executescript(SCHEMA)
         self.client, self.refused = client, []
+
+    def before_start(self, created):
+        try:
+            return self.since is not None and instant(created) < self.since
+        except ValueError:
+            return False
 
     def store(self, post):
         """Store one post and its observation in one transaction. True if new."""
@@ -135,6 +164,8 @@ class Observer:
             obs = observation(post)
         except Failure as f:
             self.refused.append((f.code, f.detail))
+            return False
+        if self.before_start(obs['createdAt']):
             return False
         body = canonical({'uri': obs['uri'], 'cid': obs['cid'], 'author': obs['author'], 'record': post['record']})
         digest = hashlib.sha256(body.encode()).hexdigest()
