@@ -48,11 +48,13 @@ def main(path):
     w(f"| interpretations still pending at the end | {len(r['interpretationsLeft'].get('pending') or [])} |")
     w(f"| journal height | {j['height']} |")
     w(f"| journal bytes | {j['bytes']:,} |")
+    for tag, b in sorted((j.get('bytesByOutcome') or {}).items(), key=lambda kv: -kv[1]['bytes']):
+        w(f"| ... `{tag}` entries: count, bytes, largest | {b['count']}, {b['bytes']:,}, {b['max']:,} |")
     w(f"| snapshots | {len(r['snapshots'])} {r['snapshots']} |")
     w(f"| objects | {r['status'].get('objects')} |")
     w(f"| clock at the end (unix minutes) | {r['status'].get('clock')} |\n")
     w('Recorded as posted: ' + ', '.join(f"`{x['uri'].rsplit('/', 1)[-1]}` for {x['object']} ({x['status']})" for x in r['recorded'])
-      + f". Section 10 planting slot: {json.dumps(r.get('planting'))}.\n")
+      + '. Planting posts recorded for their bells: ' + (', '.join(f"`{x['uri'].rsplit('/', 1)[-1]}` for {x['object']} ({x['status']})" for x in r.get('plantings') or []) or 'none') + '.\n')
 
     w('### Drafts by recipient\n')
     by = collections.Counter(d['to'] for d in r['drafts'])
@@ -68,6 +70,17 @@ def main(path):
         w(f"| {first} ... | {len(ds)} | {ds[0]['chars']} |")
     w('')
 
+    if r.get('gate'):
+        w('### The section 10 hour, post by post\n')
+        w('| Post | Step | Entries (outcome, class, objects written) | First offer |\n| --- | --- | --- | --- |')
+        for g in r['gate']:
+            ents = '; '.join(f"{e['tag']}{' ' + e['class'] if e['class'] else ''}{' (' + e['reason'] + ')' if e['reason'] else ''} {','.join(x for x in e['writes'] if x)}".strip() for e in g['entries']) or 'no turn'
+            offer = next((o for e in g['entries'] for o in e['offers'] if o), '')
+            w(f"| `{g['uri'].rsplit('/', 1)[-1]}` | {g['step']} | {ents} | {offer.strip().replace(chr(10), ' / ')[:160]} |")
+        w('')
+        for obj, v in (r.get('views') or {}).items():
+            w(f"- `{obj}` v{v['version']}: `{json.dumps(v['state'], ensure_ascii=False)[:400]}`")
+        w('')
     w('### Host errors and Python exceptions, verbatim\n')
     seen = set()
     for e in r['errors']:
@@ -98,6 +111,22 @@ def main(path):
         said = ' / '.join(t.strip().split('\n')[0] + ('; ' + t.strip().split('\n')[2] if len(t.strip().split('\n')) > 2 else '') for t in g['offers'] if t) or g['reason'] or json.dumps(g['result'])
         w(f"| {g['object']} | {g['what']} | {g['status']}{' ' + g['class'] if g['class'] else ''} | {said[:160]} |")
     w('')
+    b = r.get('burst')
+    if b:
+        w('### Burst probe: nine prose plantings to the garden in one poll\n')
+        w('First pass: ' + ', '.join(f"{f['status']}{' ' + f['class'] if f['class'] else ''}" for f in b['first']) + '.')
+        w(f"Settled {len(b['settled'])}: " + ', '.join(sorted({json.dumps(s['verdict'])[:80] for s in b['settled']})) + '.')
+        w(f"Retried after capacity: {b['retried']}. Final outcomes: " + ', '.join(f"{f['outcome']}{' ' + f['class'] if f['class'] else ''}" for f in b['final']) + '.')
+        offers = [f['offer'] for f in b['final'] if f['offer']]
+        if offers:
+            w('A resumed offer:\n')
+            w(fence(offers[0]))
+        w('')
+    h = r.get('handle')
+    if h:
+        w('### Handle probe\n')
+        w(f"world-principal: {h['recorded']}; plant: {h['status']}; the offer names the handle: {h['showsHandle']}; a DID fragment: {h['showsFragment']}.\n")
+        w(fence(h['offer']))
     w('### Cards at the end\n')
     for obj, c in r['cards'].items():
         w(f"**{obj}** ({c['status']}, {c['chars']} characters)\n")

@@ -33,9 +33,26 @@ STATUS = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxhfxkkcts
 # answers), the v2 status. The archive holds no post of the Garden's own card.
 HUBS = [WELCOME, 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxen3fdeo224',
         'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxgh25xsa227', STATUS]
-# The section 10 planting: glm's post, recorded as the bell's planting slot once a bell grows from it,
-# so the rains and the strike that reply to it route to the bell by reply address.
-PLANTING = 'at://did:plc:nmjdxe6fex23zslnnbwgruj3/town.delve.feed.post/3mxghe7w33c2f'
+# The section 10 plantings: each post that grows a bell is recorded for that bell with its planting
+# slot, so the rains and the strike that reply to it route to the bell by reply address.
+FINE = ('2026-10-09T07:25', '2026-10-09T07:50')
+# The FOUNDATION section 10 hour, post by post, with the step each one is.
+_G, _K, _M, _P = ('did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:j2hnfjwlnm2mau24vnmpir6d', 'did:plc:ubtqb43nq7u6jlibkzlobkuu',
+                  'did:plc:m4247k3y7qpbpw5opune7nvf')
+SECTION10 = [(f'at://{d}/town.delve.feed.post/{k}', step) for d, k, step in [
+    (_P, '3mxgh64u64r22', 'penny: first rain for the lighthouse, silver (reply to the leak)'),
+    (_M, '3mxghbmaz2s2f', "gemini: rain on the silver lighthouse (before glm's planting)"),
+    (_G, '3mxghe7w33c2f', '1. glm plants a silver bell (plant: / colour: silver)'),
+    (_M, '3mxghexfsqk2f', "2. gemini replies to glm's planting (a rain, if any)"),
+    (_K, '3mxghge5hak2f', "2. kimik3 replies to glm's planting (a rain, if any)"),
+    (_M, '3mxghfenfgk2f', '3. gemini plants the stone cistern (fenced plant: / colour: violet)'),
+    (_K, '3mxghh4qis22f', "4. kimik3's rain on the cistern"),
+    (_G, '3mxghha2r6k2f', '3. glm plants the second cistern'),
+    (_M, '3mxghjkkodk2f', '5. gemini: the striker is in hand'),
+    (_M, '3mxghd6kvo22f', '6. gemini: a line for the anthology'),
+    (_G, '3mxghgacmlc2f', '6. glm: that line belongs in the anthology'),
+    (_K, '3mxghjyx4pk2f', '6. kimik3: anthology, fourth entry'),
+    (_G, '3mxghjmm6zc2f', '6. glm: the guestbook line in the anthology')]]
 NOT_ADDRESSED = 'unclear: not addressed'
 FIX = ROOT / 'rehearsal' / 'fixtures'
 
@@ -65,16 +82,19 @@ EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\n
 
 def seeds(top):
     """(object, module, creator, owner, intent, partial seed) in the order the runbook creates them. Seeds name only
-    the fields genesis decides; deploy/seed.py lays them over each package's own initial()."""
+    the fields genesis decides; world-create lays them over each package's own initial()."""
     out = [('policy', 'Policy', OWNER, None, 'genesis-policy', rec(
                owner=lab(OWNER), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
                lexicon=lst(*[rec(word=lab(w), meaning=lab(m)) for w, m in LEXICON]),
                examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
            ('directory', 'Directory', OWNER, None, 'genesis-directory', rec(
-               owner=lab(OWNER), doors=lst(*[rec(label=lab(l), description=lab(d), to=ref(t)) for l, d, t in DOORS]))),
+               owner=lab(OWNER), policy=ref('policy'), doors=lst(*[rec(label=lab(l), description=lab(d), to=ref(t)) for l, d, t in DOORS]))),
            ('garden', 'Garden', OWNER, None, 'genesis-garden', rec(owner=lab(OWNER), policy=ref('policy'), confirm=boo(True))),
            ('tide', 'Tide', OWNER, None, 'genesis-tide', rec(gap=nat(1))),
-           ('workshop', 'Workshop', OWNER, None, 'genesis-workshop', rec(title=lab('Workshop')))]
+           ('workshop', 'Workshop', OWNER, None, 'genesis-workshop', rec(title=lab('Workshop'))),
+           ('anthology', 'Anthology', OWNER, None, 'genesis-anthology', rec(owner=lab(OWNER))),
+           ('cistern', 'Cistern', OWNER, None, 'genesis-cistern', rec()),
+           ('commons', 'Commons', OWNER, None, 'genesis-commons', rec(owner=lab(OWNER)))]
     for handle, did in top:
         out.append((did, 'Avatar', OWNER, did, 'genesis-avatar-' + did, rec(handle=lab(handle))))
         out.append(('env/' + did, 'Env', OWNER, did, 'genesis-env-' + did, rec(owner=lab(did))))
@@ -99,7 +119,7 @@ class Run:
         self.steps = []       # per window: what each program printed
         self.answers = json.loads((FIX / 'model-answers.json').read_text())
         self.answered = {}    # interpretation id -> (uri, raw)
-        self.seen, self.planting = set(), None
+        self.seen, self.plantings = set(), []
 
     def program(self, *argv, what=''):
         """One transport program as a subprocess; its stdout JSON lines are returned, stderr kept verbatim."""
@@ -116,19 +136,9 @@ class Run:
                 out.append({'text': line})
         return out
 
-    def open_world(self):
-        """Open the journal once with the clock principal and the opener (ember), the settings hostd's world
-        keeps; hostd opens it afterwards naming only the clock. Until hostd passes `opener` itself."""
-        proc = subprocess.Popen([self.env['DELVETALK_OBEND']], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-        out, _ = proc.communicate(json.dumps({'op': 'world-open', 'path': str(self.state / 'world.journal'),
-                                              'clock': 'transport', 'opener': OWNER}) + '\n', timeout=120)
-        reply = json.loads(out.splitlines()[0])
-        assert reply.get('status') == 'opened', reply
-        return reply
-
     def start_hostd(self):
         self.hostd = subprocess.Popen([sys.executable, '-m', 'transport.hostd', '--state', str(self.state),
-                                       '--journal', str(self.state / 'world.journal')],
+                                       '--journal', str(self.state / 'world.journal'), '--opener', OWNER],
                                       cwd=ROOT, env=self.env, stderr=open(self.out / 'hostd.stderr', 'w'))
         sock = self.state / 'host.sock'
         for _ in range(200):
@@ -196,19 +206,23 @@ class Run:
         f = next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'children'), {'items': []})
         return [next(x['value']['value'] for x in c['fields'] if x['name'] == 'object') for c in f.get('items', [])]
 
-    def record_planting(self, posts, before):
-        """Once glm's planting post has grown a bell, record that post for the bell with the planting slot
-        (the turn's principal and intent, as Garden.slot names it)."""
-        if self.planting or PLANTING not in self.seen:
-            return
-        grown = [c for c in self.children() if c not in before]
-        if not grown:
-            self.planting = {'status': 'no bell grew from the planting post', 'uri': PLANTING}
-            return
-        did = PLANTING.split('/')[2]
-        reply = post_py.record_posted(self.host, {'uri': PLANTING, 'cid': posts[PLANTING]['cid']}, grown[-1],
-                                      {'principal': did, 'intent': PLANTING})
-        self.planting = {'status': reply.get('status'), 'object': grown[-1], 'message': reply.get('message'), 'uri': PLANTING}
+    def record_plantings(self, posts, before):
+        """Every bell grown since `before` has its planting post recorded for it, with the planting slot (the
+        turn's principal and intent, read from the bell's own state), so replies to that post reach the bell
+        by reply address. In production ember records the post that answers; the rehearsal records the
+        planting post itself, as the gate asks."""
+        for bell in [c for c in self.children() if c not in before]:
+            v = self.host.send({'op': 'world-view', 'principal': OWNER, 'object': bell})
+            slot = next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'planting'), None)
+            if not slot:
+                continue
+            slot = {f['name']: f['value']['value'] for f in slot['fields']}
+            uri = slot.get('intent')
+            if uri not in posts:
+                self.plantings.append({'object': bell, 'uri': uri, 'status': 'planting intent is not an archived post'})
+                continue
+            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': posts[uri]['cid']}, bell, slot)
+            self.plantings.append({'object': bell, 'uri': uri, 'status': reply.get('status'), 'message': reply.get('message')})
 
     def window(self, window, now, texts, posts):
         """One observer poll, as production runs it: bridge, then the interpretation loop, then deliveries,
@@ -234,7 +248,7 @@ class Run:
         clock = self.host.send({'op': 'world-advance', 'principal': 'transport', 'height': int(now // 60)})
         if clock.get('status') == 'error':
             self.errors.append({'kind': 'clock', 'reply': clock})
-        self.record_planting(posts, before)
+        self.record_plantings(posts, before)
         step = {'now': now, 'posts': len(window), 'bridge': bridged, 'interpretations': pending, 'interpret': interpreted,
                 'delivered': delivered}
         for b in bridged:
@@ -275,18 +289,78 @@ def grammar_probes(out, binary):
         for i, (obj, what, text) in enumerate(GRAMMAR):
             who = f'did:plc:rehearsalprobe{i:010d}'
             reply = host.send({'op': 'world-turn', 'principal': who, 'object': obj, 'method': 'receive', 'identity': f'probe-{i}',
-                               'argument': rec(text=lab(text), post=lab(f'at://{who}/town.delve.feed.post/probe{i}'), slot=lab(''))})
+                               'argument': rec(text=lab(text), post=lab(f'at://{who}/town.delve.feed.post/probe{i}'))})
             outcome = (reply.get('receipt') or {}).get('outcome') or {}
             results.append({'object': obj, 'what': what, 'text': text, 'status': reply.get('status'),
                             'class': outcome.get('class'), 'reason': outcome.get('reason') or reply.get('message'),
                             'offers': [o.get('text') for o in reply.get('offers') or []], 'result': reply.get('result')})
+        burst = burst_probe(host)
+        handle = handle_probe(host)
     finally:
         host.close()
-    return results
+    return results, burst, handle
+
+
+def turn_text(host, who, obj, intent, text):
+    return host.send({'op': 'world-turn', 'principal': who, 'object': obj, 'method': 'receive', 'identity': intent,
+                      'argument': rec(text=lab(text), post=lab(intent))})
+
+
+def burst_probe(host, n=9):
+    """Nine prose plantings reach the garden in one poll, before the interpreter runs: each must suspend
+    (pendingInterpretationsPerObject is counted apart from pendingActivitiesPerObject = 8), settle, and
+    resume admitted. A turn refused `capacity` is transient: the same identity is retried after settling."""
+    who = [f'did:plc:rehearsalburst{i:011d}' for i in range(n)]
+    intent = [f'at://{w}/town.delve.feed.post/burst{i}' for i, w in enumerate(who)]
+    said = {f'could you plant me a silver fern that remembers hour {i}?': i for i in range(n)}
+    first = []
+    for (text, i) in said.items():
+        r = turn_text(host, who[i], 'garden', intent[i], text)
+        first.append({'i': i, 'status': r.get('status'), 'class': ((r.get('receipt') or {}).get('outcome') or {}).get('class'),
+                      'reason': ((r.get('receipt') or {}).get('outcome') or {}).get('reason') or r.get('message')})
+    settled, retried = [], []
+    for _ in range(4):
+        for item in host.send({'op': 'world-interpretations'}).get('pending') or []:
+            i = said.get(item['utterance'])
+            text = (f'delvetalk garden plant\nseed: a fern that remembers hour {i}\ncolour: silver' if i is not None else NOT_ADDRESSED)
+            body = json.dumps({'content': [{'type': 'text', 'text': text}], 'model': model.DEFAULT_MODEL, 'stop_reason': 'end_turn',
+                               'usage': {}}).encode()
+            got = host.send({'op': 'world-interpretation', 'id': item['id'], 'reply': model.interpret_body(200, body, model.DEFAULT_MODEL)})
+            verdict = ((got.get('receipt') or {}).get('outcome') or {}).get('verdict') or got.get('message')
+            settled.append({'i': i, 'verdict': verdict})
+        again = [f for f in first if f['class'] == 'capacity' and f['i'] not in retried]
+        if not again:
+            break
+        for f in again:
+            retried.append(f['i'])
+            r = turn_text(host, who[f['i']], 'garden', intent[f['i']], next(t for t, j in said.items() if j == f['i']))
+            f['retry'] = r.get('status')
+    final = []
+    for i in range(n):
+        rc = host.send({'op': 'world-receipt', 'principal': who[i], 'identity': intent[i]}).get('receipt') or {}
+        offers = host.send({'op': 'world-offers', 'principal': who[i]}).get('offers') or []
+        final.append({'i': i, 'outcome': (rc.get('outcome') or {}).get('tag'), 'class': (rc.get('outcome') or {}).get('class'),
+                      'offer': offers[-1]['text'] if offers else None})
+    return {'first': first, 'settled': settled, 'retried': retried, 'final': final}
+
+
+def handle_probe(host):
+    """After world-principal records a handle, a card names the principal by it, not by a DID fragment."""
+    did, handle = 'did:plc:rehearsalhandle000000000', 'rehearsal-probe.delve.town'
+    recorded = host.send({'op': 'world-principal', 'principal': 'transport', 'did': did, 'handle': handle})
+    r = turn_text(host, did, 'garden', f'at://{did}/town.delve.feed.post/handle', 'delvetalk garden plant\nseed: a named fern\ncolour: amber')
+    offer = '\n'.join(o.get('text') or '' for o in r.get('offers') or [])
+    return {'recorded': recorded.get('status') or recorded.get('message'), 'status': r.get('status'), 'offer': offer,
+            'showsHandle': handle in offer, 'showsFragment': did.split(':')[-1] in offer}
 
 
 def journal_stats(path):
-    entries = [json.loads(l) for l in open(path) if l.strip()]
+    lines = [l for l in open(path, 'rb') if l.strip()]
+    entries = [json.loads(l) for l in lines]
+    sizes = collections.defaultdict(list)
+    for l, e in zip(lines, entries):
+        sizes[(e.get('outcome') or {}).get('tag', '?')].append(len(l))
+    journal_stats.sizes = {t: {'count': len(v), 'bytes': sum(v), 'max': max(v)} for t, v in sizes.items()}
     tags, classes, ops = collections.Counter(), collections.Counter(), collections.Counter()
     reasons = collections.defaultdict(list)
     for e in entries:
@@ -315,7 +389,6 @@ def main(argv=None):
     counts = collections.Counter((p['author']['handle'], p['author']['did']) for p in posts if p['author']['did'] != OWNER)
     top = [hd for hd, _ in counts.most_common(20)]
     r = Run(a)
-    results_open = r.open_world()
     r.start_hostd()
     results = {'binary': a.binary, 'posts': len(posts), 'first': posts[0]['record']['createdAt'], 'last': posts[-1]['record']['createdAt'],
                'top': [{'handle': h, 'did': d, 'posts': counts[(h, d)]} for h, d in top]}
@@ -323,15 +396,20 @@ def main(argv=None):
         results['seeded'] = r.seed(top)
         results['probes'] = r.probes()
         results['recorded'] = r.record_posts(by_uri)
-        span = a.window * 60
-        t0 = epoch(posts[0]['record']['createdAt']) // span * span
+        # Each post belongs to the poll that ends at the next window boundary: 15 minutes, except
+        # that the operator watches the section 10 hour (07:25 to 07:50) minute by minute, so a
+        # planting is recorded before the replies to it arrive.
+        def poll_end(p):
+            t = epoch(p['record']['createdAt'])
+            step = 60 if FINE[0] <= p['record']['createdAt'] < FINE[1] else a.window * 60
+            return (t // step + 1) * step
         buckets = collections.defaultdict(list)
         for p in posts:
-            buckets[int((epoch(p['record']['createdAt']) - t0) // span)].append(p)
-        for k in sorted(buckets):
-            r.window(buckets[k], t0 + (k + 1) * span, texts, by_uri)
+            buckets[poll_end(p)].append(p)
+        for end in sorted(buckets):
+            r.window(buckets[end], end, texts, by_uri)
         # After the last post: the clock runs on past every interpretation deadline, deliveries drain.
-        last = t0 + (max(buckets) + 1) * span
+        last = max(buckets)
         for extra in (30, 70, 130):
             r.window([], last + extra * 60, texts, by_uri)
         sock = str(r.state / 'host.sock')
@@ -353,6 +431,11 @@ def main(argv=None):
             envs.append((len(buf.get('items', [])), 'env/' + d, h))
         envs.sort(key=lambda e: -e[0])
         results['envs'] = envs
+        views = {}
+        for obj in ['garden', 'anthology', 'cistern'] + r.children():
+            v = r.host.send({'op': 'world-view', 'principal': OWNER, 'object': obj})
+            views[obj] = {'version': v.get('version'), 'state': v.get('state'), 'status': v.get('status')}
+        results['views'] = views
         results['cards'] = {}
         for obj in ('directory', 'garden', 'tide', envs[0][1], 'policy', 'workshop'):
             c = r.host.send({'op': 'world-card', 'principal': OWNER, 'object': obj})
@@ -371,10 +454,11 @@ def main(argv=None):
         results['hostOffers'] = held
     finally:
         r.stop_hostd()
-    results['grammar'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
+    results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
     entries, tags, classes, reasons = journal_stats(r.state / 'world.journal')
     results['journal'] = {'height': len(entries), 'bytes': (r.state / 'world.journal').stat().st_size,
-                          'outcomes': dict(tags), 'refusedByClass': dict(classes), 'refusals': reasons}
+                          'outcomes': dict(tags), 'refusedByClass': dict(classes), 'refusals': reasons,
+                          'bytesByOutcome': journal_stats.sizes}
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))
     obs = [json.loads(js) for (js,) in __import__('sqlite3').connect(r.state / 'observe.sqlite').execute('SELECT json FROM observations ORDER BY seq')]
     results['observed'] = {'count': len(obs), 'kinds': dict(collections.Counter(o['kind'] for o in obs))}
@@ -393,7 +477,7 @@ def main(argv=None):
                        'class': (receipt.get('outcome') or {}).get('class'), 'object': d.get('object')})
     results['offerless'] = sum(1 for d in drafts if not d['text'])
     results['drafts'] = [d for d in drafts if d['text']]
-    results['planting'] = r.planting
+    results['plantings'] = r.plantings
     verdicts = collections.Counter()
     for e in entries:
         o = e.get('outcome') or {}
@@ -401,6 +485,15 @@ def main(argv=None):
             v = o.get('verdict') or {}
             verdicts[v.get('tag', '?') + (': ' + '; '.join(v.get('needs') or []) if v.get('needs') else '')] += 1
     results['verdicts'] = dict(verdicts)
+    gate = []
+    for uri, step in SECTION10:
+        mine = [e for e in entries if (e.get('identity') or {}).get('intent') == uri]
+        gate.append({'uri': uri, 'step': step, 'routed': results['observations'].get(uri, {}).get('kind'),
+                     'entries': [{'tag': (e.get('outcome') or {}).get('tag'), 'class': (e.get('outcome') or {}).get('class'),
+                                  'reason': (e.get('outcome') or {}).get('reason'),
+                                  'writes': [w.get('object') for w in (e.get('outcome') or {}).get('writes') or []],
+                                  'offers': [o.get('text') for o in e.get('offers') or []]} for e in mine]})
+    results['gate'] = gate
     results['answered'] = r.answered
     results['steps'] = r.steps
     results['errors'] = r.errors
