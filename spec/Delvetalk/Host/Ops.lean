@@ -931,6 +931,10 @@ partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theo
   | .emptyRow => some []
   | _ => none
 
+/-- The State fields an artifact lists as `fixed` (none when absent). -/
+def fixedOf (artifact : Json) : List String :=
+  ((artifact.getObjValAs? (List String) "fixed").toOption).getD []
+
 /-- The relations an artifact lists (`relations [{field, key, limit, retain?}]`, the value of the
     entry module's `relations()`, which the kernel evaluates once per prepared closure); `none` when
     the entry module declares none. An empty key or a retention other than `dropOldest` refuses. -/
@@ -1171,7 +1175,7 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
     | none => pure (if extend then o.relations else [])
   (checkRelations relations assumptions.bounds ty).mapError (("key", ·))
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
-           methods, predicate, predicateReads, packet, relations }
+           methods, predicate, predicateReads, packet, relations, fixed := fixedOf artifact }
 
 def programKey (o : Object) (source migration : String) (extend : Bool := false) : String :=
   o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "")
@@ -1893,7 +1897,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "migration" s!"{e}: the converted state's relations are not canonical")
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
-                       predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations }
+                       predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,
+                       fixed := prog.fixed }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),
@@ -2318,7 +2323,8 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     (laws.lookup n).isSome && laws.lookup n == b.laws.lookup n && (given.lookup n).isNone
   return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty, readings,
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
-            inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet }, sources)
+            inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet,
+            fixed := fixedOf b.artifact }, sources)
 
 def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
   if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
