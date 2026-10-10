@@ -783,7 +783,8 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
         unless dom == o.stateType && cod == ty do
           throw ("migration", "the migration must have type OldState -> NewState")
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
-      pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid, none⟩)
+      pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid,
+        (Delvetalk.CheckedEntry.ofPacket packet).toOption⟩)
   let (methods, predicate, predicateReads) ← if !extend then pure (artifactShape artifact) else do
     -- The layer's own table (compiled with one of its definitions as the entry), then every
     -- method below it that the layer does not override; the law shape is the layer's if it
@@ -1380,7 +1381,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .ok prog => pure prog
         | .error (clause, message) => throw (refuse clause message)
       if let some m := prog.migration then
-        match Package.executeDataValues m.packet #[written] (Json.mkObj []) with
+        let run := match m.entry with
+          | some e => Package.executeDataEntry e #[written] (Json.mkObj [])
+          | none => Package.executeDataValues m.packet #[written] (Json.mkObj [])
+        match run with
         | .ok (.finished value _ _ _) => state := value
         | .ok (.refused failure _) => throw (refuse "migration" s!"the migration was refused: {failure}")
         | .error e => throw (refuse "migration" e)

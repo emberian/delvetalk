@@ -565,7 +565,9 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
     let st ← get
     let lim := st.limits.setObjVal! "ticks" (toJson (toString st.ticks))
-    match Package.executeDataValues compiled.packet arguments.toArray lim with
+    -- The held entry, as cards run: no packet decode or re-check per call.
+    let entry ← entryOf compiled
+    match Package.executeDataEntry entry arguments.toArray lim with
     | .error e => evaluation e
     | .ok (.refused failure usage) =>
       spend (usage.ticksUsed + usage.conversionNodes)

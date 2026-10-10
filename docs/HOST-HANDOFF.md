@@ -617,6 +617,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    against its own CID only; `verify: true` still replays everything. Tests: `test_snapshot` (stale CID, consistent
    forgery).
 
+36. **Pure methods on held entries (host7, §7 item 5).** A method returning the new state runs `Package.executeDataEntry`
+   on `compiledMethod`'s held `CheckedEntry` (`entryOf`), as cards do; a reprogram's migration is held too
+   (`CheckedEntry.ofPacket` once in `prepareProgram`, `executeDataEntry` in `judge`, the packet path kept for a
+   `Compiled` without an entry). Only `initial()` at creation still runs from the packet (once per package). Measured on
+   hbox, before and after interleaved, three runs each (`test_turn_world.Maximum`): 200 pure bumps of a one-field
+   counter 0.04-0.05 s -> 0.03-0.04 s; 200 pure bumps whose method renders a Document (a larger packet) 0.06-0.07 s ->
+   0.03-0.04 s; 200 activity bumps 0.17 s either way (already held). A first measurement of 0.45 s / 0.15 s was the
+   box's load (about 9.5), not the code.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -701,8 +710,7 @@ Queued, none started:
    `handle`; an activity handler (a card that asks before answering) and handlers over the callee's own calls
    are open.
 4. ~~Snapshot verification by default.~~ Done in host7 (5.35).
-5. **Pure methods.** A state-returning method still goes through `Package.executeDataValues` (packet JSON); move
-   it to `executeDataEntry` with `compiledMethod`'s held entry (cards moved in lane/host5).
+5. ~~Pure methods.~~ Done in host7 (5.36).
 
 lane/host5 (based on foundation 7d90f1b) did: journal durability modes (`sync: "none" | "fsync" | "full"`, default
 fsync); cards with a point of view (5.9); `publish` end to end (5.11: `world-publications`, page-aware `posted`, the
