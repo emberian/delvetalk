@@ -143,8 +143,8 @@ structure Compiled where
       (a `List<T>` field) are data only under them. -/
   bounds : DataBounds
   rigid : List Nat
-  /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntry`,
-      `Turn.resumeEntry`, `Package.executeDataEntry`), never from the packet JSON. -/
+  /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntryStep`,
+      `Turn.resumeEntryStep`, `Package.executeDataEntry`), never from the packet JSON. -/
   entry : Option Delvetalk.CheckedEntry := none
   /-- The checkpoint dictionary of the entry's program (`Dictionary.ofProgram`), built once with it:
       every yield encodes against it and every resumption decodes against it. -/

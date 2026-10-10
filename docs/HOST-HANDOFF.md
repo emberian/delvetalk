@@ -366,6 +366,15 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 57. **`world-inspect {source: false}` (host9).** Omits `source`; everything else is as with `source: true`
    (the default). A non-boolean is a request error. Test: `tests/test_inspect_reads.py`.
 
+58. **In-process yields hold the machine state (host9; KERNEL-HANDOFF §18).** `runFrame` starts with
+   `Turn.startEntryStep`; `drive` takes a `Turn.Step`, whose yield holds a `Turn.Suspension`; a Plan
+   answered in this process resumes with `Turn.resumeSuspended` (no checkpoint encoded, digested or
+   decoded). Only `await*` and `interpret`, which may suspend, build `suspension.checkpoint`; the profile
+   reads it lazily. A journaled resumption uses `resumeEntryStep`. Measured on hbox, the offline
+   rehearsal with `DELVETALK_TIMING=1`, one run each on the same tree (before at load ~5, after at ~17):
+   host ms 25,646 -> 13,621; directory `receive` 11,339 -> 4,521 (120 turns, median 70 -> 22 ms); garden
+   `receive` 5,189 -> 2,010; env `receive` 3,681 -> 2,267; rehearsal wall 62.3 -> 43.4 s.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

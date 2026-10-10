@@ -651,7 +651,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
     let entry ← entryOf compiled
-    let started ← kernelRefusal (Delvetalk.Turn.startEntry entry arguments binding b compiled.dictionary) (some expected)
+    let started ← kernelRefusal (Delvetalk.Turn.startEntryStep entry arguments binding b compiled.dictionary) (some expected)
     noteProfile fun _ => (Delvetalk.Turn.prepareStartEntry entry arguments |>.map fun (applied, _) =>
       Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial applied.source.term))
     drive depth id caller compiled binding started 0
@@ -673,13 +673,13 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
       return value
 
 partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (binding : Delvetalk.Turn.Binding)
-    (outcome : Delvetalk.Turn.Outcome) (_n : Nat) : M Data := do
+    (outcome : Delvetalk.Turn.Step) (_n : Nat) : M Data := do
   match outcome with
   | .finished value _ used => spend used; return value
   | .exhausted resource used =>
     spend used
     throw (.budget resource)
-  | .yielded message _ responseType checkpoint used =>
+  | .yielded message _ responseType suspension used =>
     spend used
     countPlan
     -- A message activity calls the world by method name; a sum Plan names its constructor.
@@ -690,9 +690,9 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     let response ← match plan with
       | .variant "refusedMessage" (.record f) =>
         refusedWith compiled.bounds responseType (((f.lookup "clause").bind labelOf).getD "noMethod")
-      | .variant "await" (.record f) | .variant "awaitUntil" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
-      | .variant "awaitPost" (.record f) | .variant "awaitPostUntil" (.record f) => awaitPostPlan depth self compiled.bounds f responseType checkpoint
-      | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType checkpoint
+      | .variant "await" (.record f) | .variant "awaitUntil" (.record f) => awaitPlan depth self compiled.bounds f responseType suspension.checkpoint
+      | .variant "awaitPost" (.record f) | .variant "awaitPostUntil" (.record f) => awaitPostPlan depth self compiled.bounds f responseType suspension.checkpoint
+      | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType suspension.checkpoint
       | _ => do
         -- A frame run under a handler offers each Plan to it first.
         match (← get).handlers.lookup depth with
@@ -702,8 +702,9 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
         | none => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
     let entry ← entryOf compiled
-    let next ← liftEval (Delvetalk.Turn.resumeEntry entry checkpoint binding response b compiled.dictionary)
-    noteProfile fun _ => (Delvetalk.Turn.prepareResumeEntry entry checkpoint binding response |>.map fun (_, _, _, _, st, resumed) =>
+    -- A yield held in this process resumes from its machine state; no checkpoint is made.
+    let next ← liftEval (Delvetalk.Turn.resumeSuspended entry suspension binding response b)
+    noteProfile fun _ => (Delvetalk.Turn.prepareResumeEntry entry suspension.checkpoint binding response |>.map fun (_, _, _, _, st, resumed) =>
       Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ st) b.bytes b.ticks resumed)
     drive depth self caller compiled binding next 0
 
@@ -1831,7 +1832,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
     let binding := Delvetalk.Turn.Binding.make object principal intent
       (roots.filter (·.1 == object))
     let b ← budgetsNow
-    let next ← liftEval (Delvetalk.Turn.resumeEntry (← entryOf compiled) checkpoint binding response b compiled.dictionary)
+    let next ← liftEval (Delvetalk.Turn.resumeEntryStep (← entryOf compiled) checkpoint binding response b compiled.dictionary)
     drive 0 object ctx.caller compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st
