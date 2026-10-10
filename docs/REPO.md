@@ -40,11 +40,12 @@ law's the same with the clause name in place of the version (`garden~bell~1.owne
 the last dot and `~` to `/`. The host creates only ids of letters, digits and `. _ : / -`
 (`validObjectId`), so every object it creates has a key. It still replays any id a journal written before
 that rule holds; such an id with `~`, `@` or another character record keys forbid gets a key outside the
-syntax, and its record cannot be cited until the object is recreated. getRecord also accepts the old `<object>/<version>` for one release
-(any key holding `/`) and answers with the new key in `uri`.
+syntax, and its record cannot be cited until the object is recreated. The old `<object>/<version>` key is gone (400).
 
 Host statuses become XRPC errors carrying the host reply as `reply`: `unknown` is 400 `RecordNotFound`,
-`denied` 403 `Denied`, `ambiguous` 400 `AmbiguousSlug`, anything else 400 `InvalidRequest`.
+`denied` 403 `Denied`, `ambiguous` 400 `AmbiguousSlug`, hostd not answering 503 `HostUnavailable` or 504
+`HostTimeout`, anything else 400 `InvalidRequest`. The front adds 401 `InvalidToken` for a bad bearer and 429
+`RateLimitExceeded` (with `Retry-After`); the catalogue's `xrpcErrors` lists them all.
 
 **A record's `cid`.** For a receipt it is the entry's `hash`: the CID of the entry's canonical bytes without
 `hash`. The `value` is the entry as the host projects it to that reader, so it hashes to `cid` only when the

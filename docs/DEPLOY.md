@@ -28,7 +28,7 @@ by replaying the journal, and serves the front, the bridge, the interpreter,
 `post --object` and `deploy.seed` over `/data/state/host.sock` (mode 0600). Private
 heaps live in the same daemon, addressed by a `heap: <did>` field. At a journal's first open hostd seals
 `world/lib` into it as the library (`--library`; the opener may change it, each heap's owner theirs),
-so packages import `./Plan.obend` and the rest by name. hostd seals `world/lib` together with `world/objects/{Avatar,Env,Wake,Place}.obend` (the packages `world-arrive` creates from; copied to `<state>/library` at each start), or arrival creates nothing. Those programs
+so packages import `./Plan.obend` and the rest by name. hostd seals `world/lib` together with `world/objects/{Avatar,Env,Wake}.obend` (the packages `world-arrive` creates from, `ARRIVAL` in `transport/hostproc.py`; copied to `<state>/library` at each start), or arrival creates nothing. Those programs
 are clients: stop, start or run them at any time without touching the world.
 The lock holds where one kernel sees the file: a local Linux
 filesystem (measured on ext4). Docker Desktop's file sharing on a Mac does not
@@ -86,14 +86,19 @@ On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` 
     docker compose up -d --wait delvetalk-hostd
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
 
-`deploy.genesis` is docs/GENESIS.md as one command. The opener arrives first (`world-arrive`), then creates `policy`,
+`deploy.genesis` is docs/GENESIS.md as one command. The transport image carries only `deploy/seed.py` of `deploy/`
+(`Dockerfile.transport`), so this command, `deploy/library-update.sh` and `deploy.spend` below do not run in
+`delvetalk-ops` until the image carries them; until then run them from a checkout of the same commit on the workhorse,
+as uid 10425, against the socket under the data directory (`--host-socket /var/lib/delvetalk/v2/state/host.sock`). The opener arrives first (`world-arrive`), then creates `policy`,
 `directory`, `garden`, `tide`, `workshop`, `anthology`, `cistern`, `commons`, `rooms` and `play`, in that order. It
 refuses to run if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the
 same way. `deploy.seed` creates one further object by hand.
 
-Genesis then has each door's object publish its page (`publishPage`). After the bridge runs, its outbox holds one
-`wiki: <Door>` draft each for GARDEN, ROOMS, WORKSHOP and ANTHOLOGY. Tide has no `publishPage`, so TIDE's is
-named on stderr as not published; STUDIO is a link, with no page.
+The welcome card's menu has six doors: GARDEN, ROOMS, WORKSHOP, TIDE, ANTHOLOGY and STUDIO (a link to
+`<origin>/AGENTS.md`, with no object). Genesis then has each door's object publish its page (`publishPage {page}`, the
+page the door's word capitalized). After the bridge runs, its outbox holds one draft each: `wiki: Garden`, `wiki: Rooms`,
+`wiki: Workshop`, `wiki: Tide` and `wiki: Anthology`. Garden writes its own page; the others get the host's default page
+(the card, then how to reply). STUDIO has no page.
 Post each with `transport.post ... --object <object>` as `python3 -m transport.bridge outbox` prints it; that records the
 post for the object, so replies to it route there. A door whose page was not published is named on stderr.
 
@@ -121,7 +126,8 @@ account's credentials file is mounted for that one command only:
       python3 -m transport.post --state /data/state/post post --text-file /data/welcome.txt \
       --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
 
-Without `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
+`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt`, placed in the data directory by hand. Without
+`--i-am-ember-and-authorize-posting` it prints the request and exits 2;
 read it, then add the flag. `--object` names the object the card addresses: after a
 confirmed post, post.py calls the host's `world-posted` for it, so every card posted
 is recorded in the same step (replies to it then route to that object). Post a card

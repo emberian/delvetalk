@@ -1,30 +1,33 @@
 # Host handoff
 
-State on 2026-10-10 (lane/host11 over foundation cce14c7).
+State on 2026-10-10 (foundation 189b534, after lane/host11).
 
 ## Summary
 
 The host is one Lean process holding a world of durable objects. Every state change is a hash-chained journal entry (CID of canonical DAG-CBOR); memory is derived from the journal by `record`, and replay re-judges admitted entries. A reply exists only after its bytes are durable.
 
-- Files: `spec/Delvetalk/Host/` `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Ops` (pure kernel: judge, commit, record, replay, reads), `TurnLoop` (turns, activities, sends, suspension), `Snapshot` (CBOR snapshots, fork genesis), `Session` (journal IO, ops dispatch), `Slug`. `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
-- Write is self-only. Cross-object change is `call`/`send`; the callee's own law judges it. `reprogram` and `amend` of another object are judged by the target's law.
-- An object's pin is the CID of its sealed source closure, never a compiler output.
-- Laws: a text law (`law NAME "reading": EXPR`) judges every change; an optional Bend `law(old, new, request)` runs after it for kind-0 writes.
-- Refusals are receipts with a class; `staleRoot`, `budget`, `evaluation`, `capacity` are transient (a retry with the same identity runs again).
+- Files: `spec/Delvetalk/Host/` `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots, fork genesis), `Session` (journal IO, ops dispatch). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
+- An activity yields `World.Message`s; `answer` dispatches on the method name against `worldMethods` (5.48). Write is self-only; cross-object change is `call`/`send`, judged by the callee's own law; `reprogram` and `amend` of another object are judged by the target's law.
+- Only declared methods run from outside (5.62). A direct `receive` is read as a spell by the host (5.49, 5.54, 5.63); a misfit is `badSpell` with `clause`, `reason`, `hint`.
+- Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); subscriptions deliver `changed` to typed receivers (5.50, 5.53); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
+- An object's pin is the CID of its sealed source closure, never a compiler output. A `fixed` State field is set at creation only (5.76).
+- Laws: a text law (`law NAME "reading": EXPR`) judges every change; an optional Bend `law(old, new, request)` runs after it for kind-0 writes and may give a reading (5.67).
+- Refusals are receipts with a class from `refusalClasses` (17); every `reason` is written by `Refusal.voiced` (5.75). `staleRoot`, `budget`, `evaluation`, `capacity` and `quota` are transient (a retry with the same identity runs again).
 - Ops in section 2. Limits in section 4 (`Store.lean`, namespace `Limits`).
 - Run: `make check` (parallel runner `tests/run.py`), `make smoke` (`test_turn_world test_chain`). Narrow: `DELVETALK_OBEND=<binary> python3 -W ignore -m tests.run test_x`. `tests/host.py` opens test journals with `sync: "none"`.
-- Tests: full `tests.run` on hbox at lane/host11 (load ~25): 1070 tests in 263 classes; the only failures were `test_artifact_pins` (the `Abi.Origin.post` line moves every pin), re-recorded in the same commit as this line.
-- Wall-clock bounds (`test_turn_world.Maximum` 200 bumps under 5 s, `test_http` 200 turns under 10 s, `test_snapshot` reopen under 1 s) are fsync- and load-bound and can miss on a loaded box.
-- Open: section 7 (forms for sum inputs, nested handlers, foreign worlds, one stale `expectedFailure` in `tests/test_bridge.py`).
+- Tests: 1,077 `def test_` across 99 files at 189b534; host11's full run on hbox passed with only the pin fixture to re-record. Wall-clock bounds (`test_snapshot` reopen under 5 s, `test_relation` under 3 s, `test_hypermedia`'s long poll) are fsync- and load-bound and can miss on a loaded box.
+- Open: section 7.
 
 ## 1. Module map
 
-Import order: Store, Journal, Law, Slug, Ops, TurnLoop, Snapshot, Session. Snapshot imports Ops only.
+Import order: Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapshot, Session. Snapshot imports Ops only; Spell imports no host module.
 
 - `Store.lean`: `Limits`, `Law`, `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey` (compressed `[principal, intent]`). Pure data.
 - `Journal.lean`: `bodyHash` (CID of the body's canonical bytes), `sealEntry`, `verify height previous entry`.
 - `Law.lean`: `Facts`, `Reading`, `denote`, `admits`, `refusedBy`; `#guard` tests at the bottom. Syntax is `spec/bend/Compiler/ObjectiveBendLaw.lean`.
 - `Ops.lean`: edits, `Proposal`, `judge`, `commit`, `record`, `push`, creation (`compileObject`, `makeObject`, `buildObject`), `replayEntry`, `replay`, `advance`, reads.
+- `DiskCache.lean`: the on-disk compile cache's reads (5.66).
+- `Spell.lean`: `parse`, `bare`, `fit` and the `Clause`s of the spell grammar (5.49).
 - `TurnLoop.lean`: `M` monad (`ExceptT Abort (StateM TurnState)`), `runMethod`, `drive`, `answer`, `finishTurn`, `runTurnWith`, `resumeOne`, `settle`, `deliver`, `reprogramOp`, `amendOp`.
 - `Snapshot.lean`: snapshot bytes, `openContent`, fork genesis. It does IO (snapshot files).
 - `Session.lean`: `Open {world, path, handle, report, sync, snapshotAt}`, `openWorld`, `durable`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
@@ -68,7 +71,7 @@ Rules:
 
 ## 3. Journal
 
-One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version}]`, `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.12).
+One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version}]`, `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
 
 `world.receipts` maps `identityKey` to the entry index (first wins, except that a suspension or a transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`) are journaled but do not bind; admitted outcomes and every other refusal bind.
 
@@ -82,7 +85,7 @@ Outcomes:
 
 - `created`: `{object, pin, sourcesSha256, compile, seed, read, chain, supervisor?, owner?}`; `roots []`, `turn 0`. Replay recompiles, requires the pin to match the source closure, the seed to conform and the amendment dry run to pass at the entry's height.
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
-- `refused`: `{class, clause?, object?, reason?, expected?, root?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (reason "the turn ran out of <resource>; …", resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted (reason "the chain of sends spent its <ledger field>."), programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence. Replay checks only that the class is known. A text-law refusal with a reading journals `reason: "refused <name>: <reading>"`; `publicRefusal` shows it.
+- `refused`: `{class, clause?, object?, reason?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a text-law refusal with a reading journals `reason: "refused <name>: <reading>"`. Replay checks only that the class is known; `publicRefusal` shows the reason.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
@@ -125,8 +128,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ### 5.1 Authority and laws
 
-- `Facts {subject, caller, height, turn, pin, kind, method}`. `caller` is the object whose method wrote ("" for the turn's own method and client proposals; for a delivered turn, the sending object). `method` is the method whose run made the change ("" for ops).
-- Fragment: `request.subject`, `request.caller`, `request.pin`, `request.kind`, `request.method`, text constants, `x in new.F` (`member`), `appendOnly(F)`, `unchanged(F)`, `writeOnce(F)`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
+- `Facts {subject, caller, height, turn, pin, kind, method, relations}` (`relations`: the object's declarations, for `insertOnly`, 5.74). `caller` is the object whose method wrote ("" for the turn's own method and client proposals; for a delivered turn, the sending object). `method` is the method whose run made the change ("" for ops).
+- Fragment (grammar in `ObjectiveBendLaw.lean`): `and`, `or`, `not`, `implies`; `request.subject`, `request.caller`, `request.height`, `request.turn`, `request.pin`, `request.kind`, `request.method`, integer and text constants, `monotone(F)`, `writeOnce(F)`, `appendOnly(F)`, `unchanged(F)`, `x in new.F` (`member`), and for relations `insertOnly(F)`, `count(new.F) <= N`, `count(new.F) <= count(old.F) + N`, `x in new.F.COL`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
 - `judge` judges every distinct (caller, kind) of an object's changes. Default law `owner: request.kind == 0 or request.subject == "<creator>"`: anyone may invoke methods, only the creator may reprogram or amend (`defaultLaw`). Metarule: an amendment must be admitted by the existing law for its proposer; message "law does not admit an amendment by its proposer <p>: <name>: <expr>".
 - `Object.readings` holds the package's law readings for clauses that are still the package's; `makeObject` keeps those the effective law leaves equal, an amendment keeps those it leaves equal, a reprogram keeps all. `parseLawTextReadings` reads `law NAME "reading": EXPR`; a malformed reading is `law syntax`.
 - Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin {kind, object, command, program, immediatelyPrevious, post}}` (`post`: 5.71). The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
@@ -154,13 +157,13 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - Supervisors: `Object.supervisor` is fixed at creation (`world-create {supervisor}`, Plan `createUnder`; `refused {clause: supervisor}` if not an object). An activity of a supervised object ends `broken` when refused `evaluation`, `budget` when a machine budget ran out, `timedOut` when a segment resumed past its deadline ends in any way. `commit` puts an `ended {id, to, method: "ended", argument, sender, ledger}` field in that entry (`endedField`, `endedId`); `record` makes it a pending delivery with argument `{receipt, how}`. A ledger refusal (`budgetExhausted`) tells nobody. Replay checks the id and that `to` is the supervisor (`checkEnded`). Test: `test_supervisors`.
 - Handlers: Plan `run {object, method, argument, handler}` runs the callee as `call` does, but every Plan the callee's frame, or any frame it calls, yields is first offered to the handlers around it, innermost first, each a pure `handle(state, plan[, context]) -> Handled<R>` (`answer {response}`, or `pass` to the next one out; 5.73). The handler must be readable by the subject (`refused {clause: handler}`) and is a root. Plan `judge {edits}` answers `judged {admitted, clause}` without committing. Test: `test_handlers`.
 - Held entries: `compiledMethod`/`compileDef` use `compileEntryIn` (`Package.prepareRequest` cached in `world.requests`, `Package.compileEntryFrom`); `Compiled.entry` is a decoded, checked `CheckedEntry`. Turns run `Turn.startEntry`/`resumeEntry`; pure definitions (law, `lawReads`, handler, pure methods, migrations) run `Package.executeDataEntry`. Only `initial()` at creation runs from the packet.
-- Kernel integration: `world-turn {…, profile: true}` returns `profile [{kind, steps, ticks}]` (not journaled). `annotateData` (`Turn.lean`) annotates sum-valued arguments.
+- Kernel integration: `world-turn {…, profile: true}` returns `profile [{kind, steps, ticks}]` (not journaled). `Turn.quoteAt` (`Turn.lean`) annotates sum-valued arguments.
 
 ### 5.4 Interpretation
 
 - `world.interpret::<R>({utterance, offers, policy, model})` suspends like `await` with `interpretation {id, object, policy, utterance, offers, model?}` (id = hash of principal, intent, ordinal). Deadline `interpretationPatience`, resuming `timedOut`.
 - `world-interpretations` lists pending items with the Policy's state as `{model, system, examples}`; `policy.system` is the Policy's pure `prompt(state, offers, utterance)` (`policyPrompt`) else its `system` field; `policy.model` is the item's `model` when non-empty (at most 128 bytes), else the Policy's.
-- `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument}` (the spell fits an offered form, or a JSON `{method, argument}` for the asking object; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`), `replied {text}` (prose, or reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `Interpreted` gains `denied {reason}` (the review lane's World.obend line); the host answers no `denied` yet.
+- `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument}` (the spell fits an offered form, or a JSON `{method, argument}` for the asking object; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`), `replied {text}` (prose, or reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `denied {}` when the Policy is not readable by the turn's principal (TurnLoop, `interpret`); Garden and the Directory refuse it with clause `policy`.
 - Capacity: `mayWait … (interpreting := true)` counts interpretations apart. Test: `test_interpret_text`, `test_policy`.
 
 ### 5.5 Cards, offers, publish, posts
@@ -190,7 +193,9 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ### 5.8 Arrival
 
-`world-arrive {principal, did, handle}` (clock principal only; the world must name an opener and have a library) records the handle as `world-principal` does, then creates each absent one of `<did>` from library module `Avatar`, `env/<did>` from `Env`, `wake/<did>` from `Wake`, as `create` by the opener with identity `arrive:<id>`, `owner: did`. Idempotent: a repeat answers `{status: "arrived", did, handle, created: []}` with no entry. Reply: `created [{object, height}]` and `principal`. A missing library module is a request error naming it. `transport/hostproc.py` `ARRIVAL` lists the packages the sealed library must hold (`Avatar`, `Env`, `Wake`, `Place`). `docs/GENESIS.md` says when transport calls it. Test: `test_arrive`.
+`world-arrive {principal, did, handle}` (clock principal only; the world must name an opener and have a library) records the handle as `world-principal` does, then creates each absent one of `<did>` from library module `Avatar`, `env/<did>` from `Env`, `wake/<did>` from `Wake`, as `create` by the opener with identity `arrive:<id>`, `owner: did`. Idempotent: a repeat answers `{status: "arrived", did, handle, created: []}` with no entry. Reply: `created [{object, height}]` and `principal`. A missing library module is a request error naming it. `transport/hostproc.py` `ARRIVAL` lists the packages the sealed library must hold (`Avatar`, `Env`, `Wake`; the Avatar imports `Places.obend` from the library). `docs/GENESIS.md` says when transport calls it. Test: `test_arrive`.
+
+Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 were folded into 5.1 to 5.8).
 
 43. **Per-op timing (host7).** With `DELVETALK_TIMING=1` in its environment, the host binary writes one stderr line per
    op after the reply: `timing<TAB>op<TAB>ms<TAB>object=…<TAB>method=…<TAB>principal=…<TAB>resumed=n<TAB>delivered=n`
@@ -207,9 +212,9 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `resumeEntry` (an optional parameter added to the kernel's functions): a directory prose turn 310 -> 180 ms.
 
 45. **Relations, day 1 (host7; RELATIONAL.md §2, §3, §11 item 1).** A package declares relations with `def relations() ->
-   Lists.List<Decl>` (`{field, key: List<String>, limit: Nat, retain?}`; `retain` only `dropOldest`). The host reads it
-   only when a module of the package has a `def relations(` line (`declaresRelations`), compiling it as a held entry
-   (`relationDecls`; `prepareProgram` compiles it from the program's resolved inputs) into `Object.relations` /
+   Lists.List<Decl>` (`{field, key: List<String>, limit: Nat, retain?}`; `retain` only `dropOldest`). The kernel
+   evaluates the entry module's `relations()` once per package and lists it in the artifact; the host reads it from there
+   (`declsOfArtifact`, host11) into `Object.relations` /
    `Program.relations : List RelDecl` (snapshots keep `relations` per object). A relation field holds
    `rows {items: List<T>}` of records `T`; `checkRelations` refuses at creation (and reprogram, clause `key`) a field that
    is not one or a key column `T` lacks, by name. `canonicalRows`: rows sorted by the canonical DAG-CBOR bytes of their
@@ -228,10 +233,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    (`inputOrigin.kind = "view"`, `command` the view) when it takes one, under the turn's remaining ticks,
    as a card renders (`derivedView`). Read authority and the root are `view`'s. Refusals: `noView` (not
    declared, or no such definition), `view` (fails, runs out, or its result type is not first-order data);
-   `denied` without read authority. `world-inspect` lists `views` when the package declares any. The host
-   reads the Plan label, so a package may declare its own Plan/Response arms; Plan.obend's constructors
-   (`viewDerived` at the end of `Plan`, `derived` at the end of `Response`) and World.obend's protocol line
-   are the objects lane's, added with their pin re-record. Test: `tests/test_view_derived.py`.
+   `denied` without read authority. `world-inspect` lists `views` when the package declares any. World.obend's
+   `viewDerived<T>` line and `Derived<T>` sum are the contract. Test: `tests/test_view_derived.py`.
 
 47. **Past versions (host8).** Plan `viewAt {object, version}` answers `viewed {version, state}` with the state
    the object had at `version`, rebuilt by `stateAt` (Ops): the created seed (or a creating turn's), then each
@@ -248,8 +251,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    on, by method name: `write`'s argument is the running object's edits, `judge`'s the edits to judge,
    every other method's argument is that method's payload. A message whose
    `object` is not `{world: "", object: "world"}` is answered `refused {clause: notWorld}` (a message to an
-   object is a `call`), a method outside `worldMethods` `refused {clause: noMethod}`; `spell`, `subscribe`
-   and `unsubscribe` are listed and answered by later days. The response is checked against the call
+   object is a `call`), a method outside `worldMethods` `refused {clause: noMethod}`; `subscribe`
+   and `unsubscribe` are answered (5.50); `spell` is not a world method (5.53). The response is checked against the call
    site's type the kernel reports (`responseType`): the result sum of that protocol method in World.obend
    (`Written`, `Returned<R>`, `Interpreted<R>`, ...). A handler (`run`) sees the Message as yielded. The world has no state
    and no law (WHOLENESS §5): who may call which method is the authority model as built (`write`
@@ -263,7 +266,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    Lean, rule for rule (`parse`, `bare`, `fit`, reasons verbatim, plus a `Clause`: `otherCard`, `noAction`,
    `unknownField`, `duplicateField`, `badValue`, `unclosedBlock`, `unclear`); the stateless op `spell-parse
    {text, form?}` answers `{status: "parsed", spell | notASpell, fit?, bare}`; `tests/test_host_spell.py` runs
-   115 fixtures (`tests/fixtures/spells/`) through both parsers and they agree. `runTurn` sends a direct
+   116 fixtures (`tests/fixtures/spells/`) through both parsers and they agree. `runTurn` sends a direct
    `receive {text, post}` to a card through `spellTurn`: the spell's card resolves (`resolveCard`) and the turn is
    retargeted to it (same principal, identity, `replyTo`); `?` answers `{status: "usage", object, text}` and
    journals nothing; the action is looked up in the card's `methodForms`; a fitting spell runs the method with
@@ -273,7 +276,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    public projection. Per the root decision, a spell missing fields and a reply with no spell run `receive`
    with the bare `name: value` lines as `fields` (when `receive` declares them): completion is the card's
    policy. A reply with no spell line whose first field line names one of the card's actions or fields is
-   that form's spell (`Card.withBare`). The interpretation fit and lens `set` are 5.54. Test:
+   that form's spell (the rule `Card.withBare` had in Bend). The interpretation fit and lens `set` are 5.54. Test:
    `tests/test_spell_turns.py`.
 
 50. **Subscriptions and `changed` (host8; WHOLENESS §3, host day 3).** Plan/world method `subscribe {object, field}`
@@ -303,7 +306,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    index). Both count against `maxRoots`. Not done, and not doable from the host alone: per-row roots
    (`{object, field, key}` for the rows a turn's code read). The host sees the whole state go into a turn
    and cannot tell which rows `lookup`/`where` touched; that needs the kernel's lazy state cells
-   (KERNEL-HANDOFF §15), whose `fetch` would call `recordRows`. Test: `tests/test_changes.py`
+   (KERNEL-HANDOFF §15), whose `fetch` would record each row it reads. Test: `tests/test_changes.py`
    `test_a_field_root_is_stale_only_when_its_field_moved`.
 
 52. **Words for sums at the boundary (host9).** An argument from outside, a direct turn's (`runFrame` at
@@ -403,12 +406,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `amend {item, change}`/`remove {item}` (item-addressed under the old labels; host10 deleted them,
    since no object writes them: `EditKind.amendItem`/`removeItem` only) and `withBindingContext`'s
    Context-carrying `turn-start` request, which `tests/test_layers.py` and the kernel tests send.
-   Not deleted then: `receiveArgument` (host10 deleted it after transport2 stopped sending `slot`). Removing it failed `test_http`, `test_hypermedia`, `test_bridge` and
-   `test_zulip`: `transport/http.py:113` sends `{text, post, slot: ""}` and the bridge and zulip tests'
-   objects declare `slot` (`tests/test_bridge.py:36`). Once transport stops sending it and those
-   fixtures drop it, delete `receiveArgument` and its two lines in `runTurnWith`, and turn
-   `tests/test_outbound.py`'s and `tests/test_receive.py`'s slot tests into typeMismatch cases. The
-   host's own tests no longer send `slot: ""`.
+   `receiveArgument` went in host10 (5.65), once transport stopped sending `slot`.
 
 62. **Declared methods (host10; WORLD-REVIEW finding 1).** A State-first definition is public only when
    the package declares it: the `action` of a form its `forms()` lists, a name its `def methods() ->
@@ -453,8 +451,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `object: String`, and every verdict names it (host11 deleted the unnamed path and the
    interpretation's `named` flag: no journal from before host10 is opened). A JSON proposal `{method, argument}` is for the asking object. Test:
    `tests/test_interpret_object.py` (a hub whose World copy carries the new line proposes `g plant`
-   and calls it; a form naming a method its card does not offer is `unclear`). The World.obend line
-   and the Directory's `world.call::<Data>({object, method, argument})` are the objects lane's.
+   and calls it; a form naming a method its card does not offer is `unclear`). World.obend's
+   `Interpreted.proposal {object, method, argument}` and the Directory's `world.call::<Data>(...)` use it.
 
 65. **`receiveArgument` and the old item labels deleted (host10).** `receive` takes `{text, post}` as sent;
    `amend {item}`/`remove {item}` are gone (`EditKind.amendItem`/`removeItem` only).
@@ -480,7 +478,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `refused {clause, reading}` as well as `refused {clause}` (`Package.lawShape` accepts both; the
    kernel lane's file, a two-line widening). A non-empty reading becomes the refusal's `reason`,
    "refused <clause>: <reading>", as a text clause's reading does, and so reaches the public projection.
-   `Abi.Verdict` gaining `reading` is the objects lane's. Test: `tests/test_law.py`
+   `Abi.Verdict.refused {clause, reading}` is in the prelude. Test: `tests/test_law.py`
    `test_a_bend_laws_reading_is_the_refusals_reason`.
 
 68. **The host's default page (host10; WORLD-REVIEW finding 16).** A direct `publishPage {page}` to a card
@@ -502,8 +500,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    fenced block (`firstFence`, `withFence`), under the same bound, so a block and a fence are one
    value. A choice is passed as a word and read against the method's input (`spellArgumentFor`,
    `inputWords`): the case of a closed sum there, text where the field is a `String`. Form.obend's
-   `source: {}` line and Workshop's forms declaring it are the objects lane's (the kernel's `form`
-   block grammar has no `source` kind yet; a form can be built as data). Tests:
+   `Kind.source` and the Workshop's `form check`/`form propose` (`source: source`, the kernel's
+   form-block kind since kernel8) declare it. Tests:
    `tests/test_form_bounds.py` (a 6 KB block admitted, 20 KB refused `badValue` naming `source`, a
    fence filling `source`, a declared text bound), `tests/test_hub.py`, `tests/test_hypermedia.py`
    (the garden's declared choice and 1..80 seed).
@@ -534,9 +532,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    String` (fitted, so an older library's Origin without it runs unchanged). A `receive` argument with a
    field its card's `receive` input lacks (with or without the host's `fields`) is not read as a spell
    (`heardFits`): `receive` runs as asked and is refused `typeMismatch`, so a forged `who` beside a spell
-   no longer runs the spell. The Garden may read `context.inputOrigin.post` for its planting post and drop
-   `context.intent` (objects lane; `tests/test_replay.py` test_1 and `tests/test_principal.py`'s planting
-   case pass with that one-line change, probed on hbox). Not carried: a delivery's post from the sending
+   no longer runs the spell. The Garden reads `context.inputOrigin.post` for its planting post. Not carried: a delivery's post from the sending
    turn (only its own `receive` argument's); `sends` journal no post. Test: `tests/test_input_post.py`.
 
 72. **A suspension journals what it does not already say (host11; §7 item 2 of host10).** The
@@ -572,8 +568,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    so it still refuses; so does a retraction from a relation that is not full. Without a declaration
    (a field that is no relation) the rule is as before. `#guard`s in `Law.lean`; test:
    `tests/test_relation.py` `test_insert_only_does_not_count_the_rows_retention_drops` (limit 2, three
-   inserts admitted, an upsert and a retract of a kept row refused). The Directory's Bend 4,096 check
-   (`greeted`) may now be `law greeted "...": insertOnly(greeted)` (objects lane).
+   inserts admitted, an upsert and a retract of a kept row refused). The Directory's `greeted` is `law greeted "...": insertOnly(greeted)`.
 
 75. **Refusal reasons in the town's voice (host11; docs/VOICE.md "The host's refusals").** `commit`
    journals every refusal through `Refusal.voiced` (Ops), which writes `reason` from what the refusal
@@ -616,46 +611,17 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 - Foreign worlds: `Reference.world != ""` is refused `foreignWorld`.
 - `world-reprogram`/`amend` are gated only by the object's law.
-- Closed by host10, not by code: "forms for sum inputs held as bounds variables". A closed sum of empty
-  payloads is never recursive, so it is never a bounds variable; a named one is an inline variant and
-  forms a choice (probed on hbox with `test_sum_words`'s garden); declared forms (5.69) cover the rest.
-- `tests/test_bridge.py`'s stale `expectedFailure` is gone (foundation).
-
-### Queue for the next host lane, in order (from lane/host11)
-
-host11 landed 5.71 to 5.74, one commit each (plus foundation merges and the re-recorded pins): `inputOrigin.post` and the
-forged-field rule for spells; suspensions that journal what they do not already say; handlers over a
-run's whole extent; `insertOnly` under retention.
-`tests/test_form_bounds.py` `WorkshopSource` is the Workshop's case (a 6 KB `source` block checked,
-20 KB refused `badValue` naming `source`), declaring `form check`/`form propose` with `source:
-source` over the on-disk Workshop until Workshop.obend declares them. It is an `expectedFailure`
-until foundation has lane/kernel8's `name: source` form line (a977d64) and the library has
-`Form.Kind.source` with its `case source` arms (Spell.obend `judge` and `typed`, Card.obend's
-template, Policy.obend's kind text); probed on hbox with those overlaid, it passes. Then drop the
-marker.
-
-1. Finding 22 is done (host11, after review group A): `Document.lean` renders `text` and `sequence`
-   only; any other form is "unknown document form" (malformed), and `tests/test_document.py`'s
-   generator builds only those two. `Limits.lean`'s `documentDepth` comment still names a quote's body
-   (the kernel lane's file).
-2. **Suspension size** (5.72): one speaker's median is 5.1 KB, nine speakers' 7.5 KB. The host's
-   remaining share is ~0.5 KB (`slot` beside an interpretation, ~100 B, read in five places:
-   `turnReply`, `settle`'s waiting lookup, `record`; the argument). The kernel's fresh checkpoint
-   blocks (3 KB and up) and the `tokenTree` roots (~900 B) are the rest: the kernel lane's queue
-   (KERNEL-HANDOFF §16, `lane/kernel7`'s environment trimming).
-3. **Rows as roots** (WHOLENESS §3a): still blocked on the kernel's lazy cells (KERNEL-HANDOFF §15 is a
-   design note): when `fetch` lands, record `{object, field, key}` there and judge it with
-   `keysChangedSince`.
-4. **Rehearsal wall**: not measured by host11; hbox's load stayed 19 to 37 through the lane. host10's
-   two runs were 23.0 s and 32.6 s at load ~17 against the 50 s target. Measure on a quiet box.
-5. **A delivery's post** (5.71): a delivered turn sees only its own `receive` argument's post, not the
-   sending turn's; `sends` journal none. Add it only when an object needs it (none does).
-
-Requests to other lanes (not the host's files):
-- Objects: the Garden reads `context.inputOrigin.post` for its planting post and drops `context.intent`
-  and the two `expectedFailure`s (test_replay test_1, test_principal's planting case; probed passing).
-  The Directory's Bend 4,096 `greeted` check may become `insertOnly(greeted)` (5.74). `Form.obend`'s
-  `Kind` gains `source: {}` and the Workshop declares its `source` fields with the kernel's
-  `name: source` form line.
-- Review: WORLD-REVIEW finding 10's trap ("insertOnly with a limit refuses every insert past the
-  limit") is fixed by 5.74.
+- A `world-propose` naming a fixed field is not refused yet (`tests/test_appointments.py`
+  `test_a_proposed_write_naming_a_fixed_field_is_refused`, an expected failure).
+- `world.call`'s `refused` carries only `clause`; run 11 wants the voiced reading beside it, so the
+  Directory can pass a door's refusal on (rehearsal/REPORT.md, run 11 "What remains" 3; World.obend
+  is the objects lane's).
+- `typeMismatch`'s `expected.form` gives the input type's default bounds (a garden `seed` shows
+  `text 0..1400`), not the card's declared form (`seed: text 1..80`) that the spell path judges by.
+- **Rows as roots** (WHOLENESS §3a): blocked on the kernel's lazy cells (KERNEL-HANDOFF §15, a
+  design note): when `fetch` lands, record `{object, field, key}` there and judge it with
+  `keysChangedSince`.
+- **Suspension size** (5.72): run 11's median suspension is 7.4 KB. The host's remaining share is
+  ~0.5 KB (`slot` beside an interpretation, read in five places; the argument).
+- **A delivery's post** (5.71): a delivered turn sees only its own `receive` argument's post, not the
+  sending turn's; `sends` journal none. Add it only when an object needs it (none does).
