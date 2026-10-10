@@ -52,7 +52,17 @@ class Posts(Reflection):
 
     def test_a_post_for_an_unknown_object_or_a_non_at_uri_is_a_request_error(self):
         self.assertEqual(self.host.send(op="world-posted", principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
-        self.assertEqual(self.posted(uri="https://example.com")["status"], "error")
+        refused = self.posted(uri="https://example.com")
+        self.assertEqual(refused, {"status": "error", "message": "uri must be an at:// or zulip:// URI, not https://"})
+
+    def test_a_zulip_message_is_recorded_and_a_reply_to_it_finds_its_object(self):
+        # The playtest transport's messages: zulip://<stream>/<topic>/<id>.
+        uri = "zulip://delvetalk/garden/1042"
+        r = self.posted(uri=uri, slot=SLOT)
+        self.assertEqual(r["status"], "posted", r)
+        self.assertEqual(self.host.send(op="world-addressee", parent=uri), {"status": "addressee", "object": "bell", "slot": SLOT})
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-addressee", parent=uri)["object"], "bell")
 
 
 CARDED = PACKAGE.replace("import ./Plan.obend as Plans", "import ./Plan.obend as Plans\nimport ./Document.obend as Document") + """def render(state: State) -> Document.Document:
@@ -427,7 +437,8 @@ class Projection(Reflection):
                                roots=[{"object": "vault", "version": 7}], writes=[])
         self.assertEqual(stale["status"], "refused", stale)
         theirs = self.host.send(op="world-receipt", principal="cid", identity="stale", of="ann")
-        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": {"object": "vault", "version": 7}})
+        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": {"object": "vault", "version": 7},
+                                  "slug": stale["receipt"]["slug"]})
 
     def test_roots_cite_versions_and_the_state_cid_is_read_from_the_write_that_made_it(self):
         """A card address is a versioned capability: a receipt's roots, and a public refusal's root,
@@ -477,7 +488,7 @@ class Projection(Reflection):
         """Rehearsal finding 7: `delvetalk forge make` with no forge said only `unknownObject`."""
         r = self.turn("forge", "make", principal="gemini", identity="forge-1")
         public = {"status": "refused", "class": "unknownObject", "root": {"object": "forge"}, "object": "forge",
-                  "hint": "no card named forge; reply to the directory for the list"}
+                  "hint": "no card named forge; reply to the directory for the list", "slug": r["receipt"]["slug"]}
         self.assertEqual((r["status"], r["public"]), ("refused", public), r)
         self.assertEqual(self.host.send(op="world-receipt", principal="cid", identity="forge-1", of="gemini"), public)
 

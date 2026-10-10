@@ -76,6 +76,11 @@ On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` 
 time if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the same way.
 `deploy.seed` creates one further object by hand.
 
+Genesis also has each door's object publish its page (`publishPage`), so after the bridge runs its outbox holds one
+`wiki: <Door>` draft each for GARDEN, ROOMS, PLAY, WORKSHOP, TIDE and ANTHOLOGY (STUDIO is a link, with no page).
+Post each with `transport.post ... --object <object>` as `python3 -m transport.bridge outbox` prints it; that records the
+post for the object, so replies to it route there. A door whose page was not published is named on stderr.
+
     docker compose up -d --wait --remove-orphans
     docker compose ps
 
@@ -126,6 +131,30 @@ interpretation has no draft until the interpretation settles; then the bridge dr
 resumed turn offered (none if it offered nothing). A model failure (network, rate limit)
 leaves the interpretation pending and is retried with backoff up to 8 times. Draft
 principals are observed, unverified DIDs.
+
+## Playtesting in Zulip
+
+Before DelveTalk goes to delve.town, residents can play it in the owner's own Zulip. `transport/zulip.py` is a second
+transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
+would (principal `zulip:<sender email>`, the full name as handle, `replyTo` the previous message of its topic, kind
+by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
+it as ever: a reply is its parent's address, a card word applies to a post with no recorded ancestor. Because this is
+the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
+inside the host's `postQuota` per hour (a draft over it waits for the next round), and records each post with
+`world-posted`, so a reply to it routes. The delve.town rule against automatic posting does not apply here and nothing
+in this path reads Delve credentials.
+
+    deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--poll 20]
+    deploy/playtest.sh --stop
+
+It starts hostd on a fresh journal under `~/.delvetalk-playtest/run-<stamp>/` (`--dir` or `DELVETALK_PLAYTEST_DIR`
+moves it; earlier runs are kept), runs genesis, posts `docs/previews/zulip-welcome.txt` (its `<bot name>` filled in) to the stream's `welcome`
+topic and records it against `directory`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds). The
+`.zuliprc` is the bot's: its user must be subscribed to the stream. The model credentials are as under "Model
+credentials" and are read from the environment of the script; `DELVETALK_OBEND` names the host binary.
+
+The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
+`python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.
 
 ## Rotating the Anthropic key
 

@@ -160,6 +160,30 @@ class Extend(Reflection):
         self.assertEqual(self.turn("c", "bump")["status"], "admitted")
         self.assertEqual(self.count(), "23")
 
+    def test_a_snapshot_holding_a_layer_of_the_older_form_still_runs(self):
+        # Before the layer line, the host inserted `import ./Main.obend as Super` after `edition`;
+        # a snapshot written then holds that source, and loading gives it the line.
+        from tests.test_snapshot import read_snapshot, write_snapshot
+        self.assertEqual(self.extend(LAYER)["status"], "admitted")
+        height = self.host.send(op="world-snapshot")["height"]
+        path = self.path + f".snapshot.{height}.cbor"
+        body = read_snapshot(path)
+        [obj] = [o for o in body["objects"] if o["id"] == "c"]
+        [layer] = [m for m in obj["compile"]["modules"] if m["name"] == "Layer1"]
+        below = obj["compile"]["modules"][-2]["name"]
+        first, rest = layer["source"].split("\n", 1)
+        self.assertEqual(first, f"layer over ./{below}.obend")
+        edition, more = rest.split("\n", 1)
+        layer["source"] = f"{edition}\nimport ./{below}.obend as Super\n{more}"
+        write_snapshot(path, body)
+        self.release()
+        self.host = self.spawn()
+        opened = self.host.send(op="world-open", path=self.path)
+        self.assertEqual(opened["snapshot"]["resumed"], height, opened)
+        self.assertEqual(self.turn("c", "bump")["status"], "admitted")
+        self.assertEqual(self.turn("c", "peek")["status"], "admitted")
+        self.assertEqual(self.count(), "10")
+
     def test_the_extend_plan_grafts_a_layer_from_another_object(self):
         self.make("forge", FORGE, record(note=label("")))
         r = self.turn("forge", "graft", record(target=label("c"), package=label(LAYER)))
@@ -181,6 +205,50 @@ class Extend(Reflection):
         bad = self.host.send(op="world-reprogram", principal="ember", identity="x4", object="c", version=1,
                              package=LAYER, mode="graft")
         self.assertEqual(bad["status"], "error")
+
+
+LOUDER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Document.obend as Document
+type State = Super.State
+def render(state: State, context: Abi.Context) -> Document.Document:
+  Document.concat(Document.text("LOUDER\\n"), Super.render(state, context))
+"""
+
+
+class LateBinding(Extend):
+    """The host writes `layer over` as the layer's first line, so the kernel binds the whole stack late:
+    Bell's own rain reply calls render, which a Louder layer grafted by the extend Plan overrides.
+    Refuted by a rain reply without LOUDER, or by losing it on replay."""
+    test_a_layer_overrides_what_it_defines_and_keeps_the_rest = None
+    test_layers_stack_and_a_layer_reaches_two_down = None
+    test_a_snapshot_holding_a_layer_of_the_older_form_still_runs = None
+    test_the_extend_plan_grafts_a_layer_from_another_object = None
+    test_an_extension_is_judged_by_the_objects_law_and_a_broken_layer_is_refused = None
+
+    def rain(self, text, ident):
+        r = self.turn("bell", "receive", record(text=label("rain: " + text), post=label("at://x/" + ident)),
+                      principal="glm", identity=ident)
+        self.assertEqual(r["status"], "admitted", r)
+        return r["offers"][-1]["text"]
+
+    def test_a_louder_layer_changes_the_card_bells_own_rain_reply_renders(self):
+        from tests.test_objects import closure
+        amber = {"tag": "variant", "label": "amber", "payload": record()}
+        r = self.host.send(op="world-create", principal="ember", identity="mk-bell", object="bell", modules=closure("Bell"),
+                           entry="initial", seed=record(colour=amber, seed=label("a fern"), planter=label("glm")))
+        self.assertEqual(r["status"], "created", r)
+        self.assertFalse(self.rain("a drizzle", "r1").startswith("LOUDER"))
+        self.make("forge", FORGE, record(note=label("")))
+        g = self.turn("forge", "graft", record(target=label("bell"), package=label(LOUDER)))
+        self.assertEqual((g["status"], g["result"]), ("admitted", label("grafted")), g)
+        said = self.rain("a fog", "r2")
+        self.assertTrue(said.startswith("LOUDER\n"), said)
+        self.assertIn("a fog", said)
+        names = [m["name"] for m in self.host.send(op="world-inspect", principal="ember", object="bell")["methods"]]
+        self.assertIn("rain", names)
+        self.reopen()
+        self.assertTrue(self.rain("a mist", "r3").startswith("LOUDER\n"))
 
 
 if __name__ == "__main__":

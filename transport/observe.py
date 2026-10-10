@@ -50,8 +50,8 @@ def spell_card(text):
     return unquoted or quoted
 
 
-def classify(text, reply_to, mentions, tags):
-    """-> (kind, wiki, spell). Surface-form only; first match wins."""
+def classify(text, reply_to, mentions, tags, summon=SUMMON_HANDLE):
+    """-> (kind, wiki, spell). Surface-form only; first match wins. `summon` is the handle whose mention summons."""
     first = text.strip().split('\n', 1)[0].strip()
     if first.startswith('wiki:') and first[5:].strip():
         return 'wiki-page', {'op': 'page', 'title': first[5:].strip(), 'section': None}, None
@@ -64,7 +64,7 @@ def classify(text, reply_to, mentions, tags):
     card = spell_card(text)
     if card:
         return 'spell', None, {'card': card}
-    if SUMMON_HANDLE in [x['handle'] for x in mentions] or SUMMON_TAG in [t.lower() for t in tags]:
+    if summon in [x['handle'] for x in mentions] or SUMMON_TAG in [t.lower() for t in tags]:
         return 'summon', None, None
     return ('reply' if reply_to else 'post'), None, None
 

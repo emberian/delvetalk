@@ -4,6 +4,7 @@
 import Delvetalk.Host.Store
 import Delvetalk.Host.Journal
 import Delvetalk.Host.Law
+import Delvetalk.Host.Slug
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
@@ -404,27 +405,28 @@ def stateTypeOk (assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions)
     | .field .. | .emptyRow => true
     | _ => false
 
-def tyVariables : Minidregg.Theory.ObjectiveBendTypes.Ty → List Nat
-  | .variable i => [i]
-  | .field _ m t => tyVariables m ++ tyVariables t
-  | .variant r => tyVariables r
-  | _ => []
-
-/-- The bounds a type actually uses (transitively): what makes two state types
-    the same, ignoring the rest of a package's bounds table. -/
-def relevantBounds (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String DataBounds := do
-  -- The closure of the variables `ty` reaches through the table; each round adds one or stops,
-  -- so `bounds.length + 1` rounds reach the fixpoint. Not reaching it refuses by name.
-  let mut used := (tyVariables ty).eraseDups
-  let mut closed := false
-  for _ in [0:bounds.length + 2] do
-    let next := (used ++ used.flatMap fun i => ((bounds.lookup i).map tyVariables).getD []).eraseDups
-    if next.length == used.length then
-      closed := true
-      break
-    used := next
-  unless closed do throw "type too deep to compare"
-  return bounds.filter fun (i, _) => used.contains i
+/-- A type with its variables renamed in order of first use, each bound one's body written once
+    where first met: two state types are the same exactly when these agree, whatever numbering the
+    compiles gave their bounds (a layer stack's packet numbers them anew). -/
+partial def canonicalTy (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Json :=
+  (go ty).run' ([], 0)
+where
+  go : Minidregg.Theory.ObjectiveBendTypes.Ty → StateT (List (Nat × Nat) × Nat) (Except String) Json
+    | .variable i => do
+      let (seen, steps) ← get
+      if steps > 4096 then throw "type too deep to compare"
+      set (seen, steps + 1)
+      match seen.lookup i with
+      | some k => return Json.mkObj [("ref", toJson k)]
+      | none =>
+        let k := seen.length
+        set (seen ++ [(i, k)], steps + 1)
+        match bounds.lookup i with
+        | some body => return Json.mkObj [("var", toJson k), ("is", ← go body)]
+        | none => return Json.mkObj [("free", toJson k)]
+    | .field n m t => do return Json.mkObj [("field", toJson n), ("member", ← go m), ("tail", ← go t)]
+    | .variant r => do return Json.mkObj [("variant", ← go r)]
+    | other => pure (Minidregg.Theory.ObjectiveBendTyping.typeJson other)
 
 def inputsKeyOf (inputs : Json) : String :=
   Journal.bodyHash (Json.mkObj (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
@@ -671,28 +673,34 @@ def replaceSource (inputs : Json) (source : String) : Except String Json := do
 /-! ## Extension
 
 `reprogram {mode: extend}` (Plan `extend`) appends the offered source as a new module, a layer,
-over the object's current modules. The layer sees the current entry module as `Super` (the host
-adds `import ./<entry>.obend as Super` after its `edition` line when it lacks it, so its line
-numbers in diagnostics are one more than the author's), defines what it overrides, and every
-method it does not define is the code below it: `delegate` drops layers until the top one
-defines the entry. `inputs.layers` counts them. -/
-
-/-- The definitions a source declares at the top level (`def NAME`). -/
-def definedNames (source : String) : List String :=
-  (source.splitOn "\n").filterMap fun line =>
-    (line.dropPrefix? "def ").map fun rest => (rest.toString.takeWhile fun c => c.isAlphanum || c == '_').toString
+over the object's current modules. The host writes `layer over ./<entry>.obend` as the layer's
+first line (unless the author did), which imports the module below as `Super` and tells the
+kernel the modules are a layer stack: every method of the stack is resolved with late binding (a
+method below that calls an overridden one reaches the override) and the artifact's method table
+lists the whole stack, top first. `inputs.layers` counts the layers. Layers built before (the
+host inserted `import ./<entry>.obend as Super` after the `edition` line, held only by snapshots
+written then; replay re-derives the new form from the journaled source) are given the line on
+load (`stackForm`). -/
 
 def layersOf (inputs : Json) : Nat := (inputs.getObjValAs? Nat "layers").toOption.getD 0
 
-/-- The compile inputs whose entry module defines `name`: the layers that do not are dropped. -/
-def delegate (inputs : Json) (name : String) : Json := Id.run do
-  let mut inputs := inputs
-  for _ in [0:layersOf inputs] do
-    let some (.arr ms) := (inputs.getObjVal? "modules").toOption | break
-    let some top := ms.back? | break
-    if (definedNames ((top.getObjValAs? String "source").toOption.getD "")).contains name then break
-    inputs := (inputs.setObjVal! "modules" (.arr ms.pop)).setObjVal! "layers" (toJson (layersOf inputs - 1))
-  return inputs
+/-- The line that makes a module a layer over the module below. -/
+def layerLine (below : String) : String := s!"layer over ./{below}.obend"
+
+/-- Layered inputs with every layer opening with its `layer over` line: a layer built before (its
+    `Super` import inserted after `edition`, held only by snapshots written then) gets the line, which
+    imports the same `Super`, so the kernel resolves the whole stack. Other inputs are as given. -/
+def stackForm (inputs : Json) : Json := Id.run do
+  let n := layersOf inputs
+  let some (.arr ms) := (inputs.getObjVal? "modules").toOption | return inputs
+  if n == 0 || n ≥ ms.size then return inputs
+  let mut out := ms
+  for k in [ms.size - n : ms.size] do
+    let below := ((ms[k - 1]!.getObjValAs? String "name").toOption).getD ""
+    let src := (ms[k]!.getObjValAs? String "source").toOption.getD ""
+    unless src.startsWith "layer over " do
+      out := out.set! k (ms[k]!.setObjVal! "source" (toJson (layerLine below ++ "\n" ++ src)))
+  return inputs.setObjVal! "modules" (.arr out)
 
 /-- The inputs with `source` as one more layer over the current entry module. -/
 def extendInputs (inputs : Json) (source : String) : Except String Json := do
@@ -705,12 +713,9 @@ def extendInputs (inputs : Json) (source : String) : Except String Json := do
   let name := s!"Layer{n}"
   if modules.any fun m => (m.getObjValAs? String "name").toOption == some name then
     throw s!"the package already has a module named {name}"
-  let importLine := s!"import ./{below}.obend as Super"
-  let lines := source.splitOn "\n"
-  let withSuper := if lines.any (·.trimAscii.toString == importLine) then source else
-    match lines with
-    | first :: rest => "\n".intercalate (first :: importLine :: rest)
-    | [] => importLine
+  let line := layerLine below
+  let withSuper := if (source.splitOn "\n").head?.map (·.trimAscii.toString) == some line then source
+    else line ++ "\n" ++ source
   let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "source" && k != "modules" && k != "layers"
   return Json.mkObj ([("modules", .arr (modules.push (Json.mkObj [("name", toJson name), ("source", toJson withSuper)]))),
     ("layers", toJson n)] ++ fields)
@@ -744,7 +749,7 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
     | some lib => if (replaced.getObjVal? "library").toOption.isSome then
         pure (replaced.setObjVal! "library" (toJson lib.pin)) else pure replaced
     | none => pure replaced)
-  let resolved := fun (entry : String) => (resolveInputs w ((delegate inputs entry).setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
+  let resolved := fun (entry : String) => (resolveInputs w (inputs.setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
   let (artifact, ty, _) ← (Package.compileKeepingLaws (← resolved "initial")).mapError (("compile", ·))
   let decoded ← (do
     Minidregg.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
@@ -757,9 +762,8 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   -- whatever `initial` it reaches.
   let pin := if extend then Journal.bodyHash (Json.arr #[toJson "extend", toJson o.pin, toJson (Journal.bodyHash (toJson source))])
     else sourcePin
-  let same := ty == o.stateType &&
-    (← (relevantBounds assumptions.bounds ty).mapError (("stateType", ·))) ==
-      (← (relevantBounds o.bounds o.stateType).mapError (("stateType", ·)))
+  let same := (← (canonicalTy assumptions.bounds ty).mapError (("stateType", ·))) ==
+    (← (canonicalTy o.bounds o.stateType).mapError (("stateType", ·)))
   let migrated : Option Compiled ← if migration.isEmpty then
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
     else do
@@ -774,17 +778,11 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
       pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid,
         (Delvetalk.CheckedEntry.ofPacket packet).toOption⟩)
-  let (methods, predicate, predicateReads) ← if !extend then pure (artifactShape artifact) else do
-    -- The layer's own table (compiled with one of its definitions as the entry), then every
-    -- method below it that the layer does not override; the law shape is the layer's if it
-    -- declares a law, else the code's below.
-    let own := definedNames source
-    let some first := own.head? | throw ("compile", "an extension defines nothing")
-    let (layerArtifact, _, _) ← (Package.compileKeepingLaws (← (resolveInputs w (inputs.setObjVal! "entry" (toJson first))).mapError (("compile", ·)))).mapError (("compile", ·))
-    let (mine, lawHere, readsHere) := artifactShape layerArtifact
-    let rows := (mine.getArr?.toOption.getD #[]) ++ ((o.methods.getArr?.toOption.getD #[]).filter fun m =>
-      !own.contains ((m.getObjValAs? String "name").toOption.getD ""))
-    pure (Json.arr rows, lawHere || o.predicate, if lawHere then readsHere else o.predicateReads)
+  -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
+  -- is the stack's when a layer declares a law, else the code's below.
+  let (methods, predicate, predicateReads) := artifactShape artifact
+  let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
+    else (o.predicate, o.predicateReads)
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
            methods, predicate, predicateReads, packet }
 
@@ -1098,7 +1096,7 @@ def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 /-- An object's definition `name`, compiled and prepared (from the world's cache when warm). -/
 def compileDef (w : World) (o : Object) (name : String) : Except String (Compiled × World) := do
   if let some c := w.compiled[defKey o name]? then return (c, w)
-  let (c, w) ← compileEntryIn w (delegate o.inputs name) name
+  let (c, w) ← compileEntryIn w o.inputs name
   return (← compiledOf c, w)
 
 /-- Compile the Bend law (and its reads) of the objects a proposal writes, into the world's
@@ -1508,8 +1506,15 @@ def statusOf (entry : Json) : String :=
   | .ok tag => tag
   | .error _ => "unknown"
 
+/-- A receipt as a reply shows it: the entry with `slug` beside `hash`, the name a person cites
+    (`Slug`); the journal holds only the hash. -/
+def slugged (entry : Json) : Json :=
+  match (entry.getObjValAs? String "hash").toOption.bind Slug.ofCid with
+  | some s => entry.setObjVal! "slug" (toJson s)
+  | none => entry
+
 def reply (entry : Json) : Json :=
-  Json.mkObj [("status", toJson (statusOf entry)), ("receipt", entry)]
+  Json.mkObj [("status", toJson (statusOf entry)), ("receipt", slugged entry)]
 
 def duplicate (principal intent : String) (entry : Json) : Json :=
   Json.mkObj [("status", toJson "refused"), ("class", toJson "duplicateIdentity"),
@@ -1891,6 +1896,9 @@ def postedPage (j : Json) : Except String (String × String) := do
       throw s!"page and section are titles: one line of 1..{Limits.maxTitleBytes} bytes"
     return (page, part)
 
+/-- The URI schemes a transport may record a post under. -/
+def postSchemes : List String := ["at://", "zulip://"]
+
 /-- `world-posted {principal, uri, cid, object, slot?, page?, section?}`: transport confirms a post it
     made for `object` (and for an awaited `slot`, or carrying the object's publication of `page`,
     section "" for the whole page). Only the world's clock principal, when one is named. -/
@@ -1903,7 +1911,9 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
     | .ok (.null) | .error _ => pure none
     | .ok s => pure (some (← parseSlot s))
   let (page, part) ← postedPage j
-  unless uri.startsWith "at://" do throw "uri must be an at:// URI"
+  -- An AT post, or a message of the Zulip playtest transport (`zulip://<stream>/<topic>/<id>`).
+  unless postSchemes.any (fun (p : String) => uri.startsWith p) do
+    throw s!"uri must be an at:// or zulip:// URI, not {(uri.splitOn "://").head!}://"
   if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
     throw s!"posts are confirmed only by {w.clockPrincipal}"
   unless w.objects.contains object do throw s!"unknown object {object}"
@@ -2371,7 +2381,9 @@ def publicRefusal (entry : Json) : Json :=
   let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [])
   -- A law's reading is the package's public text about the clause, never state.
   let reading := if cls == "lawRefused" then (outcome.getObjValAs? String "reason").toOption else none
+  let slug := (entry.getObjValAs? String "hash").toOption.bind Slug.ofCid
   Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", root)] ++
+    (slug.map fun x => [("slug", toJson x)]).getD [] ++
     (reading.map fun r => [("reason", toJson r)]).getD [] ++
     (if cls == "unknownObject" then
       [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
@@ -2383,11 +2395,11 @@ def publicRefusal (entry : Json) : Json :=
     is elided and counted. Results, offers, sends, sources and checkpoints never show. -/
 def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
   let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
-  if owner == reader && !reader.isEmpty then entry
+  if owner == reader && !reader.isEmpty then slugged entry
   else if tagOf entry == "refused" then
     (publicRefusal entry).setObjVal! "height" ((entry.getObjVal? "height").toOption.getD Json.null)
       |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null)
-  else
+  else slugged <|
     let objectOf := fun (x : Json) => (x.getObjValAs? String "object").toOption.getD ""
     let arr := fun (x : Option Json) => ((x.bind (·.getArr?.toOption)).getD #[])
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -2402,6 +2414,57 @@ def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
        ("outcome", Json.mkObj ([("tag", toJson (tagOf entry))] ++
          (if writes.isEmpty then [] else [("writes", Json.arr shownWrites)]))),
        ("elided", toJson elided)])
+
+/-- Everything a slug may name, as `(cid, kind)`: every entry's hash (`receipt`); every pin an
+    entry gave an object `reader` may view (`pin`); the state CIDs the journal names for such an
+    object: a created seed, a write's `cid` (`state`). -/
+def slugTargets (w : World) (reader : String) : Array (String × String) := Id.run do
+  let mut out : Array (String × String) := #[]
+  let seen := fun (id : String) => viewable w reader id
+  for entry in w.entries do
+    if let .ok h := entry.getObjValAs? String "hash" then out := out.push (h, "receipt")
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let object := fun (j : Json) => (j.getObjValAs? String "object").toOption.getD ""
+    match tagOf entry with
+    | "created" =>
+      if seen (object outcome) then
+        if let .ok p := outcome.getObjValAs? String "pin" then out := out.push (p, "pin")
+        if let .ok seed := outcome.getObjVal? "seed" then out := out.push (Journal.bodyHash seed, "state")
+    | "admitted" =>
+      for c in arr "creates" do
+        if seen (object c) then
+          if let .ok p := c.getObjValAs? String "pin" then out := out.push (p, "pin")
+          if let .ok seed := c.getObjVal? "seed" then out := out.push (Journal.bodyHash seed, "state")
+      for r in arr "reprograms" do
+        if seen (object r) then
+          if let .ok p := r.getObjValAs? String "newPin" then out := out.push (p, "pin")
+      for x in arr "writes" do
+        if seen (object x) then
+          if let .ok c := x.getObjValAs? String "cid" then out := out.push (c, "state")
+    | _ => pure ()
+  return out
+
+/-- `world-resolve {principal, slug}`: the one CID the slug names among what `principal` may see
+    (`slugTargets`): `{status: "resolved", slug, kind: receipt | pin | state, cid, receipt?}`, with the
+    receipt as `world-receipt` renders it to that reader when it names one; `{status: "ambiguous",
+    matches}` when it names two or more CIDs; `{status: "unknown"}` when none. -/
+def resolveOp (w : World) (j : Json) : Except String Json := do
+  let reader ← j.getObjValAs? String "principal"
+  let slug ← j.getObjValAs? String "slug"
+  if (Slug.decode slug).isNone then throw s!"{slug} is not a slug: two proquint words, like lusab-babad"
+  let hits := (slugTargets w reader).foldl (fun (acc : Array (String × String)) (cid, kind) =>
+    if Slug.ofCid cid == some slug && !acc.any (·.1 == cid) then acc.push (cid, kind) else acc) #[]
+  match hits.toList with
+  | [] => return Json.mkObj [("status", toJson "unknown"), ("slug", toJson slug),
+      ("message", toJson s!"unknown: no receipt, pin or state here is named {slug}")]
+  | [(cid, kind)] =>
+    let receipt := if kind != "receipt" then none else
+      (w.entries.find? fun e => (e.getObjValAs? String "hash").toOption == some cid).map (projectEntry w reader)
+    return Json.mkObj ([("status", toJson "resolved"), ("slug", toJson slug), ("kind", toJson kind),
+      ("cid", toJson cid)] ++ (receipt.map fun r => [("receipt", r)]).getD [])
+  | many => return Json.mkObj [("status", toJson "ambiguous"), ("slug", toJson slug), ("matches", toJson many.length),
+      ("message", toJson s!"ambiguous: {many.length} matches; cite the object and version")]
 
 /-- A reader principal: 1..128 bytes, or "" for an anonymous reader (public objects only). -/
 def readerOf (j : Json) : Except String String := do

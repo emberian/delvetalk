@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Observed town posts -> host turns -> reply drafts for a human to post.
 
-Never posts: post.py is the only writer. Principals here are the observed authors' DIDs,
+Never posts: post.py is the only writer (with `--source zulip`, the owner's own Zulip, transport/zulip.py posts drafts itself). Principals here are the observed authors' DIDs,
 which are UNVERIFIED (this path serves ember's manual posting).
 Run as `python3 -m transport.bridge`.
 """
@@ -107,11 +107,13 @@ def register(state, host, did, handle):
     path = Path(state) / 'principals.txt'
     known = set(path.read_text().split()) if path.exists() else set()
     if did in known:
-        return
+        return True
     got = host.send({'op': 'world-arrive', 'principal': CLOCK, 'did': did, 'handle': handle})
-    if got.get('status') != 'error':
-        with open(path, 'a') as f:
-            f.write(did + '\n')
+    if got.get('status') == 'error':
+        return False
+    with open(path, 'a') as f:
+        f.write(did + '\n')
+    return True
 
 
 def awaiting_path(state, uri):
@@ -175,9 +177,10 @@ MAX_HOPS = 32
 MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ignored
 
 
-def mention_turns(state, host, obs, authors):
-    """A mention is addressed to the mentioned: one turn per resolved mention (a facet's DID, or an @handle that is a
-    known author) to env/<did>.receive {text, post} under the author. Once per post; the host judges each turn."""
+def mention_turns(state, host, obs, authors, handles):
+    """A mention is addressed to the mentioned: one turn per mention (a facet's DID, or an @handle that is a known
+    author) to env/<did>.receive {text, post} under the author. Once per post. Only an arrived principal has an Env:
+    a mentioned principal the observer has seen is arrived first; one it has not is skipped, with a note in skipped.txt."""
     path = Path(state) / 'mentioned.txt'
     done = set(path.read_text().split()) if path.exists() else set()
     dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:MENTIONS]) if d))
@@ -186,12 +189,18 @@ def mention_turns(state, host, obs, authors):
     author = obs['author']
     register(state, host, author['did'], author['handle'])
     fields = [{'name': 'text', 'value': {'tag': 'label', 'value': obs['text']}}, {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
-    replies = [host.send({'op': 'world-turn', 'principal': author['did'], 'object': f'env/{did}', 'method': 'receive',
-                          'argument': {'tag': 'record', 'fields': fields}, 'identity': f"{obs['uri']}#env:{did}"}) for did in dids]
+    replies = []
+    for did in dids:
+        if did not in handles or not register(state, host, did, handles[did]):
+            with open(Path(state) / 'skipped.txt', 'a') as f:
+                f.write(f"{obs['uri']}#mention:{did}\n")  # not arrived, so no Env: nothing to send
+            continue
+        replies.append(host.send({'op': 'world-turn', 'principal': author['did'], 'object': f'env/{did}', 'method': 'receive',
+                                  'argument': {'tag': 'record', 'fields': fields}, 'identity': f"{obs['uri']}#env:{did}"}))
     if all('receipt' in r for r in replies):  # else retry next run: the host answers a repeated identity with its first receipt
         with open(path, 'a') as f:
             f.write(obs['uri'] + '\n')
-    return True
+    return bool(replies)
 
 
 def route(host, obs, known=None):
@@ -271,14 +280,17 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     outbox = state / 'outbox'
     outbox.mkdir(parents=True, exist_ok=True, mode=0o700)
     if poll:
-        poll(Observer(state, poll.client))
+        poll(getattr(poll, 'observer', Observer)(state, poll.client))
     tick(host, now)
     done, failed, skip = [], [], skipped(state)
     rows = all_observations(state)
     observed = pending_observations(state, rows)
     known = {o['uri']: o for o in observed}
     authors = {o['author']['handle'].lower(): o['author']['did'] for o in rows}  # every author seen, so an @handle resolves
-    mentioned = [obs['uri'] for obs in observed if mention_turns(state, host, obs, authors)]
+    handles = {o['author']['did']: o['author']['handle'] for o in rows}
+    for did, handle in handles.items():  # a principal arrives at their first observed post, whatever its kind
+        register(state, host, did, handle)
+    mentioned = [obs['uri'] for obs in observed if mention_turns(state, host, obs, authors, handles)]
     for obs in observed:
         if obs['uri'] in skip or draft_exists(outbox, obs['uri']) or awaiting_path(state, obs['uri']).exists():
             continue
@@ -374,6 +386,9 @@ def main(argv=None, out=None):
     r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: observe, turn, draft every SECONDS')
     r.add_argument('--observe', action='store_true', help='read-only: observe the town before bridging (implied by --poll)')
     r.add_argument('--mock', metavar='DIR')
+    r.add_argument('--source', choices=('delve', 'zulip'), default='delve', help='zulip: observe a stream of the owner\'s own Zulip and post drafts back automatically')
+    r.add_argument('--zuliprc', metavar='PATH', help='--source zulip: the bot\'s .zuliprc')
+    r.add_argument('--stream', default='delvetalk', help='--source zulip: the stream to observe')
     r.add_argument('--origin', default=ORIGIN, help='the front\'s origin, for the short links drafts cite')
     r.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default: the wall clock)')
     o = sub.add_parser('outbox')
@@ -401,14 +416,22 @@ def main(argv=None, out=None):
             ap.error('give exactly one of --once and --poll SECONDS')
         host = connect(a)
         try:
-            poll = None
-            if a.observe or a.poll or a.mock:
+            poll, after = None, lambda: {}
+            if a.source == 'zulip':
+                from transport import zulip
+                if not a.zuliprc:
+                    ap.error('--source zulip needs --zuliprc')
+                client = zulip.Client(a.zuliprc)
+                poll = lambda ob: ob.poll()
+                poll.client, poll.observer = client, lambda state, c: zulip.ZulipObserver(state, c, a.stream)
+                after = lambda: zulip.post_drafts(a.state, host, client, a.stream)
+            elif a.observe or a.poll or a.mock:
                 poll = lambda ob: ob.poll()
                 poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
             if a.once:
-                out.write(canonical(run(a.state, host, poll, now=a.now, origin=a.origin)) + '\n')
+                out.write(canonical({**run(a.state, host, poll, now=a.now, origin=a.origin), **after()}) + '\n')
             else:
-                daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical(run(a.state, host, poll, origin=a.origin)) + '\n') and out.flush())
+                daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical({**run(a.state, host, poll, origin=a.origin), **after()}) + '\n') and out.flush())
         finally:
             host.close()
     return 0
