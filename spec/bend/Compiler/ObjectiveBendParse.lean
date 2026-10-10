@@ -1091,7 +1091,7 @@ def declarations (lines : Array Line) :
           let m := trimText m
           let type := trimText (":".intercalate rest)
           unless isIdent m.toList && !type.isEmpty do fail member "a protocol method is `name: TYPE`"
-          methods := methods.push ⟨m, protocolType type, member.span, []⟩
+          methods := methods.push ⟨m, protocolType type, member.span, [], false⟩
         | [] => fail member "a protocol method is `name: TYPE`"
       if methods.isEmpty then fail line "a protocol declares at least one method"
       decls := decls.push (.protocol name methods.toList (methods.toList.map (·.type)) line.span)
@@ -1172,7 +1172,7 @@ def declarations (lines : Array Line) :
         if c.indent == 0 then break
         set (j + 1)
         let some (_, m) ← matchAt c sumCaseRe c.text | fail c "expected sum case label: Type"
-        cases := cases.push ⟨cap c.text m 1, cap c.text m 2, c.span, []⟩
+        cases := cases.push ⟨cap c.text m 1, cap c.text m 2, c.span, [], false⟩
         labels := labels ++ [cap c.text m 1]
       if cases.isEmpty then fail line "empty sum"
       if labels.eraseDups.length != labels.length then fail line "duplicate sum label"
@@ -1220,7 +1220,14 @@ def declarations (lines : Array Line) :
         set (j + 1)
         if let some (_, f) ← matchAt m fieldRe m.text then
           let name ← liftBare (fieldName ((capture m.text f 1).getD []))
-          fields := fields.push ⟨name, cap m.text f 2, m.span, []⟩
+          let type := cap m.text f 2
+          -- `name: fixed T`: a State field no edit names.
+          if type.startsWith "fixed " then
+            unless cap line.text caps 1 == "State" do
+              fail m ("refused (fixed): only a State field is fixed; " ++ name ++ " is a field of " ++ cap line.text caps 1)
+            fields := fields.push { name, type := (type.drop 6).trimAscii.toString, span := m.span, fixed := true }
+          else
+            fields := fields.push ⟨name, type, m.span, [], false⟩
         else
           methods := methods.push (← signature m.text m)
       decls := decls.push (.record (cap line.text caps 1) methods.toList fields.toList line.span)
