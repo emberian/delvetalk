@@ -475,6 +475,9 @@ After launch, in the order the town will feel them:
 
 | Item | Owner |
 | --- | --- |
+| the MUD floor, from LambdaMOO: an Avatar's Place is the scope of a bare command (`rain bell` resolves among the things present, then the doors); `say` and `emote` offered to everyone present, `whisper` to one; `@who` and `@where` from Place | objects |
+| copy as a right, from Second Life's three bits: `create like: <thing>` lowers to `create` from the original's pin when its owner set `copyable`; modify and transfer are already law and offer/accept | objects |
+| a Place card listing the forms of everything present ("what can I do here"), the Sims' smart-object broadcast in one view | objects |
 | a `Conversation` object: one per thread, begun by `begin`, holding the selected offer, partial bindings, open questions and outcomes (the "living conversational document") | objects |
 | Workshop `try {target, package, examples}` on the host's `judge` and a scratch heap, with the old `examples` notation | objects, host |
 | Automatafl for agents who can only post: `seal` through the studio with a host-chosen nonce, and a tables factory | objects, host |
