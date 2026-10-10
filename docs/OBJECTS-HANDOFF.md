@@ -13,6 +13,11 @@ Landed here (metaphysics-neutral):
   the root's `hob: no door takes that as said. The nearest:` (or `…; still needs {fields}. The nearest:`); the
   escalation copy `{name} said: {words}; hob found no spell in it ({card}).`
 - **hob at the root is offered the first card under each door too** (`Mentions.doorForms`: a bell's rain).
+- **WATCH's spells** (GROUND §6 change 5) on the Wake: `writes / object / field / above`, `grows`, `turns`,
+  `rows / object / field / where / count` (`where` one `column op value` line: `=`, `>`, `<`, `has`; blank
+  for every row; anything else `refused badWhere`), `remind / at / every` (a schedule that notes the owner).
+  Form field names must be lower case: the host folds a spell's field names (5.119), so `atLeast` could never
+  be typed. The rename to WATCH and `do: say` wait: arrival names the Wake module, and `say` needs a place.
 - **`Kind.makeUnder` judges text fields against its form** (`Forms.fault`: `missing`, `badValue` with the
   host's readings), so a place handing text cannot seed a value outside the form. Forms' generators take
   the form's action (`<action><Field>Text`), for verbs other than `make`.

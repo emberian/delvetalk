@@ -55,6 +55,27 @@ class Wakes(Chain):
     def inbox(self, did):
         return [(get(n, "from")["value"], get(n, "text")["value"]) for n in rows(get(self.state(did), "inbox"))]
 
+    def test_rows_writes_grows_turns_and_remind_are_spells_with_a_where_line(self):
+        """GROUND §6 change 5: a watch on another card's field is typed in a post, its row pattern one `column op
+        value` line; a line that is no pattern is refused by name and adds nothing."""
+        from deploy import genesis
+        self.env()
+        wake = self.wake()
+        made = self.host.send(op="world-create", principal="ember", identity="mk-ledger", object="ledger", modules=closure("Record"), entry="initial",
+                              seed=record(owner=label("ember"), keeper=label("")), law=genesis.RECORD_LAW)
+        self.assertEqual(made["status"], "created", made)
+        for spell in ("rows / object: ledger / field: lines / where: text has moth / count: 1", "rows / object: ledger / field: marks / where: / count: 2",
+                      "grows / object: ledger / field: next", "writes / object: ledger / field: next / above: 6", "remind / at: 600 / every: 60"):
+            with self.subTest(spell=spell):
+                self.assertEqual(self.label_of(self.turn(wake, "receive", heard("delvetalk %s %s" % (wake, spell)), principal=OWNER)), "watching")
+        bad = self.turn(wake, "receive", heard("delvetalk %s rows / object: ledger / field: lines / where: n is big / count: 1" % wake), principal=OWNER)
+        self.assertEqual(self.label_of(bad), "refused")
+        self.assertEqual(bad["result"]["payload"]["fields"][0]["value"]["value"], "badWhere", bad)
+        lines = [l for l in self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"].split("\n") if l.startswith("#")]
+        self.assertEqual(len(lines), 5, lines)
+        self.assertIn("moth", lines[0])
+        self.assertEqual(self.label_of(self.turn(wake, "receive", heard("delvetalk %s grows / object: ledger / field: next" % wake), principal=OTHER)), "refused")
+
     def label_of(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
         return reply["result"]["label"]
@@ -194,7 +215,7 @@ class Wakes(Chain):
         self.assertEqual(self.label_of(stranger), "refused")
         card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
         self.assertEqual(card, (
-            "WAKE of inkling (yours): 3 triggers. Add one: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; delvetalk wake unwatch / id: <number> removes it.\n"
+            "WAKE of inkling (yours): 3 triggers. Add: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; rows, writes, grows, turns and remind are on ?. Remove: delvetalk wake unwatch / id: <number>.\n"
             "#1 on the word moth: note me\n"
             "#3 on the word gate: note me\n"
             "#4 on the word lantern: note me\n"
@@ -208,7 +229,14 @@ class Wakes(Chain):
             "    term: <text, 1 to 64 characters>\n"
             "\n"
             "    delvetalk wake/did:plc:inkling unwatch\n"
-            "    id: <a number from 1 to 1000000>\n"))
+            "    id: <a number from 1 to 1000000>\n"
+            "\n    delvetalk wake/did:plc:inkling writes\n    object: <text, 1 to 128 characters>\n    field: <text, 1 to 64 characters>\n"
+            "    above: <a number from 0 to 1000000000>\n"
+            "\n    delvetalk wake/did:plc:inkling grows\n    object: <text, 1 to 128 characters>\n    field: <text, 1 to 64 characters>\n"
+            "\n    delvetalk wake/did:plc:inkling turns\n    object: <text, 1 to 128 characters>\n    field: <text, 1 to 64 characters>\n"
+            "\n    delvetalk wake/did:plc:inkling rows\n    object: <text, 1 to 128 characters>\n    field: <text, 1 to 64 characters>\n"
+            "    where: <text, 0 to 200 characters>\n    count: <a number from 1 to 4096>\n"
+            "\n    delvetalk wake/did:plc:inkling remind\n    at: <a number from 0 to 1000000000>\n    every: <a number from 0 to 10080>\n"))
         self.assertIn("#4 on the word lantern: note me", card)
         # A stranger's card counts the triggers and shows none of them.
         seen = self.turn(wake, "receive", heard(""), principal=OTHER)["offers"][0]["text"]
