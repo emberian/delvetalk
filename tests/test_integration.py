@@ -86,6 +86,20 @@ class Integration(Reflection):
         fine = self.turn("probe", "bump2", record(n=nat(2)))
         self.assertEqual(fine["status"], "admitted", fine)
 
+    def test_a_typeMismatch_says_what_the_method_takes(self):
+        r = self.turn("probe", "bump2", record(m=nat(1)), identity="bad")
+        expected = r["receipt"]["outcome"]["expected"]
+        self.assertEqual(expected["method"], "bump2", expected)
+        self.assertEqual((expected["type"]["name"], expected["type"]["member"]["tag"]), ("n", "natural"), expected)
+        self.assertEqual(expected["form"]["action"], "bump2", expected)
+        self.assertEqual([(f["name"], f["kind"]["tag"]) for f in expected["form"]["fields"]], [("n", "natural")], expected)
+
+    def test_an_import_of_no_supplied_module_is_named(self):
+        r = self.host.send(op="check-package", entry="initial",
+                           modules=[{"name": "Package", "source": "edition ObjectiveBend 1\nimport ./Nowhere.obend as N\ndef initial() -> Nat:\n  0n\n"}])
+        self.assertEqual(r["status"], "refused", r)
+        self.assertIn("./Nowhere.obend", r["diagnostic"]["message"])
+
     def test_a_call_whose_argument_does_not_conform_is_answered_refused_typeMismatch(self):
         r = self.turn("caller", "poke", record(target=label("probe")))
         self.assertEqual((r["status"], r["result"]), ("admitted", label("typeMismatch")), r)

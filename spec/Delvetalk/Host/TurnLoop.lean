@@ -67,8 +67,8 @@ inductive Abort where
       silence, journaled as class `budget` with the resource as its reason. -/
   | budget (resource : String)
   /-- The turn is refused with a named class other than `evaluation` (`typeMismatch`: the
-      argument does not conform to the method's input type). -/
-  | refused (cls reason : String)
+      argument does not conform to the method's input type, `expected` what it takes). -/
+  | refused (cls reason : String) (expected : Option Json := none)
   /-- The turn awaits a slot: its activity is checkpointed and journaled. -/
   | suspend (principal intent : String) (patience : Nat) (checkpoint : Delvetalk.Turn.Checkpoint)
       (interpretation : Option Json := none) (post : Option String := none)
@@ -172,6 +172,27 @@ def listData (items : List Data) : Data :=
   items.foldr (fun x tail => .variant "cons" (.record [("head", x), ("tail", tail)]))
     (.variant "nil" (.record []))
 
+
+/-- Plain JSON for a model to read: lists are arrays, a sum is an object with its `tag`. -/
+partial def listHeads (acc : List Data) : Data → Option (List Data)
+  | .variant "nil" _ => some acc.reverse
+  | .variant "cons" (.record f) => do
+    let head ← f.lookup "head"
+    let tail ← f.lookup "tail"
+    listHeads (head :: acc) tail
+  | _ => none
+
+partial def plainJson : Data → Json
+  | .natural n => toJson n
+  | .boolean b => toJson b
+  | .label s => toJson s
+  | .record fs => Json.mkObj (fs.map fun (k, v) => (k, plainJson v))
+  | d@(.variant l p) =>
+    match listHeads [] d with
+    | some items => Json.arr (items.toArray.map plainJson)
+    | none => match p with
+      | .record fs => Json.mkObj (("tag", toJson l) :: fs.map fun (k, v) => (k, plainJson v))
+      | other => Json.mkObj [("tag", toJson l), ("value", plainJson other)]
 
 /-- The first payload that makes a response conform to the Response type. -/
 def respond (bounds : DataBounds) (responseType : Ty) (label : String) (payloads : List Data) : M Data := do
@@ -439,12 +460,26 @@ def argumentFits (compiled : Compiled) (argument : Data) : Bool :=
     else !(domain.isDataUnder compiled.bounds [] Ty.dataFuel []) || argument.conformsUnder compiled.bounds domain
   | _ => true
 
+/-- What method `method` of object `id` takes, for a `typeMismatch` refusal: `type`, its input
+    as the artifact's method table records it (resolved, so it reads alone), else the compiled
+    domain (`typeJson`, whose variables need the packet's bounds); and `form`, the form a card
+    would offer for it (`methodForms`, plain JSON), when it has one. -/
+def expectedInput (obj : Object) (id method : String) (compiled : Compiled) : Json :=
+  let row := ((obj.methods.getArr?.toOption).getD #[]).find? fun m => (m.getObjValAs? String "name").toOption == some method
+  let type := match (row.bind fun r => (r.getObjVal? "input").toOption), compiled.type with
+    | some input, _ => input
+    | none, .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) => Minidregg.Theory.ObjectiveBendTyping.typeJson domain
+    | none, _ => Json.null
+  let form := row.bind fun r => (methodForms id (Json.arr #[r])).head?
+  Json.mkObj ([("method", toJson method), ("type", type)] ++ (form.map fun f => [("form", plainJson f)]).getD [])
+
 /-- A kernel refusal at the start or resumption of an activity: an argument that does not
-    conform is the journaled class `typeMismatch`, anything else an `evaluation`. -/
-def kernelRefusal {α : Type} (r : Except String α) : M α :=
+    conform is the journaled class `typeMismatch` (with what was `expected`), anything else an
+    `evaluation`. -/
+def kernelRefusal {α : Type} (r : Except String α) (expected : Option Json := none) : M α :=
   match r with
   | .ok a => pure a
-  | .error e => if e.startsWith argumentRefusal then throw (.refused "typeMismatch" e) else throw (.evaluation e)
+  | .error e => if e.startsWith argumentRefusal then throw (.refused "typeMismatch" e expected) else throw (.evaluation e)
 
 /-- Offer a Plan the frame `self` yielded to handler object `handler`: its pure
     `handle(state, plan[, context]) -> pass {} | answer {response}`. `none` is pass (also when the
@@ -497,13 +532,14 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
-  unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal)
+  let expected := expectedInput obj id method compiled
+  unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal (some expected))
   match r with
   | .computation .. =>
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
     let entry ← entryOf compiled
-    let started ← kernelRefusal (Delvetalk.Turn.startEntry entry arguments binding b)
+    let started ← kernelRefusal (Delvetalk.Turn.startEntry entry arguments binding b) (some expected)
     noteProfile fun _ => (Delvetalk.Turn.prepareStartEntry entry arguments |>.map fun (applied, _) =>
       Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial applied.source.term))
     drive depth id caller compiled binding started 0
@@ -1081,9 +1117,9 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls := "budget", reason := some resource }) (onEnd := ended "budget")
     return (w', turnReply w' r)
-  | .error (.refused cls reason) =>
+  | .error (.refused cls reason expected) =>
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
-      (some { cls, reason := some reason, object := some ctx.object }) (onEnd := endedIfLate)
+      (some { cls, reason := some reason, object := some ctx.object, expected }) (onEnd := endedIfLate)
     return (w', turnReply w' r)
   | .error (.suspend sp si patience checkpoint interpretation post) =>
     let journaledCheckpoint := compactCheckpoint w checkpoint.toJson
@@ -1574,27 +1610,6 @@ def cardOp (w : World) (j : Json) : Except String Json := do
     | .ok (.error clause) => return Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)]
     | .error _ => return Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")]
 
-/-- Plain JSON for a model to read: lists are arrays, a sum is an object with its `tag`. -/
-partial def listHeads (acc : List Data) : Data → Option (List Data)
-  | .variant "nil" _ => some acc.reverse
-  | .variant "cons" (.record f) => do
-    let head ← f.lookup "head"
-    let tail ← f.lookup "tail"
-    listHeads (head :: acc) tail
-  | _ => none
-
-partial def plainJson : Data → Json
-  | .natural n => toJson n
-  | .boolean b => toJson b
-  | .label s => toJson s
-  | .record fs => Json.mkObj (fs.map fun (k, v) => (k, plainJson v))
-  | d@(.variant l p) =>
-    match listHeads [] d with
-    | some items => Json.arr (items.toArray.map plainJson)
-    | none => match p with
-      | .record fs => Json.mkObj (("tag", toJson l) :: fs.map fun (k, v) => (k, plainJson v))
-      | other => Json.mkObj [("tag", toJson l), ("value", plainJson other)]
-
 /-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
     utterance)` when its package defines one and it renders text under the turn tick budget,
     else none (the caller then sends the `system` field). The method table does not list
@@ -1659,7 +1674,7 @@ def scratchState (w : World) : TurnState :=
 def abortText : Abort → String
   | .request m | .evaluation m => m
   | .budget r => s!"{r} budget exhausted"
-  | .refused cls r => s!"{cls}: {r}"
+  | .refused cls r _ => s!"{cls}: {r}"
   | .suspend .. => "unexpected suspension"
 
 /-- The input type of a method: `none` when it takes none, an error when it is not a method. -/

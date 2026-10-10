@@ -157,7 +157,7 @@ Outcomes:
   checks `request == p.digest`, re-runs `judge`, and requires that `judged.reprograms`,
   `amendments`, `creates` equal the recorded JSON exactly and that each recorded write version equals
   the replayed new version. So admitted entries are re-judged, not trusted.
-- **refused**: `{tag, class, clause?, object?, reason?}`. Classes (`refusalClasses`): staleRoot,
+- **refused**: `{tag, class, clause?, object?, reason?, expected?}` (`expected`: 5.29). Classes (`refusalClasses`): staleRoot,
   typeMismatch (conformance), capacity (byte or count limit), outOfRange (index past the end), lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation,
   budget (reason = the exhausted machine resource: ticks, heap, stack, nodes, bytes),
   budgetExhausted (reason = exhausted ledger field), programRefused (clause = packageBytes, compile,
@@ -535,6 +535,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    library module named by itself (all own modules the library's: the last is the entry and stays); `attachLibrary` keeps
    it, which `world-arrive` (5.31) needs. Tests: `test_reflection.LibraryCheck`.
 
+29. **A typeMismatch says what was expected (host7).** A turn (or delivery) refused `typeMismatch` because its argument
+   does not fit the method's input journals `expected {method, type, form?}` on the refused outcome (`expectedInput`,
+   `Refusal.expected`, `Abort.refused … expected`): `type` is the input as the artifact's method table records it
+   (resolved, readable alone), else the compiled domain's `typeJson`; `form` is the card form `methodForms` derives for
+   the method (plain JSON: `{card, action, fields [{name, kind {tag, min, max | options}}]}`) when it has one. The
+   receipt carries it whole for the turn's own principal; the public projection does not. A `call` Plan is still answered
+   `refused {clause: typeMismatch}`. The package loader's "import must name an earlier supplied module" now ends
+   `: <path>` (`Package.modulesAndAsts`, a one-line edit in the kernel's file). Tests: `test_integration.Integration`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -640,7 +649,7 @@ with `opener`; `transport/model.py`'s comment ("the host fits raw") is now the o
 quotes the old metarule message.
 
 lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27);
-`world-check`, `library: <pin>` and `library-load` (5.28).
+`world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29).
 Section 7's queue items 1 to 5 above are unchanged.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch

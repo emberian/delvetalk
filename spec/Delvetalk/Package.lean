@@ -66,7 +66,7 @@ def modulesAndAsts (j : Json) :
     let mut imports : List LockedImport := []
     for edge in ast.imports do
       let some target := modules.zipIdx.find? (fun (m,_) => edge.path == "./" ++ m.name ++ ".obend")
-        | throw { stage := "package-request", message := "import must name an earlier supplied module",
+        | throw { stage := "package-request", message := s!"import must name an earlier supplied module: {edge.path}",
                   sourceModule := some name }
       imports := imports ++ [⟨edge.path, edge.importAlias, edge.span, target.2, target.1.name, target.1.sha256⟩]
     let module : SourceModule := ⟨name,source,Minidregg.Compiler.Sha256.hexString source,imports⟩

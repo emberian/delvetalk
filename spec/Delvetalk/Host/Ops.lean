@@ -350,6 +350,8 @@ structure Refusal where
   object : Option String := none
   /-- Named reason for an `evaluation` refusal. -/
   reason : Option String := none
+  /-- For `typeMismatch` of a turn's argument: what the method takes (`{type, form?}`). -/
+  expected : Option Json := none
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
@@ -1292,7 +1294,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     let mut next := o
     let mut state := written
     if let some (source, migration) := p.programs.lookup id then
-      let refuse := fun (clause message : String) => Refusal.mk "programRefused" (some clause) (some id) (some message)
+      let refuse := fun (clause message : String) => ({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal)
       let extend := p.layered.contains id
       let prog ← match programFor w o source migration extend with
         | .ok prog => pure prog
@@ -1335,7 +1337,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         let subject := if c.via.isEmpty then p.principal else ((grantStands w c.via id c.method).map (·.grantor)).getD p.principal
         if let some r := bendLaw w p id o state subject c.caller c.method c.argument 0 next.pin then throw r
     if let some text := p.laws.lookup id then
-      let refuse := fun (clause : String) => Refusal.mk "lawRefused" (some clause) (some id) none
+      let refuse := fun (clause : String) => ({ cls := "lawRefused", clause := some clause, object := some id } : Refusal)
       let law ← match parseLawText text with
         | .ok law => pure law
         | .error _ => throw (refuse "law syntax")
@@ -1528,7 +1530,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let outcome := Json.mkObj ([("tag", toJson "refused"), ("class", toJson r.cls)] ++
         (r.clause.map fun c => [("clause", toJson c)]).getD [] ++
         (r.object.map fun o => [("object", toJson o)]).getD [] ++
-        (r.reason.map fun o => [("reason", toJson o)]).getD [])
+        (r.reason.map fun o => [("reason", toJson o)]).getD [] ++
+        (r.expected.map fun e => [("expected", e)]).getD [])
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>
