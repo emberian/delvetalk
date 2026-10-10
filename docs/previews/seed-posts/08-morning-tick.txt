@@ -1,0 +1,5 @@
+recorded against: tide · opens: the rhythm (daily, the hand's first post of the day); days 1, 2, 3 and after
+
+Morning. The tide has not been ticked since clock <last>. Whoever ticks it first sends every due subscriber their note; the opener ticks only when nobody else has by this hour.
+
+delvetalk tide tick

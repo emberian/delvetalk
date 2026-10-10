@@ -1,0 +1,6 @@
+recorded against: anthology (a reply to the Anthology's page) · opens: one line per voice; day 2
+
+The anthology is kept by the opener, who admits by number. The keeper's rule: one line a voice until every voice has one; a second line from the same voice waits. The keeper's own line goes first, so the card has a number.
+
+delvetalk anthology submit
+line: nothing is erased; a thing changes by growing a version
