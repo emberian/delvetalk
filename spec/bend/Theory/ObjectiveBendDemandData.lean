@@ -87,6 +87,31 @@ unaffordable prefix is refused after at most `ticks / 2` scalars. -/
 def prefixCost (text : String) (n ticks : Nat) : Option Nat :=
   scalarPrefixBytes ((ticks - 1) / 2 + 1) n (String.Legacy.iter text)
 
+/-- The bytes of a natural's magnitude, at least one; `Nat.log2` is the runtime's
+bit length, read without building anything. -/
+def naturalBytes (n : Nat) : Nat := n.log2 / 8 + 1
+
+/-- Natural arithmetic, charged before the result is built. Operands below 2^64 cost
+the unit tick. Past a machine word the work is linear in the operands' bytes (two
+ticks a byte, as text), plus a product of their 64-bit word counts for multiply,
+divide and modulo (schoolbook bound), and the result's bytes are reserved: at most
+`max + 1` for a sum, the minuend for a difference, `x + y` for a product, the
+dividend for a quotient or remainder. Every reserved byte is also paid in ticks, so a
+segment allocates at most half its ticks in naturals. Forty squarings of 2 are
+refused at the first operand the allowance cannot pay, not at a 128 GiB result. -/
+def naturalStepCost (primitive : ObjectiveBendOpenRecursion.Primitive) (a b : Nat) : Nat × Nat :=
+  if a < 18446744073709551616 && b < 18446744073709551616 then (1, 0) else
+  let x := naturalBytes a
+  let y := naturalBytes b
+  let linear := 1 + 2 * (x + y)
+  let words := (x / 8 + 1) * (y / 8 + 1)
+  match primitive with
+  | .add => (linear, max x y + 1)
+  | .subtract => (linear, x)
+  | .multiply => (linear + words, x + y)
+  | .divide | .modulo => (linear + words, x)
+  | _ => (linear, 0)
+
 /-- Hosted text work and exact result allocation bound, checked before
 `stepRaw` constructs a String. Ordinary pinned transitions retain unit cost.
 Unicode operations traverse scalar sequences; their UTF-8 size bounds both the
@@ -99,7 +124,8 @@ copies the suffix (`B - prefix` bytes). (The runtime's `String.Slice.toString`
 is `lean_string_utf8_extract`, a fresh string: the suffix is copied, not shared.
 That copy is the one text work not charged in ticks, so that a drop-by-one walk
 stays linear; its bytes are bounded here.) Decimal conversion uses a conservative
-quadratic bit-work allowance and bit-count allocation bound. -/
+quadratic bit-work allowance and bit-count allocation bound; natural arithmetic
+is `naturalStepCost`. -/
 def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
   match state.control,state.stack with
   | .returned (.label alphabet), .binaryRight .textSpan (.label text) :: _ => textPrefixCost text alphabet true ticks
@@ -135,6 +161,7 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
       -- Prepay input copying/padding, all compression blocks and hex output.
       -- Reserve padded input plus bounded SHA schedule/state/hex workspace.
       (65 + 8 * ((bytes + 63) / 64) + 32 * blocks, 64 * blocks + 4096)
+  | .returned (.natural b), .binaryRight primitive (.natural a) :: _ => naturalStepCost primitive a b
   | .returned (.natural n), .unary .natText :: _ =>
       let bits := n.log2 + 1
       (1 + bits * bits, bits)

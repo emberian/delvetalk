@@ -98,5 +98,41 @@ class TariffTests(unittest.TestCase):
         self.assertNotEqual(refused["status"], "compiled", refused)
 
 
+SQUARES = """edition ObjectiveBend 1
+def squared(n: Nat, k: Nat) -> Nat:
+  match k:
+    case 0: n
+    case 1+p: squared(n * n, p)
+def big(k: Nat) -> Bool:
+  5n < squared(2n, k)
+def sum(k: Nat) -> Bool:
+  5n < squared(2n, k) + squared(3n, k)
+"""
+
+
+class NaturalArithmetic(unittest.TestCase):
+    """A natural past a machine word is charged by its operands' bytes before the result is
+    built: ticks linear in the operands (word products for multiply, divide and modulo) and
+    the result's bytes reserved against the byte budget."""
+
+    def test_repeated_squaring_is_refused_before_it_allocates(self):
+        # Thirty squarings of 2 is 2^(2^30), a 128 MiB natural; forty would be 128 GiB.
+        # Each squaring once cost one tick and reserved nothing.
+        for k in (30, 40):
+            ran = run_pure("Document", "big", nat(k), probe=SQUARES, limits=BIG)
+            self.assertEqual(ran["status"], "refused", ran)
+            self.assertLessEqual(ran["ticksUsed"], 1000000)
+
+    def test_small_naturals_cost_one_tick_and_bignums_are_charged(self):
+        small = run_pure("Document", "big", nat(5), probe=SQUARES, limits=BIG)
+        self.assertEqual(small["value"], {"tag": "boolean", "value": True})
+        larger = run_pure("Document", "big", nat(9), probe=SQUARES, limits=BIG)
+        self.assertEqual(larger["value"], {"tag": "boolean", "value": True})
+        # 2^(2^9) needs three more squarings past a word, each charged by its operand bytes.
+        self.assertGreater(larger["ticksUsed"] - small["ticksUsed"], 4 * 50)
+        summed = run_pure("Document", "sum", nat(12), probe=SQUARES, limits=BIG)
+        self.assertEqual(summed["value"], {"tag": "boolean", "value": True})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -124,7 +124,9 @@ Every machine transition costs 1 tick. Before a text primitive runs, `forceHoste
 - `textDrop t n`: 1 if n=0 or n>=B; else `1 + 2p`, reserves `B - p` (the suffix copy is bounded in bytes, not charged in ticks, so a drop-by-one walk stays linear).
 - `textJoin list sep` (each element): `1 + 2*(bytes appended)`, reserves the new accumulator (appended in place when unique).
 - `textSpan/textBreak`: `1 + perScalar*visited`, perScalar = `2*(|alphabet|+2)`; refused up front if the cap cannot cover the scan.
-- `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`. `natText n`: `1 + bits^2`. Everything else: 1 tick.
+- `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`. `natText n`: `1 + bits^2`.
+- Natural arithmetic (`naturalStepCost`, kernel10): 1 tick while both operands are below 2^64; past a word, with x, y the operands' bytes (`log2/8 + 1`), `1 + 2(x+y)` plus `(x/8+1)(y/8+1)` for multiply, divide and modulo, reserving the result's bound (`max+1`, `x`, `x+y`, `x`). Before it, forty squarings of 2 cost one tick each and built a 128 GiB natural; now they are refused at the first unaffordable operand (`test_tariff.NaturalArithmetic`).
+- Everything else: 1 tick.
 
 `tests/test_tariff.py` pins the bump turn (73 + 10 ticks since day 4) and `Document.plain` over 1,025 leaves (129,272); library workloads are bounded where that code is tested (`test_hub`: glm's 1,788-character reply under a bell under 20,000 ticks, the directory's reading under 250,000). Update a pin with a reason when it moves. Profile before optimizing the interpreter: the Bend spell parse was 81% text primitives, and the host parses spells now.
 
