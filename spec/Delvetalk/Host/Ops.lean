@@ -1079,6 +1079,41 @@ partial def fitRecord (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBend
     else d
   | _, _ => d
 
+/-- The fields `contextData` fills. -/
+def contextFields : List String :=
+  ["world", "object", "principal", "handle", "caller", "intent", "height", "clock", "inputOrigin"]
+
+/-- A Context type: a record (through the bounds) naming the principal and the intent, every
+    field of which the host fills. An older library's Context with fewer fields is one too. -/
+def isContextType (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
+  match recordFieldTypes bounds (bounds.length + 1) ty with
+  | some fs => fs.any (·.1 == "principal") && fs.any (·.1 == "intent") && fs.all (contextFields.contains ·.1)
+  | none => false
+
+/-- The parameter types of a definition's type, outermost first. -/
+def arrowDomains : Nat → Minidregg.Theory.ObjectiveBendTypes.Ty → List Minidregg.Theory.ObjectiveBendTypes.Ty
+  | fuel + 1, .arrow _ _ domain codomain => domain :: arrowDomains fuel codomain
+  | _, _ => []
+
+/-- `turn-start` on a held entry whose last parameter is a Context, sent the arguments before it:
+    the host appends the Context the binding (`object`, `principal`, `intent`, the entry's name as
+    the command) implies, fitted to the entry's own Context type, as a world turn builds it
+    (`inputOrigin.kind` "repl"; `handle`, `height` and `clock` from the world this process has open,
+    else "" and 0). A request that already carries the Context (one argument more) is as sent;
+    that form is accepted for one release. -/
+def withBindingContext (world : Option World) (entry : Delvetalk.CheckedEntry) (request : Json) : Except String Json := do
+  let arguments ← (← request.getObjVal? "arguments").getArr?
+  let domains := arrowDomains Delvetalk.Bounds.entryArrowDepth entry.type
+  let bounds := entry.source.assumptions.bounds
+  let some ct := domains.getLast? | return request
+  unless domains.length == arguments.size + 1 && isContextType bounds ct do return request
+  let principal ← request.getObjValAs? String "principal"
+  let command := ((request.getObjVal? "artifact").toOption.bind fun a => (a.getObjValAs? String "entry").toOption).getD ""
+  let context := contextData (← request.getObjValAs? String "object") principal
+    ((world.map (handleOf · principal)).getD "") "" (← request.getObjValAs? String "intent")
+    ((world.map (·.height)).getD 0) ((world.map (·.clock)).getD 0) "repl" command
+  return request.setObjVal! "arguments" (Json.arr (arguments.push (dataJson (fitRecord bounds ct context))))
+
 /-- An object's Bend law on one ordinary write: none when it admits. -/
 def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (subject caller method : String)
     (argument : Data) (kind : Nat) (pin : String) : Option Refusal := Id.run do

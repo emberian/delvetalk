@@ -503,6 +503,61 @@ class BindingTests(TurnCase):
         self.assertEqual(r["status"], "error", r)
 
 
+NOTED = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+sum Plan:
+  note: {who: String, why: String, at: String}
+sum Reply:
+  ok: {}
+def bump(n: Nat, context: Abi.Context) -> Activity<Plan, Reply, Nat>:
+  match perform(Plan.note({who: context.principal, why: context.intent, at: context.object})):
+    case ok(_): n + 1n
+def plain(n: Nat, m: Nat) -> Activity<Plan, Reply, Nat>:
+  match perform(Plan.note({who: "", why: "", at: ""})):
+    case ok(_): n + m
+"""
+
+
+def context_data(principal, intent, obj):
+    text = lambda k, v: {"name": k, "value": label(v)}
+    return {"tag": "record", "fields": [
+        text("world", ""), text("object", obj), text("principal", principal), text("handle", ""),
+        text("caller", ""), text("intent", intent), {"name": "height", "value": nat(0)},
+        {"name": "clock", "value": nat(0)},
+        {"name": "inputOrigin", "value": {"tag": "record", "fields": [
+            text("kind", "request"), text("object", ""), text("command", "bump"), text("program", ""),
+            {"name": "immediatelyPrevious", "value": {"tag": "boolean", "value": False}}]}}]}
+
+
+class ContextTests(TurnCase):
+    """turn-start fills a method's trailing Context from the binding; refuted if the plan does not
+    carry the binding's principal, intent and object, or if an explicit Context stops working."""
+
+    def test_the_binding_fills_a_trailing_context(self):
+        h = self.host()
+        art = h.compile(NOTED, "bump", library=("Abi",))
+        y = h.start(art, [nat(3)])
+        self.assertEqual(y["status"], "yielded", y)
+        payload = y["plan"]["payload"]
+        self.assertEqual([plan_field(payload, k) for k in ("who", "why", "at")],
+                         [label("glm"), label("t1"), label("counter")])
+        done = h.resume(art, y["checkpoint"], variant("ok"))
+        self.assertEqual((done["status"], done["value"]), ("finished", nat(4)), done)
+
+    def test_an_explicit_context_is_still_accepted(self):
+        h = self.host()
+        art = h.compile(NOTED, "bump", library=("Abi",))
+        y = h.start(art, [nat(3), context_data("someone", "i9", "elsewhere")])
+        self.assertEqual(y["status"], "yielded", y)
+        self.assertEqual(plan_field(y["plan"]["payload"], "who"), label("someone"))
+
+    def test_a_missing_argument_that_is_not_a_context_is_not_filled(self):
+        h = self.host()
+        art = h.compile(NOTED, "plain", library=("Abi",))
+        r = h.start(art, [nat(3)])
+        self.assertNotEqual(r["status"], "yielded", r)
+
+
 class ExhaustionTests(TurnCase):
     def test_each_budgeted_resource_is_a_named_silence_on_start(self):
         h = self.host()

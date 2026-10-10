@@ -515,6 +515,14 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    (`TurnMeta.rerun`, journaled `rerun: true`; the reply carries `rerunOf` = the refusal's hash); a re-run's own
    stale resumption is final. Deliveries are not re-run.
 
+27. **The binding fills the Context (host7).** Stateless `turn-start` on an entry whose last parameter is a Context
+   (`isContextType`: a record, through the bounds, naming `principal` and `intent`, every field one `contextData` fills)
+   and that is sent one argument short appends the Context itself (`withBindingContext`, Ops; called from
+   `PackageSession.runHeld`): object, principal and intent from the binding, `inputOrigin {kind: "repl", command: <entry>}`,
+   `handle`/`height`/`clock` from the world the process has open, else "" and 0, fitted to the entry's own Context
+   type. A REPL caller passes only the method's own input. A request that sends the Context too is as before (for one
+   release); `turn-resume` needs nothing (the checkpoint holds it). Tests: `test_turn.ContextTests`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -618,6 +626,9 @@ queue: items 1 to 5 above, unchanged. Asks for other lanes: transport should sen
 now holds lexicon, examples, forms and the utterance), call `world-principal` at each author's first post, and open
 with `opener`; `transport/model.py`'s comment ("the host fits raw") is now the object's fitting; Env.obend's comment
 quotes the old metarule message.
+
+lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27).
+Section 7's queue items 1 to 5 above are unchanged.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch
 as not started; section 5 said nothing of Data payloads (the one-variant unwrap in `mergeSeed` is gone).

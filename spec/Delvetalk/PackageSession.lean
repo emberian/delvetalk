@@ -146,7 +146,8 @@ def status (cache : Cache) : Json :=
     ("maxEntryBytes", toJson Bounds.entryCacheBytes), ("hits", toJson cache.hits), ("misses", toJson cache.misses)]
 
 /-- Runs of a held entry never decode the packet or re-check the package. -/
-def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) : Except String Json := do
+def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) (world : Option Host.World := none) :
+    Except String Json := do
   let limits := Package.getLimits j
   if operation == "run" then
     let profile := (j.getObjValAs? Bool "profile").toOption.getD false
@@ -154,12 +155,13 @@ def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) : E
   else if operation == "run-data-v1" then
     Package.executeDataEntryWire entry (← j.getObjVal? "arguments") limits
   else if operation == "turn-start" then
+    let j ← Host.withBindingContext world entry j
     Delvetalk.Turn.startEntryJson entry (← j.getObjVal? "arguments") limits j
   else if operation == "turn-resume" then
     Delvetalk.Turn.resumeEntryJson entry (← j.getObjVal? "checkpoint") (← j.getObjVal? "response") limits j
   else throw "unsupported held operation"
 
-def step (cache : Cache) (request : Json) : Cache × Except String Json :=
+def step (cache : Cache) (request : Json) (world : Option Host.World := none) : Cache × Except String Json :=
   match request.getObjValAs? String "op" with
   | .ok "compile" =>
       match compile cache request with
@@ -172,7 +174,7 @@ def step (cache : Cache) (request : Json) : Cache × Except String Json :=
         | .error e => (cache, .error e)
         | .ok artifact =>
           let (cache, entry) := entryOf cache artifact
-          (cache, entry.bind fun entry => runHeld entry operation request)
+          (cache, entry.bind fun entry => runHeld entry operation request world)
       else (cache, Package.job request)
   | .error _ => (cache, Package.job request)
 
@@ -189,7 +191,7 @@ def stepIO (session : Session) (request : Json) : IO (Session × Except String J
       let (world, result) ← Host.stepWorld session.world request
       return ({ session with world }, result)
     else
-      let (cache, result) := step session.cache request
+      let (cache, result) := step session.cache request (session.world.map (·.world))
       return ({ session with cache }, result)
   | .error _ =>
     let (cache, result) := step session.cache request
