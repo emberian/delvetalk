@@ -242,10 +242,61 @@ structure Checkpoint where
   digest : String
 
 open Minidregg.Theory.ObjectiveBendCheckpoint in
+/-- A token's canonical CBOR, as `Canonical.writeJson` writes its `tokensJson` form: a v1
+token a one-key map (`{"n": decimal}`, `{"s": text}`, `{"r": decimal}`), any other a natural,
+a text, or a string reference as the negative integer `-(i+1)`. -/
+def writeToken (v1 : Bool) (out : ByteArray) : Token → ByteArray
+  | .nat n => if v1 then Canonical.text (Canonical.text (Canonical.head out 5 1) "n") (toString n)
+    else Canonical.natural out n
+  | .text t => if v1 then Canonical.text (Canonical.text (Canonical.head out 5 1) "s") t
+    else Canonical.text out t
+  | .str i => if v1 then Canonical.text (Canonical.text (Canonical.head out 5 1) "r") (toString i)
+    else Canonical.head out 1 i
+
+open Minidregg.Theory.ObjectiveBendCheckpoint in
+/-- The canonical CBOR of the checkpoint's digest preimage, written straight from the tokens:
+the map `{packetSha256, object, principal, intent, rootsDigest, tokens}` with its keys in
+DAG-CBOR order (by byte length, then bytes: intent, object, tokens, principal, rootsDigest,
+packetSha256), the bytes `Canonical.encodeJson` writes for the same map with `tokensJson`
+(checked below), without building that `Json`. -/
+def checkpointPreimage (packetSha256 object principal intent rootsDigest : String) (tokens : Tokens) : ByteArray :=
+  let v1 := match tokens with
+    | .text edition :: _ => edition == checkpointEdition
+    | _ => false
+  let out := Canonical.head (ByteArray.emptyWithCapacity (64 * tokens.length + 256)) 5 6
+  let out := Canonical.text (Canonical.text out "intent") intent
+  let out := Canonical.text (Canonical.text out "object") object
+  let out := Canonical.head (Canonical.text out "tokens") 4 tokens.length
+  let out := tokens.foldl (writeToken v1) out
+  let out := Canonical.text (Canonical.text out "principal") principal
+  let out := Canonical.text (Canonical.text out "rootsDigest") rootsDigest
+  Canonical.text (Canonical.text out "packetSha256") packetSha256
+
+open Minidregg.Theory.ObjectiveBendCheckpoint in
 def checkpointDigest (packetSha256 object principal intent rootsDigest : String) (tokens : Tokens) : String :=
+  Canonical.cid (checkpointPreimage packetSha256 object principal intent rootsDigest tokens)
+
+open Minidregg.Theory.ObjectiveBendCheckpoint in
+/-- The digest as it was defined, through `Json`: the reference `checkpointDigest` agrees
+with (the guards below, and `test_turn`'s digests of real checkpoints). -/
+def checkpointDigestJson (packetSha256 object principal intent rootsDigest : String) (tokens : Tokens) : String :=
   Delvetalk.Canonical.cidJson (Json.mkObj [("packetSha256", Lean.toJson packetSha256),
     ("object", Lean.toJson object), ("principal", Lean.toJson principal), ("intent", Lean.toJson intent),
     ("rootsDigest", Lean.toJson rootsDigest), ("tokens", tokensJson tokens)])
+
+open Minidregg.Theory.ObjectiveBendCheckpoint in
+-- v1 tokens (one-key maps), v2/v3 tokens (naturals past 2^64, negative string references,
+-- non-ASCII text), and an empty list, each against the `Json` definition.
+#guard
+  let cases : List Tokens := [
+    [.text checkpointEdition, .nat 3, .text "x", .nat 0, .str 2],
+    [.text "dregg.objective-bend.checkpoint.v3", .nat 17, .nat 18446744073709551616, .nat 255,
+      .nat 65536, .str 0, .str 23, .str 24, .str 70000, .text "", .text "Grüße ✾"],
+    [.text "delvetalk.checkpoint.site.v1", .nat 4, .text "dregg.objective-bend.checkpoint.v3", .nat 1],
+    []]
+  cases.all fun t =>
+    checkpointDigest "bafy" "garden/bell/1" "did:plc:x" "intent-1" "bafyroots" t ==
+      checkpointDigestJson "bafy" "garden/bell/1" "did:plc:x" "intent-1" "bafyroots" t
 
 def Checkpoint.makeFor (pin : String) (binding : Binding) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) :
     Checkpoint :=

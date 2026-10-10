@@ -439,4 +439,11 @@ token stream of a message checkpoint gains two leading tokens.
   the rehearsal stream, directory `receive`, 120 turns, `taskset -c 0-15`, load ~16): 5,102
   to 5,505 ms before, 2,123 to 2,474 ms after (2.2 to 2.6x); the whole replay's user
   instructions 322 G to 160 G; ticks identical (12,489,187).
-
+- The checkpoint digest without `Json`. `checkpointPreimage` writes the canonical CBOR of
+  `{packetSha256, object, principal, intent, rootsDigest, tokens}` straight from the tokens
+  (`writeToken`: v1 one-key maps, else naturals, texts and negative string references), the
+  bytes `encodeJson` wrote for the `tokensJson` map; `checkpointDigestJson` keeps the old
+  definition and a `#guard` compares them over v1, v3 and site-prefixed tokens, a natural
+  past 2^64, every CBOR head width and non-ASCII text. Not a theorem: `writeJson` is
+  `partial`. Measured as above with the host unchanged: whole replay 322 G to 286 G user
+  instructions; directory `receive` 5.9-6.3 s to 4.9-5.1 s.
