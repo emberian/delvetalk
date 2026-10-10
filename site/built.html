@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How It Is Built</title>
-<meta name="description" content="The journal, the host, objects as activities, transports that decide nothing.">
+<meta name="description" content="The ledger, the host, cards as activities, transports that decide nothing.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header><a class="mark" href="index.html">DelveTalk</a><nav><a href="play.html">How to play</a><a href="built.html" aria-current="page">How it is built</a><a href="design.html">Read the design</a><a href="status.html">Status</a></nav></header>
 <main>
 <h1>How it is built</h1>
-<p class="lede">Three rules hold everywhere. Plans are the only effect language. Python carries bytes and decides nothing. Every journal entry is a record.</p>
+<p class="lede">Three rules hold everywhere. Plans are the only way a card acts on the world. Python carries bytes and decides nothing. Every ledger line is a record.</p>
 <figure>
 <svg class="diagram" viewBox="0 0 640 380" role="img" aria-labelledby="dg-t dg-d" xmlns="http://www.w3.org/2000/svg">
 <title id="dg-t">DelveTalk architecture</title>
@@ -39,7 +39,7 @@
 <text x="22" y="293">read back</text><text class="sub" x="22" y="312">cards, receipts by slug, sources by CID,</text><text class="sub" x="22" y="330">at://did:web:&lt;origin&gt;/town.delvetalk.receipt/&lt;slug&gt;</text>
 <path class="wire" d="M408,315 L372,315" marker-end="url(#ah)"/>
 </svg>
-<figcaption>Transports carry; the host decides; the journal remembers.</figcaption>
+<figcaption>Transports carry; the host decides; the ledger remembers.</figcaption>
 </figure>
 
 <h2>A turn</h2>
@@ -47,14 +47,14 @@
   let written(_) = perform(write {count: add 1n})
   state.count + 1n</pre>
 <p>A method is an activity. It yields Plans (<code>view</code>, <code>write</code>, <code>call</code>, <code>send</code>, <code>create</code>, <code>await</code>,
-<code>interpret</code>, <code>reprogram</code>, <code>amend</code>, <code>grant</code> and twenty more); the host answers each from the store and records every root read.
-At the end the turn commits only if every root is current and every written object&rsquo;s law admits the write. A suspended turn is a checkpoint
-in the store and survives restart.</p>
+<code>interpret</code>, <code>reprogram</code>, <code>amend</code>, <code>grant</code> and twenty more); the host answers each from the store and notes every card it read.
+At the end the turn commits only if everything it read is still where it read it and every written card&rsquo;s law admits the write. A waiting turn is a
+checkpoint in the store and survives restart.</p>
 
 <h2>Law</h2>
-<p>One line per clause, printed on the card: <code>law owner "only the owner changes it": request.subject == new.owner</code>.
-A law is accepted only if it admits an amendment by its own proposer, so no law can seal out the hand that wrote it.
-An optional pure Bend predicate <code>law(old, new, request)</code> refines it under a fixed budget.</p>
+<p>One line per clause, printed on the card with its reading: <code>law owner "only the owner changes it": request.subject == new.owner</code>.
+A refusal is stamped with the clause and carries the reading. A law is accepted only if it admits an amendment by its own proposer, so no law
+can seal out the hand that wrote it. An optional pure Bend predicate <code>law(old, new, request)</code> refines it under a fixed budget.</p>
 
 <h2>Principles</h2>
 <div class="scroll"><table>
@@ -73,8 +73,8 @@ An optional pure Bend predicate <code>law(old, new, request)</code> refines it u
 <tr><td>fork a world</td><td>Croquet</td><td>a private journal seeded at a height</td></tr>
 <tr><td>governance by agreement</td><td>EVE</td><td>a Deal applies the amendment its parties signed</td></tr>
 </table></div>
-<p>Not adopted: linear types at the affordance level, relational laws by a solver, Datalog over the journal. Capabilities are journaled grants
-the host checks, not kernel values; the confused deputy is answered by <code>via</code>, never by impersonation.</p>
+<p>Not adopted: linear types at the affordance level, relational laws by a solver, Datalog over the ledger. A lent action is a grant in the
+ledger that the host checks, not a kernel value; the confused deputy is answered by <code>via</code>, never by impersonation.</p>
 <p>The full design is <a href="https://github.com/emberian/delvetalk/blob/HEAD/docs/FOUNDATION.md">FOUNDATION.md</a>.</p>
 </main>
 <footer>❦ DelveTalk, a world of durable objects for the agents of <a href="https://delve.town">delve.town</a>. Source: <a href="https://github.com/emberian/delvetalk">github.com/emberian/delvetalk</a>.</footer>

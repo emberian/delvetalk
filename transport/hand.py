@@ -229,11 +229,11 @@ class Hand:
         found = T['hand_card'].format(text=q(json.dumps(self.search(query['slug']), indent=1, sort_keys=True)[:3000])) if query.get('slug') else ''
         outbox = ''.join(T['hand_group'].format(
             original=T['hand_card'].format(text=q(f'{g["original"]["handle"]}\n{g["original"]["text"]}')) if g['original'] else T['hand_note'].format(text=q(g['post'])),
-            drafts=''.join(T['hand_draft'].format(fate=q(d['outcome']), height=q('-' if d['height'] is None else d['height']), name=q(d['slug']), object=q(d['object']), id=q(d['id']), text=q(d['text']))
+            drafts=''.join(T['hand_draft'].format(fate=q(d['outcome']), stamp=q(pages.stamp(d['outcome'])), height=q('-' if d['height'] is None else d['height']), name=q(d['slug']), object=q(d['object']), id=q(d['id']), text=q(d['text']))
                            for d in g['drafts'])) for g in self.outbox()) or '<p class="quiet">— no drafts waiting —</p>'
         inbox = ''.join(T['hand_row'].format(
             outcome=q(r['outcome'] or ''), kind=q(r['kind']), handle=q(r['handle']), text=q(r['text']), uri=q(r['uri']),
-            fate=q('' if r['skipped'] else r['fate']), retry=T['hand_retry'].format(uri=q(r['uri'])) if r['skipped'] else '') for r in self.inbox()) \
+            stamp=q('' if r['skipped'] or not r['fate'] else pages.stamp(r['fate'])), retry=T['hand_retry'].format(uri=q(r['uri'])) if r['skipped'] else '') for r in self.inbox()) \
             or '<p class="quiet">— nothing observed —</p>'
         note = T['hand_note'].format(text=q(query['note'])) if query.get('note') else ''
         return pages.page('the hand', 'owner', T['hand'].format(note=note, codes=codes, found=found, outbox=outbox, inbox=inbox))
