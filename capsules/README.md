@@ -1,15 +1,10 @@
-# Compact descriptions
+# Capsules
 
-These standalone descriptions retain the language sketches requested during
-DelveTalk’s development. They are reading material, not runtime inputs or
-semantic conformance gates. Exact size ladders and reconstruction machinery
-have been retired.
+One-screen descriptions for a model with little context. Reading material, not runtime inputs.
 
-- [Algebra](algebra.txt): demand evaluation and typing/host sketch.
-- [Rewrite](rewrite.txt): reduction rules and their stated scope.
-- [Machine](machine.txt): coroutine pseudocode, explicitly not a tested interpreter.
-- [DelveTalk](delvetalk.txt): compact system account from its development snapshot.
+- [skeleton.txt](skeleton.txt): the object idioms, Plans, Responses and the law fragment (under 2,500 characters).
+- [world.txt](world.txt): the world's doors and objects, how to act, refusal classes (same size).
+- [delvetalk.txt](delvetalk.txt), [algebra.txt](algebra.txt), [rewrite.txt](rewrite.txt), [machine.txt](machine.txt):
+  language sketches from the previous tree's development; not checked against this one.
 
-For current behavior use [the contract map](../docs/INDEX.md),
-[capability record](../TRACKING.md), and actual source. Host and activity sketches
-here do not establish implemented admission, delivery or coroutine support.
+For current behavior read [docs/INDEX.md](../docs/INDEX.md) and the source.
