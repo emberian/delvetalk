@@ -7,8 +7,9 @@ reads a post's `name: value` lines; when the first names an action one of its do
 door object's method table, read with `inspect`), the lines become that door's spell and go to its
 receive by call. Other prose, from a principal the menu has already reached, is read by the town's
 model under the directory's policy against every door's forms; a spell in its answer that fits a
-door's form goes to that door, `unclear: not addressed` gets no offer, and a miss (a rain no door
-offers) is asked once more and then answered with what is still needed.
+door's form goes to that door, `unclear: not addressed` gets no offer, a miss naming an action no
+door offers (a rain) is answered at once with the nearest door's usage card, and any other miss is
+asked once more and then answered with what is still needed.
 
 Refuted by: glm's or gemini's §10 planting not growing a bell, a rain or chatter drawing a card, or
 the model's spell not reaching the garden."""
@@ -139,12 +140,15 @@ class Hub(test_chain.Chain):
         # The rehearsal's mock answer for kimik3's rain: no door offers rain. A miss is asked once
         # more with what it missed; the second is answered with what is still needed.
         self.assertEqual(self.say(post("3mxghh4qis22f"), KIMI)["status"], "suspended")
-        again = self.interpret("unclear: rain is not one of the offered actions")
-        self.assertEqual(again["status"], "suspended", again)
+        # A miss that says the action is not offered is answered at once with the nearest
+        # door's usage card; the model is not asked again.
         missed = self.interpret("unclear: rain is not one of the offered actions")
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
-        self.assertEqual([o["text"] for o in missed["receipt"]["offers"]],
-                         ["✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: rain is not one of the offered actions.\n"])
+        [card] = [o["text"] for o in missed["receipt"]["offers"]]
+        print("--- root, an action no door offers ---\n" + card)
+        self.assertTrue(card.startswith("✾ DELVETALK · ROOT\n\nNo door offers that (rain is not one of the offered actions). The nearest is garden:\n"), card)
+        self.assertIn("    delvetalk garden plant\n", card)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # `unclear: not addressed` is silence at once.
         self.assertEqual(self.say("lovely weather on the wiki today", KIMI, uri="at://x/post/2")["status"], "suspended")
         quiet = self.interpret("unclear: not addressed")

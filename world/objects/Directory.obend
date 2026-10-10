@@ -179,8 +179,30 @@ def interpreting(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, 
 def readBack(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, text: String, fitted: Card.Fitted, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match fitted:
     case hit(h): if Card.confirms(policy, actionOf(h.parsed)) then askedFirst(h.card, text) else passOn(h.card, {text: text, post: input.post}, context)
-    case miss(m): if attempt == 0n then interpreting(state, input, forms, policy, 1n, m.needs, context) else Card.unfit(policy, input.text, m.needs, context, needsCard(m.needs), Heard.unclear({needs: m.needs}))
+    case miss(m): if unoffered(m.needs) then nearest(input.text, text, forms, m.needs) else if attempt == 0n then interpreting(state, input, forms, policy, 1n, m.needs, context) else Card.unfit(policy, input.text, m.needs, context, needsCard(m.needs), Heard.unclear({needs: m.needs}))
     case silent(_): Heard.silent({})
+# A miss that says the action is not offered is not asked again (no attempt can offer it):
+# it is answered once with the usage card of the nearest door, the one whose card the
+# model's spell named, else the first whose action or field the utterance names, else the
+# first with forms.
+def unoffered(needs: Form.Names) -> Bool:
+  Lists.any(needs, fn(n: String) -> Bool: Card.contains(n, "not offered") || Card.contains(n, "not one of the offered"))
+def nearest(utterance: String, text: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Activity<Plan, Response, Heard>:
+  usageOf(nearestCard(utterance, Spell.parse(text), forms), forms, needs)
+def nearestCard(utterance: String, parsed: Spell.Parsed, forms: Lists.List<Form.Form>) -> String:
+  match parsed:
+    case spell(s): if Lists.any(forms, fn(f: Form.Form) -> Bool: f.card == s.card) then s.card else namedIn(utterance, forms)
+    case notASpell(_): namedIn(utterance, forms)
+def namedIn(utterance: String, forms: Lists.List<Form.Form>) -> String:
+  match Lists.find(forms, fn(f: Form.Form) -> Bool: Card.contains(utterance, f.action) || Lists.any(f.fields, fn(x: Form.Field) -> Bool: Card.contains(utterance, x.name))):
+    case some(f): f.value.card
+    case none(_): firstCard(forms)
+def firstCard(forms: Lists.List<Form.Form>) -> String:
+  match forms:
+    case cons(c): c.head.card
+    case nil(_): ""
+def usageOf(card: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Activity<Plan, Response, Heard>:
+  Card.tell(Heard.unclear({needs: needs}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card))))
 # An action the policy confirms (a give, an offer, a reprogram) is not passed on from prose:
 # the speaker is shown the spell, and sending it is the yes.
 def actionOf(parsed: Spell.Parsed) -> String:
