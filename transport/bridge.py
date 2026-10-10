@@ -309,6 +309,8 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),
             'receipt': reply['receipt'], 'text': draft_text(reply, origin), 'posted': False})  # offerless: text '', hidden from outbox
+        if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
+            write_atomic(awaiting_path(state, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot), 'height': reply['receipt']['height']})
         done.append(obs['uri'])
     for _ in range(rounds):
         if not host.send({'op': 'world-pending'}).get('count'):
