@@ -70,7 +70,7 @@ def resolve(method, path):
         return (name, {'heap': heap, 'object': obj, 'method': tail}) if name else (None, None)
     if parts[:1] == ['xrpc'] and len(parts) == 2:
         return 'xrpc', {'nsid': parts[1]}  # the repository answers every method (405 for a write)
-    get = {('',): 'home', ('o',): 'find', ('.well-known', 'did.json'): 'did'}.get(tuple(parts))
+    get = {('',): 'home', ('o',): 'find', ('.well-known', 'did.json'): 'did', ('style', ''): 'specimen', ('style',): 'specimen'}.get(tuple(parts))
     if method == 'GET' and get:
         return get, {}
     if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
@@ -458,6 +458,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.xrpc(method, p.get('nsid', 'did.json'))
         if name == 'home':
             return self.home()
+        if name == 'specimen':
+            return self.html(200, pages.page('style', None, (STATIC / 'specimen.html').read_text()))
         if name == 'find':
             found = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('object', [''])[0]
             return self.reply(302, '', 'text/plain', [('Location', '/o/' + urllib.parse.quote(found, safe=''))])
