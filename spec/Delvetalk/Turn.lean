@@ -491,38 +491,6 @@ def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
   conclude (programDictionary packet) (packetDigest packet) binding source.assumptions.bounds plan response result b capacities outcome sites
 
-open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
-def prepareResume (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) :
-    Except String (DataBounds × Ty × Ty × Ty × State × State) := do
-  let decoded ← decodePacket packet
-  unless decoded.context.isEmpty do throw "package must have a closed context"
-  let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
-  let (plan, response, result) ← activityShape decoded.source.assumptions (peelArrows Bounds.entryArrowDepth entry.type)
-  unless checkpoint.packetSha256 == packetDigest packet do throw "checkpoint belongs to another package"
-  unless checkpoint.digest == checkpointDigest checkpoint.packetSha256 checkpoint.object checkpoint.principal
-      checkpoint.intent checkpoint.rootsDigest checkpoint.tokens do throw "checkpoint digest mismatch"
-  unless checkpoint.object == binding.object do throw "checkpoint belongs to another object"
-  unless checkpoint.principal == binding.principal do throw "checkpoint belongs to another principal"
-  unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
-  unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
-  let (response, tokens) ← resumeType (← sitesFor decoded.source plan) response checkpoint.tokens
-  let some state := decodeCheckpoint (Dictionary.ofProgram decoded.source.term) tokens
-    | throw "checkpoint does not decode"
-  unless value.conformsUnder decoded.source.assumptions.bounds response do throw "turn refused: response does not conform to the response type"
-  let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
-    | throw "turn refused: checkpoint is not a yielded state"
-  return (decoded.source.assumptions.bounds, plan, response, result, state, resumed)
-
-open Minidregg.Theory.ObjectiveBendDemandCollect in
-def resumeActivity (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) (b : Budgets) :
-    Except String Delvetalk.Turn.Outcome := do
-  let (bounds, plan, response, result, state, resumed) ← prepareResume packet checkpoint binding value
-  let sites ← sitesFor (← decodePacket packet).source plan
-  let capacities := limitsPast ⟨b.heap, b.stack⟩ state
-  let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
-    fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude (programDictionary packet) (packetDigest packet) binding bounds plan response result b capacities outcome sites
-
 /-! ## A decoded, checked entry: no packet decoding or re-checking per turn -/
 
 /-- The checked application of a held entry to turn arguments, and its activity shape:
@@ -559,12 +527,14 @@ def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (binding
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
 /-- A checkpoint's state, checked against the entry and the binding and decoded, with the site
-it names. -/
-def checkpointState (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding)
+it names. `issued` is the digest the caller recorded when the checkpoint was made (the host's
+journal, a session's issued table): the tokens and binding must hash to it. The `digest` carried
+beside the tokens is never trusted, since anyone can recompute it over invented tokens. -/
+def checkpointState (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String) (binding : Binding)
     (dictionary : Dictionary) : Except String (State × Option Nat) := do
   discard <| activityShape entry.source.assumptions (peelArrows Bounds.entryArrowDepth entry.type)
   unless checkpoint.packetSha256 == entry.pin do throw "checkpoint belongs to another package"
-  unless checkpoint.digest == checkpointDigest checkpoint.packetSha256 checkpoint.object checkpoint.principal
+  unless issued == checkpointDigest checkpoint.packetSha256 checkpoint.object checkpoint.principal
       checkpoint.intent checkpoint.rootsDigest checkpoint.tokens do throw "checkpoint digest mismatch"
   unless checkpoint.object == binding.object do throw "checkpoint belongs to another object"
   unless checkpoint.principal == binding.principal do throw "checkpoint belongs to another principal"
@@ -586,10 +556,10 @@ def resumeState (entry : Delvetalk.CheckedEntry) (state : State) (site : Option 
     | throw "turn refused: checkpoint is not a yielded state"
   return (assumptions.bounds, plan, response, result, resumed)
 
-def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data)
+def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String) (binding : Binding) (value : Data)
     (dictionary : Option Dictionary := none) :
     Except String (DataBounds × Ty × Ty × Ty × State × State) := do
-  let (state, site) ← checkpointState entry checkpoint binding (dictionary.getD (Dictionary.ofProgram entry.source.term))
+  let (state, site) ← checkpointState entry checkpoint issued binding (dictionary.getD (Dictionary.ofProgram entry.source.term))
   let (bounds, plan, response, result, resumed) ← resumeState entry state site value
   return (bounds, plan, response, result, state, resumed)
 
@@ -603,17 +573,19 @@ def runResumed (entry : Delvetalk.CheckedEntry) (state : State) (site : Option N
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
   concludeStep dictionary entry.pin binding bounds plan response result b capacities outcome entry.sites
 
-/-- `resumeActivity` on a held entry, its next yield held (`Step`). -/
-def resumeEntryStep (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data)
+/-- Resume a checkpoint whose digest the caller recorded when it was made (`issued`, see
+`checkpointState`), its next yield held (`Step`). The only other resumption is a yield held in
+this process (`resumeSuspended`). -/
+def resumeEntryStep (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String) (binding : Binding) (value : Data)
     (b : Budgets) (dictionary : Option Dictionary := none) : Except String Step := do
   let dictionary := dictionary.getD (Dictionary.ofProgram entry.source.term)
-  let (state, site) ← checkpointState entry checkpoint binding dictionary
+  let (state, site) ← checkpointState entry checkpoint issued binding dictionary
   runResumed entry state site binding value b dictionary
 
-/-- `resumeActivity` on a held entry. -/
-def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data)
+/-- `resumeEntryStep`'s outcome. -/
+def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String) (binding : Binding) (value : Data)
     (b : Budgets) (dictionary : Option Dictionary := none) : Except String Delvetalk.Turn.Outcome :=
-  (resumeEntryStep entry checkpoint binding value b dictionary).map Step.outcome
+  (resumeEntryStep entry checkpoint issued binding value b dictionary).map Step.outcome
 
 /-- Resume a yield held in this process (`Step.yielded`) without a checkpoint: no encoding,
 digest or decoding. It refuses what `resumeEntry` would refuse of that yield's checkpoint:
@@ -646,26 +618,21 @@ def startEntryJson (entry : Delvetalk.CheckedEntry) (arguments limits request : 
   let (applied, _) ← prepareStartEntry entry values
   return reply.setObjVal! "profile" (Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (initial applied.source.term))
 
-def resumeEntryJson (entry : Delvetalk.CheckedEntry) (checkpointJson responseJson limits request : Json) :
+/-- The refusal of a checkpoint whose digest the resuming process did not record. -/
+def notIssued : String := "checkpoint was not issued by this process"
+
+/-- `turn-resume` in a process without a journal: `issued` answers whether this process handed
+out a checkpoint with that digest; the supplied digest is only the key looked up. -/
+def resumeEntryJson (entry : Delvetalk.CheckedEntry) (issued : String → Bool) (checkpointJson responseJson limits request : Json) :
     Except String Json := do
   let checkpoint ← Checkpoint.fromJson checkpointJson
+  unless issued checkpoint.digest do throw notIssued
   let value ← decodeData Bounds.dataWireDepth responseJson
   let b ← budgets limits
   let binding ← Binding.ofJson request
-  let reply := (← resumeEntry entry checkpoint binding value b).toJson
+  let reply := (← resumeEntry entry checkpoint checkpoint.digest binding value b).toJson
   if !wantsProfile request then return reply
-  let (_, _, _, _, state, resumed) ← prepareResumeEntry entry checkpoint binding value
-  return reply.setObjVal! "profile"
-    (Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) b.bytes b.ticks resumed)
-
-def resumeTurn (packet checkpointJson responseJson limits request : Json) : Except String Json := do
-  let checkpoint ← Checkpoint.fromJson checkpointJson
-  let value ← decodeData Bounds.dataWireDepth responseJson
-  let b ← budgets limits
-  let binding ← Binding.ofJson request
-  let reply := (← resumeActivity packet checkpoint binding value b).toJson
-  if !wantsProfile request then return reply
-  let (_, _, _, _, state, resumed) ← prepareResume packet checkpoint binding value
+  let (_, _, _, _, state, resumed) ← prepareResumeEntry entry checkpoint checkpoint.digest binding value
   return reply.setObjVal! "profile"
     (Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) b.bytes b.ticks resumed)
 

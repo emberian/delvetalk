@@ -873,18 +873,9 @@ def turnStartVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
   Delvetalk.Turn.start (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j) j
 
-def turnResumeVerified (j : Json) : Except String Json := do
-  let artifact ← j.getObjVal? "artifact"
-  Delvetalk.Turn.resumeTurn (← artifact.getObjVal? "packet") (← j.getObjVal? "checkpoint")
-    (← j.getObjVal? "response") (getLimits j) j
-
 def turnStart (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")
   turnStartVerified j
-
-def turnResume (j : Json) : Except String Json := do
-  verifyArtifact (← j.getObjVal? "artifact")
-  turnResumeVerified j
 
 def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with
@@ -926,7 +917,7 @@ def job (j : Json) : Except String Json := do
   | "evaluate-term" => Delvetalk.EvaluateTerm.op j
   | "render-document" => Delvetalk.Document.renderOp j
   | "turn-start" => turnStart j
-  | "turn-resume" => turnResume j
+  | "turn-resume" => throw Delvetalk.Turn.notIssued
   | "run-data-v1" => runData j
   | "run-compact" => runCompactData j
   | "encode-compact" => compactCodec j true
