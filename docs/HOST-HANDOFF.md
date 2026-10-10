@@ -114,7 +114,8 @@ either journals a `settings` entry, and a later open with other values is refuse
 `world-open {opener}` records the world's opener in the same settings entry (only when named); the opener alone may
 `world-create {…, owner}`. `world-principal {principal, did, handle}` (clock principal only) journals a `principal`
 entry for the handle registry (5.22); `world-arrive {principal, did, handle}` also creates the newcomer's Avatar, Env and Wake (5.31).
-`world-posted {principal, uri, cid, object, slot?, page?, section?}` journals a `posted` entry (identity `posted:<uri>`;
+`world-posted {principal, uri, cid, object, slot?, page?, section?}` (`uri` an `at://` post or a `zulip://<stream>/<topic>/<id>`
+message of the playtest transport, `postSchemes`; another scheme is refused by name) journals a `posted` entry (identity `posted:<uri>`;
 `page`/`section` when the post carried the object's publication, section "" for the whole page) and indexes
 `world.posts` (`Post {object, slot, page, part, height}`; snapshots keep them); `world-addressee {parent}` answers
 `{status: "addressee", object, slot?, page?, section?}` or `{status: "unknown"}`.

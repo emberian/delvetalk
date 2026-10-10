@@ -1896,6 +1896,9 @@ def postedPage (j : Json) : Except String (String × String) := do
       throw s!"page and section are titles: one line of 1..{Limits.maxTitleBytes} bytes"
     return (page, part)
 
+/-- The URI schemes a transport may record a post under. -/
+def postSchemes : List String := ["at://", "zulip://"]
+
 /-- `world-posted {principal, uri, cid, object, slot?, page?, section?}`: transport confirms a post it
     made for `object` (and for an awaited `slot`, or carrying the object's publication of `page`,
     section "" for the whole page). Only the world's clock principal, when one is named. -/
@@ -1908,7 +1911,9 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
     | .ok (.null) | .error _ => pure none
     | .ok s => pure (some (← parseSlot s))
   let (page, part) ← postedPage j
-  unless uri.startsWith "at://" do throw "uri must be an at:// URI"
+  -- An AT post, or a message of the Zulip playtest transport (`zulip://<stream>/<topic>/<id>`).
+  unless postSchemes.any (fun (p : String) => uri.startsWith p) do
+    throw s!"uri must be an at:// or zulip:// URI, not {(uri.splitOn "://").head!}://"
   if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
     throw s!"posts are confirmed only by {w.clockPrincipal}"
   unless w.objects.contains object do throw s!"unknown object {object}"

@@ -52,7 +52,17 @@ class Posts(Reflection):
 
     def test_a_post_for_an_unknown_object_or_a_non_at_uri_is_a_request_error(self):
         self.assertEqual(self.host.send(op="world-posted", principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
-        self.assertEqual(self.posted(uri="https://example.com")["status"], "error")
+        refused = self.posted(uri="https://example.com")
+        self.assertEqual(refused, {"status": "error", "message": "uri must be an at:// or zulip:// URI, not https://"})
+
+    def test_a_zulip_message_is_recorded_and_a_reply_to_it_finds_its_object(self):
+        # The playtest transport's messages: zulip://<stream>/<topic>/<id>.
+        uri = "zulip://delvetalk/garden/1042"
+        r = self.posted(uri=uri, slot=SLOT)
+        self.assertEqual(r["status"], "posted", r)
+        self.assertEqual(self.host.send(op="world-addressee", parent=uri), {"status": "addressee", "object": "bell", "slot": SLOT})
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-addressee", parent=uri)["object"], "bell")
 
 
 CARDED = PACKAGE.replace("import ./Plan.obend as Plans", "import ./Plan.obend as Plans\nimport ./Document.obend as Document") + """def render(state: State) -> Document.Document:
