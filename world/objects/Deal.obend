@@ -56,12 +56,14 @@ sum Why:
   notParty: {act: String}
   alreadySigned: {}
   atRest: {}
+  unposted: {}
 def refusal(w: Why) -> Card.Refusal:
   match w:
     case withdrawn(_): {clause: "withdrawn", reading: "The deal was withdrawn."}
     case notParty(n): {clause: "notParty", reading: "Only a party {n.act}."}
     case alreadySigned(_): {clause: "alreadySigned", reading: "Already countersigned."}
     case atRest(_): {clause: "atRest", reading: "The deal is at rest."}
+    case unposted(_): {clause: "unposted", reading: "A countersignature is a reply: it cites the post it is in."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
 def party(state: State, who: String) -> Bool:
@@ -74,23 +76,21 @@ def unsigned(state: State) -> Nat:
   Lists.length(Lists.filter(state.parties, fn(p: String) -> Bool: hasSigned(state, p) == false))
 def atRest(state: State) -> Bool:
   unsigned(state) == 0n && state.withdrawn == ""
-# A party countersigns once, citing its post; the last signature puts the deal at rest.
-# A spell `delvetalk <deal> countersign` names no post: the host finds the field missing and
-# hands the reply to `receive`, which countersigns citing the post the reply is in.
-def countersign(state: State, input: {post: String}, context: Abi.Context) -> Activity<Done>:
-  countersigned(input.post, state, context, fn(done: Done) -> Done: done)
-def countersigned<T>(post: String, state: State, context: Abi.Context, then: Done -> T) -> Activity<T>:
-  if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else if party(state, context.principal) == false then then(refused(Why.notParty({act: "countersigns"}))) else if hasSigned(state, context.principal) then then(refused(Why.alreadySigned({}))) else signing({principal: context.principal, handle: context.handle, post: post}, state, context, then)
-def signing<T>(signature: Signature, state: State, context: Abi.Context, then: Done -> T) -> Activity<T>:
+# A party countersigns once by replying `delvetalk <deal> countersign`: the signature cites the
+# post the reply is in (the host's `inputOrigin.post`), and a turn from no post signs nothing. The
+# last signature puts the deal at rest.
+def countersign(state: State, input: {}, context: Abi.Context) -> Activity<Done>:
+  if state.withdrawn != "" then refused(Why.withdrawn({})) else if party(state, context.principal) == false then refused(Why.notParty({act: "countersigns"})) else if hasSigned(state, context.principal) then refused(Why.alreadySigned({})) else if context.inputOrigin.post == "" then refused(Why.unposted({})) else signing({principal: context.principal, handle: context.handle, post: context.inputOrigin.post}, state, context)
+def signing(signature: Signature, state: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {signatures: insert signature}
-  if unsigned(state) == 1n then amending(state.amendment, context, then) else then(Done.signed({remaining: unsigned(state) - 1n}))
+  if unsigned(state) == 1n then amending(state.amendment, context) else Done.signed({remaining: unsigned(state) - 1n})
 # At rest, the deal's amendment (if any) is proposed to its object, the deal as caller.
-def amending<T>(amendment: Amendment, context: Abi.Context, then: Done -> T) -> Activity<T>:
-  if amendment.object == "" then then(Done.atRest({})) else amended(amendment, context, then)
-def amended<T>(amendment: Amendment, context: Abi.Context, then: Done -> T) -> Activity<T>:
+def amending(amendment: Amendment, context: Abi.Context) -> Activity<Done>:
+  if amendment.object == "" then Done.atRest({}) else amended(amendment, context)
+def amended(amendment: Amendment, context: Abi.Context) -> Activity<Done>:
   match world.amend({object: {world: context.world, object: amendment.object}, law: amendment.law}):
-    case amended(_): then(Done.atRest({}))
-    case refused(r): then(Done.refused({clause: "amendRefused", reading: "At rest, but {amendment.object} refused the amendment ({r.clause})."}))
+    case amended(_): Done.atRest({})
+    case refused(r): Done.refused({clause: "amendRefused", reading: "At rest, but {amendment.object} refused the amendment ({r.clause})."})
 # A party withdraws before rest; the withdrawal names who withdrew.
 def withdraw(state: State, context: Abi.Context) -> Activity<Done>:
   if party(state, context.principal) == false then refused(Why.notParty({act: "withdraws"})) else if atRest(state) then refused(Why.atRest({})) else if state.withdrawn != "" then refused(Why.withdrawn({})) else withdrawing(context)
@@ -103,13 +103,8 @@ def forms() -> Card.Forms:
   Lists.append(Lists.append(Card.Forms.nil(), countersignForm()), withdrawForm())
 def blurb() -> Card.Door:
   {word: "deal", blurb: "Terms every party countersigns; at rest when all have."}
-def doneReply(done: Done) -> Card.Replied:
-  match done:
-    case refused(r): Card.Replied.refused(r)
-    case _: Card.Replied.done({action: "countersign"})
-# A countersign by post cites that post: the reply is the signature.
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
-  if Card.spellAction(input.text) == "countersign" && input.post != "" then countersigned(input.post, state, context, doneReply) else Card.answer(input, context, forms(), render(state, context))
+  Card.answer(input, context, forms(), render(state, context))
 def signatureLine(signature: Signature) -> Document.Document:
   Document.text("signed: {Card.shown(signature.principal, signature.handle, Card.stranger())} at {signature.post}\n")
 def waitingLine(state: State) -> Document.Document:

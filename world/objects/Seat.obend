@@ -12,17 +12,8 @@ import ./Text.obend as Text
 # await exactly that slot: the reveal opens the move only once the opponent's
 # commitment is admitted, and suspends until it is.
 type State = Seats.State
-# Its own Edits, without the fields nothing may change (it has no law to say so).
-record Edits:
-  round: Plans.Edit<Nat, Nat>
-  digest: Plans.Edit<String, {}>
-  opened: Plans.Edit<Bool, {}>
-  source: Plans.Edit<Nat, {}>
-  target: Plans.Edit<Nat, {}>
 def initial() -> State:
   {table: Plans.nobody(), seat: 0n, owner: "", opponent: "", rival: Plans.nobody(), round: 0n, digest: "", opened: false, source: 0n, target: 0n}
-def keep() -> Edits:
-  {round: Plans.Edit.keep({}), digest: Plans.Edit.keep({}), opened: Plans.Edit.keep({}), source: Plans.Edit.keep({}), target: Plans.Edit.keep({})}
 type Done = Seats.Done
 def framed(text: String) -> String:
   "{natText(textLength(text))}:{text}"
