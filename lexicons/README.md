@@ -6,6 +6,7 @@ not reshape it. Files sit at `town/delvetalk/<name>.json`, `defs.main` a `record
 
 | Collection | Record key | Record `cid` | Host op (get / list) | Journal fields (FOUNDATION section 2 table) |
 | --- | --- | --- | --- | --- |
+| `town.delvetalk.entry` | the rev (a TID) | the record's own | `getRecord` / `listRecords` by height; the only collection in the signed MST | `height`, `hash` as a link: every reader's projection |
 | `town.delvetalk.receipt` | slug, or the CID | `hash` | `world-resolve` (slug), `world-entry` (CID) / `world-entries` | the entry: `height`, `previous` and `hash` (chain links), `identity`, `turn`, `roots [{object, version}]`, `outcome`; a public refusal is `{class, root, reason?}` |
 | `town.delvetalk.object` | `<object, / as ~>.<version>` | `stateCid` | `world-object` / `world-objects` then `world-object` | `pin` (content name: `created.pin`, `creates[].pin`, `reprograms[].newPin`), `library.pin`, the state named by `writes[].cid` or a created seed |
 | `town.delvetalk.source` | the module CID | the module CID | `world-source` / `world-sources` | `sources[].cid` with its text, compile inputs' `{name, cid}` |
@@ -22,4 +23,5 @@ What the table does not carry: request digests (`request`, `turnRequest`), check
 identity's own principal; there is no collection for checkpoints or pending sends.
 
 CIDs inside records are strings (`format: cid`), as the journal stores them, not DAG-CBOR links
-(tag 42): an entry's canonical bytes, and so its CID, are the journal's own.
+(tag 42): an entry's canonical bytes, and so its CID, are the journal's own. The exception is
+`town.delvetalk.entry`, the signed repository's record, which the transport builds: its `entry` is a link.

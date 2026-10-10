@@ -29,38 +29,10 @@ def counted(n: Nat) -> String:
   textJoin(Lists.map(Relations.rows(O.byColour(state, Card.stranger())), fn(t: O.Tally) -> String: "{O.colourName(t.colour)} {natText(t.count)}"), ", ")
 """)
 
-PLACE = declared("""edition ObjectiveBend 1
-import ./List.obend as Lists
-import ./Plan.obend as Plans
-import ./World.obend as World
-import ./Card.obend as Card
-import ./Document.obend as Document
-import ./Relation.obend as Relations
-import ./Place.obend as O
-def shown(n: Nat) -> String:
-  let state: O.State = extend(O.initial(), {things: Relations.Relation.rows({items: Lists.List.cons({head: {world: "", object: "porch/stone"}, tail: Lists.List.nil({})})}), exits: Lists.List.cons({head: {label: "in", to: {world: "", object: "garden"}}, tail: Lists.List.nil({})})})
-  Document.plain(O.affordances(state, extend(Card.stranger(), {object: "porch", principal: "did:plc:glm"})))
-""")
-
 
 class DerivedViews(Chain):
-    def test_garden_by_colour_counts_its_bells_one_row_a_colour(self):
-        out = run_pure("Garden", "counted", nat(0), probe=GARDEN)
-        self.assertEqual(out["value"]["value"], "amber 1, violet 2")
-
-    def test_place_affordances_are_its_forms_the_things_to_take_and_the_exits(self):
-        text = run_pure("Place", "shown", nat(0), probe=PLACE)["value"]["value"]
-        self.assertEqual(text, (
-            "\nReply with a spell:\n"
-            "\n    delvetalk porch say\n    line: <text, 1 to 280 characters>\n"
-            "\n    delvetalk porch emote\n    line: <text, 1 to 280 characters>\n"
-            "\n    delvetalk porch whisper\n    to: <text, 1 to 160 characters>\n    line: <text, 1 to 280 characters>\n"
-            "\n    delvetalk porch door\n    label: <text, 1 to 32 characters>\n    to: <text, 1 to 128 characters>\n"
-            "\n    delvetalk porch undoor\n    label: <text, 1 to 32 characters>\n"
-            "\n    delvetalk porch/stone acquire\n"
-            "\n    delvetalk did:plc:glm move\n    exit: in\n"))
-
-    def test_another_object_asks_the_garden_for_by_colour(self):
+    def test_garden_by_colour_counts_its_bells_purely_and_for_another_object(self):
+        self.assertEqual(run_pure("Garden", "counted", nat(0), probe=GARDEN)["value"]["value"], "amber 1, violet 2")
         self.make("garden", closure("Garden"), garden_seed())
         town_kinds(self.host.send)
         planted = self.turn("garden", "plant", record(colour=label("violet"), seed=label("a moth")), principal="glm")

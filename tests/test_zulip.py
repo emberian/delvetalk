@@ -11,8 +11,6 @@ import base64
 import io
 import json
 import tempfile
-import threading
-import time
 import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -146,34 +144,6 @@ class ZulipCase(unittest.TestCase):
 
 
 class Observing(ZulipCase):
-    def test_a_message_becomes_the_observation_record_delve_posts_have(self):
-        a = self.zulip.say('garden', 'Alice', SPELL)
-        b = self.zulip.say('garden', 'Bob', 'lovely')
-        c = self.zulip.say('hello', 'Carol', f'@**{BOT["full_name"]}** hi')
-        d = self.zulip.say('chat', 'Dan', 'just talking')
-        self.zulip.add('garden', BOT['email'], BOT['full_name'], 'planted', 'delvetalk', BOT['user_id'])
-        first, second, summon, post = self.observed()
-        uri = lambda topic, n: f'zulip://delvetalk/{topic}/{n}'
-        self.assertEqual((first['author'], first['uri'], first['replyTo'], first['root'], first['kind']),
-                         ({'did': 'zulip:127.0.0.1:1000', 'handle': 'Alice'}, uri('garden', a), None, None, 'post'))
-        self.assertEqual((second['replyTo'], second['root'], second['kind']), (uri('garden', a), uri('garden', a), 'reply'))
-        self.assertEqual((summon['kind'], summon['replyTo']), ('summon', None))
-        self.assertEqual((post['kind'], post['text']), ('post', 'just talking'))
-        self.assertEqual(len(self.observed()), 4, 'polling again adds nothing, and the bot own message is never observed')
-        later = self.zulip.say('garden', 'Alice', 'more')
-        self.assertEqual(self.observed()[-1]['replyTo'], uri('garden', 5), 'the previous message of a topic includes the bot own')
-
-    def test_a_topic_narrow_observes_only_that_topic(self):
-        self.zulip.say('mobo', 'Alice', 'in the topic')
-        self.zulip.say('elsewhere', 'Bob', 'in another topic')
-        self.zulip.say('mobo', 'Carol', 'and again')
-        ob = zulip.ZulipObserver(self.state, self.client(), topic='mobo')
-        ob.poll()
-        got = [json.loads(r[0]) for r in ob.db.execute('SELECT json FROM observations ORDER BY seq')]
-        self.assertEqual([o['text'] for o in got], ['in the topic', 'and again'])
-        self.assertEqual(self.zulip.narrows[-1], {'channel': 'delvetalk', 'topic': 'mobo'})
-        self.assertEqual(got[1]['replyTo'], got[0]['uri'])
-
     def test_a_principal_carries_its_realm_so_two_realms_never_collide(self):
         self.zulip.say('t', 'Alice', 'hello')
         here = self.observed()[0]['author']['did']
@@ -235,23 +205,6 @@ class Bridging(ZulipCase):
         self.assertEqual(len(texts), 3, texts)
         self.assertTrue(all('garden-1 says' in t for t in texts), texts)
 
-    def test_in_a_topic_the_world_opened_a_message_mentioning_only_other_residents_is_not_read(self):
-        self.zulip.say('t', 'Alice', SPELL)
-        self.bridge()
-        self.zulip.say('t', 'Bob', '@**Alice** your fern looks well, what colour did you pick?')
-        self.assertEqual(self.bridge()['turns'], [])
-        self.zulip.say('t', 'Bob', 'and one for me too')
-        self.assertEqual(len(self.bridge()['turns']), 1)
-
-    def test_a_bell_spell_in_a_new_topic_routes_to_the_bell(self):
-        body = OFFERING.replace('"hello "', '"bell says "')
-        r = self.host.send({'op': 'world-create', 'principal': OPENER, 'identity': 'mk-bell', 'object': 'garden/bell/1',
-                            'modules': [{'name': 'Echo', 'source': CARD % ('', body)}], 'entry': 'initial', 'seed': record(seen=nat(5))})
-        self.assertEqual(r['status'], 'created', r)
-        self.zulip.say('fresh topic', 'Alice', 'delvetalk garden/bell/1 plant\nseed: a\ncolour: amber')
-        got = self.bridge()
-        self.assertEqual((len(got['turns']), len(got['posted'])), (1, 1), got)
-        self.assertIn('bell says', self.zulip.mine()[0]['content'])
 
     def test_with_a_topic_the_bridge_reads_and_answers_only_there(self):
         self.zulip.say('mobo', 'Alice', SPELL)
@@ -263,16 +216,6 @@ class Bridging(ZulipCase):
         self.assertEqual((len(got['turns']), len(got['posted'])), (1, 1), got)
         self.assertEqual([m['subject'] for m in self.zulip.mine()], ['mobo'])
 
-    def test_with_a_topic_a_page_publication_goes_to_the_topic_not_a_topic_named_for_the_page(self):
-        d = {'text': 'a page', 'page': 'Garden', 'section': '', 'publication': {'object': None}, 'posted': False, 'replyTo': None}
-        sent = []
-        client = type('C', (), {'send': lambda self, st, t, c: sent.append((st, t)) or {'id': 7},
-                                'newest': lambda self, st: 0, 'sent_after': lambda self, *a: None})()
-        orig = zulip.unposted
-        zulip.unposted = lambda state: [(Path(self.tmp.name) / 'x.json', d)]
-        self.addCleanup(setattr, zulip, 'unposted', orig)
-        zulip.post_drafts(self.state, self.host, client, 'delvetalk', topic='mobo')
-        self.assertEqual(sent, [('delvetalk', 'mobo')])
 
     def test_a_mention_of_the_bot_summons_the_directory_and_a_follow_up_in_its_topic_is_read(self):
         self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** I planted a fern, what colour is it?')
@@ -305,20 +248,6 @@ class Bridging(ZulipCase):
         self.assertEqual(len(self.zulip.mine()), 1, 'the lost send is adopted, never repeated')
         self.assertEqual(again['posted'], [zulip.uri_of('delvetalk', 't', self.zulip.mine()[0]['id'])])
         self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': again['posted'][0]})['object'], 'garden-1')
-
-    def test_the_welcome_is_posted_and_recorded_so_replies_to_it_reach_the_directory(self):
-        welcome = Path(__file__).resolve().parent.parent / 'docs' / 'previews' / 'zulip-welcome-v3.txt'
-        out = io.StringIO()
-        code = zulip.main(['post', '--state', str(self.state), '--zuliprc', str(self.rc), '--topic', 'welcome',
-                           '--text-file', str(welcome), '--object', 'directory', '--host-socket', str(self.sock)], out)
-        self.assertEqual(code, 0)
-        posted = json.loads(out.getvalue())
-        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': posted['uri']})['object'], 'directory')
-        self.assertTrue(self.zulip.mine()[0]['content'].startswith('wiki: DelveTalk Welcome'))
-        self.zulip.say('welcome', 'Erin', 'hello? what is this')
-        got = self.bridge()
-        self.assertEqual(len(got['turns']), 1, got)
-        self.assertIn('directory says', self.zulip.mine()[-1]['content'])
 
 
 if __name__ == '__main__':

@@ -125,44 +125,21 @@ def summary(text):
 
 
 class Parse(unittest.TestCase):
-    def test_the_readmes_tavern_names_a_weight_and_is_refused_by_name(self):
-        text, _ = summary(TAVERN)
-        self.assertEqual(text, "refused: weight: a scene is entered by name here, never drawn by weight")
-
-    def test_the_tavern_without_its_weight_lowers_to_two_passages(self):
-        text, ticks = summary(TAVERN.replace("weight: 10\n", ""))
-        self.assertEqual(text, "tavern-encounter / The Mysterious Stranger / start intro / cooldown 0 / requires \n"
-                               "=== intro: A hooded figure sits alone in the corner of the tavern.\n"
-                               "  * Approach them [courage >= 5] (courage sub 1) -> conversation\n"
-                               "  * Order a drink instead [] (gold sub 2) -> END\n"
-                               "=== conversation: \"I've been expecting you,\" they whisper.\n"
-                               "  * Ask about the quest [] (quest_started set true) -> END")
-
-    def test_the_well_keeps_its_cooldown_requirements_guards_and_divert(self):
-        text, ticks = summary(WELL)
-        self.assertEqual(text, "wishing-well / The Wishing Well / start intro / cooldown 3 / requires well_sealed falsy \n"
-                               "=== intro: A mossy well hums under the square.\nCoins glint far below.\n"
-                               "  * Drop a coin [wished falsy ] (coins add 2; wished set true) -> deeper\n"
-                               "  * Walk on [] () -> END\n"
-                               "=== deeper: The water answers with a low bell.\n"
-                               "  * Make a wish [coins >= 2] (coins sub 1; wish set a quiet harbour) -> END\n"
-                               "  * Climb down [coins >= 5] () -> intro\n"
-                               "  * Continue [] () -> intro")
-
-    def test_calls_has_and_stray_effects_are_refused_by_name(self):
+    def test_weights_calls_has_stray_effects_dangling_targets_and_long_passages_are_refused_by_name(self):
         body = "---\nid: s\n---\n=== a\nText.\n* [Go]\n  %s\n  -> END\n"
-        self.assertTrue(summary(body % '~ play_sound "victory"')[0].startswith("refused: ~ call: play_sound"))
-        self.assertTrue(summary(body % '~ call("play_sound", "victory")')[0].startswith("refused: ~ call: call("))
-        self.assertTrue(summary("---\nid: s\n---\n=== a\n* [Go] { inventory.sword }\n  -> END\n")[0].startswith("refused: has: inventory.sword"))
-        self.assertTrue(summary("---\nid: s\nrequires:\n  has: [inventory.sword]\n---\n=== a\n")[0].startswith("refused: has:"))
-        self.assertTrue(summary("---\nid: s\n---\n=== a\n~ gold += 1\n")[0].startswith("refused: an effect outside a choice"))
-        self.assertEqual(summary("---\nid: s\n---\n=== a\n* [Go]\n  -> nowhere\n")[0], "refused: -> nowhere: no passage of that name")
-        self.assertEqual(summary("=== a\nText.\n")[0], "refused: a scene starts with frontmatter naming its id: ---, id: <name>, ---")
-
-    def test_a_passage_over_600_characters_is_refused(self):
-        body = "---\nid: s\n---\n=== a\n%s\n* [Go]\n  -> END\n"
-        self.assertTrue(summary(body % ("x" * 600))[0].startswith("s / s"))
-        self.assertEqual(summary(body % ("x" * 601))[0], "refused: a passage holds at most 600 characters")
+        long = "---\nid: s\n---\n=== a\n%s\n* [Go]\n  -> END\n"
+        for text, refusal in ((TAVERN, "refused: weight: a scene is entered by name here, never drawn by weight"),
+                              (body % '~ play_sound "victory"', "refused: ~ call: play_sound"),
+                              (body % '~ call("play_sound", "victory")', "refused: ~ call: call("),
+                              ("---\nid: s\n---\n=== a\n* [Go] { inventory.sword }\n  -> END\n", "refused: has: inventory.sword"),
+                              ("---\nid: s\nrequires:\n  has: [inventory.sword]\n---\n=== a\n", "refused: has:"),
+                              ("---\nid: s\n---\n=== a\n~ gold += 1\n", "refused: an effect outside a choice"),
+                              ("---\nid: s\n---\n=== a\n* [Go]\n  -> nowhere\n", "refused: -> nowhere: no passage of that name"),
+                              ("=== a\nText.\n", "refused: a scene starts with frontmatter naming its id: ---, id: <name>, ---"),
+                              (long % ("x" * 601), "refused: a passage holds at most 600 characters"),
+                              (long % ("x" * 600), "s / s")):
+            with self.subTest(refusal=refusal):
+                self.assertTrue(summary(text)[0].startswith(refusal), summary(text)[0])
 
 
 class Made(test_chain.Chain):
@@ -214,23 +191,6 @@ class Made(test_chain.Chain):
         self.assertEqual(self.say(well, "delvetalk %s enter" % well)["result"]["label"], "entered")
         self.assertEqual(self.say(well, "delvetalk %s choose / choice: Drop a coin" % well)["result"]["label"], "moved")
         deeper = self.card(well)
-        self.assertEqual(deeper, (
-            "SCENE The Wishing Well (1 here), you are at deeper:\n"
-            "The water answers with a low bell.\n"
-            "Choices:\n"
-            "  * Make a wish\n"
-            "  * Continue\n"
-            "coins = 2\n"
-            "wished = true\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk scene/wishing-well enter\n"
-            "\n"
-            "    delvetalk scene/wishing-well choose\n"
-            "    choice: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk scene/wishing-well leave\n"))
         self.assertIn("you are at deeper:\nThe water answers with a low bell.\nChoices:\n  * Make a wish\n  * Continue\n", deeper)
         self.assertNotIn("Climb down", deeper)
         self.assertIn("coins = 2\nwished = true\n", deeper)

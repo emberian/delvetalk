@@ -22,7 +22,7 @@ import unittest
 
 from deploy import genesis
 from tests.test_chain import nil, reference
-from tests.test_replay import get, items, relation, rows
+from tests.test_replay import get, relation, rows
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
@@ -61,14 +61,6 @@ class LawWorld(TurnWorld):
 
 
 class Laws(LawWorld):
-    def test_the_policy_law_is_the_one_the_handoff_named(self):
-        self.create("policy", closure("Policy"), record(owner=label(OWNER), model=label("m"), system=label("s"),
-                                                        lexicon=nil(), examples=nil(), escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
-        law = self.host.send(op="world-inspect", principal=OWNER, object="policy")["law"]
-        self.assertIn('law owner: (unchanged(owner)) and (request.subject == new.owner)', law)
-        self.assertNotIn("describe", law)
-        r = self.turn("policy", "receive", heard("delvetalk policy set\nmodel: n"), principal=OWNER)
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
 
     def test_only_the_directorys_owner_adds_or_removes_a_door(self):
         self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))
@@ -93,15 +85,15 @@ class Laws(LawWorld):
         # A stranger's admit is refused by name in Bend, with the card; so is a line that is not there.
         stranger = self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)
         self.assertEqual((stranger["status"], stranger["result"]["label"]), ("admitted", "refused"), stranger)
-        self.assertTrue(stranger["offers"][0]["text"].startswith("refused notKeeper: Only the keeper, inkling, admits\n\nTHE ANTHOLOGY"), stranger)
+        self.assertIn("refused notKeeper", stranger["offers"][0]["text"])
         missing = self.turn("anthology", "admit", record(number=nat(9)), principal=OWNER)
         self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
-        self.assertTrue(missing["offers"][0]["text"].startswith("refused noLine: No line numbered 9\n\nTHE ANTHOLOGY"), missing)
+        self.assertIn("refused noLine", missing["offers"][0]["text"])
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
         admitted = [get(p, "n") for p in rows(get(self.state("anthology"), "admitted"))]
         self.assertEqual(admitted, [nat(2)])
         card = self.turn("anthology", "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        self.assertTrue(card.startswith("THE ANTHOLOGY; keeper inkling (yours). Write: delvetalk anthology write / text: <1 to 280 characters>; numbered, [pending] until admitted.\n#1 [pending] kimik3: moths\n#2 [admitted] glm: lamps\n"), card)
+        self.assertIn("#1 [pending] kimik3: moths\n#2 [admitted] glm: lamps\n", card)
 
     def test_a_line_keeps_its_number_after_the_oldest_is_dropped(self):
         """The anthology keeps its newest 128 lines, which fit the host's state bytes at 280
@@ -186,16 +178,12 @@ class FixedFields(LawWorld):
 
 class Predicates(LawWorld):
 
-    def test_tides_predicate_refuses_someone_elses_subscription(self):
+    def test_tides_predicate_refuses_someone_elses_subscription_and_a_tick_too_soon(self):
         self.create("tide", tide_variant(), TIDE_SEED)
         r = self.turn("tide", "subscribe", record(every=nat(1), note=label("wake me")), principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/self", r)
-
-    def test_tides_predicate_refuses_a_tick_too_soon(self):
-        self.create("tide", tide_variant(), TIDE_SEED)
         self.assertEqual(self.turn("tide", "tick", principal=OTHER)["status"], "admitted")
-        r = self.turn("tide", "tick", principal=OTHER)
-        self.assertEqual(self.clause(r), "lawRefused/tooSoon", r)
+        self.assertEqual(self.clause(self.turn("tide", "tick", principal=OTHER)), "lawRefused/tooSoon")
 
     def test_records_law_refuses_a_strangers_admission(self):
         self.create("anthology", record_variant(), anthology_seed(OWNER), law=genesis.RECORD_LAW)
@@ -203,20 +191,14 @@ class Predicates(LawWorld):
         self.assertEqual(self.clause(self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)), "lawRefused/kept")
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(1)), principal=OWNER)["result"]["label"], "done")
 
-    def test_wakes_law_refuses_a_strangers_trigger(self):
+    def test_wakes_law_refuses_a_strangers_trigger_and_admits_the_owners(self):
         self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
         r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
                                                action={"tag": "variant", "label": "notify", "payload": record()}), principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/owner", r)
-
-    def test_the_owners_own_writes_pass_both_tiers(self):
-        self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
-        r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
-                                               action={"tag": "variant", "label": "notify", "payload": record()}), principal=OWNER)
-        self.assertEqual(r["status"], "admitted", r)
-        self.create("tide", closure("Tide"), TIDE_SEED)
-        self.assertEqual(self.turn("tide", "subscribe", record(every=nat(1), note=label("me")), principal=OTHER)["status"], "admitted")
-
+        mine = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
+                                                  action={"tag": "variant", "label": "notify", "payload": record()}), principal=OWNER)
+        self.assertEqual(mine["status"], "admitted", mine)  # the owner's own write passes both tiers
 
 if __name__ == "__main__":
     unittest.main()

@@ -31,7 +31,7 @@ class AccessRow(unittest.TestCase):
             (state / name.replace('_', '.')).write_text(text)
         return tmp.name
 
-    def test_the_access_log_is_counted_by_class_and_the_500s_are_the_gate(self):
+    def test_the_access_log_is_counted_by_class_the_500s_are_the_gate_and_no_log_is_no_row(self):
         r = harvest.harvest(self.run_dir(access_log=LOG, access_log_1=LOG.splitlines()[0] + '\n'))
         a = r['access']
         self.assertEqual((a['requests'], a['principals'], a['status500'], a['status5xx']), (9, 2, 1, 1))
@@ -41,9 +41,7 @@ class AccessRow(unittest.TestCase):
         text = harvest.markdown(r)
         self.assertIn('| front 5xx, of which 500 (the gate is zero) | 1, 1 |', text)
         self.assertIn('| front HTTP 404 | 2 |', text)
-
-    def test_a_run_without_a_log_has_no_row(self):
-        r = harvest.harvest(self.run_dir())
+        r = harvest.harvest(self.run_dir())  # a run without a log has no row
         self.assertIsNone(r['access'])
         self.assertNotIn('access.log', harvest.markdown(r))
 

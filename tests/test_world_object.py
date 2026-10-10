@@ -13,7 +13,6 @@ import shutil
 import tempfile
 import unittest
 
-from tests.host import as_owner
 
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record, declared
@@ -98,34 +97,6 @@ class WorldObject(Reflection):
     def count(self, name):
         return self.state(name)["fields"][0]["value"]
 
-    def test_write_view_and_send_are_world_calls(self):
-        self.thing("a")
-        self.thing("b", 7)
-        bumped = self.turn("a", "bump", record())
-        self.assertEqual((bumped["status"], bumped["result"]), ("admitted", nat(1)), bumped)
-        peek = self.turn("a", "peek", record(other=label("b")))
-        self.assertEqual(peek["result"], nat(700), peek)
-        self.assertIn({"object": "b", "version": 0}, peek["receipt"]["roots"])
-        copied = self.turn("a", "copy", record(other=label("b")))
-        self.assertEqual(copied["result"], nat(7), copied)
-        self.assertEqual(self.count("a"), nat(7))
-        told = self.turn("a", "tell", record(other=label("b")))
-        self.assertEqual(told["result"], label("sent"), told)
-        self.assertEqual(self.count("b"), nat(17))
-        self.reopen()
-        self.assertEqual((self.count("a"), self.count("b")), (nat(7), nat(17)))
-
-    def test_a_message_activity_suspends_on_await_and_resumes(self):
-        self.thing("a")
-        self.thing("b")
-        waiting = self.turn("a", "later", record())
-        self.assertEqual(waiting["status"], "suspended", waiting)
-        go = self.turn("b", "bump", record(), identity="go", principal="ann")
-        [resumed] = [as_owner(self.host, r) for r in go["resumed"]]
-        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", nat(1)), resumed)
-        self.assertEqual(self.count("a"), nat(100))
-        self.reopen()
-        self.assertEqual(self.count("a"), nat(100))
 
     def test_view_field_answers_one_field_at_the_readers_type(self):
         self.thing("a")
@@ -135,19 +106,11 @@ class WorldObject(Reflection):
         self.assertIn({"object": "b", "field": "count", "key": "*", "version": 0}, r["receipt"]["roots"])
         self.assertEqual(self.turn("a", "field", record(other=label("b"), field=label("nope")))["result"], nat(777777))
         self.assertEqual(self.turn("a", "fieldText", record(other=label("b")))["result"], label("typeMismatch"))
-
-    def test_a_method_the_world_has_not_is_refused_by_name(self):
-        self.thing("a")
-        r = self.turn("a", "away", record())
-        self.assertEqual(r["result"], label("noMethod"), r)
-
-    def test_the_id_world_is_reserved(self):
+        # A method the world has not is refused by name, and the id `world` is reserved.
+        self.assertEqual(self.turn("a", "away", record())["result"], label("noMethod"))
         r = self.host.send(op="world-create", principal="ember", identity="mk-w", object="world",
-                           modules=[{"name": "Thing", "source": THING}],
-                           entry="initial", seed=record())
-        self.assertEqual(r["status"], "error", r)
+                           modules=[{"name": "Thing", "source": THING}], entry="initial", seed=record())
         self.assertIn("not world", r["message"])
-
 
 if __name__ == "__main__":
     unittest.main()

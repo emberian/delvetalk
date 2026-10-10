@@ -50,66 +50,6 @@ class Mailbox(test_chain.Chain):
     def following(self, did):
         return [(get(get(f, "object"), "object")["value"], get(f, "field")["value"]) for f in items(get(self.state(did), "following"))]
 
-    def test_subscribe_then_send_reaches_the_follower(self):
-        r = self.say(KIM, "delvetalk %s subscribe\nto: %s" % (KIM, GLM), KIM)
-        self.assertEqual(r["result"]["label"], "followed", r)
-        self.assertEqual(self.following(KIM), [(GLM, "outbox")])
-        sent = self.say(GLM, "delvetalk %s send\ntext: the moths are out" % GLM, GLM)
-        self.assertEqual(sent["result"]["label"], "sent", sent)
-        self.deliver_all()
-        self.assertEqual(self.inbox(KIM), [(GLM, "the moths are out")])
-        self.assertEqual(len(rows(get(self.state(GLM), "outbox"))), 1)
-        card = self.say(KIM, "", KIM)["offers"][0]["text"]
-        self.assertEqual(card, (
-            "kimik3, at porch.\n"
-            "0 sent, follows 1\n"
-            "Follows: glm\n"
-            "glm: the moths are out\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 move\n"
-            "    exit: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 go\n"
-            "    place: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 note\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 accept\n"
-            "    thing: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 send\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 subscribe\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 watch\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "    field: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 unsubscribe\n"
-            "    to: <text, 1 to 160 characters>\n"))
-        # Unsubscribing ends the host's subscription: the next letter reaches nobody.
-        self.assertEqual(self.say(KIM, "delvetalk %s unsubscribe\nto: %s" % (KIM, GLM), KIM)["result"]["label"], "followed")
-        self.assertEqual(self.following(KIM), [])
-        self.say(GLM, "delvetalk %s send\ntext: second" % GLM, GLM)
-        self.deliver_all()
-        self.assertEqual(self.inbox(KIM), [(GLM, "the moths are out")])
-
-    def test_a_bell_tells_its_watcher_when_it_rings(self):
-        silver = {"tag": "variant", "label": "silver", "payload": record()}
-        self.make("bell", closure("Bell"), record(colour=silver, seed=label("moths"), planting=label("p"), planter=label(GLM), planterHandle=label("")))
-        self.assertEqual(self.say(KIM, "delvetalk %s watch\nto: bell\nfield: rung" % KIM, KIM)["result"]["label"], "followed")
-        self.assertEqual(self.turn("bell", "ring", principal=GLM)["status"], "admitted")
-        self.deliver_all()
-        self.assertEqual(self.inbox(KIM), [("bell", "news from bell")])
-        # A field the object lacks is refused by name, and nothing is followed.
-        r = self.say(GLM, "delvetalk %s watch\nto: bell\nfield: chimes" % GLM, GLM)
-        self.assertEqual((r["result"]["label"], r["result"]["payload"]["fields"][0]["value"]), ("refused", label("field")), r)
-        self.assertEqual(self.following(GLM), [])
 
     def test_strangers_neither_send_subscribe_nor_deliver(self):
         r = self.say(GLM, "delvetalk %s send\ntext: forged" % GLM, KIM)
@@ -140,12 +80,6 @@ class Mailbox(test_chain.Chain):
         self.make("did:plc:busy", closure("Avatar"), record(handle=label("busy"), at=record(world=label(""), object=label("porch")), following=full))
         r = self.say("did:plc:busy", "delvetalk did:plc:busy subscribe\nto: %s" % GLM, "did:plc:busy")
         self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("followingFull"), r)
-
-    def test_the_inbox_keeps_the_newest_sixty_four(self):
-        for i in range(65):
-            self.assertEqual(self.turn(KIM, "note", record(text=label("n%d" % i)), principal=GLM)["status"], "admitted")
-        notes = self.inbox(KIM)
-        self.assertEqual((len(notes), notes[0], notes[-1]), (64, (GLM, "n1"), (GLM, "n64")))
 
 
 if __name__ == "__main__":

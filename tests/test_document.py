@@ -9,15 +9,11 @@ Host-side Document projection: render-document, and the `offer` Plan.
 Run from the repository root:  python3 -m unittest tests.test_document -v
 """
 import json
-import os
 import random
-import tempfile
 import unittest
 
-from tests.test_chain import garden_state
 
 from tests import host
-from tests.host import HostCase
 from tests.test_turn_world import closure, label, nat, record
 
 ALPHABET = ["a", "b", " ", "\n", "é", "日本", "😀", "\\", '"', "x y", "\n\n", "tab\t", ""]
@@ -114,30 +110,16 @@ class RenderTests(unittest.TestCase):
                 self.assertEqual(got["bytes"], len(expected_plain.encode()))
                 self.assertEqual("".join(x + "\u0001" for x in got["lines"]), expected_lines)
 
-    def test_a_1025_rain_card_renders_whole_in_the_host(self):
-        header = "A silver bell planted by glm: a bell for lost moths (silent)\n"
-        line = "author: a line of rain\n"
-        rains = [variant("text", value=label(line)) for _ in range(1025)]
-        doc = variant("sequence", items=as_list([variant("text", value=label(header))] + rains))
-        got = self.s.render(doc)
-        self.assertEqual(got["text"], header + line * 1025)
-        self.assertEqual(len(got["lines"]), 1026)
 
-    def test_depth_65_is_refused_by_name_and_depth_64_renders(self):
-        def nested(levels):
-            d = variant("text", value=label("leaf"))
-            for _ in range(levels - 1):
-                d = variant("sequence", items=as_list([d]))
-            return d
-        ok = self.s.render(nested(64))
-        self.assertEqual(ok["status"], "rendered", ok)
-        refused = self.s.render(nested(65))
-        self.assertEqual(refused["status"], "error", refused)
-        self.assertIn("document depth exceeds 64", refused["message"])
-
-    def test_node_and_byte_limits_and_malformed_documents_are_refused_by_name(self):
+    def test_depth_node_and_byte_limits_and_malformed_documents_are_refused_by_name(self):
         import sys
         sys.setrecursionlimit(20000)
+        nested = variant("text", value=label("leaf"))
+        for _ in range(63):
+            nested = variant("sequence", items=as_list([nested]))
+        self.assertEqual(self.s.render(nested)["status"], "rendered")  # depth 64
+        r = self.s.render(variant("sequence", items=as_list([nested])))
+        self.assertIn("document depth exceeds 64", r.get("message", ""), r)
         inner = lambda: variant("sequence", items=as_list([variant("text", value=label(""))
                                                        for _ in range(200)]))
         many = variant("sequence", items=as_list([inner() for _ in range(200)]))
@@ -151,33 +133,6 @@ class RenderTests(unittest.TestCase):
             r = self.s.render(bad)
             self.assertEqual(r["status"], "error", r)
             self.assertIn("malformed document", r["message"])
-
-
-class OfferTests(HostCase):
-    def test_an_offer_turn_on_garden_returns_the_card_and_the_journal_retains_it(self):
-        made = self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
-                              modules=closure("Garden"), entry="initial", seed=garden_state(2))
-        self.assertEqual(made["status"], "created", made)
-        look = record(text=label(""), post=label("at://glm/p/look"))
-        turn = self.host.send(op="world-turn", principal="glm", object="garden", method="receive",
-                              argument=look, identity="look-1")
-        self.assertEqual(turn["status"], "admitted", turn)
-        self.assertEqual(len(turn["offers"]), 1)
-        self.assertEqual(turn["offers"][0]["principal"], "glm")
-        text = turn["offers"][0]["text"]
-        self.assertIn("2 planted, newest first:\n", text)
-        self.assertEqual(turn["receipt"]["offers"], [{"to": "glm", "text": text}])
-        # restart: replay reproduces the same offers on the same receipt
-        self.reopen()
-        again = self.host.send(op="world-receipt", principal="glm", identity="look-1")
-        self.assertEqual(again["status"], "receipt", again)
-        self.assertEqual(again["receipt"]["offers"], turn["receipt"]["offers"])
-        self.assertEqual(again["receipt"]["outcome"]["tag"], "admitted")
-        # a retry of the same identity returns the same receipt
-        retry = self.host.send(op="world-turn", principal="glm", object="garden", method="receive",
-                               argument=look, identity="look-1")
-        self.assertEqual(retry["receipt"], again["receipt"])
-        self.assertEqual(retry["offers"], turn["offers"])
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import json
 import os
 import unittest
 
-from tests.host import Host, HostCase
+from tests.host import HostCase
 from tests.test_turn_world import counter_modules, nat, record
 
 
@@ -38,16 +38,15 @@ class Durability(HostCase):
         self.assertEqual(again.send(op="world-status")["head"], status["head"])
         return status["sync"]
 
-    def test_each_mode_opens_writes_and_reopens_to_the_same_head(self):
+    def test_each_mode_reopens_to_the_same_head_and_anything_else_is_refused(self):
         for mode, expect in [("none", "none"), ("fsync", "fsync"), ("full", "full"), (None, "fsync")]:
             self.assertEqual(self.run_mode(mode), expect)
-
-    def test_anything_but_the_three_names_is_refused(self):
         h = self.spawn()
         for i, value in enumerate([False, True, "barrier"]):
             bad = h.send(op="world-open", path=os.path.join(self.dir.name, f"bad{i}.journal"), sync=value)
             self.assertEqual(bad["status"], "error", bad)
             self.assertIn('"none", "fsync" or "full"', bad["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

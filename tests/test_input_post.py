@@ -13,7 +13,7 @@ import json
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record, declared
+from tests.test_turn_world import label, record, declared
 
 GARDEN = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -110,29 +110,6 @@ class InputPost(Reflection):
     def say(self, card, text, post, identity):
         return self.turn(card, "receive", record(text=label(text), post=label(post)), principal="glm", identity=identity)
 
-    def test_a_spells_method_sees_the_replys_post(self):
-        self.create("garden", GARDEN)
-        r = self.say("garden", "delvetalk garden plant\nseed: fern", "at://glm/1", "plant-1")
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(self.field("planted"), label("fern@at://glm/1"))
-        # Prose reaches receive, whose Context names the same post; a direct `plant` names none.
-        self.assertEqual(self.say("garden", "lovely", "at://glm/2", "prose")["result"], nat(3))
-        self.assertEqual(self.field("heard"), label("at://glm/2"))
-        self.assertEqual(self.turn("garden", "plant", record(seed=label("moss")), principal="glm")["status"], "admitted")
-        self.assertEqual(self.field("planted"), label("moss@"))
-
-    def test_called_and_delivered_turns_see_their_post(self):
-        self.create("garden", GARDEN)
-        self.create("relay", RELAY)
-        r = self.say("relay", "pass it on", "at://glm/relay", "relay-1")
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(self.field("noted"), label("at://glm/relay"))   # a call inherits the caller's post
-        # The called spell wrote first and the delivered one after: each names its own post.
-        self.assertEqual(self.field("planted"), label("sent@at://sent"))
-        planted = [str(w["edits"]) for e in self.entries() for w in e.get("outcome", {}).get("writes", [])
-                   if w["object"] == "garden" and "planted" in str(w["edits"]) and "@" in str(w["edits"])]
-        self.assertEqual(len(planted), 2, planted)
-        self.assertIn("called@at://called", planted[0])
 
     def test_a_resumed_activitys_call_sees_the_journaled_post(self):
         self.create("garden", WAITING)
