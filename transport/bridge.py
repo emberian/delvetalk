@@ -9,7 +9,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import signal
 import sqlite3
 import sys
@@ -89,13 +88,16 @@ def refusal_line(outcome, fallback_class=None):
 
 
 def draft_text(reply, origin=None):
-    """The only text a draft carries. A refusal is the turn line, the host's hint when it gives one, and the receipt's name;
-    no state, hash or CID. A usage answer is the host's text."""
+    """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
+    is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
+    receipt's name; no state, hash or CID. A usage answer is the host's text."""
     if reply.get('status') == 'usage':
         return str(reply.get('text', ''))
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':
+        if 'public' not in reply:
+            return ''
         hint = reply.get('hint') or (reply.get('public') or {}).get('hint')
         lines = [refusal_line(outcome, reply.get('class'))] + ([str(hint)] if hint else []) + ([f"receipt {receipt['slug']}"] if receipt.get('slug') else [])
         return '\n'.join(lines) + '\n'
@@ -197,17 +199,6 @@ def skipped(state):
 
 
 MAX_HOPS = 32
-FIELD_LINE = re.compile(r'^\s*[\w-]+:\s*\S', re.M)
-
-
-def addressed(obs):
-    """Was the observation spoken to the system: a spell or summon, or text with a `delvetalk` line or `name: value` field lines."""
-    text = obs['text']
-    return obs['kind'] == 'summon' or 'delvetalk' in text.lower() or bool(FIELD_LINE.search(text))
-
-
-def refused(reply):
-    return reply.get('status') == 'refused' or reply['receipt'].get('outcome', {}).get('tag') == 'refused'
 MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ignored
 
 
@@ -369,8 +360,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),
-            'receipt': reply['receipt'], 'posted': False,  # unaddressed chatter that was refused is journaled, never drafted
-            'text': '' if refused(reply) and not addressed(obs) else draft_text(reply, origin)})  # offerless: text '', hidden from outbox
+            'receipt': reply['receipt'], 'posted': False, 'text': draft_text(reply, origin)})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             write_atomic(awaiting_path(state, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot), 'height': reply['receipt']['height']})
         done.append(obs['uri'])

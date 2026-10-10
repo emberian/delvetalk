@@ -486,30 +486,27 @@ class Mentions(BridgeCase):
 
 
 class Unaddressed(BridgeCase):
-    def run_refused(self, post):
+    """Whether a refusal is drafted is the host's fact: its `public` projection. The post's wording is never read for it."""
+    def run_refused(self, post, public=True):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
         stub = Stub({parent: {'status': 'addressee', 'object': 'directory', 'slot': 'welcome'}})
         real = stub.send
-        stub.send = lambda req: ({'status': 'refused', 'receipt': {'hash': 'h', 'height': 5, 'outcome': {'tag': 'refused', 'class': 'budget'}}}
+        outcome = {'tag': 'refused', 'class': 'quota', 'reason': 'the interpreter has read 48 this hour; reply with the spell itself, or wait.', 'next': 600}
+        stub.send = lambda req: ({'status': 'refused', 'receipt': {'hash': 'h', 'height': 5, 'slug': 'bofab-lukid', 'outcome': outcome},
+                                  **({'public': {'status': 'refused', 'class': 'quota', 'reason': outcome['reason'], 'next': 600}} if public else {})}
                                  if req['op'] == 'world-turn' else real(req))
         self.observe([post])
         bridge.run(self.state, stub)
         return self.drafts()
 
-    def test_a_plain_reply_refused_budget_gets_no_draft_but_a_spell_does(self):
+    def test_a_plain_prose_reply_refused_by_quota_is_drafted_with_the_hosts_explanation(self):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
         (chatter,) = self.run_refused(mk(1, 'lovely thread, thanks all', parent=parent))
-        self.assertEqual(chatter['text'], '')  # journaled, listed by `outbox --all`, never drafted
-        self.assertEqual(chatter['receipt']['outcome']['class'], 'budget')
+        self.assertEqual(chatter['text'], 'refused quota: the interpreter has read 48 this hour; reply with the spell itself, or wait.\nreceipt bofab-lukid\n')
 
-    def test_a_spell_refused_budget_is_drafted(self):
-        (spell,) = self.run_refused(spell_post(2, 'garden-1', '2026-10-09T10:00:00Z'))
-        self.assertEqual(spell['text'], 'refused budget\n')
-
-    def test_field_lines_in_a_reply_count_as_addressed(self):
-        parent = f'at://{DID}/town.delve.feed.post/welcome'
-        (fields,) = self.run_refused(mk(3, 'plant: a fern\ncolour: silver', parent=parent))
-        self.assertEqual(fields['text'], 'refused budget\n')
+    def test_a_refusal_the_host_gives_no_public_projection_is_journaled_not_drafted(self):
+        (spell,) = self.run_refused(spell_post(2, 'garden-1', '2026-10-09T10:00:00Z'), public=False)
+        self.assertEqual((spell['text'], spell['receipt']['outcome']['class']), ('', 'quota'))
 
 
 class Silence(BridgeCase):
@@ -564,7 +561,7 @@ class Projection(unittest.TestCase):
         h = 'bafyrei' + 'a' * 52
         receipt = {'hash': h, 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}
         texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'),
-                 bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}}, 'https://x.example'),
+                 bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}, 'public': {}}, 'https://x.example'),
                  bridge.draft_text({'status': 'refused', 'receipt': receipt, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
         self.assertIn('receipt: garden v3 at height 9\nhttps://x.example/o/garden#v3', texts[0])
         for t in texts:
