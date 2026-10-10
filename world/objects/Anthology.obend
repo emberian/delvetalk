@@ -55,22 +55,37 @@ def admit(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<P
 def admitted(context: Abi.Context, index: Nat, proposal: Proposal) -> Activity<Plan, Response, Bool>:
   match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
     case _: true
+# submit {line} is anyone's; admit {number} (the line's number on the card, from 1) is the
+# owner's, refused by name to anyone else before the law is asked.
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "submit", fields: Form.Fields.cons({head: {name: "line", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})
+  Card.Forms.cons({head: {card: "", action: "submit", fields: Form.Fields.cons({head: {name: "line", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "admit", fields: Form.Fields.cons({head: {name: "number", kind: Form.Kind.natural({min: 1n, max: 1000n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})
 def door() -> Card.Door:
   {word: "anthology", blurb: "Submit a line; the anthology's law admits it."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   heard(state, Card.route(input.text, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): submitted::<Card.Reply>(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
+    case act(a): if a.action == "admit" then admitting(state, Card.natural(a.fields, "number"), context) else submitted::<Card.Reply>(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
     case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
+def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  if context.principal != state.owner then Card.Reply.refused({reason: textConcat("Only the anthology's owner admits; that is ", Card.name(state.owner, context))}) else admittingAt(at(state.proposals, number - 1n), number, context)
+def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match found:
+    case none(_): Card.Reply.refused({reason: textConcat("No line numbered ", natText(number))})
+    case some(s): admittedReply(context, s.proposal)
+def admittedReply(context: Abi.Context, proposal: Proposal) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
+    case _: Card.tell::<Edits, State, {}, Card.Reply>(Card.Reply.done({action: "admit"}), Document.text(textConcat("Admitted: ", textConcat(proposal.line, "\n"))))
 def statusName(status: Status) -> String:
   match status:
     case proposed(_): "proposed"
     case admitted(_): "admitted"
+def numbered(context: Abi.Context, proposals: Lists.List<Proposal>, n: Nat) -> Document.Documents:
+  match proposals:
+    case nil(_): Document.Documents.nil()
+    case cons(c): Document.Documents.cons({head: Document.concat(Document.text(textConcat("#", textConcat(natText(n), " "))), entry(context)(c.head)), tail: numbered(context, c.tail, n + 1n)})
 def entry(context: Abi.Context) -> Proposal -> Document.Document:
   fn(proposal: Proposal) -> Document.Document: Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.name(proposal.author, context), textConcat(Card.mine(proposal.author, context), textConcat(": ", textConcat(proposal.line, "\n"))))))))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("Anthology, admitted by ", textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), "\n")))), tail: Card.clipped(Lists.map::<Proposal, Document.Document>(state.proposals, entry(context)), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("Anthology, admitted by ", textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), "\n")))), tail: Card.clipped(numbered(context, state.proposals, 1n), 8n)})})

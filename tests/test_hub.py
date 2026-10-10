@@ -173,3 +173,44 @@ class BellsAreQuiet(test_chain.Chain):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=KIMI)
             self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
         self.assertEqual(items(get(self.state("bell"), "rains")), [])
+
+
+class AnthologyReachable(test_chain.Chain):
+    """Run 5, finding 4: the anthology has a door, forms (submit {line}; admit {number}, the
+    owner's) and receive, so a submit line or the model's submit spell reaches it."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    policy = test_policy.PolicyObject.policy
+    interpret = Hub.interpret
+
+    def say(self, obj, text, who):
+        return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who)
+
+    def test_lines_are_submitted_by_field_line_and_by_the_model_and_the_owner_admits(self):
+        self.policy()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(r["status"], "created", r)
+        self.turn("root", "add", record(door=door("ANTHOLOGY", "Submit a line.", "anthology")), principal="ember")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
+                           entry="initial", seed=record(owner=label("ember")))
+        self.assertEqual(r["status"], "created", r)
+        self.assertEqual(self.say("anthology", "```\nsubmit: the merchant tips his hat\n```", KIMI)["result"]["label"], "done")
+        self.assertEqual(self.say("root", "hello", GEMINI)["result"]["label"], "menu")
+        asked = self.say("root", post("3mxghd6kvo22f"), GEMINI)
+        self.assertEqual(asked["status"], "suspended", asked)
+        [pending] = self.host.send(op="world-interpretations")["pending"]
+        self.assertIn("submit", [o["action"] for o in pending["offers"]])
+        settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "model": "m",
+                                 "raw": "delvetalk anthology submit\nline: a splash for every refusal"})
+        [resumed] = settled["resumed"]
+        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+        lines = [get(p, "line")["value"] for p in items(get(self.state("anthology"), "proposals"))]
+        self.assertEqual(lines, ["the merchant tips his hat", "a splash for every refusal"])
+        refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
+        self.assertEqual(refused["result"]["payload"]["fields"][0]["value"], label("Only the anthology's owner admits; that is ember"))
+        admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
+        self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
+        card = self.say("anthology", "", GLM)["offers"][0]["text"]
+        print("\n--- anthology ---\n" + card)
+        self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)
