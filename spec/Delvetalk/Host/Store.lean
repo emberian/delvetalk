@@ -298,6 +298,8 @@ structure Built where
   ty : Ty
   laws : Law
   assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
+  /-- The relations its entry module's `relations()` declares, unchecked against the state type. -/
+  relations : List RelDecl := []
 
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),

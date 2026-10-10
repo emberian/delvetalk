@@ -883,10 +883,14 @@ partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theo
   | .emptyRow => some []
   | _ => none
 
-/-- Does a package declare `relations()`? Read from its own modules' sources, so a package without
-    one compiles nothing more. -/
-def declaresRelations (inputs : Json) : Bool :=
-  (inputSources inputs).any fun src => (src.splitOn "\n").any (·.startsWith "def relations(")
+/-- Does a package's entry module (the last of its modules, or its one `source`) declare
+    `relations()`? Only the entry module's declaration counts: a package whose other modules
+    declare one, and its entry module none, has no relations. -/
+def entryDeclaresRelations (inputs : Json) : Bool :=
+  let src := match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => (ms.back?.bind fun m => (m.getObjValAs? String "source").toOption).getD ""
+    | _ => (inputs.getObjValAs? String "source").toOption.getD ""
+  (src.splitOn "\n").any (·.startsWith "def relations(")
 
 /-- The relation declarations `relations()` returned (a list of `{field, key, limit?, retain?}`). -/
 def parseDecls (value : Data) : Except String (List RelDecl) := do
@@ -985,7 +989,7 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   let (methods, predicate, predicateReads) := artifactShape artifact
   let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
     else (o.predicate, o.predicateReads)
-  let relations ← if !declaresRelations inputs then pure [] else do
+  let relations ← if !entryDeclaresRelations (← resolved "initial") then pure [] else do
     let compiled ← (Package.compileEntry (← resolved "relations")).mapError (("key", ·.render))
     (declsOfEntry compiled.entry).mapError (("key", ·))
   (checkRelations relations assumptions.bounds ty).mapError (("key", ·))
@@ -1333,17 +1337,10 @@ def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
     | none => throw "lawReads must return a List<String>"
   | .error _ => throw "lawReads did not finish"
 
-/-- The relations a package declares: its `relations()` compiled as a held entry and run. No
-    declaration: none. -/
-def relationDecls (w : World) (inputs : Json) : Except String (List RelDecl) := do
-  if !declaresRelations inputs then return []
-  let (c, _) ← compileEntryIn w inputs "relations"
-  declsOfEntry c.entry
-
 /-- A built package's relations, checked, and a state put in canonical form under them
     (`duplicateKey` refused by name). -/
-def relationsFor (w : World) (inputs : Json) (b : Built) (state : Data) : Except String (List RelDecl × Data) := do
-  let decls ← relationDecls w inputs
+def relationsFor (b : Built) (state : Data) : Except String (List RelDecl × Data) := do
+  let decls := b.relations
   checkRelations decls b.assumptions.bounds b.ty
   match canonicalState decls state with
   | .ok s => return (decls, s)
@@ -1884,12 +1881,20 @@ def buildKey (inputs : Json) : String := Journal.bodyHash inputs
 
 def compileObject (w : World) (inputs : Json) : Except String Built := do
   if let some b := w.builds[buildKey inputs]? then return b
-  let (artifact, ty, laws) ← Package.compileKeepingLaws (← resolveInputs w inputs)
+  let resolved ← resolveInputs w inputs
+  -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
+  let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
+  let c ← (Package.compileEntryCore request (← resolved.getObjValAs? String "entry")).mapError
+    fun d => (Package.withHint resolved d).render
+  let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
   unless stateTypeOk decoded.source.assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
-  return { artifact, ty, laws, assumptions := decoded.source.assumptions }
+  let relations ← if !entryDeclaresRelations resolved then pure [] else do
+    let r ← (Package.compileEntryCore request "relations").mapError fun d => s!"key: relations(): {d.render}"
+    declsOfEntry r.entry
+  return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations }
 
 /-- Give a compiled package its first state and law. `lawText`, when given, is the law
     exactly as journaled; otherwise the package's laws, or the default owner law. -/
@@ -1924,7 +1929,7 @@ def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) 
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) :
     Except String (Object × String × World) := do
   let built ← compileObject w inputs
-  let (relations, state) ← relationsFor w inputs built (← decodeData Limits.dataDepth seed)
+  let (relations, state) ← relationsFor built (← decodeData Limits.dataDepth seed)
   let (o, sources) ← makeObject built inputs state read chain creator height lawText
   return ({ o with relations }, sources, cacheBuild w inputs built)
 
@@ -1996,7 +2001,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let state ← (mergeSeed (← initialState built) given built.assumptions.bounds built.ty).mapError (s!"typeMismatch: {·}")
   let state := withOwner state given (owner.getD principal)
   -- Relations are journaled in canonical form, so the seed is the state the object holds.
-  let (_, state) ← relationsFor w inputs built state
+  let (_, state) ← relationsFor built state
   let seed := dataJson state
   let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
   let supervisor := (← optText j "supervisor").getD ""

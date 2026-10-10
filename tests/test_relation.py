@@ -169,6 +169,50 @@ class Relations(Reflection):
         self.assertIn("duplicateKey", dup["receipt"]["outcome"]["reason"])
         self.assertEqual(self.rows(), [("ann", 2, "m"), ("kim", 5, "m"), ("ann", 9, "m")])
 
+    def test_only_the_entry_modules_relations_count(self):
+        # Refuted if a package whose imported module declares relations() but whose entry module
+        # declares none is refused ("missing selected entry") or given that module's relations.
+        helper = PACKAGE.replace("LIMIT", "0n")
+        entry = """edition ObjectiveBend 1
+import ./Rel.obend as Rel
+record State:
+  n: Nat
+def initial() -> State:
+  {n: 0n}
+"""
+        r = self.host.send(op="world-create", principal="ember", identity="mk-e", object="e",
+                           modules=[{"name": "Rel", "source": helper}, {"name": "Main", "source": entry}],
+                           entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+
+    def test_twenty_creations_compile_the_package_once(self):
+        # Refuted if each creation compiles relations() anew (a creation then costs a compile).
+        import time
+        self.assertEqual(self.make_bell(name="b0")["status"], "created")
+        start = time.monotonic()
+        for i in range(1, 21):
+            self.assertEqual(self.make_bell(name=f"b{i}")["status"], "created")
+        self.assertLess(time.monotonic() - start, 3.0)
+        self.reopen()
+        self.edit("insert", rain("ann", 1, "a"), name="b20")
+        self.assertEqual(self.rows("b20"), [("ann", 1, "a")])
+
+    def test_relational_law_atoms_judge_writes(self):
+        # Refuted if insertOnly/count/column membership refuse every write (or admit a retract).
+        law = ('law grow: insertOnly(rains)\nlaw small: count(new.rains) <= 2\n'
+               'law once: count(new.rains) <= count(old.rains) + 1\nlaw mine: request.subject in new.rains.author\n')
+        source = PACKAGE.replace("LIMIT", "0n").replace("def relations()", law + "def relations()")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-l", object="l", source=source,
+                           entry="initial", seed=record(rains=relation(rain("ember", 0, "seed"))))
+        self.assertEqual(r["status"], "created", r)
+        outcome = lambda r: (r["status"], r["receipt"]["outcome"].get("clause"))
+        self.assertEqual(outcome(self.edit("insert", rain("ann", 1, "a"), who="ann", name="l")), ("admitted", None))
+        self.assertEqual(outcome(self.edit("upsert", rain("ann", 1, "b"), who="ann", name="l")), ("refused", "grow"))
+        self.assertEqual(outcome(self.edit("retract", record(author=label("ann"), at=nat(1)), who="ann", name="l")),
+                         ("refused", "grow"))
+        self.assertEqual(outcome(self.edit("insert", rain("kim", 2, "k"), who="bob", name="l")), ("refused", "small"))
+        self.assertEqual(self.rows("l"), [("ember", 0, "seed"), ("ann", 1, "a")])
+
 
 if __name__ == "__main__":
     unittest.main()

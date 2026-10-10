@@ -348,7 +348,7 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   let initial ← (initialState built).mapError (("compile", ·))
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
   let state := withOwner state seed principal
-  let (relations, state) ← (relationsFor w inputs built state).mapError fun e =>
+  let (relations, state) ← (relationsFor built state).mapError fun e =>
     (if e.startsWith "duplicateKey" then "duplicateKey" else "key", e)
   let lawText := if lawArg.startsWith "law " then some lawArg else none
   let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
