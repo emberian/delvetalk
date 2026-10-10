@@ -253,7 +253,9 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    and no law (WHOLENESS §5): who may call which method is the authority model as built (`write`
    self-only, `create` under the creator's rules, grants, read policy). The id `world` is reserved
    (`worldId`, `validObjectId`). A message suspension's checkpoint (two-token site prefix) goes through
-   the block scheme like any other. Test: `tests/test_world_object.py`.
+   the block scheme like any other. `viewField {object, field}` (RELATIONAL §6) answers `viewed {version,
+   state}` with one field when its value conforms to the call site's type (`typeMismatch` otherwise,
+   `field` for a missing field); read authority and root as `view`. Test: `tests/test_world_object.py`.
 
 ## 6. Gotchas
 

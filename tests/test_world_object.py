@@ -20,7 +20,7 @@ WORLD_PLUS = WORLD.replace("protocol world:", """sum Awaited:
   unknown: {}
   timedOut: {}
   broken: {}
-protocol world:""") + "  await({slot: Plans.Slot, patience: Nat}) -> Awaited\n  teleport({to: String}) -> Written\n"
+protocol world:""") + "  await({slot: Plans.Slot, patience: Nat}) -> Awaited\n  viewField<S>({object: Plans.Reference, field: String}) -> Viewed<S>\n  teleport({to: String}) -> Written\n"
 
 THING = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -59,6 +59,16 @@ def later(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:
       let written(_) = write {count: add 100n}
       1n
     case _: 0n
+def field(state: State, input: {other: String, field: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Nat>({object: {world: "", object: input.other}, field: input.field}):
+    case viewed(v): v.state
+    case refused(r): if r.clause == "field" then 777777n else 666666n
+    case _: 0n
+def fieldText(state: State, input: {other: String}, context: Abi.Context) -> Activity<String>:
+  match world.viewField::<String>({object: {world: "", object: input.other}, field: "count"}):
+    case viewed(v): v.state
+    case refused(r): r.clause
+    case _: ""
 def away(state: State, input: {}, context: Abi.Context) -> Activity<String>:
   match world.teleport({to: "moon"}):
     case written(_): "went"
@@ -108,6 +118,15 @@ class WorldObject(Reflection):
         self.assertEqual(self.count("a"), nat(100))
         self.reopen()
         self.assertEqual(self.count("a"), nat(100))
+
+    def test_view_field_answers_one_field_at_the_readers_type(self):
+        self.thing("a")
+        self.thing("b", 9)
+        r = self.turn("a", "field", record(other=label("b"), field=label("count")))
+        self.assertEqual(r["result"], nat(9), r)
+        self.assertIn({"object": "b", "version": 0}, r["receipt"]["roots"])
+        self.assertEqual(self.turn("a", "field", record(other=label("b"), field=label("nope")))["result"], nat(777777))
+        self.assertEqual(self.turn("a", "fieldText", record(other=label("b")))["result"], label("typeMismatch"))
 
     def test_a_method_the_world_has_not_is_refused_by_name(self):
         self.thing("a")
