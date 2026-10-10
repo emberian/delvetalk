@@ -13,9 +13,9 @@ BARE No delvetalk line, first name: value line names an action or field of this 
 form's spell (rain: a drizzle). A line named as the action fills the first open text field (plant: a
 fern -> seed).
 ? delvetalk CARD ? -> the card's spells, blanks shown; nothing journaled.
-FIT Message-dialect cards fit the method's input type, not the form block: text 0-1400; natural in
-plain digits, no leading 0, <= 10^9; choice = a case name of an empty-case sum. A card not yet
-migrated fits its forms() and answers "refused spell: <reason>" on its card.
+FIT A field is judged by the card's form (forms()), else the method's input type: text 0-1400;
+natural in plain digits, no leading 0, <= 10^9; choice = a case name of an empty-case sum; source =
+Bend up to 16 KiB, a <<BEND block or the reply's ```obend fence.
 MISSING fields: no refusal; receive gets the bare lines as fields. Completion is the card's policy:
 Garden holds your spell; colour: silver completes it.
 TARGET A spell naming another card moves the turn there (same principal, identity, post).

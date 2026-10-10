@@ -2,6 +2,64 @@
 
 `world/` at foundation 8a4b141, before the Wholeness object migration (objects7) lands. Ranked by harm. Each item: where, smell, smallest fix. Items the migration erases are listed at the end and not counted. Verified on hbox with the foundation binary: items 1, 3 and 10.
 
+## Status after the review lane (lane/review, 2026-10-10)
+
+The findings below are as written at 8a4b141; this section says what became of each. `world/` was
+5,987 lines at foundation 79e91f0 and is 5,505 after the lane (objects 3,941 to 3,554, libraries
+2,046 to 1,951). Commits are named by group (A to P) on lane/review.
+
+**Landed in world/.**
+- 2 Cards by characters: `Card.clipped` keeps at most 1,200 characters (`Card.budget`; A), and
+  `Card.clippedWithin` what a long head leaves (the Policy, I); Spween refuses a passage over 600 (B).
+- 3, object side: the Workshop's `check`/`propose` take `source` fields (`Form.Kind.source`, a
+  `form` block line since kernel8; 44c3d14, L); the Anthology's `admit {number}` already agreed.
+- 4 The Seed ritual is gone; `initial()` is the State (O). Only the Appointment keeps the `Seed` its
+  book types.
+- 5 Every hand-written `Edits`/`keep()` is gone now that the kernel derives them (kernel9; O), except
+  Bell, Appointment and Seat, which leave out fields that never change and have no law to say so
+  (Bell and Appointment are imported by their creators, so they cannot carry one). Lawful objects
+  whose fields were read-only by omission say it in law: Scene and Table `law fixed`, Tide `law gap`.
+  The Appointment's action `keep` is `wait`, so the name no longer shadows `keep()` (N).
+- 6 One `refusal(w) -> Card.Refusal` match: Deal (D), Garden (E), Wake (G), Policy (I), Tide (J).
+- 7 Clauses on every refusal: Directory (C), Env (G), Workshop, whose successes are their own cases
+  (L), Seats, Table, Appointment (N).
+- 9 Policy's law no longer admits a `describe` it lacks (I); the Cistern's blurb says it keeps the
+  newest first (E). Deal's and Thing's readings were fixed by the migration.
+- 10 The Directory's Bend 4,096 check is gone: the host counts a retention-dropped row as kept
+  (5.74; 44c3d14). `insertedOnly` went with the deletion pass.
+- 11 The Wake's Bend `law` is gone (G).
+- 12 Bounded relations: Scene `left` {at, who} 64 (B), Cistern `entries` 256 (E), Door `knocks` 64
+  (F), Workshop `held` 16 (L); Avatar's inbox was migrated.
+- 13 The Directory learns its doors in one pass a turn; `words`/`fields` and their law terms are gone (C).
+- 14 `world/lib/Text.obend` (A), with Spween (B), Directory (C), Wake (G), Tide's `%` (J), Anthology's
+  `Lists.at` (K) and the Workshop's `cat` (L); the Workshop's fence reading is the host's (44c3d14).
+- 15 `Rows.Presence` keyed {who} for Scene (B) and Commons (M).
+- 16 Garden's duplicate `publish` is gone beside `publishPage` (E); the host publishes the default page.
+- 19 The Cistern declares its relation (E); no empty `relations()` remains.
+- 21 A sensed row is the event extended with its `n` (G).
+- 22 Dead code: Document's seven unused variants and `Capture`, `Encounter.obend`, `Phrasebook.obend`,
+  Abi's three records, Card's door forms (A).
+- 23 Stale FOUNDATION citations (A), the 24 render comments (O), and the State-first comments.
+- 24 Scene ops are `sum Op` and `sum Test` (B).
+- 25 One constant per cap: Garden `pendingMax` (E), Tide `subsMax` (J), Commons `presenceMax` and
+  `namesMax` (M).
+- Also: `Interpreted.denied` (host's empty payload) is refused `policy` by Garden and Directory;
+  VOICE.md's card texts and six readings (P).
+
+**Landed in another lane.** 1 (declared methods, host10 5.62), 3 (bounds from the form, host10 5.69),
+5 (derivation, kernel9), 8 (readings in `Verdict.refused`, host 5.67), 16 (default page, host10
+5.68), 17 (gone with the migration), 18 (PLAY is not a door), 19 (relations read from the artifact,
+host11), 20 (Place's law through `Places.obend`, objects9).
+
+**Dropped.** 15 for Place: its `present` relation holds the avatars standing in it (references), not
+principals at named spots, so it is not the Presence relation. 21's "give `Event` an `n`": the
+transport publishes Events without one, so the row type stays the event plus `n`. 5's last step (the
+three hand-written pairs) waits on a way to say "never changes" without a law.
+
+**Open.** Kernel9's second commit (forms derived from `form` blocks) will let every hand-written
+`forms()` go. Bell's `colour`, `seed` and planting, the Appointment's topic and target, and a Seat's
+table and players are kept by their hand-written Edits alone.
+
 ## Findings
 
 1. **Every def whose first parameter is the State is a public method** (convention; Package.lean:134, TurnLoop.lean:615 compiles any such def by name). A stranger declared South the winner with `Table.played` (Table.obend:56), reset a seat with `Seat.nextRound` (Seat.obend:74, skipping `next`'s table check), and kept an appointment early with `Appointment.due` (Appointment.obend:49). `Thing.carried` (Thing.obend:138) hands an unheld thing to any `by`; the law admits a pickup from nobody. Usage cards offer `render` and `publishPage` as spells. Fix: the host runs only declared methods (`def methods()`, or the `form` names plus `receive`/`changed`). objects7's "State second" convention fixes only the files it touches. The migration makes this worse: methodForms turns every such def into a spell.

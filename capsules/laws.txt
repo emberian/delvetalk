@@ -20,10 +20,9 @@ kind test, anyone's reprogram or amend passes.
 PREDICATE (optional second tier): def law(old: State, new: State, request: Abi.Request) ->
 Abi.Verdict. It is pure, gets 100,000 ticks, and runs after the text admits a kind-0 write. Request
 {context, method, argument: Data, kind, pin, reads}, where reads = [{object, version, state: Data}]
-for the ids def lawReads() names. Verdict admitted {} | refused {clause}; that clause has no
-reading.
-TRAP: insertOnly on a relation with a limit refuses every insert past the limit (the host drops a
-row).
+for the ids def lawReads() names. Verdict admitted {} | refused {clause, reading}; the reading is the
+refusal's reason.
+insertOnly counts a row the relation's limit dropped as kept.
 CLASSES: transient, identity free, retry: staleRoot budget evaluation capacity. Binding: lawRefused
 typeMismatch outOfRange absentItem unknownObject duplicateIdentity programRefused requiredAbsence
 budgetExhausted keyTaken duplicateKey badSpell.

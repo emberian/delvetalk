@@ -2,7 +2,7 @@ RELATIONS (world/lib/Relation.obend, import as Relations): keyed record sets the
 canonical.
 TYPE sum Relation<T>: rows {items: List<T>}. T is a closed first-order record, so principals are
 rows Greeting {principal}. Relations.empty(); wire: variant rows {items}.
-DECL def relations() -> Relations.Decls: [{field, key: List<String>, limit}]. limit 0 = 4,096; past
+DECL def relations() -> Relations.Decls: [{field, key: Text.words("a b"), limit}]. limit 0 = 4,096; past
 it the host drops the first rows in key order. A key column T lacks, or one key twice, is refused at
 create. Unbounded = child objects (anthology/page/n).
 EDITS, one per field per write: write {f: insert row | upsert row | retract key}, key = the key
@@ -20,12 +20,9 @@ QUERIES (pure): rows count exists where project lookup(rel, key, keyOf) order(re
 by)->Group{key, rows} fromList(items, keyOf) compare(0<,1=,2>), joinOn(l, r, lk, rk) over sides
 already in join-key order (~400 ticks a row: join dozens). insert/upsert/retract(rel, row|key,
 keyOf) mirror the host so a card shows its own write.
-TRAP: importing a module with relations() obliges your own (Relations.Decls.nil({}) for none), else
-create fails "missing selected entry".
 RETRACT leaves no tombstone; laws cannot see it. What must outlive retraction is a second,
 never-retracted relation under insertOnly(F).
 READ another's: world.viewField::<Relations.Relation<Row>>({object, field}); a field root: writes to
 other fields do not stale you.
 REFUSALS. keyTaken: another row holds the key; upsert, or add an ordinal. staleRoot on
-upsert/retract: the row moved; resend. lawRefused under insertOnly: you retracted, or the limit
-dropped a row.
+upsert/retract: the row moved; resend. lawRefused under insertOnly: you retracted a row.
