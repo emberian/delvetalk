@@ -126,7 +126,7 @@ sum Plan:
 sum Reply:
   back: Doc.Document
 def show(label: String) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.offer(Doc.concat(Doc.text(label), Doc.quote("a", Doc.text("b"))))):
+  match perform(Plan.offer(Doc.concat(Doc.text(label), Doc.concat(Doc.text("a"), Doc.text("b"))))):
     case back(d): Doc.size(d)
 """
 

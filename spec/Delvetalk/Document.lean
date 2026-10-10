@@ -55,18 +55,6 @@ partial def walk (depth : Nat) (document : Data) : W Unit := do
   | "sequence" =>
     let some items := f.lookup "items" | malformed "sequence without items"
     walkItems depth items
-  | "quote" =>
-    emit (← textField f "attribution"); emit ": "
-    let some body := f.lookup "body" | malformed "quote without body"
-    walk (depth + 1) body
-  | "reference" => emit (← textField f "label")
-  | "offer" => emit (← textField f "label")
-  | "fields" => pure ()
-  | "source" => emit (← textField f "code")
-  | "result" =>
-    let some body := f.lookup "body" | malformed "result without body"
-    walk (depth + 1) body
-  | "continuation" => emit (← textField f "label")
   | other => malformed s!"unknown document form {other}"
 
 partial def walkItems (depth : Nat) (items : Data) : W Unit := do
