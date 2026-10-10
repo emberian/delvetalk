@@ -124,30 +124,6 @@ class Extend(Reflection):
         self.assertEqual(self.turn("c", "bump")["status"], "admitted")
         self.assertEqual(self.count(), "23")
 
-    def test_a_snapshot_holding_a_layer_of_the_older_form_still_runs(self):
-        # Before the layer line, the host inserted `import ./Main.obend as Super` after `edition`;
-        # a snapshot written then holds that source, and loading gives it the line.
-        from tests.test_snapshot import read_snapshot, write_snapshot
-        self.assertEqual(self.extend(LAYER)["status"], "admitted")
-        height = self.host.send(op="world-snapshot")["height"]
-        path = self.path + f".snapshot.{height}.cbor"
-        body = read_snapshot(path)
-        [obj] = [o for o in body["objects"] if o["id"] == "c"]
-        [layer] = [m for m in obj["compile"]["modules"] if m["name"] == "Layer1"]
-        below = obj["compile"]["modules"][-2]["name"]
-        first, rest = layer["source"].split("\n", 1)
-        self.assertEqual(first, f"layer over ./{below}.obend")
-        edition, more = rest.split("\n", 1)
-        layer["source"] = f"{edition}\nimport ./{below}.obend as Super\n{more}"
-        write_snapshot(path, body)
-        self.release()
-        self.host = self.spawn()
-        opened = self.host.send(op="world-open", path=self.path)
-        self.assertEqual(opened["snapshot"]["resumed"], height, opened)
-        self.assertEqual(self.turn("c", "bump")["status"], "admitted")
-        self.assertEqual(self.turn("c", "peek")["status"], "admitted")
-        self.assertEqual(self.count(), "10")
-
     def test_the_extend_plan_grafts_a_layer_from_another_object(self):
         self.make("forge", FORGE, record(note=label("")))
         r = self.turn("forge", "graft", record(target=label("c"), package=label(LAYER)))

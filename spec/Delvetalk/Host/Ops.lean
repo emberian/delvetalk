@@ -68,14 +68,13 @@ def readerOf (j : Json) : Except String String := do
   return if p == publicReader then "" else p
 
 /-- One field's edit, in the wire shape of `world/lib/Plan.obend`:
-    `keep {}`, `set {value}`, `add {delta}`, `append {item}`, `amend {index, change}`. -/
+    `keep {}`, `set {value}`, `add {delta}`, `append {item}`, `amendItem {item, change}`,
+    `removeItem {item}`, and a relation's `insert`, `upsert`, `retract`. -/
 inductive EditKind where
   | keep
   | set (value : Data)
   | add (delta : Nat)
   | append (item : Data)
-  | amend (index : Nat) (change : Data)
-  | remove (index : Nat)
   /-- The first item whose canonical bytes are `item`'s, replaced by `change` or removed. The
       label is the constructor the object used (`amendItem`/`removeItem` in Plan.obend, or
       `amend`/`remove` with an `item` payload), kept so the journal records what was written. -/
@@ -101,8 +100,6 @@ def EditKind.data : EditKind → Data
   | .set v => .variant "set" (.record [("value", v)])
   | .add n => .variant "add" (.record [("delta", .natural n)])
   | .append v => .variant "append" (.record [("item", v)])
-  | .amend i v => .variant "amend" (.record [("index", .natural i), ("change", v)])
-  | .remove i => .variant "remove" (.record [("index", .natural i)])
   | .amendBy l item c => .variant l (.record [("item", item), ("change", c)])
   | .removeBy l item => .variant l (.record [("item", item)])
   | .insert row => .variant "insert" (.record [("row", row)])
@@ -126,14 +123,10 @@ def parseKind : Data → Option EditKind
       | some (.natural n) => some (.add n)
       | _ => none
   | .variant "append" (.record f) => (f.lookup "item").map .append
-  | .variant "remove" (.record f) => match f.lookup "index", f.lookup "item" with
-      | some (.natural i), none => some (.remove i)
-      | none, some item => some (.removeBy "remove" item)
+  | .variant "remove" (.record f) => (f.lookup "item").map (.removeBy "remove")
+  | .variant "amend" (.record f) => match f.lookup "item", f.lookup "change" with
+      | some item, some c => some (.amendBy "amend" item c)
       | _, _ => none
-  | .variant "amend" (.record f) => match f.lookup "index", f.lookup "item", f.lookup "change" with
-      | some (.natural i), none, some c => some (.amend i c)
-      | none, some item, some c => some (.amendBy "amend" item c)
-      | _, _, _ => none
   | .variant "removeItem" (.record f) => (f.lookup "item").map (.removeBy "removeItem")
   | .variant "insert" (.record f) => (f.lookup "row").map .insert
   | .variant "upsert" (.record f) => (f.lookup "row").map .upsert
@@ -394,9 +387,9 @@ def Proposal.digest (p : Proposal) : String :=
 
 /-- The closed set of refusal classes. -/
 def refusalClasses : List String :=
-  ["staleRoot", "typeMismatch", "capacity", "outOfRange", "absentItem", "lawRefused", "unknownObject",
+  ["staleRoot", "typeMismatch", "capacity", "absentItem", "lawRefused", "unknownObject",
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
-   "keyTaken", "duplicateKey", "badSpell"]
+   "keyTaken", "duplicateKey", "badSpell", "quota"]
 
 structure Refusal where
   cls : String
@@ -411,12 +404,14 @@ structure Refusal where
   root : Option String := none
   /-- For `badSpell`: the spell the reply meant, its blanks shown, to resend. -/
   hint : Option String := none
+  /-- For `quota`: the clock at which the principal may try again. -/
+  next : Option Nat := none
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
 
 /-- Why an edit does not apply: `typeMismatch` (the field or value is not of the kind the
-    edit needs) or `outOfRange` (an index at or past the end of the list). -/
+    edit needs), `absentItem`, `keyTaken`, `duplicateKey`. -/
 abbrev EditResult := Except String
 
 /-- A `List<T>` on the wire is `nil {} | cons {head, tail}`. -/
@@ -426,25 +421,6 @@ partial def appendItem (item : Data) : Data → EditResult Data
     let some head := f.lookup "head" | throw "typeMismatch"
     let some tail := f.lookup "tail" | throw "typeMismatch"
     pure (.variant "cons" (.record [("head", head), ("tail", ← appendItem item tail)]))
-  | _ => throw "typeMismatch"
-
-partial def amendItem (index : Nat) (change : Data) : Data → EditResult Data
-  | .variant "nil" _ => throw "outOfRange"
-  | .variant "cons" (.record f) => do
-    let some head := f.lookup "head" | throw "typeMismatch"
-    let some tail := f.lookup "tail" | throw "typeMismatch"
-    if index == 0 then pure (.variant "cons" (.record [("head", change), ("tail", tail)]))
-    else pure (.variant "cons" (.record [("head", head), ("tail", ← amendItem (index - 1) change tail)]))
-  | _ => throw "typeMismatch"
-
-/-- Delete the element at `index`. -/
-partial def removeItem (index : Nat) : Data → EditResult Data
-  | .variant "nil" _ => throw "outOfRange"
-  | .variant "cons" (.record f) => do
-    let some head := f.lookup "head" | throw "typeMismatch"
-    let some tail := f.lookup "tail" | throw "typeMismatch"
-    if index == 0 then pure tail
-    else pure (.variant "cons" (.record [("head", head), ("tail", ← removeItem (index - 1) tail)]))
   | _ => throw "typeMismatch"
 
 /-- Replace (`some change`) or remove (`none`) the first item whose canonical bytes are `item`'s;
@@ -566,8 +542,6 @@ def applyStep (decls : List RelDecl) (fields : List (String × Data)) (step : St
         | .natural m => put (.natural (m + n))
         | _ => throw "typeMismatch"
     | .append item => put (← appendItem item old)
-    | .amend i c => put (← amendItem i c old)
-    | .remove i => put (← removeItem i old)
     | .amendBy _ item c => put (← editByItem item (some c) old)
     | .removeBy _ item => put (← editByItem item none old)
     | .insert _ | .upsert _ | .retract _ => match decl with
@@ -866,30 +840,12 @@ over the object's current modules. The host writes `layer over ./<entry>.obend` 
 first line (unless the author did), which imports the module below as `Super` and tells the
 kernel the modules are a layer stack: every method of the stack is resolved with late binding (a
 method below that calls an overridden one reaches the override) and the artifact's method table
-lists the whole stack, top first. `inputs.layers` counts the layers. Layers built before (the
-host inserted `import ./<entry>.obend as Super` after the `edition` line, held only by snapshots
-written then; replay re-derives the new form from the journaled source) are given the line on
-load (`stackForm`). -/
+lists the whole stack, top first. `inputs.layers` counts the layers. -/
 
 def layersOf (inputs : Json) : Nat := (inputs.getObjValAs? Nat "layers").toOption.getD 0
 
 /-- The line that makes a module a layer over the module below. -/
 def layerLine (below : String) : String := s!"layer over ./{below}.obend"
-
-/-- Layered inputs with every layer opening with its `layer over` line: a layer built before (its
-    `Super` import inserted after `edition`, held only by snapshots written then) gets the line, which
-    imports the same `Super`, so the kernel resolves the whole stack. Other inputs are as given. -/
-def stackForm (inputs : Json) : Json := Id.run do
-  let n := layersOf inputs
-  let some (.arr ms) := (inputs.getObjVal? "modules").toOption | return inputs
-  if n == 0 || n ≥ ms.size then return inputs
-  let mut out := ms
-  for k in [ms.size - n : ms.size] do
-    let below := ((ms[k - 1]!.getObjValAs? String "name").toOption).getD ""
-    let src := (ms[k]!.getObjValAs? String "source").toOption.getD ""
-    unless src.startsWith "layer over " do
-      out := out.set! k (ms[k]!.setObjVal! "source" (toJson (layerLine below ++ "\n" ++ src)))
-  return inputs.setObjVal! "modules" (.arr out)
 
 /-- The inputs with `source` as one more layer over the current entry module. -/
 def extendInputs (inputs : Json) (source : String) : Except String Json := do
@@ -980,6 +936,41 @@ partial def variantCases (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.O
   | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (variantCases bounds (fuel - 1))
   | .variant r => recordFieldTypes bounds (bounds.length + 1) r
   | _ => none
+
+/-- A value from outside with its text words read as cases (HOST-HANDOFF 5.52): where `ty` has a closed
+    sum whose every case has an empty payload and the value is a text, the text is the case of that
+    name; through records, list items and the payloads of the sums the value names. A text naming no
+    case is `(path, word, cases)`, `path` the field path (`bed.colours[1]`, "" for the whole value). Any other value
+    is left as it is, for the conformance check to judge. -/
+partial def wordsAsCases (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) (d : Data)
+    (path : String := "") : Except (String × String × List String) Data :=
+  let fuel := bounds.length + 1
+  match d with
+  | .label word =>
+    match variantCases bounds fuel ty with
+    | some cases@(_ :: _) =>
+      if !cases.all fun (_, p) => match recordFieldTypes bounds fuel p with | some [] => true | _ => false then pure d
+      else if cases.any (·.1 == word) then pure (.variant word (.record []))
+      else throw (path, word, cases.map (·.1))
+    | _ => pure d
+  | .record fs =>
+    match recordFieldTypes bounds fuel ty with
+    | some tys => .record <$> fs.mapM fun (n, v) => match tys.lookup n with
+      | some t => (n, ·) <$> wordsAsCases bounds t v (if path.isEmpty then n else s!"{path}.{n}")
+      | none => pure (n, v)
+    | none => pure d
+  | .variant l p =>
+    let item := do
+      let cons ← (variantCases bounds fuel ty).bind (·.lookup "cons")
+      (← recordFieldTypes bounds fuel cons).lookup "head"
+    match Minidregg.Compiler.ObjectiveBendDataWire.listItems? d, item with
+    | some items, some t =>
+      Minidregg.Compiler.ObjectiveBendDataWire.listData <$> (items.zipIdx.mapM fun (v, i) => wordsAsCases bounds t v s!"{path}[{i}]")
+    | _, _ =>
+      match (variantCases bounds fuel ty).bind (·.lookup l) with
+      | some t => .variant l <$> wordsAsCases bounds t p path
+      | none => pure d
+  | _ => pure d
 
 /-- The columns of a relation field's rows, read from the state type: `rows {items: List<T>}` with `T` a record. -/
 def rowColumns (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBendTypes.Ty) (field : String) : Option (List String) := do
@@ -1181,17 +1172,12 @@ def compactInterpretation (i : Json) : Json × Array (Array Json) :=
     (Json.mkObj (rest ++ [("offersBlock", toJson (blockCid offers))]), #[#[offers]])
   | .error _ => (i, #[])
 
-/-- An interpretation with its `offers` restored from the world's blocks (and its `utterance`, which
-    host7 builds before 6b928f6 also journaled as a block); one journaled whole is as it was. -/
+/-- An interpretation with its `offers` restored from the world's blocks. -/
 def expandInterpretation (w : World) (i : Json) : Option Json := do
   let some cid := (i.getObjValAs? String "offersBlock").toOption | return i
   let offers ← (w.blocks[cid]?).bind (·[0]?)
-  let utterance ← match (i.getObjValAs? String "utteranceBlock").toOption with
-    | some u => ((w.blocks[u]?).bind (·[0]?)).bind fun b => (b.getObjValAs? String "s").toOption
-    | none => (i.getObjValAs? String "utterance").toOption
-  let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) =>
-    k != "offersBlock" && k != "utteranceBlock" && k != "utterance"
-  return Json.mkObj (rest ++ [("offers", offers), ("utterance", toJson utterance)])
+  let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) => k != "offersBlock"
+  return Json.mkObj (rest ++ [("offers", offers)])
 
 /-- The blocks an entry carries, checked against their CIDs. -/
 def entryBlocks (entry : Json) : Except String (List (String × Array Json)) := do
@@ -1214,10 +1200,6 @@ partial def expandCheckpoint (w : World) (checkpoint : Json) : Except String Jso
       out := out ++ items
     expand (depth - 1) out
   let tokens ← expand (← tree.getObjValAs? Nat "depth") (← (← tree.getObjVal? "roots").getArr?)
-  -- Host7 builds between foundation 0b3363c and 6b928f6 journaled v1 tokens with relative addresses; that
-  -- form is gone (v2 checkpoints and the kernel's canonical cell order do its work).
-  if (tree.getObjValAs? Bool "relative").toOption == some true then
-    throw "a checkpoint with relative addresses (a host7 build before 6b928f6) is no longer read"
   let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokenTree")
   return Json.mkObj (fields ++ [("tokens", Json.arr tokens)])
 
@@ -1247,13 +1229,6 @@ def expandInputs (w : World) (inputs : Json) : Except String Json := do
   | .ok cid, .ok fields =>
     return Json.mkObj ((fields.toList.filter fun (kv : String × Json) => kv.1 != "sourceCid") ++ [("source", toJson (← resolve cid))])
   | _, _ => return inputs
-
-/-- A record without its `compiled` observation (journaled before host7's hash pass, ignored), for
-    replay's comparisons. -/
-def withoutCompiled (j : Json) : Json :=
-  match j.getObj? with
-  | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "compiled"))
-  | .error _ => j
 
 /-- Count `o` in `world-status.recompiledDifferently` when a snapshot this process resumed from
     cached another packet digest for the same compile inputs; nothing is journaled to compare with. -/
@@ -1465,8 +1440,8 @@ def arrowDomains : Nat → Minidregg.Theory.ObjectiveBendTypes.Ty → List Minid
     the host appends the Context the binding (`object`, `principal`, `intent`, the entry's name as
     the command) implies, fitted to the entry's own Context type, as a world turn builds it
     (`inputOrigin.kind` "repl"; `handle`, `height` and `clock` from the world this process has open,
-    else "" and 0). A request that already carries the Context (one argument more) is as sent;
-    that form is accepted for one release. -/
+    else "" and 0). A request that already carries the Context (one argument more) is as sent:
+    a REPL turn may name its own Context. -/
 def withBindingContext (world : Option World) (entry : Delvetalk.CheckedEntry) (request : Json) : Except String Json := do
   let arguments ← (← request.getObjVal? "arguments").getArr?
   let domains := arrowDomains Delvetalk.Bounds.entryArrowDepth entry.type
@@ -1750,7 +1725,7 @@ def tagOf (entry : Json) : String :=
     failed, a capacity was full (pending activities and interpretations drain; a capacity
     that never drains refuses the retry again). They are journaled but do not bind the
     identity's outcome. -/
-def transientClasses : List String := ["staleRoot", "budget", "evaluation", "capacity"]
+def transientClasses : List String := ["staleRoot", "budget", "evaluation", "capacity", "quota"]
 
 def isTransient (entry : Json) : Bool :=
   tagOf entry == "refused" &&
@@ -1773,10 +1748,11 @@ def subscriptionsAfter (w : World) (entry : Json) : Std.HashMap String (Array Su
   else if (outcome.getObjValAs? String "clause").toOption == some "denied" then
     let id := (entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption
     if let some d := w.pending.find? fun p => (p.getObjValAs? String "id").toOption == id then
-      if (d.getObjValAs? String "method").toOption == some "changed" then
+      if (d.getObjVal? "field").toOption.isSome then
         if let (.ok to, .ok principal, .ok object, .ok field) :=
             (d.getObjValAs? String "to", d.getObjValAs? String "principal", d.getObjValAs? String "object", d.getObjValAs? String "field") then
-          subs := subs.insert object ((subs.getD object #[]).filter (· != ⟨to, principal, object, field⟩))
+          let x : Subscription := { subscriber := to, principal, object, field }
+          subs := subs.insert object ((subs.getD object #[]).filter fun y => !(y.sameAs x && y.principal == principal))
   return subs
 
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
@@ -1798,8 +1774,8 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
   let changed := if tagOf entry != "admitted" then #[] else
     (((entry.getObjVal? "changes").toOption.bind (·.getArr?.toOption)).getD #[]).map fun c =>
       let fields := c.getObj?.toOption.map (·.toList) |>.getD []
-      Json.mkObj ([("from", identity), ("method", toJson "changed"),
-        ("sender", (c.getObjVal? "object").toOption.getD Json.null)] ++ fields)
+      Json.mkObj ([("from", identity), ("method", toJson ((c.getObjValAs? String "method").toOption.getD "changed")),
+        ("sender", (c.getObjVal? "object").toOption.getD Json.null)] ++ fields.filter (·.1 != "method"))
   let sources := (entrySources entry).toOption.getD []
   -- Offers of an admitted entry are retained for their addressees.
   let offered := if tagOf entry != "admitted" then #[] else
@@ -1832,6 +1808,14 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
           | _, _ => w.handles
         | none => w.handles
       else w.handles
+    interpretsStarted := if tagOf entry != "suspended" then w.interpretsStarted else
+      match (entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "interpretation" |>.toOption),
+          (entry.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption) with
+      | some _, some p =>
+        let hour := w.clock / 60
+        let (h, n) := w.interpretsStarted.getD p (hour, 0)
+        w.interpretsStarted.insert p (hour, if h == hour then n + 1 else 1)
+      | _, _ => w.interpretsStarted
     clock := if tagOf entry == "advanced" then (entry.getObjVal? "outcome" |>.bind (·.getObjValAs? Nat "to")).toOption.getD w.clock else w.clock
     suspended := (match (entry.getObjValAs? String "resumes").toOption with
         | some h => w.suspended.filter fun s => (s.getObjValAs? String "hash").toOption != some h
@@ -1946,7 +1930,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.reason.map fun o => [("reason", toJson o)]).getD [] ++
         (r.expected.map fun e => [("expected", e)]).getD [] ++
         (r.root.map fun x => [("root", toJson x)]).getD [] ++
-        (r.hint.map fun x => [("hint", toJson x)]).getD [])
+        (r.hint.map fun x => [("hint", toJson x)]).getD [] ++
+        (r.next.map fun x => [("next", toJson x)]).getD [])
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>
@@ -2216,15 +2201,15 @@ The first open that names a clock principal or a posting quota journals a `setti
 after that both are fixed. `posted` entries record what transport published for an object,
 so a reply to that post can be routed back (`world-addressee`). -/
 
-def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener : Option String := none) :
-    Except String (World × Json) := do
-  if clock.isNone && quota.isNone && opener.isNone then return (w, Json.null)
+def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener : Option String := none)
+    (interpretQuota : Option Nat := none) : Except String (World × Json) := do
+  if clock.isNone && quota.isNone && opener.isNone && interpretQuota.isNone then return (w, Json.null)
   let clockP := clock.getD ""
   let openerP := opener.getD ""
   if w.settled then
     if (clock.isSome && clockP != w.clockPrincipal) || (quota.isSome && quota != some w.postQuota) ||
-        (opener.isSome && openerP != w.opener) then
-      throw s!"the journal records clock {w.clockPrincipal}, postQuota {w.postQuota} and opener {w.opener}; the settings differ"
+        (opener.isSome && openerP != w.opener) || (interpretQuota.isSome && interpretQuota != some w.interpretQuota) then
+      throw s!"the journal records clock {w.clockPrincipal}, postQuota {w.postQuota}, interpretQuota {w.interpretQuota} and opener {w.opener}; the settings differ"
     return (w, Json.null)
   if let some c := clock then discard <| boundedText "clock principal" Limits.maxPrincipalBytes c
   if let some o := opener then discard <| boundedText "opener" Limits.maxPrincipalBytes o
@@ -2232,8 +2217,10 @@ def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener 
   let intent := "settings"
   -- The opener is recorded only when named, so earlier settings entries keep their bytes.
   let fields := [("clock", toJson clockP), ("postQuota", toJson q)] ++
-    (if openerP.isEmpty then [] else [("opener", toJson openerP)])
-  let (w', entry) := push { w with clockPrincipal := clockP, postQuota := q, opener := openerP, settled := true }
+    (if openerP.isEmpty then [] else [("opener", toJson openerP)]) ++
+    ((interpretQuota.map fun n => [("interpretQuota", toJson n)]).getD [])
+  let (w', entry) := push { w with clockPrincipal := clockP, postQuota := q, opener := openerP, settled := true,
+                                   interpretQuota := interpretQuota.getD 48 }
     (identityKey "world" intent)
     [("identity", identityJson "world" intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson (Journal.bodyHash (Json.mkObj fields))),
@@ -2430,9 +2417,10 @@ def changesJson (w : World) (principal intent : String) (ledger : Ledger) (used 
       let (inserted, retracted) := fieldChange o.relations x.field (field before.state) (field o.state)
       let argument := Data.record [("object", .record [("world", .label ""), ("object", .label id)]),
         ("field", .label x.field), ("version", .natural o.version), ("inserted", inserted), ("retracted", retracted)]
-      changes := changes.push (Json.mkObj [("id", toJson (deliveryId principal intent (sent + changes.size))),
+      changes := changes.push (Json.mkObj ([("id", toJson (deliveryId principal intent (sent + changes.size))),
         ("to", toJson x.subscriber), ("object", toJson id), ("field", toJson x.field), ("version", toJson o.version),
-        ("principal", toJson x.principal), ("ledger", child), ("argument", dataJson argument)])
+        ("principal", toJson x.principal), ("ledger", child), ("argument", dataJson argument)] ++
+        (if x.method == "changed" then [] else [("method", toJson x.method)])))
   return (if changes.isEmpty then [] else [("changes", Json.arr changes)]) ++
     (if unserved.isEmpty then [] else [("unserved", Json.arr unserved)])
 
@@ -2545,6 +2533,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     if w.settled then throw "settings recorded twice"
     return record { w with clockPrincipal := ← outcome.getObjValAs? String "clock",
                            postQuota := ← natField outcome "postQuota", settled := true,
+                           interpretQuota := (outcome.getObjValAs? Nat "interpretQuota").toOption.getD 48,
                            opener := (outcome.getObjValAs? String "opener").toOption.getD "" } entry key []
   | "principal" =>
     discard <| outcome.getObjValAs? String "did"
@@ -2649,9 +2638,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     match judge w (w.height + 1) p with
     | .error r => throw s!"admitted entry would be refused ({r.cls})"
     | .ok judged =>
-      let strip := fun (l : List Json) => l.map withoutCompiled
-      unless strip judged.reprograms == strip recordedPrograms.toList && judged.amendments == recordedLaws.toList &&
-          strip judged.creates == strip recordedCreates.toList do
+      unless judged.reprograms == recordedPrograms.toList && judged.amendments == recordedLaws.toList &&
+          judged.creates == recordedCreates.toList do
         throw "recorded reprograms, amendments or creations do not replay"
       let w := (judged.updates.filter (fun (id, _) => judged.reprograms.any fun r =>
           (r.getObjValAs? String "object").toOption == some id) ++ judged.creations).foldl (fun w (_, o) => noteRecompiled w o) w
@@ -2732,7 +2720,17 @@ def objectsOp (w : World) (j : Json) : Except String Json := do
     | .ok _ => throw s!"{k} must be text"
     | .error _ => pure ""
   let (ids, more) := listIds w principal (← text "prefix") (← text "after")
-  return Json.mkObj [("status", toJson "listed"), ("ids", toJson ids), ("more", toJson more)]
+  let withMethods ← match j.getObjVal? "methods" with
+    | .ok (.bool b) => pure b
+    | .ok _ => throw "methods must be true or false"
+    | .error _ => pure false
+  let listed := [("status", toJson "listed"), ("ids", toJson ids), ("more", toJson more)]
+  if !withMethods then return Json.mkObj listed
+  -- The turnable method names (those that take a context) of each listed object.
+  let names := fun (o : Object) => ((o.methods.getArr?.toOption).getD #[]).toList.filterMap fun m =>
+    if (m.getObjValAs? Bool "context").toOption == some true then (m.getObjValAs? String "name").toOption else none
+  return Json.mkObj (listed ++ [("methods", Json.mkObj (ids.filterMap fun id =>
+    (w.objects[id]?).map fun o => (id, toJson (names o))))])
 
 def view (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
@@ -2859,6 +2857,8 @@ def publicRefusal (entry : Json) : Json :=
     -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
     else if cls == "badSpell" then
       [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
+    -- A quota: how many, and when the next may start; nothing about the turn.
+    else if cls == "quota" then ["reason", "next"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
     else if id != named then [("object", toJson named)] else []))
 
 /-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else

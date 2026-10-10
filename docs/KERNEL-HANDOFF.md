@@ -343,31 +343,60 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
-## 16. Queue for the successor (lane/kernel6, after foundation e9d8ca9)
+## 16. Queue for the successor (lane/kernel6 at 17338e6, after foundation 8a4b141)
 
-Done on lane/kernel6 (§17): Wholeness kernel day 1 (c6033f7), day 2 (9d65553), call sites
-cached per held entry (after foundation cdfa59a). Remaining,
-in order:
+Done on lane/kernel6: world calls day 1 and 2 and the per-entry site table (§17), in-process
+yields carrying the state and the token-direct checkpoint digest (§18). Remaining, in the
+coordinator's order; each its own commit, measured with `compile-profile replay` of a
+rehearsal capture (rebuild it: a wrapper `tee $CAP/$$.jsonl | delvetalk-obend` given to
+`rehearsal/rehearse.py --binary`; the 3.5 MB stream is the shared world host's).
 
-1. **Day 4 (after the objects lane has moved every object to `Activity<R>`):** refuse
-   `Activity<P, R, A>` and a sum Plan by name (`sourceType`'s three-argument case and
-   `Ty.isPlanUnder`'s variant case; the decided examples at Typing ~1545-1600 move to the
-   message form), delete the `$write` Plan branch (`writeLowered`), surface `perform`, the
-   typed-view rewrite (`typedViews`, `viewAs`) and `Package.methodTable`'s old rows, then
-   re-record the pins once with the relational re-record (WHOLENESS §4, RELATIONAL §9).
-2. **`textWords(s) -> List<String>`**, only if an object still needs it once the objects
-   lane uses `textHasAny` (no `world/` source does yet). Shape as the old §16 item 1: a
-   list-producing term form, which touches the machine, collector and checkpoint codecs,
-   now lane perf2's files; route through the root.
+1. **Rehearsal run 10 finding 1: checkpoint blocks do not deduplicate** (median suspension
+   46.4 KB, target run 8's 9.5 KB). Measured on lane/kernel6 at 8a4b141 (`rehearse.py` in a
+   private scratch, the journal's 56 suspensions, all the directory's `interpret`): v3 *is*
+   journaled (the report's "no v3" is wrong: the first token is
+   `dregg.objective-bend.checkpoint.v3`); a suspension is about 19K tokens, of which the
+   local string table is ~105, the environment table ~1,000 and the body ~17K (about 2,000
+   heap cells). Between consecutive suspensions about 10% of tokens change, but in ~600
+   scattered runs (SequenceMatcher), so most 32-256-token blocks change. The turn's
+   arguments are NOT the bulk: carrying them as a Data prefix and extending the dictionary
+   by their quoted terms (tried, not committed) made the state literal 386 tokens and moved
+   the median from 46.4 to 47.6 KB. What scatters the edits: the canonical order numbers the
+   yielded Plan's cells and the stack's per-turn values before and among the long-lived
+   ones, so relative offsets of edges that cross a per-turn region shift (e.g. every
+   `823, 778, 759 ...` becomes `503, 458, 439`, all by 320); the string table reorders when a
+   new DID or reply lands among the vocabulary. Next: number the long-lived region first and
+   per-turn regions last (the roots' order in `rootAddresses`/`orderRounds`, collector
+   files), measure the scatter again; and find why ~2,000 cells are live at an `interpret`
+   yield (environments capturing every let of `receive`?). The §15 state-by-reference design
+   removes only the argument literal, which is small here.
+2. **Checker quadratic** (PERF item 4, and the host's 57 ms insert into a 1,000-row relation,
+   75% in `CheckedEntry.apply`): `infer` builds `position ++ [i]` and every annotation lookup
+   walks a whole path (`AnnotationTree.lookup`, the packet's `HashMap (List Nat)`), so a
+   function `List Nat → Option LambdaAnnotation` cannot be made incremental: the fix is a
+   checker over an annotation cursor (a tree with O(1) child), `check` on a function kept as
+   the reference and the cursor version proved equal for `tree.lookup`; then the decided
+   examples stay functions. Measure 5,000 items at `Data` (4.4 s) and that insert.
+3. `relationsOf` once per package in the front-end cache (not per method compile).
+4. The artifact's `relations` entries gain `limit` and `retain` from the `Decl`.
+5. `write {f: remove i}` / `amend`: lower to `removeItem {item}` / `amendItem {item, change}`
+   and to `retract {key}` for a declared relation; an index refused by name with a hint
+   (Plan.obend lost the index forms at ffa3e85). Test in `test_sugar`.
+6. Day 4 when the objects lane reports (WHOLENESS §4 and the plan in the lane report):
+   refuse the old dialect, delete `$write`'s Plan branch, the typed-view rewrite, surface
+   `perform`, the dead JSON-argument path of `Elaborated.select` (`legacyArgument`, the
+   `argument-values.v1` envelope, `argumentCodec`: every lowering is `"definition"` with no
+   arguments), the checkpoint v1/v2 decoders and their round-trip theorems (with lane perf2),
+   `isPlanUnder`'s sum case; pins re-recorded once.
+7. `textWords`, only if an object asks.
 
-Contract notes. WHOLENESS §1 says the yield's site is "the annotation at the preorder index
-of the yielded perform (the index `Dictionary.ofProgram` assigns)": the dictionary indexes
-terms, not positions, and identical perform terms share an index, so a site is named by its
-plan term and an entry whose world calls build one message at two result types is refused
-(`refused (world-call-site)`). The old §16's route to the term at resume (keep the plan
-cell's origin in `settleCell`) is in DemandCollect, now lane perf2's; the site index rides
-as a checkpoint token prefix instead (§17). "No `Checkpoint` field changes" holds; the
-token stream of a message checkpoint gains two leading tokens.
+Host lane (not a kernel item, but blocked on): `drive` (TurnLoop.lean) takes a `Turn.Step`
+from `startEntryStep`, passes `suspension.checkpoint` only to the `await*`/`interpret`
+paths, resumes every other Plan with `Turn.resumeSuspended entry suspension binding
+response b`, and the journaled resume uses `resumeEntryStep`; the patch measured in §18 is
+seven one-line substitutions. The pins fixture at foundation records `Abi`, `Form`, `List`,
+`Policies` and `World` with no entries (recorded at cb6bd26 by the objects lane), so
+`test_artifact_pins` fails three shards at foundation until it is re-recorded.
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -419,3 +448,31 @@ token stream of a message checkpoint gains two leading tokens.
   Artifact (message activities only): `dialect: "message"`, `world` (methods the entry's
   sites name, first occurrence), `worldProtocol` (the World module's source SHA-256 hex).
   Tests: `tests/test_world_calls.py` `SiteTypes`.
+
+## 18. Turn performance (docs/PERF.md items, lane/kernel6)
+
+- In-process yields carry the state. `concludeStep` returns a `Step` whose yield holds a
+  `Suspension {pin, binding, dictionary, site, state}`: the state as the machine left it,
+  neither collected nor encoded. `Suspension.checkpoint` makes the `Checkpoint`
+  (`encodeStateV3` of `checkpoint state`, site prefix, digest) only when asked.
+  `resumeSuspended entry suspension binding value budgets` resumes it with the same
+  refusals as `resumeEntry` (activity shape, package, binding) and no encode, digest or
+  decode. Invariant, from theorems that exist: resuming `checkpoint state` (what
+  `resumeEntry` decodes, `stateV3_roundTrip`) decides the same verdict, spends the same ticks
+  and extracts the same Plan or result as resuming `state`, each under `limitsPast` of its own
+  heap (`checkpoint_resume_segment`). Runners: `startEntryStep`, `resumeEntryStep`,
+  `resumeSuspended` (Step), with `startEntry`/`resumeEntry` their `Step.outcome`. The host's
+  `drive` switches by taking a `Step`, passing `suspension.checkpoint` only to the `await*`
+  and `interpret` paths, and resuming every other Plan with `resumeSuspended` (the host
+  lane's change). Measured with that change applied on hbox (`compile-profile replay` of
+  the rehearsal stream, directory `receive`, 120 turns, `taskset -c 0-15`, load ~16): 5,102
+  to 5,505 ms before, 2,123 to 2,474 ms after (2.2 to 2.6x); the whole replay's user
+  instructions 322 G to 160 G; ticks identical (12,489,187).
+- The checkpoint digest without `Json`. `checkpointPreimage` writes the canonical CBOR of
+  `{packetSha256, object, principal, intent, rootsDigest, tokens}` straight from the tokens
+  (`writeToken`: v1 one-key maps, else naturals, texts and negative string references), the
+  bytes `encodeJson` wrote for the `tokensJson` map; `checkpointDigestJson` keeps the old
+  definition and a `#guard` compares them over v1, v3 and site-prefixed tokens, a natural
+  past 2^64, every CBOR head width and non-ASCII text. Not a theorem: `writeJson` is
+  `partial`. Measured as above with the host unchanged: whole replay 322 G to 286 G user
+  instructions; directory `receive` 5.9-6.3 s to 4.9-5.1 s.

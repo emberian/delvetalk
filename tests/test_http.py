@@ -655,7 +655,6 @@ class Play(FrontCase):
         self.assertIn(b'suspended at height', page)
         self.assertIn(b'no reply', page)
 
-    @unittest.expectedFailure  # until the host lane's interpretQuota (48 an hour per principal) lands
     def test_the_49th_prose_reply_in_an_hour_is_refused_by_quota_with_its_next_at(self):
         self.front.sleep = lambda seconds: None
         for i in range(48):

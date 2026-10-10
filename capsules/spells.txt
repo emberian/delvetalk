@@ -1,0 +1,32 @@
+SPELLS as the host reads them (Host/Spell.lean = Spell.obend; op spell-parse {text, form?} shows a
+parse).
+LINE delvetalk CARD ACTION. CARD [a-z0-9:/.-]{1,160}; ACTION [a-z0-9-]+ or ?. env, wake = your
+env/<did>, wake/<did>.
+WHICH The LAST unquoted delvetalk line. Indented 4+ or a tab = quoted, used only if no other. > and
+fence lines are never spell lines; ```info hides its block; a bare ``` line is skipped, its contents
+read.
+FIELDS On the line: / name: v / name: v, or name: v, name: v (a / or , splits only before name:).
+Then name: value lines, value trimmed. Blank, #, > and fence lines skipped; --- ends fields; a
+non-field line ends them (a later spell line takes over).
+BLOCK name: <<DELIM ... a line exactly DELIM. DELIM 1-32 of [A-Z0-9_]; lines joined by newline.
+BARE No delvetalk line, first name: value line names an action or field of this card's forms: that
+form's spell (rain: a drizzle). A line named as the action fills the first open text field (plant: a
+fern -> seed).
+? delvetalk CARD ? -> the usage card, nothing journaled.
+FIT Message-dialect cards fit the method's input type, not the form block: text 0-1400; natural in
+plain digits, no leading 0, <= 10^9; choice = a case name of an empty-case sum. A card not yet
+migrated fits its forms() and answers "refused spell: <reason>" on its card.
+MISSING fields: no refusal; receive gets the bare lines as fields. Completion is the card's policy:
+Garden holds your spell; colour: silver completes it.
+TARGET A spell naming another card moves the turn there (same principal, identity, post).
+YES/NO A card holding your proposal reads a bare reply first: yes y yeah yep ok okay sure, go ahead,
+do it / no n nope cancel, never mind (or Capitalised; .!? and blanks aside; <= 64 chars). Garden,
+with nothing waiting: nothingWaiting.
+PROSE Otherwise receive gets the text: the card asks its policy's model (a proposal, never
+authority) or hands it to the directory.
+badSpell = a spell that does not fit: a refused turn, identity bound (reply anew), public {clause,
+reason, hint}. clause: otherCard noAction unknownField duplicateField badValue unclosedBlock; reason
+names the line ("Unknown field colour"); hint = your spell with blanks, or the card's usage. Copy
+the hint.
+REFUSALS. unknownField/badValue: fix that line per the hint, resend. noAction/otherCard: the hint
+lists the real spells. unclosedBlock: end with a line that is exactly DELIM.

@@ -20,12 +20,11 @@ inductive Durability | none | fsync | full
 def Durability.name : Durability → String
   | .none => "none" | .fsync => "fsync" | .full => "full"
 
-/-- `sync` of `world-open`: one of the three names; the boolean of the previous release is still
-    accepted for one release (false = none, true = fsync). Absent is `fsync`. -/
+/-- `sync` of `world-open`: one of the three names. Absent is `fsync`. -/
 def Durability.ofJson? : Option Lean.Json → Except String Durability
   | Option.none => .ok .fsync
-  | Option.some (.str "none") | Option.some (.bool false) => .ok .none
-  | Option.some (.str "fsync") | Option.some (.bool true) => .ok .fsync
+  | Option.some (.str "none") => .ok .none
+  | Option.some (.str "fsync") => .ok .fsync
   | Option.some (.str "full") => .ok .full
   | Option.some _ => .error "sync must be \"none\", \"fsync\" or \"full\""
 
@@ -68,7 +67,8 @@ def loadLibrary (path : String) : IO (Except String Library) := do
 /-- Open and replay a journal. The handle takes an exclusive advisory lock (`flock`, through
     `IO.FS.Handle.tryLock`) for the life of the session, so a second process cannot append to
     (or replay) a journal another holds. `held` is this process's own handle on the same path. -/
-def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Bool := false) : IO (Except String Open) := do
+def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Bool := false) (caches : Caches := {}) :
+    IO (Except String Open) := do
   try
     let handle ← match held with
       | some h => pure h
@@ -82,7 +82,7 @@ def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Boo
           return .error "journal exceeds byte capacity"
         IO.FS.readFile path
       else pure ""
-    match ← Snapshot.openContent path content verify with
+    match ← Snapshot.openContent path content verify caches with
     | .error e => return .error e
     | .ok (world, report) => return .ok { world, path, handle, report, snapshotAt := report.resumed }
   catch e => return .error s!"journal unreadable: {e}"
@@ -145,7 +145,7 @@ def forkWorld (s : Open) (j : Json) : IO (Except String Json) := do
   if height == 0 || height > s.world.height then return .error s!"height must be 1..{s.world.height}"
   if into == s.path || (← System.FilePath.pathExists into) then return .error s!"{into} already exists"
   let w ← if height == s.world.height then pure s.world else
-    match Snapshot.replayAll (s.world.entries.extract 0 height) with
+    match Snapshot.replayAll (s.world.entries.extract 0 height) s.world.caches with
     | .ok w => pure w
     | .error e => return .error e
   let cid := ((s.world.entries[height - 1]?).bind fun e => (e.getObjValAs? String "hash").toOption).getD ""
@@ -157,6 +157,22 @@ def forkWorld (s : Open) (j : Json) : IO (Except String Json) := do
     return .ok (Json.mkObj [("status", toJson "forked"), ("into", toJson into),
       ("forkedFrom", Json.mkObj [("world", toJson s.path), ("height", toJson height), ("cid", toJson cid)]),
       ("carried", toJson (w.objects.size - omitted.length)), ("omitted", toJson omitted)])
+
+/-- `world-status`'s interpretation quota: the cap, and for a named principal how many it may still
+    start this clock hour and the clock at which the count starts again (`exempt` for the opener and
+    the clock principal). -/
+def interpretStatus (w : World) (r : Json) (principal : Option String) : Json :=
+  let r := r.setObjVal! "interpretQuota" (toJson w.interpretQuota)
+  match principal with
+  | none => r
+  | some p =>
+    if p == w.opener || p == w.clockPrincipal then r.setObjVal! "interpretations" (toJson "exempt") else
+    let hour := w.clock / 60
+    let used := match w.interpretsStarted[p]? with
+      | some (h, n) => if h == hour then n else 0
+      | none => 0
+    r.setObjVal! "interpretations" (Json.mkObj [("remaining", toJson (w.interpretQuota - used)),
+      ("next", toJson ((hour + 1) * 60))])
 
 def stepWorld (session : Session) (request : Json) : IO (Session × Except String Json) := do
   let op ← match request.getObjValAs? String "op" with
@@ -176,7 +192,8 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       let sync ← match Durability.ofJson? (request.getObjVal? "sync").toOption with
         | .ok d => pure d
         | .error e => return (session, .error e)
-      match ← openWorld path held verify with
+      -- What this process compiled for the world it had open stays compiled for the next.
+      match ← openWorld path held verify ((session.map (·.world.caches)).getD {}) with
       | .error e => return (session, .error e)
       | .ok o =>
         let o := { o with sync }
@@ -185,12 +202,13 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
             let quota ← match request.getObjVal? "postQuota" with
               | .ok q => some <$> natOf q
               | .error _ => pure none
+            let interpretQuota ← optNat request "interpretQuota"
             return ((request.getObjValAs? String "clock").toOption, quota,
-              (request.getObjValAs? String "opener").toOption) : Except String _) with
+              (request.getObjValAs? String "opener").toOption, interpretQuota) : Except String _) with
           | .error e => return (session, .error e)
-          | .ok (none, none, none) => pure o
-          | .ok (clock, quota, opener) =>
-            let (s', r) ← durable o (fun w => settingsOp w clock quota opener)
+          | .ok (none, none, none, none) => pure o
+          | .ok (clock, quota, opener, interpretQuota) =>
+            let (s', r) ← durable o (fun w => settingsOp w clock quota opener interpretQuota)
             match r, s' with
             | .ok _, some o' => pure o'
             | .error e, _ => return (session, .error e)
@@ -277,10 +295,13 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
           ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name),
-          ("recompiledDifferently", toJson s.world.recompiledDifferently)] |>
-          fun r => match s.world.forkedFrom with
+          ("recompiledDifferently", toJson s.world.recompiledDifferently),
+          -- What this process holds compiled (carried from world to world it opens).
+          ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
+            ("methods", toJson s.world.compiled.size)])] |>
+          fun r => (match s.world.forkedFrom with
             | some f => r.setObjVal! "forkedFrom" f
-            | none => r))
+            | none => r) |> fun r => interpretStatus s.world r (request.getObjValAs? String "principal").toOption))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-principal" => durable s (fun w => principalOp w request)
       | "world-arrive" => durable s (fun w => arriveOp w request)
