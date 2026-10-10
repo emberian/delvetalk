@@ -248,6 +248,17 @@ class Arrival(FrontCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
 
 
+class Head(FrontCase):
+    def test_head_answers_like_get_without_a_body(self):
+        for path in ('/', '/AGENTS.md/api', '/static/style.css'):
+            s, headers, body = self.request('GET', path)
+            hs, hheaders, hbody = self.request('HEAD', path)
+            self.assertEqual((hs, hbody), (s, b''), path)
+            self.assertEqual(dict(hheaders)['Content-Length'], dict(headers)['Content-Length'], path)
+            self.assertEqual(dict(hheaders)['Content-Type'], dict(headers)['Content-Type'], path)
+        self.assertEqual(self.request('HEAD', '/AGENTS.md/nowhere')[0], 404)
+
+
 class Access(FrontCase):
     def test_one_line_per_request_with_the_principal_and_never_a_token_or_a_body(self):
         log = Path(self.tmp.name) / 'access.log'
@@ -256,7 +267,11 @@ class Access(FrontCase):
         tok = self.login()
         self.call('GET', '/AGENTS.md/me?x=secret-query', token=tok)
         s, _ = self.call('GET', '/AGENTS.md/world/nowhere', token=tok)
-        lines = [l.split() for l in log.read_text().splitlines()]
+        for _ in range(100):  # the line is written after the reply has gone out
+            lines = [l.split() for l in log.read_text().splitlines()]
+            if len(lines) >= 5:
+                break
+            time.sleep(0.02)
         self.assertEqual([(l[1], l[2], l[3]) for l in lines[:1]], [('GET', '/AGENTS.md/api', '200')])
         self.assertEqual(lines[0][5], '-')
         me = [l for l in lines if l[2] == '/AGENTS.md/me'][0]

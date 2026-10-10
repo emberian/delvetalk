@@ -383,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
         super().send_response(code, message)
 
     def handle_one_request(self):
-        self.status, self.did = 0, None
+        self.status, self.did, self.head = 0, None, False
         self.wfile.sent = 0
         super().handle_one_request()
         if self.server.access and self.status:  # a request that never parsed has no status
@@ -402,7 +402,8 @@ class Handler(BaseHTTPRequestHandler):
         for k, v in headers:
             self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(raw)
+        if not getattr(self, 'head', False):
+            self.wfile.write(raw)
 
     def fail(self, cls, message=None, hint=None, links=None, more=None, acts=None, headers=()):
         """The one error envelope: {status, class, message, hint?, _links} over the host's own fields, if any (`more`)."""
@@ -497,7 +498,12 @@ class Handler(BaseHTTPRequestHandler):
         self.did = (who or {}).get('did') or self.did
         return who
 
-    do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = lambda self: self.dispatch(self.command)
+    do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = lambda self: self.dispatch(self.command)
+
+    def do_HEAD(self):
+        """Answers as GET does, headers only."""
+        self.head = True
+        self.dispatch('GET')
 
     def dispatch(self, method):
         """Route, and turn whatever escapes into a named envelope: a client gone is dropped, anything else is `internal`."""

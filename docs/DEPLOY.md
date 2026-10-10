@@ -55,7 +55,7 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   next in the edge's series). On ext4 or ZFS, local disk: see "Durability".
 - `/etc/delvetalk/anthropic.key`: the key alone, owner 10425, mode 0400.
 - The portal is `https://gsb.fg-goose.online` (`DELVETALK_ORIGIN` overrides it for every program; the front's `--origin` in
-  `compose.yml` names it too, and compose does not pass `DELVETALK_ORIGIN` into the containers). The Caddy route for
+  `compose.yml` names it too, and compose passes `DELVETALK_ORIGIN` from `.env` into every service). The Caddy route for
   `gsb.fg-goose.online`, and the old `delvetalk.fg-goose.online` route, both proxy to `10.10.1.10:8765` until the town
   has moved; then the old one goes. The installed config is `/etc/caddy/Caddyfile` on the anchor (native Caddy, no
   checkout there; dregg-infra's `edge/anchor/Caddyfile` is its source and had drifted from it on 2026-10-10). Install as

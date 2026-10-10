@@ -33,6 +33,8 @@ x-service: &service
   cap_drop: ["ALL"]
   init: true
   stop_grace_period: 30s
+  environment:
+    DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}  # .env names the portal for every program (transport/identity.py ORIGIN)
   volumes:
     # One directory: world.journal, journal.lock, state/ (identity.sqlite,
     # heaps/, outbox/, observe.sqlite, interpretations/, pid files). A host
@@ -49,6 +51,7 @@ services:
     <<: *service
     command: ["python3", "-m", "transport.hostd", "--state", "/data/state", "--journal", "/data/world.journal", "--lock", "/data/journal.lock"]
     environment:
+      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
       DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}  # the world's opener: ember
     # Replay on start recompiles every created object (~0.2 to 1 s each), and up
     # to 8 private heaps run as their own host processes. The old systemd unit's
@@ -131,6 +134,7 @@ services:
     profiles: ["town"]
     command: ["python3", "-m", "transport.interpret", "run", "--state", "/data/state", "--poll", "60"]
     environment:
+      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
       DELVETALK_ANTHROPIC_KEY_FILE: /run/secrets/anthropic_key
       DELVETALK_MODEL_THINKING: "off"  # cheap deterministic JSON calls (docs/GENESIS.md)
     secrets: [anthropic_key]

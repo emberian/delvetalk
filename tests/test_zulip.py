@@ -117,7 +117,7 @@ class ZulipCase(unittest.TestCase):
     def bridge(self):
         out = io.StringIO()
         bridge.main(['run', '--once', '--state', str(self.state), '--host-socket', str(self.sock), '--source', 'zulip',
-                     '--zuliprc', str(self.rc)], out)
+                     '--zuliprc', str(self.rc), '--since', '1970-01-01T00:00:00Z'], out)
         return json.loads(out.getvalue())
 
     def client(self):
