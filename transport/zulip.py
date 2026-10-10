@@ -2,7 +2,7 @@
 """The Zulip transport: an observer and a poster for one stream of the owner's own Zulip.
 
 The observer turns each message of the stream into the observation record observe.py produces for a Delve post
-(principal `zulip:<sender email>`, the sender's full name as handle, `replyTo` the previous message of the topic,
+(principal `zulip:<sender id>`, the sender's full name as handle, `replyTo` the previous message of the topic,
 which is a thread), classified by observe.classify. The poster puts a draft into its topic as a message. Neither
 decides anything: routing, quota and admission stay with the bridge and the host.
 
@@ -118,7 +118,7 @@ class ZulipObserver(Observer):
         text = text.strip()
         tags = list(dict.fromkeys(TAG.findall(text)))
         kind, wiki, spell = classify(text, parent, mentions, tags, summon=bot)
-        return {'uri': uri, 'cid': str(m['id']), 'author': {'did': 'zulip:' + m['sender_email'], 'handle': m['sender_full_name']},
+        return {'uri': uri, 'cid': str(m['id']), 'author': {'did': 'zulip:' + str(m['sender_id']), 'handle': m['sender_full_name']},
                 'createdAt': created_at(m), 'text': text, 'replyTo': parent, 'root': row[0] if row and parent else None,
                 'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki, 'spell': spell}
 

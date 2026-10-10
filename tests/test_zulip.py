@@ -29,7 +29,7 @@ class FakeZulip:
     """The three endpoints the transport uses, over real HTTP with basic auth, holding one list of messages."""
 
     def __init__(self):
-        self.messages, self.calls = [], []
+        self.messages, self.calls, self.ids = [], [], {}
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -73,7 +73,7 @@ class FakeZulip:
     def add(self, topic, email, name, text, stream='delvetalk', sender_id=None):
         mid = len(self.messages) + 1
         self.messages.append({'id': mid, 'subject': topic, 'content': text, 'sender_email': email, 'sender_full_name': name,
-                              'sender_id': sender_id or 1000 + abs(hash(email)) % 1000, 'timestamp': 1_790_000_000, 'display_recipient': stream})
+                              'sender_id': sender_id or self.ids.setdefault(email, 1000 + len(self.ids)), 'timestamp': 1_790_000_000, 'display_recipient': stream})
         return mid
 
     def say(self, topic, who, text, stream='delvetalk'):
@@ -132,7 +132,7 @@ class Observing(ZulipCase):
         first, second, summon, post = self.observed()
         uri = lambda topic, n: f'zulip://delvetalk/{topic}/{n}'
         self.assertEqual((first['author'], first['uri'], first['replyTo'], first['root'], first['kind'], first['spell']),
-                         ({'did': 'zulip:alice@people.test', 'handle': 'Alice'}, uri('garden', a), None, None, 'spell', {'card': 'garden-1'}))
+                         ({'did': 'zulip:1000', 'handle': 'Alice'}, uri('garden', a), None, None, 'spell', {'card': 'garden-1'}))
         self.assertEqual((second['replyTo'], second['root'], second['kind']), (uri('garden', a), uri('garden', a), 'reply'))
         self.assertEqual((summon['kind'], summon['replyTo']), ('summon', None))
         self.assertEqual((post['kind'], post['text']), ('post', 'just talking'))
@@ -160,11 +160,11 @@ class Bridging(ZulipCase):
         self.assertEqual(len(got['posted']), 2, got)
         mine = self.zulip.mine()
         self.assertEqual(sorted(m['subject'] for m in mine), ['alice garden', 'bob garden'])
-        self.assertTrue(all(m['content'].endswith('garden-1 says zulip:' + m['subject'].split()[0] + '@people.test') for m in mine), mine)
+        self.assertTrue(all(m['content'].endswith('garden-1 says zulip:' + {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]) for m in mine), mine)
         self.assertTrue(mine[0]['content'].startswith('@**Alice**\n'))
         arrivals = self.host.send({'op': 'world-objects', 'principal': OPENER})['ids']
-        self.assertIn('env/zulip:alice@people.test', arrivals)
-        self.assertIn('env/zulip:bob@people.test', arrivals)
+        self.assertIn('env/zulip:1000', arrivals)
+        self.assertIn('env/zulip:1001', arrivals)
         for uri in got['posted']:  # every posted draft is recorded, so the host knows who it addresses
             self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': uri})['object'], 'garden-1')
         self.assertEqual(self.bridge()['posted'], [], 'nothing is posted twice')
