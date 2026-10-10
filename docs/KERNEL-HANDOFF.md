@@ -371,6 +371,24 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
   recompiled). Test: `tests/test_world_calls.py` (its `WORLD` is a stand-in for the objects
   lane's World.obend).
 
+- Day 2. Site types at a yield and a resume, without touching the machine, collector or
+  codecs (those files are lane perf2's): the machine keeps no positions, so a site is named
+  by its plan term. `Turn.performsOf` walks the entry term at the checker's positions and
+  reads each perform's annotation codomain; `messageSites` keeps one `(plan term, T)` per
+  distinct plan (`termEq`) and refuses an entry in which two performs build the same plan
+  term at different types ("refused (world-call-site)", at compile: `Package.messageFields`,
+  so no such artifact exists). At a message yield `conclude` finds the site from the plan
+  cell's origin in the extracted state (before `checkpoint` settles it), reports its `T` as
+  `responseType`, and prefixes the checkpoint tokens with `["delvetalk.checkpoint.site.v1",
+  i]`; resume (`resumeType`) strips the prefix (inside the digest), checks the response
+  against `T` and decodes the rest. A sum-Plan checkpoint carries no prefix and is
+  byte-identical; a prefix on one, or none on a message checkpoint, is refused. No
+  `Checkpoint` field changed. The site walk runs per start/resume of a message entry only
+  (cache it beside the host lane's per-method dictionary when message objects are common).
+  Artifact (message activities only): `dialect: "message"`, `world` (methods the entry's
+  sites name, first occurrence), `worldProtocol` (the World module's source SHA-256 hex).
+  Tests: `tests/test_world_calls.py` `SiteTypes`.
+
 ## 16. Queue for the successor (lane/kernel5 at 9a29080, after foundation b47046b)
 
 Done on this lane and committed (each green on hbox, details in §14 and §15): typed views

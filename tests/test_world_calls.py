@@ -170,5 +170,105 @@ class WorldCalls(unittest.TestCase):
         self.assertIn("exactly one input", str(reply))
 
 
+def rec(**fields):
+    return {"tag": "record", "fields": [{"name": n, "value": v} for n, v in fields.items()]}
+
+
+def nat(n):
+    return {"tag": "natural", "value": str(n)}
+
+
+def variant(label, payload):
+    return {"tag": "variant", "label": label, "payload": payload}
+
+
+def labels(t):
+    """The labels of a variant type's row (typeJson)."""
+    out, row = [], t.get("row")
+    while row and row.get("tag") == "field":
+        out.append(row["name"])
+        row = row["tail"]
+    return out
+
+
+TWICE = THING + """def twice(state: State, input: {other: Plans.Reference}, context: Abi.Context) -> Activity<Nat>:
+  match state.count == 0n:
+    case true:
+      match world.view::<State>({object: input.other}):
+        case viewed(v): 1n
+        case _: 0n
+    case false:
+      match world.view::<Data>({object: input.other}):
+        case viewed(v): 2n
+        case _: 0n
+"""
+
+
+class SiteTypes(unittest.TestCase):
+    """Each world call resumes at its own result type (WHOLENESS §1, day 2)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.close()
+
+    def compile(self, entry, thing=THING):
+        reply = self.h.send({"op": "compile", "entry": entry, "modules": world_modules(thing)})
+        self.assertEqual(reply["status"], "compiled", reply)
+        return reply["artifact"]
+
+    def start(self, entry, count=2):
+        art = self.compile(entry)
+        ref = rec(world={"tag": "label", "value": ""}, object={"tag": "label", "value": "b"})
+        return art, self.h.start(art, [rec(count=nat(count)), rec(other=ref)])
+
+    def test_a_view_yields_at_viewed_of_its_type_and_resumes_with_it(self):
+        art, y = self.start("peek")
+        self.assertEqual(y["status"], "yielded", y)
+        self.assertEqual(y["responseType"]["tag"], "variant")
+        self.assertEqual(labels(y["responseType"]), ["viewed", "denied", "refused"])
+        self.assertEqual(y["checkpoint"]["tokens"][0], "delvetalk.checkpoint.site.v1")
+        done = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(3), state=rec(count=nat(7)))))
+        self.assertEqual((done["status"], done.get("value")), ("finished", nat(7)), done)
+
+    def test_a_response_of_another_type_is_refused(self):
+        art, y = self.start("peek")
+        bad = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(3), state=rec(other=nat(7)))))
+        self.assertEqual(bad["status"], "error", bad)
+        self.assertIn("response does not conform", bad["message"])
+        written = self.h.resume(art, y["checkpoint"], variant("written", rec()))
+        self.assertIn("response does not conform", written["message"])
+
+    def test_two_sites_resume_at_two_types(self):
+        art, y = self.start("both")
+        self.assertEqual(labels(y["responseType"]), ["viewed", "denied", "refused"])
+        w = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(1), state=rec(count=nat(5)))))
+        self.assertEqual(w["status"], "yielded", w)
+        self.assertEqual(labels(w["responseType"]), ["written", "refused"])
+        fields = {f["name"]: f["value"] for f in w["plan"]["fields"]}
+        self.assertEqual(fields["method"], {"tag": "label", "value": "write"})
+        # A view's response at the write's site is refused.
+        again = self.h.resume(art, w["checkpoint"], variant("viewed", rec(version=nat(1), state=rec(count=nat(5)))))
+        self.assertIn("response does not conform", again["message"])
+        done = self.h.resume(art, w["checkpoint"], variant("written", rec()))
+        self.assertEqual((done["status"], done.get("value")), ("finished", nat(5)), done)
+
+    def test_the_artifact_names_its_dialect_and_world_methods(self):
+        art = self.compile("both")
+        self.assertEqual(art["dialect"], "message")
+        self.assertEqual(art["world"], ["view", "write"])
+        self.assertEqual(len(art["worldProtocol"]), 64)
+        rows = {m["name"]: m for m in art["methods"]}
+        self.assertTrue(rows["both"]["activity"])
+        self.assertNotIn("dialect", self.compile("keep"))
+
+    def test_two_calls_that_build_one_message_at_two_types_are_refused(self):
+        reply = self.h.send({"op": "check-package", "entry": "twice", "modules": world_modules(TWICE)})
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (world-call-site)", reply["diagnostic"]["message"])
+
 if __name__ == "__main__":
     unittest.main()
