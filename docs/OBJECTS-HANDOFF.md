@@ -172,6 +172,11 @@ the library).
   Commons) are made with world-create by their owner. The host prints a law fully
   parenthesised. `law(old, new, request)` Bend predicates run after the text admits a
   kind-0 write (Tide: self, tooSoon; Wake: owner); `tests/test_laws.py` shows them biting.
+* **Layers through the host** (objects5): `tests/test_extend.py` LouderBell grafts
+  `layer over ./Bell.obend` by the extend Plan and expects a rain reply's card to start
+  LOUDER; it is an expectedFailure (today: programRefused/compile, "import must name an
+  earlier supplied module: ./Bell.obend") until the host lane drops `delegate`. Remove the
+  decorator then.
 * **Layers.** `world-reprogram {mode: extend}` with a module `type State = Super.State`
   overrides what it defines; `tests/test_layers.py` (Louder over Bell) keeps rain.
 
