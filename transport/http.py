@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from transport import bridge, hand, oauth, pages, post
+from transport.bridge import door_rows, plain
 from transport.hostd import CLOCK
 from transport.hostproc import HOST_TIMEOUT, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
@@ -81,19 +82,6 @@ def resolve(method, path):
         return 'page', {'object': parts[1]}
     return None, None
 
-
-
-def plain(data):
-    """Typed data as plain JSON, for reading only (a form's fields); never sent back to the host."""
-    tag = data.get('tag') if isinstance(data, dict) else None
-    if tag == 'record':
-        return {f['name']: plain(f['value']) for f in data['fields']}
-    if tag == 'list':
-        return [plain(i) for i in data['items']]
-    if tag == 'variant':
-        inner = plain(data['payload'])
-        return {'tag': data['label'], **inner} if isinstance(inner, dict) else {'tag': data['label'], 'value': inner}
-    return int(data['value']) if tag == 'natural' else data.get('value') if tag else data
 
 
 def typed(value):
@@ -191,14 +179,6 @@ def turn_line(r):
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
     return f"suspended at height {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
-
-
-def door_rows(view):
-    """The doors in an object's state, in menu order: a list, or a relation (`rows {items}`) ordered by each row's place."""
-    state = plain(view.get('state') or {})
-    doors = (state.get('doors') if isinstance(state, dict) else None) or []
-    doors = sorted(doors.get('items') or [], key=lambda d: d.get('place', 0)) if isinstance(doors, dict) else doors
-    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
 
 
 def digits(text):

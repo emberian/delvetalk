@@ -263,7 +263,9 @@ transport: an observer of one stream and a poster. Every message of the stream b
 would (principal `zulip:<sender id>`, the full name as handle, `replyTo` the previous message of its topic, kind
 by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
 it as ever: a reply is its parent's address, and a post with no recorded ancestor goes to the card of its spell as the
-host's parser reads it (`spell-parse`; Python only skips text without the word `delvetalk`). Because this is
+host's parser reads it (`spell-parse`; Python only skips text without the word `delvetalk`). A summons with no
+recorded ancestor and no spell reaches the directory only when it names one of its doors (a label, as a word); one
+that merely mentions the bot is observed and not turned. Because this is
 the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
 with no hourly cap (the host's `postQuota` is delve.town etiquette and does not apply to the owner's own Zulip), and records each post with
 `world-posted`, so a reply to it routes. The delve.town rule against automatic posting does not apply here and nothing
