@@ -165,7 +165,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 - `world.interpret::<R>({utterance, offers, policy, model})` suspends like `await` with `interpretation {id, object, policy, utterance, offers, model?}` (id = hash of principal, intent, ordinal). Deadline `interpretationPatience`, resuming `timedOut`.
 - `world-interpretations` lists pending items with the Policy's state as `{model, system, examples}`; `policy.system` is the Policy's pure `prompt(state, offers, utterance)` (`policyPrompt`) else its `system` field; `policy.model` is the item's `model` when non-empty (at most 128 bytes), else the Policy's.
-- `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument}` (the spell fits an offered form, or a JSON `{method, argument}` for the asking object; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`), `replied {text}` (prose, or reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `denied {}` when the Policy is not readable by the turn's principal (TurnLoop, `interpret`); Garden and the Directory refuse it with clause `policy`.
+- `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument, spell}` (the spell fits an offered form, or a JSON `{method, argument}` for the asking object; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`), `replied {text}` (prose, or reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `denied {}` when the Policy is not readable by the turn's principal (TurnLoop, `interpret`); Garden and the Directory refuse it with clause `policy`.
 - Capacity: `mayWait … (interpreting := true)` counts interpretations apart. Test: `test_interpret_text`, `test_policy`.
 
 ### 5.5 Cards, offers, publish, posts
@@ -1213,6 +1213,19 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      no model call. `test_hub`'s HandedToTheDirectory now states `reach: mention`, as the bridge must. Test:
      `tests/test_reach.py` `test_a_reply_handed_on_by_send_keeps_its_reach`. The original `replyTo` is not
      carried (the `post` is in the argument).
+
+128. **A proposal carries its spell; the real hand-on checked (host15).**
+   - *`spell` on a proposal:* `World.Proposed` and `Interpreted`'s `proposal` gain `spell: String`, the spell the
+     proposal stands for (`proposalSpell`: `delvetalk <card> <method>` as the form names the card, a line per
+     argument field, text with a line break as a `<<END` block, a case as its word; "" when a field has no
+     spell form), journaled on the verdict, so a card that asks first can hold it and print it back. A call
+     site compiled against the older shape hears it without `spell` (`proposalShapes`, as `receiptReplies`).
+     Replay reads the journaled verdict, so no edition bump. Tests: `test_reflection` Interpret,
+     `test_hub` HandedToTheDirectory.
+   - *The hand-on:* the objects lane's "still costs a model call" was reported before 5.127 landed. Through
+     the real Bell and Directory, prose with no reach handed on by `Card.handingOn` is heard `silent` at the
+     directory within the turn, nothing pending, `hour.interpretations` 0
+     (`test_prose_that_reached_no_one_handed_on_is_not_addressed_at_the_directory`).
 
 ## 6. Gotchas
 

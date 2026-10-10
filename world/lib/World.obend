@@ -64,14 +64,15 @@ sum Awaited:
   broken: {}
   refused: {clause: String}
 # A proposal names the object whose offered form the model's spell fits (an interpreting card
-# may offer other cards' forms, as the directory offers its doors'), and that object's method.
+# may offer other cards' forms, as the directory offers its doors'), that object's method, and
+# the spell it stands for ("" when a field has no spell form), for a card asking first to print back.
 # An answer with several spells is `proposals`, each item fitted as one spell is, in the order
 # said (at most three; HOST-HANDOFF 106).
 sum Proposed<R>:
-  proposal: {object: String, method: String, argument: R}
+  proposal: {object: String, method: String, argument: R, spell: String}
   unclear: {reasons: Document.Names}
 sum Interpreted<R>:
-  proposal: {object: String, method: String, argument: R}
+  proposal: {object: String, method: String, argument: R, spell: String}
   proposals: {items: Lists.List<Proposed<R>>}
   unclear: {needs: Document.Names}
   replied: {text: String}
