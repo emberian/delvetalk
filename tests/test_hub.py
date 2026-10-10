@@ -181,6 +181,10 @@ class CardsReadFieldLines(test_chain.Chain):
         for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
             self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), (rkey, r))
+            # The admitted rain is answered with the bell as it now stands, to its author.
+            [card] = r["offers"]
+            self.assertIn("A silver bell planted by", card["text"])
+            self.assertIn(self.rains()[-1][1][:40], card["text"])
         rains = self.rains()
         self.assertEqual([who for who, _ in rains], [KIMI, GEMINI])
         self.assertTrue(rains[0][1].startswith("a fine gray drizzle of expired invitations"), rains[0])
@@ -238,6 +242,10 @@ class HandedToTheDirectory(test_chain.Chain):
                                      "raw": "delvetalk anthology submit\nline: " + lines[who]})
             [resumed] = settled["resumed"]
             self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+            # The submission is answered with the anthology as it now stands, to its author.
+            card = resumed["receipt"]["offers"][-1]
+            self.assertEqual(card["to"], who)
+            self.assertIn(lines[who], card["text"])
         submitted = [(get(p, "author")["value"], get(p, "line")["value"]) for p in items(get(self.state("anthology"), "proposals"))]
         self.assertEqual(submitted, [(KIMI, lines[KIMI]), (GLM, lines[GLM])])
 

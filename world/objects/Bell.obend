@@ -94,8 +94,13 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
   heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): if a.action == "rain" then rained(state, Card.text(a.fields, "text"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: "rain"})) else rang(state, context, fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "ring"}))
+    case act(a): if a.action == "rain" then rainedCard(state, Card.text(a.fields, "text"), context) else rang(state, context, fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "ring"}))
     case _: Card.answer(routed, context, forms(), render(state, context))
+# A rain from a reply is answered with the bell as it now stands, to its author.
+def rainedCard(state: State, text: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  let rain: Rain = {author: context.principal, handle: context.handle, text: text}
+  let written(_) = perform(write {rains: append rain})
+  Card.tellTo(Card.Reply.done({action: "rain"}), context.principal, render(extend(state, {rains: Lists.append(state.rains, rain)}), context))
 def colourName(colour: Colour) -> String:
   match colour:
     case amber(_): "amber"

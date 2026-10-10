@@ -99,6 +99,10 @@ the library).
   no menu, its field lines as usual, and with a policy the model; the owner's handed-on
   replies are read too. A send, not a call: a call's result must fit the caller's Response
   R, which the directory's Heard does not.
+* **An admitted act answers with its card** (objects5): a rain from a reply
+  (`Bell.rainedCard`) and a submission (`Anthology.submittedCard`) offer the card as the
+  write leaves it to the speaker, as Garden does when it plants; the direct `rain` and
+  `submit` methods still answer only their count.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

@@ -70,8 +70,13 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
   heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): if a.action == "admit" then admitting(state, Card.natural(a.fields, "number"), context) else submitted(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
+    case act(a): if a.action == "admit" then admitting(state, Card.natural(a.fields, "number"), context) else submittedCard(state, Card.text(a.fields, "line"), context)
     case _: Card.answer(routed, context, forms(), render(state, context))
+# A submission from a reply is answered with the anthology as it now stands, to its author.
+def submittedCard(state: State, line: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  let proposal: Proposal = {author: context.principal, handle: context.handle, line: line, status: Status.proposed({})}
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.append({item: proposal})}}))
+  Card.tellTo(Card.Reply.done({action: "submit"}), context.principal, render(extend(state, {proposals: Lists.append(state.proposals, proposal)}), context))
 def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   if context.principal != state.owner then Card.Reply.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(state.proposals, number - 1n), number, context)
 def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
