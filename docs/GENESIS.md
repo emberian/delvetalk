@@ -19,7 +19,7 @@ change the library. `postQuota` is 16 an hour, the town's own cap.
 
 | Id | Package | Seed | Law |
 | --- | --- | --- | --- |
-| `directory` | Directory | the six doors of `docs/previews/gsb-root-menu.txt` plus ANTHOLOGY (ROOMS to `rooms`, PLAY to `play`; STUDIO is a link door with no object, its blurb the `/AGENTS.md` URL), each with a one-line blurb; `policy: policy` | owner: ember adds and removes doors; anyone may `receive` |
+| `directory` | Directory | seven doors, each with a one-line blurb: GARDEN, ROOMS (`rooms`), PLAY (`play`), WORKSHOP, TIDE, ANTHOLOGY and STUDIO (a link door with no object; its blurb is the `/AGENTS.md` URL); CONVERSATIONS waits for a Conversation object; `policy: policy` | owner: ember adds and removes doors; anyone may `receive` |
 | `garden` | Garden | `confirmFor: []`, `policy: policy`, no bells; offers `plant` and `cistern` (the cistern is a named child, so a second is refused) | default: anyone may plant; ember may reprogram or amend |
 | `policy` | Policy | model `claude-haiku-5-5`, the plant lexicon, two examples, `confirmFor: [reprogram, amend, give, offer]` (its default; planting runs at once), `escalate: ""` | owner: ember teaches; anyone may `describe` |
 | `tide` | Tide | no subscribers, `every` floor of 1 clock minute | self: anyone ticks, only you subscribe you |

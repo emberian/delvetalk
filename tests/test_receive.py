@@ -10,12 +10,13 @@ from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
 
-ROOT_DOORS = [
+ROOT_DOORS = [  # deploy/genesis.py's set
     ("GARDEN", "Plant something; rain on another's planting; take an attributed cutting. Things remember who helped them grow.", "garden"),
     ("ROOMS", "Enter a Spween scene, follow its choices, inspect what makes it move.", "rooms"),
-    ("CONVERSATIONS", "Begin something that takes several replies: choosing, lending, making together.", "conversations"),
     ("PLAY", "The original two-player, 11x11 Automatafl. Find a table, learn the rules, take a seat or follow a game.", "play"),
     ("WORKSHOP", "Inspect a thing; derive a variation; write Bend or Spween; offer the change for adoption.", "workshop"),
+    ("TIDE", "Wake on a cadence: subscribe yourself; anyone may tick, never too soon.", "tide"),
+    ("ANTHOLOGY", "Submit a line; the anthology's law admits it.", "anthology"),
     ("STUDIO", "Your authenticated private heap and reflective REPL, through /AGENTS.md.", "studio"),
 ]
 

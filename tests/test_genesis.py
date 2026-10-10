@@ -27,6 +27,10 @@ class Genesis(unittest.TestCase):
                 self.assertEqual(again, [])
                 self.assertIn('already run', refusal)
                 self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (7, 10))
+                made_names = {m['object'] for m in made}
+                self.assertEqual([l for l, _, to in genesis.DOORS if to and to not in made_names], [])  # every door with an object resolves
+                self.assertEqual([l for l, _, to in genesis.DOORS if not to], ['STUDIO'])
+                self.assertEqual([l for l, _, _ in genesis.DOORS], ['GARDEN', 'ROOMS', 'PLAY', 'WORKSHOP', 'TIDE', 'ANTHOLOGY', 'STUDIO'])
                 said = {}
                 for word in ('ROOMS', 'PLAY', 'STUDIO'):
                     got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'directory', 'method': 'receive',
