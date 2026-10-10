@@ -286,9 +286,8 @@ evaluators' validators/arity tables/`reducible`, run the report, and decide fix 
 - Host-side resume of suspended activities rebuilds the `Checkpoint` from journaled tokens plus the
   activity's object/principal/intent/roots (`resumeOne` in TurnLoop); if you change `Checkpoint`'s
   fields, journals written before the change stop resuming (no migration exists).
-- Checkpoints contain the whole program heap (hundreds of tokens even for `bump`); `collect` only drops
-  unreachable cells. A size-aware checkpoint (share the program, store only mutable cells) would cut
-  journal bytes a lot but changes the binding story.
+- Checkpoints contain the whole program heap; since lane 6 (§12) v2 checkpoints reference the
+  program's terms instead of carrying them.
 - `Outcome.exhausted` is a silence, not an error; the host currently maps it to a refused turn with
   message "turn refused: <resource> budget exhausted"; journaling class `budget` is host work.
 - Related docs: `docs/FOUNDATION.md` (design), `docs/HOST-HANDOFF.md`, `docs/OBJECTS-HANDOFF.md`.
@@ -650,4 +649,30 @@ fixture recorded by the foundation binary).
     too few and too many arguments, an arm and a constructor naming no case; each on
     check-package and compile, which must agree). Garden compile time unchanged
     (95 vs 96 ms fresh-process, three entries).
+- Checkpoint edition v2 (`Theory/ObjectiveBendCheckpointV2.lean`, proofs in
+  `ObjectiveBendCheckpointV2RoundTrip.lean`). A checkpoint is written against a
+  `Dictionary` the decoder rebuilds from the entry's term (`Dictionary.ofProgram
+  entry.source.term`; the packet is named by pin): a term is one token `i+1` for the
+  program's `i`th subterm in preorder (`0` then the v1 term when it is not one: an
+  argument's or response's literal), an environment of two or more addresses one token
+  into a table listed once, a record value's names one token for a program record's or
+  extension's name list, address lists as zigzag steps, and every string a `Token.str`
+  reference into the program's strings then the checkpoint's own (listed after the
+  edition). JSON: a v2 token list is bare (`3`, `"x"`, `-(i+1)` for a string reference);
+  a v1 list keeps `{"n"}`/`{"s"}` objects, so old digests are unchanged and old
+  checkpoints decode (`decodeStateAny`). Every reference is emitted only after a check
+  that it names exactly the value (`termEq`: pointer, else equal v1 encodings, which
+  `encodeTerm_injective` makes equality), so `stateV2_roundTrip : decodeStateV2 d.terms
+  d.strings d.nameLists (encodeStateV2 d s) = some s` holds for EVERY dictionary (the
+  hash hints are unverified accelerators) and every state. v1's `state_roundTrip` and the
+  collector proofs are untouched (the state is the same; only its encoding changed).
+  `Token` gained `str`; the host's `Relative.relativeTokens` does not decode v2 and
+  journals it plain, which is what it should do now.
+  Measured (Garden prose suspension, tokens as the journal would hold them before any
+  block scheme, `tests.test_policy` scenario): v1 20,338 tokens, 248,006 bytes; v2 2,412
+  tokens, 6,984 bytes (35x). `tests.test_suspension_size`: one speaker median 6,661 ->
+  5,093 bytes, nine speakers 24,947 -> 15,362. Still quadratic: a FORCED literal argument
+  (each forced cell's closure carries its subterm inline); a checkpoint-local term table
+  would fix it. `Dictionary.ofProgram` runs per start/resume (not cached on
+  `CheckedEntry`; suites showed no slowdown).
 

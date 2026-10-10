@@ -18,6 +18,9 @@ set_option autoImplicit false
 inductive Token where
   | nat (value : Nat)
   | text (value : String)
+  /-- A string by its index in a v2 checkpoint's string table (`ObjectiveBendCheckpointV2`);
+  never in a v1 checkpoint. -/
+  | str (index : Nat)
   deriving Repr, BEq, DecidableEq
 
 abbrev Tokens := List Token
@@ -382,6 +385,7 @@ def decodeState (tokens : Tokens) : Option State :=
 def tokenJson : Token → Lean.Json
   | .nat value => Lean.Json.mkObj [("n", Lean.toJson (toString value))]
   | .text value => Lean.Json.mkObj [("s", Lean.toJson value)]
+  | .str index => Lean.Json.mkObj [("r", Lean.toJson (toString index))]
 
 /-- Executed round-trip check: re-encoding the decoded checkpoint reproduces the
 same tokens. `state_roundTrip` proves the stronger equation for every state. -/
