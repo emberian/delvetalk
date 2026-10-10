@@ -427,6 +427,7 @@ def main(argv=None):
     results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
     entries, tags, classes, reasons = journal_stats(r.state / 'world.journal')
     results['journal'] = {'height': len(entries), 'bytes': (r.state / 'world.journal').stat().st_size,
+                          'sha256': __import__('hashlib').sha256((r.state / 'world.journal').read_bytes()).hexdigest(),
                           'outcomes': dict(tags), 'refusedByClass': dict(classes), 'refusals': reasons,
                           'bytesByOutcome': journal_stats.sizes, 'suspendedByObject': journal_stats.suspended}
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))

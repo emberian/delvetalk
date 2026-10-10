@@ -48,6 +48,7 @@ def main(path):
     w(f"| interpretations still pending at the end | {len(r['interpretationsLeft'].get('pending') or [])} |")
     w(f"| journal height | {j['height']} |")
     w(f"| journal bytes | {j['bytes']:,} |")
+    w(f"| journal SHA-256 | `{j.get('sha256')}` |")
     for tag, b in sorted((j.get('bytesByOutcome') or {}).items(), key=lambda kv: -kv[1]['bytes']):
         w(f"| ... `{tag}` entries: count, bytes, largest, median | {b['count']}, {b['bytes']:,}, {b['max']:,}, {b.get('median', 0):,} |")
     for obj, b in sorted((j.get('suspendedByObject') or {}).items(), key=lambda kv: -kv[1]['bytes']):
