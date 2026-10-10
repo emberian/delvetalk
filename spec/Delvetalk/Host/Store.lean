@@ -143,8 +143,8 @@ structure Compiled where
       (a `List<T>` field) are data only under them. -/
   bounds : DataBounds
   rigid : List Nat
-  /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntry`,
-      `Turn.resumeEntry`, `Package.executeDataEntry`), never from the packet JSON. -/
+  /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntryStep`,
+      `Turn.resumeEntryStep`, `Package.executeDataEntry`), never from the packet JSON. -/
   entry : Option Delvetalk.CheckedEntry := none
   /-- The checkpoint dictionary of the entry's program (`Dictionary.ofProgram`), built once with it:
       every yield encodes against it and every resumption decodes against it. -/
@@ -304,22 +304,31 @@ structure Built where
   relations : List RelDecl := []
 
 /-- A standing subscription (WHOLENESS §3): after every admitted write that touches `field` of
-    `object`, `subscriber` is sent `changed`, run under `principal` (who subscribed it and must still
-    be permitted to view `object`). -/
+    `object`, `subscriber`'s receiver `method` (`changed` unless the subscription named another) is
+    sent the change, run under `principal` (who subscribed it and must still be permitted to view
+    `object`). One per (subscriber, object, field). -/
 structure Subscription where
   subscriber : String
   principal : String
   object : String
   field : String
+  method : String := "changed"
   deriving BEq, Repr, Inhabited
 
+/-- The method is written only when it is not `changed`. -/
 def Subscription.json (x : Subscription) : Json :=
-  Json.mkObj [("subscriber", toJson x.subscriber), ("principal", toJson x.principal),
-    ("object", toJson x.object), ("field", toJson x.field)]
+  Json.mkObj ([("subscriber", toJson x.subscriber), ("principal", toJson x.principal),
+    ("object", toJson x.object), ("field", toJson x.field)] ++
+    (if x.method == "changed" then [] else [("method", toJson x.method)]))
 
 def Subscription.ofJson (j : Json) : Except String Subscription := do
   return ⟨← j.getObjValAs? String "subscriber", ← j.getObjValAs? String "principal",
-    ← j.getObjValAs? String "object", ← j.getObjValAs? String "field"⟩
+    ← j.getObjValAs? String "object", ← j.getObjValAs? String "field",
+    (j.getObjValAs? String "method").toOption.getD "changed"⟩
+
+/-- Do two subscriptions stand for the same (subscriber, object, field)? -/
+def Subscription.sameAs (x y : Subscription) : Bool :=
+  x.subscriber == y.subscriber && x.object == y.object && x.field == y.field
 
 /-- One admitted write of an object, as the moved-root rule reads it (`Ops.movedRootAdmits`): the
     version it produced and, for an ordinary write (kind 0 only) whose steps decode, every edit
@@ -374,6 +383,13 @@ structure World where
       when none was named): it alone may create an object for a named owner. -/
   opener : String := ""
   settled : Bool := false
+  /-- Interpretations one principal may start per clock hour (`world-open {interpretQuota}`, journaled
+      in `settings` when named; 48 otherwise). The opener and the clock principal are exempt. -/
+  interpretQuota : Nat := 48
+  /-- Interpretations started, by the principal of the turn that started them: the clock hour of the
+      last one and how many that hour. Derived by `record` from `suspended` entries with an
+      `interpretation`. -/
+  interpretsStarted : Std.HashMap String (Nat × Nat) := {}
   /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
       entry's `replyTo`), which `awaitPost` settles on. -/
   replies : Std.HashMap String (String × String) := {}
@@ -408,6 +424,20 @@ structure World where
     step compiled stays compiled whether or not its world is kept. -/
 def World.withCachesOf (w src : World) : World :=
   { w with compiled := src.compiled, requests := src.requests, builds := src.builds, programs := src.programs }
+
+/-- A world's memory-only compile caches. Every key is a content address (the digest of compile
+    inputs that name their library by pin and their modules by CID), so a process carries them from
+    one world it opens to the next (`Session.stepWorld`). -/
+structure Caches where
+  compiled : Std.HashMap String Compiled := {}
+  requests : Std.HashMap String Package.PreparedRequest := {}
+  builds : Std.HashMap String Built := {}
+  programs : Std.HashMap String Program := {}
+
+def World.caches (w : World) : Caches := ⟨w.compiled, w.requests, w.builds, w.programs⟩
+
+def World.withCaches (w : World) (c : Caches) : World :=
+  { w with compiled := c.compiled, requests := c.requests, builds := c.builds, programs := c.programs }
 
 def identityKey (principal intent : String) : String :=
   (Json.arr #[toJson principal, toJson intent]).compress

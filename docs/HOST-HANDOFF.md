@@ -29,7 +29,7 @@ Import order: Store, Journal, Law, Slug, Ops, TurnLoop, Snapshot, Session. Snaps
 - `Snapshot.lean`: snapshot bytes, `openContent`, fork genesis. It does IO (snapshot files).
 - `Session.lean`: `Open {world, path, handle, report, sync, snapshotAt}`, `openWorld`, `durable`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
 
-Durability is fsync, not a full barrier: an entry may be lost on power loss inside the OS write-back window. The chain verifies on reopen, so a torn tail is cut, never corrupted. `world-open {sync: "none" | "fsync" | "full"}` picks the mode per process (default `fsync`; `full` = F_FULLFSYNC; a boolean is still accepted: false = none, true = fsync). Never journaled; `world-status` reports `sync`. `openWorld` takes an exclusive flock and refuses "journal is open in another process".
+Durability is fsync, not a full barrier: an entry may be lost on power loss inside the OS write-back window. The chain verifies on reopen, so a torn tail is cut, never corrupted. `world-open {sync: "none" | "fsync" | "full"}` picks the mode per process (default `fsync`; `full` = F_FULLFSYNC; anything else, a boolean too, is refused). Never journaled; `world-status` reports `sync`. `openWorld` takes an exclusive flock and refuses "journal is open in another process".
 
 Signatures a newcomer calls (pure unless noted):
 
@@ -82,7 +82,7 @@ Outcomes:
 
 - `created`: `{object, pin, sourcesSha256, compile, seed, read, chain, supervisor?, owner?}`; `roots []`, `turn 0`. Replay recompiles, requires the pin to match the source closure, the seed to conform and the amendment dry run to pass at the entry's height.
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
-- `refused`: `{class, clause?, object?, reason?, expected?, root?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, outOfRange, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (reason = machine resource: ticks, heap, stack, nodes, bytes, or `law ticks`), budgetExhausted (reason = ledger field), programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence. Replay checks only that the class is known. A text-law refusal with a reading journals `reason: "refused <name>: <reading>"`; `publicRefusal` shows it.
+- `refused`: `{class, clause?, object?, reason?, expected?, root?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (reason = machine resource: ticks, heap, stack, nodes, bytes, or `law ticks`), budgetExhausted (reason = ledger field), programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence. Replay checks only that the class is known. A text-law refusal with a reading journals `reason: "refused <name>: <reading>"`; `publicRefusal` shows it.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
@@ -131,7 +131,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - `Object.readings` holds the package's law readings for clauses that are still the package's; `makeObject` keeps those the effective law leaves equal, an amendment keeps those it leaves equal, a reprogram keeps all. `parseLawTextReadings` reads `law NAME "reading": EXPR`; a malformed reading is `law syntax`.
 - Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin}`. The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
 - Two-tier law: for an artifact with `law.present` (`Object.predicate`), after the text admits, `judge` runs `law(old, new, request)` once per distinct kind-0 change (`bendLaw`) with `request = {context, method, argument, kind, pin, reads}` (`inputOrigin.kind = "law"`). `reads` are the ids `lawReads()` returns; `commit` adds them to the roots (`withLawReads`). Runs under `Bounds.lawTicks`: `admitted`, `refused {clause}` (= `lawRefused clause`), exhaustion is class `budget` reason `law ticks`, anything else fails closed as `lawRefused law`/`lawReads`. Reprograms and amendments are the text's alone. `warmLaws` compiles `law`/`lawReads` before `judge`.
-- Commutative edits: `judge` accepts a root `(id, seen)` whose object moved (`seen < version now`) when every change of `id` is a kind-0 write whose every edit is `keep`, `add`, `append`, `insert` (`EditKind.commutes`), or an `upsert`/`retract` of a relation row whose key no admitted write since `seen` touched (`keysChangedSince`, read from `writes[].edits`; a `set` or list edit of the relation touches every key), or, on a resumed turn's own object, an edit of a field later writes left alone (`movedRootAdmits`, one rule for `judge` and `resumeOne`). The entry keeps the roots as read, so `writes[].version` can be past `seen + 1`. Any other moved root is `staleRoot`. List items by bytes: `amendItem {item, change}` and `removeItem {item}` address the first item with the same canonical DAG-CBOR; none is `absentItem`. The index forms `amend {index}`/`remove {index}` are still accepted; `world/` uses none.
+- Commutative edits: `judge` accepts a root `(id, seen)` whose object moved (`seen < version now`) when every change of `id` is a kind-0 write whose every edit is `keep`, `add`, `append`, `insert` (`EditKind.commutes`), or an `upsert`/`retract` of a relation row whose key no admitted write since `seen` touched (`keysChangedSince`, read from `writes[].edits`; a `set` or list edit of the relation touches every key), or, on a resumed turn's own object, an edit of a field later writes left alone (`movedRootAdmits`, one rule for `judge` and `resumeOne`). The entry keeps the roots as read, so `writes[].version` can be past `seen + 1`. Any other moved root is `staleRoot`. List items by bytes: `amendItem {item, change}` and `removeItem {item}` address the first item with the same canonical DAG-CBOR; none is `absentItem`.
 - Stale resumptions: a resumed turn's own object may have moved while it waited. `judge` and `resumeOne` accept it when `movedRootAdmits` holds (every later change was an ordinary write and each of the turn's edits commutes, is a row edit of an untouched key, or touches a field those left alone). Otherwise `staleRoot` (transient), and `resumeOne` re-runs the direct turn once from its journaled request (`TurnMeta.rerun`, journaled `rerun: true`, reply `rerunOf`). Deliveries are not re-run.
 - Cross-object dry run: a `reprogram`/`extend`/`amend` Plan naming another object records it as a root and dry-runs the change alone through `judge` (`dryChange`). A refusal is answered `refused {clause}` and nothing is staged. The commit still judges the whole turn.
 - Typed arguments: an argument that does not fit the method's input type (`argumentFits`, `kernelRefusal`) refuses with class `typeMismatch`, which binds. The refused outcome journals `expected {method, type, form?}` (`expectedInput`); the receipt carries it for the turn's own principal only. In a `call` the Plan is answered `refused {clause: typeMismatch}`.
@@ -150,7 +150,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - `inspect` answers pin, law text, the entry module's source and the method forms under the reader's `ReadPolicy` (`denied` otherwise). `check` runs `Package.checkPackage` over the library closure, answers `"<module>:<line>: <stage>: <message>"` strings and a following `"<module>:<line>: hint: <text>"` line when the kernel has a hint; it installs nothing.
 - `world-check {principal, modules | source, entry, limits?}` compiles over the world's library (`overLibrary`), journals nothing, any principal may ask. Stateless `check-package`/`compile` take `library: <pin>`, resolved among the world's libraries then those sealed with `library-load` (at most 4 kept).
 - Method table and forms: `Object.methods` is the artifact's method table (reprogram replaces it; for a layer stack it lists every layer's methods, top first). `world-inspect` answers it as `methods` plus `forms`. A form is `{card, action, fields}` for each method that takes a context and whose input is a record of `String` (text 0..`formTextMax`), `Nat` (0..`formNaturalMax`) or a closed sum of empty payloads.
-- Extend: `world-reprogram {mode: "extend"}` and Plan `extend` add the source as module `Layer<n>`. The host writes `layer over ./<module below>.obend` as its first line (`layerLine`), so the kernel builds a layer stack with late binding. New pin = CID of `["extend", old pin, source CID]`; the state type must be equal under `canonicalTy` or a migration named. A layer written in the older `import … as Super` form is rewritten on replay and on snapshot load (`stackForm`). Tests: `test_extend`, `test_layers`.
+- Extend: `world-reprogram {mode: "extend"}` and Plan `extend` add the source as module `Layer<n>`. The host writes `layer over ./<module below>.obend` as its first line (`layerLine`), so the kernel builds a layer stack with late binding. New pin = CID of `["extend", old pin, source CID]`; the state type must be equal under `canonicalTy` or a migration named. Tests: `test_extend`, `test_layers`.
 - Supervisors: `Object.supervisor` is fixed at creation (`world-create {supervisor}`, Plan `createUnder`; `refused {clause: supervisor}` if not an object). An activity of a supervised object ends `broken` when refused `evaluation`, `budget` when a machine budget ran out, `timedOut` when a segment resumed past its deadline ends in any way. `commit` puts an `ended {id, to, method: "ended", argument, sender, ledger}` field in that entry (`endedField`, `endedId`); `record` makes it a pending delivery with argument `{receipt, how}`. A ledger refusal (`budgetExhausted`) tells nobody. Replay checks the id and that `to` is the supervisor (`checkEnded`). Test: `test_supervisors`.
 - Handlers: Plan `run {object, method, argument, handler}` runs the callee as `call` does, but every Plan the callee's own frame yields is first offered to the handler's pure `handle(state, plan[, context]) -> Handled<R>` (`answer {response}` or `pass`). The handler must be readable by the subject (`refused {clause: handler}`) and is a root. Plan `judge {edits}` answers `judged {admitted, clause}` without committing. Test: `test_handlers`.
 - Held entries: `compiledMethod`/`compileDef` use `compileEntryIn` (`Package.prepareRequest` cached in `world.requests`, `Package.compileEntryFrom`); `Compiled.entry` is a decoded, checked `CheckedEntry`. Turns run `Turn.startEntry`/`resumeEntry`; pure definitions (law, `lawReads`, handler, pure methods, migrations) run `Package.executeDataEntry`. Only `initial()` at creation runs from the packet.
@@ -179,8 +179,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - The body holds objects (state, `stateCid`, law text, version, read policy, ledger, compile inputs by CID, `pin`, `packet` cached), types, method tables and law shapes by pin, libraries, grants, posts, settings, `supervisor`, `minted`, `readings`; plus `clock`, `pending`, `suspended` as cross-checks. Everything `record` derives is rebuilt by `recordAll`. Sources no entry carries by CID (reprogrammed and extended modules) are kept whole (`knownByCid`).
 - `openContent`: parse and hash-walk every entry (`entriesOf`), then per snapshot newest first check the CID, edition, height, `head`, derived copies, each object's version and pin against the entries (`expectedObjects`), each law reading back from its text, and that every later entry replays on it. The first failure refuses the snapshot by name and the next older is tried, then full replay.
 - `install` refuses "the state of X is not its CID's" and "object X carries no state CID". Against a forger who recomputes both, `resume` compares each object with `anchoredStates` (a created or child seed, or a write's `cid`): "the state of X is not the one the journal commits to at version V". `world-open {verify: true}` replays everything and refuses each snapshot that differs from the replayed store ("it disagrees with replay at its height").
-- Pins are sources. No packet digest is journaled: replay recompiles from the journaled sources with the current compiler and requires the compile to succeed, the seed to conform and the recomputed pin to equal the recorded one. `world-status.recompiledDifferently` counts objects rebuilt after a snapshot resume whose packet differs from the one the snapshot cached (`World.cachedPackets`, `noteRecompiled`). An old `compiled {binary, packet}` field is ignored.
-- Suspension checkpoints are journaled as `tokenTree {depth, roots}` over content-defined blocks (`cutBlocks`: leaves 32..256 tokens, a token of 256 bytes or more its own leaf; inner nodes 2..16 names), each block once per journal as a top-level `blocks [{cid, items}]` item (`World.blocks`); an interpretation's `offers` are a one-item block (`offersBlock`). Replay still reads older blocks and `utteranceBlock`; a `tokenTree.relative` checkpoint is refused by name. Measured on hbox at foundation 6b928f6 (132 directory suspensions, `tests/test_suspension_size.py`): median 9,392 B with blocks against 119,119 B with the v2 codec alone.
+- Pins are sources. No packet digest is journaled: replay recompiles from the journaled sources with the current compiler and requires the compile to succeed, the seed to conform and the recomputed pin to equal the recorded one. `world-status.recompiledDifferently` counts objects rebuilt after a snapshot resume whose packet differs from the one the snapshot cached (`World.cachedPackets`, `noteRecompiled`).
+- Suspension checkpoints are journaled as `tokenTree {depth, roots}` over content-defined blocks (`cutBlocks`: leaves 32..256 tokens, a token of 256 bytes or more its own leaf; inner nodes 2..16 names), each block once per journal as a top-level `blocks [{cid, items}]` item (`World.blocks`); an interpretation's `offers` are a one-item block (`offersBlock`). Measured on hbox at foundation 6b928f6 (132 directory suspensions, `tests/test_suspension_size.py`): median 9,392 B with blocks against 119,119 B with the v2 codec alone.
 
 ### 5.7 Slugs, fork, repository reads
 
@@ -272,8 +272,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    public projection. Per the root decision, a spell missing fields and a reply with no spell run `receive`
    with the bare `name: value` lines as `fields` (when `receive` declares them): completion is the card's
    policy. A reply with no spell line whose first field line names one of the card's actions or fields is
-   that form's spell (`Card.withBare`). Not yet: the interpretation verdict fitted as spell text (§2
-   "Interpretation"), lenses' `set`. Test: `tests/test_spell_turns.py`.
+   that form's spell (`Card.withBare`). The interpretation fit and lens `set` are 5.54. Test:
+   `tests/test_spell_turns.py`.
 
 50. **Subscriptions and `changed` (host8; WHOLENESS §3, host day 3).** Plan/world method `subscribe {object, field}`
    stages `Subscription {subscriber: the running object, principal: the frame's subject, object, field}`:
@@ -305,6 +305,113 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    (KERNEL-HANDOFF §15), whose `fetch` would call `recordRows`. Test: `tests/test_changes.py`
    `test_a_field_root_is_stale_only_when_its_field_moved`.
 
+52. **Words for sums at the boundary (host9).** An argument from outside, a direct turn's (`runFrame` at
+   depth 0 of a direct turn) or an interpretation proposal's (`interpretVerdict`), is read against the
+   method's input type before the conformance check (`wordsAsCases`, Ops; `inputWords`, TurnLoop): where
+   the type has a closed sum whose every case has an empty payload and the value is a text, the text is the
+   case of that name, in fields, nested records, list items and the payloads of named cases. A word naming
+   no case refuses the direct turn `typeMismatch` (binding), reason `... : colour is one of: amber, violet,
+   silver (not gold)` (path `bed.colours[1]` inside lists), `expected.cases {at, given, cases}`; a proposal's
+   is `unclear {needs: ["colour is one of: ..."]}`. The frame's argument (`Written.argument`, the Bend
+   law's `request.argument`) is the read one; the request digest is of the argument as sent. Deliveries,
+   `call` and `send` arguments are typed values and are not read so. Test: `tests/test_sum_words.py`.
+
+53. **Typed receivers (host9; WHOLENESS second root decisions, 3 and 5).** `subscribe {object, field,
+   method}` names the subscriber's receiver; "" or absent is `changed`. The receiver must be a method of
+   the subscriber (`refused {clause: method}`). One subscription per (subscriber, object, field): a
+   subscribe naming another receiver replaces the standing one (journaled as an unsubscribe of the old
+   and a subscribe of the new). `Subscription.method` is journaled in `subscribes`/`unsubscribes` and in
+   each `changes` item only when it is not `changed`; `record` queues the delivery to that method.
+   `inserted`/`retracted` are checked against the receiver's declared input at delivery as any
+   delivered argument is (`argumentFits`): rows that do not conform refuse the delivery `typeMismatch`
+   with `expected {method, type}`; the subscription stands. A change delivery is told apart from a send
+   by its `field` (the read-authority recheck and the `denied` drop use it). `spell` is not a world
+   method (`noMethod`): the host's spell path runs a card's methods directly. World.obend's
+   `subscribe` line gains `method: String` in the objects lane (tests replace the line in a library
+   copy until then). Test: `tests/test_changes.py` `Receivers`.
+
+54. **Spells, the rest (host9; WHOLENESS §2, second root decisions 2).** Interpretation: a model's text
+   to an activity of the message dialect is fitted against the offered forms (`spellVerdict`): a spell
+   naming an offered form that fits is that form's `proposal {method, argument}` (checked as a JSON
+   proposal is, `proposalVerdict`), a misfit `unclear {needs: [reason]}`, missing fields `unclear
+   {needs: [names]}`, a spell naming no offered form `unclear`; a text with no spell line whose first
+   field line names an offered action or field is that form's spell; prose stays `replied {text}`. A
+   sum-Plan activity still hears every text as `replied` (Garden and the Directory read their own until
+   they migrate). Lenses: a message-dialect card declares its lenses as data, `def lenses() ->
+   Lists.List<Form.Field>` (name and kind; the sum dialect's `lenses()` of `Form.Lens` closures is not
+   data and reads as none), and puts through a method `set(state, input: {field: String, value:
+   Form.Value}, context)`. `delvetalk <card> set` with one `<field>: <value>` line is judged against
+   the lens's kind (`badValue`, reason as a form field's) and runs `set` with the typed value
+   (`inputOrigin.kind = "spell"`, `command` `delvetalk <card> set`); a field no lens names, or more than
+   one field line, is `badSpell` `unknownField`; no field line is `receive` with the bare fields
+   (completion is the card's policy). A card whose forms already have an action `set` keeps it. `?`
+   lists the lenses after the forms. `bridge.draft_text` reading `hint` is transport's. Tests:
+   `tests/test_spell_turns.py` `Lenses`, `Interpreted`.
+
+55. **`admits` per method (host9; AGENTS-API "host ops wanted" 1).** `world-inspect`'s `methods` rows
+   that take a context carry `admits: true | {clause, reading?}` (`methodAdmits`): the text law judged
+   for a kind-0 change by the reader through that method on the unchanged state (`Facts {subject:
+   reader, caller: "", kind: 0, method, height = turn = height + 1, pin}`). Only a clause that reads no
+   state field (`LawExpr.fields` empty) can refuse here, since the change cannot alter its verdict; a
+   clause that reads the state is left to the commit (`true`), so `admits` never refuses what a commit
+   would admit. The Bend law is not consulted. The front (`transport/http.py`) then omits refused
+   actions: `tests/test_hypermedia.py`'s law-refusal reply no longer offers `bump`. Test:
+   `tests/test_inspect_reads.py`.
+
+56. **Methods in a listing (host9; AGENTS-API "host ops wanted" 2).** `world-objects {principal, prefix?,
+   after?, methods?: true}` adds `methods: {<id>: [<name>]}`, the turnable method names (`context:
+   true`, table order) of each listed id; the ids are the reader's as before. `methods` other than a
+   boolean is a request error. Test: `tests/test_inspect_reads.py` `Listed`.
+
+57. **`world-inspect {source: false}` (host9).** Omits `source`; everything else is as with `source: true`
+   (the default). A non-boolean is a request error. Test: `tests/test_inspect_reads.py`.
+
+58. **In-process yields hold the machine state (host9; KERNEL-HANDOFF §18).** `runFrame` starts with
+   `Turn.startEntryStep`; `drive` takes a `Turn.Step`, whose yield holds a `Turn.Suspension`; a Plan
+   answered in this process resumes with `Turn.resumeSuspended` (no checkpoint encoded, digested or
+   decoded). Only `await*` and `interpret`, which may suspend, build `suspension.checkpoint`; the profile
+   reads it lazily. A journaled resumption uses `resumeEntryStep`. Measured on hbox, the offline
+   rehearsal with `DELVETALK_TIMING=1`, one run each on the same tree (before at load ~5, after at ~17):
+   host ms 25,646 -> 13,621; directory `receive` 11,339 -> 4,521 (120 turns, median 70 -> 22 ms); garden
+   `receive` 5,189 -> 2,010; env `receive` 3,681 -> 2,267; rehearsal wall 62.3 -> 43.4 s.
+
+59. **Compile caches per process (host9).** `World.compiled`, `requests`, `builds` and `programs` are
+   keyed by content addresses (compile inputs naming the library by pin and modules by CID; `defKey`,
+   `buildKey`, `programKey`), so `Session.stepWorld` hands the caches of the world it had open to the
+   next it opens (`Caches`, `World.caches`/`withCaches`; `openWorld` -> `openContent` -> `startOf`,
+   `replayAll`, `resume`), and `world-fork`'s replay uses them. `world-status.compiled {packages,
+   closures, methods}` counts them. Measured on hbox (`world-create` of Place, Garden, Directory, Thing
+   from `world/objects`, a fresh world each time, one process): first world 78/137/92/102 ms, the next
+   world 6/8/6/6 ms. Separate processes (hostd's heaps) still compile from scratch: the on-disk cache is
+   queued (§7). Test: `tests/test_compile_cache.py`.
+
+60. **Interpretation quota (host9).** `world-open {interpretQuota: n}` (default 48) is journaled in the
+   `settings` entry when named (as `postQuota`; a later open naming another value is refused) and kept
+   in snapshots. `record` derives `World.interpretsStarted` (principal -> (clock hour, count)) from
+   `suspended` entries carrying an `interpretation`, by the identity's principal at the entry's clock;
+   the clock counts minutes, so the hour is `clock / 60`. An `interpret` Plan past the cap refuses the
+   whole turn with class `quota` (in `refusalClasses` and `transientClasses`, so the identity runs again
+   later), `reason` "interpretations: N an hour; next at clock M" and `next: M`, both in the public
+   projection. The opener and the clock principal are exempt. `world-status` reports `interpretQuota`,
+   and with `principal` `interpretations: {remaining, next} | "exempt"`. `tests/test_policy.py`'s
+   65-interpretation capacity test lifts the quota. Test: `tests/test_interpret_quota.py`.
+
+61. **Deletion pass (host9).** Gone, with their tests converted: the boolean `world-open {sync}` (refused
+   by name now); `stackForm` (the `import … as
+   Super` layer form in old snapshots) and its test; `utteranceBlock` in `expandInterpretation`; the
+   `tokenTree.relative` refusal; `withoutCompiled` (replay compares reprograms and creations as
+   journaled); the index edits `amend {index}`/`remove {index}`, `amendItem`/`removeItem` by index and
+   the class `outOfRange`; `via` on `call`/`send` (only `callVia`/`sendVia` name a grant). Kept:
+   `amend {item, change}`/`remove {item}` (item-addressed under the old labels; Plan.obend writes
+   `amendItem`/`removeItem`, so the objects lane may drop them) and `withBindingContext`'s
+   Context-carrying `turn-start` request, which `tests/test_layers.py` and the kernel tests send.
+   Not deleted: `receiveArgument`. Removing it failed `test_http`, `test_hypermedia`, `test_bridge` and
+   `test_zulip`: `transport/http.py:113` sends `{text, post, slot: ""}` and the bridge and zulip tests'
+   objects declare `slot` (`tests/test_bridge.py:36`). Once transport stops sending it and those
+   fixtures drop it, delete `receiveArgument` and its two lines in `runTurnWith`, and turn
+   `tests/test_outbound.py`'s and `tests/test_receive.py`'s slot tests into typeMismatch cases. The
+   host's own tests no longer send `slot: ""`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -327,7 +434,26 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - `tests/test_bridge.py` `test_end_to_end_clock_and_addressee_against_the_real_host` is still `@unittest.expectedFailure` with a comment that `world-addressee` is missing; the op exists (`Session.lean`). Remove the decorator and run it.
 - `world-reprogram`/`amend` are gated only by the object's law.
 
-### Queue for the next host lane, in order (from lane/host8, which stopped at its context ceiling)
+### Queue for the next host lane, in order (from lane/host9)
+
+host9 landed 5.52 to 5.61, one commit each: words for sums at the boundary; typed receivers for
+`subscribe` and `spell` out of the world's methods; model replies fitted as spells and lens `set`;
+`admits` per method, `world-objects {methods}`, `world-inspect {source: false}`; in-process yields
+resuming from the held machine state (KERNEL-HANDOFF §18); compile caches carried across the worlds a
+process opens; `interpretQuota`; the deletion pass. Full `tests.run` on hbox at lane/host9's last
+code commit: 1040 tests in 253 classes, 0 failed.
+
+1. **The on-disk compile cache** (the open half of host9's item 4): the design points (key naming the
+   binary, prefetch around the pure compile paths, a `LawExpr` codec, `DELVETALK_COMPILE_CACHE`, the
+   cache dir in the TCB) and the measurement (82 ms compile against 10 ms from packet) are below as
+   item 4.
+2. **Delete `receiveArgument`** once transport stops sending `slot` (5.61 says what to change).
+3. **`amend {item}`/`remove {item}`** under the old labels: delete when no object writes them
+   (`world/` writes `amendItem`/`removeItem`).
+4. The rest of host8's queue, below: rows as roots, the rehearsal wall, the older open items.
+
+host8's queue as host9 left it:
+
 
 host8 landed, one commit each (5.46 to 5.51 and the commits on lane/host8): compile caches kept across
 turns and card reads; a migration made canonical (test); the relational law atoms denoted; relations read
@@ -338,38 +464,27 @@ and `spell-parse`; spells read by the host for message-dialect cards (`badSpell`
 `changed`; field roots. Build and test on hbox in your own directory with `swarm-build`; narrow suites, then
 the full `tests.run` once (1011 tests green at lane/host8's last commit).
 
-1. **Text word for a sum of empty constructors at the boundary** (coordinator, ahead of the rest: Garden's
-   colour becomes a sum). Where the host decodes an argument from outside (`world-turn`, `world-interpretation`'s
-   proposal argument, `jsonData`/`decodeData` at the op boundary), a label where the method's input type has a
-   closed sum of empty-payload cases is taken as the case of that name; no case of that name is refused by
-   name (`typeMismatch`, `expected` naming the cases). Resolve the input type through the packet's bounds
-   (`variantCases`, Ops). Tests: a JSON proposal and a `receive` (spell path: `spellArgument` already builds
-   the variant).
-2. **Spells, the rest of WHOLENESS §2.** The interpretation verdict fitted as spell text against the offered
-   forms (`interpretVerdict`); lenses' `set` (`delvetalk <card> set` with one `field: value`, judged against the
-   lens kind, calling `set(state, {field, value}, context)`); `bridge.draft_text` reading `hint` is transport's.
-3. **Hypermedia reads** (docs/AGENTS-API.md "host ops wanted"): `world-inspect` lists per method `admits:
-   true | {clause, reading?}`, the text law's kind-0 verdict for the asking principal on the unchanged state;
-   `world-objects {methods: true}` answers `methods: {<id>: [names]}`; `world-inspect {source: false}` omits the
-   module text. One commit each.
-4. **Compile cache per process.** `World.compiled/requests/builds` are per world, so a fresh world recompiles
-   every package (Place 0.11 s first, 0.02 s cached). Keys are content addresses (inputs digest with the
-   library pin), so a process-wide cache is sound: keep it in the session (`PackageSession.Session.cache` sits
-   beside the world already) and inject it into each world it opens. Heaps (`hostd` `heaps/<did>.journal`) are
-   separate processes, so they gain only from an on-disk cache keyed the same way; measure a heap's first
-   compile before and after.
-5. **`world-open {interpretQuota: n}`** (default 48): interpretations one principal may start per clock hour,
-   counted from the journal (suspended entries with `interpretation`, by principal and clock); the next is a
-   journaled transient refusal, class `quota`, whose public projection carries `next: <clock>` and the message
-   "interpretations: N an hour; next at clock M"; `world-status {principal}` reports the cap and the caller's
-   remaining count; the opener and the clock principal are exempt. Test: the 49th prose turn in an hour
-   refused, the first after the hour admitted.
-6. **Deletion pass** (no deployed journal exists): the boolean `sync`; the `slot` tolerance in `receive`
-   (`receiveArgument`); the `import … as Super` layer form (`stackForm`); `utteranceBlock` and pre-v3 block
-   shapes; the ignored `compiled`/`binary` fields (`withoutCompiled`); the relative-address refusal; the index
-   edit forms `amend {index}`/`remove {index}` (objects6 deleted them from Plan.obend); `via` beside
-   `callVia` if both remain. Tests converted, replay of the test journals green, the "accepted for one
-   release" sentences gone from this file. One commit.
+1. Done on lane/host9 (5.52).
+2. Done on lane/host9 (5.54).
+3. Done on lane/host9 (5.55 to 5.57).
+4. Per-process half done on lane/host9 (5.59). **The on-disk half is open:** heaps are separate
+   processes. Measured on hbox: compiling a package's `initial` 82 ms (Place), running it from its
+   packet (decode, Mini re-check, run) 10 ms, so a packet cache saves about 85%. Design points found:
+   (a) the key must also name the compiler: pins are sources and replay "recompiles with the current
+   compiler", so a disk cache keyed by inputs alone would serve an old binary's packet after an upgrade;
+   the binary is 129 MB, too big to hash per process in Lean, so use a stamp (size and mtime of
+   `IO.appPath`) as the cache's subdirectory, and say the operator removes old ones; (b) the compile
+   paths are pure (`compileObject`, `compileEntryIn`, `compiledMethod`): either Session prefetches the
+   keys a step will need (a `world-create`'s `buildKey`; the defs of objects the journal names, at
+   open) and writes new keys after `durable`, or the cache read is an `implemented_by` memo; the
+   prefetch is the clean one and misses only methods first compiled in a session; (c) `Built.laws` is
+   `LawExpr`, which has no codec: add one in `Law.lean` (encode, decode, `#guard` round trip) or
+   re-derive from the entry module's law lines; `Compiled` comes back from `CheckedEntry.ofPacket`
+   (re-checked by Mini, so a damaged file fails closed to a compile); (d) gate it on
+   `DELVETALK_COMPILE_CACHE=<dir>` (hostd's children inherit it), default off; (e) the cache dir is in
+   the TCB as the binary is: a forged packet type-checks but need not be its source's.
+5. Done on lane/host9 (5.60).
+6. Done on lane/host9 (5.61).
 7. **Rows as roots, the rest** (WHOLENESS §3a): per-row roots need the kernel's lazy cells (KERNEL-HANDOFF
    §15); when `fetch` lands, record `{object, field, key}` there and judge it with `keysChangedSince`.
 8. **Rehearsal wall.** foundation at 6fe2740 runs the rehearsal in 32 to 36 s wall on hbox at load 14 to 50
@@ -378,6 +493,12 @@ the full `tests.run` once (1011 tests green at lane/host8's last commit).
    foreign worlds, `tests/test_bridge.py`'s stale `expectedFailure` (check it is still there).
 
 Requests to other lanes (not the host's files):
+- Objects (from host9): World.obend's `subscribe` line gains `method: String` ("" = `changed`), with
+  shared row types in `world/lib/Rows.obend` so a receiver's `inserted: List<Rows.Rain>` types; a
+  message-dialect card with lenses declares `def lenses() -> Lists.List<Form.Field>` and a method
+  `set(state, input: {field: String, value: Form.Value}, context)` (5.54).
+- Transport (from host9): `transport/http.py:113` stops sending `slot: ""` in `receive`, and the bridge and
+  zulip test objects stop declaring `slot`, so `receiveArgument` can go (5.61).
 - Kernel: (a) in-turn yields encode, hash and decode the whole checkpoint for every Plan the host answers at
   once (`Turn.conclude` -> `Checkpoint.makeFor` -> `checkpointDigest`, then `prepareResumeEntry` re-hashes and
   decodes): ~45% of host CPU in the rehearsal profile. A yielded outcome that carries the machine state and a

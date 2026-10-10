@@ -14,7 +14,7 @@ from tests.test_turn_world import TurnWorld, closure, label, nat, record
 
 
 def heard(text, post="at://glm/p/1"):
-    return record(text=label(text), post=label(post), slot=label(""))
+    return record(text=label(text), post=label(post))
 
 
 class Receive(TurnWorld):

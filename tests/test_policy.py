@@ -91,7 +91,7 @@ class PolicyObject(Chain):
         self.assertEqual(r["status"], "created", r)
 
     def card(self, name, principal="glm"):
-        return self.turn(name, "receive", record(text=label(""), post=label(""), slot=label("")), principal=principal)["offers"][0]["text"]
+        return self.turn(name, "receive", record(text=label(""), post=label("")), principal=principal)["offers"][0]["text"]
 
     def test_teach_define_and_set_model_edit_the_policy_in_order(self):
         self.policy()
@@ -102,7 +102,7 @@ class PolicyObject(Chain):
         self.assertEqual(reply["status"], "admitted", reply)
         for spell in ("delvetalk policy set\nmodel: claude-sonnet", "delvetalk policy set\nescalate: claude-opus",
                       "delvetalk policy set\nescalate-to: did:plc:operator4keeper"):
-            reply = self.turn("policy", "receive", record(text=label(spell), post=label(""), slot=label("")), principal="ember")
+            reply = self.turn("policy", "receive", record(text=label(spell), post=label("")), principal="ember")
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
         card = self.card("policy")
         self.assertEqual(card, (
@@ -307,7 +307,7 @@ class PolicyObject(Chain):
         self.make("garden", closure("Garden"), garden_seed(policy, confirm=confirm))
 
     def say(self, text, principal="glm", identity=None):
-        return self.turn("garden", "receive", record(text=label(text), post=label("at://glm/p/1"), slot=label("")), principal=principal,
+        return self.turn("garden", "receive", record(text=label(text), post=label("at://glm/p/1")), principal=principal,
                          identity=identity)
 
     def interpret(self, reply):
@@ -517,6 +517,8 @@ class PolicyObject(Chain):
 
     def test_interpretations_have_their_own_capacity_apart_from_awaits(self):
         """The rehearsal rerun: the ninth prose reply in a batch was refused at the await cap."""
+        # One principal starts 65 here: the hourly interpretation quota (48 by default) is lifted.
+        self.assertEqual(self.host.send(op="world-open", path=self.path, interpretQuota=1000)["status"], "opened")
         self.policy()
         self.garden("policy")
         for i in range(64):

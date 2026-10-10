@@ -108,7 +108,7 @@ class Commons(TurnWorld):
         self.assertEqual(self.act("move", GLM, to="vault"), "moved")
         self.assertEqual(self.act("move", GLM, to="porch"), "No path from vault to porch")
         self.assertEqual(self.where(), {GLM: "vault", KIM: "yard"})
-        card = self.turn("commons", "receive", record(text=label(""), post=label(""), slot=label("")), principal=KIM)["offers"][0]["text"]
+        card = self.turn("commons", "receive", record(text=label(""), post=label("")), principal=KIM)["offers"][0]["text"]
         self.assertEqual(card, (
             "COMMONS: you are at Yard.\n"
             "about the yard\n"
@@ -128,7 +128,7 @@ class Commons(TurnWorld):
             "    delvetalk commons leave\n"))
         self.assertTrue(card.startswith("COMMONS: you are at Yard.\nabout the yard\nPaths:\n  to porch\n  to vault (gated; you may not cross)\n"
                                         "  to attic (gated by door-1)\n"), card)
-        outside = self.turn("commons", "receive", record(text=label(""), post=label(""), slot=label("")), principal="did:plc:zero")["offers"][0]["text"]
+        outside = self.turn("commons", "receive", record(text=label(""), post=label("")), principal="did:plc:zero")["offers"][0]["text"]
         self.assertEqual(outside, (
             "COMMONS of ember: 4 places, 2 here. Ways in: porch\n"
             "\n"

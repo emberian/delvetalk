@@ -22,7 +22,7 @@ PAGE = "at://did:plc:ember/town.delve.feed.post/page1"
 
 
 def heard(text, post=PAGE):
-    return record(text=label(text), post=label(post), slot=label(""))
+    return record(text=label(text), post=label(post))
 
 
 class Merge(test_chain.Chain):

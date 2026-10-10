@@ -141,7 +141,8 @@ class Controls(FrontCase):
         s, t = self.call('POST', '/AGENTS.md/heap/world/kept/bump', {'intent': 'no'}, self.tok)
         self.assertEqual((s, t['status'], t['receipt']['outcome']['class']), (200, 'refused', 'lawRefused'), t)
         self.assertEqual(t['_links']['hint']['href'], '/AGENTS.md/heap/world/kept/source')  # the law is there
-        self.assertEqual([a['href'] for a in t['_actions']], ['/AGENTS.md/heap/world/kept/bump'])
+        # The law refuses this caller `bump` on a request-only clause (`admits`), so it is not offered again.
+        self.assertNotIn('_actions', t)
         s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': 7, 'intent': 'bad'}, self.tok)
         self.assertEqual((s, e['_links']['hint']['href'], [a['name'] for a in e['_actions']]), (400, f'/AGENTS.md/world/{self.c}/source', ['bump']))
         self.turn(self.tok, 'dup')

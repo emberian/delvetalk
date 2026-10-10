@@ -154,7 +154,8 @@ def body (w : World) : Except String Json := do
     ("libraries", Json.arr (libraries.toArray.map fun (pin, l) =>
       Json.mkObj [("pin", toJson pin), ("modules", modulesJson l.modules)])),
     ("settings", Json.mkObj ([("settled", toJson w.settled), ("clock", toJson w.clockPrincipal),
-      ("postQuota", toJson w.postQuota)] ++ (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]))),
+      ("postQuota", toJson w.postQuota), ("interpretQuota", toJson w.interpretQuota)] ++
+      (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
     ("grants", Json.arr (grants.toArray.map fun (_, g) => (g.json).setObjVal! "revoked" (toJson g.revoked))),
     ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))] ++
@@ -253,6 +254,7 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
                 settled := ← settings.getObjValAs? Bool "settled",
                 clockPrincipal := ← settings.getObjValAs? String "clock",
                 postQuota := ← natField settings "postQuota",
+                interpretQuota := (settings.getObjValAs? Nat "interpretQuota").toOption.getD 48,
                 opener := (settings.getObjValAs? String "opener").toOption.getD "" }
   let mut types : Std.HashMap String (Ty × DataBounds × Json × Bool × Bool) := {}
   for t in ← (← b.getObjVal? "types").getArr? do
@@ -266,7 +268,7 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
     let some (stateType, bounds, methods, predicate, predicateReads) := types[pin]?
       | throw s!"object {id} names a type no entry holds"
     let lawText ← o.getObjValAs? String "law"
-    let inputs := stackForm (← expandInputs w (← o.getObjVal? "compile"))
+    let inputs ← expandInputs w (← o.getObjVal? "compile")
     let state ← decodeData Limits.dataDepth (← o.getObjVal? "state")
     unless state.conformsUnder bounds stateType do throw s!"the state of {id} does not conform to its type"
     let some cid := (o.getObjValAs? String "stateCid").toOption | throw s!"object {id} carries no state CID"
@@ -390,10 +392,10 @@ def installFork (entry : Json) : Except String World := do
   return record w entry (identityKey (← identity.getObjValAs? String "principal") (← identity.getObjValAs? String "intent")) []
 
 /-- Where replay of a journal starts: a fork's installed genesis and one entry consumed, else an empty world. -/
-def startOf (entries : Array Json) : Except String (World × Nat) := do
+def startOf (entries : Array Json) (caches : Caches := {}) : Except String (World × Nat) := do
   match entries[0]? with
-  | some e => if tagOf e == "forked" then return (← installFork e, 1) else return ({}, 0)
-  | none => return ({}, 0)
+  | some e => if tagOf e == "forked" then return ((← installFork e).withCaches caches, 1) else return (({} : World).withCaches caches, 0)
+  | none => return (({} : World).withCaches caches, 0)
 
 /-- What the entries say each object is, without judging: created (with its pin), then each
     admitted write's recorded version and each reprogram's new pin. -/
@@ -446,10 +448,10 @@ def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String :
 
 /-- A world from a snapshot body and the journal's entries: the store installed, the entries up
     to its height recorded, the derived copies compared, the later entries replayed. -/
-def resume (b : Json) (entries : Array Json) : Except String World := do
+def resume (b : Json) (entries : Array Json) (caches : Caches := {}) : Except String World := do
   let height ← natField b "height"
   let early := entries.extract 0 height
-  let (start, skip) ← startOf entries
+  let (start, skip) ← startOf entries caches
   let booked ← recordAll start (early.extract skip early.size)
   let w ← install b booked.modules
   let w := { booked with library := w.library, libraries := w.libraries, libraryLaw := w.libraryLaw,
@@ -457,6 +459,7 @@ def resume (b : Json) (entries : Array Json) : Except String World := do
                          cachedPackets := w.objects.fold (fun m _ o =>
                            if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {},
                          clockPrincipal := w.clockPrincipal, postQuota := w.postQuota, opener := w.opener,
+                         interpretQuota := w.interpretQuota,
                          settled := w.settled }
   for (k, v) in derived w do
     unless (b.getObjVal? k).toOption == some v do throw s!"its {k} is not the journal's"
@@ -504,8 +507,8 @@ def entriesOf (content : String) : Except String (Array Json) := do
   return out
 
 /-- Full replay of verified entries. -/
-def replayAll (entries : Array Json) : Except String World := do
-  let (start, skip) ← startOf entries
+def replayAll (entries : Array Json) (caches : Caches := {}) : Except String World := do
+  let (start, skip) ← startOf entries caches
   let mut w := start
   for entry in entries.extract skip entries.size do
     match replayEntry w entry with
@@ -526,7 +529,8 @@ def Report.json (r : Report) : Json :=
 /-- Open a journal's content: the newest snapshot that passes every check, else full replay.
     With `verify`, replay everything and compare every snapshot with the replayed store at its
     height; a snapshot that disagrees is refused by name. -/
-def openContent (journal content : String) (verify : Bool := false) : IO (Except String (World × Report)) := do
+def openContent (journal content : String) (verify : Bool := false) (caches : Caches := {}) :
+    IO (Except String (World × Report)) := do
   let entries ← match entriesOf content with
     | .ok e => pure e
     | .error e => return .error e
@@ -534,7 +538,7 @@ def openContent (journal content : String) (verify : Bool := false) : IO (Except
   let mut report : Report := {}
   if verify then
     let heights := snaps.map (·.1)
-    let (start, skip) ← match startOf entries with
+    let (start, skip) ← match startOf entries caches with
       | .ok r => pure r
       | .error e => return .error s!"journal broken at height 1: {e}"
     let mut w := start
@@ -555,12 +559,12 @@ def openContent (journal content : String) (verify : Bool := false) : IO (Except
   for (height, f) in snaps do
     let attempt ← try
         let bytes ← IO.FS.readBinFile f
-        pure (verifiedBody bytes height entries >>= fun b => resume b entries)
+        pure (verifiedBody bytes height entries >>= fun b => resume b entries caches)
       catch e => pure (.error s!"unreadable: {e}")
     match attempt with
     | .ok w => return .ok (w, { report with resumed := height })
     | .error e => report := { report with refused := report.refused ++ [(height, e)] }
-  match replayAll entries with
+  match replayAll entries caches with
   | .ok w => return .ok (w, report)
   | .error e => return .error e
 

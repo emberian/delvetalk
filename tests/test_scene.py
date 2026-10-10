@@ -22,7 +22,7 @@ GLM, KIM = "did:plc:glm", "did:plc:kimik3"
 
 
 def heard(text=""):
-    return record(text=label(text), post=label(""), slot=label(""))
+    return record(text=label(text), post=label(""))
 
 
 def listing(items):
