@@ -137,6 +137,26 @@ def send(request, intent, state, credentials, client=None, limit=LIMIT):
     return result
 
 
+def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=None, client=None, intent=None):
+    """Post a bridge outbox draft (its replyTo, object and slot; `text` replaces its text), record it with the host, and
+    mark it posted: what `post --draft ... --i-am-ember-and-authorize-posting` does, callable. -> the post result."""
+    path = Path(path)
+    d = json.loads(path.read_text())
+    if d.get('posted') or d.get('skipped'):
+        raise Failure('draft_already_posted')
+    body = d['text'] if text is None else text
+    reader = reader or Client(http_transport)
+    slot = slot_record(d['slot']) if d.get('slot') else None
+    request = build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body))
+    limit, _ = quota_limit(host)
+    result = send(request, intent or f'draft-{path.stem}', Path(state), credentials, client=client, limit=limit)
+    if d.get('object'):
+        result['recorded'] = record_posted(host, result, d['object'], slot, wiki_target(body))
+    from transport.bridge import write_atomic
+    write_atomic(path, dict(d, text=body, posted=True, **({} if body == d['text'] else {'original': d['text']})))
+    return result
+
+
 def main(argv=None, out=None, client=None):
     out = out or sys.stdout
     ap = argparse.ArgumentParser(prog='post.py')

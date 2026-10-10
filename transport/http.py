@@ -20,7 +20,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import pages
+from transport import hand, pages, post
 from transport.hostd import CLOCK
 from transport.hostproc import HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
@@ -117,10 +117,10 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep):
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy, self.sleep = heaps, repl, trust_proxy, sleep
+        self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps, repl, trust_proxy, sleep, hand
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
@@ -236,6 +236,12 @@ class Handler(BaseHTTPRequestHandler):
     def route(self, method):
         path = urllib.parse.urlsplit(self.path).path
         parts = [urllib.parse.unquote(p) for p in path.split('/')[1:]]
+        if parts[:1] == ['hand'] and self.server.hand:  # the owner's console; without --hand-token this is an unknown route
+            form = self.body() if method == 'POST' else None
+            if method == 'POST' and form is None:
+                return
+            code, body, headers = self.server.hand.handle(method, self.path, self.headers.get('Cookie') or '', form)
+            return self.html(code, body, headers)
         if method == 'GET' and path == PREFIX:
             return self.reply(200, self.server.guide(), 'text/plain', [('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
         if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
@@ -481,12 +487,15 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
+    ap.add_argument('--hand-token', metavar='SECRET', help='serve the owner\'s console at /hand/ (needs the token once); for an ssh forward, never public')
+    ap.add_argument('--credentials', default=post.CREDENTIALS, help='the Delve credentials file the hand posts with')
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
     sock = a.host_socket or Path(a.state) / 'host.sock'
     host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
     front = Front((a.bind, a.port), host, Identity(a.state, Client(http_transport), a.origin), a.origin,
-                  heaps=heaps, repl=repl, trust_proxy=a.trust_proxy)
+                  heaps=heaps, repl=repl, trust_proxy=a.trust_proxy,
+                  hand=hand.Hand(a.state, host, a.hand_token, a.credentials) if a.hand_token else None)
     try:
         front.serve_forever()
     finally:
