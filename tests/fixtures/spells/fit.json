@@ -1,0 +1,1291 @@
+[
+ {
+  "text": "delvetalk garden-1 plant\nseed: fern\ncolour: silver\n",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: A fern whose leaves remember\ncolour: amber",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=amber;seed=A fern whose leaves remember;"
+ },
+ {
+  "text": "\n# hello\n  delvetalk garden-1 plant  \r\n\nseed:   fern  \r\n# note\ncolour: violet\n---\nnot: a field\nProse here\n",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=violet;seed=fern;"
+ },
+ {
+  "text": "Could we plant a fern?",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "> ✾ DELVETALK · ROOT\n> \n> GARDEN\n> Plant something.\n> Say: delvetalk is the word\n---\nSure!\n\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver\n---\ntrailing prose",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;"
+ },
+ {
+  "text": "Sure!\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk garden-1 plant seed: a fern, that remembers, colour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=a fern, that remembers;"
+ },
+ {
+  "text": "Quoted menu\n  delvetalk garden-1 plant  colour: amber ,  seed: moth  \n",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=amber;seed=moth;"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed fern",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "unclear colour|seed|"
+ },
+ {
+  "text": "delvetalk garden-1 plant\n: fern",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "unclear colour|seed|"
+ },
+ {
+  "text": "delvetalk garden-1 plant / seed: fern / colour: amber\nthanks, all!\nmore: prose",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=amber;seed=fern;"
+ },
+ {
+  "text": "delvetalk env/did:plc:abc plant\nseed: fern\ncolour: silver",
+  "form": {
+   "card": "env/did:plc:abc",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk env/DID:plc:x seen",
+  "form": {
+   "card": "env/x",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk env/did:plc:x? seen",
+  "form": {
+   "card": "env/x",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk env_did seen",
+  "form": {
+   "card": "env/x",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk env/did:plc:x se:en",
+  "form": {
+   "card": "env/x",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk env/x see/n",
+  "form": {
+   "card": "env/x",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk env/x seen\na.b: 1",
+  "form": {
+   "card": "env/x",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk garden-1 plant / colour: amber / seed: a fern",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=amber;seed=a fern;"
+ },
+ {
+  "text": "```\ndelvetalk garden-1 plant\n```\n```\nseed: fern\n> colour: violet\ncolour: silver\n```",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nplant: a fern\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=a fern;"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nplant: a fern",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "unclear colour|"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused Unknown field plant"
+ },
+ {
+  "text": "a companion card:\n\n```bend\ndelvetalk forge make / name: sentry\n---\nrecord State:\n  n: Nat\n```\n\nAnd planting an initial token:\n\ndelvetalk garden-1 plant / colour: silver / seed: an open gate",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=an open gate;"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: 🌙 é “moths” 蛾\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=🌙 é “moths” 蛾;"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: fern",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "unclear colour|"
+ },
+ {
+  "text": "delvetalk garden-1 plant",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "unclear colour|seed|"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: fern\ncolour: silver\nsmell: sweet",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused Unknown field smell"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nsmell: sweet",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused Unknown field smell"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: fern\ncolour: green",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused colour is one of: amber, violet, silver"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: fern\ncolour: Silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed:\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused seed takes 1 to 80 characters."
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé;"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused seed takes 1 to 80 characters."
+ },
+ {
+  "text": "delvetalk garden-1 plant\nSeed: fern\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused Unknown field Seed"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nsee d: fern\ncolour: silver",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused Unknown field see d"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: a\nseed: b\ncolour: amber",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused Duplicate field seed"
+ },
+ {
+  "text": "delvetalk garden-2 plant\nseed: a\ncolour: amber",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused This card offers garden-1 plant"
+ },
+ {
+  "text": "delvetalk garden-1 prune\nseed: a\ncolour: amber",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused This card offers garden-1 plant"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: <<S\nfern\nmoss\nS\ncolour: amber",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: <<S\nfern\n",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk garden-1 plant\nplant: a\nseed: b\nplant: c\ncolour: amber",
+  "form": {
+   "card": "garden-1",
+   "action": "plant",
+   "fields": [
+    {
+     "name": "colour",
+     "kind": {
+      "choice": {
+       "options": [
+        "amber",
+        "violet",
+        "silver"
+       ]
+      }
+     }
+    },
+    {
+     "name": "seed",
+     "kind": {
+      "text": {
+       "min": 1,
+       "max": 80
+      }
+     }
+    }
+   ]
+  }
+ }
+]

@@ -1,0 +1,187 @@
+[
+ {
+  "text": "delvetalk garden-1 plant\nseed: fern\ncolour: silver\n",
+  "expected": "spell garden-1 plant seed=fern;colour=silver;"
+ },
+ {
+  "text": "",
+  "expected": "not a spell: The reply has no delvetalk line."
+ },
+ {
+  "text": "\n\n# only a comment\n",
+  "expected": "not a spell: The reply has no delvetalk line."
+ },
+ {
+  "text": "Could we plant a silver fern whose leaves remember last night's rain?"
+ },
+ {
+  "text": "one\ntwo\nthree",
+  "expected": "not a spell: The reply has no delvetalk line."
+ },
+ {
+  "text": "delvetalk garden-1 plant seed: fern, colour: silver",
+  "expected": "spell garden-1 plant seed=fern;colour=silver;"
+ },
+ {
+  "text": "delvetalk garden-1 plant seed: fern\ncolour: silver",
+  "expected": "spell garden-1 plant seed=fern;colour=silver;"
+ },
+ {
+  "text": "delvetalk a b x: 1, y: 2, ---",
+  "expected": "spell a b x=1;y=2, ---;"
+ },
+ {
+  "text": "delvetalk garden-1 plant now"
+ },
+ {
+  "text": "delvetalk garden-1\nseed: fern"
+ },
+ {
+  "text": "delvetalk Garden-1 plant"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed fern",
+  "expected": "spell garden-1 plant "
+ },
+ {
+  "text": "delvetalk garden-1 plant\n: fern",
+  "expected": "spell garden-1 plant "
+ },
+ {
+  "text": "delvetalk env/did:plc:abc123 seen\nat: 3",
+  "expected": "spell env/did:plc:abc123 seen at=3;"
+ },
+ {
+  "text": "delvetalk did:web:town.example set\nhandle: glm",
+  "expected": "spell did:web:town.example set handle=glm;"
+ },
+ {
+  "text": "delvetalk garden-1 ?",
+  "expected": "spell garden-1 ? "
+ },
+ {
+  "text": "delvetalk env/did:plc:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa seen"
+ },
+ {
+  "text": "delvetalk env/did:plc:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa seen"
+ },
+ {
+  "text": "delvetalk env/x ??"
+ },
+ {
+  "text": "delvetalk tide subscribe / every: 1 / note: WC-01, first light",
+  "expected": "spell tide subscribe every=1;note=WC-01, first light;"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nseed: a / b fern",
+  "expected": "spell garden-1 plant seed=a / b fern;"
+ },
+ {
+  "text": "delvetalk a b x: at://did/p/1 / y: 2",
+  "expected": "spell a b x=at://did/p/1;y=2;"
+ },
+ {
+  "text": "delvetalk a b x: 1/2 / y: and/or",
+  "expected": "spell a b x=1/2;y=and/or;"
+ },
+ {
+  "text": "e.g. like this:\n    delvetalk garden plant / colour: amber / seed: x\n> delvetalk wake watch\nso here is mine:\ndelvetalk tide subscribe / every: 1 / note: WC-01",
+  "expected": "spell tide subscribe every=1;note=WC-01;"
+ },
+ {
+  "text": "delvetalk a first\ndelvetalk b second\nx: 1",
+  "expected": "spell b second x=1;"
+ },
+ {
+  "text": "quoted:\n    delvetalk garden-1 plant\n    seed: fern",
+  "expected": "spell garden-1 plant seed=fern;"
+ },
+ {
+  "text": "> delvetalk garden-1 plant\n> seed: fern"
+ },
+ {
+  "text": "delvetalk a b\nx: 1\ndelvetalk Is The word",
+  "expected": "spell a b x=1;"
+ },
+ {
+  "text": "```json\ndelvetalk garden-1 plant\n```"
+ },
+ {
+  "text": "delvetalk a b\nx: 1\n```obend\ny: 2\n```\nz: 3",
+  "expected": "spell a b x=1;z=3;"
+ },
+ {
+  "text": "delvetalk a b\nnote: time: 12:30",
+  "expected": "spell a b note=time: 12:30;"
+ },
+ {
+  "text": "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\n\ndef f(n: Nat) -> Nat:\n  n\nBEND\ntarget: bell-1\n"
+ },
+ {
+  "text": "delvetalk w c\nnote: <<END_1\nnot END_1 yet\nEND_1\n",
+  "expected": "spell w c note=not END_1 yet;"
+ },
+ {
+  "text": "delvetalk w c\nnote: <<X\nX",
+  "expected": "spell w c note=;"
+ },
+ {
+  "text": "delvetalk w c\nnote: <<end\nx: y\n",
+  "expected": "spell w c note=<<end;x=y;"
+ },
+ {
+  "text": "delvetalk w c\nsource: <<BEND\nline\n",
+  "expected": "not a spell: the block <<BEND for source is never closed by a line BEND"
+ },
+ {
+  "text": "delvetalk w c\nsource: <<BEND\r\nline\r\nBEND\r\nz: 1"
+ },
+ {
+  "text": "delvetalk w c\nsource:<<A\nx\nA\n/ y: 2"
+ },
+ {
+  "text": "delvetalk w c\nsource: <<TOOLONGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nx\n"
+ },
+ {
+  "text": "\t delvetalk a b\n\tx: 1"
+ },
+ {
+  "text": "delvetalk a b\n  \n\t\nx:   1  \r\n#c\n>q\n```\ny: 2\n```\n---\nz: 3"
+ },
+ {
+  "text": "note: hi\nprose only"
+ },
+ {
+  "text": "delvetalk a b / x: 1, y, z: 3 / w:4"
+ },
+ {
+  "text": "delvetalk a b /x: 1"
+ },
+ {
+  "text": "delvetalk\ta\tb\tx: 1"
+ },
+ {
+  "text": "delvetalk a b\nx: é, 🌙\ny: 蛾"
+ },
+ {
+  "text": "delvetalk a b\ndelvetalk c d\nx: 1\n    delvetalk e f\ny: 2"
+ },
+ {
+  "text": "delvetalk a b\nx: 1\nprose here\ndelvetalk c d\ny: 2"
+ },
+ {
+  "text": "delvetalk a b\nx: 1\nprose here\n    delvetalk c d\ny: 2"
+ },
+ {
+  "text": "    delvetalk a b\nx: 1"
+ },
+ {
+  "text": "    delvetalk a b\n    delvetalk c d\nx: 1"
+ },
+ {
+  "text": "delvetalk garden-1 plant\nf00: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf01: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf02: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf03: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf04: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf05: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf06: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf07: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf08: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf09: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf10: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf11: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf12: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf13: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf14: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf15: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf16: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf17: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf18: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf19: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf20: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf21: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf22: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf23: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf24: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf25: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf26: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf27: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf28: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf29: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf30: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf31: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf32: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf33: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf34: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf35: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf36: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf37: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf38: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf39: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf40: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf41: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf42: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf43: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf44: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf45: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf46: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf47: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf48: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf49: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf50: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf51: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf52: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf53: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf54: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf55: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf56: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf57: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf58: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf59: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf60: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf61: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf62: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\nf63: vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\n---\n###################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################"
+ },
+ {
+  "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+ }
+]

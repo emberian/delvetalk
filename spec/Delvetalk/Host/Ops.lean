@@ -44,14 +44,18 @@ def boundedText (what : String) (cap : Nat) (s : String) : Except String String 
   if s.isEmpty || s.utf8ByteSize > cap then throw s!"{what} must be 1..{cap} bytes"
   return s
 
+/-- The world object's id (WHOLENESS §1): the reference `{world: "", object: "world"}` a message
+    activity calls. No object may take it. -/
+def worldId : String := "world"
+
 /-- An object id a creation may take: 1..128 bytes of letters, digits and `. _ : / -`, so every object has an
     AT record key (`~` stands for `/` there). Journals with other ids still replay; only new creations
     are held to it. -/
 def validObjectId (id : String) : Bool :=
-  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes &&
+  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId &&
     id.toList.all fun (c : Char) => c.isAlphanum || ".:_/-".toList.contains c
 
-def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -"
+def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world"
 
 /-- The public reader's name: `anonymous`, or the empty string; both read as "". -/
 def publicReader : String := "anonymous"
@@ -105,10 +109,12 @@ def EditKind.data : EditKind → Data
   | .upsert row => .variant "upsert" (.record [("row", row)])
   | .retract key => .variant "retract" (.record [("key", key)])
 
-/-- Edits that commute with any other change of the same kinds: `keep`, `add`, `append`. A root
-    whose every change in a proposal is made of them commits against the root as it is now. -/
+/-- Edits that commute with any other change of the same kinds: `keep`, `add`, `append`, and a
+    relation's `insert` (re-applied on the rows as they are now: a fresh key adds, the same row is
+    no change, another row under the key is `keyTaken`). A root whose every change in a proposal
+    is made of them commits against the root as it is now. -/
 def EditKind.commutes : EditKind → Bool
-  | .keep | .add _ | .append _ => true
+  | .keep | .add _ | .append _ | .insert _ => true
   | _ => false
 
 def Step.data (s : Step) : Data := .record (s.map fun e => (e.field, e.kind.data))
@@ -201,8 +207,13 @@ structure Proposal where
   revokes : List String := []
   /-- Uses the turn spends of limited grants: grant id and count. -/
   spent : List (String × Nat) := []
+  /-- Subscriptions the turn makes and ends (WHOLENESS §3); they take effect with the commit. -/
+  subscribes : List Subscription := []
+  unsubscribes : List Subscription := []
+  /-- Fields of objects the turn read alone (`viewField`), at the version it read. -/
+  fieldRoots : List (String × String × Nat) := []
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
-      moved while the turn waited (`rebasable`). An entry with `resumes` sets it on replay. -/
+      moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
   rebaseOwn : Option String := none
 
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
@@ -229,6 +240,21 @@ def noteMinted (w : World) (id : String) : World :=
     | some p => if p.minted ≥ n then w else { w with objects := w.objects.insert parent { p with minted := n } }
     | none => w
 
+/-- `j.compress.utf8ByteSize`, counted without printing: the state byte bound reads it on every
+    write, and printing a large state to measure it was most of a write's cost. -/
+partial def compressedSize : Json → Nat
+  | .null => 4
+  | .bool b => if b then 4 else 5
+  | .num n => n.toString.utf8ByteSize
+  | .str s => (Json.renderString s "").utf8ByteSize
+  | .arr a => 2 + a.foldl (fun n x => n + compressedSize x) 0 + (a.size - 1)
+  | .obj kvs =>
+    let (n, count) := kvs.foldl (fun (n, c) k v => (n + (Json.renderString k "").utf8ByteSize + 1 + compressedSize v, c + 1)) (0, 0)
+    2 + n + (count - 1)
+
+/-- The bytes of a state as the bound counts them: its wire JSON, compressed. -/
+def stateBytes (state : Data) : Nat := compressedSize (dataJson state)
+
 /-- The CID of an object's state: its canonical bytes as the journal hashes them, so a root
     names exactly the card version a turn was judged against. -/
 def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
@@ -237,6 +263,19 @@ def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
     entry that wrote it (`writes[].cid`, `world-state-cid`). -/
 def rootsJson (roots : List (String × Nat)) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj [("object", toJson o), ("version", toJson v)])
+
+/-- Field roots (WHOLENESS §3a): a turn that read one field of an object (`viewField`) conflicts only
+    with later writes of that field. Journaled in `roots` beside the object roots as `{object, field,
+    key: "*", version}`; the `key` is `*` because the host does not see which rows a turn's code read
+    (that waits on lazy state cells, KERNEL-HANDOFF §15). -/
+def fieldRootsJson (roots : List (String × String × Nat)) : Array Json :=
+  roots.toArray.map fun (o, f, v) => Json.mkObj [("object", toJson o), ("field", toJson f), ("key", toJson "*"), ("version", toJson v)]
+
+/-- An entry's `roots`: the object roots, then the field roots. -/
+def allRootsJson (roots : List (String × Nat)) (fieldRoots : List (String × String × Nat)) : Json :=
+  match rootsJson roots with
+  | .arr a => .arr (a ++ fieldRootsJson fieldRoots)
+  | other => other
 
 /-- The fields recording who made each change: parallel arrays of steps, callers, kinds. -/
 def writtenFields (ws : List Written) : List (String × Json) :=
@@ -255,9 +294,22 @@ def parseRoots (j : Json) : Except String (List (String × Nat)) := do
   if raw.size > Limits.maxRoots then throw "too many roots"
   let mut out : List (String × Nat) := []
   for r in raw do
+    if (r.getObjVal? "field").toOption.isSome then continue
     let object ← boundedText "object id" Limits.maxObjectIdBytes (← r.getObjValAs? String "object")
     if out.any (·.1 == object) then throw "duplicate root"
     out := out ++ [(object, ← natField r "version")]
+  return out
+
+/-- The field roots among an entry's `roots` (`fieldRootsJson`). -/
+def parseFieldRoots (j : Json) : Except String (List (String × String × Nat)) := do
+  let raw ← j.getArr?
+  let mut out : List (String × String × Nat) := []
+  for r in raw do
+    let some field := (r.getObjValAs? String "field").toOption | continue
+    unless (r.getObjValAs? String "key").toOption == some "*" do throw "a field root's key is *"
+    let object ← boundedText "object id" Limits.maxObjectIdBytes (← r.getObjValAs? String "object")
+    if out.any (fun (o, f, _) => o == object && f == field) then throw "duplicate root"
+    out := out ++ [(object, field, ← natField r "version")]
   return out
 
 /-- Writes as a client sends them: direct, so every step has the empty caller. A client
@@ -324,6 +376,7 @@ def Proposal.digest (p : Proposal) : String :=
     [("object", toJson id), ("source", toJson (Journal.bodyHash src)), ("migration", toJson mig)]
   let laws := p.laws.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)]
   Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots), ("writes", writesJson p.allWrites)] ++
+    (if p.fieldRoots.isEmpty then [] else [("fieldRoots", Json.arr (fieldRootsJson p.fieldRoots))]) ++
     (if programs.isEmpty then [] else [("programs", Json.arr programs.toArray)]) ++
     (if p.layered.isEmpty then [] else [("extends", toJson p.layered)]) ++
     (if laws.isEmpty then [] else [("laws", Json.arr laws.toArray)]) ++
@@ -333,7 +386,9 @@ def Proposal.digest (p : Proposal) : String :=
        ("law", toJson c.object.lawText)]))]) ++
     (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
     (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
-    (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)])))
+    (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]) ++
+    (if p.subscribes.isEmpty then [] else [("subscribes", Json.arr (p.subscribes.toArray.map (·.json)))]) ++
+    (if p.unsubscribes.isEmpty then [] else [("unsubscribes", Json.arr (p.unsubscribes.toArray.map (·.json)))])))
 
 /-! ## Judging -/
 
@@ -341,7 +396,7 @@ def Proposal.digest (p : Proposal) : String :=
 def refusalClasses : List String :=
   ["staleRoot", "typeMismatch", "capacity", "outOfRange", "absentItem", "lawRefused", "unknownObject",
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
-   "keyTaken", "duplicateKey"]
+   "keyTaken", "duplicateKey", "badSpell"]
 
 structure Refusal where
   cls : String
@@ -354,6 +409,8 @@ structure Refusal where
   /-- The root the refusal was judged against when it is not `object`: for `requiredAbsence`, the
       object whose create found `object` already there. -/
   root : Option String := none
+  /-- For `badSpell`: the spell the reply meant, its blanks shown, to resend. -/
+  hint : Option String := none
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
@@ -883,10 +940,14 @@ partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theo
   | .emptyRow => some []
   | _ => none
 
-/-- Does a package declare `relations()`? Read from its own modules' sources, so a package without
-    one compiles nothing more. -/
-def declaresRelations (inputs : Json) : Bool :=
-  (inputSources inputs).any fun src => (src.splitOn "\n").any (·.startsWith "def relations(")
+/-- Does a package's entry module (the last of its modules, or its one `source`) declare
+    `relations()`? Only the entry module's declaration counts: a package whose other modules
+    declare one, and its entry module none, has no relations. -/
+def entryDeclaresRelations (inputs : Json) : Bool :=
+  let src := match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => (ms.back?.bind fun m => (m.getObjValAs? String "source").toOption).getD ""
+    | _ => (inputs.getObjValAs? String "source").toOption.getD ""
+  (src.splitOn "\n").any (·.startsWith "def relations(")
 
 /-- The relation declarations `relations()` returned (a list of `{field, key, limit?, retain?}`). -/
 def parseDecls (value : Data) : Except String (List RelDecl) := do
@@ -985,7 +1046,8 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   let (methods, predicate, predicateReads) := artifactShape artifact
   let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
     else (o.predicate, o.predicateReads)
-  let relations ← if !declaresRelations inputs then pure [] else do
+  -- A layer that declares no relations keeps the relations of the code below it, as it keeps its law.
+  let relations ← if !entryDeclaresRelations (← resolved "initial") then pure (if extend then o.relations else []) else do
     let compiled ← (Package.compileEntry (← resolved "relations")).mapError (("key", ·.render))
     (declsOfEntry compiled.entry).mapError (("key", ·))
   (checkRelations relations assumptions.bounds ty).mapError (("key", ·))
@@ -1333,17 +1395,10 @@ def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
     | none => throw "lawReads must return a List<String>"
   | .error _ => throw "lawReads did not finish"
 
-/-- The relations a package declares: its `relations()` compiled as a held entry and run. No
-    declaration: none. -/
-def relationDecls (w : World) (inputs : Json) : Except String (List RelDecl) := do
-  if !declaresRelations inputs then return []
-  let (c, _) ← compileEntryIn w inputs "relations"
-  declsOfEntry c.entry
-
 /-- A built package's relations, checked, and a state put in canonical form under them
     (`duplicateKey` refused by name). -/
-def relationsFor (w : World) (inputs : Json) (b : Built) (state : Data) : Except String (List RelDecl × Data) := do
-  let decls ← relationDecls w inputs
+def relationsFor (b : Built) (state : Data) : Except String (List RelDecl × Data) := do
+  let decls := b.relations
   checkRelations decls b.assumptions.bounds b.ty
   match canonicalState decls state with
   | .ok s => return (decls, s)
@@ -1455,47 +1510,85 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
   | _ => return refuse "law"
 
-/-- Every change of `id` in the writes is an ordinary write made only of commuting edits. -/
-def commutesAt (writes : List (String × List Written)) (id : String) : Bool :=
-  match writes.lookup id with
-  | some changes => !changes.isEmpty && changes.all fun c => c.kind == 0 && c.edits.all (·.kind.commutes)
-  | none => false
+/-- The edits of `id`'s admitted writes after version `seen`, oldest first, from the per-object
+    index (`World.touches`, newest back to `seen`); none when one of them was not an ordinary write
+    (a reprogram or an amendment) or does not decode. -/
+def editsSince (w : World) (id : String) (seen : Nat) : Option (List (String × Data)) := Id.run do
+  let ts := w.touches.getD id #[]
+  let mut out : List (String × Data) := []
+  let mut i := ts.size
+  while i > 0 do
+    i := i - 1
+    let t : Touch := ts[i]!
+    if t.version ≤ seen then break
+    match t.edits with
+    | some es => out := es ++ out
+    | none => return none
+  return some out
 
 /-- The fields of `id` its ordinary admitted writes changed after version `seen` (edits other
-    than `keep`), from the journal; none when one of its later changes was not an ordinary write
-    (a reprogram or an amendment) or does not decode. -/
-def fieldsChangedSince (w : World) (id : String) (seen : Nat) : Option (List String) := Id.run do
-  let mut fields : List String := []
-  for i in w.touched.getD id #[] do
-    let e := w.entries[i]!
-    if ((e.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "tag" |>.toOption)) != some "admitted" then continue
-    let ws := ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
-      |>.bind (·.getArr? |>.toOption)).getD #[]
-    for x in ws do
-      unless (x.getObjValAs? String "object").toOption == some id do continue
-      unless (x.getObjValAs? Nat "version").toOption.getD 0 > seen do continue
-      let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
-      if kinds.any (fun k => k.getNat?.toOption != some 0) then return none
-      for step in ((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[] do
-        match decodeData Limits.dataDepth step with
-        | .ok (.record fs) =>
-          for (f, k) in fs do
-            match k with
-            | .variant "keep" _ => pure ()
-            | _ => fields := f :: fields
-        | _ => return none
-  return some fields.eraseDups
+    than `keep`); none when one of its later changes was not an ordinary write. -/
+def fieldsChangedSince (w : World) (id : String) (seen : Nat) : Option (List String) :=
+  (editsSince w id seen).map fun es => (es.map (·.1)).eraseDups
 
-/-- A resumed turn's own object that moved while it waited may commit on the current state when
-    nothing but ordinary writes moved it and each of the turn's own edits of it commutes or is to
-    a field those writes left alone (a turn that only read it qualifies). -/
-def rebasable (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat) : Bool :=
-  match fieldsChangedSince w id seen with
-  | none => false
-  | some changed =>
-    match writes.lookup id with
-    | none => true
-    | some changes => changes.all fun c => c.kind == 0 && c.edits.all fun e => e.kind.commutes || !changed.contains e.field
+/-- The keys of relation `d` that ordinary admitted writes of `id` touched after version `seen`
+    (the rows' keys of inserts and upserts, the keys of retracts); none when a later change of `id`
+    was not an ordinary write or changed the field by any other edit (a `set` of the whole relation
+    touches every key). Reads only the writes since `seen` (`editsSince`). -/
+def keysChangedSince (w : World) (id : String) (seen : Nat) (d : RelDecl) : Option (List Data) := do
+  let es ← editsSince w id seen
+  (es.filter (·.1 == d.field)).mapM fun (_, k) => match parseKind k with
+    | some (.insert row) | some (.upsert row) => (keyOf d row).toOption
+    | some (.retract key) => (keyAsDeclared d key).toOption
+    | _ => none
+
+/-- The index entries an admitted entry adds (`World.touches`), from its `writes`. -/
+def touchesOf (entry : Json) : List (String × Touch) :=
+  let ws := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
+    |>.bind (·.getArr? |>.toOption)).getD #[]
+  ws.toList.filterMap fun x => do
+    let id ← (x.getObjValAs? String "object").toOption
+    let version ← (x.getObjValAs? Nat "version").toOption
+    let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+    let steps := (((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+    let edits : Option (List (String × Data)) :=
+      if kinds.any (fun k => k.getNat?.toOption != some 0) then none else
+      steps.foldlM (init := []) fun acc step => match decodeData Limits.dataDepth step with
+        | .ok (.record fs) => some (acc ++ fs.filter fun (_, k) => match k with
+            | .variant "keep" _ => false
+            | _ => true)
+        | _ => none
+    return (id, { version, edits })
+
+/-- A root `id` the turn read at `seen` that has moved since may still commit when every change the
+    turn makes of it is an ordinary write and each edit either commutes (`EditKind.commutes`), or
+    is an `upsert`/`retract` of a relation row whose key no admitted write since `seen` touched
+    (`keysChangedSince`: the row rule, for any root), or, on a resumed turn's own object (`own`), is
+    to a field those writes left alone (a turn that only read its own object qualifies). Anything
+    else is `staleRoot`. -/
+def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat) (own : Bool) : Bool :=
+  let decls := ((w.objects[id]?).map (·.relations)).getD []
+  let changedFields := if own then fieldsChangedSince w id seen else none
+  let untouched := fun (e : Edit) =>
+    match decls.find? (·.field == e.field) with
+    | none => false
+    | some d =>
+      let key? := match e.kind with
+        | .upsert row => (keyOf d row).toOption
+        | .retract key => (keyAsDeclared d key).toOption
+        | _ => none
+      match key?, keysChangedSince w id seen d with
+      | some key, some keys =>
+        let k := Delvetalk.Canonical.encode key
+        !keys.any (Delvetalk.Canonical.encode · == k)
+      | _, _ => false
+  match writes.lookup id with
+  | none => own && changedFields.isSome
+  | some changes => !changes.isEmpty && changes.all fun c => c.kind == 0 && c.edits.all fun e =>
+      e.kind.commutes || untouched e ||
+        (match changedFields with
+         | some fields => !fields.contains e.field
+         | none => false)
 
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
@@ -1508,8 +1601,13 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   for (id, seen) in p.roots do
     if let some o := w.objects[id]? then
       if o.version != seen && !(seen < o.version &&
-          (commutesAt writes id || (p.rebaseOwn == some id && rebasable w writes id seen))) then
+          movedRootAdmits w writes id seen (p.rebaseOwn == some id)) then
         throw { cls := "staleRoot", object := id }
+  -- A field root is current while no write since the turn read touched that field.
+  for (id, field, seen) in p.fieldRoots do
+    let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
+    if o.version != seen && !(seen < o.version && ((fieldsChangedSince w id seen).map (!·.contains field)).getD false) then
+      throw { cls := "staleRoot", object := id }
   -- A write to the running object needs no view; its version is the first root. A
   -- proposal that writes what it never named as a root is malformed.
   for (id, _) in writes do
@@ -1521,6 +1619,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   if w.objects.size + p.creates.length > Limits.maxObjects then
     throw { cls := "evaluation", reason := some "object capacity reached" }
   if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants" }
+  -- Subscriptions stand at most `subscribersPerObject` to an object, counted as they will be.
+  for x in p.subscribes do
+    let standing := ((w.subscriptions.getD x.object #[]).toList ++ p.subscribes).filter fun y =>
+      y.object == x.object && !p.unsubscribes.contains y
+    if standing.eraseDups.length > Limits.subscribersPerObject then
+      throw { cls := "capacity", object := some x.object, reason := some "subscribersPerObject" }
   for g in p.grants do
     if w.grants.contains g.id then throw { cls := "evaluation", reason := some "a grant id is already taken" }
   -- A limited grant must have the uses the turn spends left when it commits.
@@ -1546,7 +1650,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       | .ok d => pure d
       | .error clause => throw { cls := clause, object := id }
     unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
-    unless (dataJson written).compress.utf8ByteSize ≤ Limits.maxStateBytes do
+    unless stateBytes written ≤ Limits.maxStateBytes do
       throw { cls := "capacity", object := id }
     -- A reprogram replaces code and, through its migration, the state's type.
     let mut next := o
@@ -1565,7 +1669,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .ok (.finished value _ _ _) => state := value
         | .ok (.refused failure _) => throw (refuse "migration" s!"the migration was refused: {failure}")
         | .error e => throw (refuse "migration" e)
-      unless state.conformsUnder prog.bounds prog.stateType && (dataJson state).compress.utf8ByteSize ≤ Limits.maxStateBytes do
+      unless state.conformsUnder prog.bounds prog.stateType && stateBytes state ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
       -- A migration's result is put in canonical form under the new code's relations.
       state ← match canonicalState prog.relations state with
@@ -1652,6 +1756,29 @@ def isTransient (entry : Json) : Bool :=
   tagOf entry == "refused" &&
     ((entry.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "class" |>.toOption)).any transientClasses.contains
 
+/-- The subscriptions after an entry: an admitted one's `subscribes` added (once each) and
+    `unsubscribes` removed; a refused delivery of `changed` whose principal may no longer view the
+    object (`lawRefused denied`) drops its subscription, as a fallen grant is dropped. -/
+def subscriptionsAfter (w : World) (entry : Json) : Std.HashMap String (Array Subscription) := Id.run do
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let list := fun (k : String) => ((((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
+    fun j => (Subscription.ofJson j).toOption)
+  let mut subs := w.subscriptions
+  if tagOf entry == "admitted" then
+    for x in list "subscribes" do
+      let now := subs.getD x.object #[]
+      unless now.contains x do subs := subs.insert x.object (now.push x)
+    for x in list "unsubscribes" do
+      subs := subs.insert x.object ((subs.getD x.object #[]).filter (· != x))
+  else if (outcome.getObjValAs? String "clause").toOption == some "denied" then
+    let id := (entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption
+    if let some d := w.pending.find? fun p => (p.getObjValAs? String "id").toOption == id then
+      if (d.getObjValAs? String "method").toOption == some "changed" then
+        if let (.ok to, .ok principal, .ok object, .ok field) :=
+            (d.getObjValAs? String "to", d.getObjValAs? String "principal", d.getObjValAs? String "object", d.getObjValAs? String "field") then
+          subs := subs.insert object ((subs.getD object #[]).filter (· != ⟨to, principal, object, field⟩))
+  return subs
+
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
   let index := w.entries.size
@@ -1666,6 +1793,13 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
           (if fields.any (·.1 == "principal") then [] else
             [("principal", (identity.getObjVal? "principal").toOption.getD Json.null)]) ++ fields)
     | _, _ => #[]
+  -- A subscriber's `changed` deliveries, run under the subscription's principal, the changed
+  -- object as their sender.
+  let changed := if tagOf entry != "admitted" then #[] else
+    (((entry.getObjVal? "changes").toOption.bind (·.getArr?.toOption)).getD #[]).map fun c =>
+      let fields := c.getObj?.toOption.map (·.toList) |>.getD []
+      Json.mkObj ([("from", identity), ("method", toJson "changed"),
+        ("sender", (c.getObjVal? "object").toOption.getD Json.null)] ++ fields)
   let sources := (entrySources entry).toOption.getD []
   -- Offers of an admitted entry are retained for their addressees.
   let offered := if tagOf entry != "admitted" then #[] else
@@ -1680,7 +1814,7 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
     blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (cid, b) => m.insert cid b) w.blocks
     pending := (match delivered with
       | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
-      | none => w.pending) ++ sent ++
+      | none => w.pending) ++ sent ++ changed ++
       -- An activity's end told to its object's supervisor, whatever the entry's outcome.
       (((entry.getObjVal? "ended").toOption.map fun e =>
         #[Json.mkObj ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
@@ -1708,7 +1842,10 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
       | none => w.receipts.insert key index
       | some i => if tagOf w.entries[i]! == "suspended" || isTransient w.entries[i]! then w.receipts.insert key index
           else w.receipts
-    touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched }
+    touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched
+    subscriptions := subscriptionsAfter w entry
+    touches := if tagOf entry != "admitted" then w.touches else
+      (touchesOf entry).foldl (fun t (id, x) => t.insert id ((t.getD id #[]).push x)) w.touches }
 
 def push (w : World) (key : String) (fields : List (String × Json)) (touch : List String) :
     World × Json :=
@@ -1796,7 +1933,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     -- The turn number is the host's: the height of the entry about to be written.
     let p := { p with turn := w.height + 1 }
     let key := identityKey p.principal p.intent
-    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots),
+    let base := [("identity", identityJson p.principal p.intent), ("roots", allRootsJson p.roots p.fieldRoots),
       ("turn", toJson p.turn), ("request", toJson p.digest)] ++
       (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++ extra
     let verdict : Except Refusal Judged :=
@@ -1808,7 +1945,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.object.map fun o => [("object", toJson o)]).getD [] ++
         (r.reason.map fun o => [("reason", toJson o)]).getD [] ++
         (r.expected.map fun e => [("expected", e)]).getD [] ++
-        (r.root.map fun x => [("root", toJson x)]).getD [])
+        (r.root.map fun x => [("root", toJson x)]).getD [] ++
+        (r.hint.map fun x => [("hint", toJson x)]).getD [])
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>
@@ -1825,7 +1963,9 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (if judged.creates.isEmpty then [] else [("creates", Json.arr judged.creates.toArray)]) ++
         (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
         (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
-        (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]))
+        (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]) ++
+        (if p.subscribes.isEmpty then [] else [("subscribes", Json.arr (p.subscribes.toArray.map (·.json)))]) ++
+        (if p.unsubscribes.isEmpty then [] else [("unsubscribes", Json.arr (p.unsubscribes.toArray.map (·.json)))]))
       let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates ++
           newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs) ++ onEnd (w.height + 1) outcome)
@@ -1884,12 +2024,20 @@ def buildKey (inputs : Json) : String := Journal.bodyHash inputs
 
 def compileObject (w : World) (inputs : Json) : Except String Built := do
   if let some b := w.builds[buildKey inputs]? then return b
-  let (artifact, ty, laws) ← Package.compileKeepingLaws (← resolveInputs w inputs)
+  let resolved ← resolveInputs w inputs
+  -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
+  let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
+  let c ← (Package.compileEntryCore request (← resolved.getObjValAs? String "entry")).mapError
+    fun d => (Package.withHint resolved d).render
+  let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
   unless stateTypeOk decoded.source.assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
-  return { artifact, ty, laws, assumptions := decoded.source.assumptions }
+  let relations ← if !entryDeclaresRelations resolved then pure [] else do
+    let r ← (Package.compileEntryCore request "relations").mapError fun d => s!"key: relations(): {d.render}"
+    declsOfEntry r.entry
+  return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations }
 
 /-- Give a compiled package its first state and law. `lawText`, when given, is the law
     exactly as journaled; otherwise the package's laws, or the default owner law. -/
@@ -1897,7 +2045,7 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     (chain : Option Json := none) (creator : String := "") (height : Nat := 1)
     (lawText : Option String := none) : Except String (Object × String) := do
   unless state.conformsUnder b.assumptions.bounds b.ty do throw "seed does not conform to the package state type"
-  if (dataJson state).compress.utf8ByteSize > Limits.maxSeedBytes then throw "seed exceeds state byte capacity"
+  if stateBytes state > Limits.maxSeedBytes then throw "seed exceeds state byte capacity"
   -- The pin is the source closure's CID; the compiled packet is only observed beside it.
   let packet ← b.artifact.getObjValAs? String "packetSha256"
   let sources ← b.artifact.getObjValAs? String "sourcesSha256"
@@ -1924,7 +2072,7 @@ def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) 
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) :
     Except String (Object × String × World) := do
   let built ← compileObject w inputs
-  let (relations, state) ← relationsFor w inputs built (← decodeData Limits.dataDepth seed)
+  let (relations, state) ← relationsFor built (← decodeData Limits.dataDepth seed)
   let (o, sources) ← makeObject built inputs state read chain creator height lawText
   return ({ o with relations }, sources, cacheBuild w inputs built)
 
@@ -1996,7 +2144,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let state ← (mergeSeed (← initialState built) given built.assumptions.bounds built.ty).mapError (s!"typeMismatch: {·}")
   let state := withOwner state given (owner.getD principal)
   -- Relations are journaled in canonical form, so the seed is the state the object holds.
-  let (_, state) ← relationsFor w inputs built state
+  let (_, state) ← relationsFor built state
   let seed := dataJson state
   let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
   let supervisor := (← optText j "supervisor").getD ""
@@ -2236,6 +2384,58 @@ def addressee (w : World) (j : Json) : Except String Json := do
 def deliveryId (principal intent : String) (ordinal : Nat) : String :=
   Journal.bodyHash (Json.arr #[toJson principal, toJson intent, toJson ordinal])
 
+/-- The ledger a turn's sends and changes inherit: depth - 1, work - the ticks it used, storage -
+    the bytes its writes added. -/
+def childLedger (w : World) (ledger : Ledger) (used : Nat) (updates : List (String × Object)) : Ledger :=
+  let added := updates.foldl (fun n (id, o) =>
+    let before := ((w.objects[id]?).map fun p => stateBytes p.state).getD 0
+    n + (stateBytes o.state - before)) 0
+  ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
+
+/-- What a write did to one field, as `changed` reports it: for a relation the rows inserted and the
+    rows retracted (an upsert that replaced a row is both), for a list the items added and the items
+    removed (by canonical bytes), for anything else the new value and the old one. Both are lists. -/
+def fieldChange (decls : List RelDecl) (field : String) (old new : Data) : Data × Data :=
+  let listed := fun (items : List Data) => ofList items
+  let diff := fun (a b : List Data) =>
+    let bs := b.map Delvetalk.Canonical.encode
+    a.filter fun x => !bs.contains (Delvetalk.Canonical.encode x)
+  let rows := fun (d : Data) => if decls.any (·.field == field) then (relationRows d).toOption else listOf d
+  match rows old, rows new with
+  | some before, some after => (listed (diff after before), listed (diff before after))
+  | _, _ => (listed [new], listed [old])
+
+/-- The `changed` deliveries an admitted write owes its subscribers (WHOLENESS §3): for each written
+    object, each subscription to a field its edits touched (an edit other than `keep`), in
+    subscription order, `{id, to, object, field, version, principal, ledger, argument}` with argument
+    `{object: Reference, field, version, inserted, retracted}`; ids continue the sends' ordinals. Sends
+    and changes together are at most `sendsPerTurn`: the subscribers past it are named in `unserved`. -/
+def changesJson (w : World) (principal intent : String) (ledger : Ledger) (used sent : Nat)
+    (updates : List (String × Object)) (writes : List (String × List Written)) : List (String × Json) := Id.run do
+  let child := (childLedger w ledger used updates).json
+  let mut changes : Array Json := #[]
+  let mut unserved : Array Json := #[]
+  for (id, o) in updates do
+    let some before := w.objects[id]? | continue
+    let touched := (((writes.lookup id).getD []).filter (·.kind == 0)).flatMap fun c =>
+      (c.edits.filter fun e => match e.kind with | .keep => false | _ => true).map (·.field)
+    for x in w.subscriptions.getD id #[] do
+      unless touched.contains x.field do continue
+      if sent + changes.size ≥ Limits.sendsPerTurn then
+        unserved := unserved.push (toJson x.subscriber)
+        continue
+      let field := fun (d : Data) => match d with
+        | .record fs => (fs.lookup x.field).getD (.record [])
+        | _ => .record []
+      let (inserted, retracted) := fieldChange o.relations x.field (field before.state) (field o.state)
+      let argument := Data.record [("object", .record [("world", .label ""), ("object", .label id)]),
+        ("field", .label x.field), ("version", .natural o.version), ("inserted", inserted), ("retracted", retracted)]
+      changes := changes.push (Json.mkObj [("id", toJson (deliveryId principal intent (sent + changes.size))),
+        ("to", toJson x.subscriber), ("object", toJson id), ("field", toJson x.field), ("version", toJson o.version),
+        ("principal", toJson x.principal), ("ledger", child), ("argument", dataJson argument)])
+  return (if changes.isEmpty then [] else [("changes", Json.arr changes)]) ++
+    (if unserved.isEmpty then [] else [("unserved", Json.arr unserved)])
+
 def ledgerOf (j : Json) : Except String Ledger := do
   return ⟨← natField j "depth", ← natField j "work", ← natField j "storage"⟩
 
@@ -2436,9 +2636,13 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       unless g.id == grantId principal intent i && g.grantor == principal do throw "a grant is not its turn's"
     let spent ← parseSpent (outcome.getObjVal? "spent").toOption
     let roots ← parseRoots (← entry.getObjVal? "roots")
+    let fieldRoots ← parseFieldRoots (← entry.getObjVal? "roots")
     let rebaseOwn := if (entry.getObjVal? "resumes").toOption.isSome then roots.head?.map (·.1) else none
+    let subs := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Subscription.ofJson
+    let subscribes ← subs "subscribes"
+    let unsubscribes ← subs "unsubscribes"
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent, layered }
+                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, fieldRoots }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))
@@ -2459,6 +2663,16 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         -- The state an admitted write commits to (host7; earlier entries name none).
         if let some cid := (raw.getObjValAs? String "cid").toOption then
           unless cid == stateCid o.state do throw s!"the state of {id} does not replay to the CID its write recorded"
+      -- The changes owed to subscribers are re-derived and must be the ones journaled.
+      let sentCount := ((entry.getObjVal? "sends").toOption.bind (·.getArr?.toOption) |>.map (·.size)).getD 0
+      let entryLedger ← match entry.getObjVal? "ledger" with
+        | .ok l => ledgerOf l
+        | .error _ => pure Ledger.start
+      let usedTicks := (entry.getObjValAs? Nat "ticksUsed").toOption.getD 0
+      let owed := changesJson w principal intent entryLedger usedTicks sentCount updates p.allWrites
+      unless owed.lookup "changes" == (entry.getObjVal? "changes").toOption &&
+          owed.lookup "unserved" == (entry.getObjVal? "unserved").toOption do
+        throw "the changes owed to subscribers do not replay"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w grants revokes spent
@@ -2557,6 +2771,44 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
     | _ => pure ()
   return none
 
+/-- The object's state at `version`, rebuilt from the journal: its created seed (or a creating turn's
+    seed), then each admitted write of it in order, re-applying its edits under the object's relations
+    (or taking a reprogram's recorded result), each checked against the CID its write recorded. None
+    when the version is past the current one, the object came from a fork genesis before it, or a
+    rebuilt state is not the one the journal names (a relation declaration a reprogram changed). -/
+def stateAt (w : World) (id : String) (version : Nat) : Option Data := Id.run do
+  let some o := w.objects[id]? | return none
+  if version == o.version then return some o.state
+  if version > o.version then return none
+  let mut state : Option Data := none
+  for i in (w.touched[id]?).getD #[] do
+    let some entry := w.entries[i]? | continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let named := fun (j : Json) => (j.getObjValAs? String "object").toOption == some id
+    let seedOf := fun (j : Json) => (j.getObjVal? "seed").toOption.bind fun s => (decodeData Limits.dataDepth s).toOption
+    match tagOf entry with
+    | "created" => if named outcome then state := seedOf outcome
+    | "admitted" =>
+      for c in arr "creates" do
+        if named c then state := seedOf c
+      for x in arr "writes" do
+        unless named x do continue
+        let some v := (x.getObjValAs? Nat "version").toOption | return none
+        if v > version then return state
+        let some before := state | return none
+        let next? : Option Data := match (arr "reprograms").find? named with
+          | some r => (r.getObjVal? "result").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+          | none => ((x.getObjVal? "edits").toOption.bind (parseSteps · |>.toOption)).bind fun steps =>
+            (applyEdits o.relations before steps).toOption
+        let some next := next? | return none
+        if let .ok cid := x.getObjValAs? String "cid" then
+          if cid != stateCid next then return none
+        state := some next
+    | _ => pure ()
+    if version == 0 && state.isSome then return state
+  return none
+
 /-- `world-state-cid {principal, object, version}`: the CID of the object's state at that version, for
     a reader who may view it (a CID of a state the reader may not see would let it test guesses):
     `{status: "stateCid", object, version, cid}`, `denied`, or `unknown` (no such object, version, or
@@ -2604,6 +2856,9 @@ def publicRefusal (entry : Json) : Json :=
     (reading.map fun r => [("reason", toJson r)]).getD [] ++
     (if cls == "unknownObject" then
       [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
+    -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
+    else if cls == "badSpell" then
+      [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
     else if id != named then [("object", toJson named)] else []))
 
 /-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else
@@ -2976,4 +3231,11 @@ def publicationsOp (w : World) (j : Json) : Except String Json := do
   let (shown, more) ← pageByHeight j items
   return Json.mkObj [("status", toJson "publications"), ("publications", Json.arr shown), ("more", toJson more)]
 
+end Delvetalk.Host
+
+namespace Delvetalk.Host
+open Lean in
+#guard [Json.null, .bool true, .bool false, toJson (5 : Nat), toJson (-3 : Int), .str "a\"b\\c\n\u0001é", .arr #[],
+  .arr #[toJson (1 : Nat), .str "x"], Json.mkObj [],
+  Json.mkObj [("k", toJson (1 : Nat)), ("q\"", .arr #[Json.mkObj [("z", .null)]])]].all fun j => compressedSize j == j.compress.utf8ByteSize
 end Delvetalk.Host

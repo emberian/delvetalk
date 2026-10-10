@@ -1,0 +1,256 @@
+[
+ {
+  "text": "delvetalk c a\nn: 42",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  },
+  "expected": "proposal c a n=42;"
+ },
+ {
+  "text": "delvetalk c a\nn: 300",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: 301",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  },
+  "expected": "refused n takes 2 to 300"
+ },
+ {
+  "text": "delvetalk c a\nn: 1",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: 042",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: 4 2",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: -3",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: 4.5",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: x",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: ",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: 9999999999999999999",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: 999999999999999999",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: 0",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "text": "delvetalk c a\nn: 002",
+  "form": {
+   "card": "c",
+   "action": "a",
+   "fields": [
+    {
+     "name": "n",
+     "kind": {
+      "natural": {
+       "min": 2,
+       "max": 300
+      }
+     }
+    }
+   ]
+  }
+ }
+]

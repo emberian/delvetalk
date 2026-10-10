@@ -55,7 +55,6 @@ class DerivedViews(Chain):
             "\n    delvetalk porch/stone acquire\n"
             "\n    delvetalk did:plc:glm move\n    exit: in\n"))
 
-    @unittest.expectedFailure  # the host answers "plan not supported: viewDerived" until HOST-HANDOFF §7 item 6 lands
     def test_another_object_asks_the_garden_for_by_colour(self):
         self.make("garden", closure("Garden"), garden_seed())
         planted = self.turn("garden", "plant", record(colour=label("violet"), seed=label("a moth")), principal="glm")

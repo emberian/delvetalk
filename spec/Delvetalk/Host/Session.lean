@@ -288,7 +288,9 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-publications" => return (session, publicationsOp s.world request)
       | "world-objects" => return (session, objectsOp s.world request)
       | "world-offers" => return (session, offersOp s.world request)
-      | "world-card" => return (session, cardOp s.world request)
+      | "world-card" => match cardOp s.world request with
+        | .ok (w, r) => return (some { s with world := w }, .ok r)
+        | .error e => return (session, .error e)
       | _ => return (session, .error s!"unknown world operation {op}")
 
 end Delvetalk.Host

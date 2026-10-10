@@ -64,6 +64,15 @@ partial def emptyValue : Data → Bool
   | .record fields => fields.all fun (_, v) => emptyValue v
   | _ => false
 
+/-- The rows of a relation field (`rows {items: List<T>}`, RELATIONAL §2), or of a plain list. -/
+partial def rowsOf : Data → Option (List Data)
+  | .variant "rows" (.record f) => (f.lookup "items").bind rowsOf
+  | .variant "nil" _ => some []
+  | .variant "cons" (.record f) => do
+    let head ← f.lookup "head"
+    return head :: (← rowsOf (← f.lookup "tail"))
+  | _ => none
+
 /-- `old` is a prefix of `new`. -/
 def isPrefix : List String → List String → Bool
   | [], _ => true
@@ -149,9 +158,34 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
     match who, (rawField field new).bind (listItems []) with
     | some w, some items => items.contains (canon (.label w))
     | _, _ => false
-  -- Relations (RELATIONAL §5): parsed by the kernel; the host lane denotes them (day 2).
-  -- Until then they fail closed, as an unreadable field does.
-  | .insertOnly _ | .countLe _ _ | .countGrowth _ _ | .memberColumn _ _ _ => false
+  -- Relations (RELATIONAL §5). Rows are compared whole by canonical bytes: a relation holds no
+  -- key twice, so "every old row is in new" is "new ⊇ old by key, every old row unchanged".
+  | .insertOnly field => match (rawField field new).bind rowsOf with
+    | none => false
+    | some after => match old with
+      | none => true
+      | some before => match (rawField field before).bind rowsOf with
+        | some rows => let now := after.map canon; rows.all fun r => now.contains (canon r)
+        | none => false
+  | .countLe field bound => match (rawField field new).bind rowsOf with
+    | some rows => decide ((rows.length : Int) ≤ bound)
+    | none => false
+  -- At creation there is no old relation: it counts as empty.
+  | .countGrowth field offset =>
+    let before := match old with
+      | none => some 0
+      | some o => ((rawField field o).bind rowsOf).map (·.length)
+    match before, ((rawField field new).bind rowsOf).map (·.length) with
+    | some b, some a => decide ((a : Int) ≤ b + offset)
+    | _, _ => false
+  | .memberColumn ref field column =>
+    let who := match ref with
+      | .subject => some facts.subject
+      | .caller => some facts.caller
+      | _ => none
+    match who, (rawField field new).bind rowsOf with
+    | some w, some rows => rows.any fun r => (rawField column r).map canon == some (canon (.label w))
+    | _, _ => false
   | .not body => !denote facts old new body
   | .and left right => denote facts old new left && denote facts old new right
   | .or left right => denote facts old new left || denote facts old new right
@@ -229,5 +263,27 @@ private def withList (xs : List String) (by_ : String) : Data :=
 #guard !denote ⟨"a", "", 1, 0, "", 0, "toll"⟩ none (rec1 1) (parsed "request.method == \"ring\"")
 #guard (Minidregg.Compiler.ObjectiveBendLaw.parse "request.height in new.entries").toBool == false
 #guard refusedBy [("a", parsed "new.count <= 5"), ("b", parsed "new.count <= 2")] facts none (rec1 3) == some "b"
+
+private def rain (a : String) (t : Nat) (x : String) : Data :=
+  .record [("author", .label a), ("at", .natural t), ("text", .label x)]
+private def rel (rows : List Data) : Data :=
+  .record [("rains", .variant "rows" (.record [("items",
+    rows.foldr (fun x tail => .variant "cons" (.record [("head", x), ("tail", tail)])) (.variant "nil" (.record [])))]))]
+
+#guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "insertOnly(rains)")
+#guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a"]) (parsed "insertOnly(rains)")
+#guard denote facts none (rel [rain "ann" 1 "a"]) (parsed "insertOnly(rains)")
+#guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "kim" 2 "b"]) (parsed "insertOnly(rains)")
+#guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "changed"]) (parsed "insertOnly(rains)")
+#guard !denote facts (some (rec1 1)) (rec1 1) (parsed "insertOnly(count)")
+#guard denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= 2")
+#guard !denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= 1")
+#guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
+#guard !denote facts (some (rel [])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
+#guard denote facts none (rel [rain "ann" 1 "a"]) (parsed "count(new.rains) <= count(old.rains) + 1")
+#guard denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
+#guard !denote ⟨"bob", "", 1, 0, "", 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.text")
+#guard denote ⟨"a", "forge", 1, 0, "", 0, ""⟩ none (rel [rain "forge" 1 "a"]) (parsed "request.caller in new.rains.author")
 
 end Delvetalk.Host.Law
