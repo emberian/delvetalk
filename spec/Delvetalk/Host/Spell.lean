@@ -209,9 +209,20 @@ partial def slashed (before rest : T) : Fields2 :=
       both (segment (before ++ head)) (slashed [] (trimStart after))
     else slashed (before ++ head ++ ['/']) after
 
+/-- The slashed form's leading values without a name (`plant / silver / a fern`): the segments before
+    the first that has a colon; after a named field a ` / ` is part of its value. -/
+def leading (tail : T) : List Binding × T :=
+  let parts := (str tail).splitOn " / "
+  let values := parts.takeWhile fun p => !p.any (· == ':')
+  let rest := " / ".intercalate (parts.drop values.length)
+  (values.filterMap fun v => let t := str (trimEnd (trimStart v.toList)); if t.isEmpty then none else some ⟨"", t⟩, rest.toList)
+
 def inline (tail : T) : Fields2 :=
   if tail.isEmpty then .found []
-  else slashed [] (if tail.take 1 == ['/'] then trimStart (tail.drop 1) else tail)
+  else if tail.take 1 == ['/'] then
+    let (values, rest) := leading (trimStart (tail.drop 1))
+    sequenced values (if (trimStart rest).isEmpty then .found [] else slashed [] (trimStart rest))
+  else slashed [] tail
 
 def isDelimiter (text : T) : Bool :=
   decide (text.length ≥ 1) && decide (text.length ≤ 32) && span text delimiterAlphabet == text.length
@@ -231,7 +242,22 @@ partial def spellLine (text : T) (indent stop : Nat) : Fields2 :=
   else fieldLine text stop
 
 partial def fieldLine (text : T) (stop : Nat) : Fields2 :=
-  if stop == 0 then fieldLines (text.drop 1) else lineParts (text.take stop) (text.drop (stop - 1))
+  if stop == 0 then afterBlank (text.drop 1) else lineParts (text.take stop) (text.drop (stop - 1))
+
+/-- After a blank line a value without a name is prose: the fields end at it (docs/FLEX.md §4 host 3). -/
+partial def afterBlank (rest : T) : Fields2 :=
+  let next := trimEnd (trimStart (rest.take (brk rest ['\n'])))
+  if next.isEmpty || next.any (· == ':') || ["#", ">", "`"].any (lit · == next.take 1) || isSpellAt next 0
+  then fieldLines rest else .stray [] rest
+
+/-- Values without a name run on while their lines have no colon; any other line ends the fields, so
+    prose after them never reads a later `name: value` line as a field. -/
+partial def loose (rest : T) : Fields2 :=
+  let stop := brk rest ['\n']
+  let line := trimEnd (trimStart (rest.take stop))
+  if line.isEmpty || line.any (· == ':') || ["#", ">", "`"].any (lit · == line.take 1) || isSpellAt line 0
+  then .stray [] rest
+  else consed ⟨"", str line⟩ (loose (rest.drop (stop + 1)))
 
 partial def lineParts (line tail : T) : Fields2 :=
   let rest := tail.drop 2
@@ -240,7 +266,8 @@ partial def lineParts (line tail : T) : Fields2 :=
   else classify (if span (tail.take 1) blanks == 1 then trimEnd line else line) first rest
 
 partial def classify (line first rest : T) : Fields2 :=
-  if line.isEmpty || first == ['#'] || first == ['>'] || (first == ['`'] && line.take 3 == lit "```") then
+  if line.isEmpty then afterBlank rest
+  else if first == ['#'] || first == ['>'] || (first == ['`'] && line.take 3 == lit "```") then
     fieldLines rest
   else if first == ['-'] && line == lit "---" then .found []
   else binding line rest
@@ -250,7 +277,9 @@ partial def binding (line rest : T) : Fields2 :=
   let name := line.take colon
   -- A line is a field only when it looks like one (`name: value`, the name an identifier), as
   -- `bareT` reads them: prose with a colon after the fields ends them (docs/FLEX.md §4 host 1).
-  if colon == 0 || name == line || !looksLikeField line then .stray [] rest
+  -- A line with no colon in the field lines is a value without a name, bound by type at fit.
+  if !line.any (· == ':') then consed ⟨"", str line⟩ (loose rest)
+  else if colon == 0 || name == line || !looksLikeField line then .stray [] rest
   else if opens ((line.drop (colon + 1)).take 3) then valued (str (foldT name)) (trimStart (line.drop (colon + 1))) rest
   else consed ⟨str (foldT name), str (trimStart (line.drop (colon + 1)))⟩ (fieldLines rest)
 
@@ -415,6 +444,37 @@ def rebound (bindings : List Binding) (form : Form) : List Binding :=
     | some f => bindings.map fun b => if b.name == form.action then { b with name := f.name } else b
   else bindings
 
+def isNatural : Kind → Bool
+  | .natural .. => true
+  | _ => false
+
+/-- Values without a name (docs/FLEX.md §4 host 3), bound in order to the open field they fit: a
+    choice whose option the value is (folded; the option as the form writes it), else digits to the one
+    open natural, else the one open text field. A value that fits none, or more than one natural or text,
+    is dropped: fit then names what is still missing. -/
+def boundByType (fields : List Field) (bs : List Binding) : List Binding :=
+  (bs.filter (·.name == "")).foldl (fun acc b =>
+    let open_ := fields.filter fun f => !acc.any (named f.name)
+    -- `seed fern` is a field with its colon missing, not a value.
+    let first := fold ((b.value.splitOn " ").headD "")
+    if fields.any (·.name == first) then acc else
+    let option := open_.findSome? fun f => match f.kind with
+      | .choice os => (os.find? (fold · == fold b.value)).map (f.name, ·)
+      | _ => none
+    match option with
+    | some (n, o) => acc ++ [⟨n, o⟩]
+    | none =>
+      let kinds := if (number b.value.toList).isSome && (open_.filter (isNatural ·.kind)).length == 1
+        then open_.filter (isNatural ·.kind) else open_.filter (isText ·.kind)
+      match kinds with
+      | [f] => acc ++ [⟨f.name, b.value⟩]
+      | _ => acc) (bs.filter (·.name != ""))
+
+/-- A spell's bindings as `form` reads them: the action-named line to its text field (`rebound`), the
+    values without a name by type. -/
+def bind (form : Form) (bs : List Binding) : List Binding :=
+  boundByType form.fields (rebound bs form)
+
 def clauseOfReason (reason : String) : Clause :=
   if reason.startsWith "The block <<" then .unclosedBlock else .noAction
 
@@ -425,7 +485,7 @@ def fit (parsed : Parsed) (form : Form) : Fit :=
       if fold card != fold form.card || action != form.action then
         .refused .otherCard s!"This card answers {form.card} {form.action}."
       else
-        let bindings := rebound fields form
+        let bindings := bind form fields
         match audit form.fields bindings with
         | some (clause, reason) => .refused clause reason
         | none =>
