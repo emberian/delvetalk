@@ -174,6 +174,11 @@ the library).
   name otherwise; eight at most) and `Card.doorLines` ("label: id"). Bell has them (its
   planter's) and Garden plants each bell with `garden: <garden>`. (`door()` stays the
   directory blurb, so the action is a form, not a method named door.)
+* **A Wake watches writes** (objects5): `On.writes {object, field, above}`; `watch` with it
+  sends the watched object `observe {object: wake, method: "written"}` (the observers
+  convention). Garden keeps observers and tells them `{field: "planted", value}` after each
+  planting; `Wake.written` fires a trigger when the value passes `above` (one step from at
+  most `above`), sending a call action nothing (`tick` takes no input), else the line.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

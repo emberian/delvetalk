@@ -156,7 +156,7 @@ class OwnedLenses(test_chain.Chain):
         r = self.say("garden", "delvetalk garden set\nconfirm: yes", "ember")
         self.assertEqual(self.listed("garden", "confirmFor"), ["plant"])
         append = {"tag": "variant", "label": "append", "payload": record(item=label("give"))}
-        r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint"], {"confirmFor": append}))
+        r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint", "observers"], {"confirmFor": append}))
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
     def test_a_rooms_owner_renames_it(self):

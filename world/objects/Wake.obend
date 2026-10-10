@@ -16,6 +16,7 @@ sum On:
   keyword: {term: String}
   reply: {card: String}
   schedule: {every: Nat}
+  writes: {object: String, field: String, above: Nat}
 sum Action:
   notify: {}
   observe: {}
@@ -87,7 +88,36 @@ def watched<T>(state: State, event: On, action: Action, context: Abi.Context, th
   if context.principal != state.owner then then(notOwner(state)) else if Lists.length(state.triggers) < 32n then added(state, event, action, context, then) else then(refused(Why.full({})))
 def added<T>(state: State, event: On, action: Action, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {triggers: Plans.Entries.append({item: {id: state.nextId, event: event, action: action}}), nextId: Plans.Edit.add({delta: 1n})}}))
-  then(Done.watching({id: state.nextId}))
+  observing(event, Done.watching({id: state.nextId}), context, then)
+# A trigger on another object's writes registers this wake as that object's observer
+# (the observers convention: its `observe {object, method}`), by a send.
+def observing<T>(event: On, done: Done, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match event:
+    case writes(w): observed(w.object, done, context, then)
+    case _: then(done)
+def observed<T>(object: String, done: Done, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.send({object: {world: context.world, object: object}, method: "observe", argument: {object: Plans.self(context), method: "written"}})):
+    case _: then(done)
+# What an observed object sends on a write: the field and its value now. A trigger on
+# that object and field fires when the value passes `above` (it was at most `above`
+# before this write, as one step up from it); a call action is sent with nothing.
+def written(state: State, input: {field: String, value: Nat}, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  passing(state, state.triggers, context.caller, input.field, input.value, 0n)
+def passes(on: On, object: String, field: String, value: Nat) -> Bool:
+  match on:
+    case writes(w): w.object == object && w.field == field && value > w.above && value - 1n <= w.above
+    case _: false
+def passing(state: State, triggers: Lists.List<Trigger>, object: String, field: String, value: Nat, count: Nat) -> Activity<Plan, Response, Done>:
+  match triggers:
+    case nil(_): Done.fired({count: count})
+    case cons(c): if passes(c.head.event, object, field, value) then passed(state, c.head.action, c.tail, object, field, value, count) else passing(state, c.tail, object, field, value, count)
+def passed(state: State, action: Action, rest: Lists.List<Trigger>, object: String, field: String, value: Nat, count: Nat) -> Activity<Plan, Response, Done>:
+  match perform(Plan.send({object: target(state, action), method: method(action), argument: passArgument(action, object, field, value)})):
+    case _: passing(state, rest, object, field, value, count + 1n)
+def passArgument(action: Action, object: String, field: String, value: Nat) -> Data:
+  match action:
+    case call(_): Plans.nothing()
+    case _: {text: "{object}.{field} is {natText(value)}"}
 def same(done: Done) -> Done:
   done
 def watch(state: State, input: {event: On, action: Action}, context: Abi.Context) -> Activity<Plan, Response, Done>:
@@ -127,6 +157,7 @@ def matches(on: On, event: Events.Event) -> Bool:
     case keyword(k): contains(event.text, k.term)
     case reply(r): event.kind == "reply" && event.replyTo == r.card
     case schedule(_): false
+    case writes(_): false
 # Each matching trigger acts, in order, by explicit recursion (a send never sits in a
 # lambda: an activity in a closure is refused).
 def fire(state: State, triggers: Lists.List<Trigger>, event: Events.Event, count: Nat) -> Activity<Plan, Response, Done>:
@@ -181,6 +212,7 @@ def onText(on: On) -> String:
     case keyword(k): "the word {k.term}"
     case reply(r): "a reply to {r.card}"
     case schedule(s): "every {natText(s.every)}"
+    case writes(w): "{w.object}.{w.field} passing {natText(w.above)}"
 def actionText(action: Action) -> String:
   match action:
     case notify(_): "note me"

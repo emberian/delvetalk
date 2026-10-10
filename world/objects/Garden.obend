@@ -30,12 +30,14 @@ record State:
   pending: Lists.List<Pending>
   children: Lists.List<Plans.Reference>
   pageCheckpoint: String
+  observers: Card.Observers
 record Edits:
   planted: Plans.Edit<Nat, Nat>
   confirmFor: Plans.Entries<String, {}>
   pending: Plans.Entries<Pending, Pending>
   children: Plans.Entries<Plans.Reference, {}>
   pageCheckpoint: Plans.Edit<String, {}>
+  observers: Plans.Entries<Card.Observer, {}>
 # A creator supplies a Seed; the host lays it over initial(). The garden's own creates
 # carry Data: a Bell.Seed, and nothing for a cistern.
 record Seed:
@@ -59,11 +61,11 @@ law owner "only the owner changes who owns it, its stance, its policy or its pag
 def defaultSeed() -> Seed:
   {owner: "", policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Lists.List.nil()}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, planted: 0n, policy: seed.policy, confirmFor: seed.confirmFor, pending: seed.pending, children: Lists.List.nil(), pageCheckpoint: ""}
+  {owner: seed.owner, planted: 0n, policy: seed.policy, confirmFor: seed.confirmFor, pending: seed.pending, children: Lists.List.nil(), pageCheckpoint: "", observers: Card.Observers.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {planted: Plans.Edit.keep({}), confirmFor: Plans.Entries.keep({}), pageCheckpoint: Plans.Edit.keep({}), pending: Plans.Entries.keep({}), children: Plans.Entries.keep({})}
+  {planted: Plans.Edit.keep({}), confirmFor: Plans.Entries.keep({}), pageCheckpoint: Plans.Edit.keep({}), pending: Plans.Entries.keep({}), children: Plans.Entries.keep({}), observers: Plans.Entries.keep({})}
 sum Made:
   made: {object: Plans.Reference}
   refused: {clause: String}
@@ -413,7 +415,27 @@ def bellSeed(context: Abi.Context, post: String, colour: Bell.Colour, seed: Stri
 # principal had waiting.
 def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit.add({delta: 1n}), pending: forget(found), children: Plans.Entries.append({item: reference})})}))
-  tell(Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, Card.name(context.principal, context), reference, colour, seed, state.planted + 1n))
+  notified(state.observers, state.planted + 1n, Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, Card.name(context.principal, context), reference, colour, seed, state.planted + 1n))
+# Observers (a Wake watching `planted`) are told the count after each planting, by their
+# method, as `{field: "planted", value}`; then the planter gets the card.
+def notified(observers: Card.Observers, planted: Nat, reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
+  match observers:
+    case nil(_): tell(reply, card)
+    case cons(c): notifiedOne(c.head, c.tail, planted, reply, card)
+def notifiedOne(observer: Card.Observer, rest: Card.Observers, planted: Nat, reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.send({object: observer.object, method: observer.method, argument: {field: "planted", value: planted}})):
+    case _: notified(rest, planted, reply, card)
+def observe(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  observerChanged(Card.observing(state.observers, input), context)
+def unobserve(state: State, input: Card.Observer, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  observerChanged(Card.unobserving(state.observers, input), context)
+def observerChanged(change: Card.Change, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  match change:
+    case edit(e): observerWritten(change, e.entries, context)
+    case _: change
+def observerWritten(change: Card.Change, entries: Plans.Entries<Card.Observer, {}>, context: Abi.Context) -> Activity<Plan, Response, Card.Change>:
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {observers: entries})}))
+  change
 def forget(found: Held) -> Plans.Entries<Pending, Pending>:
   match found:
     case none(_): Plans.Entries.keep({})
