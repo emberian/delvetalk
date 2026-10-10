@@ -1,59 +1,55 @@
-"""HTML for humans: plain markup, one stylesheet, no script needed to read."""
+"""HTML for people. The markup is transport/static/pages.html (named sections), the look transport/static/style.css;
+no script is needed to read. Python fills the sections with escaped host facts and decides nothing."""
+import json
+import re
 from html import escape as e
+from pathlib import Path
 from urllib.parse import quote
 
-SHELL = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title}</title><link rel="stylesheet" href="/static/style.css"><script src="/static/theme.js"></script></head><body>
-<header><a href="/"><strong>DelveTalk</strong></a><span>{who} <button id="theme-toggle" type="button" hidden>theme</button></span></header>
-<main>{body}</main><footer><a href="/AGENTS.md">/AGENTS.md</a>: the agent API</footer></body></html>'''
+T = dict(re.findall(r'<!-- (\w+)[^>]*-->\n(.*?)(?=\n<!--|\Z)', (Path(__file__).resolve().parent / 'static' / 'pages.html').read_text(), re.S))
 
 
 def page(title, who, body):
-    return SHELL.format(title=e(title), who=e(who or 'not logged in'), body=body)
+    return T['shell'].format(title=e(title), who=e(who or 'not logged in'), body=body)
 
 
-def home(status, who):
-    login = '' if who else '''<section><h2>Log in</h2><p>Ask for a challenge, post its text publicly from your own delve.town account, then verify.</p>
-<form method="post" action="/AGENTS.md/challenge"><label>Handle <input name="handle" placeholder="you.delve.town"></label><button>Get a challenge</button></form>
-<form method="post" action="/AGENTS.md/verify"><label>Handle <input name="handle"></label><label>Post AT URI <input name="uri"></label><button>Verify</button></form></section>'''
-    return page('DelveTalk', who, f'''<h1>DelveTalk</h1><section><dl><dt>journal height</dt><dd>{e(str(status.get('height')))}</dd>
-<dt>objects</dt><dd>{e(str(status.get('objects')))}</dd></dl>
-<form method="get" action="/o"><label>Open an object <input name="object"></label><button>Open</button></form></section>{login}''')
+def yours(text, did):
+    return T['yours'] if did and did in str(text) else ''
 
 
-def value(v):
-    """A typed-JSON value as readable HTML."""
-    if isinstance(v, dict):
-        tag = v.get('tag')
-        if tag == 'record':
-            return '<dl>' + ''.join(f'<dt>{e(f["name"])}</dt><dd>{value(f["value"])}</dd>' for f in v.get('fields', [])) + '</dl>'
-        if tag == 'variant':
-            return f'<strong>{e(str(v.get("label")))}</strong> {value(v.get("payload"))}'
-        if 'value' in v:
-            return e(str(v['value']))
-    return f'<code>{e(str(v))}</code>'
+def home(status, who, ids=(), did=None):
+    items = ''.join(T['item'].format(id=e(i), href=e(quote(i, safe=':')), yours=yours(i, did)) for i in ids)
+    return page('the ledger', who, T['home'].format(height=e(str(status.get('height'))), objects=e(str(status.get('objects'))),
+                                                    enter=T['enter'] if who else '', login='' if who else T['login'], items=items))
 
 
-def receipts(entries):
-    rows = ''.join(
-        f'<tr><td>{e(str(x.get("height")))}</td><td>{e(str((x.get("identity") or {}).get("principal")))}</td>'
-        f'<td>{e(str((x.get("identity") or {}).get("intent")))}</td>'
-        f'<td>{e(str((x.get("outcome") or {}).get("class") or (x.get("outcome") or {}).get("tag")))}</td>'
-        f'<td><code>{e(str(x.get("hash"))[:16])}</code></td></tr>' for x in entries)
-    return ('<section><h3>Last receipts</h3><table><tr><th>height</th><th>principal</th><th>intent</th><th>outcome</th><th>receipt</th></tr>'
-            + rows + '</table></section>') if entries else ''
+def slips(entries, did=None):
+    """Receipts as library slips: the slug in small caps, the height as a shelf mark, a refusal's clause in the margin."""
+    def slip(x):
+        out, ident = x.get('outcome') or {}, x.get('identity') or {}
+        clause = out.get('reason') or ' '.join(str(out[k]) for k in ('clause', 'object') if out.get(k))
+        return T['slip'].format(fate=e(str(out.get('tag'))), height=e(str(x.get('height'))), name=e(str(x.get('slug') or '')),
+                                intent=e(str(ident.get('intent'))), who=e(str(ident.get('principal'))), yours=yours(ident.get('principal'), did),
+                                note=T['note'].format(clause=e(f"{out.get('class')}: {clause}" if clause else str(out.get('class')))) if out.get('tag') == 'refused' else '')
+    return T['ledger'].format(slips=''.join(slip(x) for x in entries)) if entries else ''
 
 
-def obj(name, who, view, card, entries):
-    shown = f'<div class="card">{e(card)}</div>' if card else value(view.get('state'))
-    play = f'<p><a href="/play/{e(quote(name, safe="/:"))}">Play {e(name)}</a>: reply to its card as you would on Delve</p>' if who else ''
-    return page(name, who, f'<h1>{e(name)}</h1><p>version {e(str(view.get("version")))}</p><section>{shown}</section>{play}{receipts(entries)}')
+def obj(name, who, view, card, entries, did=None):
+    shown = T['card'].format(text=e(card)) if card else T['state'].format(state=e(json.dumps(view.get('state'), indent=1)[:4000]))
+    play = T['playlink'].format(href=e(quote(name, safe='/:')), id=e(name)) if who else ''
+    return page(name, who, T['object'].format(id=e(name), version=e(str(view.get('version'))), yours=yours(name, did), shown=shown,
+                                              play=play, ledger=slips(entries, did)))
 
 
-def e_json(r):
-    import json
-    return json.dumps(r.get('receipt', {}).get('outcome') or r, indent=1, sort_keys=True)[:4000]
+def refusal(title, who, body, code_class=None):
+    """An envelope (or a host refusal) as a page: its class, its words, its hint as large as the card's, its links as doors."""
+    links = ''.join(T['link'].format(href=e(v['href']), rel=e(k)) for k, v in (body.get('_links') or {}).items()
+                    if isinstance(v, dict) and k != 'self')
+    hint = T['hint'].format(hint=e(str(body['hint']))) if body.get('hint') else ''
+    return page(title, who, T['refusal'].format(cls=e(str(code_class or body.get('class') or body.get('status'))), title=e(title),
+                                                message=e(str(body.get('message') or json.dumps(body, sort_keys=True)[:2000])), hint=hint, links=links))
 
 
 def missing(name, who, reply):
-    return page('unknown object', who, f'<h1>{e(name)}</h1><section class="refused"><pre>{e(e_json(reply))}</pre></section>')
+    return refusal(name, who, {**reply, 'message': reply.get('message') or f'no object {name} that you may see',
+                               '_links': {'the ledger': {'href': '/'}}}, reply.get('status'))
