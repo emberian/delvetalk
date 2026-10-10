@@ -11,6 +11,7 @@ import ./Cistern.obend as Cistern
 import ./Card.obend as Card
 import ./Policies.obend as Policies
 import ./Relation.obend as Relations
+import ./Text.obend as Text
 # What the garden holds for a principal: a planting understood from prose waiting for "yes"
 # (needs empty), or a planting spell missing fields (needs names them) that a reply of only
 # the missing `name: value` lines completes (the host hands such a reply to receive with its
@@ -112,7 +113,7 @@ def waiting(context: Abi.Context, state: State) -> String:
     case none(_): ""
 def childLine(child: Child) -> Document.Document:
   Document.text("- {child.object}\n")
-# Derived views (FOUNDATION §16, `viewDerived {object, view}`): pure definitions of the state
+# Derived views (FOUNDATION §9, `viewDerived {object, view}`): pure definitions of the state
 # and the reader's context that another object may ask for by name.
 def views() -> Lists.List<String>:
   Lists.List.cons({head: "byColour", tail: Lists.List.nil({})})
@@ -145,7 +146,7 @@ def publish(state: State, context: Abi.Context) -> Activity<String>:
     case published(p): p.post
     case refused(r): r.clause
 def methods() -> Lists.List<String>:
-  Card.wordList("publish")
+  Text.words("publish")
 def blurb() -> Card.Door:
   {word: "garden", blurb: "Plant something; rain on another's planting. Things remember who helped them grow."}
 sum Reply:
@@ -173,7 +174,7 @@ def plantedCard(context: Abi.Context, reference: Plans.Reference, colour: String
   Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo plant another, reply:\n\n{another}")
 def unclearCard(context: Abi.Context, needs: Form.Names, colour: String, seed: String) -> Document.Document:
   let again = spell(context.object, if seed == "" then "<what might grow here, 1 to 80 characters>" else seed, if colour == "" then "<amber, violet or silver>" else colour)
-  Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Spell.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
+  Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Text.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
 # Why the garden refuses: each arm a clause, `why` its reading; a refusal the world gave
 # (a create refused requiredAbsence) keeps the world's clause.
 sum Why:
@@ -267,7 +268,7 @@ def answered(input: Card.Reply, found: Held, context: Abi.Context, state: State)
   match Card.answerOf(input.text):
     case yes(_): confirmed(found, context, state)
     case no(_): declined(found)
-    case other(_): if Card.blank(input.text) then shown(context, state) else prose(input, found, context, state)
+    case other(_): if Text.blank(input.text) then shown(context, state) else prose(input, found, context, state)
 # Yes plants what waits; no drops it; with nothing of the speaker's waiting, either is
 # answered so, with no model call (rehearsal play mode).
 def confirmed(found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
@@ -371,7 +372,7 @@ def quietly(edit: Plans.Entries<Pending, Pending>) -> Activity<Reply>:
   let written(_) = world.write(extend(keep(), {pending: edit}))
   Reply.silent({})
 def needsCard(needs: Form.Names) -> Document.Document:
-  Document.text("✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: {Spell.joined(needs)}.\n")
+  Document.text("✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: {Text.joined(needs)}.\n")
 def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.Document:
   Document.text("✾ THE NIGHT GARDEN\n\n{Card.name(context.principal, context)}, I understood this:\n\n{spell(context.object, seed, colour)}\nReply yes or correct it.\n")
 # A planting either waits for the speaker's yes (an understood one the garden or the policy

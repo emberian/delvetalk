@@ -7,6 +7,7 @@ import ./Spell.obend as Spell
 import ./Form.obend as Form
 import ./World.obend as World
 import ./Card.obend as Card
+import ./Text.obend as Text
 # A proposal the target's law refused, held for the target's owner to adopt (sixteen at
 # most; the oldest goes when a seventeenth comes), or for its proposer to withdraw.
 record Held:
@@ -174,7 +175,7 @@ def proposeForm() -> Form.Form:
 def forms() -> Card.Forms:
   Lists.append(Lists.append(Card.Forms.nil(), checkForm()), proposeForm())
 def methods() -> Lists.List<String>:
-  Card.wordList("adopt withdraw create")
+  Text.words("adopt withdraw create")
 def blurb() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
 # The card as the reader in the context sees it (the host's card {object} passes the reader).

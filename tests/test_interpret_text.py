@@ -26,10 +26,10 @@ from tests.test_turn_world import label, record
 
 SPELL = "delvetalk garden plant / colour: silver / seed: a fern that remembers"
 
-PROBE = PROBE_HEAD_G + """import ./Spell.obend as Spell
+PROBE = PROBE_HEAD_G + """import ./Text.obend as Text
 def back(text: String) -> String:
   match Card.prose(text):
-    case miss(m): textConcat("miss ", Spell.joined(m.needs))
+    case miss(m): textConcat("miss ", Text.joined(m.needs))
     case silent(_): "silent"
 """
 

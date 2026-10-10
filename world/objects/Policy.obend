@@ -3,11 +3,11 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
-import ./Spell.obend as Spell
 import ./Form.obend as Form
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Policies.obend as Policies
+import ./Text.obend as Text
 type Term = Policies.Term
 type Example = Policies.Example
 type Macro = Policies.Macro
@@ -112,7 +112,7 @@ def asked(action: String, ask: Bool, state: State) -> Plans.Entries<String, {}>:
 # keeps its slashes). A macro of the same name is replaced; the pattern must start with a
 # literal word (a pattern of holes alone would take all prose).
 def macro(state: State, input: {name: String, pattern: String, expansion: String}, context: Abi.Context) -> Activity<Taught>:
-  if textTake(Spell.trimStart(input.pattern), 1n) == "{{" then refused(Why.macroHole({})) else if textLength(input.expansion) > 560n || textLength(input.pattern) > 280n || textLength(input.name) > 64n then refused(Why.macroTooLong({})) else macroPlaced(input, Lists.find(state.macros, fn(m: Macro) -> Bool: m.name == input.name), context, state)
+  if textTake(Text.trimStart(input.pattern), 1n) == "{{" then refused(Why.macroHole({})) else if textLength(input.expansion) > 560n || textLength(input.pattern) > 280n || textLength(input.name) > 64n then refused(Why.macroTooLong({})) else macroPlaced(input, Lists.find(state.macros, fn(m: Macro) -> Bool: m.name == input.name), context, state)
 def macroPlaced(macro: Macro, found: Lists.Maybe<Macro>, context: Abi.Context, state: State) -> Activity<Taught>:
   match found:
     case some(f): edited(extend(keep(), {macros: Plans.Entries.amendItem({item: f.value, change: macro})}), context, state)
@@ -153,7 +153,7 @@ def kindText(kind: Form.Kind) -> String:
   match kind:
     case text(t): "text of {natText(t.min)} to {natText(t.max)} characters"
     case natural(n): "a natural number from {natText(n.min)} to {natText(n.max)}"
-    case choice(c): "one of {Spell.joined(c.options)}"
+    case choice(c): "one of {Text.joined(c.options)}"
     case source(_): "Bend source of 1 to 16384 characters, as a <<BEND block or the reply's ```obend block"
 def fieldLine(field: Form.Field) -> String:
   "  {field.name}: {kindText(field.kind)}\n"
@@ -179,7 +179,7 @@ def exampleCard(example: Example) -> Document.Document:
 def stance(context: Abi.Context, state: State) -> String:
   let escalation = if state.escalate == "" then "" else "When unsure I escalate to {state.escalate}.\n"
   let told = if state.escalateTo == "" then "" else "What a card cannot fit twice goes to {Card.name(state.escalateTo, context)}.\n"
-  let first = if Lists.length(state.confirmFor) == 0n then "nothing" else Spell.joined(state.confirmFor)
+  let first = if Lists.length(state.confirmFor) == 0n then "nothing" else Text.joined(state.confirmFor)
   "I only propose. A card asks the speaker first before: {first}.\n{escalation}{told}"
 def teaching() -> String:
   "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nTo teach a shortcut no model is asked about:\n\n    delvetalk policy macro\n    name: moth-bell\n    pattern: moth for {{who}}\n    expansion: garden plant / colour: violet / seed: a bell for {{who}}\n\nWhat I know:\n"

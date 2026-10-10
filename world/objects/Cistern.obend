@@ -6,6 +6,7 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
+import ./Text.obend as Text
 record State:
   entries: Lists.List<Plans.Receipt>
 # What a creator may supply; the host lays it over initial().
@@ -30,7 +31,7 @@ def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) 
   Lists.length(state.entries) + 1n
 # A receipt is structured data, not a spell: the card offers no form.
 def methods() -> Lists.List<String>:
-  Card.wordList("retain")
+  Text.words("retain")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def blurb() -> Card.Door:

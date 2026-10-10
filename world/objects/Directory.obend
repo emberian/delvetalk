@@ -10,6 +10,7 @@ import ./Card.obend as Card
 import ./Policies.obend as Policies
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
+import ./Text.obend as Text
 record Door:
   label: String
   description: String
@@ -110,7 +111,7 @@ def doorLine(door: Door) -> Document.Document:
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\nReply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n\n"), tail: Lists.concat(Lists.map(menu(state), doorLine), Document.Documents.cons({head: Document.text("An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"), tail: Document.Documents.nil()}))})})
 def methods() -> Lists.List<String>:
-  Card.wordList("add remove")
+  Text.words("add remove")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def blurb() -> Card.Door:
@@ -229,7 +230,7 @@ def familyForms(input: Card.Reply, words: String, fields: String, excluded: Stri
     case inspected(i): judged(input, words, fields, "{excluded}{formWords(i.methods)}{formFields(i.methods)}", context, state)
     case _: judged(input, words, fields, excluded, context, state)
 def judged(input: Card.Reply, words: String, fields: String, excluded: String, context: Abi.Context, state: State) -> Activity<Heard>:
-  if mentions(textTake(input.text, 2000n), input.fields, without(Card.wordList(words), Card.wordList(excluded)), without(Card.wordList("{fields}{knownFields()}"), Card.wordList(excluded))) then consulted(input, context, state) else Heard.silent({})
+  if mentions(textTake(input.text, 2000n), input.fields, without(Text.words(words), Text.words(excluded)), without(Text.words("{fields}{knownFields()}"), Text.words(excluded))) then consulted(input, context, state) else Heard.silent({})
 def without(words: Lists.List<String>, excluded: Lists.List<String>) -> Lists.List<String>:
   Lists.filter(words, fn(w: String) -> Bool: Lists.any(excluded, fn(x: String) -> Bool: x == w) == false)
 # Learning: a door's word and object id, and its forms' actions and fields, by inspect.
@@ -281,7 +282,7 @@ def consulted(input: Card.Reply, context: Abi.Context, state: State) -> Activity
 # second word), with no model call.
 def macroOr(input: Card.Reply, policy: Policies.State, expanded: Lists.Maybe<String>, context: Abi.Context, state: State) -> Activity<Heard>:
   match expanded:
-    case some(e): byMacro(Card.wordList(e.value), e.value, input, context)
+    case some(e): byMacro(Text.words(e.value), e.value, input, context)
     case none(_): gathering(input, doors(state), Lists.List.nil(), policy, context, state)
 def byMacro(words: Lists.List<String>, text: String, input: Card.Reply, context: Abi.Context) -> Activity<Heard>:
   if wordAt(words, 2n) == "" || wordAt(words, 2n) == context.object then Heard.silent({}) else passOn(wordAt(words, 2n), {text: text, post: input.post}, context)
@@ -320,12 +321,12 @@ def missed(input: Card.Reply, forms: Lists.List<Form.Form>, policy: Policies.Sta
 # A miss that says the action is not offered is not asked again (no attempt can offer it):
 # it is answered once, naming a door only when one offers an action resembling the miss.
 def unoffered(needs: Form.Names) -> Bool:
-  Lists.any(needs, fn(n: String) -> Bool: Card.contains(n, "not offered") || Card.contains(n, "not one of the offered"))
+  Lists.any(needs, fn(n: String) -> Bool: Text.contains(n, "not offered") || Text.contains(n, "not one of the offered"))
 # The missed action: the word before "is" in the need ("rain is not one of the offered
 # actions", the host's "garden water is not one of the offered actions").
 def missedAction(needs: Form.Names) -> String:
-  match Lists.find(needs, fn(n: String) -> Bool: Card.contains(n, "not offered") || Card.contains(n, "not one of the offered")):
-    case some(n): beforeIs(Card.wordList(n.value), "")
+  match Lists.find(needs, fn(n: String) -> Bool: Text.contains(n, "not offered") || Text.contains(n, "not one of the offered")):
+    case some(n): beforeIs(Text.words(n.value), "")
     case none(_): ""
 def beforeIs(words: Lists.List<String>, last: String) -> String:
   match words:
@@ -336,7 +337,7 @@ def wordAt(words: Lists.List<String>, n: Nat) -> String:
     case nil(_): ""
     case cons(c): if n <= 1n then c.head else wordAt(c.tail, n - 1n)
 def resembles(action: String, missed: String) -> Bool:
-  textLength(missed) >= 3n && (action == missed || Card.contains(action, missed) || Card.contains(missed, action) && textLength(action) >= 3n)
+  textLength(missed) >= 3n && (action == missed || Text.contains(action, missed) || Text.contains(missed, action) && textLength(action) >= 3n)
 # The nearest door is one whose forms have an action resembling the miss; else a kind of card
 # under a door that takes it (a garden's bell takes rain); else none is named.
 def nearestFor(missed: String, forms: Lists.List<Form.Form>, needs: Form.Names, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -361,21 +362,21 @@ def kindInspected(id: String, rest: Lists.List<Door>, missed: String, needs: For
     case _: kinds(rest, missed, needs, context)
 # "garden/bell/3" is a bell: the next-to-last segment of its id.
 def kindOf(id: String) -> String:
-  wordAt(Lists.reverse(Card.wordList(textJoin(slashed(id), " "))), 2n)
+  wordAt(Lists.reverse(Text.words(textJoin(slashed(id), " "))), 2n)
 def slashed(id: String) -> Lists.List<String>:
   if id == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(id, textBreak(id, "/")), tail: slashed(textDrop(id, textBreak(id, "/") + 1n))})
 def kindLine(id: String, missed: String) -> String:
   if kindOf(id) == "bell" then " A bell's card takes {missed}: reply to the planting post." else " A {kindOf(id)}'s card takes {missed}: reply to its post."
 def noDoor(needs: Form.Names, kind: String) -> Activity<Heard>:
-  Card.tell(Heard.unclear({needs: needs}), Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}).{kind}\n"))
+  Card.tell(Heard.unclear({needs: needs}), Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Text.joined(needs)}).{kind}\n"))
 def usageOf(card: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Activity<Heard>:
-  Card.tell(Heard.unclear({needs: needs}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card))))
+  Card.tell(Heard.unclear({needs: needs}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Text.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card))))
 # An action the policy confirms (a give, an offer, a reprogram) is not run from prose: the
 # speaker is shown the door's spell, and sending it is the yes.
 def askedFirst(card: String, forms: Lists.List<Form.Form>) -> Activity<Heard>:
   Card.tell(Heard.asked({card: card}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it filled in:\n"), Card.usage(card, forms)))
 def needsCard(needs: Form.Names) -> Document.Document:
-  Document.text("✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: {Spell.joined(needs)}.\n")
+  Document.text("✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: {Text.joined(needs)}.\n")
 # A link door (no object; genesis's STUDIO) answers with its description, which carries the
 # URL; it has no card to ask for and no forms to read.
 def linkDoor(door: Door) -> Activity<Heard>:

@@ -6,6 +6,7 @@ import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
+import ./Text.obend as Text
 # Who knocked, with their handle as the host knew it then.
 record Knock:
   who: String
@@ -62,7 +63,7 @@ def opened(by: String) -> Activity<Bool>:
 form knock:
 # An action without a form: watching names an object.
 def methods() -> Lists.List<String>:
-  Card.wordList("watch")
+  Text.words("watch")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: knockForm(), tail: Card.Forms.nil()})
 def blurb() -> Card.Door:

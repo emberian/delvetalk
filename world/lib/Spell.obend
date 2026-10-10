@@ -1,6 +1,6 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
-import ./Form.obend as Form
+import ./Text.obend as Text
 # What Bend still reads of a spell. The host parses a reply's spell, fits it to the card's
 # forms and runs the method (spec/Delvetalk/Host/Spell.lean, op `spell-parse`; FOUNDATION
 # section 5 has the grammar); a card's receive gets the reply's `name: value` lines as
@@ -36,13 +36,6 @@ def isAction(value: String) -> Bool:
 def isIdentifier(value: String) -> Bool:
   let size = textLength(value)
   size > 0n && textSpan(value, identifier()) == size
-def blanks() -> String:
-  " \t\r"
-def trimStart(value: String) -> String:
-  textDrop(value, textSpan(value, blanks()))
-def trimEnd(value: String) -> String:
-  let size = textLength(value)
-  if size == 0n then value else if textSpan(textDrop(value, size - 1n), blanks()) == 1n then trimEnd(textTake(value, size - 1n)) else value
 sum Candidate:
   none: {}
   at: {card: String, action: String, tail: String}
@@ -78,15 +71,15 @@ def pastFence(text: String) -> String:
 def pastFenceLine(text: String, indent: Nat, stop: Nat) -> String:
   if textTake(textDrop(text, indent), 3n) == "```" then textDrop(text, stop + 1n) else pastFence(textDrop(text, stop + 1n))
 def headingAt(text: String, indent: Nat, stop: Nat) -> Candidate:
-  heading(trimEnd(textDrop(textTake(text, stop), indent + 9n)))
+  heading(Text.trimEnd(textDrop(textTake(text, stop), indent + 9n)))
 def heading(line: String) -> Candidate:
-  let afterBlanks = trimStart(line)
+  let afterBlanks = Text.trimStart(line)
   let cardEnd = textBreak(afterBlanks, " \t")
   let card = textTake(afterBlanks, cardEnd)
-  let afterCard = trimStart(textDrop(afterBlanks, cardEnd))
+  let afterCard = Text.trimStart(textDrop(afterBlanks, cardEnd))
   let actionEnd = textBreak(afterCard, " \t")
   let action = textTake(afterCard, actionEnd)
-  if isCardName(card) == false || isAction(action) == false then Candidate.none({}) else Candidate.at({card: card, action: action, tail: trimStart(textDrop(afterCard, actionEnd))})
+  if isCardName(card) == false || isAction(action) == false then Candidate.none({}) else Candidate.at({card: card, action: action, tail: Text.trimStart(textDrop(afterCard, actionEnd))})
 # Fields on the spell line are separated by ` / ` (`delvetalk tide subscribe / every: 1 /
 # note: first light`) or by commas; a slash or comma only separates when what follows it
 # looks like `name:`, so a value may hold either.
@@ -98,29 +91,29 @@ def spelled(card: String, action: String, fields: Fields) -> Parsed:
     case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})
     case bad(b): Parsed.notASpell({reason: b.reason})
 def inline(tail: String) -> Fields:
-  if tail == "" then Fields.found({bindings: Bindings.nil()}) else slashed("", if textTake(tail, 1n) == "/" then trimStart(textDrop(tail, 1n)) else tail)
+  if tail == "" then Fields.found({bindings: Bindings.nil()}) else slashed("", if textTake(tail, 1n) == "/" then Text.trimStart(textDrop(tail, 1n)) else tail)
 def slashed(before: String, rest: String) -> Fields:
   let at = textBreak(rest, "/")
   if at == textLength(rest) then segment("{before}{rest}") else slashAt(before, textTake(rest, at), textDrop(rest, at + 1n))
 def slashAt(before: String, head: String, after: String) -> Fields:
-  if looksLikeField(trimStart(after)) && (head == "" || textSpan(textDrop(head, textLength(head) - 1n), blanks()) == 1n) then both(segment("{before}{head}"), slashed("", trimStart(after))) else slashed("{before}{head}/", after)
+  if looksLikeField(Text.trimStart(after)) && (head == "" || textSpan(textDrop(head, textLength(head) - 1n), Text.blanks()) == 1n) then both(segment("{before}{head}"), slashed("", Text.trimStart(after))) else slashed("{before}{head}/", after)
 def segment(text: String) -> Fields:
-  if trimStart(text) == "" then Fields.found({bindings: Bindings.nil()}) else piece(trimStart(text))
+  if Text.trimStart(text) == "" then Fields.found({bindings: Bindings.nil()}) else piece(Text.trimStart(text))
 # Commas: a comma continues the current value unless what follows it looks like `name:`.
 def piece(tail: String) -> Fields:
   let stop = textBreak(tail, ",")
-  startField(trimStart(textTake(tail, stop)), textDrop(tail, stop + 1n))
+  startField(Text.trimStart(textTake(tail, stop)), textDrop(tail, stop + 1n))
 def looksLikeField(value: String) -> Bool:
   let colon = textBreak(value, ":")
   colon > 0n && textTake(value, colon) != value && isIdentifier(textTake(value, colon))
 def startField(value: String, rest: String) -> Fields:
   let colon = textBreak(value, ":")
-  if looksLikeField(value) then continued(textTake(value, colon), trimStart(textDrop(value, colon + 1n)), rest) else Fields.bad({reason: "Not a field: {textTake(value, 40n)}"})
+  if looksLikeField(value) then continued(textTake(value, colon), Text.trimStart(textDrop(value, colon + 1n)), rest) else Fields.bad({reason: "Not a field: {textTake(value, 40n)}"})
 def continued(name: String, value: String, rest: String) -> Fields:
-  if rest == "" then consed(name, trimEnd(value), Fields.found({bindings: Bindings.nil()})) else more(name, value, textBreak(rest, ","), rest)
+  if rest == "" then consed(name, Text.trimEnd(value), Fields.found({bindings: Bindings.nil()})) else more(name, value, textBreak(rest, ","), rest)
 def more(name: String, value: String, stop: Nat, rest: String) -> Fields:
-  let next = trimStart(textTake(rest, stop))
-  if looksLikeField(next) then consed(name, trimEnd(value), startField(next, textDrop(rest, stop + 1n))) else continued(name, "{value},{textTake(rest, stop)}", textDrop(rest, stop + 1n))
+  let next = Text.trimStart(textTake(rest, stop))
+  if looksLikeField(next) then consed(name, Text.trimEnd(value), startField(next, textDrop(rest, stop + 1n))) else continued(name, "{value},{textTake(rest, stop)}", textDrop(rest, stop + 1n))
 def both(first: Fields, second: Fields) -> Fields:
   match first:
     case found(f): sequenced(f.bindings, second)
@@ -138,14 +131,3 @@ def valueOf(bindings: Bindings, name: String) -> String:
   match bindings:
     case nil(_): ""
     case cons(c): if c.head.name == name then c.head.value else valueOf(c.tail, name)
-# A natural in plain digits (no sign, no leading zero, at most 18 digits), or no.
-sum Number:
-  no: {}
-  yes: {value: Nat}
-def number(value: String) -> Number:
-  let size = textLength(value)
-  if size == 0n || size > 18n || textSpan(value, "0123456789") != size then Number.no({}) else if size > 1n && textTake(value, 1n) == "0" then Number.no({}) else Number.yes({value: digits(value, 0n)})
-def digits(rest: String, total: Nat) -> Nat:
-  if rest == "" then total else digits(textDrop(rest, 1n), total * 10n + textBreak("0123456789", textTake(rest, 1n)))
-def joined(options: Form.Names) -> String:
-  Lists.fold(options, "", fn(option: String) -> String -> String: fn(rest: String) -> String: if rest == "" then option else "{option}, {rest}")

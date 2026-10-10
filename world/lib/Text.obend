@@ -1,0 +1,46 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+# Text helpers the cards share. `textSpan(t, set)` counts the leading characters of `t` in
+# `set`; `textBreak(t, set)` is where the first character in `set` stands (`t`'s length when
+# none does).
+def blanks() -> String:
+  " \t\r\n"
+# Whether text is only blanks (without measuring all of it: textLength costs its bytes).
+def blank(text: String) -> Bool:
+  textDrop(text, textSpan(text, blanks())) == ""
+def trimStart(text: String) -> String:
+  textDrop(text, textSpan(text, blanks()))
+def trimEnd(text: String) -> String:
+  trimEndOf(text, blanks())
+# Text without the run of `chars` at its end.
+def trimEndOf(text: String, chars: String) -> String:
+  let size = textLength(text)
+  if size == 0n then text else if textSpan(textDrop(text, size - 1n), chars) == 1n then trimEndOf(textTake(text, size - 1n), chars) else text
+def trim(text: String) -> String:
+  trimEnd(trimStart(text))
+def starts(text: String, prefix: String) -> Bool:
+  textTake(text, textLength(prefix)) == prefix
+# Where `needle` first stands in `text` (its length when nowhere, and for an empty needle).
+def indexOf(text: String, needle: String) -> Nat:
+  indexFrom(text, needle, 0n)
+def indexFrom(text: String, needle: String, at: Nat) -> Nat:
+  let skip = textBreak(text, textTake(needle, 1n))
+  if skip == textLength(text) then at + skip else if textTake(textDrop(text, skip), textLength(needle)) == needle then at + skip else indexFrom(textDrop(text, skip + 1n), needle, at + skip + 1n)
+def contains(text: String, needle: String) -> Bool:
+  indexOf(text, needle) < textLength(text)
+# The words of a text, split at runs of blanks.
+def words(text: String) -> Lists.List<String>:
+  wordsFrom(trimStart(text))
+def wordsFrom(text: String) -> Lists.List<String>:
+  if text == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(text, textBreak(text, blanks())), tail: words(textDrop(text, textBreak(text, blanks())))})
+def joined(names: Lists.List<String>) -> String:
+  textJoin(names, ", ")
+# A natural in plain digits (no sign, no leading zero, at most 18 digits), or no.
+sum Number:
+  no: {}
+  yes: {value: Nat}
+def number(value: String) -> Number:
+  let size = textLength(value)
+  if size == 0n || size > 18n || textSpan(value, "0123456789") != size then Number.no({}) else if size > 1n && textTake(value, 1n) == "0" then Number.no({}) else Number.yes({value: digits(value, 0n)})
+def digits(rest: String, total: Nat) -> Nat:
+  if rest == "" then total else digits(textDrop(rest, 1n), total * 10n + textBreak("0123456789", textTake(rest, 1n)))
