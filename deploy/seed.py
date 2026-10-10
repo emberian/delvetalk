@@ -4,11 +4,10 @@
 Run as `python3 -m deploy.seed` from the repository root. Carries bytes: the operator names the object, the module, the creating principal
 and the typed seed; the host compiles, judges and journals. Through hostd's socket.
 
-The seed is PARTIAL: only the fields the operator means; world-create lays them over the package's own
-initial(). A genesis script never carries a full state by hand: when an object's state type gains a field,
-a hand-written full state stops conforming and genesis fails (it did, 2026-10-09: Directory and Garden
-gained owner, greeted, pageCheckpoint, confirm). `--owner DID` (the world's opener only) creates the object
-for that owner.
+The seed is PARTIAL: only the fields the operator means. The host lays it over the package's own
+initial() (mergeSeed), refuses a field the state does not have by name, and fills an unset text
+`owner` with `--owner` (opener only) or the creating principal. A genesis script never carries a
+full state by hand: a hand-written full state stops conforming when the state type gains a field.
 
   python3 -m deploy.seed --host-socket /data/state/host.sock --principal did:plc:... \
       --object garden --module Garden --intent mk-garden \

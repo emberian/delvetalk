@@ -16,6 +16,21 @@ from transport import bridge
 from transport.hostproc import HostClient
 
 DID = 'did:plc:' + 'a' * 24
+TALLY = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  count: Nat
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {count: 0n}
+def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case _: state.count + 1n
+"""
 
 
 class Hostd(unittest.TestCase):
@@ -104,6 +119,27 @@ class Hostd(unittest.TestCase):
                 finally:
                     stop_hostd(dd)
         self.assertEqual([r.get('opener') for r in opened if r['op'] == 'world-open'][:1], [DID])
+
+    def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
+        import tempfile as tf
+        from transport.hostproc import LIBRARY
+        one = [{'name': 'Tally', 'source': TALLY}]
+        with tf.TemporaryDirectory() as d2:
+            dd = start_hostd(d2, opener=DID, library=LIBRARY)
+            try:
+                for client, who in ((HostClient(Path(d2) / 'host.sock'), DID), (HostClient(Path(d2) / 'host.sock', heap=DID), DID)):
+                    made = client.send({'op': 'world-create', 'principal': who, 'identity': 'mk', 'object': 't',
+                                        'modules': one, 'entry': 'initial', 'seed': record()})
+                    self.assertEqual(made['status'], 'created', made)
+                    self.assertTrue(made['receipt']['outcome']['compile']['library'])
+                    turned = client.send({'op': 'world-turn', 'principal': who, 'object': 't', 'method': 'bump', 'argument': record(), 'identity': 'b'})
+                    self.assertEqual((turned['status'], turned['result']), ('admitted', nat(1)), turned)
+            finally:
+                stop_hostd(dd)
+        # without a library the same module names an import nobody supplied
+        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk2', 'object': 't', 'modules': one,
+                                 'entry': 'initial', 'seed': record()})
+        self.assertEqual(made['status'], 'error', made)
 
     def test_clients_report_a_missing_daemon_instead_of_raising(self):
         self.assertEqual(HostClient(self.state / 'nope.sock').send({'op': 'world-status'})['message'], 'hostd unavailable')

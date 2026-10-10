@@ -147,11 +147,11 @@ class Stateless:
 atexit.register(lambda: _checker and _checker.alive() and _checker.close())
 
 
-def start_hostd(state, binary_path=None, opener=None):
+def start_hostd(state, binary_path=None, opener=None, library=None):
     """A hostd serving <state>/host.sock from a thread, over <state>/world.journal. Stop with stop_hostd."""
     import threading
     from transport.hostd import Hostd
-    d = Hostd(state, os.path.join(state, "world.journal"), binary_path or binary(), opener=opener)
+    d = Hostd(state, os.path.join(state, "world.journal"), binary_path or binary(), opener=opener, library=library)
     threading.Thread(target=d.serve_forever, daemon=True).start()
     return d
 

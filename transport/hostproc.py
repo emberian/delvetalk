@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 
 BINARY = os.environ.get('DELVETALK_OBEND', '/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend')
+LIBRARY = Path(__file__).resolve().parent.parent / 'world' / 'lib'
 HOST_TIMEOUT, POOL = 120, 8
 DID_RE = __import__('re').compile(r'did:plc:[a-z2-7]{24}\Z')
 
@@ -25,15 +26,17 @@ class Host:
     """One host subprocess, one request at a time; respawned and reopened if it dies.
     With journal=None it is a stateless compile/run process."""
 
-    def __init__(self, journal, binary=BINARY, clock=None, opener=None):
+    def __init__(self, journal, binary=BINARY, clock=None, opener=None, library=None, librarian=None):
         self.journal, self.binary, self.proc, self.clock, self.opener = journal, binary, None, clock, opener
+        # A library directory is sealed into the journal at its first open, as `librarian` (who may change it).
+        self.library = {'library': str(library), 'principal': librarian} if library and librarian else {}
         self.lock = threading.Lock()
 
     def _spawn(self):
         self.proc = subprocess.Popen([self.binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         if self.journal:
             reply = self._exchange({'op': 'world-open', 'path': self.journal, **({'clock': self.clock} if self.clock else {}),
-                                     **({'opener': self.opener} if self.opener else {})})
+                                     **({'opener': self.opener} if self.opener else {}), **self.library})
             if reply.get('status') != 'opened':
                 raise HostDied('world-open refused: ' + json.dumps(reply))
 
@@ -79,8 +82,8 @@ class Heaps:
     """Per-principal journals, each in its own host process; least recently used evicted.
     A heap is reopened by the host's replay, so eviction loses nothing."""
 
-    def __init__(self, directory, size=POOL, binary=BINARY):
-        self.dir, self.size, self.binary = Path(directory), size, binary
+    def __init__(self, directory, size=POOL, binary=BINARY, library=None):
+        self.dir, self.size, self.binary, self.library = Path(directory), size, binary, library
         self.pool = collections.OrderedDict()
 
     def journal(self, did):
@@ -93,7 +96,7 @@ class Heaps:
         self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         while len(self.pool) >= self.size:
             self.pool.popitem(last=False)[1].close()
-        self.pool[did] = Host(str(self.journal(did)), self.binary)
+        self.pool[did] = Host(str(self.journal(did)), self.binary, library=self.library, librarian=did)
         return self.pool[did]
 
     def close(self):

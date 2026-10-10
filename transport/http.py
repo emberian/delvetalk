@@ -10,6 +10,7 @@ import collections
 import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -20,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from transport import pages
-from transport.hostproc import HostClient, RemoteHeaps, add_host_args
+from transport.hostproc import LIBRARY, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
 
@@ -31,6 +32,70 @@ MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
+EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
+IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
+ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
+          ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
+          ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
+TOP_ONLY = ('repl', 'check', 'me', 'revoke')
+ROUTE_HINT = ('GET world, world/<object>, world/<object>/card, world/<object>/source, receipt/<intent>, offers, pending, me, examples; '
+              'POST world/<object>/<method>, repl, check, deliver, revoke, heap/objects; heap/ before world, receipt, offers, pending, deliver')
+
+
+def plain(data):
+    """Typed data as plain JSON, for reading only (a form's fields); never sent back to the host."""
+    tag = data.get('tag') if isinstance(data, dict) else None
+    if tag == 'record':
+        return {f['name']: plain(f['value']) for f in data['fields']}
+    if tag == 'list':
+        return [plain(i) for i in data['items']]
+    if tag == 'variant':
+        inner = plain(data['payload'])
+        return {'tag': data['label'], **inner} if isinstance(inner, dict) else {'tag': data['label'], 'value': inner}
+    return int(data['value']) if tag == 'natural' else data.get('value') if tag else data
+
+
+def typed(value):
+    """Plain JSON as the host's typed data: text is a label, an integer a natural, an object a record."""
+    if isinstance(value, dict):
+        return value if 'tag' in value else {'tag': 'record', 'fields': [{'name': k, 'value': typed(v)} for k, v in value.items()]}
+    if isinstance(value, list):
+        return {'tag': 'list', 'items': [typed(v) for v in value]}
+    if isinstance(value, bool):
+        return {'tag': 'boolean', 'value': value}
+    return {'tag': 'natural', 'value': str(value)} if isinstance(value, int) else {'tag': 'label', 'value': str(value)}
+
+
+def argument(data):
+    """A turn's argument: `spell` is a reply's text as a card hears it, `fields` a plain record, else `argument` typed."""
+    if 'spell' in data:
+        return typed({'text': data['spell'], 'post': '', 'slot': ''})
+    return typed(data['fields']) if isinstance(data.get('fields'), dict) else data.get('argument', {'tag': 'record', 'fields': []})
+
+
+def brief(value):
+    """A checkpoint's tokens (hundreds of KiB for a suspended turn) as their count."""
+    if isinstance(value, dict):
+        return {k: {'elided': len(v)} if k == 'tokens' and isinstance(v, list) else brief(v) for k, v in value.items()}
+    return [brief(v) for v in value] if isinstance(value, list) else value
+
+
+def library(modules):
+    """The modules, after the world/lib modules they import and did not supply (imports first): the bytes hostd seals."""
+    found = {p.stem: p for p in sorted(LIBRARY.rglob('*.obend'))}
+    have, out = {m.get('name') for m in modules}, []
+
+    def visit(name):
+        if name not in have and name in found:
+            have.add(name)
+            source = found[name].read_text()
+            for dep in IMPORT.findall(source):
+                visit(dep)
+            out.append({'name': name, 'source': source})
+    for m in modules:
+        for dep in IMPORT.findall(str(m.get('source', ''))):
+            visit(dep)
+    return out + modules
 
 
 class Front(HTTPServer):
@@ -52,8 +117,8 @@ class Front(HTTPServer):
         self.hits[key] = hits + [self.clock()]
         return len(hits) >= rate
 
-    def guide(self):
-        return GUIDE.read_text().replace('{{origin}}', self.origin)
+    def guide(self, path=GUIDE):
+        return path.read_text().replace('{{origin}}', self.origin)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -73,8 +138,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def fail(self, code, message):
-        self.reply(code, canonical({'status': 'error', 'message': message}))
+    def fail(self, code, message, hint=None):
+        self.reply(code, canonical({'status': 'error', 'message': message, **({'hint': hint} if hint else {})}))
 
     def body(self):
         """-> dict, or None after replying with the refusal. JSON, or a urlencoded form."""
@@ -87,7 +152,8 @@ class Handler(BaseHTTPRequestHandler):
         if n > MAX_BODY:
             return self.fail(413, f'body exceeds {MAX_BODY} bytes')
         raw = self.rfile.read(n)
-        if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded'):
+        # curl -d labels JSON as a form; a browser's form body never starts with '{'
+        if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded') and not raw.lstrip().startswith(b'{'):
             return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace')).items()}
         try:
             data = json.loads(raw or b'{}')
@@ -96,8 +162,18 @@ class Handler(BaseHTTPRequestHandler):
         return data if isinstance(data, dict) else self.fail(400, 'body must be a JSON object')
 
     def answer(self, reply):
+        """The host's reply, rendered: a diagnostic carried as JSON text in `message` is lifted, its `hint` with it,
+        and a checkpoint's tokens are counted, not shown (?full=1 shows them)."""
         status = reply.get('status')
-        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200, canonical(reply))
+        try:
+            inner = json.loads(reply['message']) if status == 'error' else None
+        except (KeyError, TypeError, ValueError):
+            inner = None
+        reply = {**inner, 'status': 'error'} if isinstance(inner, dict) else reply
+        if isinstance(reply.get('diagnostic'), dict) and 'hint' in reply['diagnostic']:
+            reply = {**reply, 'hint': reply['diagnostic']['hint']}
+        full = 'full' in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200, canonical(reply if full else brief(reply)))
 
     def cookie(self):
         for part in (self.headers.get('Cookie') or '').split(';'):
@@ -146,22 +222,26 @@ class Handler(BaseHTTPRequestHandler):
     def agents(self, method, rest):
         if method == 'POST' and rest in (['challenge'], ['verify']):
             return self.identify(rest[0])
-        kind = {('GET', 'world', 2): 'view', ('POST', 'world', 3): 'turn', ('GET', 'receipt', 2): 'receipt',
-                ('POST', 'deliver', 1): 'deliver', ('GET', 'pending', 1): 'pending', ('POST', 'repl', 1): 'repl',
-                ('GET', 'me', 1): 'me', ('POST', 'revoke', 1): 'revoke'}.get((method, rest[0] if rest else '', len(rest)))
+        if method == 'GET' and rest == ['examples']:
+            return self.reply(200, self.server.guide(EXAMPLES), 'text/plain')
         heap = rest[:1] == ['heap']
-        if heap:
-            rest = rest[1:]
-            kind = {('POST', 'objects', 1): 'create', ('GET', 'world', 2): 'view', ('POST', 'world', 3): 'turn',
-                    ('GET', 'receipt', 2): 'receipt', ('POST', 'deliver', 1): 'deliver',
-                    ('GET', 'pending', 1): 'pending'}.get((method, rest[0] if rest else '', len(rest)))
+        rest = rest[1:] if heap else rest
+        head, obj, tail = (rest[0] if rest else ''), '/'.join(rest[1:]), ''
+        if head == 'world':  # an object id may hold slashes: the last segment names the method, or card/source
+            if method == 'POST' or (len(rest) > 2 and rest[-1] in ('card', 'source')):
+                obj, tail = '/'.join(rest[1:-1]), rest[-1]
+            kind = 'turn' if method == 'POST' else tail or ('view' if obj else 'objects')
+            kind = kind if obj or kind == 'objects' else None
+        else:
+            kind = ROUTES.get((method, head, bool(obj)))
+            kind = None if kind in (('create',) if not heap else TOP_ONLY) else kind
         if kind is None:
-            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}')
+            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}', ROUTE_HINT)
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else ''
         who = self.principal(credential)
         if who is None:
-            return self.fail(401, 'missing, unverified or revoked credential')
+            return self.fail(401, 'missing, unverified or revoked credential', 'POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>')
         if self.server.limited(credential):
             return self.fail(429, f'more than {RATE} requests per {WINDOW} seconds')
         if kind == 'me':
@@ -169,18 +249,26 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'revoke':
             self.server.identity.revoke(credential)
             return self.reply(200, canonical({'status': 'revoked'}), headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
-        if kind == 'repl':
-            return self.run_repl(who['did'])
-        if heap:
-            host = self.server.heaps.get(who['did'])
-        else:
-            host = self.server.host
+        if kind in ('repl', 'check'):
+            return self.run_repl(who['did'], kind)
+        host = self.server.heaps.get(who['did']) if heap else self.server.host
         principal = who['did']  # the principal the host sees; the handle is display only
         send = lambda req: self.answer(host.send(req))
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        after = {'after': int(q['after']) if q['after'].isdigit() else q['after']} if 'after' in q else {}
+        if kind == 'objects':
+            return send({'op': 'world-objects', 'principal': principal, **{k: q[k] for k in ('prefix', 'after') if k in q}})
         if kind == 'view':
-            return send({'op': 'world-view', 'principal': principal, 'object': rest[1]})
+            return send({'op': 'world-view', 'principal': principal, 'object': obj})
+        if kind in ('card', 'source'):
+            r = host.send({'op': 'world-card' if kind == 'card' else 'world-inspect', 'principal': principal, 'object': obj})
+            if 'full' not in q:  # the readable part; ?full=1 is the host's reply verbatim
+                r = {k: plain(v) if k == 'forms' else v for k, v in r.items() if k not in ('document', 'methods')}
+            return self.answer(r)
         if kind == 'receipt':
-            return send({'op': 'world-receipt', 'principal': principal, 'identity': rest[1]})
+            return send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
+        if kind == 'offers':
+            return send({'op': 'world-offers', 'principal': principal, **after})
         if kind == 'pending':
             return send({'op': 'world-pending'})
         data = self.body()
@@ -189,10 +277,10 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'deliver':
             return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT})
         if kind == 'create':
-            made = {k: data[k] for k in CREATE_KEYS if k in data}
+            made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             return send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
-        send({'op': 'world-turn', 'principal': principal, 'object': rest[1], 'method': rest[2],
-              'argument': data.get('argument', {'tag': 'record', 'fields': []}), 'identity': data.get('intent')})
+        send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
+              'argument': argument(data), 'identity': data.get('intent')})
 
     def client_ip(self):
         forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[-1].strip()
@@ -221,28 +309,36 @@ class Handler(BaseHTTPRequestHandler):
                                    'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))},
                                    'heapObjects': count}))
 
-    def run_repl(self, principal):
+    def run_repl(self, principal, kind='repl'):
         data = self.body()
         if data is None:
             return
-        modules = data.get('modules')
+        modules = data['modules'] if 'modules' in data else [{'name': 'Package', 'source': data.get('source', '')}]
         if not isinstance(modules, list) or len(modules) > MAX_MODULES:
             return self.fail(400, f'modules must be a list of at most {MAX_MODULES}')
         for m in modules:
             if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > MAX_SOURCE:
-                return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes')
-        repl = self.server.repl
+                return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes', 'import the library by name (./Plan.obend); it is not sent')
+        repl, modules = self.server.repl, library(modules)
+        if kind == 'check':  # the verdict; ?full=1 adds the compiled artifact
+            checked = repl.send({'op': 'check-package', 'modules': modules, 'entry': data.get('entry')})
+            return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'})
         compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry')})
         if compiled.get('status') != 'compiled':
             return self.answer(compiled)
+        ty = compiled['artifact'].get('type') or {}
+        while ty.get('tag') == 'arrow':
+            ty = ty.get('codomain') or {}
+        activity = ty.get('tag') == 'computation'  # an Activity entry starts a turn; anything else runs
         extra = {k: data[k] for k in ('limits', 'object', 'intent', 'roots') if k in data}
-        if data.get('turn') or 'checkpoint' in data:
+        if activity or 'checkpoint' in data:
             extra['principal'] = principal  # a checkpoint is bound to the credential's principal, never the body's
         if 'checkpoint' in data:
             req = {'op': 'turn-resume', 'checkpoint': data['checkpoint'], 'response': data.get('response'), **extra}
         else:
-            req = {'op': 'turn-start' if data.get('turn') else 'run', 'arguments': data.get('arguments', []), **extra}
-        self.answer(repl.send({**req, 'artifact': compiled['artifact']}))
+            req = {'op': 'turn-start' if activity else 'run', 'arguments': data.get('arguments', []), **extra}
+        reply = repl.send({**req, 'artifact': compiled['artifact']})
+        return self.answer(reply) if reply.get('status') == 'error' else self.reply(200, canonical(reply))  # a checkpoint goes back whole
 
     # ---- humans
 

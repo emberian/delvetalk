@@ -19,7 +19,7 @@ import sys
 import threading
 from pathlib import Path
 
-from transport.hostproc import BINARY, DID_RE, Heaps, Host
+from transport.hostproc import BINARY, DID_RE, LIBRARY, Heaps, Host
 
 CLOCK = 'transport'  # the clock principal named at world-open
 EX_TEMPFAIL = 75
@@ -42,13 +42,14 @@ def take_lock(path):
 class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
 
-    def __init__(self, state, journal, binary=BINARY, lock=None, opener=None):
+    def __init__(self, state, journal, binary=BINARY, lock=None, opener=None, library=None):
         self.state = Path(state)
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock_fd = take_lock(lock or self.state / 'journal.lock')  # before anything else is touched
         self.binary, self.order = binary, threading.Lock()
-        self.shared, self.stateless = Host(str(journal), binary, clock=CLOCK, opener=opener), Host(None, binary)
-        self.heaps = Heaps(self.state / 'heaps', binary=binary)
+        self.shared = Host(str(journal), binary, clock=CLOCK, opener=opener, library=library, librarian=opener)
+        self.stateless = Host(None, binary)
+        self.heaps = Heaps(self.state / 'heaps', binary=binary, library=library)
         self.pidfile = self.state / 'hostd.pid'
         self.pidfile.write_text(str(os.getpid()))
         sock = self.state / 'host.sock'
@@ -104,9 +105,11 @@ def main(argv=None):
     ap.add_argument('--journal', required=True)
     ap.add_argument('--lock', help='lock file (default <state>/journal.lock)')
     ap.add_argument('--opener', default=os.environ.get('DELVETALK_OPENER'), metavar='DID', help="the world's opener (ember's DID); only the opener may create objects with an owner")
+    ap.add_argument('--library', default=LIBRARY, help="the standard library sealed into each journal at its first open, as the "
+                    "opener's (each heap's as its owner's), so packages import it by name; '' for none")
     a = ap.parse_args(argv)
     try:
-        daemon = Hostd(a.state, a.journal, lock=a.lock, opener=a.opener)
+        daemon = Hostd(a.state, a.journal, lock=a.lock, opener=a.opener, library=a.library or None)
     except Locked as err:
         print(f'hostd: {err}; refusing to start a second writer', file=sys.stderr)
         return EX_TEMPFAIL
