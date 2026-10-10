@@ -266,3 +266,61 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
   `relations():`); `compileEntryCore` is the compile without it (check-package's path).
   Test: `test_sugar.Relations`.
 
+## 15. Design note: lazy state (RELATIONAL §11 item 4)
+
+**Today.** A turn's state argument is admitted whole as native cells: `Cell.native d` holds
+admitted Data, and forcing it allocates its immediate children as native cells and caches
+the WHNF (`nativeCached d v`). That is lazy in conversion, not in loading: the host has already materialised every row. `nativeCached` is not a host thunk: its origin is the Data.
+
+**What the machine needs.** One cell kind and one control, no change to `stepRaw`'s
+signature: `Cell.stored (h : Handle)`, `Handle = {object, version, field, row : Option key,
+size : Nat}`. Entering a stored cell sets `control := .awaitingStore h addr` (one tick),
+exactly as `perform` yields, but the *runner* answers it inside the segment:
+`forceHostedFrom` calls the host's `fetch : Handle → Option Data` (a parameter, like
+`policy`), charges the row, and `supply h d state` overwrites the cell with `native d`
+and re-enters it. A relation's `items` becomes a stored spine: forcing the spine cell of
+position k yields `cons {head: stored row k, tail: stored spine k+1}` without the row's
+data; forcing `head` fetches that row. Two primitives answer from the handle without
+forcing: `relationCount(r)` (the handle's `size`; on an ordinary list a walk, as
+`textJoin` walks) and `relationLookup(r, key)` (the host's canonical index: one fetch).
+`fetch` reads the version the turn read, so replay is deterministic.
+
+**What the proofs say.** `stepRaw`, `resume`, `settle` and the collector see a stored cell
+as a leaf holding no address (as `native`): `cellAddresses (.stored _) = []`,
+`renameCell` the identity, a codec tag in v2/v3 (`Handle` encodes as its fields).
+`related_stepRaw` gains the enter case (control changes, heap does not);
+`supply` needs its own lemma `related_supply` (heap agreement after overwriting one
+cell with the same Data on both sides), the shape of `related_resume`.
+`checkpoint_resume_segment` stays true for any fixed `fetch` (both runs ask the same function): its proof gains a parameter, not an idea. `stateV2/V3_roundTrip` gain one
+codec case each. `state_roundTrip` (v1) is untouched: v1 never holds a stored cell.
+
+**Across a suspension.** A yield happens only at a `perform`, never at `awaitingStore`
+(the runner answers before continuing), so a checkpoint never stops mid-fetch. A turn
+that forced half a list checkpoints forced rows as `nativeCached` (their data inline,
+the "forced cells only" the brief asks) and unforced ones as handles naming the version
+read at the turn's start. On resume an unforced row is fetched at that version: the host
+must answer old versions (it can: `world-object {version}`, HOST-HANDOFF 5.42) or, more
+simply, treat a resumed fetch of a row changed since as a stale root and refuse/re-run
+the turn, as a moved root does today.
+
+**Roots.** The host records each fetch `(object, field, key, version)`: a turn conflicts only with writes to the keys it forced (or any insert/retract if it called `relationCount`), §3's `keysChangedSince` rule applied to reads.
+
+**Evaluators.** None see stores: a term with a stored state is, by definition, the term
+with the Data substituted, which is what they evaluate today. They gain the two
+primitives over list literals (`relationCount` = length, `relationLookup` = first row
+whose key projection equals the key, by canonical bytes), the generator emits them, and
+`evaluate-term` gains an optional `store` table so the machine path with stored cells is
+compared against the substituted term.
+
+**Cost per forced row.** One tick to enter, one to supply, and the row's admission work
+(`nodes + bytes`, as `prepareNative` charges) plus `1 + 2 * bytes` for the copy, so a
+lookup of a 200-byte row is about 450 ticks against today's whole-relation load. A
+`count` is one tick. Only forced rows are allocated.
+
+**Estimate.** Kernel: cell, control, `supply`, runner, two primitives, codec cases, the
+Fast mirror, collector and settle lemmas, evaluators and generator: 3 lane-days.
+Host: `Handle` minting on admission, `fetch` over the store with the canonical key index,
+row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation.obend`
+`count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
+§11 says; nothing in it changes a pin of an object that does not declare relations.
+
