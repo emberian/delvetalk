@@ -777,7 +777,7 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
 /-- The lenses of a card (WHOLENESS §2: a lens is a form): the fields its pure `lenses() ->
     Lists.List<Form.Field>` names, each with the kind of value it takes, when it also has a `set`
     method; none otherwise (also when `lenses()` is the sum dialect's list of `Form.Lens`, which is
-    not data). -/
+    not data). A `fixed` State field is no lens, whatever `lenses()` says. -/
 def declaredLenses (w : World) (o : Object) : List Spell.Field :=
   if !hasMethod o "set" || !((entrySource o).splitOn "\n").any (·.startsWith "def lenses(") then [] else
   let read : M (List Spell.Field) := do
@@ -789,7 +789,7 @@ def declaredLenses (w : World) (o : Object) : List Spell.Field :=
       return (form.map (·.fields)).getD []
     | .error _ => return []
   match (read.run.run (scratchState w)).1 with
-  | .ok ls => ls
+  | .ok ls => ls.filter fun l => !o.fixed.contains l.name
   | .error _ => []
 
 /-- A lens's value as the `set` method takes it: `Form.Value`. -/
@@ -821,6 +821,8 @@ def lensSpell (w : World) (id : String) (argument : Data) (target : Object) (car
   match fields with
   | [] => receiveHeard w id target argument fields
   | [b] =>
+    if target.fixed.contains b.name then .refuse id "fixed"
+      s!"{b.name} is fixed; it is set when {id} is made and never after." (spellUsage id [] lenses) else
     match lenses.find? (·.name == b.name) with
     | none => .refuse id "unknownField"
         s!"No field {b.name} in this spell; it takes {", ".intercalate (lenses.map (·.name))}." (spellUsage id [] lenses)
@@ -867,7 +869,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let lenses := declaredLenses w target
   if action == "?" then return .usage id (spellUsage id forms lenses)
   -- `set` with one `<field>: <value>` line goes through a lens (`lensSpell`).
-  if action == "set" && !lenses.isEmpty && !forms.any (·.action == "set") then
+  if action == "set" && (!lenses.isEmpty || (hasMethod target "set" && !target.fixed.isEmpty)) && !forms.any (·.action == "set") then
     return lensSpell w id argument target card lenses fields
   let some form := forms.find? (·.action == action)
     | return .refuse id "noAction" s!"{id} has no spell {action}; it has these:" (spellUsage id forms lenses)
@@ -2290,7 +2292,8 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
-      ("forms", dataJson (listData (spellFormsData w id o)))]) |> fun r =>
+      ("forms", dataJson (listData (spellFormsData w id o)))] ++
+      (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)])) |> fun r =>
       -- The views its package declares (`views()`), which `viewDerived` answers.
       let init : TurnState := { world := w, principal, intent := "", subject := principal,
                                 ticks := Delvetalk.Bounds.lawTicks, limits := Json.mkObj [] }
