@@ -1218,5 +1218,7 @@ theorem trim_resume_segment {fetch : Fetch} {state resumed : State} {response : 
 #assert_axioms erase_forceStored trimValue_forceStored erase_allocateObjectFields fetchable_agree agree_fetchStep
 #assert_axioms forceHostedFrom_succ sizesAfter_erase trim_heap_erased settle_resume_segment trim_resume_segment
 #assert_axioms agree_materializeWith agree_completeWith agree_yieldedPlanWith
+#assert_axioms eraseCell_objectCell fetchable_erase erase_fetchStep Agree.heap_size agree_forceHostedWith
+#assert_axioms materializeWith_record materializeWith_record_gate materializeWith_record_ok
 
 end Minidregg.Theory.ObjectiveBendDemandCollect

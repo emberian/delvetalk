@@ -1961,5 +1961,6 @@ theorem checkpoint_resume_segment {fetch : Fetch} {state resumed : State} {respo
 #assert_axioms collect_resume_segment checkpoint_resume_segment
 #assert_axioms forceStored_related forceStored_none allocateObjectFields_foldl related_fetchable related_fetchStep
 #assert_axioms forceHostedFrom_active related_forceHostedWith related_completeWith related_yieldedPlanWith
+#assert_axioms objectCell_rename objectCell_addresses forceHostedFrom_inactive
 
 end Minidregg.Theory.ObjectiveBendDemandCollect
