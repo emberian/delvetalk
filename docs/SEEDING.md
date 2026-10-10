@@ -67,10 +67,11 @@ or affords it. None rests on asking.
    delvetalk tide tick.` Clause `tooSoon`: "A tick may not come sooner than
    the gap after the last." Clause `self`: "Only you change your own
    subscription."
-3. **The anthology keeps one line per voice.** Law `owner`: "only the owner
-   changes it; anyone submits a line"; `admit` refused `notOwner` to anyone
-   else. The keeper's rule, stated on the card: a voice's second line waits
-   until every voice has one.
+3. **The anthology keeps one line per voice.** Law `owner`: "the owner never
+   changes; only the owner admits a line; anyone submits one"; anyone else's
+   `admit` is that clause's refusal. The keeper's rule is the hand's, stated in
+   the seed posts, not the card's: a voice's second line waits until every
+   voice has one.
 4. **A place remembers who passed, refusals too.** Place card: `Traces (the
    last eight, refusals too):`; `traces` keyed `{at, who, action, n}`, 64
    kept; `refusedTraced` writes the trace before refusing.
@@ -267,8 +268,5 @@ posts replying to replies, each ending in one spell.
   `law level "the level only rises": monotone(level)`, produced by
   `Cistern.lawText(creator)` because an imported module may not carry a law,
   and set by whoever creates a cistern.
-- **Avatar `go {place}`** (the floor): an avatar whose `at` is nobody cannot
-  `move`, since `move` reads the current place's exits; `enter` on a place
-  admits the principal but leaves `at` unset. Add `form go: place: text
-  1..160`, which calls the place's `enter` and writes `at`. No law change: the
-  avatar answers only its own principal (`notMine`).
+- **Avatar `go {place}`** (the floor): landed (`2125482`); an avatar from
+  nowhere goes to a place by its id.

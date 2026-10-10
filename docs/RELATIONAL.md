@@ -1,6 +1,6 @@
 # Relations in objects: a proposal before launch
 
-Read against `foundation` a2635d2. Line numbers, and the FOUNDATION section numbers cited, are that tree's (today FOUNDATION's principles are §8, the gate §11). Landed by 189b534: FOUNDATION §3 says what was built, and §11 and §12 below are the decisions and corrections the first migration made.
+Read against `foundation` a2635d2. Line numbers, and the FOUNDATION section numbers cited, are that tree's (today FOUNDATION's principles are §8, the gate §11). Landed by 189b534: FOUNDATION §3 says what was built, and §11 and §12 below are the decisions and corrections the first migration made. Since then: `Relation.canonical` is `canonicalRelation` and `canonicalRows` in `Ops.lean`; `Card.notifyRows`, `RowLens` and `answerLensed` went with the Wholeness (the host delivers changes, WHOLENESS §3); the Anthology keys `proposals` by `{n}` (OBJECTS-HANDOFF §2 lists every declared key).
 
 ## 1. What the relational view is here
 
@@ -204,5 +204,6 @@ under the per-turn send bound, a per-object index of height to keys touched so
 - A per-turn ordinal from the count at read time does not separate two
   concurrent turns by one author at one read height; no current object needs
   that, and one that does should key by the receipt's intent.
-- `insertOnly` is enforced in the Bend predicate until the host denotes the
-  fragment atom (a host defect, in its queue).
+- `insertOnly` is a law atom the host denotes (Deal's `signatures`, the
+  Directory's `greeted`); a row the declared retention evicts is a fact of the
+  write and does not count.

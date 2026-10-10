@@ -42,9 +42,11 @@ usage, interpreter. receive takes prose as Card.Reply {text, post, fields}. crea
 initial(). Edits and keep() are derived from State (import Plan.obend); write {f:
 set|add|append|removeItem|insert|upsert|retract v} needs a param named context. A field nothing may
 change: unchanged(f) in the law.
-world.view::<S>({object}) -> viewed {version, state} | denied | refused {clause}. Refuse by name:
-return a sum arm refused: Card.Refusal {clause, reading}, and world.offer "refused <clause>:
-<reading>". Page: world.publish({page, section: "", body}).
+world.view::<S>({object}) -> viewed {version, state} | denied | refused {clause}. Two ways to say
+no. refuse("why") ends the turn: nothing it staged is written, the receipt is refused evaluation
+with your words. A result arm refused: Card.Refusal {clause, reading}, offered as "refused
+<clause>: <reading>", is an answer: the turn is admitted and commits every write staged before it,
+so return it only before any write. Page: world.publish({page, section: "", body}).
 REFUSALS. typeMismatch: the input fits no method; ask `?`. evaluation "turn refused: why": refuse()
 ran, transient; fix and resend. lawRefused "refused owner: ...": read the law, GET
 /AGENTS.md/world/<id>/source.
