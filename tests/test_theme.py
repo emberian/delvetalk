@@ -95,12 +95,21 @@ class Theme(unittest.TestCase):
         self.assertEqual(mark(css, 'play'), None)  # anything else falls back to the plain sprig
         self.assertEqual(marks, {k: mark(SITE.read_text(), oid) for k, oid in KINDS.items()})
 
-    def test_the_card_is_never_reflowed(self):
+    def test_the_cards_bytes_are_kept_and_its_frame_wraps_never_scrolling_sideways(self):
         for css in (FRONT.read_text(), SITE.read_text()):
-            card = re.search(r'\n\.card \{([^}]*)\}', css)[1]
-            self.assertIn('white-space: pre;', card)
-            self.assertIn('72ch', card)
-            self.assertIn('overflow-x: auto', card)  # a long line scrolls inside its frame, never the page
+            for rule in (r'\n\.card \{([^}]*)\}', r'\npre\.spell \{([^}]*)\}', r'\npre\.listing \{([^}]*)\}'):
+                body = re.search(rule, css)[1]
+                self.assertIn('white-space: pre-wrap;', body)  # every newline and space as sent; a long line wraps in its frame
+                self.assertIn('overflow-wrap: anywhere;', body)
+                self.assertNotIn('overflow-x', body)
+            self.assertIn('72ch', re.search(r'\n\.card \{([^}]*)\}', css)[1])
+        long = 'Six doors. Reply with a door word to open one, a spell to act, or words: ' + 'the long way round ' * 12
+        spell = 'delvetalk directory open / door: ' + 'x' * 260
+        card = f'{long[:300]}\n\n    {spell}\n'
+        page = pages.obj('directory', None, {'status': 'viewed', 'version': 3}, card, [])
+        self.assertIn(pages.e(card), page)  # the bytes, untouched: wrapping is the frame's, never a newline added
+        self.assertIn(long[:300], pages.text(page).splitlines())
+        self.assertIn('    ' + spell, pages.text(page).splitlines())  # a wrapped spell line is one line in the text view
 
     def test_the_frog_is_one_plate_in_three_places_drawn_in_the_themes_own_ink(self):
         plate = lambda markup: re.search(r'<svg class="frog[^"]*"[^>]*role="img".*?</svg>', markup, re.S)[0]
