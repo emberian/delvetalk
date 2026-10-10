@@ -125,6 +125,10 @@ record Doorway:
   label: String
   to: Plans.Reference
 type Doorways = Lists.List<Doorway>
+# The owner's door actions: no reader but the owner can use them, so the directory never
+# reads them in a stranger's prose.
+def ownerActions() -> Lists.List<String>:
+  Text.words("door undoor")
 sum DoorEdit:
   edit: {entries: Plans.Entries<Doorway, Doorway>}
   refused: Refusal
