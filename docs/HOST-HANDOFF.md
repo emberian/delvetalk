@@ -1025,6 +1025,22 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `test_a_reply_to_the_card_needs_no_delvetalk`; `tests/test_spell_turns.py`
    `test_a_spell_in_any_case_and_a_direct_reply_without_delvetalk`.
 
+120. **A value without a name, bound by type (host13; docs/FLEX.md §4 host 3).** In a spell's field
+   lines a line with no colon is a value without a name (`Binding` named ""), and so are the slashed
+   form's leading segments before the first with a colon (`leading`: `plant / silver / a fern`; after a
+   named field a ` / ` stays inside its value). Values run on only while their lines have no colon
+   (`loose`), so prose after them never reads a later `name: value` line as a field, and a value after
+   a blank line is prose that ends the fields (`afterBlank`). `Spell.bind` (in `fit` and `castSpell`,
+   before `withFence`) binds each in order: to the open choice whose option it is (folded; the form's
+   spelling), else digits to the one open natural, else the one open text field; a value whose first
+   word is one of the form's field names (`seed fern`, a missing colon) or that fits nothing is
+   dropped, so fit names what is still missing (`verdigris` leaves `colour` asked). Lens and host
+   spells see the named fields only. A bare value in a reply with no spell line is the card's to
+   complete (objects lane, `Held`). Four parse rows re-recorded (each now shows its `=value`; the fits
+   are unchanged). Tests: `tests/test_spell.py` `test_a_value_without_a_name_binds_by_type`,
+   `test_prose_after_a_blank_line_or_with_a_colon_is_no_value`; `tests/test_spell_turns.py`
+   `test_values_without_names_plant_by_type`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

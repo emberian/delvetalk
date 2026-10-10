@@ -1037,13 +1037,13 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   if hostSpells.contains action && !forms.any (·.action == action) then
     if !retarget then
       return .refuse id "noAction" s!"{action} is a speaker's own spell, from a direct reply." (spellUsage shown shownForms shownLenses)
-    return .host id action fields
+    return .host id action (fields.filter (·.name != ""))
   -- `set` with one `<field>: <value>` line goes through a lens (`lensSpell`).
   if action == "set" && (!lenses.isEmpty || (hasMethod target "set" && !target.fixed.isEmpty)) && !forms.any (·.action == "set") then
-    return lensSpell w id argument target card lenses fields
+    return lensSpell w id argument target card lenses (fields.filter (·.name != ""))
   let some form := forms.find? (·.action == action)
     | return .refuse id "noAction" s!"{shown} has no spell {action}; it has these:" (spellUsage shown shownForms shownLenses)
-  let fields := withFence w target action argument fields
+  let fields := withFence w target action argument (Spell.bind form fields)
   match Spell.fit (.spell id action fields) form with
   | .proposal _ _ entries => match spellArgumentFor w target action entries with
     | .ok a => return .run id action a (spellLine card action)

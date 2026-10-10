@@ -97,6 +97,11 @@ class SpellTurns(Reflection):
                       principal="glm", reach="mention")
         self.assertEqual((r["result"], self.field("planted")), (nat(2), label("violet:rue")), r)
 
+    def test_values_without_names_plant_by_type(self):
+        # docs/FLEX.md §4 host 3, on a turn: the option to the choice, the rest to the one text field.
+        r = self.say("delvetalk garden plant\nSilver\na fern that remembers")
+        self.assertEqual((r["status"], self.field("planted")), ("admitted", label("silver:a fern that remembers")), r)
+
     def test_misfits_are_refused_by_clause_with_reason_and_hint(self):
         cases = [("delvetalk garden plant\ncolour: gold\nseed: fern", "badValue", "colour is one of: amber, violet, silver"),
                  ("delvetalk garden plant\nsize: big", "unknownField", "No field size in this spell; it takes colour, seed."),
