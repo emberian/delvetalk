@@ -658,7 +658,7 @@ class Handler(BaseHTTPRequestHandler):
                                              **({'next': link(f'{base}/world?{nxt}')} if nxt else {}), 'offers': link(base + '/offers')})
         if kind in ('object', 'card', 'source'):
             op = {'object': 'world-view', 'card': 'world-card', 'source': 'world-inspect'}[kind]
-            r = host.send({'op': op, 'principal': principal, 'object': obj})
+            r = host.send({'op': op, 'principal': principal, 'object': obj, **({'source': True} if kind == 'source' else {})})
             seen = r if kind == 'source' else host.send({'op': 'world-inspect', 'principal': principal, 'object': obj}) \
                 if r.get('status') in ('viewed', 'card') else {}
             acts = actions(base, obj, seen) if seen.get('status') == 'inspected' else None

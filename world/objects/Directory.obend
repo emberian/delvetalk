@@ -222,7 +222,7 @@ def learning(input: Card.Reply, next: Next, learned: Learning, doors: Lists.List
     case nil(_): learnedAll(input, next, learned, context, state)
     case cons(c): if Plans.isNobody(c.head.to) then learning(input, next, learned, c.tail, context, state) else doorLearned(input, next, learned, c.head.to.object, c.tail, context, state)
 def doorLearned(input: Card.Reply, next: Next, learned: Learning, door: String, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
-  match world.inspect({object: {world: context.world, object: door}}):
+  match world.inspect({object: {world: context.world, object: door}, source: false}):
     case inspected(i): childListed(input, next, Lists.concat(learned, Mentions.learnedOf(door, door, false, i.methods)), door, rest, context, state)
     case _: childListed(input, next, learned, door, rest, context, state)
 def childListed(input: Card.Reply, next: Next, learned: Learning, door: String, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -234,7 +234,7 @@ def childLearned(input: Card.Reply, next: Next, learned: Learning, door: String,
     case none(_): learning(input, next, learned, rest, context, state)
     case some(c): childInspected(input, next, learned, door, c.value, rest, context, state)
 def childInspected(input: Card.Reply, next: Next, learned: Learning, door: String, child: String, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
-  match world.inspect({object: {world: context.world, object: child}}):
+  match world.inspect({object: {world: context.world, object: child}, source: false}):
     case inspected(i): learning(input, next, Lists.concat(learned, Mentions.learnedOf(child, door, true, i.methods)), rest, context, state)
     case _: learning(input, next, learned, rest, context, state)
 def learnedAll(input: Card.Reply, next: Next, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -262,7 +262,7 @@ def handedOn(input: Card.Reply, context: Abi.Context, state: State) -> Activity<
 def judgedHandOn(input: Card.Reply, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
   if context.caller == "" then judged(input, learned, Lists.List.nil(), context, state) else ownFamily(input, learned, context, state)
 def ownFamily(input: Card.Reply, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
-  match world.inspect({object: {world: context.world, object: context.caller}}):
+  match world.inspect({object: {world: context.world, object: context.caller}, source: false}):
     case inspected(i): judged(input, learned, Lists.concat(Lists.concat(Mentions.formWords(i.methods), Mentions.formFields(i.methods)), Mentions.family(learned, familyDoor(context.caller, state))), context, state)
     case _: judged(input, learned, Lists.List.nil(), context, state)
 def familyDoor(caller: String, state: State) -> Lists.Maybe<Door>:

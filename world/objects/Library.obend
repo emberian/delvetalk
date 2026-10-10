@@ -67,7 +67,7 @@ def missLine(state: State, said: String) -> String:
   "hob: no page called {said}. Pages: {names(Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false))}; walks: {names(Lists.filter(ordered(state), isWalk))}.\n\n"
 # A card's law as the host has it (`laws`: a definition named law is a card's Bend predicate): each clause with its reading, then its expression.
 def laws(state: State, input: {card: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  match world.inspect({object: {world: context.world, object: input.card}}):
+  match world.inspect({object: {world: context.world, object: input.card}, source: true}):
     case inspected(i): Card.tell(Card.Replied.done({action: "laws"}), Document.text("LAW of {input.card}\n{lawLines(i.source, i.law)}{predicate(i.source)}"))
     case _: Card.tell(Card.Replied.refused({clause: "noCard", reading: "No card {input.card} that you may see"}), Document.text("Not done: No card {input.card} that you may see; the directory lists the doors.\n"))
 # The source's law lines carry their readings; a law given at creation has only the host's

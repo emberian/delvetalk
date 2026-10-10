@@ -44,9 +44,9 @@ class Sources(Reflection):
         self.open_library()
         self.bell("a")
         self.bell("b")
-        before = [self.host.send(op="world-inspect", principal="ember", object=n) for n in ("a", "b")]
+        before = [self.host.send(op="world-inspect", principal="ember", object=n, source=True) for n in ("a", "b")]
         self.reopen()
-        self.assertEqual([self.host.send(op="world-inspect", principal="ember", object=n) for n in ("a", "b")], before)
+        self.assertEqual([self.host.send(op="world-inspect", principal="ember", object=n, source=True) for n in ("a", "b")], before)
         self.assertEqual(before[0]["source"], BELL)
 
 
