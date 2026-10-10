@@ -691,10 +691,8 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    before?, reverse?, limit?}` (`grantsOp`) lists the grants whose object the reader may view, as they stand
    (`revoked`, `uses` left), with the making entry's `height` and `hash`. Tests: `tests/test_reads.py`,
    `test_grants.Attenuation`. Object ids at creation (`world-create`, the `create` Plan, `world-arrive`) are 1..128 bytes
-   of letters, digits and `. _ : / - @` (`validObjectId`), refused by name otherwise, so every object has a record key;
-   replay accepts any id a journal holds. `@` is there because the Zulip playtest's principals (`zulip:alice@host`)
-   become `env/<principal>` ids; AT record keys do not allow it, so the façade must escape it (or transport rename those
-   principals).
+   of letters, digits and `. _ : / -` (`validObjectId`), refused by name otherwise, so every object has a record key;
+   replay accepts any id a journal holds. (Zulip playtest principals are `zulip:<numeric id>`.)
 
 ## 6. Gotchas
 
