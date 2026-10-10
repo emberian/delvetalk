@@ -349,9 +349,7 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1], by_intent)  # an intent never asks to resolve
         self.assertEqual(seen.count('world-resolve'), 1)
 
-    @unittest.expectedFailure
     def test_end_to_end_world_resolve_against_the_real_host(self):
-        # Until the host lands slugs: {'message': 'unknown world operation world-resolve'}
         tok = self.login()
         receipt = self.turn(tok, 'sl2')[1]['receipt']
         s, r = self.call('GET', '/AGENTS.md/receipt/' + receipt['slug'], token=tok)
