@@ -35,7 +35,7 @@ class FakeZulip:
     """The three endpoints the transport uses, over real HTTP with basic auth, holding one list of messages."""
 
     def __init__(self):
-        self.messages, self.calls, self.ids = [], [], {}
+        self.messages, self.calls, self.ids, self.lose = [], [], {}, 0
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -60,14 +60,21 @@ class FakeZulip:
                 if (method, url.path) == ('GET', '/api/v1/users/me'):
                     return self.reply(200, {'result': 'success', **BOT})
                 if (method, url.path) == ('GET', '/api/v1/messages'):
-                    narrow = json.loads(p['narrow'])
-                    inside = [m for m in fake.messages if m['display_recipient'] == narrow[0]['operand']]
+                    key = {'channel': 'display_recipient', 'topic': 'subject', 'sender': 'sender_email'}
+                    inside = [m for m in fake.messages if all(m[key[n['operator']]] == n['operand'] for n in json.loads(p['narrow']))]
+                    if p['anchor'] == 'newest':
+                        page = inside[-int(p['num_before']):] if int(p['num_before']) else []
+                        return self.reply(200, {'result': 'success', 'messages': page, 'found_newest': True})
                     if p['anchor'] != 'oldest':
                         inside = [m for m in inside if m['id'] > int(p['anchor'])]
                     page = inside[:int(p['num_after'])]
                     return self.reply(200, {'result': 'success', 'messages': page, 'found_newest': len(page) == len(inside)})
                 if (method, url.path) == ('POST', '/api/v1/messages'):
-                    return self.reply(200, {'result': 'success', 'id': fake.add(p['topic'], BOT['email'], BOT['full_name'], p['content'], p['to'], BOT['user_id'])})
+                    mid = fake.add(p['topic'], BOT['email'], BOT['full_name'], p['content'], p['to'], BOT['user_id'])
+                    if fake.lose:  # the message lands; its reply does not
+                        fake.lose -= 1
+                        return self.reply(502, {'result': 'error', 'msg': 'bad gateway'})
+                    return self.reply(200, {'result': 'success', 'id': mid})
                 return self.reply(404, {'result': 'error', 'msg': 'no such endpoint'})
 
             do_GET = lambda self: self.handle_any('GET')
@@ -212,6 +219,17 @@ class Bridging(ZulipCase):
         later = zulip.post_drafts(self.state, self.host, self.client(), 'delvetalk', now=time.time() + 3601)
         self.assertEqual((len(later['posted']), 'held' in later), (1, False), later)
         self.assertEqual(len(self.zulip.mine()), 17)
+
+    def test_a_send_whose_reply_was_lost_is_found_in_its_topic_not_sent_again(self):
+        self.zulip.say('t', 'Alice', SPELL)
+        self.zulip.lose = 1
+        got = self.bridge()
+        self.assertEqual((got['posted'], [h['reason'] for h in got['held']]), ([], ['zulip_refused']), got)
+        self.assertEqual(len(self.zulip.mine()), 1)
+        again = zulip.post_drafts(self.state, self.host, self.client(), 'delvetalk')
+        self.assertEqual(len(self.zulip.mine()), 1, 'the lost send is adopted, never repeated')
+        self.assertEqual(again['posted'], [zulip.uri_of('delvetalk', 't', self.zulip.mine()[0]['id'])])
+        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': again['posted'][0]})['object'], 'garden-1')
 
     def test_the_welcome_is_posted_and_recorded_so_replies_to_it_reach_the_directory(self):
         welcome = Path(__file__).resolve().parent.parent / 'docs' / 'previews' / 'zulip-welcome-v2.txt'

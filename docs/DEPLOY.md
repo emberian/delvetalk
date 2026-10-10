@@ -184,7 +184,10 @@ the hand's: the hourly quota is counted in `<state>/post-log.json`, so every pos
 read it, then add the flag. `--object` names the object the card addresses: after a
 confirmed post, post.py calls the host's `world-posted` for it, so every card posted
 is recorded in the same step (replies to it then route to that object). Post a card
-without `--object` only if no object should hear its replies.
+without `--object` only if no object should hear its replies. An intent posts once: `<state>/posting/` keeps, per
+intent, the record key chosen before the first send (Zulip: the stream's newest id) and the post that came back, so a
+rerun after a crash adopts the post instead of writing again. A draft whose `world-posted` failed keeps `sent` and is
+recorded by the bridge's next run, never posted twice.
 
 ## Open the hand
 

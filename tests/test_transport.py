@@ -496,6 +496,77 @@ class Posting(unittest.TestCase):
             post.take_slot(Path(d), 5000.0 + post.WINDOW + 1)
 
 
+class Pds:
+    """The PDS side of a post: a session, records kept by key, and a reply that can be lost after the write lands."""
+    def __init__(self, lose=0):
+        self.records, self.creates, self.lose = {}, 0, lose
+
+    def write(self, nsid, body, token=None):
+        if 'Session' in nsid:
+            return {'did': DID, 'accessJwt': 't'}
+        self.creates += 1
+        key = body.get('rkey') or f'auto{self.creates}'
+        self.records[key] = {'uri': f'at://{DID}/{post.COLLECTION}/{key}', 'cid': f'bafy{key}', 'value': body['record']}
+        if self.lose:
+            self.lose -= 1
+            raise delve.Failure('network_error', 'TimeoutError')
+        return {k: self.records[key][k] for k in ('uri', 'cid')}
+
+    def record(self, uri):
+        got = self.records.get(uri.rsplit('/', 1)[1])
+        if got is None:
+            raise delve.Failure('http_status', '400 RecordNotFound')
+        return got
+
+    def resolve_handle(self, h): return {}
+
+
+class Recorder:
+    """A host whose first `fail` world-posted calls answer an error."""
+    def __init__(self, fail=0):
+        self.posted, self.fail = [], fail
+
+    def send(self, req):
+        if req['op'] != 'world-posted':
+            return {'status': 'status', 'postQuota': 16}
+        self.posted.append(req)
+        if self.fail:
+            self.fail -= 1
+            return {'status': 'error', 'message': 'journal busy'}
+        return {'status': 'posted'}
+
+
+class Idempotent(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = Path(self.tmp.name)
+        self.creds = self.state / 'creds.json'
+        self.creds.write_text('{"identifier": "a", "password": "b"}')
+        self.draft = self.state / 'outbox' / '7-aaaa.json'
+        self.draft.parent.mkdir()
+        self.draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': None, 'posted': False}))
+
+    def test_a_retry_after_the_reply_was_lost_adopts_the_record_and_never_posts_twice(self):
+        pds, host = Pds(lose=1), Recorder()
+        with self.assertRaises(delve.Failure):
+            post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+        got = post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+        self.assertEqual((pds.creates, len(pds.records)), (1, 1))
+        self.assertEqual(got['uri'], next(iter(pds.records.values()))['uri'])
+        self.assertEqual([r['uri'] for r in host.posted], [got['uri']])
+
+    def test_a_post_whose_registration_failed_is_registered_apart_from_sending(self):
+        pds, host = Pds(), Recorder(fail=1)
+        got = post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+        d = json.loads(self.draft.read_text())
+        self.assertEqual((d['posted'], d['sent']['uri'], d['recorded']['status']), (True, got['uri'], 'error'))
+        self.assertEqual(post.record_sent(self.state, host), [self.draft.name])
+        self.assertEqual(json.loads(self.draft.read_text())['recorded']['status'], 'posted')
+        self.assertEqual(post.record_sent(self.state, host), [])
+        self.assertEqual((pds.creates, [r['uri'] for r in host.posted]), (1, [got['uri']] * 2))
+
+
 class Cli(unittest.TestCase):
     def test_commands_write_canonical_json(self):
         out = io.StringIO()

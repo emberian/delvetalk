@@ -300,6 +300,8 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     if poll:
         poll(getattr(poll, 'observer', Observer)(state, poll.client))
     tick(host, now)
+    from transport.post import record_sent
+    recorded = record_sent(state, host)  # posts whose registration failed, retried apart from sending
     done, failed, skip = [], [], skipped(state)
     rows = all_observations(state)
     observed = pending_observations(state, rows)
@@ -359,7 +361,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     published, problem = publication_drafts(state, host)
     if problem:
         failed.append({'publications': problem})
-    return {'turns': done, 'failed': failed, **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
+    return {'turns': done, 'failed': failed, **({'recorded': recorded} if recorded else {}), **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
 def daemon(state, name, interval, step, stop=None, sleep=None):
