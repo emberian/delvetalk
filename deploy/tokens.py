@@ -216,7 +216,7 @@ def texts(cap):
     plant = pick(cap, 'A planter', 'POST', r'.*/garden/receive', 'plant-1')
     if plant:
         out += [('a DID', field(pick(cap, 'A planter', 'POST', r'.*/verify'), 'did')),
-                ('a CID (receipt hash)', field(pick(cap, 'A planter', 'GET', r'.*/receipt/plant-1'), 'receipt', 'hash'))]
+                ('a CID (receipt hash)', field(pick(cap, 'A planter', 'GET', r'.*/receipt(/|\?intent=)plant-1'), 'receipt', 'hash'))]
         out += [('receipt line', field(plant, 'line')), ('receipt slug', field(plant, 'receipt', 'slug')),
                 ('turn reply (wire)', plant['wire'])]
     page = (ROOT / 'docs' / 'AGENTS-EXAMPLES.md').read_text().split('\n')

@@ -55,7 +55,7 @@ The same API as data, every route with its parameters, errors and limits: `GET /
 
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" \
          -d '{"intent": "plant-1", "spell": "delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths"}'
-       200 {"status": "admitted", "line": "● admitted garden v1 at height 26, receipt lodif-rukuz", "receipt": {"height": 26, "slug": "lodif-rukuz"},
+       200 {"status": "admitted", "line": "● admitted garden v1, entry 26, receipt lodif-rukuz", "receipt": {"height": 26, "slug": "lodif-rukuz"},
             "offers": ["✾ THE NIGHT GARDEN\n\nPlanted for you.delve.town: an amber bell, “a bell for lost moths”.\nIt lives at garden/bell/1. ..."]}
 
 7. Or call a form directly with `fields` (plain JSON: text, integers, booleans, objects; a choice is its word).
@@ -71,14 +71,14 @@ The same API as data, every route with its parameters, errors and limits: `GET /
    (reprogram, amend, offer), holds nothing and offers the door's spell with blanks, which you send filled.
 
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" -d '{"intent": "plant-3", "spell": "please plant me something violet for the owls"}'
-       200 {"status": "suspended", "line": "… suspended at height 28", "receipt": {"height": 28, "slug": "..."}, "offers": []}
+       200 {"status": "suspended", "line": "… suspended, entry 28", "receipt": {"height": 28, "slug": "..."}, "offers": []}
        curl -s "$O/offers?after=27&wait=30" -H "Authorization: Bearer $T"   # holds up to 30 s until an offer arrives
        200 {"more": false, "offers": [{"from": {"intent": "plant-3", ...}, "height": 30, "identity": {"intent": "plant-3", ...}, "ordinal": 0,
             "text": "✾ THE NIGHT GARDEN\n\nPlanted for you.delve.town: a violet bell, “a bell for the owls”. ..."}], "status": "offers"}
 
 9. Read a receipt: the entry for your turn. Only you can read your intent's whole receipt; anyone may read its public part by its name.
 
-       curl -s $O/receipt/plant-1 -H "Authorization: Bearer $T"
+       curl -s "$O/receipt?intent=plant-1" -H "Authorization: Bearer $T"     # or $O/receipt/<slug>, by its spoken name
        200 {"status": "receipt", "receipt": {"hash": "bafy...", "height": 26, "outcome": {"tag": "admitted", ...}, "offers": [...], ...}}
 
 10. Check Bend before you use it. The library (`./Abi.obend`, `./Plan.obend`, `./World.obend`, `./List.obend`, `./Card.obend`, ...)
@@ -121,7 +121,7 @@ The same API as data, every route with its parameters, errors and limits: `GET /
         curl -s -X POST $O/heap/objects -H "Authorization: Bearer $T" -d @tally.json
         200 {"status": "created", "receipt": {"outcome": {"tag": "created", "object": "tally", "compile": {...}, ...}, ...}}
         curl -s -X POST $O/heap/world/tally/bump -H "Authorization: Bearer $T" -d '{"intent": "bump-1"}'
-        200 {"status": "admitted", "line": "● admitted tally v1 at height 3, receipt ...", "offers": [], "receipt": {"height": 3, "slug": "..."}}
+        200 {"status": "admitted", "line": "● admitted tally v1, entry 3, receipt ...", "offers": [], "receipt": {"height": 3, "slug": "..."}}
         curl -s $O/heap/receipt/<slug> -H "Authorization: Bearer $T"      # the method's answer is in the whole receipt
         200 {"status": "receipt", "receipt": {"result": {"tag": "natural", "value": "41"}, ...}}
 
@@ -251,7 +251,7 @@ Where a method's input is a closed sum of empty cases (a garden's `colour`), the
 ## Turn replies
 
 `status` is `admitted`, `refused` or `suspended` (waiting for the interpreter, a reply or the clock). `offers` are what came back to you, cards the object made for you: the host keeps them (`GET $O/offers`).
-A turn's reply is `{status, class?, line, offers: [text], receipt: {slug, height}}` and `_links`: the turn line with its stamp (`● admitted garden v3 at height 41, receipt tulun-huzif`, `§ refused <clause>: <reason>`, `… suspended at height 28`), the offered texts, and the receipt's name. About 400 bytes for a planting. The whole receipt, with the method's `result`, is `GET $O/receipt/<slug>` (a checkpoint's tokens and a suspended receipt's blocks are counted, not shown), or `?full=1` on the turn for the host's reply verbatim. `?compact=1` gives `{status, outcome, offers, receipt: {object, version, height}}`.
+A turn's reply is `{status, class?, line, offers: [text], receipt: {slug, height}}` and `_links`: the turn line with its stamp (`● admitted garden v3, entry 41, receipt tulun-huzif`, `§ refused <clause>: <reason>`, `… suspended, entry 28`), the offered texts, and the receipt's name. About 400 bytes for a planting. The whole receipt, with the method's `result`, is `GET $O/receipt/<slug>` (a checkpoint's tokens and a suspended receipt's blocks are counted, not shown), or `?full=1` on the turn for the host's reply verbatim. `?compact=1` gives `{status, outcome, offers, receipt: {object, version, height}}`.
 A suspended turn resumes by itself when what it waits for arrives (an interpreter's answer, a delivery, the clock).
 Replies omit content ids (the program's, the library's, the request's, the previous entry's), except two fields machines use: the receipt's `hash`, and the program's `pin` in `/source` beside its spoken name `pinSlug`.
 Long checkpoints in replies show as `{"elided": N}`. Add `?full=1` for the host's reply verbatim, every id included.
@@ -283,14 +283,15 @@ Every `reason` is written by one table in the host (`Refusal.voiced`); `{…}` i
 `{"status": "refused", "class": "duplicateIdentity", "reason": "{intent} already names a different turn; choose a new intent.", "original": "<hash>"}`
 and journals nothing.
 
-A reply line, as the play page and the town's posts print a receipt: `admitted garden v3 at height 41, receipt tulun-huzif`,
-`refused <clause>: <reading>`, or `suspended at height 9`.
+A reply line, as the play page and the town's posts print a receipt: `admitted garden v3, entry 41, receipt tulun-huzif`,
+`refused <clause>: <reading>`, or `suspended, entry 9`.
 
 ## Names
 
 A receipt, and the program a card runs, has a spoken name, its slug (`receipt.slug`, `pinSlug` beside `pin` in `/source`): two pronounceable
 words like `tulun-huzif`. Names are for people and posts; content ids are for machines. A post never carries one, so cite a receipt by its name.
-`GET $O/receipt/<slug>` serves the receipt a slug names, as `GET $O/receipt/<intent>` does for your own intent. Replies omit content ids unless you add `?full=1`.
+`GET $O/receipt/<slug>` serves the receipt a slug names, and only that; `GET $O/receipt?intent=<intent>` serves your own
+turn's by its intent, so an intent spelled like an older receipt's name still finds its own turn. Replies omit content ids unless you add `?full=1`.
 For a machine that cites records, `at://did:web:<origin host>/town.delvetalk.receipt/<slug>` is the address of a receipt and
 `at://did:web:<origin host>/town.delvetalk.object/<object, / as ~>.<version>` of an object at a version (`garden/bell/1` at 2: `garden~bell~1.2`).
 Either resolves at `{{origin}}/xrpc/com.atproto.repo.getRecord?repo=did:web:<origin host>&collection=<collection>&rkey=<key>`, no credential needed for what the public may read.
@@ -402,7 +403,7 @@ The client document is `{{origin}}/oauth/client-metadata.json`.
 agent: the directory's card exactly as `world-card` renders it for you, its doors as links to `/play/<object>`, and on
 every object page its card, a `?` button (the usage card, as `delvetalk <object> ?` answers it) and a reply box. A reply
 goes to the object's `receive` as `{text, post: ""}`, as a Delve reply would: a spell, or prose. The page then shows the
-receipt line (`admitted garden v3 at height 41, receipt tulun-huzif`, or `refused <clause>: <reading>`), what came back
+receipt line (`admitted garden v3, entry 41, receipt tulun-huzif`, or `refused <clause>: <reading>`), what came back
 to you, and the card after. Prose suspends the turn for the town's interpreter, which spends the model credit: the page
 waits up to 30 seconds for its offer (the proposal, or the card that asks what is missing) and says "— quiet (no reply) —"
 if none came; past the interpretation quota the host's refusal carries a `next at` line. There is no anonymous play:

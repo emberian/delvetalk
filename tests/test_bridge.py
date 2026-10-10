@@ -258,7 +258,7 @@ class Bridging(BridgeCase):
         self.assertEqual(self.run_bridge()['failed'], [])
         (d,) = self.drafts()
         self.assertIn('planted', d['text'])
-        self.assertTrue(d['text'].endswith(f"receipt {d['receipt']['slug']}: garden-1 v1 at height {d['receipt']['height']}\n"), d['text'])
+        self.assertTrue(d['text'].endswith(f"receipt {d['receipt']['slug']}: garden-1 v1, entry {d['receipt']['height']}\n"), d['text'])
 
     def test_smoke_bound_two_hundred_observations_bridge_in_under_a_minute(self):
         """The transport's one wall-clock smoke bound, generous: measured about 3 s on hbox."""
@@ -463,9 +463,9 @@ class Slugs(unittest.TestCase):
     def test_a_loopback_origin_gives_no_link_and_the_receipt_line_and_slug_stay(self):
         receipt = {'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}}
         for origin in ('http://127.0.0.1:8766', 'http://localhost:8765', 'http://[::1]:8765'):
-            self.assertEqual(bridge.receipt_line(receipt, origin), 'receipt babab-dabab: garden v3 at height 9\n')
+            self.assertEqual(bridge.receipt_line(receipt, origin), 'receipt babab-dabab: garden v3, entry 9\n')
         self.assertEqual(bridge.receipt_line(receipt, 'https://gsb.fg-goose.online'),
-                         'receipt babab-dabab: garden v3 at height 9\nhttps://gsb.fg-goose.online/o/garden#v3\n')
+                         'receipt babab-dabab: garden v3, entry 9\nhttps://gsb.fg-goose.online/o/garden#v3\n')
 
     def test_a_draft_cites_the_slug_and_carries_no_cid(self):
         import re
@@ -473,7 +473,7 @@ class Slugs(unittest.TestCase):
         refused = {'status': 'refused', 'receipt': {**receipt, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}},
                    'public': {'class': 'lawRefused', 'root': {'object': 'garden', 'version': 3}}}
         texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'), bridge.draft_text(refused)]
-        self.assertIn('receipt babab-dabab: garden v3 at height 9', texts[0])
+        self.assertIn('receipt babab-dabab: garden v3, entry 9', texts[0])
         self.assertIn('receipt babab-dabab\n', texts[1])
         for t in texts:
             self.assertFalse(re.search(r'bafy', t), t)
@@ -590,7 +590,7 @@ class RealOffers(test_outbound.TellerWorld):
             self.assertEqual(bridge.offer_drafts(d, H()), ["t-1"])
             (draft,) = list((Path(d) / "outbox").glob("*.json"))
             slug = self.host.send(op="world-receipt", principal="ann", identity="t-1")["receipt"]["slug"]
-            self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\nreceipt {slug}: teller v\d+ at height \d+\n$")
+            self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\nreceipt {slug}: teller v\d+, entry \d+\n$")
             self.assertEqual(bridge.offer_drafts(d, H()), [])
 
 
@@ -615,7 +615,7 @@ class Projection(unittest.TestCase):
         texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'),
                  bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}, 'public': {}}, 'https://x.example'),
                  bridge.draft_text({'status': 'refused', 'receipt': receipt, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
-        self.assertIn('receipt: garden v3 at height 9\nhttps://x.example/o/garden#v3', texts[0])
+        self.assertIn('receipt: garden v3, entry 9\nhttps://x.example/o/garden#v3', texts[0])
         for t in texts:
             self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', t), t)
 

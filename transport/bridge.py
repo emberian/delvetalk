@@ -83,11 +83,11 @@ def cite(object_, version, origin=None):
 
 
 def receipt_line(receipt, origin=None):
-    """`receipt <slug>: <object> v<n> at height <h>`: the version the turn wrote, else the one it read."""
+    """`receipt <slug>: <object> v<n>, entry <h>`: the version the turn wrote, else the one it read."""
     root = ((receipt.get('outcome') or {}).get('writes') or receipt.get('roots') or [{}])[0]
     text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
     name = f"receipt {receipt['slug']}" if receipt.get('slug') else 'receipt'  # the slug is the name people and posts use
-    return f"{name}: {text} at height {receipt.get('height')}{link}\n"
+    return f"{name}: {text}, entry {receipt.get('height')}{link}\n"
 
 
 def refusal_line(outcome, fallback_class=None):
