@@ -505,6 +505,23 @@ def declaredForms (o : Object) : M (List (String × List (String × Data)) × Li
   return (forms.map fun (a, fs) => (a, fs.filterMap fun (n, k) => (declaredKind k).map (n, ·)),
           forms.map fun (a, fs) => (a, fs.filterMap fun (n, k) => match k with | .variant "source" _ => some n | _ => none))
 
+/-- Why `argument` misfits the form the card declares for `method` (`declaredForms`), judged as a
+    spell's field is (`Spell.judge`): a text's length, a natural's range, a choice's options (a
+    word, or the case a sum-typed field took). Fields no form declares keep their type's freedom. -/
+def declaredMisfit (method : String) (argument : Data) (declared : List (String × List (String × Data))) : Option String := do
+  let given ← declared.lookup method
+  let form ← Spell.Form.ofData (.record [("card", .label ""), ("action", .label method),
+    ("fields", listData (given.map fun (n, k) => Data.record [("name", .label n), ("kind", k)]))])
+  let .record values := argument | none
+  form.fields.findSome? fun f => do
+    let shown ← match values.lookup f.name with
+      | some (.label t) => some t
+      | some (.natural n) => some (toString n)
+      | some (.variant l _) => some l
+      | _ => none
+    let (_, reason) ← Spell.judge f shown
+    return (if reason.endsWith "." then reason.dropRight 1 else reason)
+
 /-- An object's forms (`methodForms`) with the kinds its `forms()` declares: a spell is judged by the
     card's own bounds, and the type's default holds only for a field no form names. -/
 def formsOf (id : String) (o : Object) : M (List Data) := do
@@ -990,6 +1007,11 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
   unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal (some (← expectedNow)))
+  -- A direct turn's argument is held to the card's declared form bounds as a spell is (codex host
+  -- 12, agent 3): one advertised action, one bound, whichever way it is asked.
+  if depth == 0 && s.direct then
+    if let some why := declaredMisfit method argument (← declaredForms obj).1 then
+      throw (.refused "typeMismatch" why (some (← expectedNow)))
   match r with
   | .computation .. =>
     let b ← budgetsNow

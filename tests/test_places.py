@@ -183,7 +183,11 @@ class Floor(Chain):
         self.assertEqual(self.stone("offer")["label"], "none")
         self.assertEqual(self.refusal_reason(self.accept()), "Nothing is offered.")
         self.assertEqual(self.refusal_reason(self.turn("stone", "withdraw", principal="glm")), "Nothing is offered.")
-        self.assertTrue(self.refusal_reason(self.offer(until=self.now())).startswith("until must be after the clock, now "))
+        # At clock 0 an `until` of 0 is outside the offer form's declared 1..: the host refuses it
+        # before the Thing's own check (codex host 12), as the spell path does.
+        early = self.offer(until=self.now())
+        self.assertEqual((early["status"], early["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), early)
+        self.assertIn("until takes 1 to", early["receipt"]["outcome"]["reason"])
 
     def test_an_offer_past_its_clock_time_answers_expired_and_stays(self):
         self.holders()

@@ -750,6 +750,15 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    migration of that field and not after another field's. Tests: `tests/test_changes.py`
    `test_an_inspected_object_is_a_root_of_the_turn`, `test_a_subscription_reads_its_field`.
 
+98. **A direct turn keeps the card's declared bounds (host12; codex host 12, agent 3).** After the type
+   check, a direct turn's argument is judged against the form the card's `forms()` declares for the
+   method (`declaredMisfit`, by `Spell.judge`: a text's length, a natural's range, a choice's options,
+   a word or the case a sum field took); a misfit is refused `typeMismatch` with the spell path's reason
+   ("seed takes 1 to 80 characters; reply delvetalk garden ? …") and `expected.form`. Fields no form
+   declares keep their type's freedom; calls and deliveries are not judged (their sender is an object).
+   Tests: `tests/test_form_bounds.py` `test_a_direct_turn_is_held_to_the_declared_bounds`;
+   `test_places` (an `until` of 0) and `test_wakes` (a pour of 21) now meet the host's refusal first.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
