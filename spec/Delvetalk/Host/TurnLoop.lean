@@ -1,7 +1,7 @@
 /- Driving an activity against the store. A turn reads committed state, collects
    the roots it viewed and the writes it performed, and ends in exactly one
    `commit`. The wire shapes are those of `world/lib/Plan.obend`; `answer` handles
-   every constructor of its Plan (view, write, call/callVia, send/sendVia, create,
+   every constructor of its Plan (view, viewData, viewDataField, write, call/callVia, send/sendVia, create,
    await/awaitUntil, interpret, offer, publish, reprogram, amend, inspect, check,
    grant, revoke, objects, card). A label of some other sum refuses the turn:
    `plan not supported: <label>`. `docs/HOST-HANDOFF.md` section 5 says what each does.
@@ -207,9 +207,9 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
   match s.world.compiled[key]? with
   | some c => return c
   | none =>
-    -- An extended object's method is compiled from the highest layer that defines it, from
+    -- A method (of a layer stack too: the kernel resolves it with late binding) is compiled from
     -- its package's closure prepared once, and held decoded and checked.
-    match compileEntryIn s.world (delegate obj.inputs method) method >>= fun (ec, w) => do return (← compiledOf ec, w) with
+    match compileEntryIn s.world obj.inputs method >>= fun (ec, w) => do return (← compiledOf ec, w) with
     | .error e => throw (.request s!"method {method} does not compile: {e}")
     | .ok (c, w) =>
       -- A full cache is emptied and refilled, never left full (which would compile every turn).
@@ -718,6 +718,22 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         if !o.read.permits (← get).subject then respond bounds responseType "denied" [emptyRecord] else
         recordRoot id o.version
         respond bounds responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
+  | .variant "viewData" (.record f) | .variant "viewDataField" (.record f) =>
+    -- Another object's state (or one field of it) as `Data`, which the reader may pass along or hand
+    -- to a Plan but not take apart; read authority and the root as for `view`.
+    let s ← get
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      recordRoot id o.version
+      match (f.lookup "field").bind labelOf, o.state with
+      | none, _ => respond bounds responseType "viewedData" [.record [("version", .natural o.version), ("state", o.state)]]
+      | some name, .record fields =>
+        match fields.lookup name with
+        | some value => respond bounds responseType "viewedField" [.record [("version", .natural o.version), ("value", value)]]
+        | none => refusedWith bounds responseType "field"
+      | some _, _ => refusedWith bounds responseType "field"
   | .variant "write" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed write plan"
     let some step := (f.lookup "edits").bind parseStep | evaluation "malformed write plan"
@@ -1624,6 +1640,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
     if !o.read.permits principal then
       return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
     return Json.mkObj [("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
+      ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")),
       ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", o.methods),
       ("supervisor", toJson o.supervisor),
       ("forms", dataJson (listData (methodForms id o.methods)))]

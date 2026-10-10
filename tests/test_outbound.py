@@ -427,7 +427,8 @@ class Projection(Reflection):
                                roots=[{"object": "vault", "version": 7}], writes=[])
         self.assertEqual(stale["status"], "refused", stale)
         theirs = self.host.send(op="world-receipt", principal="cid", identity="stale", of="ann")
-        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": {"object": "vault", "version": 7}})
+        self.assertEqual(theirs, {"status": "refused", "class": "staleRoot", "root": {"object": "vault", "version": 7},
+                                  "slug": stale["receipt"]["slug"]})
 
     def test_roots_cite_versions_and_the_state_cid_is_read_from_the_write_that_made_it(self):
         """A card address is a versioned capability: a receipt's roots, and a public refusal's root,
@@ -477,7 +478,7 @@ class Projection(Reflection):
         """Rehearsal finding 7: `delvetalk forge make` with no forge said only `unknownObject`."""
         r = self.turn("forge", "make", principal="gemini", identity="forge-1")
         public = {"status": "refused", "class": "unknownObject", "root": {"object": "forge"}, "object": "forge",
-                  "hint": "no card named forge; reply to the directory for the list"}
+                  "hint": "no card named forge; reply to the directory for the list", "slug": r["receipt"]["slug"]}
         self.assertEqual((r["status"], r["public"]), ("refused", public), r)
         self.assertEqual(self.host.send(op="world-receipt", principal="cid", identity="forge-1", of="gemini"), public)
 

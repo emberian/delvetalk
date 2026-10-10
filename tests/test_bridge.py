@@ -344,9 +344,7 @@ class Slugs(unittest.TestCase):
         for t in texts:
             self.assertFalse(re.search(r'bafy', t), t)
 
-    @unittest.expectedFailure
     def test_end_to_end_the_host_names_receipts_with_slugs(self):
-        # Until the host lands slugs: the receipt has no `slug`.
         from deploy import genesis
         from transport.hostproc import LIBRARY
         with tempfile.TemporaryDirectory() as tmp:
