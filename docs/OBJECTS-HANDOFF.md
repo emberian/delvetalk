@@ -144,7 +144,9 @@ removes), Door, Lantern, Loop, Place, Thing, Avatar (mailbox: subscribe, send,
 unsubscribe; handle lens), Policy (owner law with `request.method`; lenses), Workshop
 (check prints the checker's hint under its problem; inspect; propose), Env, Wake, Tide,
 Appointments/Appointment, Deal, Seat and Table, Scene (passages and choices as data;
-enter, choose, leave), Commons (places, paths, ways in, gates: open, members, object).
+enter, choose, leave), Commons (places, paths, ways in, gates: open, members, object). Scene now has guards,
+effect lists, END, `requires` and a cooldown (its Bend `law` predicate over context.clock,
+with no law text), and makes scenes from ```spween blocks.
 
 ## 4. Open
 
@@ -155,7 +157,13 @@ enter, choose, leave), Commons (places, paths, ways in, gates: open, members, ob
   goes to the policy's `model`. It should copy `model` into the pending item and send it in
   place of `policy.model` when non-empty.
 * An addressee `slot` reaches receive but no object reads it yet.
-* Scene passages are only the creator's seed; there is no activity that adds one.
+* Scenes (objects5): `world/lib/Scenes.obend` is the data (Choice {label, to, effects,
+  guard}, Effect set/add/sub, Clause, Seed {title, start, passages, cooldown, requires});
+  `world/lib/Spween.obend` lowers spween to it (refusing weight, `~ call`, has: by name); a
+  ```spween block posted to a Scene makes `<scene>/<id>` (id's `_` become `-`). A passage
+  is still not editable once made; spween's `tags`, custom fields, floats and negative
+  numbers are skipped or compared as text; parsing the well example costs about 79,000
+  ticks with the test's summary (a scene near the 16 x 8 limit should be measured).
 * Main's other capabilities (appointments' factories, editor and desks, exhibitions,
   library beyond the mailbox) remain to port, one object per commit.
 

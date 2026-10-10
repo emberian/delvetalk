@@ -24,7 +24,9 @@ def listing(items):
 
 
 def choice(text, to, key="", value=""):
-    return record(label=label(text), to=label(to), key=label(key), value=label(value))
+    """A choice; a key sets that variable to value when it is taken (one `set` effect)."""
+    effects = [record(key=label(key), op=label("set"), value=label(value))] if key else []
+    return record(label=label(text), to=label(to), effects=listing(effects), guard=listing([]))
 
 
 def passage(pid, text, choices):
@@ -33,7 +35,8 @@ def passage(pid, text, choices):
 
 def scene_state(passages, start="gate", title="The Moss Gate"):
     return record(title=label(title), start=label(start), passages=listing(passages),
-                  presence=listing([]), vars=listing([]))
+                  presence=listing([]), vars=listing([]), cooldown={"tag": "natural", "value": "0"},
+                  requires=listing([]), left=listing([]))
 
 
 GATE = [
