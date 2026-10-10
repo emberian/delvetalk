@@ -102,7 +102,7 @@ class Supervisors(Reflection):
         r = self.turn("w", "wait")
         self.assertEqual(r["status"], "suspended", r)
         self.assertEqual(self.boss()[0], "0")
-        advanced = self.host.send(op="world-advance", height=5)
+        advanced = self.host.send(op="world-advance", principal="ember", height=5)
         [resumed] = advanced["resumed"]
         self.assertEqual((resumed["status"], resumed["receipt"]["result"]), ("admitted", nat(7)), resumed)
         self.assertEqual(self.boss(), ("1", "timedOut", "admitted", "w"))

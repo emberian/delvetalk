@@ -663,6 +663,15 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    `Cistern.lawText` this way instead of amending it in. Tests: `tests/test_law.py`
    `LawAtCreation`, `tests/test_genesis.py`.
 
+87. **A settling pass shows others' turns as their projection (host12; codex host 1).** The turns a
+   settling pass ran (`resumed`, `delivered`) and `world-deliver`'s `receipts` are shown as the op's
+   `principal` may see them (`settledFor`, TurnLoop; `durable` takes the reader): the turn's own
+   principal gets the reply whole but for `offers`; anyone else gets `status`, the receipt's
+   `projectEntry`, and `public`/`rerunOf`, never `result`, `ticksUsed`, `resumes` or offers. An op without
+   a principal (a bare `world-advance`) reads as nobody. Tests: `tests/test_await.py`
+   `test_a_settling_turn_sees_another_principals_resumption_only_as_its_projection`; the tests that read
+   another's resumed `result` read it with `world-receipt` as its principal (`tests.host.whole`).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

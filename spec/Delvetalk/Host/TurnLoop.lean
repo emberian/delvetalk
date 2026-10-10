@@ -2227,18 +2227,30 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
         (some { cls := "badSpell", clause := some clause, object := some card, reason := some reason, hint := some hint })
     | _ => runTurnWith w req how
 
-/-- Up to `limit` deliveries, oldest first; sends of a delivery join the queue. -/
-def deliver (w : World) (limit : Nat) : Except String (World × Json) := do
+/-- A turn's reply as `reader` sees it when it ran in another op's settling pass (a resumption, a
+    delivery): whole but for its offers when `reader` is the turn's own principal, else the projection
+    of its receipt (`projectEntry`) and what a refusal may say in public (codex host 1). The offers are
+    their addressees', read with `world-offers`. -/
+def settledFor (w : World) (reader : String) (r : Json) : Json :=
+  match r.getObj?, r.getObjVal? "receipt" with
+  | .ok fields, .ok entry =>
+    let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
+    if owner == reader && !reader.isEmpty then Json.mkObj (fields.toList.filter (·.1 != "offers"))
+    else Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", projectEntry w reader entry)] ++
+      ["public", "rerunOf"].filterMap fun k => (r.getObjVal? k).toOption.map (k, ·))
+  | .ok fields, .error _ => Json.mkObj (fields.toList.filter (·.1 != "offers"))
+  | .error _, _ => r
+
+/-- Up to `limit` deliveries, oldest first; sends of a delivery join the queue. Each is shown as
+    `reader` may see it (`settledFor`). -/
+def deliver (w : World) (limit : Nat) (reader : String) : Except String (World × Json) := do
   let mut w := w
   let mut receipts : Array Json := #[]
   for _ in [0:min limit Limits.deliveriesPerCall] do
     let some d := w.pending[0]? | break
     let (w', r) ← deliverOne w d
     w := w'
-    -- A delivery's offers are its addressees' (`world-offers`), not the caller's of this op.
-    receipts := receipts.push (match r.getObj? with
-      | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "offers"))
-      | .error _ => r)
+    receipts := receipts.push (settledFor w reader r)
   return (w, Json.mkObj [("status", toJson "delivered"), ("receipts", Json.arr receipts),
     ("pending", toJson w.pending.size)])
 

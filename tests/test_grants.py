@@ -13,6 +13,8 @@ ring on the registrar's behalf, and the bell's law names only the registrar.
 import json
 import unittest
 
+from tests.host import whole
+
 from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
@@ -178,7 +180,7 @@ class Grants(Reflection):
         self.assertEqual(self.fire(grant), "sent")
         delivered = self.deliver()
         self.assertEqual(delivered["status"], "admitted", delivered)
-        entry = delivered["receipt"]
+        entry = whole(self.host, delivered)
         self.assertEqual(entry["identity"]["principal"], "registrar")
         self.assertEqual(entry["delivery"]["via"], grant)
         self.assertEqual(entry["outcome"]["writes"][0]["vias"], [grant])
@@ -214,7 +216,7 @@ class Grants(Reflection):
         self.make("other", SCHEDULER, record(note=label("")))
         revoked = self.turn("other", "cancel", record(id=label(grant)), principal="registrar")
         self.assertEqual(revoked["result"], label("revoked"), revoked)
-        advanced = self.host.send(op="world-advance", height=20)
+        advanced = self.host.send(op="world-advance", principal="wake", height=20)
         [resumed] = advanced["resumed"]
         self.assertEqual(resumed["status"], "refused", resumed)
         self.assertEqual(resumed["receipt"]["outcome"].get("clause"), "noGrant", resumed)

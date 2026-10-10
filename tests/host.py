@@ -210,6 +210,15 @@ class HostdCase(unittest.TestCase):
         cls.host = HostClient(cls.socket)
 
 
+def whole(host, reply):
+    """A turn another op's settling ran, as its own principal reads it (`world-receipt`): the
+    settling reply carries it for anyone else only as its projection (codex host 1)."""
+    identity = reply["receipt"]["identity"]
+    r = host.send(op="world-receipt", principal=identity["principal"], identity=identity["intent"])
+    assert r.get("status") == "receipt", r
+    return r["receipt"]
+
+
 def card_texts(reply):
     """Every card and offer text in a host reply: what a reader sees, which never cites a hash."""
     out = []

@@ -71,7 +71,7 @@ class Appointments(Chain):
         self.assertEqual(stranger["result"]["label"], "refused")
         self.assertEqual(self.turn("book/1", "cancel", principal="glm")["result"]["label"], "cancelled")
         resumed = self.host.send(op="world-advance", height=20)
-        print("\n  resumed after cancel:", [r["receipt"]["outcome"] for r in resumed.get("resumed", [])])
+        print("\n  resumed after cancel:", [r["receipt"].get("outcome", r["receipt"].get("class")) for r in resumed.get("resumed", [])])
         self.deliver_all()
         self.assertEqual(self.status("book/1"), "cancelled")
         self.assertEqual(self.inbox(), [])
