@@ -29,8 +29,12 @@ class Receive(TurnWorld):
         self.assertEqual(self.lit(), (1, True, "glm"))
         self.assertEqual(r.get("offers", []), [])
 
-    def test_prose_is_answered_with_the_card_and_its_forms_and_changes_nothing(self):
-        r = self.say("hello counter")
+    def test_prose_is_not_addressed_and_gets_nothing_and_an_empty_reply_the_card(self):
+        """Run 5, finding 2: a card answers prose that names none of its forms, fields or actions
+        with no offer at all, so nothing is drafted; an empty reply still asks for the card."""
+        r = self.say("hello counter, what a lovely thread")
+        self.assertEqual((r["result"]["label"], r.get("offers", [])), ("silent", []))
+        r = self.say("")
         self.assertEqual(r["result"]["label"], "usage")
         self.assertEqual(r["offers"][0]["text"], "The lantern is dark.\n\nReply with a spell:\n\n    delvetalk c1 light\n")
         self.assertEqual(self.lit()[0], 0)
@@ -60,7 +64,7 @@ class CounterCard(Receive):
     """Counter, the host suites' timed reference, follows the protocol too (200 HTTP turns: 0.50 s
     on hbox with Card in its closure, 0.39 s without; test_http's bound is 10 s)."""
     test_a_spell_naming_the_card_and_an_action_runs_it = None
-    test_prose_is_answered_with_the_card_and_its_forms_and_changes_nothing = None
+    test_prose_is_not_addressed_and_gets_nothing_and_an_empty_reply_the_card = None
     test_another_card_or_an_unknown_action_is_refused_by_name = None
 
     def setUp(self):
@@ -72,6 +76,7 @@ class CounterCard(Receive):
     def test_a_bump_spell_bumps_and_prose_gets_the_count(self):
         r = self.turn("k", "receive", heard("delvetalk k bump"), principal="glm")
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
-        r = self.turn("k", "receive", heard("how many?"), principal="glm")
+        r = self.turn("k", "receive", heard(""), principal="glm")
         self.assertEqual(r["offers"][0]["text"], "Count: 1\nReply with a spell:\n\n    delvetalk k bump\n")
+        self.assertEqual(self.turn("k", "receive", heard("how many?"), principal="glm").get("offers", []), [])
         self.assertEqual(self.turn("k", "bump")["result"], nat(2))

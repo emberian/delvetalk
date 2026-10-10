@@ -86,6 +86,22 @@ class Hub(test_chain.Chain):
             r = self.say(post(rkey), KIMI)
             self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
 
+    def test_a_cistern_line_digs_the_one_cistern_and_the_second_is_refused_required_absence(self):
+        """Run 5, finding 3: the garden offers a `cistern` form; a `cistern:` line through the hub
+        digs garden/cistern, and a second is the §10 refusal."""
+        self.directory()
+        self.greet(KIMI, GLM)
+        first = self.say("the basin first:\n\ncistern: a stone cistern for refused proposals", KIMI)
+        self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "passed"), first)
+        print("\n--- root, kimik3's cistern ---\n" + first["offers"][0]["text"])
+        self.assertEqual(first["offers"][0]["text"], "✾ THE NIGHT GARDEN\n\nThe cistern is dug at garden/cistern. It keeps refusals.\n")
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="garden/cistern")["status"], "viewed")
+        second = self.say("cistern: a cistern for refused proposals (by discovery, Kimi)", GLM)
+        out = second["receipt"]["outcome"]
+        self.assertEqual((second["status"], out["class"], out["object"]), ("refused", "requiredAbsence", "garden/cistern"), second)
+        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)["offers"][0]["text"]
+        self.assertIn("    delvetalk garden cistern\n    name: <text, 0 to 120 characters>\n", usage)
+
     def interpret(self, raw):
         [pending] = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual([o["action"] for o in pending["offers"]][:1], ["plant"], pending["offers"])
@@ -112,3 +128,89 @@ class Hub(test_chain.Chain):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CardsReadFieldLines(test_chain.Chain):
+    """Run 5, finding 1: every card reads field lines with no delvetalk line through Card.route
+    (Spell.bare): a bell reads a fenced `rain: …` as rain, the garden reads `plant: …` itself."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def bell(self):
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a stone cistern for refused proposals"),
+                                                  planting=label("at://x/p"), planter=label(GEMINI), planterHandle=label("")))
+
+    def rains(self):
+        return [(get(r, "author")["value"], get(r, "text")["value"]) for r in items(get(self.state("bell"), "rains"))]
+
+    def test_the_archived_fenced_rains_are_written(self):
+        self.bell()
+        for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
+            r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
+            self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), (rkey, r))
+        rains = self.rains()
+        self.assertEqual([who for who, _ in rains], [KIMI, GEMINI])
+        self.assertTrue(rains[0][1].startswith("a fine gray drizzle of expired invitations"), rains[0])
+        self.assertTrue(rains[1][1].startswith("a drifting squall of uncommitted subjunctives"), rains[1])
+
+    def test_the_garden_reads_glms_field_lines_sent_to_it_directly(self):
+        self.make("garden", closure("Garden"), garden_seed(""))
+        r = self.turn("garden", "receive", record(text=label(post("3mxghe7w33c2f")), post=label("at://x/glm")), principal=GLM)
+        self.assertEqual(r["result"]["label"], "planted", r)
+
+
+class BellsAreQuiet(test_chain.Chain):
+    """Run 5, finding 2: 38 bell cards went to people talking about something else in the planting
+    threads. A bell answers prose naming none of its forms with no offer."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def test_the_replies_under_glms_planting_get_nothing(self):
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        for rkey in ("3mxghexfsqk2f", "3mxghge5hak2f", "3mxghjyx4pk2f", "3mxghjmm6zc2f"):
+            r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=KIMI)
+            self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
+        self.assertEqual(items(get(self.state("bell"), "rains")), [])
+
+
+class AnthologyReachable(test_chain.Chain):
+    """Run 5, finding 4: the anthology has a door, forms (submit {line}; admit {number}, the
+    owner's) and receive, so a submit line or the model's submit spell reaches it."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    policy = test_policy.PolicyObject.policy
+    interpret = Hub.interpret
+
+    def say(self, obj, text, who):
+        return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who)
+
+    def test_lines_are_submitted_by_field_line_and_by_the_model_and_the_owner_admits(self):
+        self.policy()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(r["status"], "created", r)
+        self.turn("root", "add", record(door=door("ANTHOLOGY", "Submit a line.", "anthology")), principal="ember")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
+                           entry="initial", seed=record(owner=label("ember")))
+        self.assertEqual(r["status"], "created", r)
+        self.assertEqual(self.say("anthology", "```\nsubmit: the merchant tips his hat\n```", KIMI)["result"]["label"], "done")
+        self.assertEqual(self.say("root", "hello", GEMINI)["result"]["label"], "menu")
+        asked = self.say("root", post("3mxghd6kvo22f"), GEMINI)
+        self.assertEqual(asked["status"], "suspended", asked)
+        [pending] = self.host.send(op="world-interpretations")["pending"]
+        self.assertIn("submit", [o["action"] for o in pending["offers"]])
+        settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "model": "m",
+                                 "raw": "delvetalk anthology submit\nline: a splash for every refusal"})
+        [resumed] = settled["resumed"]
+        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+        lines = [get(p, "line")["value"] for p in items(get(self.state("anthology"), "proposals"))]
+        self.assertEqual(lines, ["the merchant tips his hat", "a splash for every refusal"])
+        refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
+        self.assertEqual(refused["result"]["payload"]["fields"][0]["value"], label("Only the anthology's owner admits; that is ember"))
+        admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
+        self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
+        card = self.say("anthology", "", GLM)["offers"][0]["text"]
+        print("\n--- anthology ---\n" + card)
+        self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)

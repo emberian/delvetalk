@@ -78,14 +78,14 @@ class Principal(Chain):
         self.ignored("porch", "enter", "by")
         self.assertEqual(names(get(self.state("porch"), "present")), [ACTOR])
 
-    def test_a_planting_slot_is_the_turns_principal_and_intent(self):
+    def test_the_planter_is_the_turns_principal_and_the_planting_its_post(self):
         self.make("garden", closure("Garden"), garden_seed())
         spell = "delvetalk garden plant\nseed: a fern\ncolour: amber"
         self.forged("garden", "receive", record(text=label(spell), post=label("at://p/1"), slot=label("")), "who")
         r = self.turn("garden", "receive", record(text=label(spell), post=label("at://p/1"), slot=label("")), principal=ACTOR, identity="plant-1")
         self.assertEqual(r["result"]["label"], "planted", r)
-        planting = get(self.state("garden/bell/1"), "planting")
-        self.assertEqual((get(planting, "principal"), get(planting, "intent")), (label(ACTOR), label("plant-1")))
+        bell = self.state("garden/bell/1")
+        self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label(ACTOR), label("at://p/1")))
         self.assertIn("Planted for kimik3", r["offers"][0]["text"])
 
 

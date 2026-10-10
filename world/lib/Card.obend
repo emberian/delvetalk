@@ -9,7 +9,7 @@ import ./Plan.obend as Plans
 # Document (its card as the reader in the context sees it: a member may see more than a
 # stranger; the host's `card {object}` passes the reader's context), exports forms() (the
 # actions its card offers, as data) and door() (its line in a directory), and takes
-# receive {text, post, slot} as the one message the town sends.
+# receive {text, post} as the one message the town sends (the host owns the slot).
 # route reads a reply: a spell naming this object and one of its forms becomes
 # `act` with typed fields; the object matches the action to its own method. What
 # is not acted on is answered by `answer`, which offers the card with its forms.
@@ -19,11 +19,9 @@ import ./Plan.obend as Plans
 #
 # A form's card is "" in forms(): the card a spell names is the object's id, which
 # route and usage take from the context.
-# slot names the awaiting post a reply answers, "" when it answers none.
 record Heard:
   text: String
   post: String
-  slot: String
 record Door:
   word: String
   blurb: String
@@ -37,16 +35,42 @@ sum Routed:
   refused: {reason: String}
   set: {field: String, value: String}
   help: {}
+  quiet: {}
 # What receive answers when no method was acted on.
 sum Reply:
   done: {action: String}
   usage: {}
   unclear: {needs: Form.Names}
   refused: {reason: String}
+  silent: {}
 def named(form: Form.Form, card: String) -> Form.Form:
   {card: card, action: form.action, fields: form.fields}
+# Prose that names none of the card's forms, fields or actions is not addressed to it:
+# `quiet`, answered with no offer at all (the bridge drafts nothing). An empty reply
+# still asks for the card.
 def route(text: String, context: Abi.Context, forms: Forms) -> Routed:
-  routeParsed(Spell.parse(text), context, forms)
+  heardAs(withBare(Spell.parse(text), text, context, forms), text, context, forms)
+def heardAs(parsed: Spell.Parsed, text: String, context: Abi.Context, forms: Forms) -> Routed:
+  match parsed:
+    case notASpell(_): if textSpan(text, " \n\t\r") == textLength(text) then Routed.usage({}) else Routed.quiet({})
+    case spell(_): routeParsed(parsed, context, forms)
+# A reply with no delvetalk line whose first `name: value` line names an action or a
+# field of one of this card's forms is that form's spell (a bell reads a fenced `rain:
+# a drizzle` as rain; Spell.fit gives an action-named line to the form's open text field).
+def withBare(parsed: Spell.Parsed, text: String, context: Abi.Context, forms: Forms) -> Spell.Parsed:
+  match parsed:
+    case spell(_): parsed
+    case notASpell(_): bareSpell(Spell.bare(text), context.object, forms, parsed)
+def bareSpell(bindings: Spell.Bindings, card: String, forms: Forms, otherwise: Spell.Parsed) -> Spell.Parsed:
+  match bindings:
+    case nil(_): otherwise
+    case cons(c): bareFor(Lists.find::<Form.Form>(forms, fn(f: Form.Form) -> Bool: f.action == c.head.name || hasField(f, c.head.name)), bindings, card, otherwise)
+def hasField(form: Form.Form, name: String) -> Bool:
+  Lists.any::<Form.Field>(form.fields, fn(f: Form.Field) -> Bool: f.name == name)
+def bareFor(found: Lists.Maybe<Form.Form>, bindings: Spell.Bindings, card: String, otherwise: Spell.Parsed) -> Spell.Parsed:
+  match found:
+    case none(_): otherwise
+    case some(f): Spell.Parsed.spell({card: card, action: f.value.action, fields: Lists.filter::<Spell.Binding>(bindings, fn(b: Spell.Binding) -> Bool: b.name == f.value.action || hasField(f.value, b.name))})
 def routeParsed(parsed: Spell.Parsed, context: Abi.Context, forms: Forms) -> Routed:
   match parsed:
     case notASpell(_): Routed.usage({})
@@ -119,12 +143,12 @@ def replyOf(routed: Routed) -> Reply:
     case refused(r): Reply.refused({reason: r.reason})
     case usage(_): Reply.usage({})
     case help(_): Reply.usage({})
+    case quiet(_): Reply.silent({})
     case set(_): Reply.refused({reason: "Nothing here can be set."})
 def answered(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why(routed)), tail: Document.Documents.cons({head: usage(context.object, forms), tail: Document.Documents.nil()})})})})
 def answer<E, S, R>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
-  match perform(Plans.Plan::<E>.offer({to: "", document: answeredOrHelp(routed, context, forms, card)})):
-    case _: replyOf(routed)
+  answerAs::<E, S, R, Reply>(routed, context, forms, card, replyOf(routed))
 # `?` gets the usage card alone; anything else the card, why, and the forms.
 def answeredOrHelp(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Document.Document:
   match routed:
@@ -133,6 +157,10 @@ def answeredOrHelp(routed: Routed, context: Abi.Context, forms: Forms, card: Doc
 # The same answer for an object whose receive finishes with its methods' own result
 # type: `result` is what a non-acting reply finishes with.
 def answerAs<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  match routed:
+    case quiet(_): result
+    case _: offering::<E, S, R, T>(routed, context, forms, card, result)
+def offering<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match perform(Plans.Plan::<E>.offer({to: "", document: answeredOrHelp(routed, context, forms, card)})):
     case _: result
 def reason(routed: Routed) -> String:
@@ -143,6 +171,7 @@ def reason(routed: Routed) -> String:
     case refused(r): r.reason
     case help(_): ""
     case set(_): "Nothing here can be set."
+    case quiet(_): ""
 # Lenses. answerLensed is answer for an object with lenses: a `set` is judged against
 # the lens's kind and written through its put (the object's law judges the write; a
 # non-empty guard refuses first, by name), `?` offers the usage card with the lenses.
@@ -245,6 +274,10 @@ def notified<E, S, R, T>(head: Observer, tail: Observers, argument: Data, sent: 
 # the host fills from its registry) when the principal is the reader, else handle(did).
 def name(did: String, context: Abi.Context) -> String:
   if did == context.principal && context.handle != "" then context.handle else handle(did)
+# A principal's name when the object stored the handle the host knew at the time
+# (planterHandle, a rain's handle): that, else name().
+def shown(did: String, handle: String, context: Abi.Context) -> String:
+  if handle != "" then handle else name(did, context)
 # What a card shows for a principal, never the raw DID: the last segment of the DID,
 # and of a long one (a real did:plc is 24 characters) only its last eight after "…".
 # The host will put the observed handle in the Context; until then this is the name.

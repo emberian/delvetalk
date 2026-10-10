@@ -165,5 +165,6 @@ def done(reply: Card.Reply) -> Place.Done:
     case refused(r): Place.Done.refused({reason: r.reason})
     case unclear(u): Place.Done.refused({reason: Card.reason(Card.Routed.unclear({action: "", needs: u.needs}))})
     case usage(_): Place.Done.refused({reason: "Reply with a spell."})
+    case silent(_): Place.Done.refused({reason: "not addressed"})
 def lenses() -> Lists.List<Form.Lens<Edits>>:
   Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})})

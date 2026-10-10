@@ -15,7 +15,7 @@ from tests.test_turn_world import label, record
 
 BELL = open(os.path.join(ROOT, "world", "objects", "Bell.obend")).read()
 SEED = record(colour={"tag": "variant", "label": "silver", "payload": empty()}, seed=label("s"),
-              rains=nil(), rung=boolean(False), planting=record(principal=label("glm"), intent=label("")), observers=nil())
+              rains=nil(), rung=boolean(False), planting=label(""), planter=label("glm"), planterHandle=label(""), observers=nil())
 
 
 class Sources(Reflection):

@@ -183,10 +183,10 @@ class PolicyObject(Chain):
     def pending(self):
         return [f["value"] for f in self.state("garden")["fields"] if f["name"] == "pending"][0]
 
-    def test_without_a_policy_prose_is_a_one_line_refusal(self):
+    def test_without_a_policy_prose_gets_nothing(self):
         self.garden("")
         reply = self.say("Could we plant a silver fern?")
-        self.assertEqual(reply["offers"][0]["text"], "Not planted: The garden has no interpretation policy.\n")
+        self.assertEqual((reply["status"], reply["result"]["label"], reply.get("offers", [])), ("admitted", "silent", []), reply)
 
     def test_a_typed_spell_never_consults_the_policy(self):
         self.policy()
