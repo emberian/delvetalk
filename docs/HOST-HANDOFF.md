@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-10 (foundation 189b534, after lane/host11).
+State on 2026-10-10 (lane/host12 89ec3cc, after the codex review of a3e1fb2; items 5.87 to 5.110).
 
 ## Summary
 
@@ -195,7 +195,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 `world-arrive {principal, did, handle}` (clock principal only; the world must name an opener and have a library) records the handle as `world-principal` does, then creates each absent one of `<did>` from library module `Avatar`, `env/<did>` from `Env`, `wake/<did>` from `Wake`, as `create` by the opener with identity `arrive:<id>`, `owner: did`. Idempotent: a repeat answers `{status: "arrived", did, handle, created: []}` with no entry. Reply: `created [{object, height}]` and `principal`. A missing library module is a request error naming it. `transport/hostproc.py` `ARRIVAL` lists the packages the sealed library must hold (`Avatar`, `Env`, `Wake`; the Avatar imports `Places.obend` from the library). `docs/GENESIS.md` says when transport calls it. Test: `test_arrive`.
 
-Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 were folded into 5.1 to 5.8).
+Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 were folded into 5.1 to 5.8).
 
 43. **Per-op timing (host7).** With `DELVETALK_TIMING=1` in its environment, the host binary writes one stderr line per
    op after the reply: `timing<TAB>op<TAB>ms<TAB>object=…<TAB>method=…<TAB>principal=…<TAB>resumed=n<TAB>delivered=n`
@@ -885,6 +885,26 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    per cell". Test: `tests/test_relation.py` `test_state_bytes_are_the_canonical_encodings` (2,048 rows
    that were 600 KB of wire JSON, created).
 
+109. **Paging by (height, item) (host12; codex transport 12).** `pageByHeight` (`world-sources`,
+   `world-grants`, `world-entries`, `world-publications`) numbers the items of each height and takes
+   `cursor: "<height>.<n>"`, continuing after (or, with `reverse`, before) exactly that item; a page
+   with `more` answers the `cursor` of its last item (`pageFields`). `after`/`before` keep paging by
+   whole heights. `transport/repo.py` should pass the reply's `cursor` through as the XRPC cursor
+   instead of the last item's height (transport lane). Test: `tests/test_reads.py`
+   `test_pages_by_height_and_item_skip_nothing` (the library entry's many sources one at a time, both
+   orders).
+
+110. **hob's tail line, and inspect's laws with readings (host12; docs/VOICE.md "hob").** A direct
+   turn's `?` usage and its badSpell `hint` end, after a blank line, with hob's one line
+   (`hobTail`): "hob: how a spell is read: delvetalk library read / page: spells" under usage, "hob: the
+   page on this: delvetalk library read / page: spells" under a hint, only when an object `library`
+   exists that the speaker may view; never in the `reason`, never in a call's or delivery's reading,
+   never twice. `world-inspect` answers `laws: [{name, clause, reading?}]` (`lawRows`: the reading the
+   law text gives, else the package's while its clause stands) and `bendLaw` (whether a Bend
+   `law(old, new, request)` judges after the text), which the library's `law {card}` page reads.
+   Tests: `tests/test_usage_voice.py` `test_hobs_tail_line_follows_usage_and_hints_only_when_a_library_is_visible`,
+   `tests/test_law.py` `test_inspect_answers_each_clause_with_its_reading`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -901,17 +921,35 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
 
 ## 7. Open
 
-- Foreign worlds: `Reference.world != ""` is refused `foreignWorld`.
-- `world-reprogram`/`amend` are gated only by the object's law.
-- `world.call`'s `refused` carries only `clause`; run 11 wants the voiced reading beside it, so the
-  Directory can pass a door's refusal on (rehearsal/REPORT.md, run 11 "What remains" 3; World.obend
-  is the objects lane's).
-- `typeMismatch`'s `expected.form` gives the input type's default bounds (a garden `seed` shows
-  `text 0..1400`), not the card's declared form (`seed: text 1..80`) that the spell path judges by.
-- **Rows as roots** (WHOLENESS §3a): blocked on the kernel's lazy cells (KERNEL-HANDOFF §15, a
-  design note): when `fetch` lands, record `{object, field, key}` there and judge it with
-  `keysChangedSince`.
-- **Suspension size** (5.72): run 11's median suspension is 7.4 KB. The host's remaining share is
+The queue after host12 (each with who holds it and what closes it):
+
+- **`proposed` by name** (kernel lane): `Compiler/ObjectiveBendLaw.lean` reads `request.kind ==
+  write|reprogram|amend|proposed` as 0..3 (host12's report has the lines); until then laws write
+  `request.kind == 3`. Closed by a `#guard` there and `tests/test_law.py` `Proposed` with the name.
+- **Deal under kind 3** (objects lane): `members` reads `request.kind == 0 implies …`, so a stranger's
+  proposal is no longer constrained; `tests/test_deal.py` keeps an `expectedFailure` until Deal guards
+  proposals (codex objects 2, 7). Any other clause written `kind == 0 implies` has the same shape.
+- **World.obend lines** (objects lane): `sum Proposed<R>` and `Interpreted.proposals` (5.106); the
+  Workshop shows `refused.reading` (5.104); Bell's `door`/`undoor` need `actions(state, context)` (5.103);
+  the Bell's rain limit or text bound per 5.108.
+- **Transport consumes host decisions** (transport lane): `world-post-reserve`/`-release` and
+  `world-posted {intent}` replace `take_slot` and `post-log.json`; the interpreter submits every model
+  result and reads `attempts`/`next` (5.107); `transport/repo.py` passes the host's `cursor` (5.109).
+  Then the host refuses a `world-posted` without `intent` (one line in `postedOp`).
+- **`readerActions` compiles `actions` per read** (host): through the world's or the disk cache only;
+  warm it as `warmLaws` warms `law` if it shows in `DELVETALK_TIMING`.
+- **`methodAdmits` on the state as it stands** (host, watch): a method that moves the clause's own
+  field for the speaker (an owner-on-first-use claim) is hidden from them though it would be
+  admitted; none in the town does. A card with one says so in `actions()`.
+- **hob's matching page** (host, with the library's pages): both tail lines name `page: spells`; a
+  hint for a lens or a law clause could name `object` or `laws` once those pages exist.
+- **Foreign worlds**: `Reference.world != ""` is refused `foreignWorld`.
+- **`world-reprogram`/`amend`** are gated only by the object's law (and, since host12, a reprogram
+  keeps every fixed field fixed, 5.92).
+- **Rows as roots** (WHOLENESS §3a): blocked on the kernel's lazy cells (KERNEL-HANDOFF §15): when
+  `fetch` lands, record `{object, field, key}` there and judge it with `keysChangedSince`; the lazy
+  cells also lift 5.108's per-object byte bound.
+- **Suspension size** (5.72): run 11's median suspension is 7.4 KB; the host's remaining share is
   ~0.5 KB (`slot` beside an interpretation, read in five places; the argument).
 - **A delivery's post** (5.71): a delivered turn sees only its own `receive` argument's post, not the
   sending turn's; `sends` journal none. Add it only when an object needs it (none does).

@@ -27,7 +27,7 @@ NEWEST = 20  # posts listed when a claim looks for its word
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS challenges(nonce TEXT PRIMARY KEY, handle TEXT, did TEXT, text TEXT,
   credential TEXT, created REAL, expires REAL, attempts INTEGER NOT NULL DEFAULT 0,
-  state TEXT NOT NULL, uri TEXT, cid TEXT, verified REAL, revoked REAL);
+  state TEXT NOT NULL, uri TEXT, cid TEXT, verified REAL, revoked REAL, address TEXT);
 '''
 
 
@@ -55,15 +55,20 @@ class Identity:
         self.db = sqlite3.connect(Path(state_dir) / 'identity.sqlite', isolation_level=None, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        if 'address' not in {r['name'] for r in self.db.execute('PRAGMA table_info(challenges)')}:
+            self.db.execute('ALTER TABLE challenges ADD COLUMN address TEXT')  # a table from before the per-address count
         self.client, self.origin, self.clock = client, origin.rstrip('/'), clock
         self.lock = threading.Lock()  # the one connection is shared by the front's threads; every use of it holds this
 
-    def challenge(self, handle):
+    def challenge(self, handle, address=''):
+        """A challenge for `handle`, asked from `address` (the requester's): at most CHALLENGES_PER_HOUR per handle and
+        address, so a stranger asking for someone's handle exhausts only their own address, never the owner's."""
         if not isinstance(handle, str) or not HANDLE.fullmatch(handle):
             raise IdentityError('invalid_handle')
         now = self.clock()
         with self.lock:
-            recent = self.db.execute('SELECT COUNT(*) FROM challenges WHERE handle=? AND created>?', (handle, now - 3600)).fetchone()[0]
+            recent = self.db.execute('SELECT COUNT(*) FROM challenges WHERE handle=? AND address IS ? AND created>?',
+                                     (handle, address, now - 3600)).fetchone()[0]
         if recent >= CHALLENGES_PER_HOUR:
             raise IdentityError('rate_limited')
         try:
@@ -76,8 +81,8 @@ class Identity:
         credential = 'dt_agent_' + secrets.token_urlsafe(32)
         text = '-'.join(proquint(secrets.randbits(16)) for _ in range(2))  # a short spoken word, like a receipt's name
         with self.lock:
-            self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state) VALUES(?,?,?,?,?,?,?,?)',
-                            (nonce, handle, did, text, digest(credential), now, now + TTL, 'pending'))
+            self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,address) VALUES(?,?,?,?,?,?,?,?,?)',
+                            (nonce, handle, did, text, digest(credential), now, now + TTL, 'pending', address))
         return {'handle': handle, 'did': did, 'text': text, 'expires': now + TTL, 'credential': credential}
 
     def _rows(self, handle, credential):

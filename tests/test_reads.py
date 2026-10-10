@@ -97,6 +97,22 @@ class Reads(Reflection):
         self.assertEqual(heights, sorted(heights))
         self.assertEqual(self.host.send(op="world-source", principal="anonymous", cid="bafy-none")["status"], "unknown")
 
+    def test_pages_by_height_and_item_skip_nothing(self):
+        # codex transport 12: one entry (the library's) carries many sources; paging by height alone
+        # with limit 1 skipped the rest of that entry. The reply's `cursor` is (height, item).
+        whole = self.host.send(op="world-sources", principal="anonymous")["sources"]
+        self.assertGreater(len(whole), 2)
+        for reverse in (False, True):
+            seen, cursor = [], None
+            while True:
+                page = self.host.send(op="world-sources", principal="anonymous", limit=1,
+                                      **({"cursor": cursor} if cursor else {}), **({"reverse": True} if reverse else {}))
+                seen += [s["cid"] for s in page["sources"]]
+                if not page["more"]:
+                    break
+                cursor = page["cursor"]
+            self.assertEqual(seen, [s["cid"] for s in (reversed(whole) if reverse else whole)], reverse)
+
     def test_object_ids_are_record_keys(self):
         odd = self.host.send(op="world-create", principal="ember", identity="mk-odd", object="odd~one", source=PACKAGE,
                              entry="initial", seed=source_seed())

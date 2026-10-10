@@ -775,7 +775,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
             if which == 'challenge':
-                out = self.server.identity.challenge(text('handle'))
+                out = self.server.identity.challenge(text('handle'), address=self.client_ip())
                 if self.browser():
                     return self.html(200, pages.challenged(out['handle'], out['text']), self.login_cookie(out['credential']))
                 return self.reply(200, canonical({**out, '_links': {'self': link(self.path), 'verify': link(PREFIX + '/verify')}}),
