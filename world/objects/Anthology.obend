@@ -23,7 +23,7 @@ record State:
   next: Nat
 # Anyone submits (submit only inserts); only the owner admits. The method named is the
 # package's own, so the law's trust in it is the pin's.
-law owner "the owner never changes; only the owner changes the rest; anyone submits a line": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and request.method == "submit"))
+law owner "the owner never changes; only the owner admits a line; anyone submits one": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and request.method == "submit"))
 def initial() -> State:
   {owner: "", ownerHandle: "", proposals: Relations.empty(), next: 1n}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
@@ -44,14 +44,13 @@ def submit(state: State, input: {line: String}, context: Abi.Context) -> Activit
 # The card's lines from a number on, for review past the first eight.
 def lines(state: State, input: {from: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
   Card.tell(Card.Replied.done({action: "lines"}), renderFrom(state, context, input.from, Card.budget()))
-# admit {number}: the line's number on the card; the owner's, refused by name to anyone else
-# before the law is asked. The number is the key, so neither a submission landing first nor
-# an older line dropped shifts it; admission upserts it with its status flipped.
+# admit {number}: the line's number on the card. Only the owner's admission stands: anyone
+# else's write is the owner law's to refuse, so the turn is refused and its receipt says why.
+# The number is the key, so neither a submission landing first nor an older line dropped
+# shifts it; admission upserts it with its status flipped.
 def admit(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
-  if context.principal != state.owner then Card.Replied.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(Relations.lookup(state.proposals, {n: input.number}, proposalKey), input.number, context)
-def admittingAt(found: Lists.Maybe<Proposal>, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
-  match found:
-    case none(_): Card.Replied.refused({clause: "noLine", reading: "No line numbered {natText(number)}"})
+  match Relations.lookup(state.proposals, {n: input.number}, proposalKey):
+    case none(_): Card.tell(Card.Replied.refused({clause: "noLine", reading: "No line numbered {natText(input.number)}"}), Document.concat(Document.text("Not done: No line numbered {natText(input.number)}\n\n"), render(state, context)))
     case some(s): admitted(context, s.value)
 def admitted(context: Abi.Context, proposal: Proposal) -> Activity<Card.Replied>:
   let written(_) = write {proposals: upsert extend(proposal, {status: Rows.Status.admitted({})}), ownerHandle: set context.handle}

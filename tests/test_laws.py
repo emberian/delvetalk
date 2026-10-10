@@ -85,10 +85,14 @@ class Laws(LawWorld):
         self.assertEqual(self.turn("anthology", "submit", record(line=label("moths")), principal=OTHER)["status"], "admitted")
         spelled = self.turn("anthology", "receive", heard("delvetalk anthology submit\nline: lamps"), principal="did:plc:glm")
         self.assertEqual((spelled["status"], spelled["result"]), ("admitted", nat(2)), spelled)  # the method's own result: the count
-        # admit refuses a stranger by name before the law is asked; the law still refuses any
-        # other change of theirs (test above).
+        # A stranger's admit is the owner law's to refuse: the turn is refused, and its receipt
+        # reads why (codex agent 4); a line that is not there is refused by name with the card.
         stranger = self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)
-        self.assertEqual((stranger["status"], stranger["result"]["label"]), ("admitted", "refused"), stranger)
+        self.assertEqual(self.clause(stranger), "lawRefused/owner", stranger)
+        self.assertEqual(stranger["receipt"]["outcome"]["reason"], "refused owner: the owner never changes; only the owner admits a line; anyone submits one")
+        missing = self.turn("anthology", "admit", record(number=nat(9)), principal=OTHER)
+        self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
+        self.assertTrue(missing["offers"][0]["text"].startswith("Not done: No line numbered 9\n\nTHE ANTHOLOGY"), missing)
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
         statuses = [get(p, "status")["label"] for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(statuses, ["proposed", "admitted"])

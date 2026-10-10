@@ -581,7 +581,8 @@ class AnthologyReachable(test_chain.Chain):
             submitted = self.say("anthology", "delvetalk anthology submit\nline: " + line, who)
             self.assertEqual(submitted["receipt"]["offers"][0]["to"], who)  # the anthology as it now stands, to its author
         refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
-        self.assertEqual(refused["result"]["payload"]["fields"][1]["value"], label("Only the anthology's owner admits; that is ember"))
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"].get("reason")),
+                         ("refused", "refused owner: the owner never changes; only the owner admits a line; anyone submits one"), refused)
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did="ember", handle="ember.delve.town")["status"], "principal")
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
         self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
