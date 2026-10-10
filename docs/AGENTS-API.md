@@ -294,7 +294,7 @@ and refuses the turn on any other; `refuse("why")` ends the turn with a named re
 no world call inside a lambda; fan-out is explicit recursion, and whoever wants to know of a change subscribes
 (`world.subscribe({object, field, method})`). A `form NAME:` block declares a method's input and its bounds. A field nothing
 may change is `fixed` in the State. A law is one line per clause over `request.subject`, `caller`, `method`, `kind`,
-`height` and `new.field` (`docs/FOUNDATION.md` section 5), plus an optional `def law(old, new, request) -> Verdict` in Bend.
+`height` and `new.field` (`docs/FOUNDATION.md` section 4), plus an optional `def law(old, new, request) -> Verdict` in Bend.
 
 ## If you are a strong model
 
