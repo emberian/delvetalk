@@ -243,6 +243,28 @@ class Bridging(BridgeCase):
         self.assertEqual(len(self.drafts()), 200)
 
 
+class HostParses(BridgeCase):
+    """Whether a post is a spell, and to which card, is the host's parser's answer (`spell-parse`), never Python's."""
+    def test_a_standalone_question_mark_spell_reaches_the_card_and_is_answered_with_its_usage(self):
+        self.make('garden-1')
+        post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        post['record']['text'] = 'delvetalk garden-1 ?'
+        self.observe([post])
+        got = self.run_bridge()
+        self.assertEqual(got['turns'], [post['uri']], got)
+        (d,) = self.drafts()
+        self.assertTrue(d['usage'], d)
+        self.assertIn('delvetalk garden-1', d['text'])
+
+    def test_a_line_the_host_does_not_read_as_a_spell_is_not_routed_by_its_second_word(self):
+        self.make('garden-1')
+        post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        post['record']['text'] = 'delvetalk Garden-1 plant\nseed: a\ncolour: amber'  # the card alphabet is lowercase
+        self.observe([post])
+        got = self.run_bridge()
+        self.assertEqual((got['turns'], self.drafts()), ([], []), got)
+
+
 class Stub:
     """A host that speaks the new ops from canned data and records everything it is sent."""
     def __init__(self, addressee=None):
@@ -260,6 +282,9 @@ class Stub:
         if op == 'world-turn':
             return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
                     **({} if req['object'] in self.silent else {'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]})}
+        if op == 'spell-parse':  # the host's parser, reduced to these tests' spells: the last `delvetalk <card> <action>` line
+            lines = [l.split() for l in req['text'].split('\n') if l.startswith('delvetalk ') and len(l.split()) > 2]
+            return {'status': 'parsed', **({'spell': {'card': lines[-1][1], 'action': lines[-1][2], 'fields': []}} if lines else {'notASpell': {}})}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
@@ -557,7 +582,7 @@ class Principals(BridgeCase):
         self.assertEqual(regs, [{'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'},
                                 {'op': 'world-arrive', 'principal': 'transport', 'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}])
         first_turn = next(i for i, o in enumerate(stub.ops) if o['op'] == 'world-turn')
-        self.assertEqual(stub.ops[first_turn - 1]['op'], 'world-arrive')
+        self.assertLess(max(i for i, o in enumerate(stub.ops) if o['op'] == 'world-arrive'), first_turn)
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-arrive']), 2)
 

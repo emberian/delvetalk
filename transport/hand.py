@@ -260,7 +260,7 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
     common.add_argument('--json', action='store_true', help='one JSON document instead of text')
     ap = argparse.ArgumentParser(prog='hand.py', description='the owner\'s console, command-line face')
     sub = ap.add_subparsers(dest='verb', required=True)
-    spec = {'inbox': [('--since', dict(type=int)), ('--kind', dict(choices=('spell', 'summon', 'reply', 'post')))],
+    spec = {'inbox': [('--since', dict(type=int)), ('--kind', dict(choices=('summon', 'reply', 'post', 'wiki-page', 'wiki-edit', 'wiki-merge')))],
             'outbox': [('--all', dict(action='store_true'))], 'show': [('draft', {})],
             'edit': [('draft', {}), ('--text-file', {}), ('--stdin', dict(action='store_true'))],
             'post': [('draft', {}), ('--object', {})], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],

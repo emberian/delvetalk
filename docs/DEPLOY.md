@@ -217,7 +217,8 @@ The same operations have a command-line face for the owner's assistant over ssh:
 --state /data/state [--credentials FILE] [--json]` (`DELVETALK_STATE` and `DELVETALK_CREDENTIALS` stand in for the
 flags; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):
 
-- `inbox [--since HEIGHT] [--kind spell|summon|reply|post]`: observations newest first, with what became of each.
+- `inbox [--since HEIGHT] [--kind summon|reply|post|wiki-page|wiki-edit|wiki-merge]`: observations newest first, with
+  what became of each (whether a post is a spell is the host's reading, shown in its fate).
 - `outbox [--all]`: drafts grouped by the post they answer (`--all` includes posted and skipped).
 - `show DRAFT`: the post, the draft text and its receipt line.
 - `edit DRAFT --text-file F | --stdin`: replace the draft text, keeping the original.
@@ -239,7 +240,8 @@ Before DelveTalk goes to delve.town, residents can play it in the owner's own Zu
 transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
 would (principal `zulip:<sender id>`, the full name as handle, `replyTo` the previous message of its topic, kind
 by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
-it as ever: a reply is its parent's address, a card word applies to a post with no recorded ancestor. Because this is
+it as ever: a reply is its parent's address, and a post with no recorded ancestor goes to the card of its spell as the
+host's parser reads it (`spell-parse`; Python only skips text without the word `delvetalk`). Because this is
 the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
 inside the host's `postQuota` per hour (a draft over it waits for the next round), and records each post with
 `world-posted`, so a reply to it routes. The delve.town rule against automatic posting does not apply here and nothing

@@ -131,10 +131,10 @@ class ZulipObserver(Observer):
         mentions = [{'did': None, 'handle': n} for n in names]
         text = text.strip()
         tags = list(dict.fromkeys(TAG.findall(text)))
-        kind, wiki, spell = classify(text, parent, mentions, tags, summon=bot)
+        kind, wiki = classify(text, parent, mentions, tags, summon=bot)
         return {'uri': uri, 'cid': str(m['id']), 'author': {'did': 'zulip:' + str(m['sender_id']), 'handle': m['sender_full_name']},
                 'createdAt': created_at(m), 'text': text, 'replyTo': parent, 'root': row[0] if row and parent else None,
-                'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki, 'spell': spell}
+                'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki}
 
     def store(self, m, me):
         """Fold one message into its topic; observe it unless it is ours. True if new."""

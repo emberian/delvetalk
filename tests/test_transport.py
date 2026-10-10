@@ -65,61 +65,34 @@ class Classification(unittest.TestCase):
             obs, ob = run_observer(posts, d)
         return {o['uri'][-6:]: o for o in obs}, ob
 
-    def test_each_post_shape_is_classified_wiki_page_edit_merge_summon_spell_reply_or_post(self):
+    def test_each_post_shape_is_classified_wiki_page_edit_merge_summon_reply_or_post(self):
         mention = [{'index': {'byteStart': 0, 'byteEnd': 25},
                     'features': [{'$type': 'town.delve.richtext.facet#mention', 'did': OTHER}]}]
-        spell = 'delvetalk garden plant\nseed: fern\n\nanything at all'
         obs, _ = self.kinds([
             mk(1, 'wiki: GSB Welcome Message (v2)\n\nbody'),
             mk(2, 'edit: Garden › Beds\nnew text'),
             mk(3, 'merge: Garden', parent=BASE['uri']),
             mk(4, '@livedelvetalk.delve.town hello #gsb', facets=mention),
-            mk(5, 'sure\n' + spell, parent=BASE['uri']),
+            mk(5, 'sure\ndelvetalk garden plant\nseed: fern', parent=BASE['uri']),
             mk(6, 'just words', parent=BASE['uri']),
             mk(7, 'merge conflicts are fun'),
+            mk(8, 'delvetalk garden ?'),  # a spell or not is the host's parser's answer (bridge.spelled)
         ])
         self.assertEqual({k: v['kind'] for k, v in obs.items()},
                          {'00000' + str(i): k for i, k in enumerate(
-                             ['wiki-page', 'wiki-edit', 'wiki-merge', 'summon', 'spell', 'reply', 'post'], 1)})
+                             ['wiki-page', 'wiki-edit', 'wiki-merge', 'summon', 'reply', 'reply', 'post', 'post'], 1)})
         self.assertEqual(obs['000001']['wiki'], {'op': 'page', 'title': 'GSB Welcome Message (v2)', 'section': None})
         self.assertEqual(obs['000002']['wiki']['section'], 'Beds')
         self.assertEqual(obs['000004']['mentions'], [{'did': OTHER, 'handle': 'livedelvetalk.delve.town'}])
         self.assertEqual(obs['000004']['tags'], ['gsb'])
-        self.assertEqual(obs['000005']['spell'], {'card': 'garden'})
         self.assertEqual(obs['000006']['replyTo'], BASE['uri'])
         self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo', 'root',
-                                              'mentions', 'tags', 'kind', 'wiki', 'spell'})
+                                              'mentions', 'tags', 'kind', 'wiki'})
 
-    def test_spell_is_a_delvetalk_line_and_only_the_card_is_extracted(self):
-        obs, _ = self.kinds([mk(1, 'hi\n  delvetalk  bell-7 ring now\nx: y\ndelvetalk other card'),
-                             mk(2, 'delvetalk'), mk(3, 'delvetalk \nrest'), mk(4, 'not delvetalk garden plant'),
-                             mk(5, 'hello @livedelvetalk.delve.town'), mk(6, 'a #gsb post', parent=BASE['uri']),
-                             mk(7, '#gsb\ndelvetalk garden plant')])
-        got = {k: (v['kind'], v['spell']) for k, v in obs.items()}
-        self.assertEqual(got['000001'], ('spell', {'card': 'other'}))  # the last unquoted delvetalk line
-        self.assertEqual(got['000002'][0], 'post')
-        self.assertEqual(got['000003'][0], 'post')
-        self.assertEqual(got['000004'][0], 'post')
-        self.assertEqual(got['000005'][0], 'summon')
-        self.assertEqual(got['000006'][0], 'summon')
-        self.assertEqual(got['000007'], ('spell', {'card': 'garden'}))
-
-    def test_spell_card_follows_spell_obend_last_unquoted_line(self):
-        card = observe.spell_card
-        kimik3 = ("The wake seam reports.\n\ndelvetalk tide subscribe / every: 1 / note: WC-01, first light")
-        self.assertEqual(card(kimik3), 'tide')
-        self.assertEqual(card('delvetalk garden plant\nseed: a\n\ndelvetalk tide subscribe / every: 1'), 'tide')  # the last wins
-        self.assertEqual(card('delvetalk tide subscribe\n> delvetalk garden plant\n```\n'), 'tide')
-        self.assertEqual(card('delvetalk tide subscribe\n    delvetalk garden plant'), 'tide')  # indented is quotation
-        self.assertEqual(card('\tdelvetalk garden plant\ndelvetalk tide subscribe'), 'tide')
-        self.assertEqual(card('    delvetalk garden plant'), 'garden')  # quotation only when nothing else matches
-        self.assertEqual(card('> delvetalk garden plant'), None)
-        self.assertEqual(card('delvetalk garden'), None)  # no action: malformed
-        self.assertEqual(card('delvetalk !x plant'), None)
-        self.assertEqual(card('delvetalk garden/bell/1 rain'), 'garden/bell/1')  # the host's id alphabet: . _ : / -
-        self.assertEqual(card('delvetalk wake/did:plc:abc.d_e receive'), 'wake/did:plc:abc.d_e')
-        obs, _ = self.kinds([mk(1, kimik3)])
-        self.assertEqual((obs['000001']['kind'], obs['000001']['spell']), ('spell', {'card': 'tide'}))
+    def test_a_summon_is_a_mention_of_the_portal_or_the_gsb_tag(self):
+        obs, _ = self.kinds([mk(1, 'hello @livedelvetalk.delve.town'), mk(2, 'a #gsb post', parent=BASE['uri']),
+                             mk(3, '#gsb\ndelvetalk garden plant'), mk(4, 'not delvetalk garden plant')])
+        self.assertEqual([obs[k]['kind'] for k in sorted(obs)], ['summon', 'summon', 'summon', 'post'])
 
     def test_the_recorded_fixture_page_is_observed_with_over_twenty_posts_and_none_refused(self):
         with tempfile.TemporaryDirectory() as d:

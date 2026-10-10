@@ -143,8 +143,8 @@ class Observing(ZulipCase):
         self.zulip.add('garden', BOT['email'], BOT['full_name'], 'planted', 'delvetalk', BOT['user_id'])
         first, second, summon, post = self.observed()
         uri = lambda topic, n: f'zulip://delvetalk/{topic}/{n}'
-        self.assertEqual((first['author'], first['uri'], first['replyTo'], first['root'], first['kind'], first['spell']),
-                         ({'did': 'zulip:1000', 'handle': 'Alice'}, uri('garden', a), None, None, 'spell', {'card': 'garden-1'}))
+        self.assertEqual((first['author'], first['uri'], first['replyTo'], first['root'], first['kind']),
+                         ({'did': 'zulip:1000', 'handle': 'Alice'}, uri('garden', a), None, None, 'post'))
         self.assertEqual((second['replyTo'], second['root'], second['kind']), (uri('garden', a), uri('garden', a), 'reply'))
         self.assertEqual((summon['kind'], summon['replyTo']), ('summon', None))
         self.assertEqual((post['kind'], post['text']), ('post', 'just talking'))

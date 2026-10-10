@@ -206,7 +206,7 @@ class Cli(HandCase):
 
     def test_reading_verbs_print_text_and_json_that_parses(self):
         rows = self.js('inbox')
-        self.assertEqual([r['kind'] for r in rows], ['spell', 'spell'])
+        self.assertEqual([r['kind'] for r in rows], ['post', 'post'])  # a spell is the host's reading, not a kind
         fates = {r['uri']: r['fate'] for r in rows}
         self.assertEqual(fates[self.uri], 'garden-1 / bofab-lukid / admitted')
         self.assertEqual(self.js('inbox', '--kind', 'summon'), [])

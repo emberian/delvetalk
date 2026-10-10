@@ -26,7 +26,6 @@ from transport import observe
 from transport.observe import SCHEMA, Observer
 
 DELIVER_ROUNDS = 8
-KINDS = ('spell', 'summon')
 
 
 def uri_hash(uri):
@@ -171,8 +170,25 @@ def all_observations(state):
 
 
 def pending_observations(state, rows=None):
+    """What may be spoken to the system: a summon, a reply, a mention, or a post the host may read as a spell."""
     rows = all_observations(state) if rows is None else rows
-    return sorted((o for o in rows if o['kind'] in KINDS or o['replyTo'] or o['mentions']), key=lambda o: (o['createdAt'], o['uri']))
+    return sorted((o for o in rows if o['kind'] == 'summon' or o['replyTo'] or o['mentions'] or (o['kind'] == 'post' and 'delvetalk' in o['text'])),
+                  key=lambda o: (o['createdAt'], o['uri']))
+
+
+def spelled(host, obs):
+    """The card of the post's spell as the host's parser reads it (`spell-parse`), or None. A text without `delvetalk`
+    has no spell line to read and is not sent; a wiki post is a page, never a spell."""
+    if obs['kind'].startswith('wiki') or 'delvetalk' not in obs['text']:
+        return None
+    got = host.send({'op': 'spell-parse', 'text': obs['text']})
+    if got.get('status') != 'parsed':
+        raise Unread(got.get('message', got.get('status')))  # the host did not read it: the post waits for the next run
+    return (got.get('spell') or {}).get('card')
+
+
+class Unread(Exception):
+    pass
 
 
 def skipped(state):
@@ -187,7 +203,7 @@ FIELD_LINE = re.compile(r'^\s*[\w-]+:\s*\S', re.M)
 def addressed(obs):
     """Was the observation spoken to the system: a spell or summon, or text with a `delvetalk` line or `name: value` field lines."""
     text = obs['text']
-    return obs['kind'] in KINDS or 'delvetalk' in text.lower() or bool(FIELD_LINE.search(text))
+    return obs['kind'] == 'summon' or 'delvetalk' in text.lower() or bool(FIELD_LINE.search(text))
 
 
 def refused(reply):
@@ -239,8 +255,9 @@ def route(host, obs, known=None):
         got = host.send({'op': 'world-addressee', 'parent': root})
         if got.get('object'):
             return got['object'], got.get('slot')
-    if obs['kind'] == 'spell':
-        return obs['spell']['card'], None
+    card = spelled(host, obs)
+    if card:
+        return card, None
     if obs['kind'] == 'summon':
         return 'directory', None
     return None
@@ -314,7 +331,11 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     for obs in observed:
         if obs['uri'] in skip or draft_exists(outbox, obs['uri']) or awaiting_path(state, obs['uri']).exists():
             continue
-        target = route(host, obs, known)
+        try:
+            target = route(host, obs, known)
+        except Unread as e:
+            failed.append({'uri': obs['uri'], 'message': str(e)})
+            continue
         if target is None:
             with open(state / 'skipped.txt', 'a') as f:
                 f.write(obs['uri'] + '\n')

@@ -25,46 +25,21 @@ CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, u
 '''
 
 
-WORD = re.compile(r'[\w-]+\Z')
-CARD = re.compile(r'[A-Za-z0-9._:/-]+\Z')  # the host's object id alphabet (validObjectId): a bell is garden/bell/1
-
-
-def spell_card(text):
-    """The card of the post's spell, following Spell.obend: the second word of the LAST unquoted line that
-    begins `delvetalk`. A `>` line and a fence line are never spell lines; a line indented four spaces or a
-    tab is quotation, used only when nothing else matches; a line without a well-formed card and action
-    is no spell line. Fields (same line after ` / `, or on later lines) are Bend's to parse."""
-    unquoted = quoted = None
-    for line in text.split('\n'):
-        body = line.lstrip(' \t')
-        words = body.split()
-        if (len(words) < 3 or words[0] != 'delvetalk' or not body.startswith(('delvetalk ', 'delvetalk\t'))
-                or not CARD.match(words[1]) or not WORD.match(words[2])):
-            continue
-        if line.startswith(('    ', '\t')):
-            quoted = words[1]
-        else:
-            unquoted = words[1]
-    return unquoted or quoted
-
-
 def classify(text, reply_to, mentions, tags, summon=SUMMON_HANDLE):
-    """-> (kind, wiki, spell). Surface-form only; first match wins. `summon` is the handle whose mention summons."""
+    """-> (kind, wiki). Surface form only, first match wins; `summon` is the handle whose mention summons. Whether a
+    post is a spell, and to which card, is the host's parser's answer (bridge.spelled), not this one's."""
     first = text.strip().split('\n', 1)[0].strip()
     if first.startswith('wiki:') and first[5:].strip():
-        return 'wiki-page', {'op': 'page', 'title': first[5:].strip(), 'section': None}, None
+        return 'wiki-page', {'op': 'page', 'title': first[5:].strip(), 'section': None}
     m = EDIT.fullmatch(first)
     if m:
-        return 'wiki-edit', {'op': 'edit', 'title': m[1], 'section': m[2]}, None
+        return 'wiki-edit', {'op': 'edit', 'title': m[1], 'section': m[2]}
     m = DECISION.fullmatch(first)
     if m and reply_to:
-        return 'wiki-merge', {'op': m[1], 'title': m[2].strip() or None, 'section': None}, None
-    card = spell_card(text)
-    if card:
-        return 'spell', None, {'card': card}
+        return 'wiki-merge', {'op': m[1], 'title': m[2].strip() or None, 'section': None}
     if summon in [x['handle'] for x in mentions] or SUMMON_TAG in [t.lower() for t in tags]:
-        return 'summon', None, None
-    return ('reply' if reply_to else 'post'), None, None
+        return 'summon', None
+    return ('reply' if reply_to else 'post'), None
 
 
 def mentions_of(text, record):
@@ -104,10 +79,9 @@ def observation(post):
     mentions = mentions_of(text, record)
     text = text.strip()
     tags = list(dict.fromkeys(TAG.findall(text)))
-    kind, wiki, spell = classify(text, parent, mentions, tags)
+    kind, wiki = classify(text, parent, mentions, tags)
     return {'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created,
-            'text': text, 'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': kind,
-            'wiki': wiki, 'spell': spell}
+            'text': text, 'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki}
 
 
 def posts_of(page):
