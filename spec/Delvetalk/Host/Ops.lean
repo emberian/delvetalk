@@ -5,6 +5,7 @@ import Delvetalk.Host.Store
 import Delvetalk.Host.Journal
 import Delvetalk.Host.Law
 import Delvetalk.Host.Slug
+import Delvetalk.Host.DiskCache
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
@@ -75,11 +76,10 @@ inductive EditKind where
   | set (value : Data)
   | add (delta : Nat)
   | append (item : Data)
-  /-- The first item whose canonical bytes are `item`'s, replaced by `change` or removed. The
-      label is the constructor the object used (`amendItem`/`removeItem` in Plan.obend, or
-      `amend`/`remove` with an `item` payload), kept so the journal records what was written. -/
-  | amendBy (label : String) (item change : Data)
-  | removeBy (label : String) (item : Data)
+  /-- The first item whose canonical bytes are `item`'s, replaced by `change` (`amendItem`) or
+      removed (`removeItem`). -/
+  | amendItem (item change : Data)
+  | removeItem (item : Data)
   /-- Relation edits (RELATIONAL.md §3), on a field the package declares a relation: a row added
       under its key (`insert` refuses a taken key with another row, `upsert` replaces it), or the row
       of a key removed (`retract`; an absent key is no change). -/
@@ -100,8 +100,8 @@ def EditKind.data : EditKind → Data
   | .set v => .variant "set" (.record [("value", v)])
   | .add n => .variant "add" (.record [("delta", .natural n)])
   | .append v => .variant "append" (.record [("item", v)])
-  | .amendBy l item c => .variant l (.record [("item", item), ("change", c)])
-  | .removeBy l item => .variant l (.record [("item", item)])
+  | .amendItem item c => .variant "amendItem" (.record [("item", item), ("change", c)])
+  | .removeItem item => .variant "removeItem" (.record [("item", item)])
   | .insert row => .variant "insert" (.record [("row", row)])
   | .upsert row => .variant "upsert" (.record [("row", row)])
   | .retract key => .variant "retract" (.record [("key", key)])
@@ -123,16 +123,12 @@ def parseKind : Data → Option EditKind
       | some (.natural n) => some (.add n)
       | _ => none
   | .variant "append" (.record f) => (f.lookup "item").map .append
-  | .variant "remove" (.record f) => (f.lookup "item").map (.removeBy "remove")
-  | .variant "amend" (.record f) => match f.lookup "item", f.lookup "change" with
-      | some item, some c => some (.amendBy "amend" item c)
-      | _, _ => none
-  | .variant "removeItem" (.record f) => (f.lookup "item").map (.removeBy "removeItem")
+  | .variant "removeItem" (.record f) => (f.lookup "item").map .removeItem
   | .variant "insert" (.record f) => (f.lookup "row").map .insert
   | .variant "upsert" (.record f) => (f.lookup "row").map .upsert
   | .variant "retract" (.record f) => (f.lookup "key").map .retract
   | .variant "amendItem" (.record f) => match f.lookup "item", f.lookup "change" with
-      | some item, some c => some (.amendBy "amendItem" item c)
+      | some item, some c => some (.amendItem item c)
       | _, _ => none
   | _ => none
 
@@ -542,8 +538,8 @@ def applyStep (decls : List RelDecl) (fields : List (String × Data)) (step : St
         | .natural m => put (.natural (m + n))
         | _ => throw "typeMismatch"
     | .append item => put (← appendItem item old)
-    | .amendBy _ item c => put (← editByItem item (some c) old)
-    | .removeBy _ item => put (← editByItem item none old)
+    | .amendItem item c => put (← editByItem item (some c) old)
+    | .removeItem item => put (← editByItem item none old)
     | .insert _ | .upsert _ | .retract _ => match decl with
       | some d => pure (replaceField acc e.field (← relationEdit d old e.kind))
       | none => throw "typeMismatch"
@@ -1426,12 +1422,27 @@ def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
     c.entry.source.assumptions.rigid, some c.entry,
     some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
 
+/-- A compiled definition from its packet: decoded and re-checked by Mini (`CheckedEntry.ofPacket`). -/
+def compiledOfPacket (packet : Json) : Option Compiled := do
+  let e ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
+  return ⟨packet, e.type, e.source.assumptions.bounds, e.source.assumptions.rigid, some e,
+    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram e.source.term)⟩
+
+/-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`. -/
+def diskCompiled (key : String) : Option Compiled :=
+  (DiskCache.read "def" key).bind fun j => ((j.getObjVal? "packet").toOption.bind compiledOfPacket).map DiskCache.hit
+
+/-- The on-disk form of a compiled definition. -/
+def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJson key), ("packet", c.packet)]
+
 /-- The cache key of an object's compiled definition (`compiledMethod` uses the same). -/
 def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 
-/-- An object's definition `name`, compiled and prepared (from the world's cache when warm). -/
+/-- An object's definition `name`, compiled and prepared (from the world's cache when warm, else
+    the disk's). -/
 def compileDef (w : World) (o : Object) (name : String) : Except String (Compiled × World) := do
   if let some c := w.compiled[defKey o name]? then return (c, w)
+  if let some c := diskCompiled (defKey o name) then return (c, w)
   let (c, w) ← compileEntryIn w o.inputs name
   return (← compiledOf c, w)
 
@@ -1570,9 +1581,13 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   match (runPure entry [o.state, new, request] Delvetalk.Bounds.lawTicks).1 with
   | .ok (.variant "admitted" _) => return none
   | .ok (.variant "refused" (.record f)) =>
-    match f.lookup "clause" with
-    | some (.label clause) => return refuse clause
-    | _ => return refuse "law"
+    match f.lookup "clause", f.lookup "reading" with
+    -- A reading is copied into the reason as a law text clause's is (`readingOf`).
+    | some (.label clause), some (.label reading) =>
+      if reading.isEmpty then return refuse clause
+      else return some { cls := "lawRefused", clause := some clause, object := some id, reason := some s!"refused {clause}: {reading}" }
+    | some (.label clause), _ => return refuse clause
+    | _, _ => return refuse "law"
   | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
   | _ => return refuse "law"
 
@@ -2098,8 +2113,34 @@ def defaultLaw (creator : String) : Except String Law := do
 
 def buildKey (inputs : Json) : String := Journal.bodyHash inputs
 
+/-- The on-disk form of a compiled package: its artifact (with the packet), its laws as text, its
+    relations and the methods it declares public. -/
+def builtJson (key : String) (b : Built) : Json :=
+  Json.mkObj [("key", toJson key), ("artifact", b.artifact), ("laws", toJson (renderLaw b.laws)),
+    ("relations", Json.arr (b.relations.toArray.map fun d =>
+      Json.mkObj [("field", toJson d.field), ("key", toJson d.key), ("limit", toJson d.limit)])),
+    ("exposed", toJson b.exposed)]
+
+/-- A compiled package from its on-disk form; the packet is decoded and re-checked by Mini. -/
+def builtOf (j : Json) : Option Built := do
+  let artifact ← (j.getObjVal? "artifact").toOption
+  let packet ← (artifact.getObjVal? "packet").toOption
+  let entry ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
+  let decoded ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).toOption
+  let laws ← match (j.getObjValAs? String "laws").toOption with
+    | some "" => some []
+    | some text => (parseLawText text).toOption
+    | none => none
+  let relations ← ((j.getObjVal? "relations").toOption.bind (·.getArr?.toOption)).map fun ds => ds.toList.filterMap fun d =>
+    match d.getObjValAs? String "field", d.getObjValAs? (List String) "key", d.getObjValAs? Nat "limit" with
+    | .ok field, .ok key, .ok limit => some ({ field, key, limit } : RelDecl)
+    | _, _, _ => none
+  let exposed ← (j.getObjValAs? (List String) "exposed").toOption
+  return { artifact, ty := entry.type, laws, assumptions := decoded.source.assumptions, relations, exposed }
+
 def compileObject (w : World) (inputs : Json) : Except String Built := do
   if let some b := w.builds[buildKey inputs]? then return b
+  if let some b := ((DiskCache.read "build" (buildKey inputs)).bind builtOf).map DiskCache.hit then return b
   let resolved ← resolveInputs w inputs
   -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
   let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render

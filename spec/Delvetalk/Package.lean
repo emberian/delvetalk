@@ -158,8 +158,8 @@ def stackMethodTable (stack : List (String × List (String × List String))) (gl
 open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- A package's optional Bend law predicate, checked by shape: `law(old: State,
 new: State, request: Request) -> Verdict`, pure, with `Verdict` exactly the sum
-`admitted: {} | refused: {clause: String}`; and `lawReads()` beside it. Nothing
-runs it here. -/
+`admitted: {} | refused: {clause: String}` or `admitted: {} | refused: {clause: String, reading: String}`
+(the host copies a reading into the refusal's reason); and `lawReads()` beside it. Nothing runs it here. -/
 def lawShape (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy)
     (sums : List (Nat × PTy)) : Except Diagnostic Json := do
   let refusal := fun (message : String) =>
@@ -184,9 +184,11 @@ def lawShape (moduleName : String) (signatures : List (String × List String)) (
     let verdict := match row? with
       | some row => (Minidregg.Compiler.ObjectiveBendElaborate.rowNames row).length == 2 &&
           lookupRow (some row) "admitted" == some PTy.emptyRow &&
-          lookupRow (some row) "refused" == some (PTy.field "clause" .label .emptyRow)
+          (lookupRow (some row) "refused" == some (PTy.field "clause" .label .emptyRow) ||
+           lookupRow (some row) "refused" == some (PTy.field "clause" .label (.field "reading" .label .emptyRow)) ||
+           lookupRow (some row) "refused" == some (PTy.field "reading" .label (.field "clause" .label .emptyRow)))
       | none => false
-    unless verdict do throw <| refusal "law must return Verdict: sum Verdict: admitted{} | refused{clause: String}"
+    unless verdict do throw <| refusal "law must return Verdict: sum Verdict: admitted{} | refused{clause: String[, reading: String]}"
     return Json.mkObj [("present", toJson true), ("reads", toJson reads)]
 
 /-- A request's closure, parsed once and prepared (specialized, elaborated, checked whole):

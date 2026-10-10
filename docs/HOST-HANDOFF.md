@@ -170,7 +170,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - `offer {to, document}` ("" = the frame's subject). An admitted entry retains `offers [{to, text}]`; `record` indexes them by addressee (`world.outbox`). `world-offers {principal, after?}` answers `offers [{height, ordinal, identity, text, from {post, principal, intent}}]` (`originOf`). A turn's reply carries only offers addressed to its own principal. A turn that offers nothing has no `offers` field.
 - Reads under authority: `world-receipt {principal, identity, of?}`; `projectEntry` gives the identity's own principal the whole entry, anyone else a `publicRefusal` (`{status: "refused", class, root {object, version?}, reason?}`, plus `object` and `hint` for `unknownObject`, `object` for `requiredAbsence`) or chain fields, roots and writes of objects the reader may view, and an `elided` count. A refused turn reply carries it as `public`.
 - `publish {page, section, body}` -> `published {post}` (at most `publishesPerTurn`; a title or section with a line break or over 256 bytes is `refused {clause: title}`). The admitted entry retains `publishes [{id, object, page, section, text}]` with agentwiki text (`wiki: Title\n\nbody` or `edit: Title › Section\n\nbody`). `world-publications {principal, after?, before?, reverse?, limit?}` answers `publications [{height, ordinal, id, object, page, section, body, hash, replyTo?}]`.
-- `world-turn {replyTo}` (in the digest): when the parent is a post recorded for the turn's object, the entry journals `replyTo` and `World.replies` maps the post to the turn. `receive`'s `slot` is the host's (`receiveArgument`): dropped for an object declaring `{text, post}`, filled from the recorded post's slot for one still declaring it.
+- `world-turn {replyTo}` (in the digest): when the parent is a post recorded for the turn's object, the entry journals `replyTo` and `World.replies` maps the post to the turn. `receive` takes `{text, post}` as sent (host10 deleted `receiveArgument`: a `slot` field is a `typeMismatch` like any other).
 - Transport side: `transport/bridge.py` `publication_drafts` writes each publication as an outbox draft and never posts; `transport/post.py --record` confirms as the clock principal and calls `world-posted`.
 
 ### 5.6 Snapshots and replay
@@ -401,11 +401,11 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    Super` layer form in old snapshots) and its test; `utteranceBlock` in `expandInterpretation`; the
    `tokenTree.relative` refusal; `withoutCompiled` (replay compares reprograms and creations as
    journaled); the index edits `amend {index}`/`remove {index}`, `amendItem`/`removeItem` by index and
-   the class `outOfRange`; `via` on `call`/`send` (only `callVia`/`sendVia` name a grant). Kept:
-   `amend {item, change}`/`remove {item}` (item-addressed under the old labels; Plan.obend writes
-   `amendItem`/`removeItem`, so the objects lane may drop them) and `withBindingContext`'s
+   the class `outOfRange`; `via` on `call`/`send` (only `callVia`/`sendVia` name a grant). Kept then:
+   `amend {item, change}`/`remove {item}` (item-addressed under the old labels; host10 deleted them,
+   since no object writes them: `EditKind.amendItem`/`removeItem` only) and `withBindingContext`'s
    Context-carrying `turn-start` request, which `tests/test_layers.py` and the kernel tests send.
-   Not deleted: `receiveArgument`. Removing it failed `test_http`, `test_hypermedia`, `test_bridge` and
+   Not deleted then: `receiveArgument` (host10 deleted it after transport2 stopped sending `slot`). Removing it failed `test_http`, `test_hypermedia`, `test_bridge` and
    `test_zulip`: `transport/http.py:113` sends `{text, post, slot: ""}` and the bridge and zulip tests'
    objects declare `slot` (`tests/test_bridge.py:36`). Once transport stops sending it and those
    fixtures drop it, delete `receiveArgument` and its two lines in `runTurnWith`, and turn
@@ -433,6 +433,69 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    lists declared rows and `receive`, not helpers or `render`/`set`/`publishPage`. Tests:
    `tests/test_public_methods.py` (the review's reproductions, a bare package, calls and sends, a helper
    receiver); fixtures declare their methods with `tests.test_turn_world.declared`.
+
+63. **Called and delivered spells (host10).** A `receive {text, …}` to a card of the message dialect is
+   read as a spell whether a principal turned it, an object called it, or a delivery brought it
+   (`routeSpell` -> `SpellRoute`: `run {object, method, argument, command}`, `usage`, `refuse`, `asIs`; the
+   direct path, `spellTurn`, is the same function). A direct turn goes to the card the spell names; a call
+   or a delivery reads only spells naming the card it was sent to (another is `otherCard`), since its
+   sender chose that object, and a `callVia`/`sendVia` is never read (its grant names one method). The
+   principal reading is the frame's subject (call) or the delivery's principal. A call's misfit is
+   answered `refused {clause}` with the spell's clause; a delivery's is a consumed `badSpell` refusal
+   with `clause`, `reason` and `hint`. A `?` in a call or delivery runs `receive` as asked. A spell runs
+   the named method only if the card offers it (5.62). Tests: `tests/test_hub.py` `SpellsPassedOn`,
+   `HandedToTheDirectory`, `AnthologyReachable` (the Directory's call of the anthology's `receive`),
+   `tests/test_places.py` `Scoped` (an avatar's send to a counter); their `expectedFailure`s are gone.
+
+64. **A proposal names its card (host10; root decision).** A message-dialect object's interpretation may
+   offer forms of several cards (the Directory offers its doors'). The model's spell is fitted against
+   the offered forms (`spellVerdict`, which now returns the form's `card`) and the proposal checked
+   against the object that card names (an id, else `resolveCard` for the asking principal): the
+   method must be one it offers (5.62) and the argument fit its input. `Interpreted.proposal` gains
+   `object: String`; whether the call site's type has it is decided where the kernel reports that type,
+   at the `interpret` yield (`proposalNamesObject`), and journaled as the interpretation's `named: true`.
+   A named verdict carries `object` and resumes `proposal {object, method, argument}`; an unnamed one
+   is the old `proposal {method, argument}` and only for the asking object itself (another card is
+   `unclear`). A JSON proposal `{method, argument}` is for the asking object. Test:
+   `tests/test_interpret_object.py` (a hub whose World copy carries the new line proposes `g plant`
+   and calls it; a form naming a method its card does not offer is `unclear`). The World.obend line
+   and the Directory's `world.call::<Data>({object, method, argument})` are the objects lane's.
+
+65. **`receiveArgument` and the old item labels deleted (host10).** `receive` takes `{text, post}` as sent;
+   `amend {item}`/`remove {item}` are gone (`EditKind.amendItem`/`removeItem` only).
+
+66. **The on-disk compile cache (host10; §7 item 1 of host9).** With `DELVETALK_COMPILE_CACHE=<dir>` in the
+   host's environment (hostd's children inherit it; off by default), compiled packages (`build-<cid>.json`:
+   artifact with packet, laws as text, relations, declared methods; `builtJson`/`builtOf`) and compiled
+   definitions (`def-<cid>.json`: the packet; `compiledJson`/`compiledOfPacket`) are kept under
+   `<dir>/<size>-<mtime sec>-<mtime nsec>` of `IO.appPath`, so another binary never reads them (the
+   operator removes old stamps). Files are named by the CID of the key (`buildKey`, `defKey`) and carry
+   it. Reads (`Host/DiskCache.lean`) are a memo of a pure function (`read` is `none` in the model,
+   `implemented_by` a file read) at the three compile points: `compileObject` (creation, replay),
+   `compileDef` and `compiledMethod`, after the world's own caches. Every packet read is decoded and
+   re-checked by Mini (`CheckedEntry.ofPacket`), so a damaged file compiles again; the directory is in
+   the TCB as the binary is (a forged packet that type-checks need not be its source's). Writes are
+   the session's: after every op `persistCaches` writes each key the process holds that it has not
+   written or seen (to a temporary name, then renamed). `world-status.compileCache {dir, hits, known}`
+   (null when off). Measured on hbox (load ~17), `world-create` of Place, Garden, Directory, Thing in a
+   fresh process: 300/459/265/313 ms off, 70/135/66/86 ms with a warm cache (2.1 MB on disk). Test:
+   `tests/test_compile_cache.py` `DiskCache`.
+
+67. **A Bend law's reading (host10; WORLD-REVIEW finding 8).** `law(old, new, request)` may return
+   `refused {clause, reading}` as well as `refused {clause}` (`Package.lawShape` accepts both; the
+   kernel lane's file, a two-line widening). A non-empty reading becomes the refusal's `reason`,
+   "refused <clause>: <reading>", as a text clause's reading does, and so reaches the public projection.
+   `Abi.Verdict` gaining `reading` is the objects lane's. Test: `tests/test_law.py`
+   `test_a_bend_laws_reading_is_the_refusals_reason`.
+
+68. **The host's default page (host10; WORLD-REVIEW finding 16).** A direct `publishPage {page}` to a card
+   whose package declares no `publishPage` is the host's (`defaultPublishPage`, chosen in `runTurnWith`):
+   it publishes `Card.defaultPage`'s shape, `## Card` (the card rendered for nobody, as `world-card`
+   renders it for "") and `## How to reply` (the host's usage of the card's forms and lenses,
+   `spellUsage`), joined by a line as `Card.pageText` joins sections, under `page`, else the word the
+   pure `blurb()` gives, else the object's id; the result is the post id. The turn writes nothing and
+   stages one publication. The five pasted `publishPage` methods (Anthology, Scene, Table, Tide,
+   Workshop) may go (objects lane); Garden keeps its own. Test: `tests/test_publish.py` `DefaultPage`.
 
 ## 6. Gotchas
 

@@ -363,9 +363,8 @@ class HandedToTheDirectory(test_chain.Chain):
     against every door's forms, and the model's submit spell reaches the anthology."""
     policy = test_policy.PolicyObject.policy
 
-    # The model's submit reaches the anthology by the Directory's `call` of its `receive`
-    # (SpellsPassedOn): expected to fail until the host reads a called `receive` as a spell.
-    @unittest.expectedFailure
+    # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which the
+    # host reads as a spell (SpellsPassedOn).
     def test_two_anthology_lines_under_glms_planting_are_submitted(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
@@ -519,8 +518,7 @@ class AnthologyReachable(test_chain.Chain):
         return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who)
 
     # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which
-    # the host does not read as a spell (SpellsPassedOn): refused typeMismatch until it does.
-    @unittest.expectedFailure
+    # the host reads as a spell (SpellsPassedOn).
     def test_lines_are_submitted_by_field_line_and_by_the_model_and_the_owner_admits(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),

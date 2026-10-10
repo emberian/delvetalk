@@ -668,17 +668,18 @@ class ReplyIsAddress(PostWaiterWorld):
         [resumed] = advanced["resumed"]
         self.assertEqual(resumed["result"], label("timed out"), resumed)
 
-    def test_receive_takes_text_and_post_and_the_host_fills_or_drops_slot(self):
+    def test_receive_takes_text_and_post_and_nothing_else(self):
         self.posted(URI, slot=SLOT)
-        # Sent with a slot for one release: an object declaring {text, post} gets it dropped.
-        legacy = self.reply(URI + "/r1", URI, text="with slot", slot=label("x"))
-        self.assertEqual((legacy["status"], self.note()), ("admitted", "with slot"), legacy)
-        # An object still declaring slot gets it from the recorded post.
+        # A reply sent with a slot does not fit {text, post}: the host neither drops nor fills it.
+        sent = self.reply(URI + "/r1", URI, text="with slot", slot=label("x"))
+        self.assertEqual((sent["status"], sent["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), sent)
+        self.assertEqual(self.note(), "")
+        # An object still declaring slot is not given one from the recorded post.
         self.make("old", OLD_RECEIVE, record(note=label("")))
         self.posted(URI + "/old", obj="old", slot=SLOT)
         r = self.reply(URI + "/r2", URI + "/old", obj="old")
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(json.loads(self.note("old")), SLOT)
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), r)
+        self.assertEqual(self.note("old"), "")
 
 
 MINTER = declared("""edition ObjectiveBend 1
