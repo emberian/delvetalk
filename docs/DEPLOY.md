@@ -263,6 +263,11 @@ draft's object, the draft marked posted); **Skip** marks it `skipped` with a rea
 leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
 (what, who, when, draft id). A turn that suspends on an interpretation has no draft until the interpretation settles; a
 model failure is submitted to the host, which retries a transient one with backoff up to 8 attempts (`attempted` entries). Draft principals are observed, unverified DIDs.
+A turn made over HTTP (`/AGENTS.md/world/<o>/<method>` or the play page) that the host admits with a write on an object
+the public reads (`world-view` as `anonymous` answers it) is drafted here as a town reply is (`<height>-http-<hash>.json`,
+`http: {intent}`, no `replyTo`, the turn's offers or else its receipt line), once per receipt, so the owner chooses
+whether the town hears of it; a heap turn, a refusal and a write to a private object draft nothing. On Zulip the bridge
+never posts such a draft itself (it answers no message); Post sends it to Delve.
 The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport.hand <verb>
 --state /data/state [--root-socket PATH] [--world W] [--credentials FILE] [--json]` (`DELVETALK_STATE`,
 `DELVETALK_ROOT_SOCKET` and `DELVETALK_CREDENTIALS` stand in for the flags; the ops container sets the first two; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):

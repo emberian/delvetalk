@@ -25,7 +25,7 @@ from transport.bridge import door_rows, plain
 from transport.host import CLOCK, HOST_TIMEOUT, HostClient, add_host_args, connect
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
-from transport.repo import Repo
+from transport.repo import PUBLIC, Repo
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
@@ -293,11 +293,12 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS):
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS,
+                 outbox=None):
         super().__init__(address, Handler)
         self.slots, self.receiving, self.receiving_lock = threading.BoundedSemaphore(workers), {}, threading.Lock()
         threading.Thread(target=self.reap, daemon=True).start()
-        self.access = access
+        self.access, self.outbox = access, outbox and Path(outbox)  # outbox: the hand's, where an HTTP turn's draft waits
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps and Path(heaps), repl, trust_proxy, sleep, hand  # heaps: serve's heaps/ directory
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
@@ -337,6 +338,21 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                     c.shutdown(socket.SHUT_RD)
                 except OSError:
                     pass
+
+    def draft_turn(self, principal, intent, reply):
+        """The owner's rule (cracks R6): an admitted HTTP turn that wrote an object the public reads (the host's answer to
+        `world-view` as the anonymous reader) is drafted in the hand's outbox like a town reply, once per receipt; whether
+        the town hears of it is the operator's click."""
+        receipt = reply.get('receipt') or {}
+        writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
+        if self.outbox is None or reply.get('status') != 'admitted' or not writes:
+            return
+        public = [o for o in dict.fromkeys(writes) if self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': o}).get('status') == 'viewed']
+        path = self.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
+        if public and not path.exists():
+            bridge.write_atomic(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
+                                       'object': public[0], 'slot': None, 'receipt': receipt, 'posted': False,
+                                       'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
 
     def heap(self, did, create=True):
         """A principal's private heap over the host's socket; None for one never made, unless `create`."""
@@ -709,6 +725,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.answer(reply, links=receipt_links(base, reply))
         reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,  # asked on the card itself
                            'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct'})
+        if not heap:
+            self.server.draft_turn(principal, data.get('intent'), reply)
         links, acts = {**at(obj), **receipt_links(base, reply, data.get('intent'))}, None
         if reply.get('status') in ('refused', 'error'):  # the usage action: the method as the host's table shows it
             seen = host.send({'op': 'world-inspect', 'principal': principal, 'object': obj})
@@ -853,6 +871,7 @@ class Handler(BaseHTTPRequestHandler):
             fields = {k[2:] if k[:2] in kinds else k: kinds[k[:2]](v) if k[:2] in kinds else v for k, v in data.items() if k != 'method'}
             r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent, 'reach': 'direct',
                            'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
+            self.server.draft_turn(did, intent, r)
             offers = [o['text'] for o in r.get('offers') or []]
             for _ in range(WAIT_MAX if r.get('status') == 'suspended' else 0):  # the interpreter answers as an offer to this intent
                 seen = host.send({'op': 'world-offers', 'principal': did, 'after': r['receipt']['height']}).get('offers') or []
@@ -924,7 +943,7 @@ def main(argv=None):
     host = connect(a)
     ident = Identity(a.state, Client(http_transport), a.origin)
     front = Front((a.bind, a.port), host, ident, a.origin, heaps=Path(host.path).parent / 'heaps', repl=HostClient(host.path, stateless=True),
-                  trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'))
+                  trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'), outbox=Path(a.state) / 'outbox')
     try:
         front.serve_forever()
     finally:

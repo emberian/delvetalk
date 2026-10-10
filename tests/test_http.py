@@ -109,8 +109,9 @@ class FrontCase(HostdCase):
         self.now = [1000.0]
         self.host = HostClient(self.socket)  # a test may replace its send
         ident = identity.Identity(self.tmp.name, delve.Client(self.provider), clock=lambda: self.now[0])
+        self.outbox = Path(self.tmp.name) / 'outbox'  # the hand's: an HTTP turn that writes a public object drafts here
         self.front = serve(Front(('127.0.0.1', 0), self.host, ident, clock=lambda: self.now[0],
-                                 heaps=Path(self.hostd_dir.name) / 'heaps', repl=HostClient(self.socket, stateless=True)))
+                                 heaps=Path(self.hostd_dir.name) / 'heaps', repl=HostClient(self.socket, stateless=True), outbox=self.outbox))
         self.addCleanup(self.front.server_close)
         self.addCleanup(self.front.shutdown)
         self.port = self.front.server_address[1]
@@ -298,6 +299,45 @@ class Bearer(FrontCase):
             s, _, page = self.request('GET', path, token=tok, headers=headers)
             self.assertEqual((s, set(seen)), (200, {DID}), (path, headers))
             self.assertIn(HANDLE, page.decode())
+
+
+class HttpDrafts(FrontCase):
+    """The owner's rule (cracks R6, Q4): a turn made over HTTP that admits a write on a public object gets a draft in
+    the hand, as a town reply does, so the operator chooses whether the town hears of it. Nothing is posted."""
+
+    def drafts(self):
+        return [json.loads(p.read_text()) for p in sorted(self.outbox.glob('*.json'))] if self.outbox.exists() else []
+
+    def test_an_admitted_write_on_a_public_object_is_drafted_once_with_its_receipt(self):
+        tok = self.login()
+        s, t = self.turn(tok, 'pub-1')
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        (d,) = self.drafts()
+        self.assertEqual((d['object'], d['principal'], d['posted'], d['replyTo'], d['http']), (self.c, DID, False, None, {'intent': 'pub-1'}))
+        self.assertEqual(d['receipt']['slug'], t['receipt']['slug'])
+        self.assertIn(f"receipt {t['receipt']['slug']}: {self.c} v1", d['text'])
+        self.assertEqual(self.turn(tok, 'pub-1')[1]['receipt']['slug'], t['receipt']['slug'])  # the same intent again: the same receipt,
+        self.assertEqual(len(self.drafts()), 1)  # and no second draft
+
+    def test_a_turn_from_the_play_page_is_drafted_too(self):
+        tok = self.login()
+        s, _, _ = self.request('POST', f'/play/{self.c}', raw=b'method=bump', headers={'Cookie': f'dt_credential={tok}', 'Content-Type': FORM})
+        self.assertEqual(s, 200)
+        self.assertEqual([d['object'] for d in self.drafts()], [self.c])
+
+    def test_a_private_object_a_refusal_and_a_heap_draft_nothing(self):
+        tok = self.login()
+        r = self.host.send({'op': 'world-create', 'principal': DID, 'identity': 'mk-p-' + self.c, 'object': 'p-' + self.c, 'modules': counter_modules(),
+                            'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}})
+        self.assertEqual(r['status'], 'created', r)
+        s, t = self.call('POST', f'/AGENTS.md/world/p-{self.c}/bump', {'argument': record(), 'intent': 'priv-1'}, tok)
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': 7, 'intent': 'bad-1'}, tok)
+        self.assertEqual(s, 400, e)
+        self.assertEqual(self.heap_create(tok)[1]['status'], 'created')
+        s, t = self.call('POST', '/AGENTS.md/heap/world/h1/bump', {'argument': record(), 'intent': 'heap-1'}, tok)
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        self.assertEqual(self.drafts(), [])
 
 
 class Forms(FrontCase):
