@@ -1514,10 +1514,16 @@ def spellTemplate (card : String) (form : Spell.Form) (given : List Spell.Bindin
   s!"delvetalk {card} {form.action}\n" ++ String.join (form.fields.map fun f =>
     s!"{f.name}: {((given.find? (·.name == f.name)).map (·.value)).getD (spellHint f.kind)}\n")
 
-/-- A card's usage (`Card.usage`): every form as a template. -/
-def spellUsage (card : String) (forms : List Spell.Form) : String :=
-  if forms.isEmpty then s!"{card} takes no spells." else
-  "Reply with a spell:\n" ++ String.join (forms.map fun f => "\n" ++ spellTemplate card f)
+/-- One lens as the `set` spell a reader copies (`Card.lensTemplate`). -/
+def lensTemplate (card : String) (lens : Spell.Field) (value : Option String := none) : String :=
+  s!"delvetalk {card} set\n{lens.name}: {value.getD (spellHint lens.kind)}\n"
+
+/-- A card's usage (`Card.help`): every form as a template, then every lens. -/
+def spellUsage (card : String) (forms : List Spell.Form) (lenses : List Spell.Field := []) : String :=
+  if forms.isEmpty && lenses.isEmpty then s!"{card} takes no spells." else
+  (if forms.isEmpty then "" else "Reply with a spell:\n" ++ String.join (forms.map fun f => "\n" ++ spellTemplate card f)) ++
+  (if lenses.isEmpty then "" else
+    "\nTo change a field, reply (one field a spell):\n" ++ String.join (lenses.map fun l => "\n" ++ lensTemplate card l))
 
 /-- The spell line a reply's spell stands on, for `inputOrigin.command`. -/
 def spellLine (card action : String) : String := s!"delvetalk {card} {action}"
@@ -1557,6 +1563,30 @@ def withFields (w : World) (o : Object) (argument : Data) (fields : List Spell.B
 /-- The forms a card offers, as the spell grammar reads them. -/
 def spellForms (id : String) (o : Object) : List Spell.Form := (methodForms id o.methods).filterMap Spell.Form.ofData
 
+/-- The lenses of a card (WHOLENESS §2: a lens is a form): the fields its pure `lenses() ->
+    Lists.List<Form.Field>` names, each with the kind of value it takes, when it also has a `set`
+    method; none otherwise (also when `lenses()` is the sum dialect's list of `Form.Lens`, which is
+    not data). -/
+def declaredLenses (w : World) (o : Object) : List Spell.Field :=
+  if !hasMethod o "set" || !((entrySource o).splitOn "\n").any (·.startsWith "def lenses(") then [] else
+  let read : M (List Spell.Field) := do
+    let some c ← tryCatch (some <$> compiledMethod o "lenses") (fun _ => pure none) | return []
+    let some entry := c.entry | return []
+    match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+    | .ok d =>
+      let form := Spell.Form.ofData (.record [("card", .label ""), ("action", .label "set"), ("fields", d)])
+      return (form.map (·.fields)).getD []
+    | .error _ => return []
+  match (read.run.run (scratchState w)).1 with
+  | .ok ls => ls
+  | .error _ => []
+
+/-- A lens's value as the `set` method takes it: `Form.Value`. -/
+def lensValue : Spell.Value → Data
+  | .text t => .variant "text" (.record [("value", .label t)])
+  | .natural n => .variant "natural" (.record [("value", .natural n)])
+  | .choice c => .variant "choice" (.record [("value", .label c)])
+
 /-- Does an object read its replies in the message dialect (the host then parses its spells)? -/
 def speaksMessages (w : World) (o : Object) : Bool :=
   match ((compiledMethod o "receive").run.run (scratchState w)).1 with
@@ -1566,6 +1596,28 @@ def speaksMessages (w : World) (o : Object) : Bool :=
 /-- `receive` with the bare field lines (`Heard.fields`): completion is the card's policy. -/
 def receiveHeard (w : World) (req : TurnRequest) (o : Object) (fields : List Spell.Binding) : Except String (World × Json) :=
   runTurnWith w { req with argument := withFields w o req.argument fields } {}
+
+/-- `delvetalk <card> set` with one `<field>: <value>` line: the value is judged against the lens's
+    kind (`badValue`) and the card's `set {field, value: Form.Value}` method runs with it
+    (`inputOrigin.kind = "spell"`). No field line is completion, the card's policy (`receive` with the
+    bare fields); a field no lens names, or more than one, is `unknownField`. -/
+def lensSpell (w : World) (req : TurnRequest) (target : Object) (card : String) (lenses : List Spell.Field)
+    (fields : List Spell.Binding) : Except String (World × Json) :=
+  let id := req.object
+  match fields with
+  | [] => receiveHeard w req target fields
+  | [b] =>
+    match lenses.find? (·.name == b.name) with
+    | none => refuseSpell w req id "unknownField"
+        s!"Unknown field {b.name}; set takes one of: {", ".intercalate (lenses.map (·.name))}" (spellUsage id [] lenses)
+    | some lens =>
+      match Spell.judge lens b.value with
+      | some (clause, reason) => refuseSpell w req id clause.name reason (lensTemplate id lens b.value)
+      | none =>
+        let argument := Data.record [("field", .label lens.name), ("value", lensValue (Spell.typed lens.kind b.value))]
+        runTurnWith w { req with method := "set", argument, origin := "spell", command := spellLine card "set" } {}
+  | _ => refuseSpell w req id "unknownField"
+      s!"set takes one field a spell, not {", ".intercalate (fields.map (·.name))}" (spellUsage id [] lenses)
 
 /-- Run what a spell naming `card` and `action` with `fields` asks of the turn's card `o`. -/
 def castSpell (w : World) (req : TurnRequest) (o : Object) (card action : String) (fields : List Spell.Binding) :
@@ -1579,10 +1631,14 @@ def castSpell (w : World) (req : TurnRequest) (o : Object) (card action : String
   -- A card of the sum-Plan dialect reads its own replies.
   unless speaksMessages w target do return ← runTurnWith w req {}
   let forms := spellForms id target
+  let lenses := declaredLenses w target
   if action == "?" then
-    return (w, Json.mkObj [("status", toJson "usage"), ("object", toJson id), ("text", toJson (spellUsage id forms))])
+    return (w, Json.mkObj [("status", toJson "usage"), ("object", toJson id), ("text", toJson (spellUsage id forms lenses))])
+  -- `set` with one `<field>: <value>` line goes through a lens (`lensSpell`).
+  if action == "set" && !lenses.isEmpty && !forms.any (·.action == "set") then
+    return ← lensSpell w { req with object := id } target card lenses fields
   let some form := forms.find? (·.action == action)
-    | refuseSpell w req id "noAction" s!"{id} has no action {action}." (spellUsage id forms)
+    | refuseSpell w req id "noAction" s!"{id} has no action {action}." (spellUsage id forms lenses)
   match Spell.fit (.spell id action fields) form with
   | .proposal _ _ entries =>
     let asked := { req with method := action, argument := spellArgument entries, origin := "spell", command := spellLine card action }
@@ -2099,12 +2155,61 @@ def inputTypeOf : Ty → Except String (Option Ty)
 def unclearVerdict (needs : List String) : Json :=
   Json.mkObj [("tag", toJson "unclear"), ("needs", toJson needs)]
 
+/-- A proposal of `method` with `argument` to the suspended object, or `unclear` with the reason: the
+    method must be a method of the object, the argument (its text words read as cases) must conform
+    to its input, and the suspended activity's response type must carry the proposal. -/
+def proposalVerdict (w : World) (obj : Object) (bounds : DataBounds) (responseType : Ty) (method : String)
+    (argument : Data) : World × Json := Id.run do
+  let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
+  let w := w.withCachesOf st.world
+  let compiledM ← match r with
+    | .ok c => pure c
+    | .error e => return (w, unclearVerdict [s!"{method} is not a method of the object: {abortText e}"])
+  let some input := (inputTypeOf compiledM.type).toOption | return (w, unclearVerdict [s!"{method} is not a method"])
+  -- The argument came from outside: its text words are read as cases.
+  let argument ← match inputWords compiledM argument with
+    | .ok a => pure a
+    | .error (path, word, cases) =>
+      return (w, unclearVerdict [s!"{if path.isEmpty then "the argument" else path} is one of: {", ".intercalate cases} (not {word})"])
+  let fits := match input with
+    | some dom => argument.conformsUnder compiledM.bounds dom
+    | none => match argument with | .record [] => true | _ => false
+  if !fits then return (w, unclearVerdict [s!"the argument does not fit the input of {method}"])
+  let candidate := Data.variant "proposal" (.record [("method", .label method), ("argument", argument)])
+  if !candidate.conformsUnder bounds responseType then
+    return (w, unclearVerdict [s!"the object cannot carry a proposal of {method}"])
+  return (w, Json.mkObj [("tag", toJson "proposal"), ("method", toJson method), ("argument", dataJson argument)])
+
+/-- What a model's text says to a suspended activity of the message dialect, fitted against the
+    offered forms as a reply's spell is (WHOLENESS §2, "Interpretation"): a spell naming an offered
+    form that fits is that form's proposal; one that misfits, or misses fields, is `unclear` naming
+    why or what it needs; a spell naming no offered form is `unclear`. A text with no spell line whose
+    first field line names an offered action or field is that form's spell (`Card.withBare`). `none`
+    when the text is no spell: the object hears it as `replied`. -/
+def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (List String) (String × Data)) :=
+  let fitted := fun (form : Spell.Form) (fields : List Spell.Binding) =>
+    match Spell.fit (.spell form.card form.action fields) form with
+    | .proposal _ action entries => Except.ok (action, spellArgument entries)
+    | .unclear needs => .error needs
+    | .refused _ reason => .error [reason]
+  match Spell.parse text with
+  | .spell card action fields =>
+    match offered.find? fun f => f.card == card && f.action == action with
+    | some form => some (fitted form fields)
+    | none => some (.error [s!"{card} {action} is not one of the offered actions"])
+  | .notASpell _ fielded => do
+    guard fielded
+    let first ← (Spell.bare text).head?
+    let form ← offered.find? fun f => f.action == first.name || f.fields.any (·.name == first.name)
+    some (fitted form ((Spell.bare text).filter fun b => b.name == form.action || form.fields.any (·.name == b.name)))
+
 /-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
-    (a method of the object, one of the offered actions, with an argument that conforms to the
-    method's input type and fits the object's response type) or `unclear` with the reason. Any
-    other reply is the model's text, `replied {text}`, for the object to read with its own
-    grammar; an object whose Response cannot carry it hears `unclear`. A failed call is
-    `unclear {needs: ["model: <reason>"]}`. -/
+    (`proposalVerdict`: a method of the object, one of the offered actions, with an argument that
+    conforms to the method's input type and fits the object's response type) or `unclear` with the
+    reason. Any other reply is the model's text: for an activity of the message dialect it is fitted
+    as a spell against the offered forms (`spellVerdict`), and prose is `replied {text}`; an activity
+    of the sum-Plan dialect reads every text itself as `replied {text}`. An object whose Response
+    cannot carry it hears `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
   let some i := interpretationOf w s | throw "not an interpretation"
   let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
@@ -2124,47 +2229,32 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   let suspended ← match r2 with | .ok c => pure c | .error e => throw (abortText e)
   let some (_, responseType, _) := computationParts suspended.type | throw "the suspended method is not an activity"
   let w := w.withCachesOf st2.world
+  let offers ← decodeData Limits.dataDepth (← i.getObjVal? "offers")
+  let forms := (listHeads [] offers).getD []
   let some method := (json.getObjValAs? String "method").toOption
     | match raw with
       | some text =>
+        if isMessageDialect suspended then
+          match spellVerdict (forms.filterMap Spell.Form.ofData) text with
+          | some (.ok (action, argument)) => return proposalVerdict w obj suspended.bounds responseType action argument
+          | some (.error needs) => return (w, unclearVerdict needs)
+          | none => pure ()
         if (Data.variant "replied" (.record [("text", .label text)])).conformsUnder suspended.bounds responseType then
           return (w, Json.mkObj [("tag", toJson "replied"), ("text", toJson text)])
         return (w, unclearVerdict ["the reply names no method"])
       | none => return (w, unclearVerdict ["the reply names no method"])
-  let offers ← decodeData Limits.dataDepth (← i.getObjVal? "offers")
-  let actions := ((listHeads [] offers).getD []).filterMap fun form =>
+  let actions := forms.filterMap fun form =>
     match form with
     | .record f => (f.lookup "action").bind labelOf
     | _ => none
   if !actions.isEmpty && !actions.contains method then
     return (w, unclearVerdict [s!"{method} is not one of the offered actions"])
-  let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
-  let w := w.withCachesOf st.world
-  let compiledM ← match r with
-    | .ok c => pure c
-    | .error e => return (w, unclearVerdict [s!"{method} is not a method of the object: {abortText e}"])
-  let raw := (json.getObjVal? "argument").toOption.getD (Json.mkObj [])
-  let input ← (inputTypeOf compiledM.type).mapError fun _ => s!"{method} is not a method"
-  let wanted := match raw with
+  let wanted := match (json.getObjVal? "argument").toOption.getD (Json.mkObj []) with
     | .null => Json.mkObj []
     | other => other
   match Package.jsonData Limits.plainDepth wanted with
   | .error e => return (w, unclearVerdict [s!"the argument is not plain data: {e}"])
-  | .ok (argument, _) =>
-    -- The model's argument came from outside: its text words are read as cases.
-    let argument ← match inputWords compiledM argument with
-      | .ok a => pure a
-      | .error (path, word, cases) =>
-        return (w, unclearVerdict [s!"{if path.isEmpty then "the argument" else path} is one of: {", ".intercalate cases} (not {word})"])
-    let fits := match input with
-      | some dom => argument.conformsUnder compiledM.bounds dom
-      | none => match argument with | .record [] => true | _ => false
-    if !fits then return (w, unclearVerdict [s!"the argument does not fit the input of {method}"])
-    let candidate := Data.variant "proposal" (.record [("method", .label method), ("argument", argument)])
-    if !candidate.conformsUnder suspended.bounds responseType then
-      return (w, unclearVerdict [s!"the object cannot carry a proposal of {method}"])
-    return (w, Json.mkObj [("tag", toJson "proposal"), ("method", toJson method),
-      ("argument", dataJson argument)])
+  | .ok (argument, _) => return proposalVerdict w obj suspended.bounds responseType method argument
 
 /-- `world-interpretation {id, reply}`: settle a pending interpretation with the model's
     reply, verbatim. The verdict is journaled; the suspended turn resumes with it. -/

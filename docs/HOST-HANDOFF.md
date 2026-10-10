@@ -272,8 +272,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    public projection. Per the root decision, a spell missing fields and a reply with no spell run `receive`
    with the bare `name: value` lines as `fields` (when `receive` declares them): completion is the card's
    policy. A reply with no spell line whose first field line names one of the card's actions or fields is
-   that form's spell (`Card.withBare`). Not yet: the interpretation verdict fitted as spell text (§2
-   "Interpretation"), lenses' `set`. Test: `tests/test_spell_turns.py`.
+   that form's spell (`Card.withBare`). The interpretation fit and lens `set` are 5.54. Test:
+   `tests/test_spell_turns.py`.
 
 50. **Subscriptions and `changed` (host8; WHOLENESS §3, host day 3).** Plan/world method `subscribe {object, field}`
    stages `Subscription {subscriber: the running object, principal: the frame's subject, object, field}`:
@@ -330,6 +330,24 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `subscribe` line gains `method: String` in the objects lane (tests replace the line in a library
    copy until then). Test: `tests/test_changes.py` `Receivers`.
 
+54. **Spells, the rest (host9; WHOLENESS §2, second root decisions 2).** Interpretation: a model's text
+   to an activity of the message dialect is fitted against the offered forms (`spellVerdict`): a spell
+   naming an offered form that fits is that form's `proposal {method, argument}` (checked as a JSON
+   proposal is, `proposalVerdict`), a misfit `unclear {needs: [reason]}`, missing fields `unclear
+   {needs: [names]}`, a spell naming no offered form `unclear`; a text with no spell line whose first
+   field line names an offered action or field is that form's spell; prose stays `replied {text}`. A
+   sum-Plan activity still hears every text as `replied` (Garden and the Directory read their own until
+   they migrate). Lenses: a message-dialect card declares its lenses as data, `def lenses() ->
+   Lists.List<Form.Field>` (name and kind; the sum dialect's `lenses()` of `Form.Lens` closures is not
+   data and reads as none), and puts through a method `set(state, input: {field: String, value:
+   Form.Value}, context)`. `delvetalk <card> set` with one `<field>: <value>` line is judged against
+   the lens's kind (`badValue`, reason as a form field's) and runs `set` with the typed value
+   (`inputOrigin.kind = "spell"`, `command` `delvetalk <card> set`); a field no lens names, or more than
+   one field line, is `badSpell` `unknownField`; no field line is `receive` with the bare fields
+   (completion is the card's policy). A card whose forms already have an action `set` keeps it. `?`
+   lists the lenses after the forms. `bridge.draft_text` reading `hint` is transport's. Tests:
+   `tests/test_spell_turns.py` `Lenses`, `Interpreted`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -364,9 +382,7 @@ and `spell-parse`; spells read by the host for message-dialect cards (`badSpell`
 the full `tests.run` once (1011 tests green at lane/host8's last commit).
 
 1. Done on lane/host9 (5.52).
-2. **Spells, the rest of WHOLENESS §2.** The interpretation verdict fitted as spell text against the offered
-   forms (`interpretVerdict`); lenses' `set` (`delvetalk <card> set` with one `field: value`, judged against the
-   lens kind, calling `set(state, {field, value}, context)`); `bridge.draft_text` reading `hint` is transport's.
+2. Done on lane/host9 (5.54).
 3. **Hypermedia reads** (docs/AGENTS-API.md "host ops wanted"): `world-inspect` lists per method `admits:
    true | {clause, reading?}`, the text law's kind-0 verdict for the asking principal on the unchanged state;
    `world-objects {methods: true}` answers `methods: {<id>: [names]}`; `world-inspect {source: false}` omits the
