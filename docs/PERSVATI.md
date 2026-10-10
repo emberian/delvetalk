@@ -58,6 +58,11 @@ test_policy.PolicyObject 19.5 s, test_zulip.Bridging 17.3 s, test_receive.Cards 
 
 ## What differs from hbox
 
+- **persvati is the box for the transport suites.** hbox's python has cryptography 42.0.5, which
+  lacks deterministic ECDSA (`deterministic_signing`, from 43.0); test_repo's signing tests
+  (`Repository`'s signed journal, `Vectors`' signatures, `SignedRepository`) skip there by name and
+  run only on persvati (46.0.5).
+
 - python 3.14 versus 3.12; the suite is standard library plus `cryptography` (`tests/test_oauth.py`), and it passes on 3.14 with no red class.
 - Cgroup cap 64G and 20 pinned cores rather than 96G and 16, because the box is smaller and shared.
 - No dedicated-tenant assumption: check `ps -eo rss,etime,cmd --sort=-rss | head` before calling it busy, and never touch other tenants' processes.
