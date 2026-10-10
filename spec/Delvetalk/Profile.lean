@@ -38,7 +38,8 @@ def stateKind (state : State) : String :=
   | .enter address => match state.heap[address]? with
     | some (.suspended _) => "enter.suspended" | some (.evaluating _) => "enter.evaluating"
     | some (.cached _ _) => "enter.cached" | some (.native _) => "enter.native"
-    | some (.nativeCached _ _) => "enter.nativeCached" | none => "enter.missing"
+    | some (.nativeCached _ _) => "enter.nativeCached" | some (.stored _ _) => "enter.stored"
+    | none => "enter.missing"
   | .returned _ => match state.stack with
     | [] => "returned.empty"
     | .binaryRight primitive _ :: _ => "returned.binaryRight." ++ (reprStr primitive).replace "Minidregg.Theory.ObjectiveBendOpenRecursion.Primitive." ""

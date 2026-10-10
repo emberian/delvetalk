@@ -11,6 +11,8 @@ with `lake build compile-profile`.
                                                  SHA-256 on the FIPS 180-4 vectors and against
                                                  the stored-schedule reference
     compile-profile sha                          SHA-256 throughput on 1 MB
+    compile-profile stored REQUEST ROWS R        a relation of ROWS rows read for one row,
+                                                 quoted and stored (`storedRows`)
     compile-profile replay LINES DIR FILTER R    host requests (one JSON per line, as the
                                                  binary reads them) through
                                                  `PackageSession.stepIO`, with `world-open`
@@ -186,7 +188,55 @@ partial def freeRows (t : Term) : Array (String × List Nat) :=
     (acc.set! index (tag, free), free)
   (go #[] t).1
 
+open Minidregg.Theory.ObjectiveBendDemandData (Data) in
+/-- `compile-profile stored REQUEST ROWS R`: the entry REQUEST compiles (an activity of one
+`State` argument whose `rains` and `marks` are relations of `{n, text}` / `{n, by}` rows, as
+`tests/test_stored.py`'s `RAINS`), run R times from a state of ROWS rains, quoted as today
+(`startEntryStep`, `resumeSuspended`) and stored (`startEntryStored`, `resumeSuspendedStored`):
+the fastest wall time of a start and its resume, their ticks, and the canonical bytes of the
+suspension's checkpoint (KERNEL-HANDOFF §15). -/
+def storedRows (request : Json) (rows repeats : Nat) : IO Unit := do
+  let compiled ← IO.ofExcept ((Delvetalk.Package.compileEntry request).mapError (·.message))
+  let entry := compiled.entry
+  let row := fun (i : Nat) => Data.record [("n", .natural i), ("text", .label "a rain of twenty chr")]
+  let rel := fun (items : List Data) => Data.variant "rows" (.record [("items", items.foldr
+    (fun r tail => .variant "cons" (.record [("head", r), ("tail", tail)])) (.variant "nil" (.record [])))])
+  let state := Data.record [("count", .natural 7), ("rains", rel ((List.range rows).map row)), ("marks", rel [])]
+  let written := Data.variant "written" (.record [])
+  let binding := Delvetalk.Turn.Binding.make "counter" "glm" "t1" [("counter", 0)]
+  let b : Delvetalk.Turn.Budgets := ⟨1000000, 1000000, 100000, 1000000, 16777216⟩
+  let store ← IO.ofExcept (Delvetalk.Turn.storeOfState state (Json.arr #[
+    Json.mkObj [("field", toJson "rains"), ("key", toJson ["n"])],
+    Json.mkObj [("field", toJson "marks"), ("key", toJson ["n"])]]))
+  let ticksOf : Delvetalk.Turn.Step → Nat
+    | .finished _ _ t | .yielded _ _ _ _ t | .exhausted _ t => t
+  let mut quoted := 1000000000000
+  let mut stored := 1000000000000
+  let mut ticks : List Nat := []
+  let mut held : Nat × Nat := (0, 0)
+  for _ in [0:repeats] do
+    let t0 ← IO.monoNanosNow
+    let first ← IO.ofExcept (Delvetalk.Turn.startEntryStep entry [state] binding b)
+    let .yielded _ _ _ suspension _ := first | throw (IO.userError "quoted turn did not yield")
+    let done ← IO.ofExcept (Delvetalk.Turn.resumeSuspended entry suspension binding written b)
+    let t1 ← IO.monoNanosNow
+    let (firstS, _) ← IO.ofExcept (Delvetalk.Turn.startEntryStored entry [state] store binding b)
+    let .yielded _ _ _ suspensionS _ := firstS | throw (IO.userError "stored turn did not yield")
+    let (doneS, readsS) ← IO.ofExcept (Delvetalk.Turn.resumeSuspendedStored entry suspensionS store binding written b)
+    let t2 ← IO.monoNanosNow
+    quoted := min quoted (t1 - t0)
+    stored := min stored (t2 - t1)
+    ticks := [ticksOf first, ticksOf done, ticksOf firstS, ticksOf doneS, readsS.rows.length]
+    let bytes := fun (s : Delvetalk.Turn.Suspension) =>
+      ((Delvetalk.Canonical.encodeJson s.checkpoint.toJson).toOption.map (·.size)).getD 0
+    held := (bytes suspension, bytes suspensionS)
+  IO.println s!"rows {rows}: quoted {quoted / 1000} us, stored {stored / 1000} us; ticks quoted {ticks.take 2}, stored {(ticks.drop 2).take 2}, rows forced {ticks.drop 4}; suspension quoted {held.1} B, stored {held.2} B"
+
 def main (args : List String) : IO Unit := do
+  if args[0]! == "stored" then
+    let request ← IO.ofExcept (Json.parse (← IO.FS.readFile args[1]!))
+    storedRows request args[2]!.toNat! args[3]!.toNat!
+    return
   if args[0]! == "replay" then
     let lines := (← IO.FS.lines args[1]!)
     replay lines args[2]! args[3]! args[4]!.toNat!
@@ -321,7 +371,8 @@ def main (args : List String) : IO Unit := do
     let pk ← timed "whole decodePacket" fun _ => decodePacket lw.packet
     discard <| timed "whole check" fun _ => match check pk.source [] pk.fuel with | some c => pure c.type | none => throw "refused"
     let prepared : Delvetalk.FrontEnd.Prepared := ⟨modules, asts, specialized.modules, elaborated, specialized.instances⟩
-    let request : Delvetalk.Package.PreparedRequest := ⟨prepared, sources, limits, Delvetalk.Canonical.cidJson sources⟩
+    let request : Delvetalk.Package.PreparedRequest :=
+      { prepared, sources, limits, sourcesCid := Delvetalk.Canonical.cidJson sources }
     for e in entries do
       IO.println s!"  entry {e}"
       let lowered ← timed "    select" fun _ => (prepared.lower (modules.length - 1) e limits).mapError (·.message)

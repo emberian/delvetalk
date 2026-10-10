@@ -638,8 +638,9 @@ private def executePreparedData (prepared : PackageData.Work (AnnotatedTerm × T
 
 /-- Native finite arguments retain lazy demand cells instead of literal syntax.
 Their preparation and extraction still consume the shared execution allowance. -/
-private def executePreparedNative (prepared : PackageData.Work PackageData.NativePreparation)
-    (argumentBytes : Nat) (limits : Json) : Except String DataExecution := do
+private def executePreparedNativeFrom (prepared : PackageData.Work PackageData.NativePreparation)
+    (argumentBytes : Nat) (limits : Json) (store : Option Delvetalk.Turn.Store) :
+    Except String (DataExecution × Option State) := do
   let bytes ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax
   let inputBytes ← bounded limits "inputBytes" bytes Bounds.bytesMax
   if argumentBytes > inputBytes then throw "typed data input byte capacity"
@@ -654,17 +655,32 @@ private def executePreparedNative (prepared : PackageData.Work PackageData.Nativ
   let stack ← bounded limits "stack" Bounds.stackDefault Bounds.stackMax
   let nodes ← bounded limits "nodes" Bounds.nodesDefault Bounds.nodesMax
   let budget : Budget := ⟨nodes, ticks - before, bytes⟩
-  match executeDataArguments ⟨heap, stack⟩ budget source.term preparation.arguments.toList with
+  -- A stored state (KERNEL-HANDOFF §15) is the first argument, one stored object cell; the
+  -- rest are native.
+  let run : Except (Failure × State × Budget) Result ← match store with
+    | none => pure ((executeDataArguments ⟨heap, stack⟩ budget source.term preparation.arguments.toList).map
+        (·.extraction.result))
+    | some store => do
+      let .record fields :: rest := preparation.arguments.toList
+        | throw "a stored state is a record"
+      let start : State := ⟨#[.stored (.object fields (store.relations.map fun r => (r.field, r.size))) none],
+        .evaluate source.term [], .argument (.bound 0) [0] :: rest.map .nativeArgument⟩
+      pure ((executeStateWith (fun _ => true) store.bounded ⟨heap, stack⟩ budget start).map (·.extraction.result))
+  match run with
   | .error (failure, state, rest) =>
-      return .refused (reprStr failure) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩
-  | .ok execution =>
-      let result := execution.extraction.result
+      return (.refused (reprStr failure) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩, some state)
+  | .ok result =>
       -- Recursive aliases and the complete returned value are checked, including
       -- payloads which a later source Decision may explicitly refuse.
       let outputAllowance := min remaining result.remaining.ticks
       let (_, after) ← (PackageData.validate source.assumptions Bounds.dataWireDepth result.value type).run outputAllowance
-      return .finished result.value type (nodes - result.remaining.nodes)
-        ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
+      return (.finished result.value type (nodes - result.remaining.nodes)
+        ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩,
+        some result.state)
+
+private def executePreparedNative (prepared : PackageData.Work PackageData.NativePreparation)
+    (argumentBytes : Nat) (limits : Json) : Except String DataExecution :=
+  (executePreparedNativeFrom prepared argumentBytes limits none).map (·.1)
 
 /-- Conformance reference only; no physical operation dispatch selects it. -/
 def executeQuotedDataValue (packet arguments limits : Json) : Except String DataExecution :=
@@ -694,6 +710,26 @@ def executeDataEntry (entry : Delvetalk.CheckedEntry) (arguments : Array Data) (
   let argumentBytes := 2 + arguments.foldl (fun n value => n + dataJsonBytes value) 0 + (arguments.size - 1)
   executePreparedNative (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel arguments)
     argumentBytes limits
+
+/-- `executeDataEntry` over a stored state (KERNEL-HANDOFF §15): the first argument is the
+object's state, its relations named in `store` held as stored cells; a card or view fetches only
+the rows it forces, and those come back as `Reads` beside the result. The scalar part is admitted
+as any argument is; the rows are the host's, checked when written. -/
+def executeDataEntryStored (entry : Delvetalk.CheckedEntry) (arguments : Array Data) (store : Delvetalk.Turn.Store)
+    (limits : Json) : Except String (DataExecution × Delvetalk.Turn.Reads) := do
+  let admitted := arguments.modify 0 (Delvetalk.Turn.scalarPart (store.relations.map (·.field)))
+  let argumentBytes := 2 + admitted.foldl (fun n value => n + dataJsonBytes value) 0 + (admitted.size - 1)
+  let (execution, ended) ← executePreparedNativeFrom
+    (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel admitted) argumentBytes limits (some store)
+  return (execution, (ended.map store.readsOf).getD ⟨[], []⟩)
+
+/-- `run` with `stored: [{field, key}]`: the first argument's named relations held as stored
+cells over its own rows; the reply carries `reads`. -/
+def executeEntryStoredJson (entry : Delvetalk.CheckedEntry) (arguments limits stored : Json) : Except String Json := do
+  let values ← (← arguments.getArr?).mapM (decodeData Bounds.dataWireDepth)
+  let store ← Delvetalk.Turn.storeOfState (values[0]?.getD (.record [])) stored
+  let (execution, reads) ← executeDataEntryStored entry values store limits
+  return execution.wire.setObjVal! "reads" reads.toJson
 
 /-- A package's declared relations (RELATIONAL §2, §11): the value of its nullary `relations()`
 (a list of `{field, key: List<String>, limit?: Nat, retain?}`, listed as `{field, key, limit, retain?}`), evaluated once at compile so the host reads it from

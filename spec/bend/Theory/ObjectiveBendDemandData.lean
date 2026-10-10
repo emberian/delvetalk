@@ -224,10 +224,77 @@ def preflightRemaining (control : Control) (stack : List Frame) (ticks : Nat) : 
       if n == 0 || n >= text.utf8ByteSize then ticks else 0
   | _, _ => ticks
 
+/-- The host's rows (KERNEL-HANDOFF §15): row `position`, in canonical key order, of the
+stored relation `field` of the turn's object at the turn's read height. -/
+abbrev Fetch := String → Nat → Option Data
+
+/-- No store: every stored row is refused `unfetched`. -/
+def Fetch.none : Fetch := fun _ _ => Option.none
+
+/-- An unforced stored row the control is entering, and what the store answers for it. -/
+@[inline] def fetchable (fetch : Fetch) (state : State) : Option (Nat × String × Nat × Data) :=
+  match state.control with
+  | .enter address => match state.heap[address]? with
+    | some (.stored (.row field position) Option.none) => (fetch field position).map (address, field, position, ·)
+    | _ => Option.none
+  | _ => Option.none
+
+/-- A fetched row forced as native data is forced, its cell keeping its provenance. -/
+def fetchStep (state : State) (address : Nat) (field : String) (position : Nat) (row : Data) : State :=
+  let (heap, value) := forceNative state.heap row
+  {state with heap := heap.set! address (.stored (.row field position) (some value)), control := .returned value}
+
+theorem fetchStep_stack (state : State) (address : Nat) (field : String) (position : Nat) (row : Data) :
+    (fetchStep state address field position row).stack = state.stack := rfl
+
+theorem fetchable_spec {fetch : Fetch} {state : State} {address : Nat} {field : String} {position : Nat}
+    {row : Data} (found : fetchable fetch state = some (address, field, position, row)) :
+    state.control = .enter address ∧ state.heap[address]? = some (.stored (.row field position) Option.none) ∧
+      fetch field position = some row := by
+  unfold fetchable at found
+  split at found
+  · rename_i a hc
+    split at found
+    · rename_i f j hcell
+      cases hf : fetch f j <;> simp [hf] at found
+      obtain ⟨rfl, rfl, rfl, rfl⟩ := found
+      exact ⟨hc, hcell, hf⟩
+    · simp at found
+  · simp at found
+
+/-! ## Stored state: starting from it, and what a run forced (KERNEL-HANDOFF §15) -/
+
+/-- `term` applied to a state held as one stored object cell: `state`'s fields, those named in
+`relations` (with their row counts) stored relations, the rest native data. The argument is the
+cell at address 0, entered through an ordinary argument frame. -/
+def storedInitial (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term)
+    (state : List (String × Data)) (relations : List (String × Nat)) : State :=
+  ⟨#[.stored (.object state relations) none], .evaluate term [], [.argument (.bound 0) [0]]⟩
+
+/-- The stored rows a state has forced: `(field, position)` of every forced row cell. -/
+def forcedRows (state : State) : List (String × Nat) :=
+  state.heap.toList.filterMap fun cell => match cell with
+    | .stored (.row field position) (some _) => some (field, position)
+    | _ => Option.none
+
+/-- How far each stored relation's spine was forced: per field, one past the furthest spine
+cell forced (`size + 1` once its `nil` was). -/
+def spineReach (state : State) : List (String × Nat) :=
+  state.heap.foldl (fun reach cell => match cell with
+    | .stored (.spine field position _) (some _) =>
+      match reach.lookup field with
+      | some r => if position + 1 > r then (field, position + 1) :: reach.filter (·.1 != field) else reach
+      | Option.none => (field, position + 1) :: reach
+    | _ => reach) []
+
+/-- A fetched row's charge, as a text primitive's: two ticks a canonical byte and one, and
+its canonical bytes reserved. -/
+def fetchCost (row : Data) : Nat × Nat := (1 + 2 * row.canonicalBytes, row.canonicalBytes)
+
 /-- Explicit hosted extension of forcing. No primitive is entered before its
 whole work/allocation allowance is admitted. Insufficient work retains the
 pre-step graph. The pinned unit-cost `forceWith` and its fast proof stay intact. -/
-def forceHostedFrom (policy : State → Bool) (limits : Limits) (bytes : Nat)
+def forceHostedFrom (policy : State → Bool) (fetch : Fetch) (limits : Limits) (bytes : Nat)
     (ticks : Nat) (state : State) (depth : Nat) : Outcome × Nat :=
   match ticks with
   | 0 => (runBounded limits 0 state,0)
@@ -236,6 +303,15 @@ def forceHostedFrom (policy : State → Bool) (limits : Limits) (bytes : Nat)
     match state.control with
     | .complete _ | .refused _ | .blackhole _ | .yielded _ => (runBounded limits 0 state,ticks)
     | _ =>
+      match fetchable fetch state with
+      | some (address, field, position, row) =>
+        let cost := fetchCost row
+        if !policy state || cost.2 > bytes then (.suspended .capacity state,ticks)
+        else if cost.1 > ticks then (.suspended .ticks state,ticks)
+        else if state.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits.heap && depth ≤ limits.stack then
+          forceHostedFrom policy fetch limits bytes (ticks - cost.1) (fetchStep state address field position row) depth
+        else (.suspended .capacity state,ticks - cost.1)
+      | Option.none =>
       let cost := textStepCost state ticks
       if !policy state || cost.2 > bytes then (.suspended .capacity state,ticks)
       else if cost.1 > ticks then
@@ -243,16 +319,17 @@ def forceHostedFrom (policy : State → Bool) (limits : Limits) (bytes : Nat)
       else
         let sizes := ObjectiveBendDemandMachineFast.sizesAfter state depth
         if sizes.1 ≤ limits.heap && sizes.2 ≤ limits.stack then
-          forceHostedFrom policy limits bytes (ticks - max 1 cost.1)
+          forceHostedFrom policy fetch limits bytes (ticks - max 1 cost.1)
             (ObjectiveBendDemandMachineFast.stepRawFast state) sizes.2
         else (.suspended .capacity state,ticks - max 1 cost.1)
 termination_by ticks
 decreasing_by
-  simp_wf
-  omega
+  all_goals simp_wf
+  all_goals (try simp only [fetchCost])
+  all_goals omega
 
-def forceHostedWith (policy : State → Bool) (limits : Limits) (bytes ticks : Nat) (state : State) : Outcome × Nat :=
-  forceHostedFrom policy limits bytes ticks state state.stack.length
+def forceHostedWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (bytes ticks : Nat) (state : State) : Outcome × Nat :=
+  forceHostedFrom policy fetch limits bytes ticks state state.stack.length
 
 /-- Materialization threads the remaining budget through failures as well as successes.
 Tick counts come directly from forceWith; failed children retain all earlier field spend.
@@ -260,7 +337,7 @@ Bytes: each scalar spends its canonical size as it is reached (the same in every
 never more than the value's canonical bytes); records and variants spend nodes, and their
 heads, keys and labels are counted once the value is whole, by `Data.canonicalBytes`
 (a list's cells are no map in canonical form, only an array head). -/
-def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget → RuntimeValue → State → Except (Failure × State × Budget) Result
+def materializeWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) : Nat → Budget → RuntimeValue → State → Except (Failure × State × Budget) Result
   | 0, budget, _, state => .error (.budget,state,budget)
   | depth+1, budget, value, state => do
     if budget.nodes = 0 then throw (.budget,state,budget)
@@ -283,11 +360,11 @@ def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget
       let pair ← fields.foldlM (fun (prior : List (String × Data) × State × Budget) field => do
         if prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
         let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}
-        let (outcome,ticks) := forceHostedWith policy limits prior.2.2.bytes prior.2.2.ticks entered
+        let (outcome,ticks) := forceHostedWith policy fetch limits prior.2.2.bytes prior.2.2.ticks entered
         let nextBudget := {prior.2.2 with ticks:=ticks}
         match outcome with
         | .finished forced retained =>
-          let child ← materializeWith policy limits depth nextBudget forced retained
+          let child ← materializeWith policy fetch limits depth nextBudget forced retained
           pure ((field.1,child.value)::prior.1,child.state,child.remaining)
         | .suspended reason retained => throw (suspensionFailure reason,retained,nextBudget)
         | .divergent _ retained => throw (.divergent,retained,nextBudget)
@@ -297,11 +374,11 @@ def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget
     | .variant label payload =>
       if remaining.nodes = 0 then throw (.budget,state,remaining)
       let entered : State := {state with control:=.enter payload,stack:=[]}
-      let (outcome,ticks) := forceHostedWith policy limits remaining.bytes remaining.ticks entered
+      let (outcome,ticks) := forceHostedWith policy fetch limits remaining.bytes remaining.ticks entered
       let nextBudget := {remaining with ticks:=ticks}
       match outcome with
       | .finished forced retained =>
-        let child ← materializeWith policy limits depth nextBudget forced retained
+        let child ← materializeWith policy fetch limits depth nextBudget forced retained
         pure ⟨.variant label child.value,child.state,child.remaining⟩
       | .suspended reason retained => throw (suspensionFailure reason,retained,nextBudget)
       | .divergent _ retained => throw (.divergent,retained,nextBudget)
@@ -309,76 +386,76 @@ def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget
       | .yielded _ retained => throw (.yielded,retained,nextBudget)
     | .closure _ _ | .specification _ _ | .prototype _ _ => throw (.executableValue,state,remaining)
 
-def completeWith (policy : State → Bool) (limits : Limits) (budget : Budget) (state : State) : Except (Failure × State × Budget) Result :=
+def completeWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget) (state : State) : Except (Failure × State × Budget) Result :=
   if !policy state then .error (.suspended,state,budget) else
   match state.control,state.stack with
   | .complete value,[] => do
-    let result ← materializeWith policy limits budget.nodes budget value state
+    let result ← materializeWith policy fetch limits budget.nodes budget value state
     if result.value.canonicalBytes > budget.bytes then throw (.budget,result.state,result.remaining)
     pure result
   | _,_ => .error (.suspended,state,budget)
 /-- A receiver keeps this exact graph-to-full-data correspondence alongside
 its independently checked source/state-origin evidence. -/
-structure ExtractionWith (policy : State → Bool) (limits : Limits) (budget : Budget) (state : State) where
+structure ExtractionWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget) (state : State) where
   private mk ::
   result : Result
-  exact : completeWith policy limits budget state = .ok result
+  exact : completeWith policy fetch limits budget state = .ok result
 
-def extractWith (policy : State → Bool) (limits : Limits) (budget : Budget) (state : State) :
-    Except (Failure × State × Budget) (ExtractionWith policy limits budget state) :=
-  match equation : completeWith policy limits budget state with
+def extractWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget) (state : State) :
+    Except (Failure × State × Budget) (ExtractionWith policy fetch limits budget state) :=
+  match equation : completeWith policy fetch limits budget state with
   | .error failure => .error failure
   | .ok result => .ok ⟨result,equation⟩
 /-- One whole source-and-materialization allowance; native callers do not need
 an untrusted source tick estimate or a fresh budget at WHNF completion. -/
-structure StateExecutionWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+structure StateExecutionWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget)
     (initialState : State) where
   private mk ::
   value : RuntimeValue
   state : State
   remainingTicks : Nat
-  runExact : forceHostedWith policy limits budget.bytes budget.ticks initialState =
+  runExact : forceHostedWith policy fetch limits budget.bytes budget.ticks initialState =
     (.finished value state,remainingTicks)
-  extraction : ExtractionWith policy limits {budget with ticks:=remainingTicks} state
+  extraction : ExtractionWith policy fetch limits {budget with ticks:=remainingTicks} state
 
-def executeStateWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+def executeStateWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget)
     (initialState : State) :
-    Except (Failure × State × Budget) (StateExecutionWith policy limits budget initialState) :=
-  match equation : forceHostedWith policy limits budget.bytes budget.ticks initialState with
+    Except (Failure × State × Budget) (StateExecutionWith policy fetch limits budget initialState) :=
+  match equation : forceHostedWith policy fetch limits budget.bytes budget.ticks initialState with
   | (.finished value state,ticks) => do
-    let extraction ← extractWith policy limits {budget with ticks:=ticks} state
+    let extraction ← extractWith policy fetch limits {budget with ticks:=ticks} state
     pure ⟨value,state,ticks,equation,extraction⟩
   | (.suspended reason state,ticks) => .error (suspensionFailure reason,state,{budget with ticks := ticks})
   | (.divergent _ state,ticks) => .error (.divergent,state,{budget with ticks := ticks})
   | (.refused _ state,ticks) => .error (.refused,state,{budget with ticks := ticks})
   | (.yielded _ state,ticks) => .error (.yielded,state,{budget with ticks := ticks})
 
-abbrev ExecutionWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+abbrev ExecutionWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget)
     (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :=
-  StateExecutionWith policy limits budget (initial term)
+  StateExecutionWith policy fetch limits budget (initial term)
 
-def executeWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+def executeWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget)
     (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :
-    Except (Failure × State × Budget) (ExecutionWith policy limits budget term) :=
-  executeStateWith policy limits budget (initial term)
+    Except (Failure × State × Budget) (ExecutionWith policy fetch limits budget term) :=
+  executeStateWith policy fetch limits budget (initial term)
 
 /-- Native arguments must already have finite-data/type/quantity admission.
 They enter lazily as closed pure data cells; source thunk forcing and activities
 retain their existing semantics. Actual data construction uses one transition,
 so removed AST evaluation/update instructions consume no artificial ticks. -/
-def executeDataArgumentsWith (policy : State → Bool) (limits : Limits) (budget : Budget)
+def executeDataArgumentsWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget)
     (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) (arguments : List Data) :=
-  executeStateWith policy limits budget (initialDataArguments term arguments)
+  executeStateWith policy fetch limits budget (initialDataArguments term arguments)
 
-def executeDataArguments := executeDataArgumentsWith (fun _ => true)
+def executeDataArguments := executeDataArgumentsWith (fun _ => true) Fetch.none
 /-- Existing clear preview behavior remains the unrestricted raw language. -/
 def force := forceWith (fun _ => true)
-def materialize := materializeWith (fun _ => true)
-def complete := completeWith (fun _ => true)
-abbrev Extraction := ExtractionWith (fun _ => true)
-def extract := extractWith (fun _ => true)
-abbrev Execution := ExecutionWith (fun _ => true)
-def execute := executeWith (fun _ => true)
+def materialize := materializeWith (fun _ => true) Fetch.none
+def complete (fetch : Fetch) := completeWith (fun _ => true) fetch
+abbrev Extraction := ExtractionWith (fun _ => true) Fetch.none
+def extract := extractWith (fun _ => true) Fetch.none
+abbrev Execution := ExecutionWith (fun _ => true) Fetch.none
+def execute := executeWith (fun _ => true) Fetch.none
 
 /-! ## Activities: the yielded Plan is data; the response is typed data -/
 
@@ -448,15 +525,15 @@ def Data.conforms (data : Data) (type : Ty) : Bool := data.conformsUnder [] type
 
 /-- Extract the Plan of a yielded state through the same budgeted
 materialization as every other Data: enter its cell with an empty stack. -/
-def yieldedPlanWith (policy : State → Bool) (limits : Limits) (budget : Budget) (state : State) :
+def yieldedPlanWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget) (state : State) :
     Except (Failure × State × Budget) Result :=
   match state.control with
   | .yielded plan =>
     let entered : State := {state with control:=.enter plan,stack:=[]}
-    match forceHostedWith policy limits budget.bytes budget.ticks entered with
+    match forceHostedWith policy fetch limits budget.bytes budget.ticks entered with
     | (.finished forced retained,ticks) => do
       -- Materialization runs on the scratch copy; the checkpoint keeps its stack.
-      let result ← materializeWith policy limits budget.nodes {budget with ticks:=ticks} forced retained
+      let result ← materializeWith policy fetch limits budget.nodes {budget with ticks:=ticks} forced retained
       if result.value.canonicalBytes > budget.bytes then throw (.budget,result.state,result.remaining)
       pure {result with state:={result.state with control:=state.control,stack:=state.stack}}
     | (.suspended reason retained,ticks) => .error (suspensionFailure reason,retained,{budget with ticks := ticks})
@@ -464,6 +541,8 @@ def yieldedPlanWith (policy : State → Bool) (limits : Limits) (budget : Budget
     | (.refused _ retained,ticks) => .error (.refused,retained,{budget with ticks := ticks})
     | (.yielded _ retained,ticks) => .error (.yielded,retained,{budget with ticks := ticks})
   | _ => .error (.suspended,state,budget)
-def yieldedPlan := yieldedPlanWith (fun _ => true)
+def yieldedPlan (fetch : Fetch) := yieldedPlanWith (fun _ => true) fetch
+
+#assert_axioms fetchable_spec fetchStep_stack
 
 end Minidregg.Theory.ObjectiveBendDemandData

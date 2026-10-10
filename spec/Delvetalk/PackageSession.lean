@@ -169,7 +169,9 @@ def noteIssued (cache : Cache) (reply : Json) : Cache :=
 def runHeld (cache : Cache) (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) (world : Option Host.World := none) :
     Except String Json := do
   let limits := Package.getLimits j
-  if operation == "run" then
+  if operation == "run" && (j.getObjVal? "stored").isOk then
+    Package.executeEntryStoredJson entry (← j.getObjVal? "arguments") limits (← j.getObjVal? "stored")
+  else if operation == "run" then
     let profile := (j.getObjValAs? Bool "profile").toOption.getD false
     Package.executeEntry entry (← j.getObjVal? "arguments") limits profile
   else if operation == "run-data-v1" then

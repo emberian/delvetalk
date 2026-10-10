@@ -42,6 +42,8 @@ def cellAddresses : Cell → List Nat
   | .cached origin value => origin.environment ++ valueAddresses value
   | .native _ => []
   | .nativeCached _ value => valueAddresses value
+  | .stored _ (some value) => valueAddresses value
+  | .stored _ none => []
 
 def frameAddresses : Frame → List Nat
   | .argument _ environment | .extend _ environment | .condition _ _ environment
@@ -85,6 +87,7 @@ def renameCell (f : Nat → Nat) : Cell → Cell
   | .cached origin value => .cached (renameClosure f origin) (renameValue f value)
   | .native origin => .native origin
   | .nativeCached origin value => .nativeCached origin (renameValue f value)
+  | .stored part value => .stored part (value.map (renameValue f))
 
 def renameFrame (f : Nat → Nat) : Frame → Frame
   | .argument term environment => .argument term (environment.map f)
@@ -194,6 +197,7 @@ and otherwise the cells keep address order (`collectByAddress`). -/
 def splitChildren : Cell → List Nat × List Nat
   | .cached origin (.variant _ payload) => (origin.environment, [payload])
   | .nativeCached _ (.variant _ payload) => ([], [payload])
+  | .stored _ (some (.variant _ payload)) => ([], [payload])
   | cell => (cellAddresses cell, [])
 
 /-- One round, depth first: number what `work` reaches without entering a payload; the
@@ -363,6 +367,7 @@ def trimCell (address : Nat) : Cell → Cell
   | .cached origin value => .cached (trimClosure address origin) (trimValue address value)
   | .native origin => .native origin
   | .nativeCached origin value => .nativeCached origin (trimValue address value)
+  | .stored part value => .stored part (value.map (trimValue address))
 
 /-! The compiled trim marks a closure's free slots in one traversal of its term
 (`Term.markFree`), instead of one traversal per slot; `trimCell_eq_fast` (`@[csimp]`). -/
@@ -492,6 +497,9 @@ def trimCellFast (address : Nat) : Cell → Cell
       (match value with
         | .closure body environment => .closure body (trimEnvFast body 1 address environment)
         | value => value)
+  | .stored part value => .stored part (value.map fun value => match value with
+        | .closure body environment => .closure body (trimEnvFast body 1 address environment)
+        | value => value)
 
 @[csimp] theorem trimCell_eq_fast : @trimCell = @trimCellFast := by
   funext address cell
@@ -501,6 +509,10 @@ def trimCellFast (address : Nat) : Cell → Cell
     simp [trimCell, trimCellFast, trimClosure, trimEnvFast_eq]
   | cached origin value | nativeCached origin value =>
     cases value <;> simp [trimCell, trimCellFast, trimClosure, trimValue, trimEnvFast_eq]
+  | stored part value =>
+    cases value with
+    | none => rfl
+    | some value => cases value <;> simp [trimCell, trimCellFast, trimValue, trimEnvFast_eq]
 
 /-- Point every unread environment slot of every cell at the cell itself. -/
 def trim (state : State) : State :=
@@ -542,5 +554,6 @@ theorem collect_garbageExample_roots :
 
 #assert_axioms collect_garbageExample_heap_size
 #assert_axioms collect_garbageExample_roots
+#assert_axioms trimCell_eq_fast
 
 end Minidregg.Theory.ObjectiveBendDemandCollect
