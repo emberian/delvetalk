@@ -550,6 +550,17 @@ class Repl(FrontCase):
         s, done = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(4)), done)
 
+    def test_a_checkpoint_from_before_the_host_restarted_is_repl_restarted_never_a_500(self):
+        tok = self.login()
+        mods = closure('World') + [{'name': 'Package', 'source': PLANS}]
+        s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)], **self.BIND)
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        self.hostd.stateless.proc.kill()  # what a hostd restart does to the REPL: a new process, which issued nothing
+        self.hostd.stateless.proc.wait()
+        s, e = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
+        self.assertEqual((s, e['class'], e['message'], e['_links']['repl']), (409, 'replRestarted', 'the REPL restarted; start the module again',
+                                                                              {'href': '/AGENTS.md/repl'}), e)
+
     def test_repl_imports_the_library_by_name_and_starts_an_activity_from_its_type(self):
         tok = self.login()
         context = record(world=label(''), object=label(self.c), principal=label(DID), handle=label(''), caller=label(''),

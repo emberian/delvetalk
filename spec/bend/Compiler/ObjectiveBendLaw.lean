@@ -45,7 +45,8 @@ inductive LawRef where
   | turn
   /-- The pin of the package the object runs after the write (host extension). -/
   | pin
-  /-- 0 for a write of state, 1 for a reprogram, 2 for an amendment (host extension). -/
+  /-- 0 for a write of state, 1 for a reprogram, 2 for an amendment, 3 proposed: a state write
+  no method of the object made (host extension). Written by name or number. -/
   | kind
   /-- The method whose run made the change, "" for an op (host extension). -/
   | method
@@ -300,6 +301,10 @@ def parseIntList : Nat → List Tok → Except String (List Int × List Tok)
       return (value :: values, after)
     | _ => return ([value], ← expectSym "]" rest)
 
+/-- The request kinds by name: `request.kind == proposed` is `request.kind == 3`. -/
+def kindNumber : String → Option Int
+  | "write" => some 0 | "reprogram" => some 1 | "amend" => some 2 | "proposed" => some 3 | _ => none
+
 def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × List Tok) := do
   let (left, rest) ← parseRef toks
   match rest with
@@ -307,6 +312,14 @@ def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × L
     match left with
     | .subject | .caller | .pin | .method => return (.eqS left text, after)
     | _ => refuse "a text constant compares with request.subject, request.caller, request.pin or request.method only"
+  | .sym "==" :: .ident name :: after =>
+    if left == .kind && name != "new" && name != "request" && name != "old" then
+      match kindNumber name with
+      | some n => return (.eqC .kind n, after)
+      | none => refuse ("request.kind == " ++ name ++ " (a kind is write, reprogram, amend, proposed, or its number)")
+    else
+      let (right, after') ← parseRef (.ident name :: after)
+      return (.eqR left right, after')
   | .sym "==" :: more =>
     if startsInt more then
       let (value, after) ← parseInt more
@@ -455,10 +468,20 @@ theorem parse_refuses_relational :
       (parse "request.subject in new.a.b.c").toBool = false ∧ (parse "count(old.a) <= 3").toBool = false := by
   native_decide
 
+theorem parse_kind_names :
+    (parse "request.kind == proposed").toOption = some (.eqC .kind 3) ∧
+      (parse "request.kind == write or request.kind == 2").toOption = some (.or (.eqC .kind 0) (.eqC .kind 2)) ∧
+      (match parse "request.kind == proposal" with
+        | .error e => e == refusalPrefix ++ "request.kind == proposal (a kind is write, reprogram, amend, proposed, or its number)"
+        | .ok _ => false) = true ∧
+      (parse "new.a == proposed").toBool = false := by
+  native_decide
+
 end Minidregg.Compiler.ObjectiveBendLaw
 
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_tally
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_precedence
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_refuses_nested
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_relational
+#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_kind_names
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_refuses_relational

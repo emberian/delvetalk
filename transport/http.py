@@ -839,6 +839,8 @@ class Handler(BaseHTTPRequestHandler):
         else:
             req = {'op': 'turn-start' if activity else 'run', 'arguments': data.get('arguments', []), **extra}
         reply = repl.send({**req, 'artifact': compiled['artifact']})
+        if 'checkpoint' in data and 'not issued by this process' in str(reply.get('message')):  # a REPL session ends with its host
+            return self.fail('replRestarted', 'the REPL restarted; start the module again', links={'repl': link(PREFIX + '/repl')})
         if reply.get('status') == 'error':
             return self.answer(reply, links={'check': link(PREFIX + '/check')})
         # The default rendering omits hashes like every other reply; only the checkpoint, which the client sends back, stays whole.

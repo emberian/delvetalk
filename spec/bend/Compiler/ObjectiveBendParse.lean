@@ -457,13 +457,14 @@ def joinPieces (pieces : List Expr) (span : Span) : Expr :=
 `Plan.obend` replaces it (`parseObjective`). Not an identifier a source can spell. -/
 def writePlansAlias : String := "$plans"
 
-/-- The marker a `write {f: remove v}` stands as until the module's `State` says whether `f`
-is a relation (`lowerRemove`). Not an identifier a source can spell. -/
+/-- The marker a `write {f: remove v}` stands as until the generics pass has resolved the
+State's field types and so knows whether `f` is a relation (`lowerRemove`). Not an identifier
+a source can spell. -/
 def removeMarker : String := "$remove"
 
-/-- `remove` by the field's type in the module's `State` record: on a relation
-(`Relation<…>`) `remove KEY` is `retract {key}`, on a list `remove ITEM` is
-`removeItem {item}`. -/
+/-- `remove` by the resolved type of the field in the State the module edits: on a relation
+(`relations`, from `Generics.relationFields`) `remove KEY` is `retract {key}`, otherwise
+`remove ITEM` is `removeItem {item}`. -/
 def lowerRemove (plans : String) (relations : List String) : Expr → Expr
   | .call (.var m vs) [.str field fs, value] span =>
     if m == removeMarker then
@@ -1268,11 +1269,8 @@ def parseObjective (source : String) : Except Diagnostic Module := do
   -- `write {...}` names the Plan library by placeholder; it becomes the module's alias.
   let plans := ((imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias)).getD "Plans"
   let decls := decls.map (·.mapVars fun n => if n == writePlansAlias then plans else n)
-  -- `remove`/`amend` in `write {...}` by whether the State's field is a relation.
-  let relations := decls.foldl (fun acc d => match d with
-    | .record "State" _ fields _ => acc ++ (fields.filter fun f => (f.type.splitOn "Relation<").length > 1).map (·.name)
-    | _ => acc) []
-  let decls := decls.map (·.mapExpr (lowerRemove plans relations))
+  -- `remove` in `write {...}` stays the marker `$remove` until the generics pass has resolved
+  -- the State's field types (`Generics.relationFields`, then `lowerRemove`).
   -- `Edits` and `keep()` are derived from the State (the generics pass) only with Plan.obend.
   let declaresState := decls.any fun d => match d with
     | .record "State" .. | .typeAlias "State" .. => true

@@ -1476,8 +1476,8 @@ theorem related_materializeWith {f : Nat → Nat} {D : Nat → Prop} {policy : S
       · obtain ⟨out', folded', same1, same2, outRel⟩ := key
         refine ⟨⟨.record out'.1.reverse, out'.2.1, out'.2.2⟩, ?_, by simp [same1], by simp [same2], outRel⟩
         have gate' : RecordGate budget (fields.map fun field => (field.1, f field.2)) := by
-          obtain ⟨c1, c2, c3, c4⟩ := gate
-          refine ⟨c1, by simpa using c2, ?_, by simpa using c4⟩
+          obtain ⟨c1, c3, c4⟩ := gate
+          refine ⟨c1, ?_, by simpa using c4⟩
           simpa [List.map_map, Function.comp_def] using c3
         rw [show renameValue f (.record fields) = .record (fields.map fun field => (field.1, f field.2)) from rfl,
           materializeWith_record_gate gate']
@@ -1540,15 +1540,13 @@ theorem related_completeWith {f : Nat → Nat} {D : Nat → Prop} {policy : Stat
         obtain ⟨a', materialized', aValue, aRemaining, aRel⟩ :=
           related_materializeWith respects limits limits' _ _ _ _ _ _ related room controlIn materialized
         split at rest
-        · rename_i bytes encodedAt
-          split at rest
-          · simp at rest
-          · rename_i small
-            simp at rest; subst rest
-            refine ⟨a', ?_, aValue, aRemaining, aRel⟩
-            simp only [renameControl, List.map_nil] at allowedT materialized'
-            simp [completeWith, allowedT, renameControl, materialized', aValue, encodedAt, small]
         · simp at rest
+        · rename_i small
+          simp at rest; subst rest
+          refine ⟨a', ?_, aValue, aRemaining, aRel⟩
+          simp only [renameControl, List.map_nil] at allowedT materialized'
+          have small' : ¬ budget.bytes < a'.value.canonicalBytes := by rw [aValue]; exact small
+          simp [completeWith, allowedT, renameControl, materialized', small']
       | cons frame rest => simp [completeWith, allowed] at found
     | _ => simp [completeWith, allowed] at found
 
@@ -1585,14 +1583,19 @@ theorem related_yieldedPlanWith {f : Nat → Nat} {D : Nat → Prop} {policy : S
           cases outcome' <;> simp only [OutcomeRel] at rel
           obtain ⟨valueEq, valueIn, retainedRel⟩ := rel
           subst valueEq
-          simp at found
-          obtain ⟨a, materialized, rfl⟩ := found
+          simp only [except_bind_ok] at found
+          obtain ⟨a, materialized, rest⟩ := found
+          by_cases small : a.value.canonicalBytes > budget.bytes
+          · simp [small] at rest
+          simp [small] at rest
+          subst rest
           obtain ⟨a', materialized', aValue, aRemaining, aRel⟩ :=
             related_materializeWith respects limits limits' _ _ _ _ _ _ retainedRel
               (enteredRoom.shift enteredRel retainedRel) valueIn materialized
           refine ⟨{a' with state := {a'.state with control := .yielded (f plan), stack := stack.map (renameFrame f)}},
             ?_, aValue, aRemaining, aRel.heap, controlIn, rfl, stackIn, rfl⟩
-          simp [materialized']
+          have small' : ¬ budget.bytes < a'.value.canonicalBytes := by rw [aValue]; exact small
+          simp [materialized', small']
       | _ => simp at found
   | _ => simp [yieldedPlanWith] at found
 

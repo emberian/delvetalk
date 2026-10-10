@@ -80,6 +80,22 @@ partial def writeData (out : ByteArray) (d : Data) : ByteArray :=
 /-- The canonical bytes of Data. -/
 def encode (d : Data) : ByteArray := writeData ByteArray.empty d
 
+-- The byte budget's measure (`Data.canonicalBytes`, in the machine's module) is the size of
+-- these bytes: every head width, a bignum, a list, a chain that is not one, a repeated field.
+#guard
+  let cases : List Data := [.natural 0, .natural 23, .natural 24, .natural 255, .natural 256,
+    .natural 65535, .natural 65536, .natural 4294967296, .natural 18446744073709551615,
+    .natural 18446744073709551616, .natural (2 ^ 300), .boolean true, .label "", .label "Grüße ✾",
+    .label (String.ofList (List.replicate 300 'x')), listData #[], listData #[.natural 1, .label "a"],
+    listData ((List.range 30).map Data.natural).toArray,
+    .variant "cons" (.record [("head", .natural 1), ("tail", .natural 2)]),
+    .variant "cons" (.record [("tail", listData #[]), ("head", .boolean false)]),
+    .variant "nil" (.record [("x", .natural 1)]),
+    .record [("bb", .natural 1), ("a", .label "x"), ("bb", .natural 99999)],
+    .record ((List.range 30).map fun i => (toString i, .boolean true)),
+    .variant "tree" (.record [("kids", listData #[.variant "leaf" (.record [])])])]
+  cases.all fun d => d.canonicalBytes == (encode d).size
+
 /-- As `encode`, refusing a record that repeats a field name (a map cannot). -/
 partial def encodeChecked (d : Data) : Except String ByteArray :=
   let rec unique : Data → Bool
@@ -104,7 +120,11 @@ partial def writeJson (out : ByteArray) (j : Json) : Except String ByteArray :=
         | k + 1 => if m % 10 == 0 then scale (m / 10) k else throw "a fraction has no canonical form here"
       do
         let m ← scale n.mantissa n.exponent
-        if m ≥ 0 then pure (natural out m.toNat) else pure (head out 1 (m.natAbs - 1))
+        if m ≥ 0 then pure (natural out m.toNat)
+        else if m.natAbs - 1 < twoTo64 then pure (head out 1 (m.natAbs - 1))
+        -- DAG-CBOR has no negative bignum (tag 3 is refused), and the eight-byte head would
+        -- keep only the low 64 bits, giving two integers one encoding.
+        else throw "a negative integer below -2^64 has no canonical form"
   | .arr items => items.foldlM writeJson (head out 4 items.size)
   | .obj fields =>
       let sorted := (fields.toArray.qsort fun a b => keyLess a.1 b.1).toList

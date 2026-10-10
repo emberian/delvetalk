@@ -100,8 +100,8 @@ services:
       # The question a visitor asks first, then the one only a live host can
       # answer: /AGENTS.md is served without the host, so a broken chain would
       # still pass it; the home page shows the journal height from world-status
-      # as `ht.<n>` (pages.html), and `ht.None` when world-open refused the journal.
-      test: ["CMD", "python3", "-c", "import re,urllib.request as u; u.urlopen('http://127.0.0.1:8765/AGENTS.md', timeout=5).read(); assert re.search(rb'class=.code.>ht[.][0-9]+<', u.urlopen('http://127.0.0.1:8765/', timeout=30).read())"]
+      # as `entry <n>` (pages.html), and `entry None` when world-open refused the journal.
+      test: ["CMD", "python3", "-c", "import re,urllib.request as u; u.urlopen('http://127.0.0.1:8765/AGENTS.md', timeout=5).read(); assert re.search(rb'class=.code.>entry [0-9]+<', u.urlopen('http://127.0.0.1:8765/', timeout=30).read())"]
       interval: 30s
       timeout: 10s
       retries: 3

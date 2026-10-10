@@ -7,6 +7,7 @@ consistency, or authority. -/
 import Lean
 import Theory.AxiomPin
 import Compiler.Sha256
+import Std.Data.HashSet.Lemmas
 namespace Minidregg.Theory.ObjectiveBendOpenRecursion
 set_option autoImplicit false
 
@@ -256,6 +257,25 @@ def textWordsOf (s : String) : List String :=
     else if acc.2.isEmpty then acc else (String.ofList acc.2.reverse :: acc.1, [])) ([], [])
   (if current.isEmpty then words else String.ofList current.reverse :: words).reverse
 
+/-- Whether a word of `words` is a whole word of `text`: the reference, by list membership. -/
+def textHasAnyWord (text words : String) : Bool :=
+  (textWordsOf text).any (textWordsOf words).contains
+
+/-- The same through a hash set of the wanted words, built once: linear in both texts where the
+list search is their product (2,000 words against 2,000 is four million comparisons). -/
+def textHasAnyWordFast (text words : String) : Bool :=
+  let wanted := Std.HashSet.ofList (textWordsOf words)
+  (textWordsOf text).any wanted.contains
+
+@[csimp] theorem textHasAnyWord_eq_fast : @textHasAnyWord = @textHasAnyWordFast := by
+  funext text words
+  unfold textHasAnyWord textHasAnyWordFast
+  congr 1
+  funext word
+  exact Std.HashSet.contains_ofList.symm
+
+#assert_axioms textHasAnyWord_eq_fast
+
 def primitiveResult : Primitive → Term → Term → Option Term
   | .add, .nat a, .nat b => some (.nat (a + b))
   | .multiply, .nat a, .nat b => some (.nat (a * b))
@@ -272,8 +292,7 @@ def primitiveResult : Primitive → Term → Term → Option Term
       some (.nat (if a.utf8ByteSize < b.utf8ByteSize then 0 else if b.utf8ByteSize < a.utf8ByteSize then 2
         else if a == b then 1 else if decide (a < b) then 0 else 2))
   | .textHasAny, .label text, .label words =>
-      let wanted := textWordsOf words
-      some (.boolean ((textWordsOf text).any wanted.contains))
+      some (.boolean (textHasAnyWord text words))
   | .textSpan, .label text, .label alphabet =>
       some (.nat (textPrefixScan alphabet true text.utf8ByteSize (String.Legacy.iter text) 0 0).1)
   | .textBreak, .label text, .label alphabet =>
