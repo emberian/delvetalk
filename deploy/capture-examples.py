@@ -165,9 +165,8 @@ def planter(cap):
     cap.say('Prose instead of a spell: the garden asks the interpreter, and the turn waits for it.')
     waiting = cap.step('POST', '/world/garden/receive', {'intent': 'plant-3', 'spell': 'please plant me something violet for the owls'})
     cap.interpret('delvetalk garden plant\nseed: a bell for the owls\ncolour: violet')
-    cap.say("(The town's interpreter answered with a spell; the turn resumed. Its card is in your offers.)")
+    cap.say("(The town's interpreter answered with a spell; the turn resumed and the garden planted it at once. The card is in your offers.)")
     cap.step('GET', f'/offers?after={waiting["receipt"]["height"] - 1}')
-    cap.step('POST', '/world/garden/receive', {'intent': 'plant-3-yes', 'spell': 'yes'})
     cap.step('GET', '/receipt/plant-1')
     cap.step('GET', '/world/garden/bell/1/card')
 

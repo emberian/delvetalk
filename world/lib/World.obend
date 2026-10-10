@@ -9,8 +9,8 @@ import ./Plan.obend as Plans
 # result's type parameter cannot be inferred (`view`, `call` when its result is read,
 # `interpret`); `write {f: op v}` is `world.write(edits)`. Each method's result is a closed
 # sum of its own, so the response type belongs to the call site, as a function's result
-# does. A protocol line is a promise the host keeps: `spell`, `subscribe`/`unsubscribe`,
-# `viewDerived` and `viewAt` join when the host answers them.
+# does. A protocol line is a promise the host keeps: `spell` joins when the host answers it
+# (host8 lists it but has no arm for it yet).
 record Message:
   object: Plans.Reference
   method: String
@@ -20,6 +20,25 @@ sum Viewed<S>:
   viewed: {version: Nat, state: S}
   denied: {}
   refused: {clause: String}
+# A derived view (`viewDerived`): the value of the target's pure `view`, typed at the call site.
+sum Derived<T>:
+  derived: {version: Nat, value: T}
+  denied: {}
+  refused: {clause: String}
+sum Subscribed:
+  subscribed: {}
+  denied: {}
+  refused: {clause: String}
+# What a `changed` delivery carries to a subscriber's `changed` method (WHOLENESS §3): the
+# object and field written, its version after, and the rows or items added and removed (a
+# scalar's new and old value as one-item lists). The subscriber types `inserted` and
+# `retracted` by its own `changed` input; this is the shape with them as Data.
+record Changed:
+  object: Plans.Reference
+  field: String
+  version: Nat
+  inserted: Data
+  retracted: Data
 sum Written:
   written: {}
   refused: {clause: String}
@@ -83,6 +102,8 @@ sum Carded:
 protocol world:
   view<S>({object: Plans.Reference}) -> Viewed<S>
   viewField<S>({object: Plans.Reference, field: String}) -> Viewed<S>
+  viewAt<S>({object: Plans.Reference, version: Nat}) -> Viewed<S>
+  viewDerived<T>({object: Plans.Reference, view: String}) -> Derived<T>
   write<E>(E) -> Written
   judge<E>(E) -> Judged
   call<R>({object: Plans.Reference, method: String, argument: Data}) -> Returned<R>
@@ -109,3 +130,5 @@ protocol world:
   revoke({id: String}) -> Revoked
   objects({prefix: String, after: String}) -> Listed
   card({object: Plans.Reference}) -> Carded
+  subscribe({object: Plans.Reference, field: String}) -> Subscribed
+  unsubscribe({object: Plans.Reference, field: String}) -> Subscribed
