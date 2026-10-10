@@ -251,6 +251,20 @@ class Wakes(Chain):
         # A forged `due` from the owner fires nothing: only the wake's own sends count.
         self.assertEqual(get(self.turn(wake, "due", record(id=nat(1), at=nat(31)), principal=OWNER)["result"]["payload"], "count"), nat(0))
 
+    def test_a_clock_jump_fires_once_and_rearms_from_now(self):
+        """Transport's clock is wall minutes: the first advance jumps by millions. Missed firings
+        are not made up; the next is a period from the clock."""
+        wake = self.wake()
+        self.avatar(OWNER)
+        self.turn(wake, "schedule", record(at=nat(0), every=nat(5), action=variant("notify")), principal=OWNER)
+        self.deliver_all()
+        self.host.send(op="world-advance", height=1000)
+        self.deliver_all()
+        self.assertEqual(self.inbox(OWNER), [(OWNER, "scheduled at 5")])
+        self.host.send(op="world-advance", height=1006)
+        self.deliver_all()
+        self.assertEqual(self.inbox(OWNER), [(OWNER, "scheduled at 5"), (OWNER, "scheduled at 1005")])
+
     def test_a_once_schedule_fires_at_its_time_and_stands_down(self):
         wake = self.wake()
         self.avatar(OWNER)

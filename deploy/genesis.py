@@ -111,6 +111,14 @@ def run(host, opener=OPENER):
                      'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal'), 'reply': reply})
         if reply.get('status') != 'created':
             return made, None
+    # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
+    # garden existed, hears each planting now, and ticks the tide every 60 clock minutes.
+    wake = 'wake/' + opener
+    tide = next(m for m in made if m['object'] == 'tide')
+    tide['wake'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': wake, 'method': method, 'argument': argument,
+                               'identity': 'genesis-' + method}).get('status')
+                    for method, argument in (('arrived', rec()),
+                                             ('schedule', rec(at=nat(0), every=nat(60), action={'tag': 'variant', 'label': 'call', 'payload': rec(card=lab('tide'), method=lab('tick'))})))]
     # One card per door: each door's object publishes its page(), which the bridge drafts as `wiki: <Door>` for the hand to post.
     for label, _, to in DOORS:
         if to and any(m['object'] == to for m in made):

@@ -64,6 +64,20 @@ class Genesis(unittest.TestCase):
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
         self.assertIn(ORIGIN + '/AGENTS.md', menu)
 
+    def test_the_openers_wake_ticks_the_tide_every_hour_with_nobody_posting(self):
+        """OFFERING §4: genesis gives the opener's wake a schedule every 60 clock minutes that ticks
+        the tide, and its planting subscription (arrival ran before the garden existed)."""
+        tide = next(m for m in self.made if m['object'] == 'tide')
+        self.assertEqual(tide['wake'], ['admitted', 'admitted'], tide)
+        def ticks():
+            state = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'tide'})['state']
+            return {f['name']: f['value'] for f in state['fields']}['ticks']['value']
+        clock = self.host.send({'op': 'world-status'}).get('clock', 0)
+        for minutes in (30, 61, 125):
+            self.host.send({'op': 'world-advance', 'principal': 'transport', 'height': clock + minutes})
+            self.host.send({'op': 'world-deliver', 'principal': 'transport', 'limit': 64})
+        self.assertEqual(ticks(), '2')
+
     def test_six_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
         self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'rooms', 'tide', 'workshop'], pages)

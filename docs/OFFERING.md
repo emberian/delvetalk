@@ -236,6 +236,11 @@ world than it left. Exact triggers:
   wake `watchBell {bell}` (run after the planting commits), so `On.turns` on
   the bell's `rung` notes `garden/bell/N.rung turned true` when it rings. Test:
   `tests/test_arrive.py` `ToldWithoutPosting`.
+- **Every 60 clock minutes** the opener's wake ticks the tide (genesis turns
+  `wake/<opener> schedule {at: 0, every: 60, action: call {card: tide, method:
+  tick}}`; a schedule re-arms itself, and a clock jump fires once and re-arms
+  from now), so the tide's card, the morning card, changes with nobody posting.
+  Test: `tests/test_genesis.py`.
 - **Every enter, leave and take in a Place**, admitted or refused, inserts a
   trace keyed `{at, who, action, n}`; the card shows the last eight. A card
   read tomorrow shows who passed today.

@@ -292,7 +292,12 @@ def due(state: State, input: {id: Nat, at: Nat}, context: Abi.Context) -> Activi
 def dueTrigger(found: Lists.Maybe<Trigger>, at: Nat, context: Abi.Context, state: State) -> Activity<Done>:
   match found:
     case none(_): Done.fired({count: 0n})
-    case some(s): if at == 0n then ended(s.value) else waited(s.value, at, context, state)
+    case some(s): if at == 0n then ended(s.value) else waited(s.value, nextAt(at, everyOf(s.value.event), context.clock), context, state)
+# A `due` whose time the clock has already passed (the clock jumped: transport's is wall
+# minutes) waits a period from now; missed firings are not made up. A resumed turn sees the
+# clock of its start, so this is judged here, in the fresh `due` turn.
+def nextAt(at: Nat, every: Nat, clock: Nat) -> Nat:
+  if at > clock then at else clock + every
 def ended(trigger: Trigger) -> Activity<Done>:
   let written(_) = write {triggers: removeItem trigger}
   Done.fired({count: 0n})
