@@ -1162,10 +1162,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (some { cls, reason := some reason, object := some ctx.object, expected }) (onEnd := endedIfLate)
     return (w', turnReply w' r)
   | .error (.suspend sp si patience checkpoint interpretation post) =>
-    let utterance := (interpretation.bind fun i => (i.getObjValAs? String "utterance").toOption).toList
     let interpretation := interpretation.map compactInterpretation
-    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson (dataTexts ctx.argument ++ utterance)
-      ((interpretation.map (·.2)).getD #[])
+    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson ((interpretation.map (·.2)).getD #[])
     let interpretation := interpretation.map (·.1)
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
