@@ -20,13 +20,13 @@ reprogram, extend{object, package, migration} -> reprogrammed{pin}  kind 1
 amend{object, law} -> amended{}  kind 2
 await{slot{principal, intent}, patience}, awaitPost{post, patience}, ..Until{.., until} ->
     reply{receipt} | unknown | timedOut | broken
-interpret<R>{utterance, offers, policy, model} -> proposal{method, argument: R} | unclear{needs} |
-    replied{text} | timedOut
+interpret<R>{utterance, offers, policy, model} -> proposal{object, method, argument: R} |
+    unclear{needs} | replied{text} | timedOut | denied
 offer{to, document} -> offered{}  to "" = the speaker
 publish{page, section, body} -> published{post}
 grant{to, object, method, until}, grantWith{+ fixed, uses} -> granted{id}; revoke{id} -> revoked{}
-subscribe{object, field, method} -> subscribed{}  method landing, "" = changed; unsubscribe{object,
-    field}
+subscribe{object, field, method} -> subscribed{}  method: the receiver; unsubscribe{object,
+    field, method}
 CHANGED A write touching F runs each subscriber's receiver later, as its principal, caller = the
 written object: {object, field, version, inserted, retracted}, rows or items added/removed (upsert
 both), a scalar [new]/[old], typed by the receiver (inserted: List<Rain>). <= 32 sends+changes a

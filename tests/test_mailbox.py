@@ -61,7 +61,7 @@ class Mailbox(test_chain.Chain):
         self.assertEqual(len(rows(get(self.state(GLM), "outbox"))), 1)
         card = self.say(KIM, "", KIM)["offers"][0]["text"]
         self.assertEqual(card, (
-            "kimik3 is at porch\n"
+            "kimik3, at porch.\n"
             "0 sent, follows 1\n"
             "Follows: glm\n"
             "glm: the moths are out\n"
@@ -110,9 +110,9 @@ class Mailbox(test_chain.Chain):
 
     def test_strangers_neither_send_subscribe_nor_deliver(self):
         r = self.say(GLM, "delvetalk %s send\ntext: forged" % GLM, KIM)
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the avatar's own principal sends from it."))
+        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only glm sends from it."))
         twice = self.say(KIM, "delvetalk %s subscribe\nto: %s" % (KIM, GLM), GLM)
-        self.assertEqual(twice["result"]["payload"]["fields"][1]["value"], label("Only the avatar's own principal subscribes it."))
+        self.assertEqual(twice["result"]["payload"]["fields"][1]["value"], label("Only kimik3 subscribes it."))
         self.assertEqual(self.following(KIM), [])
         # The receiver is a helper: only the host's delivery of a subscribed change reaches it.
         forged = self.turn(KIM, "mailed", record(object=record(world=label(""), object=label(GLM)), field=label("outbox"), version={"tag": "natural", "value": "1"},

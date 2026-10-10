@@ -7,18 +7,8 @@ import ./World.obend as World
 import ./Card.obend as Card
 record State:
   count: Nat
-# What a creator may supply; the host lays it over initial().
-type Seed = {}
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
-def defaultSeed() -> Seed:
-  {}
-def seeded(seed: Seed) -> State:
-  {count: 0n}
 def initial() -> State:
-  seeded(defaultSeed())
+  {count: 0n}
 # Counts and sends tick to itself: the cycle the host's causal ledger must stop.
 def tick(state: State, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {count: add 1n}
@@ -33,6 +23,5 @@ def blurb() -> Card.Door:
   {word: "loop", blurb: "Ticks itself until the causal budget runs out."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("Ticks: {natText(state.count)}\n")

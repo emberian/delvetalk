@@ -69,6 +69,7 @@ sum Interpreted<R>:
   unclear: {needs: Document.Names}
   replied: {text: String}
   timedOut: {}
+  denied: {}
   refused: {clause: String}
 sum Offered:
   offered: {}

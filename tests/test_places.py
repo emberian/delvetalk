@@ -86,24 +86,24 @@ class Floor(Chain):
     def test_the_room_card_lists_who_is_here_and_the_exits(self):
         self.world()
         text = self.card("porch")
-        self.assertEqual(text, "Porch\nabout Porch\nHere: glm\nExit in to garden\n")
-        self.assertEqual(self.card("garden"), "Garden\nabout Garden\nLying here: stone\nExit out to porch\n")
+        self.assertEqual(text, "Porch\nabout Porch\nHere: glm\nExit in to garden\nSay: delvetalk porch say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.\n")
+        self.assertEqual(self.card("garden"), "Garden\nabout Garden\nLying here: stone\nExit out to porch\nSay: delvetalk garden say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.\n")
 
     def test_two_movers_in_one_place_both_appear_on_describe(self):
         self.make("porch", closure("Place"), place_seed("Porch", [("in", "garden")], present=["glm", "kimik3"]))
-        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: glm\nHere: kimik3\nExit in to garden\n")
+        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: glm\nHere: kimik3\nExit in to garden\nSay: delvetalk porch say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.\n")
 
     def test_enter_appends_in_order_and_a_second_entry_is_refused(self):
         self.make("porch", closure("Place"), place_seed("Porch"))
         for who in ("glm", "kimik3"):
             self.assertEqual(self.result_label(self.turn("porch", "enter", record(), principal=who)), "done")
-        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: glm\nHere: kimik3\nTraces:\n  kimik3 enter\n  glm enter\n")
+        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: glm\nHere: kimik3\nSay: delvetalk porch say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.\nTraces (the last eight, refusals too):\n  kimik3 enter\n  glm enter\n")
         before = self.version("porch")
         again = self.turn("porch", "enter", record(), principal="glm")
         self.assertEqual(self.refusal_reason(again), "Already here.")
         # The refusal changes who is here not at all, and leaves a trace.
         self.assertEqual(self.version("porch"), before + 1)
-        self.assertIn("Traces:\n  glm enter: refused alreadyHere\n", self.card("porch"))
+        self.assertIn("Traces (the last eight, refusals too):\n  glm enter: refused alreadyHere\n", self.card("porch"))
 
     def test_a_thing_held_in_the_garden_is_dropped_on_the_porch_and_seen_there(self):
         self.make("porch", closure("Place"), place_seed("Porch", [("in", "garden")], present=["glm"]))
@@ -127,7 +127,7 @@ class Floor(Chain):
         self.assertEqual(self.refusal_reason(reply), "Only someone here can put things down.")
         # Nothing moved; the porch keeps a trace of the refused put.
         self.assertEqual((self.version("porch"), self.version("stone")), (1, 0))
-        self.assertIn("Traces:\n  kimik3 put: refused notPresent\n", self.card("porch"))
+        self.assertIn("Traces (the last eight, refusals too):\n  kimik3 put: refused notPresent\n", self.card("porch"))
 
     # --- giving is offer and accept ------------------------------------------------------
 
@@ -277,7 +277,7 @@ class Floor(Chain):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3"]))
         reply = self.turn("porch", "leave", record(), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
-        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: kimik3\nTraces:\n  glm leave\n")
+        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: kimik3\nSay: delvetalk porch say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.\nTraces (the last eight, refusals too):\n  glm leave\n")
 
     def test_take_removes_from_things_when_the_thing_asks_for_itself(self):
         self.make("garden", closure("Place"), place_seed("Garden", present=["glm"], things=["stone", "fern"]))
@@ -285,7 +285,7 @@ class Floor(Chain):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
         reply = self.turn("stone", "acquire", record(), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
-        self.assertEqual(self.card("garden"), "Garden\nabout Garden\nHere: glm\nLying here: fern\nTraces:\n  glm take\n")
+        self.assertEqual(self.card("garden"), "Garden\nabout Garden\nHere: glm\nLying here: fern\nSay: delvetalk garden say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.\nTraces (the last eight, refusals too):\n  glm take\n")
 
     def test_a_place_hears_take_and_put_only_from_the_thing_itself(self):
         self.make("garden", closure("Place"), place_seed("Garden", present=["glm"], things=["stone"]))
@@ -341,7 +341,7 @@ class Scoped(Chain):
 
     def test_look_shows_the_place_and_two_of_a_name_are_asked_about(self):
         look = self.say("look")
-        self.assertEqual(look["offers"][0]["text"], "Porch\nabout Porch\nHere: glm\nHere: kimik3\nLying here: stone\nExit in to garden\nYou are here.\n")
+        self.assertEqual(look["offers"][0]["text"], "Porch\nabout Porch\nHere: glm\nHere: kimik3\nLying here: stone\nExit in to garden\nSay: delvetalk porch say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.\nYou are here.\n")
         self.make("porch2", closure("Place"), place_seed("Porch", present=["glm"], things=["stone", "pebble"]))
         self.make("pebble", closure("Thing"), thing_seed("stone", location="porch2"))
         self.make("glm2", closure("Avatar"), avatar_seed("glm2", "porch2"))
@@ -430,7 +430,8 @@ class Traces(Chain):
         self.assertEqual(card, (
             "Porch\n"
             "about Porch\n"
-            "Traces:\n"
+            "Say: delvetalk porch say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.\n"
+            "Traces (the last eight, refusals too):\n"
             "  glm.delve.town leave: refused notHere\n"
             "  glm.delve.town leave\n"
             "  glm.delve.town enter\n"
@@ -451,7 +452,7 @@ class Traces(Chain):
             "    delvetalk porch whisper\n"
             "    to: <text, 1 to 160 characters>\n"
             "    line: <text, 1 to 280 characters>\n"))
-        lines = card.split("Traces:\n")[1].split("\nReply with a spell:")[0].strip("\n").split("\n")
+        lines = card.split("Traces (the last eight, refusals too):\n")[1].split("\nReply with a spell:")[0].strip("\n").split("\n")
         self.assertEqual(len(lines), 8)
         self.assertEqual(lines[0], "  glm.delve.town leave: refused notHere")
         self.assertEqual(lines[1], "  glm.delve.town leave")

@@ -6,6 +6,8 @@ import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
 import ./Text.obend as Text
 # The commons (after main's protocols/commons): a bounded place graph, directed paths,
 # entry places, gates on paths, and declared presence. A turn moves only its own
@@ -28,38 +30,24 @@ record Gate:
   from: String
   to: String
   rule: Rule
-record Presence:
-  who: String
-  at: String
+# Who is where, keyed {who} (Rows.Presence, as a scene keeps it).
+type Presence = Rows.Presence
 record State:
   owner: String
   places: Lists.List<Place>
   paths: Lists.List<Path>
   entries: Lists.List<String>
   gates: Lists.List<Gate>
-  presence: Lists.List<Presence>
-record Seed:
-  owner: String
-  places: Lists.List<Place>
-  paths: Lists.List<Path>
-  entries: Lists.List<String>
-  gates: Lists.List<Gate>
-record Edits:
-  gates: Plans.Entries<Gate, Gate>
-  presence: Plans.Entries<Presence, Presence>
+  presence: Relations.Relation<Presence>
 # Anyone enters, moves and leaves (the code moves only the turn's own principal and
 # checks every gate); only the owner changes who a gate admits.
 law owner "only the owner changes it; anyone enters, moves and leaves": request.subject == new.owner or (request.kind == 0 and (request.method == "enter" or request.method == "move" or request.method == "leave" or request.method == "receive"))
-def defaultSeed() -> Seed:
-  {owner: "", places: Lists.List.nil(), paths: Lists.List.nil(), entries: Lists.List.nil(), gates: Lists.List.nil()}
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, places: seed.places, paths: seed.paths, entries: seed.entries, gates: seed.gates, presence: Lists.List.nil()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {gates: Plans.Entries.keep({}), presence: Plans.Entries.keep({})}
+  {owner: "", places: Lists.List.nil(), paths: Lists.List.nil(), entries: Lists.List.nil(), gates: Lists.List.nil(), presence: Relations.empty()}
+def relations() -> Relations.Decls:
+  Lists.append(Relations.Decls.nil(), {field: "presence", key: Text.words("who"), limit: presenceMax()})
 # Bounds, as main's commons had them: eight places, sixteen paths, sixteen gates; and
-# sixteen present, sixteen names on a gate.
+# sixteen present, sixteen names on a gate (a seventeenth is refused by name).
 def placesMax() -> Nat:
   8n
 def pathsMax() -> Nat:
@@ -67,6 +55,8 @@ def pathsMax() -> Nat:
 def gatesMax() -> Nat:
   16n
 def presenceMax() -> Nat:
+  16n
+def namesMax() -> Nat:
   16n
 def placeNamed(state: State, name: String) -> Lists.Maybe<Place>:
   Lists.find(state.places, fn(p: Place) -> Bool: p.name == name)
@@ -78,7 +68,7 @@ def problem(state: State) -> String:
 def pathFrom(state: State, from: String, to: String) -> Bool:
   Lists.any(state.paths, fn(p: Path) -> Bool: p.from == from && p.to == to)
 def here(state: State, context: Abi.Context) -> Lists.Maybe<Presence>:
-  Lists.find(state.presence, fn(p: Presence) -> Bool: p.who == context.principal)
+  Rows.presentAs(state.presence, context.principal)
 def gateOn(state: State, from: String, to: String) -> Lists.Maybe<Gate>:
   Lists.find(state.gates, fn(g: Gate) -> Bool: g.from == from && g.to == to)
 # Who may cross: "" when the turn may, else why not.
@@ -96,16 +86,14 @@ sum Done:
   refused: Card.Refusal
 def no(clause: String, reading: String) -> Done:
   Done.refused({clause: clause, reading: reading})
-# The helpers take the State after their own inputs: a definition whose first parameter is
-# the State is a method any turn may run.
 def enter(state: State, input: {place: String}, context: Abi.Context) -> Activity<Done>:
   if problem(state) != "" then no("misconfigured", "The commons is misconfigured: {problem(state)}") else entering(here(state, context), input.place, state, context)
 def entering(found: Lists.Maybe<Presence>, place: String, state: State, context: Abi.Context) -> Activity<Done>:
   match found:
     case some(p): no("alreadyHere", "Already here, at {p.value.at}")
-    case none(_): if Lists.any(state.entries, fn(e: String) -> Bool: e == place) == false then no("noWayIn", "{place} is not a way in") else if Lists.length(state.presence) >= presenceMax() then no("full", "Sixteen are here already.") else arrive(place, context)
+    case none(_): if Lists.any(state.entries, fn(e: String) -> Bool: e == place) == false then no("noWayIn", "{place} is not a way in") else if Relations.count(state.presence) >= presenceMax() then no("full", "{natText(presenceMax())} are here already.") else arrive(place, context)
 def arrive(place: String, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: append {who: context.principal, at: place}}
+  let written(_) = write {presence: insert {who: context.principal, at: place}}
   Done.moved({from: "", to: place})
 def move(state: State, input: {to: String}, context: Abi.Context) -> Activity<Done>:
   match here(state, context):
@@ -114,14 +102,14 @@ def move(state: State, input: {to: String}, context: Abi.Context) -> Activity<Do
 def stepping(me: Presence, to: String, state: State, context: Abi.Context) -> Activity<Done>:
   if pathFrom(state, me.at, to) == false then no("noPath", "No path from {me.at} to {to}") else if gateCheck(gateOn(state, me.at, to), context) != "" then no("gated", "Gated: {gateCheck(gateOn(state, me.at, to), context)}") else crossed(me, to)
 def crossed(me: Presence, to: String) -> Activity<Done>:
-  let written(_) = world.write(extend(keep(), {presence: Plans.Entries.amendItem({item: me, change: {who: me.who, at: to}})}))
+  let written(_) = write {presence: upsert {who: me.who, at: to}}
   Done.moved({from: me.at, to: to})
 def leave(state: State, context: Abi.Context) -> Activity<Done>:
   match here(state, context):
     case none(_): no("notHere", "Not here.")
     case some(p): departing(p.value)
 def departing(me: Presence) -> Activity<Done>:
-  let written(_) = write {presence: removeItem me}
+  let written(_) = write {presence: retract {who: me.who}}
   Done.moved({from: me.at, to: ""})
 # The owner lets one more principal through a members gate.
 def allow(state: State, input: {from: String, to: String, principal: String}, context: Abi.Context) -> Activity<Done>:
@@ -132,7 +120,7 @@ def allowedOn(found: Lists.Maybe<Gate>, principal: String) -> Activity<Done>:
     case some(g): allowing(g.value, principal)
 def allowing(gate: Gate, principal: String) -> Activity<Done>:
   match gate.rule:
-    case members(m): if Lists.length(m.names) >= 16n then no("gateFull", "A gate knows sixteen names.") else if Lists.any(m.names, fn(n: String) -> Bool: n == principal) then no("alreadyAllowed", "Already allowed.") else regated(gate, extend(gate, {rule: Rule.members({names: Lists.append(m.names, principal)})}))
+    case members(m): if Lists.length(m.names) >= namesMax() then no("gateFull", "A gate knows {natText(namesMax())} names.") else if Lists.any(m.names, fn(n: String) -> Bool: n == principal) then no("alreadyAllowed", "Already allowed.") else regated(gate, extend(gate, {rule: Rule.members({names: Lists.append(m.names, principal)})}))
     case _: no("notMembersGate", "Only a members gate lists who may cross.")
 def regated(gate: Gate, next: Gate) -> Activity<Done>:
   let written(_) = world.write(extend(keep(), {gates: Plans.Entries.amendItem({item: gate, change: next})}))
@@ -146,7 +134,7 @@ form leave:
 def methods() -> Lists.List<String>:
   Text.words("allow")
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: enterForm(), tail: Card.Forms.cons({head: moveForm(), tail: Card.Forms.cons({head: leaveForm(), tail: Card.Forms.nil()})})})
+  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), enterForm()), moveForm()), leaveForm())
 def blurb() -> Card.Door:
   {word: "commons", blurb: "Places, paths and gates: enter, walk, and see who may cross."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
@@ -167,14 +155,14 @@ def standing(state: State, me: Presence, context: Abi.Context) -> Document.Docum
     case none(_): Document.text("You are at {me.at}, which is gone.\n")
     case some(p): Document.Document.sequence({items: Document.Documents.cons({head: Document.text("COMMONS: you are at {p.value.title}.\n{p.value.description}\n{others(state, me.at, context)}Paths:\n"), tail: Card.clipped(Lists.map(Lists.filter(state.paths, fn(path: Path) -> Bool: path.from == me.at), exitLine(state, me.at, context)), 8n)})})
 def others(state: State, at: String, context: Abi.Context) -> String:
-  counted(Lists.length(Lists.filter(state.presence, fn(p: Presence) -> Bool: besides(p, at, context.principal))))
+  counted(Lists.length(Lists.filter(Relations.rows(state.presence), fn(p: Presence) -> Bool: besides(p, at, context.principal))))
 def besides(p: Presence, place: String, who: String) -> Bool:
   p.at == place && p.who != who
 def counted(n: Nat) -> String:
   if n == 0n then "" else "{natText(n)} others here.\n"
 def outside(state: State, context: Abi.Context) -> Document.Document:
   let ways = textJoin(state.entries, ", ")
-  Document.text("COMMONS of {Card.name(state.owner, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.places))} places, {natText(Lists.length(state.presence))} here. Ways in: {ways}\n")
+  Document.text("COMMONS of {Card.name(state.owner, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.places))} places, {natText(Relations.count(state.presence))} here. Ways in: {ways}\n")
 # The card as the reader in the context sees it: someone here sees their place, who
 # else is there and every path out with whether its gate lets them through.
 def render(state: State, context: Abi.Context) -> Document.Document:

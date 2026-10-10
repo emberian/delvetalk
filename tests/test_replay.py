@@ -94,7 +94,7 @@ class Replay(Chain):
                                   "payload": record(**{"class": label("requiredAbsence"), "root": label("0" * 64)})})
         reply = self.turn("cistern", "retain", record(receipt=refusal), principal="kimik3")
         self.assertEqual(reply["status"], "admitted", reply)
-        entries = items(self.state_field("cistern", "entries"))
+        entries = rows(self.state_field("cistern", "entries"))
         self.assertEqual(len(entries), 1)
         outcome = get(entries[0], "outcome")
         self.assertEqual(outcome["label"], "refused")

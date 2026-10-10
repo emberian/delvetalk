@@ -109,7 +109,7 @@ class Repository(unittest.TestCase):
             send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'plant', 'identity': 'plant-1',
                   'argument': record(colour=label('amber'), seed=label('a moth bell'))}),
             send({'op': 'world-turn', 'principal': DID, 'object': 'nope', 'method': 'receive', 'argument': record(), 'identity': 'miss'}),
-            send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'publish', 'argument': record(), 'identity': 'pub-1'}),
+            send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'publishPage', 'argument': record(page=label('')), 'identity': 'pub-1'}),
             send({'op': 'world-create', 'principal': DID, 'identity': 'mk-d', 'object': 'diary', 'modules': counter_modules(),
                   'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}})]
         assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created'], seeded

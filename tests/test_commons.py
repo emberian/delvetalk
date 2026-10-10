@@ -13,8 +13,8 @@ seventeenth presence, or a misconfigured graph admitting anyone.
 """
 import unittest
 
-from tests.test_replay import get, items
-from tests.test_turn_world import TurnWorld, closure, label, record
+from tests.test_replay import get, rows
+from tests.test_turn_world import TurnWorld, closure, label, record, relation
 from tests.test_turn_world import declared
 
 OWNER, GLM, KIM = "did:plc:ember", "did:plc:glm", "did:plc:kimik3"
@@ -47,7 +47,7 @@ def seed(paths=None, presence=()):
                   entries=lst([label("porch")]),
                   gates=lst([gate("yard", "vault", variant("members", names=lst([label(GLM)]))),
                              gate("yard", "attic", variant("object", object=label("door-1")))]),
-                  presence=lst(presence))
+                  presence=relation(*presence))
 
 
 DOOR = declared("""edition ObjectiveBend 1
@@ -92,7 +92,7 @@ class Commons(TurnWorld):
 
     def where(self):
         state = self.host.send(op="world-view", principal=OWNER, object="commons")["state"]
-        return {get(p, "who")["value"]: get(p, "at")["value"] for p in items(get(state, "presence"))}
+        return {get(p, "who")["value"]: get(p, "at")["value"] for p in rows(get(state, "presence"))}
 
     def door(self, name):
         r = self.host.send(op="world-create", principal=OWNER, identity="mk-" + name, object=name,
@@ -174,7 +174,7 @@ class Commons(TurnWorld):
     def test_sixteen_are_here_and_the_seventeenth_waits(self):
         for i in range(16):
             self.assertEqual(self.act("enter", "did:plc:p%d" % i, place="porch"), "moved")
-        self.assertEqual(self.act("enter", "did:plc:p16", place="porch"), "Sixteen are here already.")
+        self.assertEqual(self.act("enter", "did:plc:p16", place="porch"), "16 are here already.")
         self.assertEqual(self.act("leave", "did:plc:p3"), "moved")
         self.assertEqual(self.act("enter", "did:plc:p16", place="porch"), "moved")
         self.assertNotIn("did:plc:p3", self.where())

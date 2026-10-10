@@ -1,5 +1,6 @@
 edition ObjectiveBend 1
 import ./Plan.obend as Plans
+import ./Card.obend as Card
 # A seat at a commit-reveal table, as data: what the Table views. The table and each
 # seat are separate objects, so a reveal awaiting the opponent's commitment waits on a
 # turn that writes another object, and resumes on roots that are still current.
@@ -19,7 +20,7 @@ sum Done:
   committed: {}
   opened: {}
   next: {round: Nat}
-  refused: {reason: String}
+  refused: Card.Refusal
 # The intent a seat's commitment turn carries, so the opponent can name its slot.
 def commitIntent(table: String, round: Nat) -> String:
   "{table}/{natText(round)}/commit"

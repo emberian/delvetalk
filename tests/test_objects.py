@@ -36,6 +36,7 @@ def modules_on_disk():
 
 
 MODULES = modules_on_disk()
+OBJECT_NAMES = sorted(n for n, path in MODULES.items() if '/world/objects/' in path)
 
 
 def closure(name, seen=None, out=None):
@@ -165,8 +166,26 @@ def two(n: Nat) -> String:
   Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first", at: 1n, n: 0n}), {author: "gemini", handle: "", text: "second", at: 2n, n: 1n})), Card.stranger()))
 """
 
-DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:
-  Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Lists.List::<O.Knock>.cons({head: {who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()}), watching: Plans.nobody()}, Card.stranger()))
+POLICY_PROBE = PROBE_HEAD % "Policy" + """import ./Policies.obend as Policies
+def long(n: Nat) -> String:
+  match n:
+    case 0: ""
+    case 1+previous: textConcat("words ", long(previous))
+def examples(n: Nat) -> Lists.List<Policies.Example>:
+  match n:
+    case 0: Lists.List::<Policies.Example>.nil()
+    case 1+previous: Lists.List::<Policies.Example>.cons({head: {utterance: long(40n), spell: long(40n)}, tail: examples(previous)})
+def macros(n: Nat) -> Lists.List<Policies.Macro>:
+  match n:
+    case 0: Lists.List::<Policies.Macro>.nil()
+    case 1+previous: Lists.List::<Policies.Macro>.cons({head: {name: "m", pattern: long(20n), expansion: long(40n)}, tail: macros(previous)})
+def full(n: Nat) -> String:
+  Document.plain(O.render({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policies.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: macros(n), confirmFor: Lists.List::<String>.nil()}, extend(Card.stranger(), {principal: "ember"})))
+"""
+
+DOOR_PROBE = PROBE_HEAD % "Door" + """import ./Relation.obend as Relations
+def shut(n: Nat) -> String:
+  Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Relations.Relation.rows({items: Lists.List::<O.Knock>.cons({head: {at: 1n, who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()})}), watching: Plans.nobody()}, Card.stranger()))
 """
 
 LINES_PROBE = """edition ObjectiveBend 1
@@ -178,8 +197,9 @@ def joined(n: Nat) -> String:
   bar(Document.lines(Document.Document.sequence({items: Document.Documents.cons({head: Document.text("alpha\\nbe"), tail: Document.Documents.cons({head: Document.text("ta gamma\\n"), tail: Document.Documents.cons({head: Document.text("delta\\n"), tail: Document.Documents.nil()})})})})))
 """
 
-CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
-  Document.plain(O.render({entries: Lists.List::<Plans.Receipt>.cons({head: {slot: {principal: "glm", intent: "plant"}, height: 7n, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<Plans.Receipt>.nil()})}, Card.stranger()))
+CISTERN_PROBE = PROBE_HEAD % "Cistern" + """import ./Relation.obend as Relations
+def one(n: Nat) -> String:
+  Document.plain(O.render({entries: Relations.Relation.rows({items: Lists.List::<O.Kept>.cons({head: {at: 7n, slot: {principal: "glm", intent: "plant"}, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<O.Kept>.nil()})})}, Card.stranger()))
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """import ./Relation.obend as Relations
@@ -263,18 +283,15 @@ class Objects(unittest.TestCase):
                 if name == "Anthology":
                     self.assertIn("[proposed] glm: moths", reply["value"]["value"])
 
-    def test_every_object_exports_initial_and_a_seeded_constructor(self):
-        """The Seed rule: a creator supplies a Seed; the child's seeded makes its State."""
-        objects = ("Counter", "Garden", "Bell", "Cistern", "Anthology", "Door", "Lantern", "Loop", "Place", "Thing",
-                   "Directory", "Avatar")
-        for name in objects:
+    def test_every_object_is_made_from_initial_alone(self):
+        """A creator's seed is laid over `initial()`; no object keeps a Seed ritual beside it
+        (WORLD-REVIEW 4), and only the Appointment types the Seed its book creates it with."""
+        for name in OBJECT_NAMES:
             with self.subTest(object=name):
                 entries = [d[0] for d in definitions(name)]
-                for required in ("defaultSeed", "seeded", "initial"):  # test_artifact_pins compiles each
-                    self.assertIn(required, entries)
-                with open(MODULES[name]) as handle:
-                    source = handle.read()
-                self.assertIn("seeded(defaultSeed())", source)
+                self.assertIn("initial", entries)
+                self.assertNotIn("seeded", entries)
+                self.assertNotIn("defaultSeed", entries)
 
     def test_document_plain_is_linear_not_quadratic_over_256_leaves(self):
         """Document.plain flattens the leaves once and joins them in rounds of
@@ -301,7 +318,7 @@ class Objects(unittest.TestCase):
     def test_lines_split_the_rendered_document(self):
         reply = run_pure("Bell", "lineCount", nat(2), probe=BELL_PROBE)
         self.assertEqual(reply["status"], "finished", reply)
-        self.assertEqual(reply["value"]["value"], "3")
+        self.assertEqual(reply["value"]["value"], "4")
         reply = run_pure("Document", "joined", nat(0), probe=LINES_PROBE)
         self.assertEqual(reply["value"]["value"], "alpha|beta gamma|delta|")
 
@@ -313,10 +330,20 @@ class Objects(unittest.TestCase):
         self.assertEqual(full["status"], "finished", full)
         text = full["value"]["value"]
         print("247 rains: card %s ticks, %d characters" % (full["ticksUsed"], len(text)))
-        self.assertTrue(text.startswith("A silver bell planted by glm: a bell for lost moths (silent)\n"), text)
+        self.assertTrue(text.startswith("A silver bell, planted by glm: “a bell for lost moths” — silent.\n"), text)
         self.assertEqual(text.count("author: a line of rain\n"), 8)
         self.assertTrue(text.endswith("… and 239 more\n"), text)
         self.assertLess(len(text), 1400)
+
+    def test_a_full_policy_card_fits_its_owner(self):
+        """Sixteen examples and sixteen macros under the owner's teaching text stay under 1,400
+        characters (WORLD-REVIEW 2: the policy's card had no clip)."""
+        reply = run_pure("Policy", "full", nat(16), probe=POLICY_PROBE, limits=BIG)
+        self.assertEqual(reply["status"], "finished", reply)
+        text = reply["value"]["value"]
+        self.assertLess(len(text), 1400, text)
+        self.assertIn("To teach me a phrase", text)
+        self.assertRegex(text, r"… and \d+ more\n$")
 
     def test_a_bell_of_long_rains_is_clipped_by_characters(self):
         """Eight rains of 280 characters would be 2,300 characters: `Card.clipped` keeps the lines

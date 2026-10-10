@@ -38,6 +38,11 @@ def find<T>(items: List<T>, predicate: T -> Bool) -> Maybe<T>:
   match items:
     case nil(_): Maybe.none({})
     case cons(c): if predicate(c.head) then Maybe.some({value: c.head}) else find(c.tail, predicate)
+# The item at a 0-based index, if the list is that long.
+def at<T>(items: List<T>, index: Nat) -> Maybe<T>:
+  match items:
+    case nil(_): Maybe.none({})
+    case cons(c): if index == 0n then Maybe.some({value: c.head}) else at(c.tail, index - 1n)
 def filterMap<T, U>(items: List<T>, transform: T -> Maybe<U>) -> List<U>:
   match items:
     case nil(_): List.nil()

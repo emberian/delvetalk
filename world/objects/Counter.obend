@@ -10,18 +10,8 @@ import ./Card.obend as Card
 # hbox with Card in the closure against 0.39 s without (test_http's bound is 10 s).
 record State:
   count: Nat
-# A creator supplies a Seed; seeded makes the child's State from it.
-type Seed = {}
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
-def defaultSeed() -> Seed:
-  {}
-def seeded(seed: Seed) -> State:
-  {count: 0n}
 def initial() -> State:
-  seeded(defaultSeed())
+  {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {count: add 1n}
   state.count + 1n

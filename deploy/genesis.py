@@ -33,19 +33,19 @@ def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(i
 
 
 DOORS = [  # one line each; every door with an object points at a genesis object. `play` is created but is not a door.
-    ('GARDEN', "Plant something; rain on another's planting. Things remember who helped them grow.", 'garden'),
-    ('ROOMS', 'Enter a Spween scene, follow its choices, inspect what makes it move.', 'rooms'),
-    ('WORKSHOP', 'Inspect a thing; derive a variation; write Bend; offer the change for adoption.', 'workshop'),
-    ('TIDE', 'Wake on a cadence: subscribe yourself; anyone may tick, never too soon.', 'tide'),
-    ('ANTHOLOGY', "Submit a line; the anthology's law admits it.", 'anthology'),
+    ('GARDEN', "Plant something; rain on another's planting. Each bell keeps who helped it grow.", 'garden'),
+    ('ROOMS', 'Enter a scene, follow its choices, read what makes it move.', 'rooms'),
+    ('WORKSHOP', "Read what a thing runs; write Bend; the checker answers; offer the change to its owner's law.", 'workshop'),
+    ('TIDE', 'Subscribe yourself to a cadence; anyone may tick; too soon is refused by name.', 'tide'),
+    ('ANTHOLOGY', 'Submit a line; the keeper admits; the card numbers them.', 'anthology'),
     # A link door: no object (the empty reference); the blurb is the door.
-    ('STUDIO', f'Your authenticated private heap and reflective REPL: {ORIGIN}/AGENTS.md', ''),
+    ('STUDIO', f'Your private heap and REPL: {ORIGIN}/AGENTS.md', ''),
 ]
 POLICY_SYSTEM = 'You turn what a participant says into one spell for the card they are answering. You never act; you only propose.'
 LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
 def choice(text, to, key='', value=''):
     """A choice; a key sets that variable to value when it is taken (one `set` effect). As tests/test_scene.py builds it."""
-    effects = [rec(key=lab(key), op=lab('set'), value=lab(value))] if key else []
+    effects = [rec(key=lab(key), op={'tag': 'variant', 'label': 'set', 'payload': rec()}, value=lab(value))] if key else []
     return rec(label=lab(text), to=lab(to), effects=lst(*effects), guard=lst())
 
 
@@ -58,7 +58,7 @@ def moss_gate(opener):
     return rec(owner=lab(opener), title=lab('The Moss Gate'), start=lab('gate'),
                passages=lst(passage('gate', 'A moss gate, ajar.', [choice('Open', 'yard', 'gate', 'open'), choice('Wait', 'gate')]),
                             passage('yard', 'A quiet yard.', [choice('Back', 'gate'), choice('Knock', 'yard', 'knock', 'twice')])),
-               presence=lst(), vars=lst(), cooldown=nat(0), requires=lst(), left=lst())
+               presence=relation(), vars=lst(), cooldown=nat(0), requires=lst(), left=relation())
 
 
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),

@@ -15,43 +15,19 @@ type Macro = Policies.Macro
 # the configured model and returns the answer as a proposal, never as authority. Its
 # State is Policies.State, so a card may import the type and view it.
 type State = Policies.State
-# A creator supplies a Seed; seeded makes the child's State from it.
-record Seed:
-  owner: String
-  model: String
-  system: String
-  escalate: String
-  escalateTo: String
-  confirmFor: Lists.List<String>
-record Edits:
-  model: Plans.Edit<String, {}>
-  escalate: Plans.Edit<String, {}>
-  escalateTo: Plans.Edit<String, {}>
-  system: Plans.Edit<String, {}>
-  lexicon: Plans.Entries<Term, {}>
-  examples: Plans.Entries<Example, {}>
-  macros: Plans.Entries<Macro, Macro>
-  confirmFor: Plans.Entries<String, {}>
-def defaultSeed() -> Seed:
-  {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", escalate: "", escalateTo: "", confirmFor: asking()}
 # What waits for a yes by default: changing an object's program or law, and giving
 # offering custody away. Planting, raining, subscribing and submitting run at once.
 def asking() -> Lists.List<String>:
-  Lists.List.cons({head: "reprogram", tail: Lists.List.cons({head: "amend", tail: Lists.List.cons({head: "offer", tail: Lists.List.nil({})})})})
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, model: seed.model, system: seed.system, lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: seed.escalate, escalateTo: seed.escalateTo, macros: Lists.List.nil({}), confirmFor: seed.confirmFor}
+  Text.words("reprogram amend offer")
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {model: Plans.Edit.keep({}), escalate: Plans.Edit.keep({}), escalateTo: Plans.Edit.keep({}), system: Plans.Edit.keep({}), lexicon: Plans.Entries.keep({}), examples: Plans.Entries.keep({}), macros: Plans.Entries.keep({}), confirmFor: Plans.Entries.keep({})}
+  {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: "", escalateTo: "", macros: Lists.List.nil({}), confirmFor: asking()}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
-# stranger by name before writing. `describe` is the one method open to everyone: it
-# writes nothing today, and a describe that ever wrote would be the package's to answer.
-law owner "only the owner teaches it; anyone may describe": (request.kind == 0 and request.method == "describe") or request.subject == new.owner
+# stranger by name before writing.
+law owner "only the owner teaches it": request.subject == new.owner
 sum Taught:
   taught: {count: Nat}
   refused: Card.Refusal
-# Why the policy refuses: each arm a clause, `why` its reading.
+# Why the policy refuses: each arm a clause and its reading.
 sum Why:
   notOwner: {owner: String}
   examplesFull: {}
@@ -59,30 +35,21 @@ sum Why:
   macrosFull: {}
   macroHole: {}
   macroTooLong: {}
-def why(w: Why) -> String:
+def refusal(w: Why) -> Card.Refusal:
   match w:
-    case notOwner(n): "Only the policy's owner may teach it; that is {n.owner}"
-    case examplesFull(_): "The policy holds sixteen examples, the most a model call carries."
-    case lexiconFull(_): "The lexicon holds sixteen words."
-    case macrosFull(_): "The policy holds sixteen macros."
-    case macroHole(_): "A macro's pattern starts with a word, not a hole."
-    case macroTooLong(_): "A macro's name takes 64 characters, its pattern 280 and its expansion 560."
-def clause(w: Why) -> String:
-  match w:
-    case notOwner(_): "notOwner"
-    case examplesFull(_): "examplesFull"
-    case lexiconFull(_): "lexiconFull"
-    case macrosFull(_): "macrosFull"
-    case macroHole(_): "macroHole"
-    case macroTooLong(_): "macroTooLong"
+    case notOwner(n): {clause: "notOwner", reading: "Only the policy's owner may teach it; that is {n.owner}"}
+    case examplesFull(_): {clause: "examplesFull", reading: "The policy holds sixteen examples, the most a model call carries."}
+    case lexiconFull(_): {clause: "lexiconFull", reading: "The lexicon holds sixteen words."}
+    case macrosFull(_): {clause: "macrosFull", reading: "The policy holds sixteen macros."}
+    case macroHole(_): {clause: "macroHole", reading: "A macro's pattern starts with a word, not a hole."}
+    case macroTooLong(_): {clause: "macroTooLong", reading: "A macro's name takes 64 characters, its pattern 280 and its expansion 560."}
 # A refusal offers its one line and writes nothing.
 def refused(w: Why) -> Activity<Taught>:
-  Card.tell(Taught.refused({clause: clause(w), reading: why(w)}), Document.text("refused {clause(w)}: {why(w)}\n"))
+  Card.tell(Taught.refused(refusal(w)), Document.text("refused {refusal(w).clause}: {refusal(w).reading}\n"))
 # At most this many examples go into every model call.
 def exampleCap() -> Nat:
   16n
-# The helpers take the State after their own inputs: a definition whose first parameter is
-# the State is a method any turn may run. Every write is the owner's (refused by name first).
+# Every write is the owner's (refused by name first).
 def edited(edits: Edits, context: Abi.Context, state: State) -> Activity<Taught>:
   if context.principal != state.owner then refused(Why.notOwner({owner: Card.name(state.owner, context)})) else written(edits, state)
 def written(edits: Edits, state: State) -> Activity<Taught>:
@@ -105,7 +72,7 @@ def asks(ask: Ask) -> Bool:
   match ask:
     case yes(_): true
     case no(_): false
-def asked(action: String, ask: Bool, state: State) -> Plans.Entries<String, {}>:
+def asked(action: String, ask: Bool, state: State) -> Plans.Entries<String, String>:
   if ask == Lists.any(state.confirmFor, fn(a: String) -> Bool: a == action) then Plans.Entries.keep({}) else if ask then Plans.Entries.append({item: action}) else Plans.Entries.removeItem({item: action})
 # Teach a macro: its name, a pattern of words and `{holes}`, and the spell it expands to, one
 # field line (`expansion: garden plant / colour: violet / seed: a bell for {who}`: a field line
@@ -131,14 +98,14 @@ form confirm:
   action: text 1..64
   ask: yes | no
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: teachForm(), tail: Card.Forms.cons({head: defineForm(), tail: Card.Forms.cons({head: macroForm(), tail: Card.Forms.cons({head: confirmForm(), tail: Card.Forms.nil()})})})})
+  Lists.append(Lists.append(Lists.append(Lists.append(Card.Forms.nil(), teachForm()), defineForm()), macroForm()), confirmForm())
 # The model, the stronger one a second attempt names ("" for the same), the principal a card
 # tells what it could not fit after two attempts (`escalate-to`, a DID, "" for nobody) and the
 # system instruction are set through lenses: `delvetalk <policy> set` and `model: ...`.
 def lenses() -> Lists.List<Form.Field>:
-  Lists.List.cons({head: {name: "model", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.cons({head: {name: "escalate", kind: Form.Kind.text({min: 0n, max: 64n})}, tail: Lists.List.cons({head: {name: "escalate-to", kind: Form.Kind.text({min: 0n, max: 160n})}, tail: Lists.List.cons({head: {name: "system", kind: Form.Kind.text({min: 1n, max: 1000n})}, tail: Lists.List.nil()})})})})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.List.nil(), {name: "model", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "escalate", kind: Form.Kind.text({min: 0n, max: 64n})}), {name: "escalate-to", kind: Form.Kind.text({min: 0n, max: 160n})}), {name: "system", kind: Form.Kind.text({min: 1n, max: 1000n})})
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Card.Replied>:
-  if context.principal != state.owner then Card.answerRefused({clause: "notOwner", reading: why(Why.notOwner({owner: Card.name(state.owner, context)}))}, context, forms(), render(state, context), fn(r: Card.Replied) -> Card.Replied: r) else setting(input.field, Card.valueText(input.value))
+  if context.principal != state.owner then Card.answerRefused(refusal(Why.notOwner({owner: Card.name(state.owner, context)})), context, forms(), render(state, context), fn(r: Card.Replied) -> Card.Replied: r) else setting(input.field, Card.valueText(input.value))
 # The host judged the value against the lens's kind; an unlensed field never reaches here.
 def lensEdits(field: String, value: String) -> Edits:
   if field == "model" then extend(keep(), {model: Plans.Edit.set({value: value})}) else if field == "escalate" then extend(keep(), {escalate: Plans.Edit.set({value: value})}) else if field == "escalate-to" then extend(keep(), {escalateTo: Plans.Edit.set({value: value})}) else extend(keep(), {system: Plans.Edit.set({value: value})})
@@ -183,12 +150,12 @@ def stance(context: Abi.Context, state: State) -> String:
   "I only propose. A card asks the speaker first before: {first}.\n{escalation}{told}"
 def teaching() -> String:
   "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nTo teach a shortcut no model is asked about:\n\n    delvetalk policy macro\n    name: moth-bell\n    pattern: moth for {{who}}\n    expansion: garden plant / colour: violet / seed: a bell for {{who}}\n\nWhat I know:\n"
-# The policy as a card, including how to teach it.
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
+# The policy as a card, including how to teach it; its words, examples and macros take what
+# is left of 1,400 characters.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let how = if Card.reads(state.owner, context) then teaching() else "\nOnly its owner, {Card.name(state.owner, context)}, teaches it.\n\nWhat I know:\n"
   let head = Document.text("✾ INTERPRETATION POLICY\n\nModel: {state.model}\n{stance(context, state)}{how}")
   let terms = Lists.map(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map(state.examples, exampleCard)
   let macros = Lists.map(state.macros, fn(m: Macro) -> Document.Document: Document.text("Macro {m.name}: {m.pattern}\n  means: delvetalk {m.expansion}\n"))
-  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(Lists.concat(terms, shown), macros)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clippedWithin(Lists.concat(Lists.concat(terms, shown), macros), 48n, 1350n - Document.size(head))})})

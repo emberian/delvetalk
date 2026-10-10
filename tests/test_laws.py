@@ -1,20 +1,19 @@
 """The world's objects carry their laws in source: only owners change directories and admit anthology
-lines, and Tide's and Wake's predicates refuse what their code would.
+lines, Tide's predicate and Wake's law refuse what their code would.
 
 Evidence for FOUNDATION §4 (layer: objects).
 
 Laws in source on the objects.
 
-Policy: `owner: (request.kind == 0 and request.method == "describe") or request.subject == new.owner`.
+Policy: `owner: request.subject == new.owner` (it has no `describe`, which an older law admitted).
 Directory: only its owner adds or removes a door. Anthology: anyone submits, only its owner admits.
 Each is made with world-create (a lawful module cannot be imported by a creator) by its owner (a law
 must admit an amendment by its installer).
 
-Tide's and Wake's Bend predicates `law(old, new, request)`, which the host runs after the law text
-admits a kind-0 write (lane/host4 14b5c89, merged in foundation 88b9534; before it these turns were
-admitted). The tests write through a variant of the package whose method skips the Bend-side check
-the real one makes (and, for Wake, whose law text admits any ordinary write, so only the predicate
-stands); the refusal's clause is the predicate's: "self", "tooSoon", "owner".
+Tide's Bend predicate `law(old, new, request)`, which the host runs after the law text admits a
+kind-0 write, and Wake's law text. The tests write through a variant of the package whose method
+skips the Bend-side check the real one makes; the refusal's clause is the predicate's ("self",
+"tooSoon") or the law's ("owner").
 
 Refuted by: a stranger's add, remove or admit committing; an owner's being refused; a stranger's
 submit being refused; the variants committing once the host runs predicates.
@@ -61,7 +60,8 @@ class Laws(LawWorld):
         self.create("policy", closure("Policy"), record(owner=label(OWNER), model=label("m"), system=label("s"),
                                                         lexicon=nil(), examples=nil(), escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
         law = self.host.send(op="world-inspect", principal=OWNER, object="policy")["law"]
-        self.assertIn('law owner: ((request.kind == 0) and (request.method == "describe")) or (request.subject == new.owner)', law)
+        self.assertIn('law owner: request.subject == new.owner', law)
+        self.assertNotIn("describe", law)
         r = self.turn("policy", "receive", heard("delvetalk policy set\nmodel: n"), principal=OWNER)
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
 
@@ -93,7 +93,7 @@ class Laws(LawWorld):
         statuses = [get(p, "status")["label"] for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(statuses, ["proposed", "admitted"])
         card = self.turn("anthology", "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        self.assertTrue(card.startswith("Anthology, admitted by inkling (yours)\n#1 [proposed] kimik3: moths\n"), card)
+        self.assertTrue(card.startswith("THE ANTHOLOGY, kept by inkling (yours). Submit a line: delvetalk anthology submit / line: <1 to 280 characters>. The keeper admits by number.\n#1 [proposed] kimik3: moths\n"), card)
 
 
 TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation())
@@ -110,15 +110,32 @@ def tide_variant():
 
 
 def wake_variant():
-    """Wake whose law text admits any ordinary write and whose watch skips the owner check."""
+    """Wake whose watch skips the owner check, so only its law text stands."""
     with open("world/objects/Wake.obend") as handle:
         source = handle.read()
-    source = source.replace('law owner "only its owner writes it": request.subject == new.owner', "law owner: request.kind == 0 or request.subject == new.owner", 1)
     source = source.replace("if context.principal != state.owner then notOwner(state) else if Lists.length(state.triggers) >= 32n",
                             "if Lists.length(state.triggers) >= 32n", 1)
-    assert "request.kind == 0 or request.subject == new.owner" in source and "notOwner(state) else if Lists.length(state.triggers) >= 32n" not in source, \
+    assert "notOwner(state) else if Lists.length(state.triggers) >= 32n" not in source, \
         "Wake changed: the variant no longer skips its checks"
     return closure("Wake", override={"Wake": source})
+
+
+class FixedFields(LawWorld):
+    """With Edits derived from the State, every field is writable by a write record; the fields
+    nothing may change are kept by the law (unchanged), so a forged write of one is refused."""
+
+    def forged(self, obj, fields, change):
+        keep = {"tag": "variant", "label": "keep", "payload": record()}
+        version = self.host.send(op="world-view", principal=OWNER, object=obj)["version"]
+        edits = {name: keep for name in fields}
+        edits.update(change)
+        return self.host.send(op="world-propose", principal=OTHER, identity="forged-" + obj,
+                              roots=[{"object": obj, "version": version}], writes=[{"object": obj, "edits": [record(**edits)]}])
+
+    def test_a_forged_gap_is_refused_by_the_tides_law(self):
+        self.create("tide", closure("Tide"), TIDE_SEED)
+        r = self.forged("tide", ("ticks", "last", "gap", "subs"), {"gap": {"tag": "variant", "label": "set", "payload": record(value=nat(0))}})
+        self.assertEqual(self.clause(r), "lawRefused/gap", r)
 
 
 class Predicates(LawWorld):
@@ -134,7 +151,7 @@ class Predicates(LawWorld):
         r = self.turn("tide", "tick", principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/tooSoon", r)
 
-    def test_wakes_predicate_refuses_a_strangers_trigger(self):
+    def test_wakes_law_refuses_a_strangers_trigger(self):
         self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
         r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
                                                action={"tag": "variant", "label": "notify", "payload": record()}), principal=OTHER)

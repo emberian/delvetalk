@@ -8,6 +8,7 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
+import ./Text.obend as Text
 # A proposal is keyed {author, at, n} (`at` the height its turn read, `n` the count of
 # proposals then), as a bell's rains are: key order is the order of submission, so a line's
 # number on the card stays its number. Admission upserts the row with its status flipped.
@@ -18,52 +19,32 @@ record State:
   owner: String
   ownerHandle: String
   proposals: Relations.Relation<Proposal>
-# What a creator may supply; the host lays it over initial().
-record Seed:
-  owner: String
-  ownerHandle: String
-record Edits:
-  proposals: Plans.Entries<Proposal, Proposal>
-  ownerHandle: Plans.Edit<String, {}>
 # Anyone submits (submit only inserts); only the owner admits. The method named is the
 # package's own, so the law's trust in it is the pin's.
 law owner "only the owner changes it; anyone submits a line": request.subject == new.owner or (request.kind == 0 and request.method == "submit")
-def defaultSeed() -> Seed:
-  {owner: "", ownerHandle: ""}
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, ownerHandle: seed.ownerHandle, proposals: Relations.empty()}
 def initial() -> State:
-  seeded(defaultSeed())
+  {owner: "", ownerHandle: "", proposals: Relations.empty()}
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "proposals", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})}), limit: 1024n}, tail: Relations.Decls.nil({})})
+  Lists.append(Relations.Decls.nil(), {field: "proposals", key: Text.words("author at n"), limit: 1024n})
 def proposalKey(proposal: Proposal) -> {author: String, at: Nat, n: Nat}:
   {author: proposal.author, at: proposal.at, n: proposal.n}
 def proposed(line: String, state: State, context: Abi.Context) -> Proposal:
   {author: context.principal, handle: context.handle, line: line, status: Rows.Status.proposed({}), at: context.height, n: Relations.count(state.proposals)}
-def keep() -> Edits:
-  {proposals: Plans.Entries.keep({}), ownerHandle: Plans.Edit.keep({})}
 # Submission only proposes; admission is the receiver's law, not the author's. The author is
 # the turn's principal, answered with the anthology as it now stands; the result is the count.
 def submit(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:
   let proposal = proposed(input.line, state, context)
   let written(_) = write {proposals: insert proposal}
   Card.tellTo(Relations.count(state.proposals) + 1n, context.principal, render(extend(state, {proposals: Relations.insert(state.proposals, proposal, proposalKey)}), context))
-sum Found:
-  none: {}
-  some: {proposal: Proposal}
-def at(items: Lists.List<Proposal>, index: Nat) -> Found:
-  match items:
-    case nil(_): Found.none({})
-    case cons(c): if index == 0n then Found.some({proposal: c.head}) else at(c.tail, index - 1n)
 # admit {number}: the line's number on the card, from 1; the owner's, refused by name to
 # anyone else before the law is asked. The proposal is addressed by its key, so a submission
 # landing first shifts nothing; admission upserts it with its status flipped.
 def admit(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
-  if context.principal != state.owner then Card.Replied.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(Relations.rows(state.proposals), input.number - 1n), input.number, context)
-def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
+  if context.principal != state.owner then Card.Replied.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(Lists.at(Relations.rows(state.proposals), input.number - 1n), input.number, context)
+def admittingAt(found: Lists.Maybe<Proposal>, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
   match found:
     case none(_): Card.Replied.refused({clause: "noLine", reading: "No line numbered {natText(number)}"})
-    case some(s): admitted(context, s.proposal)
+    case some(s): admitted(context, s.value)
 def admitted(context: Abi.Context, proposal: Proposal) -> Activity<Card.Replied>:
   let written(_) = write {proposals: upsert extend(proposal, {status: Rows.Status.admitted({})}), ownerHandle: set context.handle}
   Card.tell(Card.Replied.done({action: "admit"}), Document.text("Admitted: {proposal.line}\n"))
@@ -72,7 +53,7 @@ form submit:
 form admit:
   number: natural 1..1000
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: submitForm(), tail: Card.Forms.cons({head: admitForm(), tail: Card.Forms.nil()})})
+  Lists.append(Lists.append(Card.Forms.nil(), submitForm()), admitForm())
 def blurb() -> Card.Door:
   {word: "anthology", blurb: "Submit a line; the anthology's law admits it."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
@@ -83,6 +64,6 @@ def numbered(context: Abi.Context, proposals: Lists.List<Proposal>, n: Nat) -> D
     case cons(c): Document.Documents.cons({head: Document.concat(Document.text("#{natText(n)} "), entry(context)(c.head)), tail: numbered(context, c.tail, n + 1n)})
 def entry(context: Abi.Context) -> Proposal -> Document.Document:
   fn(proposal: Proposal) -> Document.Document: Document.text("[{Rows.statusName(proposal.status)}] {Card.shown(proposal.author, proposal.handle, context)}{Card.mine(proposal.author, context)}: {proposal.line}\n")
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology, admitted by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}\n"), tail: Card.clipped(numbered(context, Relations.rows(state.proposals), 1n), 8n)})})
+  let id = Card.called(context, "anthology")
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("THE ANTHOLOGY, kept by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}. Submit a line: delvetalk {id} submit / line: <1 to 280 characters>. The keeper admits by number.\n"), tail: Card.clipped(numbered(context, Relations.rows(state.proposals), 1n), 8n)})})

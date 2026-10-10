@@ -114,7 +114,7 @@ class Lenses(test_chain.Chain):
     def test_an_avatars_handle_is_its_principals_to_set(self):
         self.make(GLM, closure("Avatar"), avatar_seed("glm", "porch"))
         other = self.say("delvetalk %s set\nhandle: mallory" % GLM, principal="did:plc:kimik3", obj=GLM)
-        self.assertEqual(why(other), "Only the avatar's own principal changes it.")
+        self.assertEqual(why(other), "Only glm changes it.")
         self.assertEqual(self.say("delvetalk %s set\nhandle: glm.bsky" % GLM, principal=GLM, obj=GLM)["result"]["label"], "done")
         self.assertEqual(self.field("handle", GLM), "glm.bsky")
 

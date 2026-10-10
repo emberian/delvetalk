@@ -22,42 +22,31 @@ record State:
   width: Nat
   height: Nat
   game: Game.Result
-record Seed:
-  north: Plans.Reference
-  south: Plans.Reference
-record Edits:
-  round: Plans.Edit<Nat, Nat>
-  game: Plans.Edit<Game.Result, {}>
 law rounds "rounds only go forward": monotone(round)
 law owner "only the owner reprograms or amends it; anyone plays": request.kind == 0 or request.subject == new.owner
-def defaultSeed() -> Seed:
-  {north: Plans.nobody(), south: Plans.nobody()}
+law fixed "the owner, the seats and the board's size never change": unchanged(owner) and unchanged(north) and unchanged(south) and unchanged(width) and unchanged(height)
 def opening() -> Game.Result:
   {board: 3544482323287199997214430076569557050131592232587036428018782212697626882n, automaton: 60n, marks: 0n, status: 0n, winner: 0n}
-def seeded(seed: Seed) -> State:
-  {owner: "", north: seed.north, south: seed.south, round: 0n, width: 11n, height: 11n, game: opening()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {round: Plans.Edit.keep({}), game: Plans.Edit.keep({})}
+  {owner: "", north: Plans.nobody(), south: Plans.nobody(), round: 0n, width: 11n, height: 11n, game: opening()}
 sum Done:
   resolved: {round: Nat, status: Nat, winner: Nat}
-  refused: {reason: String}
+  refused: Card.Refusal
+def no(clause: String, reading: String) -> Done:
+  Done.refused({clause: clause, reading: reading})
 def ready(seat: Seats.State, round: Nat) -> Bool:
   seat.round == round && seat.opened
-# Only `resolve` plays: every helper takes the State after its own inputs, since a definition
-# whose first parameter is the State is a method any turn may run (`north` skipped the
-# finished-match check; `played` and `advanced` wrote or moved the seats with any result).
+# Only `resolve` plays: it checks the match first, then both seats' openings.
 def resolve(state: State, context: Abi.Context) -> Activity<Done>:
-  if state.game.winner != 0n then Done.refused({reason: "The match is finished."}) else north(context, state)
+  if state.game.winner != 0n then no("finished", "The match is finished.") else north(context, state)
 def north(context: Abi.Context, state: State) -> Activity<Done>:
   match world.view::<Seats.State>({object: state.north}):
-    case viewed(v): if ready(v.state, state.round) then south(v.state, state) else Done.refused({reason: "North has not opened this round."})
-    case _: Done.refused({reason: "North's seat did not answer."})
+    case viewed(v): if ready(v.state, state.round) then south(v.state, state) else no("notOpened", "North has not opened this round.")
+    case _: no("silentSeat", "North's seat did not answer.")
 def south(n: Seats.State, state: State) -> Activity<Done>:
   match world.view::<Seats.State>({object: state.south}):
-    case viewed(v): if ready(v.state, state.round) then played(Checked.play(state.width, state.height, state.game.board, state.game.automaton, state.game.marks, n.source, n.target, v.state.source, v.state.target), state) else Done.refused({reason: "South has not opened this round."})
-    case _: Done.refused({reason: "South's seat did not answer."})
+    case viewed(v): if ready(v.state, state.round) then played(Checked.play(state.width, state.height, state.game.board, state.game.automaton, state.game.marks, n.source, n.target, v.state.source, v.state.target), state) else no("notOpened", "South has not opened this round.")
+    case _: no("silentSeat", "South's seat did not answer.")
 def played(result: Game.Result, state: State) -> Activity<Done>:
   let written(_) = write {round: add 1n, game: set result}
   advanced(result, state)
@@ -84,6 +73,5 @@ def rows(state: State, y: Nat) -> Document.Documents:
   if y == state.height then Document.Documents.nil() else Document.Documents.cons({head: Document.text(row(state.game.board, y * state.width, state.width)), tail: rows(state, y + 1n)})
 def outcome(game: Game.Result) -> String:
   if game.winner == 1n then "North wins." else if game.winner == 2n then "South wins." else if game.status == 1n then "The last pair conflicted; the board stayed." else if game.status == 2n then "The last pair was invalid; the board stayed." else "Seal, open, resolve."
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("AUTOMATAFL, round {natText(state.round)}: {outcome(state.game)}\n\n"), tail: rows(state, 0n)})})

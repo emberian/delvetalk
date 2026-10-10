@@ -6,9 +6,13 @@ import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
+import ./Relation.obend as Relations
 import ./Text.obend as Text
-# Who knocked, with their handle as the host knew it then.
+# Who knocked, with their handle as the host knew it then, keyed {at, who}: `at` is the
+# height the knock's turn read, so key order is the order of knocking and past 64 the host
+# drops the oldest.
 record Knock:
+  at: Nat
   who: String
   handle: String
 # watching: the object whose `rung` opens this door (a bell), nobody until `watch`.
@@ -16,24 +20,12 @@ record State:
   open: Bool
   openedBy: String
   openedHandle: String
-  knocks: Lists.List<Knock>
+  knocks: Relations.Relation<Knock>
   watching: Plans.Reference
-# What a creator may supply; the host lays it over initial().
-type Seed = {}
-record Edits:
-  open: Plans.Edit<Bool, {}>
-  openedBy: Plans.Edit<String, {}>
-  openedHandle: Plans.Edit<String, {}>
-  knocks: Plans.Entries<Knock, {}>
-  watching: Plans.Edit<Plans.Reference, {}>
-def defaultSeed() -> Seed:
-  {}
-def seeded(seed: Seed) -> State:
-  {open: false, openedBy: "", openedHandle: "", knocks: Lists.List.nil(), watching: Plans.nobody()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {open: Plans.Edit.keep({}), openedBy: Plans.Edit.keep({}), openedHandle: Plans.Edit.keep({}), knocks: Plans.Entries.keep({}), watching: Plans.Edit.keep({})}
+  {open: false, openedBy: "", openedHandle: "", knocks: Relations.empty(), watching: Plans.nobody()}
+def relations() -> Relations.Decls:
+  Lists.append(Relations.Decls.nil(), {field: "knocks", key: Text.words("at who"), limit: 64n})
 # Who opened it: the knocker, or the object whose change opened it (its id, no handle).
 def unlatched(who: String, handle: String) -> Edits:
   extend(keep(), {open: Plans.Edit.set({value: true}), openedBy: Plans.Edit.set({value: who}), openedHandle: Plans.Edit.set({value: handle})})
@@ -41,7 +33,7 @@ def latch(context: Abi.Context, state: State) -> Edits:
   if state.open then keep() else unlatched(context.principal, context.handle)
 # A knock is retained; a knock on a closed door opens it.
 def knock(state: State, context: Abi.Context) -> Activity<Bool>:
-  let written(_) = world.write(extend(latch(context, state), {knocks: Plans.Entries.append({item: {who: context.principal, handle: context.handle}})}))
+  let written(_) = world.write(extend(latch(context, state), {knocks: Plans.Entries.insert({row: {at: context.height, who: context.principal, handle: context.handle}})}))
   true
 # Watch an object's `rung` (a bell's): the host delivers each write of it to `changed`.
 def watch(state: State, input: {object: String}, context: Abi.Context) -> Activity<String>:
@@ -72,6 +64,5 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
   Card.answer(input, context, forms(), render(state, context))
 def knockLine(knock: Knock) -> Document.Document:
   Document.text("knock: {Card.shown(knock.who, knock.handle, Card.stranger())}\n")
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(if state.open then "The door is open, opened by {Card.shown(state.openedBy, state.openedHandle, context)}.\n" else "The door is shut.\n"), tail: Card.clipped(Lists.map(state.knocks, knockLine), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(if state.open then "The door is open, opened by {Card.shown(state.openedBy, state.openedHandle, context)}.\n" else "The door is shut.\n"), tail: Card.clipped(Lists.map(Relations.rows(state.knocks), knockLine), 8n)})})
