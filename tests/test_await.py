@@ -11,24 +11,63 @@ from tests.test_replay import get, silver
 from tests.test_turn_world import TurnWorld, label, nat, record
 
 
-def planting(post):
-    return record(principal=label("glm"), intent=label(post))
+def uri(post):
+    return post if post.startswith("at://") else "at://did:plc:glm/town.delve.feed.post/" + post
 
 
 def bell_seed(post="post-1"):
-    return record(colour=silver(), seed=label("a bell for lost moths"), planting=planting(post))
+    return record(colour=silver(), seed=label("a bell for lost moths"), planting=label(uri(post)), planter=label("glm"))
+
+
+# The object the planting posts are recorded for: a reply to one runs here (its receive
+# refuses, by its law, when the reply says "no"), and that turn answers the post.
+HUB = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  count: Nat
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, {}>
+law cap: new.count <= 0
+def initial() -> State:
+  {count: 0n}
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  if input.text == "no" then refusing(context) else 0n
+def refusing(context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+    case _: 1n
+"""
 
 
 class Await(Chain):
+    """A bell's strike awaits the planting post's answer (awaitPost): the first turn on the
+    post's recorded object whose replyTo names it. The posts are recorded for a hub."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-hub", object="hub",
+                           modules=closure("Plan") + [{"name": "Hub", "source": HUB}], entry="initial", seed=record(count=nat(0)))
+        self.assertEqual(r["status"], "created", r)
+        self.recorded = set()
+
     def bell(self, name="bell", post="post-1"):
         self.make(name, closure("Bell"), bell_seed(post))
 
     def strike(self, name="bell", ident=None, who="gemini"):
         return self.turn(name, "strike", principal=who, identity=ident or f"strike-{name}")
 
-    def settle(self, post="post-1", who="glm"):
-        """Any journaled entry under the slot's identity settles it."""
-        return self.host.send(op="world-propose", principal=who, identity=post, roots=[], writes=[])
+    def settle(self, post="post-1", who="glm", text="yes"):
+        """The reply that answers the post: a turn on the hub with replyTo = post."""
+        post = uri(post)
+        if post not in self.recorded:
+            r = self.host.send(op="world-posted", principal="transport", uri=post, cid="c", object="hub")
+            self.assertEqual(r["status"], "posted", r)
+            self.recorded.add(post)
+        return self.host.send(op="world-turn", principal=who, object="hub", method="receive",
+                              argument=record(text=label(text), post=label(post + "/reply")), identity=post + "/reply", replyTo=post)
 
     def rung(self, name="bell"):
         return self.state_field(name, "rung")
@@ -48,7 +87,7 @@ class Create(Await):
         self.make("garden", closure("Garden"), garden_seed())
         self.assertEqual(self.plant()["status"], "admitted")
         bell = self.state("garden/bell/1")
-        self.assertEqual(get(get(bell, "planting"), "principal"), label("glm"))
+        self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
         self.assertEqual(get(bell, "rung"), boolean(False))                 # default from initial()
         v = self.host.send(op="world-view", principal="e", object="garden/bell/1")
         self.assertEqual((v["status"], v["version"]), ("viewed", 0))
@@ -123,7 +162,7 @@ class Suspend(Await):
         self.bell()
         s = self.strike()
         self.assertEqual(s["status"], "suspended", s)
-        self.assertEqual(s["slot"], {"principal": "glm", "intent": "post-1"})
+        self.assertEqual(s["receipt"]["outcome"]["post"], uri("post-1"))
         self.assertEqual(s["deadline"], 8)                       # clock 0 + patience 8
         self.assertEqual(self.rung(), boolean(False))
         settled = self.settle()
@@ -146,9 +185,8 @@ class Suspend(Await):
     def test_a_refused_planting_resumes_the_strike_with_the_refusal_and_the_bell_stays_silent(self):
         self.bell()
         self.strike()
-        refused = self.host.send(op="world-propose", principal="glm", identity="post-1",
-                                 roots=[{"object": "bell", "version": 99}], writes=[])
-        self.assertEqual(refused["status"], "refused")
+        refused = self.settle(text="no")
+        self.assertEqual(refused["status"], "refused", refused)
         # The strike heard the refusal: its own turn is admitted and the bell stays silent.
         self.assertEqual(refused["resumed"][0]["status"], "admitted")
         self.assertEqual(self.rung(), boolean(False))
@@ -164,9 +202,9 @@ class Suspend(Await):
     def test_the_clock_moves_only_by_world_advance_and_times_out_a_waiting_strike(self):
         self.bell()
         s = self.strike()
-        a = self.host.send(op="world-advance", height=8)             # at the deadline: not past it
+        a = self.host.send(op="world-advance", principal="transport", height=8)             # at the deadline: not past it
         self.assertEqual((a["status"], a["clock"], a.get("resumed")), ("advanced", 8, None))
-        b = self.host.send(op="world-advance", height=9)
+        b = self.host.send(op="world-advance", principal="transport", height=9)
         self.assertEqual(len(b["resumed"]), 1)
         self.assertEqual(b["resumed"][0]["status"], "admitted")
         self.assertEqual(self.rung(), boolean(False))                # timedOut -> unchanged
@@ -177,9 +215,9 @@ class Suspend(Await):
 
     def test_advancing_to_or_before_now_is_a_no_op_and_not_journaled(self):
         h = self.height()
-        self.host.send(op="world-advance", height=5)
+        self.host.send(op="world-advance", principal="transport", height=5)
         self.assertEqual(self.height(), h + 1)
-        r = self.host.send(op="world-advance", height=3)
+        r = self.host.send(op="world-advance", principal="transport", height=3)
         self.assertEqual((r["status"], r["clock"]), ("advanced", 5))
         self.assertEqual(self.height(), h + 1)
 
@@ -208,9 +246,9 @@ class Suspend(Await):
     def test_the_deadline_survives_a_restart(self):
         self.bell()
         self.strike()
-        self.host.send(op="world-advance", height=4)
+        self.host.send(op="world-advance", principal="transport", height=4)
         self.reopen()
-        self.assertEqual(self.host.send(op="world-advance", height=9)["resumed"][0]["status"], "admitted")
+        self.assertEqual(self.host.send(op="world-advance", principal="transport", height=9)["resumed"][0]["status"], "admitted")
 
     def test_a_ninth_pending_activity_on_one_object_is_refused_by_name(self):
         self.bell()
@@ -232,7 +270,7 @@ class Suspend(Await):
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")
-        self.assertIn("height 3", r["message"])  # the Maker creator costs two entries before the strike
+        self.assertIn("height 5", r["message"])  # the clock setting, the hub and the Maker creator's two entries come first
 
 
 class Seeds(TurnWorld):

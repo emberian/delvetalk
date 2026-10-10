@@ -10,7 +10,7 @@ from tests.test_objects import closure
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
 
-PLANTING = record(principal=label("glm"), intent=label("at://glm.delve.town/app.bsky.feed.post/3m-plant"))
+PLANTING = "at://glm.delve.town/app.bsky.feed.post/3m-plant"
 
 
 def silver():
@@ -18,8 +18,8 @@ def silver():
 
 
 def bell_seed():
-    """A Bell Seed: the planter is the principal of the planting slot."""
-    return record(colour=silver(), seed=label("a bell for lost moths"), planting=PLANTING)
+    """A Bell Seed: the planting post and its planter."""
+    return record(colour=silver(), seed=label("a bell for lost moths"), planting=label(PLANTING), planter=label("glm"))
 
 
 def items(wire):
@@ -44,8 +44,8 @@ class Replay(Chain):
             "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         self.assertEqual(reply["result"]["label"], "planted", reply)
-        planting = self.state_field("garden/bell/1", "planting")
-        self.assertEqual((get(planting, "principal"), get(planting, "intent")), (label("glm"), label(reply["receipt"]["identity"]["intent"])))
+        bell = self.state("garden/bell/1")
+        self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
         self.assertEqual(items(self.state_field("garden", "children")), [reference("garden/bell/1")])
 
     def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):
@@ -55,7 +55,7 @@ class Replay(Chain):
             self.assertEqual(reply["status"], "admitted", reply)
         rains = items(self.state_field("bell", "rains"))
         self.assertEqual([get(r, "author")["value"] for r in rains], ["kimik3", "gemini"])
-        self.assertEqual(get(self.state_field("bell", "planting"), "principal"), label("glm"))
+        self.assertEqual(self.state_field("bell", "planter"), label("glm"))
 
     def test_3_the_second_cistern_create_is_refused_on_a_required_absence(self):
         self.make("garden", closure("Garden"), garden_seed())
@@ -81,18 +81,22 @@ class Replay(Chain):
         self.assertEqual(outcome["label"], "refused")
         self.assertEqual(get(outcome["payload"], "class"), label("requiredAbsence"))
 
-    def test_5_the_strike_awaits_the_planting_receipt_and_the_ring_is_the_commit(self):
-        # The planting is the Garden.receive turn that created the bell; it has committed
-        # before the strike awaits it, so the await answers at once with its receipt.
+    def test_5_the_strike_awaits_the_planting_post_and_the_ring_is_the_commit(self):
+        # The bell remembers the post that planted it; gemini's strike awaits the reply that
+        # answers that post (awaitPost), and rings when that reply's turn is admitted.
+        self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
         self.make("garden", closure("Garden"), garden_seed())
         planted = self.turn("garden", "receive", self.heard(
-            "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver",
-            "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm",
-            identity="at://glm.delve.town/app.bsky.feed.post/3m-plant")
+            "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver", PLANTING), principal="glm", identity=PLANTING)
         self.assertEqual(planted["status"], "admitted", planted)
         bell = "garden/bell/1"
-        reply = self.turn(bell, "strike", principal="gemini")
-        self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
+        waiting = self.turn(bell, "strike", principal="gemini")
+        self.assertEqual((waiting["status"], waiting["receipt"]["outcome"]["post"]), ("suspended", PLANTING), waiting)
+        self.assertEqual(self.host.send(op="world-posted", principal="transport", uri=PLANTING, cid="c", object="garden")["status"], "posted")
+        answer = self.host.send(op="world-turn", principal="kimik3", object="garden", method="receive",
+                                argument=self.heard("", PLANTING + "/r1"), identity=PLANTING + "/r1", replyTo=PLANTING)
+        self.assertEqual((answer["status"], answer["receipt"]["replyTo"]), ("admitted", PLANTING), answer)
+        self.assertEqual([r["status"] for r in answer["resumed"]], ["admitted"], answer)
         self.assertEqual(self.state_field(bell, "rung"), boolean(True))
 
     def test_6_three_lines_are_retained_as_proposals_and_admission_is_the_receivers(self):

@@ -41,7 +41,7 @@ class Views(test_chain.Chain):
 
     def test_the_planter_sees_yours_and_nobody_else_does(self):
         self.make("bell", closure("Bell"), record(colour=silver(), seed=label("a bell for lost moths"),
-                                                  planting=record(principal=label(GLM), intent=label("p"))))
+                                                  planting=label("p"), planter=label(GLM)))
         mine, theirs = self.card("bell", GLM), self.card("bell", KIM)
         print("\n--- bell, planter ---\n" + mine + "--- bell, stranger ---\n" + theirs)
         self.assertTrue(mine.startswith("A silver bell planted by glm (yours): a bell for lost moths (silent)\n"), mine)
@@ -115,7 +115,7 @@ class ObservedHandles(test_chain.Chain):
         opened = self.host.send(op="world-open", path=self.path, clock="transport")
         self.assertEqual(opened["status"], "opened", opened)
         self.make("bell", closure("Bell"), record(colour=silver(), seed=label("moths"),
-                                                  planting=record(principal=label(self.DID), intent=label("p"))))
+                                                  planting=label("p"), planter=label(self.DID)))
         self.assertEqual(self.card("bell", self.DID).split("\n")[0], "A silver bell planted by …gbruj3 (yours): moths (silent)".replace("…gbruj3", "…" + self.DID[-8:]))
         r = self.host.send(op="world-principal", principal="transport", did=self.DID, handle="glm.delve.town")
         self.assertEqual(r["status"], "principal", r)

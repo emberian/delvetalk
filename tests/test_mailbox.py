@@ -64,7 +64,7 @@ class Mailbox(test_chain.Chain):
 
     def test_a_bell_tells_its_follower_when_it_rings(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
-        self.make("bell", closure("Bell"), record(colour=silver, seed=label("moths"), planting=record(principal=label(GLM), intent=label("p"))))
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("moths"), planting=label("p"), planter=label(GLM)))
         self.assertEqual(self.say(KIM, "delvetalk %s subscribe\nto: bell" % KIM, KIM)["result"]["label"], "done")
         self.deliver_all()
         self.assertEqual(self.turn("bell", "ring", principal=GLM)["status"], "admitted")
