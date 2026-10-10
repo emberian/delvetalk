@@ -3,6 +3,7 @@ import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 record State:
   count: Nat
@@ -10,8 +11,8 @@ record State:
 type Seed = {}
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
@@ -19,25 +20,19 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 # Counts and sends tick to itself: the cycle the host's causal ledger must stop.
-def ticked<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit.add({delta: 1n})}}))
-  again(state, context, then)
-def again<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.send({object: Plans.self(context), method: "tick", argument: Plans.nothing()})):
-    case _: then(state.count + 1n)
-def tick(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  ticked(state, context, fn(count: Nat) -> Nat: count)
+def tick(state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {count: add 1n}
+  again(state.count + 1n, context)
+def again(count: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: Plans.self(context), method: "tick", argument: Plans.nothing()}):
+    case _: count
 form tick:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})
 def blurb() -> Card.Door:
   {word: "loop", blurb: "Ticks itself until the causal budget runs out."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match routed:
-    case act(a): ticked(state, context, fn(count: Nat) -> Card.Replied: Card.Replied.done({action: a.action}))
-    case _: Card.answerPlan(routed, context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("Ticks: {natText(state.count)}\n")

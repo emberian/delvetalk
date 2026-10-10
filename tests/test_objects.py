@@ -200,7 +200,7 @@ class Objects(unittest.TestCase):
                     ("Bell", "rained"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
                     ("Cistern", "retain"): "write", ("Anthology", "submitted"): "write", ("Anthology", "admitted"): "write",
                     ("Card", "notified"): "send", ("Door", "open"): "write", ("Door", "knocked"): "write",
-                    ("Lantern", "lit"): "write", ("Loop", "ticked"): "write", ("Loop", "again"): "send"}
+                    ("Lantern", "lit"): "write", ("Loop", "tick"): "write", ("Loop", "again"): "send"}
         for (name, entry), plan in expected.items():
             with open(MODULES[name]) as handle:
                 source = handle.read()

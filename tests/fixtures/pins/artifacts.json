@@ -2668,44 +2668,48 @@
  },
  "Loop": {
   "entries": {
+   "again": {
+    "packet": "bafyreififemg6gsczh7eyrjsqa22re265epa3j2he3iciruew7rgfjivey",
+    "status": "compiled"
+   },
    "blurb": {
-    "packet": "bafyreiarlq2cteqgfxcq4rg5vsko2kti5a7wcq7nurn35aaymcbku7mzgu",
+    "packet": "bafyreihs7hcmfm2leiynakrcqmvux7epxoulvvgbk6sphij5c3yoqkc7pe",
     "status": "compiled"
    },
    "defaultSeed": {
-    "packet": "bafyreigzn6mle25ckaee25wllo6p32uo76tjydiyctolfikv5wmtmzrobm",
+    "packet": "bafyreigqct7zyf5mggwwicgnryuon23ocjes27scbyh6lxewmddxldsqze",
     "status": "compiled"
    },
    "forms": {
-    "packet": "bafyreihi7ihkwnod5ljk2ezj7bfyg2psbicdolsupwlscrbn4oqvomwpbe",
-    "status": "compiled"
-   },
-   "heard": {
-    "packet": "bafyreigrka7zdlo6hfxsyu6m4npnxxtywg55omb4ohayrnu4l3cjiodv24",
+    "packet": "bafyreihx4gotzagdgw6xdigcocwbh6t4otr6l5dufxqbxqmq5ytcco3oqi",
     "status": "compiled"
    },
    "initial": {
-    "packet": "bafyreihwyi7vomhlxwtfizztyscz3v5tdcdu3umt3xiac2cizeynev4fea",
+    "packet": "bafyreifhrw6csemmb5nwtckpu3xws4pnfkuu63bm2plvmg6ldselgyk6mi",
+    "status": "compiled"
+   },
+   "keep": {
+    "packet": "bafyreihntqtcc337orzcndqy7o3ix4frfp6s67yxcuxzboktmltji2lbai",
     "status": "compiled"
    },
    "receive": {
-    "packet": "bafyreia55vsueoxlc6ourddsjla5l4gfo5fvrmoijmamx63qqygltktila",
+    "packet": "bafyreib3nbma7wauiixyb5j7m3z655azvbbw6lnpiyilzc44nxeum754zi",
     "status": "compiled"
    },
    "render": {
-    "packet": "bafyreicxhenm2kdqzsudr53egphjnucstkws2l474ozbcv74vqt6igvbvy",
+    "packet": "bafyreifuuwvdmox547ogmzsep6ntg3kh5kqvils5cadalqsz3nenwwwycm",
     "status": "compiled"
    },
    "seeded": {
-    "packet": "bafyreict4o7wdmohmsi4a74rempq5dgky2xdnuyko5jez5f5tvmzz3sdda",
+    "packet": "bafyreidrwoa6cyg6h6ciaaj2i5pa4y44pugc6h2u5vhcmxe37zs2w6lw2i",
     "status": "compiled"
    },
    "tick": {
-    "packet": "bafyreih3hbss3r2ow4u44yw4hzvgmvqc2slpgxdsaseqq7zitx72l4odgy",
+    "packet": "bafyreihhpio7nb3jjb66cgbf5tfmeucjgug27gtbqxrgafxfekhxov5wvu",
     "status": "compiled"
    }
   },
-  "pin": "bafyreievfrepx3kqqghr5fyowwgc3k3zuszitwmsmxep3cbva2ed2opdtu"
+  "pin": "bafyreick5tvd5sxwi2kri565cggpel5l7frrhdo2nx5fctobvoadat6oe4"
  },
  "Phrasebook": {
   "entries": {
