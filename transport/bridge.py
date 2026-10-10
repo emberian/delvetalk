@@ -7,8 +7,10 @@ Run as `python3 -m transport.bridge`.
 """
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
+import re
 import signal
 import sqlite3
 import sys
@@ -64,10 +66,19 @@ def web_url(uri, handle):
     return f"https://delve.town/profile/{handle}/post/{uri.rsplit('/', 1)[-1]}"
 
 
+def reachable(origin):
+    """An origin someone else can open: not loopback (`localhost`, 127/8, ::1), whose links reach nobody but this machine."""
+    host = urllib.parse.urlsplit(origin or '').hostname or ''
+    try:
+        return bool(host) and host != 'localhost' and not ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return bool(host) and host != 'localhost'
+
+
 def cite(object_, version, origin=None):
-    """`<object> v<n>` and, with an origin, its short link on the next line. Posts never carry a hash or a blob."""
+    """`<object> v<n>` and, with a reachable origin, its short link on the next line. Posts never carry a hash or a blob."""
     text = f'{object_} v{version}' if version is not None else str(object_)
-    link = f'\n{origin.rstrip("/")}/o/{urllib.parse.quote(str(object_), safe="")}#v{version}' if origin and version is not None else ''
+    link = f'\n{origin.rstrip("/")}/o/{urllib.parse.quote(str(object_), safe="")}#v{version}' if reachable(origin) and version is not None else ''
     return text, link
 
 
@@ -233,9 +244,39 @@ def mention_turns(state, host, obs, authors, handles):
     return bool(replies)
 
 
+def plain(data):
+    """Typed data as plain JSON, for reading only (a form's fields); never sent back to the host."""
+    tag = data.get('tag') if isinstance(data, dict) else None
+    if tag == 'record':
+        return {f['name']: plain(f['value']) for f in data['fields']}
+    if tag == 'list':
+        return [plain(i) for i in data['items']]
+    if tag == 'variant':
+        inner = plain(data['payload'])
+        return {'tag': data['label'], **inner} if isinstance(inner, dict) else {'tag': data['label'], 'value': inner}
+    return int(data['value']) if tag == 'natural' else data.get('value') if tag else data
+
+
+def door_rows(view):
+    """The doors in an object's state, in menu order: a list, or a relation (`rows {items}`) ordered by each row's place."""
+    state = plain(view.get('state') or {})
+    doors = (state.get('doors') if isinstance(state, dict) else None) or []
+    doors = sorted(doors.get('items') or [], key=lambda d: d.get('place', 0)) if isinstance(doors, dict) else doors
+    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
+
+
+def names_door(host, obs):
+    """Does a summons name one of the directory's doors (its label, as a whole word)? Only then is its prose read: a
+    mention that merely contains a field word (`planted`, `colour`) is observed and not turned (GROUND.md 6, change 3)."""
+    words = set(re.findall(r"[\w'-]+", obs['text'].lower()))
+    view = host.send({'op': 'world-view', 'principal': CLOCK, 'object': 'directory'})
+    return any(str(d.get('label', '')).lower() in words for d in door_rows(view))
+
+
 def route(host, obs, known=None):
     """-> (object, slot|None) or None. A reply to a journaled post goes to that post's addressee; the
-    card word applies only to posts with no journaled parent, and a summon with none routes to the directory."""
+    card word applies only to posts with no journaled parent, and a summon with none routes to the directory
+    when it names a door."""
     known, seen, ancestor = known or {}, set(), obs['replyTo']
     for _ in range(MAX_HOPS):  # the nearest recorded ancestor, walking replyTo through what the observer stored
         if not ancestor or ancestor in seen:
@@ -253,7 +294,7 @@ def route(host, obs, known=None):
     card = spelled(host, obs)
     if card:
         return card, None
-    if obs['kind'] == 'summon':
+    if obs['kind'] == 'summon' and names_door(host, obs):
         return 'directory', None
     return None
 
