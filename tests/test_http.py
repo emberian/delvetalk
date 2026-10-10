@@ -293,6 +293,19 @@ class HttpFront(unittest.TestCase):
         s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **bind)
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
 
+    def test_a_stale_library_pin_is_re_read_once_and_the_compile_goes_through(self):
+        tok = self.login()
+        self.front.library = 'bafyreistale'
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object='c1', intent='repl-4',
+                         roots=[{'object': 'c1', 'version': 0}])
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        self.assertNotEqual(self.front.library, 'bafyreistale')
+        self.front.hostd_pid = -1  # a changed pid is re-read before the request
+        self.front.library = 'bafyreistale'
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object='c1', intent='repl-5',
+                         roots=[{'object': 'c1', 'version': 0}])
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+
     def test_check_and_compile_refusals_carry_the_hosts_hint(self):
         tok = self.login()
         habit = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
