@@ -8,6 +8,7 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
+import ./Text.obend as Text
 # kimik3's tide: programmable wakes as an object. Anyone subscribes themselves (the
 # subscriber is the turn's principal, never an argument); anyone may tick, but a tick
 # sooner than `gap` clock units after the last is refused tooSoon, naming when the next may
@@ -54,7 +55,11 @@ def sameSub(old: Sub, new: Sub) -> Bool:
 def subKey(sub: Sub) -> {who: String}:
   {who: sub.who}
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "subs", key: Lists.List.cons({head: "who", tail: Lists.List.nil({})}), limit: 1024n}, tail: Relations.Decls.nil({})})
+  Lists.append(Relations.Decls.nil(), {field: "subs", key: Text.words("who"), limit: subsMax()})
+# Subscribers at most: a tick sends to every due one, and a new principal past them is refused
+# by name (the host's limit would drop someone else's row).
+def subsMax() -> Nat:
+  64n
 def defaultSeed() -> Seed:
   {gap: 1n}
 def seeded(seed: Seed) -> State:
@@ -68,25 +73,19 @@ sum Done:
   ticked: {tick: Nat, sent: Nat}
   tooSoon: {next: Nat}
   refused: Card.Refusal
-# Why a subscription is refused: each arm a clause, `why` its reading.
+# Why a subscription is refused: each arm a clause and its reading.
 sum Why:
   everyZero: {}
   full: {}
-def why(w: Why) -> String:
+def refusal(w: Why) -> Card.Refusal:
   match w:
-    case everyZero(_): "every is at least 1."
-    case full(_): "The tide holds sixty-four subscribers."
-def clause(w: Why) -> String:
-  match w:
-    case everyZero(_): "everyZero"
-    case full(_): "full"
+    case everyZero(_): {clause: "everyZero", reading: "every is at least 1."}
+    case full(_): {clause: "full", reading: "The tide holds {natText(subsMax())} subscribers."}
 def refused(w: Why) -> Done:
-  Done.refused({clause: clause(w), reading: why(w)})
+  Done.refused(refusal(w))
 # One subscription per principal (the key): subscribing again replaces it.
 # Every subscribe and tick ends by offering what happened and the Tide's card as the
-# write leaves it (a refusal shows the card as read), refusals included. The helpers take
-# the State after their own inputs: a definition whose first parameter is the State is a
-# method any turn may run.
+# write leaves it (a refusal shows the card as read), refusals included.
 def told(done: Done, card: Document.Document) -> Activity<Done>:
   Card.tell(done, Document.concat(Document.text(doneLine(done)), card))
 def doneLine(done: Done) -> String:
@@ -97,16 +96,13 @@ def doneLine(done: Done) -> String:
     case refused(r): "refused {r.clause}: {r.reading}\n\n"
 def subscribe(state: State, input: {every: Nat, note: String}, context: Abi.Context) -> Activity<Done>:
   if input.every == 0n then told(refused(Why.everyZero({})), render(state, context)) else subscribing({who: context.principal, every: input.every, note: input.note, since: state.ticks, handle: context.handle}, state, context)
-# Sixty-four at most (a tick sends to every due one): a new principal past them is refused.
 def subscribing(sub: Sub, state: State, context: Abi.Context) -> Activity<Done>:
-  if Relations.count(state.subs) < 64n || Relations.exists(state.subs, fn(s: Sub) -> Bool: s.who == sub.who) then subWritten(sub, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context)) else told(refused(Why.full({})), render(state, context))
+  if Relations.count(state.subs) < subsMax() || Relations.exists(state.subs, fn(s: Sub) -> Bool: s.who == sub.who) then subWritten(sub, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context)) else told(refused(Why.full({})), render(state, context))
 def subWritten(sub: Sub, card: Document.Document) -> Activity<Done>:
   let written(_) = write {subs: upsert sub}
   told(Done.subscribed({since: sub.since}), card)
-def remainder(n: Nat, d: Nat) -> Nat:
-  if n < d then n else remainder(n - d, d)
 def due(sub: Sub, tick: Nat) -> Bool:
-  remainder(tick - sub.since, sub.every) == 0n
+  (tick - sub.since) % sub.every == 0n
 # The first tick may come at once; after it, not before last + gap.
 def tick(state: State, context: Abi.Context) -> Activity<Done>:
   if state.ticks > 0n && context.clock < state.last + state.gap then told(Done.tooSoon({next: state.last + state.gap}), render(state, context)) else tickWritten(context, state)
@@ -127,7 +123,7 @@ form subscribe:
   note: text 1..140
 form tick:
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})})
+  Lists.append(Lists.append(Card.Forms.nil(), subscribeForm()), tickForm())
 def blurb() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
