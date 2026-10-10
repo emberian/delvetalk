@@ -108,7 +108,9 @@ class Garden(Arc):
         self.assertIn("delvetalk garden/bell/1 rain", card)
         self.assertEqual(self.field("garden", "planted"), nat(1))
         again = self.say(KIM, "garden", "delvetalk garden plant\nseed: %s\ncolour: silver" % ("y" * 81))
-        self.assertEqual(self.outcome(again), ("refused", "badSpell"), again)
+        # A misfit is the garden's to answer (HOST-HANDOFF 121): with the town's policy hob reads it;
+        # nothing is planted.
+        self.assertEqual(again["status"], "suspended", again)
         self.assertEqual(self.field("garden", "planted"), nat(1))
         # The page's owner checkpoints it with `merge` under the page post; anyone else's merge,
         # an owner's naming no post, and prose containing the word are refused or not a merge.

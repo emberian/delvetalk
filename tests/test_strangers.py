@@ -19,7 +19,7 @@ import unittest
 
 from tests.test_chain import Chain, garden_state, nil, reference
 from tests.test_objects import MODULES, closure
-from tests.test_places import avatar_seed, place_seed, thing_seed
+from tests.test_places import make_place, avatar_seed, place_seed, thing_seed
 from tests.test_replay import get, rows
 from tests.test_scene import GATE, choice, passage, scene_state
 from tests.test_table import NORTH, OPENING, SOUTH
@@ -141,7 +141,7 @@ class Strangers(Forging):
 
     # 6. Custody moves only by the Thing's methods.
     def test_a_stranger_cannot_drop_or_take_a_held_thing(self):
-        self.make("porch", closure("Place"), place_seed("porch"))
+        make_place(self, "porch", place_seed("porch"))
         self.make("stone", closure("Thing"), thing_seed("stone", holder=ALICE, location="porch"))
         self.refused(self.propose("stone", {"holder": setting(reference(""))}), "owner")
         self.refused(self.propose("stone", {"holder": setting(reference(STRANGER))}), "owner")
@@ -177,7 +177,7 @@ class Strangers(Forging):
     # And a law that admits anyone's kind-0 write, or a lawless object's default law, admits only its methods' writes.
     def test_a_stranger_cannot_forge_a_gardens_children_a_places_traces_or_a_bells_rain(self):
         self.create("garden", "Garden", garden_state(owner=OWNER))
-        self.make("porch", closure("Place"), place_seed("porch"))
+        make_place(self, "porch", place_seed("porch"))
         self.make("bell", closure("Bell"), record(colour=variant("silver"), seed=label("s"), planting=label(""), planter=label(ALICE), planterHandle=label("glm")))
         child = record(world=label(""), object=label("garden/bell/forged"), colour=variant("silver"))
         trace = record(who=label(ALICE), handle=label("glm"), action=label("say"), clause=label(""), at=nat(0), n=nat(0))

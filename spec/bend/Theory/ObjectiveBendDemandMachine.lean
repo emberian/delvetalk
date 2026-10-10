@@ -34,6 +34,26 @@ structure Closure where
   term : Term
   environment : Environment
   deriving Repr
+/-- A part of an object's state the host holds (KERNEL-HANDOFF §15). It names no address:
+forcing it allocates only its immediate children, as native data or further stored parts, and
+only a `row` is fetched from the host (by the hosted runner, `forceHostedFrom`). Positions are
+a relation's canonical (key) order at the turn's read height; `size` is its row count there.
+The shapes are the kernel's: `Relation<T> = rows {items: List<T>}` and `nil`/`cons {head, tail}`. -/
+inductive Stored where
+  /-- The object's state record: a field named in `stored` is a stored relation of that many
+  rows, any other the native data `state` holds for it. -/
+  | object (state : List (String × Data)) (stored : List (String × Nat))
+  /-- A relation field's value, `rows {items}`. -/
+  | relation (field : String) (size : Nat)
+  /-- The payload `{items}` of a relation. -/
+  | items (field : String) (size : Nat)
+  /-- The rows from `position` on: `nil` at `size`, else `cons`. -/
+  | spine (field : String) (position size : Nat)
+  /-- The payload `{head, tail}` of the spine cell at `position`. -/
+  | cons (field : String) (position size : Nat)
+  /-- The row at `position`, fetched from the host. -/
+  | row (field : String) (position : Nat)
+  deriving Repr
 inductive Cell where
   | suspended (origin : Closure)
   | evaluating (origin : Closure)
@@ -42,6 +62,9 @@ inductive Cell where
   children and caches WHNF in one real transition, without a source update. -/
   | native (origin : Data)
   | nativeCached (origin : Data) (value : RuntimeValue)
+  /-- A stored part of the turn's state (`Stored`): `none` unforced, `some` its WHNF once
+  forced, kept with its provenance so a turn's reads are read off its heap. -/
+  | stored (part : Stored) (value : Option RuntimeValue)
   deriving Repr
 inductive Frame where
   | argument (term : Term) (environment : Environment)
@@ -74,6 +97,9 @@ inductive Refusal where
   | sharedEffect
   /-- The program refused its turn by name (`Term.refuse`). -/
   | program (reason : String)
+  /-- A stored row was entered with no host store to fetch it from (`stepRaw` alone, or the
+  store has no such row). -/
+  | unfetched
   deriving Repr
 inductive Control where
   | evaluate (term : Term) (environment : Environment)
@@ -126,6 +152,42 @@ def forceNative (heap : Array Cell) (value : Data) : Array Cell × RuntimeValue 
     let address := heap.size
     (heap.push (.native payload), .variant label address)
 
+/-- The object's state record: a field named in `stored` becomes a stored relation of that
+size, any other native data. Each address is read before its push. -/
+def objectCell (stored : List (String × Nat)) (field : String × Data) : Cell :=
+  match stored.lookup field.1 with
+  | some size => .stored (.relation field.1 size) none
+  | none => .native field.2
+
+def allocateObjectFields (heap : Array Cell) (stored : List (String × Nat))
+    (fields : List (String × Data)) : Array Cell × List (String × Address) :=
+  let pair := fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+    let address := prior.1.size
+    (prior.1.push (objectCell stored field), (field.1, address) :: prior.2)) (heap, [])
+  (pair.1, pair.2.reverse)
+
+/-- Force a stored part other than a row: its WHNF, allocating only its immediate children.
+A row is fetched by the hosted runner, so it has none here. -/
+def forceStored (heap : Array Cell) : Stored → Option (Array Cell × RuntimeValue)
+  | .object state stored =>
+    let (heap, fields) := allocateObjectFields heap stored state
+    some (heap, .record fields)
+  | .relation field size =>
+    let address := heap.size
+    some (heap.push (.stored (.items field size) none), .variant "rows" address)
+  | .items field size =>
+    let address := heap.size
+    some (heap.push (.stored (.spine field 0 size) none), .record [("items", address)])
+  | .spine field position size =>
+    let address := heap.size
+    if position < size then some (heap.push (.stored (.cons field position size) none), .variant "cons" address)
+    else some (heap.push (.native (.record [])), .variant "nil" address)
+  | .cons field position size =>
+    let address := heap.size
+    some ((heap.push (.stored (.row field position) none)).push (.stored (.spine field (position + 1) size) none),
+      .record [("head", address), ("tail", address + 1)])
+  | .row _ _ => none
+
 def allocateFields (heap : Array Cell) (environment : Environment)
     (fields : List (String × Term)) : Array Cell × List (String × Address) :=
   let pair := fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
@@ -152,6 +214,10 @@ def stepRaw (state : State) : State :=
     | some (.native origin) =>
       let (heap, value) := forceNative state.heap origin
       {state with heap := heap.set! address (.nativeCached origin value), control := .returned value}
+    | some (.stored _ (some value)) => {state with control:=.returned value}
+    | some (.stored part none) => match forceStored state.heap part with
+      | some (heap, value) => {state with heap := heap.set! address (.stored part (some value)), control := .returned value}
+      | none => {state with control := .refused .unfetched}
     | some (.suspended origin) =>
       {state with heap:=state.heap.set! address (.evaluating origin), control:=.evaluate origin.term origin.environment,stack:=.update address::state.stack}
   | .nativeApplication function argument remaining =>

@@ -42,6 +42,19 @@ class Views(test_chain.Chain):
         self.assertEqual(r["status"], "card", r)
         return r["text"]
 
+    def test_the_planter_sees_yours_and_a_stranger_is_offered_no_door(self):
+        self.make("bell", closure("Bell"), record(colour=silver(), seed=label("a bell for lost moths"),
+                                                  planting=label("p"), planter=label(GLM), planterHandle=label("")))
+        mine, theirs = self.card("bell", GLM), self.card("bell", KIM)
+        self.assertTrue(mine.startswith("A silver bell, planted by glm (yours): “a bell for lost moths” — silent.\n"), mine)
+        self.assertTrue(theirs.startswith("A silver bell, planted by glm: “a bell for lost moths” — silent.\n"), theirs)
+        self.assertIn("delvetalk bell door", mine)
+        self.assertIn("delvetalk bell ring", theirs)
+        self.assertNotIn("door", theirs)  # the usage lists only what inspect offers a stranger
+        self.assertNotIn("(yours)", self.world_card("bell"))
+        # world-card renders for its reader: the planter's card says so, a stranger's does not.
+        self.assertIn("(yours)", self.world_card("bell", GLM))
+        self.assertNotIn("(yours)", self.world_card("bell", KIM))
 
     def test_an_env_shows_its_events_to_its_owner_only(self):
         r = self.host.send(op="world-create", principal=GLM, identity="mk-env", object="env/" + GLM, modules=closure("Env"),
@@ -49,6 +62,7 @@ class Views(test_chain.Chain):
         self.assertEqual(r["status"], "created", r)
         self.assertEqual(self.turn("env/" + GLM, "publish", record(event=event(text="a secret mention")), principal=GLM)["status"], "admitted")
         mine, theirs = self.card("env/" + GLM, GLM), self.card("env/" + GLM, KIM)
+        self.assertNotIn("Reply with a spell", theirs)  # a stranger is offered neither observe nor seen: no usage
         self.assertIn("a secret mention", mine)
         self.assertIn("ENV of glm (yours): 1 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n", mine)
         self.assertNotIn("a secret mention", theirs)

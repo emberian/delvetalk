@@ -230,7 +230,7 @@ def joined(needs: Lists.List<String>) -> String:
     case nil(_): ""
     case cons(c): textConcat("|", textConcat(c.head, joined(c.tail)))
 def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activity<String>:
-  match world.interpret::<Planting>({utterance: input.utterance, offers: offered(), policy: {world: "", object: "policy"}, model: ""}):
+  match world.interpret::<Planting>({utterance: input.utterance, offers: offered(), policy: {world: "", object: "policy"}, model: "", held: "", misfit: ""}):
     case proposal(p):
       let written(_) = world.write(extend(keep(), {planted: Plans.Edit.set({value: textConcat(colourText(p.argument.colour), textConcat(":", p.argument.seed))})}))
       "proposal"

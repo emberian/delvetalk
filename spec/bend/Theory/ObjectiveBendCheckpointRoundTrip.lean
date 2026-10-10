@@ -174,6 +174,16 @@ theorem dataFields_roundTrip : ∀ (fields : List (String × Data)) (fuel : Nat)
         dataFields_roundTrip others fuel rest (by omega)]
 end
 
+theorem stored_roundTrip (part : Stored) (fuel : Nat) (rest : Tokens)
+    (enough : (encodeStored part).length ≤ fuel) :
+    decodeStored fuel (encodeStored part ++ rest) = some (part, rest) := by
+  cases part with
+  | object state stored =>
+    simp only [encodeStored, List.length_cons, List.length_append] at enough
+    simp [encodeStored, decodeStored, List.append_assoc, data_roundTrip (.record state) fuel _ (by omega),
+      named_roundTrip]
+  | _ => simp [encodeStored, decodeStored]
+
 theorem frame_roundTrip (frame : Frame) (fuel : Nat) (rest : Tokens)
     (enough : (encodeFrame frame).length ≤ fuel) :
     decodeFrame fuel (encodeFrame frame ++ rest) = some (frame,rest) := by
@@ -261,5 +271,6 @@ theorem control_roundTrip (control : Control) (fuel : Nat) (rest : Tokens)
   | _ => simp [encodeControl,decodeControl]
 
 #assert_axioms data_roundTrip control_roundTrip
+#assert_axioms stored_roundTrip refusal_roundTrip
 
 end Minidregg.Theory.ObjectiveBendCheckpointRoundTrip

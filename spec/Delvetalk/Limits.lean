@@ -64,6 +64,11 @@ def entryCacheBytes : Nat := 67108864
 `turn-resume` resumes only those (a digest is 59 bytes, so about 4 MiB). -/
 def issuedCheckpoints : Nat := 65536
 
+/-- The canonical bytes of one state cell (KERNEL-HANDOFF §15): a stored relation row the
+kernel fetches, and the scalar part of a state (its stored relations emptied), which the host
+checks at write. Per cell, where `maxStateBytes` was per object. -/
+def maxCellBytes : Nat := 262144
+
 /-! ## Documents rendered by the host -/
 
 /-- Nesting of documents (a sequence's items are one deeper). -/

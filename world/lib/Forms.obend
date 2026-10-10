@@ -1,0 +1,52 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Text.obend as Text
+# The make form of a kind, as data and as the source of a layer (docs/CATALOGUE.md section 3):
+# a kind's `form` is one `name: kind` line a field, and the layers a kind and a place graft on
+# themselves are generated from those lines. Pure; KIND and PLACE import it.
+# The form's field lines, one `name: kind` a line (blank lines skipped).
+record Spec:
+  name: String
+  kind: String
+def specs(form: String) -> Lists.List<Spec>:
+  Lists.filterMap(split(form, "\n"), specOf)
+def specOf(line: String) -> Lists.Maybe<Spec>:
+  let at = textBreak(line, ":")
+  if Text.blank(line) || at == textLength(line) then Lists.Maybe.none({}) else Lists.Maybe.some({value: {name: Text.trim(textTake(line, at)), kind: Text.trim(textDrop(line, at + 1n))}})
+def split(text: String, sep: String) -> Lists.List<String>:
+  let at = textBreak(text, sep)
+  if at == textLength(text) then Lists.List.cons({head: text, tail: Lists.List.nil()}) else Lists.List.cons({head: textTake(text, at), tail: split(textDrop(text, at + textLength(sep)), sep)})
+def isChoice(kind: String) -> Bool:
+  textBreak(kind, "|") < textLength(kind)
+def isNatural(kind: String) -> Bool:
+  Text.starts(kind, "natural")
+def upper(c: String) -> String:
+  let at = textBreak("abcdefghijklmnopqrstuvwxyz", c)
+  if at == 26n then c else textTake(textDrop("ABCDEFGHIJKLMNOPQRSTUVWXYZ", at), 1n)
+def capital(name: String) -> String:
+  "{upper(textTake(name, 1n))}{textDrop(name, 1n)}"
+# The value a field gives as text, in the generated make.
+def valueExpr(spec: Spec) -> String:
+  if isChoice(spec.kind) then "make{capital(spec.name)}Text(input.{spec.name})" else if isNatural(spec.kind) then "natText(input.{spec.name})" else "input.{spec.name}"
+def fieldsExpr(items: Lists.List<Spec>) -> String:
+  match items:
+    case nil(_): "Lists.List.nil()"
+    case cons(c): "Lists.List.cons({{head: {{name: \"{c.head.name}\", value: {valueExpr(c.head)}}}, tail: {fieldsExpr(c.tail)}}})"
+def converter(spec: Spec) -> String:
+  if isChoice(spec.kind) then choiceConverter(capital(spec.name), textJoin(Lists.map(split(spec.kind, "|"), caseLine), "")) else ""
+def choiceConverter(name: String, cases: String) -> String:
+  "def make{name}Text(c: Make{name}) -> String:\n  match c:\n{cases}"
+def caseLine(option: String) -> String:
+  let o = Text.trim(option)
+  "    case {o}(_): \"{o}\"\n"
+def formLine(s: Spec) -> String:
+  "  {s.name}: {s.kind}\n"
+def spellField(s: Spec) -> String:
+  " / {s.name}: <{s.kind}>"
+# Whether a field line is safe to write into generated source: a name of letters and digits
+# that begins with a letter, and a kind of letters, digits, spaces, `.` and `|`. A form comes
+# from a kind's owner, and a place graft runs with the place's authority.
+def sound(spec: Spec) -> Bool:
+  textLength(spec.name) > 0n && textSpan(textTake(spec.name, 1n), letters()) == 1n && textSpan(spec.name, "{letters()}0123456789") == textLength(spec.name) && textSpan(spec.kind, "{letters()}0123456789 .|") == textLength(spec.kind)
+def letters() -> String:
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

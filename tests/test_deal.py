@@ -81,6 +81,7 @@ class Deals(Chain):
         self.assertEqual([(get(s, "principal")["value"], get(s, "post")["value"]) for s in signatures],
                          sorted(signed, key=lambda s: (len(s[0].encode()), s[0].encode())))   # key order
         card = self.turn("exhibition", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"]
+        self.assertNotIn("Reply with a spell", card)  # at rest, countersign and withdraw are no longer offered: no usage
         self.assertIn("At rest: every party has countersigned.", card)
         self.assertIn("signed: inkling at at://inkling/p/1", card)
         late = self.turn("exhibition", "withdraw", principal=GALLERY)

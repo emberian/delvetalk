@@ -157,6 +157,15 @@ theorem cellV2_roundTrip (cell : Cell) (fuel : Nat) (rest : Tokens)
     simp only [encodeCellV2, List.length_cons, List.length_append] at enough
     simp [encodeCellV2, decodeCellV2, List.append_assoc, data_roundTrip origin fuel _ (by omega),
       valueV2_roundTrip r value fuel rest (by omega)]
+  | stored part value =>
+    cases value with
+    | none =>
+      simp only [encodeCellV2, List.length_cons, List.length_append] at enough
+      simp [encodeCellV2, decodeCellV2, List.append_assoc, stored_roundTrip part fuel _ (by omega)]
+    | some value =>
+      simp only [encodeCellV2, List.length_cons, List.length_append] at enough
+      simp [encodeCellV2, decodeCellV2, List.append_assoc, stored_roundTrip part fuel _ (by omega),
+        valueV2_roundTrip r value fuel rest (by omega)]
 
 theorem frameV2_roundTrip (frame : Frame) (fuel : Nat) (rest : Tokens)
     (enough : (encodeFrameV2 r frame).length ≤ fuel) :
@@ -370,7 +379,9 @@ theorem mapValue_inverse (v : RuntimeValue) : mapValueAddresses g (mapValueAddre
   cases v <;> simp [mapValueAddresses, inv, Function.comp_def]
 
 theorem mapCell_inverse (c : Cell) : mapCellAddresses g (mapCellAddresses f c) = c := by
-  cases c <;> simp [mapCellAddresses, mapValue_inverse inv, inv, Function.comp_def]
+  cases c with
+  | stored part value => cases value <;> simp [mapCellAddresses, mapValue_inverse inv]
+  | _ => simp [mapCellAddresses, mapValue_inverse inv, inv, Function.comp_def]
 
 theorem mapFrame_inverse (fr : Frame) : mapFrameAddresses g (mapFrameAddresses f fr) = fr := by
   cases fr <;> simp [mapFrameAddresses, mapValue_inverse inv, inv, Function.comp_def]
@@ -403,5 +414,6 @@ theorem stateV3_roundTrip (d : Dictionary) (s : State) :
   simp only [Option.bind_some, plainV2_roundTrip, Option.map_some, absolute_relative]
 
 #assert_axioms plainV2_roundTrip stateV3_roundTrip
+#assert_axioms cellV2_roundTrip mapCell_inverse absolute_relative
 
 end Minidregg.Theory.ObjectiveBendCheckpointRoundTrip

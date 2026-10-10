@@ -151,8 +151,8 @@ class OwnedLenses(test_chain.Chain):
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
     def test_a_rooms_and_a_things_owner_sets_their_fields_and_the_law_keeps_others_out(self):
-        from tests.test_places import place_seed, thing_seed
-        self.make("porch", closure("Place"), place_seed("Porch"))
+        from tests.test_places import make_place, place_seed, thing_seed
+        make_place(self, "porch", place_seed("Porch"))
         self.make("stone", closure("Thing"), thing_seed("stone"))
         set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
         for obj, kind, fields in (("porch", "room", ["name", "description", "present", "things", "traces"]),

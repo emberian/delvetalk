@@ -120,6 +120,35 @@ theorem forceNative_size (heap : Array Cell) (data : Data) :
     (forceNative heap data).1.size = heap.size + nativeChildren data := by
   cases data <;> simp [forceNative, nativeChildren, allocateNativeFields_size]
 
+theorem foldl_push_size {α : Type} (g : String × α → Cell) : ∀ (fields : List (String × α))
+    (init : Array Cell × List (String × Address)),
+    (fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+      (prior.1.push (g field), (field.1, prior.1.size) :: prior.2)) init).1.size =
+      init.1.size + fields.length
+  | [], init => by simp
+  | field :: rest, init => by simp [List.foldl, foldl_push_size g rest]; omega
+
+theorem allocateObjectFields_size (heap : Array Cell) (stored : List (String × Nat))
+    (fields : List (String × Data)) :
+    (allocateObjectFields heap stored fields).1.size = heap.size + fields.length := by
+  unfold allocateObjectFields
+  simpa using foldl_push_size (objectCell stored) fields (heap, [])
+
+/-- The cells forcing a stored part allocates (none for a row, which `stepRaw` refuses). -/
+def storedChildren : Stored → Nat
+  | .object state _ => state.length
+  | .relation _ _ | .items _ _ | .spine _ _ _ => 1
+  | .cons _ _ _ => 2
+  | .row _ _ => 0
+
+theorem forceStored_size (heap : Array Cell) (part : Stored) :
+    (match forceStored heap part with | some (h, _) => h.size | none => heap.size) =
+      heap.size + storedChildren part := by
+  cases part with
+  | spine field position size =>
+    by_cases h : position < size <;> simp [forceStored, storedChildren, h]
+  | _ => simp [forceStored, storedChildren, allocateObjectFields_size]
+
 /-- The heap size and stack length `stepRaw` produces, computed without building
 its result; `depth` stands for the pre-state's stack length. -/
 def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
@@ -129,6 +158,7 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
   | .enter address => match state.heap[address]? with
     | some (.suspended _) => (size,depth+1)
     | some (.native value) => (size + nativeChildren value, depth)
+    | some (.stored part none) => (size + storedChildren part, depth)
     | _ => (size,depth)
   | .nativeApplication _ _ _ => (size, depth+1)
   | .evaluate term _ => match term with
@@ -168,7 +198,15 @@ theorem sizesAfter_eq (state : State) :
     simp only [sizesAfter, stepRaw]
     cases h : heap[address]? with
     | none => simp
-    | some cell => cases cell <;> simp [forceNative_size]
+    | some cell =>
+      cases cell with
+      | stored part value =>
+        cases value with
+        | some => simp
+        | none =>
+          have hs := forceStored_size heap part
+          rcases hf : forceStored heap part with _ | ⟨h', v⟩ <;> simp [hf] at hs ⊢ <;> omega
+      | _ => simp [forceNative_size]
   | nativeApplication function argument remaining =>
     cases remaining <;> simp [sizesAfter, stepRaw]
   | evaluate term environment =>
@@ -442,5 +480,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.forceWithFast_unique' dep
 -/
 #guard_msgs in
 #print axioms forceWithFast_unique
+
+#assert_axioms foldl_push_size allocateObjectFields_size forceStored_size sizesAfter_eq stepRawFast_eq_stepRaw
 
 end Minidregg.Theory.ObjectiveBendDemandMachineFast

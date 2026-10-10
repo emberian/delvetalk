@@ -252,6 +252,8 @@ def encodeCellV2 : Cell → Tokens
   | .cached origin value => .nat 2 :: (encodeClosureV2 r origin ++ encodeValueV2 r value)
   | .native origin => .nat 3 :: encodeData origin
   | .nativeCached origin value => .nat 4 :: (encodeData origin ++ encodeValueV2 r value)
+  | .stored part none => .nat 5 :: (encodeStored part ++ [.nat 0])
+  | .stored part (some value) => .nat 5 :: (encodeStored part ++ .nat 1 :: encodeValueV2 r value)
 
 def encodeFrameV2 : Frame → Tokens
   | .argument term environment => .nat 0 :: encodeClosureV2 r ⟨term, environment⟩
@@ -320,6 +322,14 @@ def decodeCellV2 (fuel : Nat) : Tokens → Option (Cell × Tokens)
       let (origin, rest) ← decodeData fuel rest
       let (value, rest) ← decodeValueV2 terms envs nameLists fuel rest
       pure (.nativeCached origin value, rest)
+  | .nat 5 :: rest => do
+      let (part, rest) ← decodeStored fuel rest
+      match rest with
+      | .nat 0 :: rest => pure (.stored part none, rest)
+      | .nat 1 :: rest => do
+        let (value, rest) ← decodeValueV2 terms envs nameLists fuel rest
+        pure (.stored part (some value), rest)
+      | _ => none
   | _ => none
 
 def decodeFrameV2 (fuel : Nat) : Tokens → Option (Frame × Tokens)
@@ -407,6 +417,8 @@ def cellEnvs : Cell → List Environment
   | .cached c v => closureEnvs c ++ valueEnvs v
   | .nativeCached _ v => valueEnvs v
   | .native _ => []
+  | .stored _ (some v) => valueEnvs v
+  | .stored _ none => []
 def frameEnvs : Frame → List Environment
   | .argument _ e | .extend _ e | .condition _ _ e | .binaryLeft _ _ e | .case _ e | .ifBool _ _ e
   | .joinSeparator _ e => [e]
@@ -510,6 +522,7 @@ def mapCellAddresses : Cell → Cell
   | .cached c v => .cached { c with environment := c.environment.map f } (mapValueAddresses f v)
   | .native d => .native d
   | .nativeCached d v => .nativeCached d (mapValueAddresses f v)
+  | .stored p v => .stored p (v.map (mapValueAddresses f))
 
 def mapFrameAddresses : Frame → Frame
   | .argument t e => .argument t (e.map f)

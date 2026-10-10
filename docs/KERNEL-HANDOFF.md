@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (foundation b0f3618, after lane/kernel10 and the codex review of a3e1fb2, whose kernel findings are §24; the queue is §16).
+State on 2026-10-10 (lane/kernel11 after foundation f7865b0: lazy state cells, §15, built and measured; the queue is §16).
 
 ## Summary
 
@@ -275,63 +275,201 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
   `tests/test_canonical_compare.py` (a hundred random records against `canonical-encode`).
   Conformance 1500: 1432 agree per evaluator, 68 known, 0 unexpected.
 
-## 15. Design note: lazy state (RELATIONAL §11 item 4)
+## 15. Lazy state: stored cells (RELATIONAL §11 item 4; the specification lane/kernel11 builds)
 
-**Today.** A turn's state argument is admitted whole as native cells: `Cell.native d` holds
-admitted Data, and forcing it allocates its immediate children as native cells and caches
-the WHNF (`nativeCached d v`). That is lazy in conversion, not in loading: the host has already materialised every row. `nativeCached` is not a host thunk: its origin is the Data.
+**Today.** A card or view (a pure entry) takes its arguments natively (`prepareNativeChecked`:
+admission walks every node, `Cell.native d` per argument, forcing allocates one layer). An
+activity quotes every argument as a term (`Turn.quoteAt`), checks it (`CheckedEntry.apply`,
+`checkAt`) and evaluates it lazily. Either way the whole state is walked per turn, outside
+the tick tariff for activities, and a turn records only `{object, version}`.
 
-**What the machine needs.** One cell kind and one control, no change to `stepRaw`'s
-signature: `Cell.stored (h : Handle)`, `Handle = {object, version, field, row : Option key,
-size : Nat}`. Entering a stored cell sets `control := .awaitingStore h addr` (one tick),
-exactly as `perform` yields, but the *runner* answers it inside the segment:
-`forceHostedFrom` calls the host's `fetch : Handle → Option Data` (a parameter, like
-`policy`), charges the row, and `supply h d state` overwrites the cell with `native d`
-and re-enters it. A relation's `items` becomes a stored spine: forcing the spine cell of
-position k yields `cons {head: stored row k, tail: stored spine k+1}` without the row's
-data; forcing `head` fetches that row. Two primitives answer from the handle without
-forcing: `relationCount(r)` (the handle's `size`; on an ordinary list a walk, as
-`textJoin` walks) and `relationLookup(r, key)` (the host's canonical index: one fetch).
-`fetch` reads the version the turn read, so replay is deterministic.
+**The cell.** One new heap cell, `Cell.stored (s : Stored) (value : Option RuntimeValue)`:
+`none` unforced, `some v` forced (its WHNF, kept with its provenance). `Stored` holds no
+address:
 
-**What the proofs say.** `stepRaw`, `resume`, `settle` and the collector see a stored cell
-as a leaf holding no address (as `native`): `cellAddresses (.stored _) = []`,
-`renameCell` the identity, a codec tag in v2/v3 (`Handle` encodes as its fields).
-`related_stepRaw` gains the enter case (control changes, heap does not);
-`supply` needs its own lemma `related_supply` (heap agreement after overwriting one
-cell with the same Data on both sides), the shape of `related_resume`.
-`checkpoint_resume_segment` stays true for any fixed `fetch` (both runs ask the same function): its proof gains a parameter, not an idea. `stateV3_roundTrip` gains one
-codec case each.
+| `Stored` | forcing it (one transition) | allocates |
+|---|---|---|
+| `object (state : List (String × Data)) (stored : List (String × Nat))` | `.record` of the state's fields in order: a field named in `stored` with size n is `stored (relation f n)`, any other `native d` | one cell a field |
+| `relation f n` | `.variant "rows" a` | `a = stored (items f n)` |
+| `items f n` | `.record [("items", b)]` | `b = stored (spine f 0 n)` |
+| `spine f j n` | `j < n`: `.variant "cons" c`; else `.variant "nil" e` | `c = stored (cons f j n)`; `e = native (.record [])` |
+| `cons f j n` | `.record [("head", h), ("tail", t)]` | `h = stored (row f j)`, `t = stored (spine f (j+1) n)` |
+| `row f j` | the host's row j of f, forced as `native` forces it | its fields, `native` |
 
-**Across a suspension.** A yield happens only at a `perform`, never at `awaitingStore`
-(the runner answers before continuing), so a checkpoint never stops mid-fetch. A turn
-that forced half a list checkpoints forced rows as `nativeCached` (their data inline,
-the "forced cells only" the brief asks) and unforced ones as handles naming the version
-read at the turn's start. On resume an unforced row is fetched at that version: the host
-must answer old versions (it can: `world-object {version}`, HOST-HANDOFF 5.7, and `viewAt`, 5.47) or, more
-simply, treat a resumed fetch of a row changed since as a stale root and refuse/re-run
-the turn, as a moved root does today.
+Every kind but `row` is forced by `stepRaw` alone (the shape is the kernel's: `Relation<T> =
+rows {items: List<T>}`, FOUNDATION §9, and `nil`/`cons {head, tail}`); the cell becomes
+`stored s (some v)`. Entering `stored s (some v)` returns `v`. Positions are the relation's
+canonical order (key order) at the turn's read height; `n` is its row count there.
 
-**Roots.** The host records each fetch `(object, field, key, version)`: a turn conflicts only with writes to the keys it forced (or any insert/retract if it called `relationCount`), §3's `keysChangedSince` rule applied to reads.
+**The fetch.** `stepRaw` cannot fetch: entering `stored (row f j) none` is `.refused
+.unfetched` (a new `Refusal`, reached only by a runner without a store). The hosted runner
+fetches: `forceHostedFrom policy fetch limits bytes ticks state depth` gains `fetch : Fetch`
+(`Fetch := String → Nat → Option Data`, beside `policy`, threaded through `forceHostedWith`,
+`materializeWith`, `completeWith`, `yieldedPlanWith`, `executeStateWith`). When the control is
+`.enter a` and `heap[a] = stored (row f j) none`, it calls `fetch f j` (none: `.refused
+.unfetched`), charges `fetchCost d = (1 + 2 * b, b)` with `b = d.canonicalBytes` exactly as a
+text primitive is charged (ticks first, `b` reserved against `bytes`, suspension retaining
+the state when either fails), and takes `fetchStep d state`: `(heap', v) := forceNative heap
+d`, `heap'[a] := stored (row f j) (some v)`, `control := .returned v`. A row is fetched once
+per segment it is forced in; forced, it is native data like any other.
 
-**Evaluators.** None see stores: a term with a stored state is, by definition, the term
-with the Data substituted, which is what they evaluate today. They gain the two
-primitives over list literals (`relationCount` = length, `relationLookup` = first row
-whose key projection equals the key, by canonical bytes), the generator emits them, and
-`evaluate-term` gains an optional `store` table so the machine path with stored cells is
-compared against the substituted term.
+**Tariff.** Every non-row stored force is one tick (as `native`). A row is `1 + 2b` ticks and
+reserves `b`, its canonical bytes. A turn that forces nothing of a relation pays nothing for
+it, in ticks or in host work: the kernel holds `(field, n)` and nothing else. `count` over
+`Lists.length` forces spine and cons cells only (no fetch, no bytes); a `rows` scan, `where`,
+`joinOn` and a card render fetch exactly the rows whose fields they read; `lookup` (a Bend
+walk) fetches the rows before the one it finds, since it compares their keys.
 
-**Cost per forced row.** One tick to enter, one to supply, and the row's admission work
-(`nodes + bytes`, as `prepareNative` charges) plus `1 + 2 * bytes` for the copy, so a
-lookup of a 200-byte row is about 450 ticks against today's whole-relation load. A
-`count` is one tick. Only forced rows are allocated.
+**The runner.** New entry points in `Turn.lean`, beside the quoted ones (which stay, unchanged
+in ticks, until the host has switched; then they are deleted):
+- `structure StoredRelation where field : String; size : Nat; key : List String`
+- `structure Store where relations : List StoredRelation; fetch : String → Nat → Option Data`
+  (`Store.empty`: no relations, every fetch `none`).
+- `startEntryStored (entry : CheckedEntry) (arguments : List Data) (store : Store) (binding : Binding) (b : Budgets) (dictionary : Option Dictionary := none) : Except String (Step × Reads)`
+- `resumeSuspendedStored (entry) (suspension : Suspension) (store : Store) (binding) (value : Data) (b) : Except String (Step × Reads)`
+- `resumeEntryStepStored (entry) (checkpoint : Checkpoint) (issued : String) (binding) (value : Data) (b) (store : Store) (dictionary := none) : Except String (Step × Reads)`
 
-**Estimate.** Kernel: cell, control, `supply`, runner, two primitives, codec cases, the
-Fast mirror, collector and settle lemmas, evaluators and generator: 3 lane-days.
-Host: `Handle` minting on admission, `fetch` over the store with the canonical key index,
-row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation.obend`
-`count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
-§11 says; nothing in it changes a pin of an object that does not declare relations.
+The stored path takes every argument natively, like a card (`nativeApplication`; no
+`quoteAt`, no `checkAt` per turn: each data argument is admitted by `conformsUnder`, which
+`conformsUnder_iff` makes `HasType`, as `prepareNativeChecked` admits a card's). The first
+argument is the state: before the check, each field named in `store.relations` is replaced by
+the empty relation `rows {items: []}` (so the check walks the scalars only), and the state
+enters as one `stored (object fields stored) none` cell. The rows themselves are not
+re-checked: the host checked each when it was written (RELATIONAL §11 item 2). Ticks of the
+stored path differ from the quoted path's (a native argument is one tick a node where a
+quoted one is three), so `test_tariff`'s pins move when the host switches, not before.
+
+**Reads.** `structure Read where field : String; key : Data; bytes : Nat` (a forced row: its
+key projection onto `StoredRelation.key`, as a record of those columns, and its canonical
+bytes), `structure Reads where rows : List Read; spans : List (String × Nat)`. A segment's
+reads are read off its final state before any collection: every `stored (row f j) (some _)`
+cell is a row read, and `spans` gives, per field, the furthest spine cell forced (`j + 1` for
+`spine f j n` forced; `n + 1` when the `nil` was forced). The host records `{object, field,
+key}` per row and, per span, the key range it observed: up to and including row `reach - 1`'s
+key, or the whole key set when `reach = n + 1` (a `count`, an `exists` that fails, a scan to
+the end). The judging rule (WHOLENESS §3a): no admitted write since the read touched a read
+key, or inserted or retracted a key inside a read span. A turn's reads are the union over its
+segments (a resumed segment reports again what is still live; the union is idempotent).
+
+**The invariant.** A forced row is `store.fetch f j` for the turn's store, and the host builds that
+store from the object's state at the turn's read height (the version `recordRoot` records):
+a fetch on a resumed segment must answer the same version (the host keeps it, or refuses
+`staleRoot` and re-runs the turn, as a moved root does today). The binding's roots digest
+already names that version, so a checkpoint resumed under another one is refused before any
+fetch.
+
+**Checkpoints.** v3 gains cell tag 5: `stored`, its `Stored` (tag 0-5 and fields: strings,
+naturals, `encodeData` for the object's state) and an option (`0`, or `1` and the value).
+An unforced row is its handle `(f, j)`, never its data; a forced row is its value (addresses
+of native columns, which the checkpoint holds as `native`). Nothing else changes; a
+checkpoint with tag 5 does not decode on an older binary.
+
+**What the proofs gain.** Cases, not ideas: `cellAddresses (stored _ v) = v`'s addresses
+(none unforced), `renameCell`, `trimCell`, `eraseCell` map the value; `stepRawFast`,
+`sizesAfter` gain the enter-stored cases; `related_stepRaw` and `erase_stepRaw` the enter
+cases (a stored force allocates address-free cells, as `forceNative` does); the runner's fetch
+branch gets `related_fetchStep` and `erase_fetchStep` (both sides read the same handle, so the
+same row, and `forceNative_related` does the rest); `agree_*` and `related_*` take `fetch` as
+a parameter, and `checkpoint_resume_segment` holds for every `fetch` (both runs ask the same
+function); `stateV3_roundTrip` gains the tag-5 case. `#assert_axioms` on each.
+
+**Evaluators.** A stored cell is not a term form, so the three evaluators do not change: a
+term run with stored state is, by definition, the term applied to the substituted Data. The
+conformance generator gains a `stored` kind (a term over a state record holding a relation,
+reading none, some or all of its rows) which `evaluate-term` runs with `{arguments, stored}`
+(the named relation fields held as stored cells, fetched from the argument's own rows) and the
+evaluators run substituted; both must agree on status, shape and plans.
+
+**Bounds (step 4).** A cell, not an object, is bounded: `Bounds.maxCellBytes` (262,144) bounds
+a fetched row (the kernel refuses a larger one, "stored row exceeds the cell bound") and the
+state's scalar part (the state with each stored relation emptied, `Turn.scalarPart`), which the
+host checks at write as it checks `stateBytes` today; a turn's forced rows are reported with
+their bytes; a write is charged the canonical bytes of the cells it changes (the scalar part
+if a scalar changed, each inserted or replaced row). FOUNDATION's sentence: "State is bounded
+per cell: the scalar fields together and each relation row are at most 256 KiB of canonical
+bytes, a relation's length is its declared limit, and a write pays for the cells it changes."
+
+**Two primitives (after the cells; queued).** Both are `textJoin`-scale (a term form, frames,
+typing, both codecs, Fast, collector and settle cases, three evaluators):
+`relationCount(r) -> Nat` reads the handle's `size - position` from a stored spine without
+forcing it (one tick; on an ordinary list a walk), and records a whole-relation span;
+`relationLookup(r, key) -> Maybe<T>` binary-searches the stored positions by fetching keys
+(a `Store.key` the host adds then, charged `1 + 2 * keyBytes` each, `⌈log2 n⌉ + 1` of them) and fetches one row;
+on an ordinary list a walk by canonical bytes. `Relation.obend`'s `count` and `lookup` move
+onto them (objects lane).
+
+**Built (lane/kernel11).** Step 2: `Stored`, `Cell.stored`, `Refusal.unfetched` (checkpoint
+refusal code 9), `objectCell`/`allocateObjectFields`/`forceStored` (Machine); `storedChildren`,
+`forceStored_size` (Fast); `Fetch`, `fetchable`, `fetchStep`, `fetchCost`, `fetchable_spec`,
+`storedInitial`, `forcedRows`, `spineReach` and the fetch branch of `forceHostedFrom` (Data);
+`encodeStored`/`decodeStored`, `stored_roundTrip`, v3 cell tag 5 (`cellV2_roundTrip`); collector,
+trim and erase cases; `erase_forceStored`, `fetchable_agree`, `agree_fetchStep`,
+`forceStored_related`, `related_fetchable`, `related_fetchStep`; `agree_*`, `related_*`, the three
+`*_resume_segment` theorems and `checkpoint_resume_segment` take `{fetch}`. `yieldedPlan` and
+`complete` take a `Fetch`. `evaluate-term` takes `stored: {state, relations}` and answers
+`forced: [[field, position]]`; the generator appends 32 `stored` cases from their own stream
+(`stored_cases`), and `test_conformance.StoredCells` checks stored against literal runs and the
+forced rows. Conformance 1500: 1467 of 1535 agree per evaluator, 68 known, 0 unexpected (the 32
+stored cases all agree). No packet or pinned tick moved.
+
+Step 3 (runner): `Turn.Store`, `StoredRelation`, `Store.bounded` (rows within
+`Bounds.maxCellBytes`), `Read`, `Reads` (`Reads.toJson`: `{rows: [{field, key, bytes}], spans:
+[{field, reach}]}`), `keyProjection`, `scalarPart`, `storedStart`, `runStored`,
+`startEntryStored`, `resumeSuspendedStored`, `resumeEntryStepStored` exactly as specified above,
+and for cards and views `Package.executeDataEntryStored entry arguments store limits :
+Except String (DataExecution × Reads)`. `exhaustedResource` names `heap` for a fetch that would
+not fit. Wire (tests and the evaluators' harness only; the host calls the Lean functions):
+`turn-start`/`run` take `stored: [{field, key}]` (the first argument's named relations held as
+stored cells over its own rows) and `turn-resume` `stored` and `state`; each reply carries
+`reads`. `profile` is not computed on the stored path. Measured in `tests/test_stored.py`: a turn
+that reads no row, or one row, spends the same ticks over 0 or 2,048 rows; a row of 101 more
+canonical bytes costs exactly 202 more ticks; a card render, a scan and a merge join report
+exactly the rows they read (the join none past the shorter relation's end).
+
+Step 4 (bound): `Turn.relationRows state field`, `Turn.cellOverBound relations state : Option
+(String × Data)` (`("scalar", {})` for the scalar part, else the field and the key of the first
+row past `Bounds.maxCellBytes`) and `Turn.changedCellBytes relations before after : Nat` (the
+scalar part's bytes when a scalar field changed, plus each row whose key is new or whose row
+changed), `relations` being the artifact's `[(field, key)]`; `#guard`ed. The host's half, by
+site: `Ops.lean` 1960 and 1979 (`stateBytes written ≤ Limits.maxStateBytes`) become
+`cellOverBound decls written = none`, refused `capacity` with reason `maxCellBytes` and the
+cell; 2450 (`maxSeedBytes`), with `TurnLoop.lean` 1757 for a fixed seed, the same over the seed; the storage ledger at 2919 charges
+`changedCellBytes decls before after` instead of the difference of `stateBytes`; `world-inspect` (`TurnLoop.lean` 2765)
+keeps `stateBytes` and gains `scalarBytes` (`Canonical.encode (scalarPart …)`). FOUNDATION §9's
+scale rule becomes: "State is bounded per cell: the scalar fields together and each relation row
+are at most 256 KiB of canonical bytes, a relation's length is its declared limit, and a write
+pays for the cells it changes."
+
+Step 5 (measured on hbox, P-cores, lane against foundation f7865b0). `compile-profile stored
+REQUEST ROWS R` runs `tests/test_stored.py`'s `third` (a write, then row 3's text) from a state of
+ROWS rains, quoted and stored. At 2,048 rows the start and resume take 2,853 us quoted and 45 us
+stored (0 rows: 32 and 29 us); ticks 81 + 168 quoted, 79 + 208 stored (the fetched row is
+`1 + 2b`); one row forced; the suspension's checkpoint is 45,357 canonical bytes quoted and 540
+stored (557 and 538 at 0 rows). The host still runs the quoted path, so the rehearsal replay
+(18,183 captured requests, `compile-profile replay … "world-turn directory receive" 1`) writes a
+byte-identical journal on both binaries (median suspension entry 3,895 bytes over its 43, the
+same ticks per class) in 84.75 G user instructions against 84.53 G (within the 5% run-to-run
+noise; directory `receive` 1,501 ms against 1,511). The Counter bump replay (R = 50, best of
+three): 120 us a bump on both, 102 ticks, 21.73 G instructions on both. `fetchable` is
+`@[inline]` so the hosted runner's fetch test costs nothing on a run without stored cells.
+
+**The host's entry points (lane/host14).** All in `Delvetalk.Turn` unless named:
+`Store`, `StoredRelation`, `Store.bounded`, `startEntryStored`, `resumeSuspendedStored`,
+`resumeEntryStepStored` (each `Except String (Step × Reads)`), `Package.executeDataEntryStored`
+for cards and views, `Read`/`Reads`/`Reads.toJson`, `keyProjection`, `scalarPart`,
+`relationRows`, `cellOverBound`, `changedCellBytes`, `Bounds.maxCellBytes`, and `storeOfState state
+[{field, key}]` (a `Store` over the state's own rows, as the tests and the profile build it). The host builds a
+`Store` per turn from the object's state at its read height (`relations` from the artifact's
+`[{field, key}]` with each relation's row count, `fetch f j` its row j in key order), records each
+`Read` as `{object, field, key}` and each span as the key range above, and keeps that store for
+the turn's resumed segments. When every turn takes the stored path, `test_tariff`'s pins are
+re-recorded (one commit, the reason being the native argument's one tick a node) and the quoted
+entry points are deleted.
+
+**Estimate.** Kernel: cells, fetch, codecs, Fast, proofs, generator (step 2) 2 days; runner and
+reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `Store` over its
+state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with
+`keysChangedSince` and the span rule, the per-cell bound and ledger: 3 days.
 
 ## 16. Queue for the successor (lane/kernel10, after foundation 534b92c)
 
@@ -352,6 +490,11 @@ codex review of a3e1fb2 (kernel10, §24). Remaining:
    digest a compacted journal entry lacks: the journal is the trust root, so that is sound, but a
    host that ever resumes a checkpoint from outside its journal must look its digest up there.
 13. Done (`52ad1b2`): a REPL checkpoint from before the host restarted is refused `replRestarted`.
+14. Lazy state (§15) is built through step 5 (lane/kernel11). After the host's switch (lane/host14):
+   delete `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt`
+   for state, and move `test_tariff`'s pins in that commit.
+15. The two primitives of §15, `relationCount` and `relationLookup` (with `Store.key`), then
+   `Relation.obend`'s `count` and `lookup` onto them (objects lane).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
