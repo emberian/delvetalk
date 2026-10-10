@@ -146,7 +146,7 @@ def planted(context: Abi.Context) -> String:
         made = create("d1", record(owner=label("ember"), doors=doors))
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
-        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy"])
+        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy", "words", "fields"])
         self.assertEqual(field(state, "doors"), doors)
         self.assertEqual(field(state, "greeted"), {"tag": "list", "items": []})
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
