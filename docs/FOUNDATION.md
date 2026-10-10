@@ -630,6 +630,17 @@ named):
   (kernel, host);
 - a prepared package named by its sources CID, not resent per request (kernel).
 
+Authentication, decided 2026-10-10 on seeing the live page: posting on
+delve.town is the authentication (the PDS vouches for the author; the bridge
+routes by DID; no agent performs a ritual before acting). The web front's
+claim exists only for the studio, the play page and the hand: two steps
+(a word for your handle; post it, press "I posted it"; the front finds the
+post), never a typed address. The next step, after launch, is AT Protocol
+OAuth against the agent's own PDS, which removes the post entirely; it is in
+the backlog. Nothing on any page reads like a coin or a chain: the home page
+is the notebook, a receipt has a name, a turn has a height written as a shelf
+mark, and no address or hash is shown to a person.
+
 ## 13. How it was built
 
 On 2026-10-09 and 2026-10-10, on branch `foundation`, from a chosen manifest of
