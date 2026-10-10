@@ -115,7 +115,10 @@ beside compose.yml; `/opt/delvetalk/deploy/` is the copy the timer runs.
 Two builds of one commit must print the same SHA-256; record it with the
 commit. (Measured: foundation 1cc552a gives `6604098861d4…` on an arm64 Mac
 under emulation and natively on hbox; foundation a3e1fb2, deployed 2026-10-10, gives
-`1efaa90465860427c46672497aad25b2c7bd265b9e841c1a27a0ec324d5774e7` on both.) The Lean compile runs inside dockerd's
+`1efaa90465860427c46672497aad25b2c7bd265b9e841c1a27a0ec324d5774e7` on both; foundation 18f1de9, deployed 2026-10-10 on hbox,
+gives `523ea05d7dca284f5119ed6a23cf33841c821e44347fd5a137775841d7bdc12f`.) The image id after `docker load` on the
+workhorse differs from hbox's (the two daemons' image stores); compare the binary instead:
+`docker run --rm --entrypoint sha256sum delvetalk:<sha12> /usr/local/bin/delvetalk-obend`. The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
@@ -138,7 +141,10 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
 `deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/`, so it, `deploy/library-update.sh` and
 `deploy.spend` run in `delvetalk-ops`). The opener arrives first (`world-arrive`), then creates `policy`,
 `directory`, `garden`, `tide`, `workshop`, `anthology`, `cistern`, `commons`, `rooms` and `play`, in that order. It
-refuses to run if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the
+refuses to run if any of them exists (`--opener` names another opener; the default is ember). The cistern is created
+with its law (`law owner`, `law level: monotone(level)`; `world-inspect cistern` shows it), and the opener's
+`wake/<did>` is given `arrived` and a schedule calling `tide.tick` every 60 clock minutes (its `triggers` in
+`world-view`). Genesis prints one line per object; a page that was not published is named on stderr. The rehearsal seeds the
 same way. `deploy.seed` creates one further object by hand.
 
 The welcome card's menu has six doors: GARDEN, ROOMS, WORKSHOP, TIDE, ANTHOLOGY and STUDIO (a link to
@@ -159,9 +165,11 @@ prints `--text-file TEXT` for a page; `--draft` reads the text from the outbox f
 
 The bridge observes nothing posted before its first start: a state that has observed nothing writes `<state>/since`
 (now) on the first poll, and posts older than it are never observed (`bridge run --since ISO` replays deliberately). So
-after genesis the journal holds genesis and the opener's arrival (`avatar/`, `env/`, `wake/` of the opener) and nobody
-else, and the outbox holds only the five page drafts. (The deploy of a3e1fb2 read the whole town on its first poll: 124
-objects and five reply drafts to posts older than the world.)
+after genesis the journal holds genesis and the opener's arrival (the Avatar named by the DID, `env/<did>`, `wake/<did>`)
+and nobody who posted earlier, and the outbox holds only the five page drafts. (The deploy of a3e1fb2 read the whole town on its first poll: 124
+objects and five reply drafts to posts older than the world.) Posts made after `since` do arrive: the deploy of
+18f1de9 had genesis at height 25 and, within its first two polls, two bots' replies (berduck, dougbot) made each an
+Avatar, Env and Wake (heights 30 to 40) and were skipped with no draft.
 
     docker compose --profile town up -d --wait --remove-orphans
     docker compose ps
