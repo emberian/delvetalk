@@ -311,7 +311,19 @@ def answer(input: Reply, context: Abi.Context, forms: Forms, card: Document.Docu
   answerAs(input, context, forms, card, fn(replied: Replied) -> Replied: replied)
 def answerAs<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
   let replied = unanswered(input, forms)
-  if quietly(replied) then handOn(input, context, as(replied)) else tell(as(replied), answerCard(card, whyNot(replied), context, forms))
+  if quietly(replied) then owed(input, context, forms, card, as(replied)) else tell(as(replied), answerCard(card, whyNot(replied), context, forms))
+# A reply to the card itself (no card handed it on) that fits no form gets the card and its
+# forms, once an hour per speaker across the town (the directory's `due` keeps the clock: a
+# conversation in a card's thread costs at most one card); either way the prose is handed on.
+def owed<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
+  if handsOn(input.text, context) then dueCard(input, context, forms, card, result) else result
+def dueCard<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
+  match world.call::<Bool>({object: directory(context), method: "due", argument: {}}):
+    case returned(r): if r.result then toldOn(input, context, answerCard(card, "", context, forms), result) else handingOn(input, context, result)
+    case _: handingOn(input, context, result)
+def toldOn<T>(input: Reply, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
+  match world.offer({to: "", document: card}):
+    case _: handingOn(input, context, result)
 def unanswered(input: Reply, forms: Forms) -> Replied:
   if Text.blank(input.text) then Replied.usage({}) else spellMissing(Spell.parse(input.text), input.fields, forms)
 # A spell line in a reply that ran no method is one the host found missing fields (it refuses

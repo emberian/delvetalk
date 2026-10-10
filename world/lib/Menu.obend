@@ -40,6 +40,12 @@ record Visit:
   principal: String
   door: String
   at: Nat
+# When a reader was last answered for prose that named nothing, keyed {principal}.
+record Missed:
+  principal: String
+  at: Nat
+def missedKey(m: Missed) -> {principal: String}:
+  {principal: m.principal}
 def newsKey(news: News) -> {card: String}:
   {card: news.card}
 def visitKey(visit: Visit) -> {principal: String}:

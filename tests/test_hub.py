@@ -314,6 +314,30 @@ class Hub(test_chain.Chain):
         self.assertEqual(r["result"]["label"], "planted", r)
         self.assertEqual([self.seed_of(b) for b in self.children()], [("a fern", "silver")])
 
+    def test_a_direct_reply_naming_nothing_gets_one_card_an_hour_and_no_model(self):
+        """The play page: words typed to the directory itself (no post) got `quiet`. A reply to the
+        directory that names no door, action or field costs no interpretation and gets the menu
+        under "I heard no door, spell or field in that." at most once an hour per speaker; a
+        reply naming a door is interpreted."""
+        self.policy()
+        self.directory("policy")
+        direct = lambda text: self.turn("root", "receive", record(text=label(text), post=label("")), principal=KIMI)
+        self.assertEqual(direct("hello there")["result"]["label"], "menu")             # the greeting: this hour's card
+        for text in ("what a lovely evening", "thank you all", "see you tomorrow"):
+            r = direct(text)
+            self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), r)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        self.assertEqual(direct("could the garden take one more?")["status"], "suspended")  # names a door: read
+        self.interpret("unclear: not addressed")
+        clock = self.host.send(op="world-status").get("clock", 0)
+        self.host.send(op="world-advance", principal="transport", height=clock + 60)
+        later = direct("still here")
+        self.assertEqual(later["result"]["label"], "menu", later)
+        card = later["offers"][0]["text"]
+        self.assertTrue(card.startswith("✾ DELVETALK · ROOT\n\nI heard no door, spell or field in that.\n\nGARDEN · 0 planted\n"), card)
+        self.assertIn("\nANTHOLOGY\n", card)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+
     def test_an_action_the_policy_confirms_is_shown_back_and_not_passed_on(self):
         """The policy's confirmFor (here plant, taught by its owner) holds an interpreted spell
         at the hub: the speaker is shown the door's spell to fill in and send, never run from prose."""
@@ -422,15 +446,27 @@ class BellDoors(test_chain.Chain):
 
 class BellsAreQuiet(test_chain.Chain):
     """Run 5, finding 2: 38 bell cards went to people talking about something else in the planting
-    threads. A bell answers prose naming none of its forms with no offer."""
+    threads. A reply to the bell that fits none of its forms gets the bell's card at most once an
+    hour per speaker (the directory's `due`), then nothing."""
 
-    def test_the_replies_under_glms_planting_get_nothing(self):
+    def test_the_replies_under_glms_planting_get_one_card_an_hour(self):
+        made = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
+                              entry="initial", seed=record(owner=label("ember")))
+        self.assertEqual(made["status"], "created", made)
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        offered = []
         for rkey in ("3mxghexfsqk2f", "3mxghge5hak2f", "3mxghjyx4pk2f", "3mxghjmm6zc2f"):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=KIMI)
-            self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
+            self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "silent"), (rkey, r))
+            offered.append(len(r.get("offers", [])))
+        self.assertEqual(offered, [1, 0, 0, 0])
         self.assertEqual(rows(get(self.state("bell"), "rains")), [])
+        # An hour later (60 clock minutes) the card is owed again.
+        clock = self.host.send(op="world-status").get("clock", 0)
+        self.host.send(op="world-advance", principal="transport", height=clock + 60)
+        again = self.turn("bell", "receive", record(text=label("still here, still talking"), post=label("at://x/later")), principal=KIMI)
+        self.assertEqual(len(again.get("offers", [])), 1, again)
 
 
 class LinkDoors(test_chain.Chain):
@@ -494,7 +530,8 @@ class HandedToTheDirectory(test_chain.Chain):
         lines = {KIMI: "the guestbook line goes next to the ring and the hat", GLM: "a coup and an amendment both change the rules"}
         for rkey, who in (("3mxghjyx4pk2f", KIMI), ("3mxghjmm6zc2f", GLM)):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
-            self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), r)
+            # Each speaker's first reply to the bell gets its card (once an hour), and is handed on.
+            self.assertEqual((r["status"], r["result"]["label"], len(r.get("offers", []))), ("admitted", "silent", 1), r)
             self.deliver_all()
             [pending] = self.host.send(op="world-interpretations")["pending"]
             self.assertIn("submit", [o["action"] for o in pending["offers"]])
@@ -533,7 +570,10 @@ class HandedOnlyWhenNamed(test_chain.Chain):
 
     def say(self, text, ident):
         r = self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
-        self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), r)
+        # A reply to the bell itself that fits none of its forms gets the bell's card once an hour
+        # (the directory's `due`), then nothing; either way the prose is handed on.
+        first, self.answered = not getattr(self, "answered", False), True
+        self.assertEqual((r["status"], r["result"]["label"], len(r.get("offers", []))), ("admitted", "silent", 1 if first else 0), r)
         self.deliver_all()
         return len(self.host.send(op="world-interpretations")["pending"])
 
@@ -579,7 +619,9 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         delivered = r.get("delivered", []) + [d for reply in self.deliver_all() for d in reply.get("delivered", []) + reply.get("receipts", [])]
         ticks = [d.get("ticksUsed") if "ticksUsed" in d else d.get("receipt", {}).get("ticksUsed") for d in delivered]
         print("\n  glm's 1,788 characters: bell turn %d ticks, directory's judgement %s ticks" % (r["ticksUsed"], ticks))
-        self.assertLess(r["ticksUsed"], 20000)
+        # Under 25,000 with the directory's hourly `due` call and the bell's card it owes the first reply
+        # (about 2,200 of them; the hand-on alone stays under 20,000).
+        self.assertLess(r["ticksUsed"], 25000)
         # The directory's reading is bounded by interpretation overhead per word (about 200,000
         # ticks here); a word-set builtin in the kernel would take it to the scan's own cost.
         self.assertTrue(ticks and all(t is not None and t < 250000 for t in ticks), (ticks, delivered[:1]))
@@ -592,7 +634,8 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.make("garden/bell/1", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
         say = lambda text, ident: self.turn("garden/bell/1", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
         r = say("The garden is lovely tonight, and the rain on this cistern bell was soft.", "f1")
-        self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), r)
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "silent"), r)
+        self.assertTrue(r["offers"][0]["text"].startswith("A silver bell"), r)  # the bell's card, once an hour
         self.deliver_all()
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # The same words under the hub are a request: the garden's plant, the bells' rain.

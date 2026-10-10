@@ -17,6 +17,7 @@ type Door = Menu.Door
 type Examples = Menu.Examples
 type News = Menu.News
 type Visit = Menu.Visit
+type Missed = Menu.Missed
 type Learned = Mentions.Learned
 type Learning = Mentions.Learning
 # A door as the directory keeps it: keyed by its label, with its place on the menu (the
@@ -32,8 +33,8 @@ type Greeting = Rows.Greeting
 # doors: the menu, keyed {label}. greeted: the principals the menu has gone to once, keyed
 # {principal} (each later summons gets one line). policy: the interpretation policy prose is
 # read with (the town's model, offered the forms of every door); nobody means prose is not
-# interpreted. news: each watched door's count. visits: each reader's last door (the newest 64
-# readers), which their menu opens on.
+# interpreted. news: each watched door's count. visits: each reader's last door, which their
+# menu opens on. missed: when each reader was last answered for prose naming nothing.
 record State:
   owner: String
   doors: Relations.Relation<Listed>
@@ -41,20 +42,18 @@ record State:
   policy: Plans.Reference
   news: Relations.Relation<News>
   visits: Relations.Relation<Visit>
+  missed: Relations.Relation<Missed>
 sum Answer:
   done: {}
   refused: Card.Refusal
-# Only the owner adds or removes a door: the law judges every write (a stranger's add is
-# refused with clause owner); anyone's summons only inserts into greeted (clause greeted). A
-# law in source means a Directory is made with world-create, never by a creator that imports
-# it. Past 4,096 greeted the host drops the oldest row, and insertOnly counts a dropped row as
-# kept.
+# Only the owner adds or removes a door; anyone's summons only inserts into greeted. A law in
+# source means a Directory is made with world-create.
 law owner "the owner never changes; only the owner changes the doors or the policy, and anyone else only by its methods": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(doors) and unchanged(policy)))
 law greeted "anyone's summons only adds to who was greeted": request.subject == new.owner or insertOnly(greeted)
 def initial() -> State:
-  {owner: "", doors: Relations.empty(), greeted: Relations.empty(), policy: Plans.nobody(), news: Relations.empty(), visits: Relations.empty()}
+  {owner: "", doors: Relations.empty(), greeted: Relations.empty(), policy: Plans.nobody(), news: Relations.empty(), visits: Relations.empty(), missed: Relations.empty()}
 def relations() -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "doors", key: Text.words("label"), limit: 64n}), {field: "greeted", key: Text.words("principal"), limit: 4096n}), {field: "news", key: Text.words("card"), limit: 64n}), {field: "visits", key: Text.words("principal"), limit: 64n})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "doors", key: Text.words("label"), limit: 64n}), {field: "greeted", key: Text.words("principal"), limit: 4096n}), {field: "news", key: Text.words("card"), limit: 64n}), {field: "visits", key: Text.words("principal"), limit: 64n}), {field: "missed", key: Text.words("principal"), limit: 64n})
 def listedKey(listed: Listed) -> {label: String}:
   {label: listed.label}
 def greetingKey(greeting: Greeting) -> Greeting:
@@ -75,11 +74,9 @@ def greetedBefore(principal: String, state: State) -> Bool:
     case none(_): false
 def answerRefused(clause: String, reading: String) -> Answer:
   Answer.refused({clause: clause, reading: reading})
-# Adds a door at the end of the menu (one place past the last); a label names one door. A door
-# watching a field of its object reads the field's count now and subscribes the directory to
-# it, as the owner's turn: each later change comes back as a delivery to the receiver for the
-# field's rows, which keeps the door's news. A door whose object is not there yet watches
-# nothing (add it again once the object is made).
+# Adds a door at the end of the menu. A door watching a field of its object reads its count now
+# and subscribes the directory to it (the owner's turn); each change comes back to the receiver
+# for its rows. A door whose object is not there yet watches nothing.
 def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Answer>:
   match position(input.door.label, state):
     case some(_): answerRefused("doorTaken", "There is already a door called {input.door.label}")
@@ -100,10 +97,9 @@ def watched(door: Listed, count: Nat, context: Abi.Context) -> Activity<Answer>:
 def added(door: Listed) -> Activity<Answer>:
   let written(_) = write {doors: insert door}
   Answer.done({})
-# The receivers: a change counts only from the watched object itself (the host runs the
-# delivery with it as caller) on a field a door watches. A relation's count moves by the rows
-# inserted less those retracted (an upsert is both; a row the host's retention dropped is
-# retracted); a tick count is the new value.
+# The receivers count a change only from the watched object itself (the delivery's caller) on
+# a watched field: rows inserted less those retracted (an upsert is both, an eviction a
+# retraction); a tick count is the new value.
 def changedNat(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Nat>, retracted: Lists.List<Nat>}, context: Abi.Context) -> Activity<Answer>:
   noted(input.object.object, input.field, Lists.fold(input.inserted, 0n, fn(n: Nat) -> Nat -> Nat: fn(_: Nat) -> Nat: n), "", context, state)
 def changedChildren(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Child>, retracted: Lists.List<Rows.Child>}, context: Abi.Context) -> Activity<Answer>:
@@ -128,9 +124,8 @@ def news(row: News) -> Activity<Answer>:
   Answer.done({})
 def nextPlace(state: State) -> Nat:
   Lists.fold(Relations.rows(state.doors), 0n, fn(l: Listed) -> Nat -> Nat: fn(most: Nat) -> Nat: if l.place + 1n > most then l.place + 1n else most)
-# remove {door: {label}}, as add takes {door}: neither is a form, so a reply's bare field lines
-# are never the directory's own spell; they reach receive, which tries the doors' forms (a
-# stranger's `label: moth` is prose to it, never refused by the owner's law).
+# add and remove are no forms, so a reply's field lines (`label: moth`) are never the
+# directory's own spell.
 def remove(state: State, input: {door: {label: String}}, context: Abi.Context) -> Activity<Answer>:
   match position(input.door.label, state):
     case none(_): answerRefused("noDoor", "There is no door called {input.door.label}")
@@ -155,7 +150,7 @@ def lastDoor(state: State, principal: String) -> String:
 def trie(state: State, context: Abi.Context, first: String) -> Document.Document:
   Menu.trie(menu(state), state.news, context, first)
 def methods() -> Lists.List<String>:
-  Text.words("add remove")
+  Text.words("add remove due")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def blurb() -> Card.Door:
@@ -172,13 +167,10 @@ sum Heard:
   several: {count: Nat}
 def refusing(clause: String, reading: String, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
   toldThen(Document.text("✾ DELVETALK · ROOT\n\nrefused {clause}: {reading}\n"), Heard.refused({clause: clause, reading: reading}), greet, context, state)
-# The hub's reply. A spell naming another card never reaches here: the host runs it on that
-# card as this turn (a reply to the hub post reaches the object it names). The owner is
-# answered with silence; a door word gets that door's card; the menu goes to each principal
-# once, and anything later that names no door, card or form gets nothing at all (no offer, so
-# no draft: 137 one-line pointers in one rehearsal run were three times the posting quota).
+# The hub's reply (a spell naming another card never reaches here: the host runs it there). A
+# door word gets that door's card; the menu goes to each principal once.
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Heard>:
-  if context.principal == state.owner && context.caller == "" then Heard.silent({}) else worded(input, doorFor(doors(state), Mentions.doorWord(input.text)), context, state)
+  worded(input, doorFor(doors(state), Mentions.doorWord(input.text)), context, state)
 # Calls a door's receive with a reply, as this turn; the door reads it as its own. `greet`: the
 # reply is a principal's first (`greeting`), whose menu follows whatever the reply drew.
 def passOn(card: String, input: {text: String, post: String}, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -246,32 +238,23 @@ def learnedAll(input: Card.Reply, next: Next, learned: Learning, context: Abi.Co
     case fielded(f): fielded(input, f.first, Lists.find(learned, fn(l: Learned) -> Bool: l.child == false && (l.form.action == f.first.name || Card.hasField(l.form, f.first.name))), context, state)
     case judged(_): judgedHandOn(input, learned, context, state)
     case greeting(_): if named(input, learned, Lists.List.nil(), state) then consulted(input, learned, true, context, state) else Card.tell(Heard.menu({}), render(state, context))
-# Field lines with no delvetalk line (the gate's hour: `plant: … / colour: silver`, `rain: …`):
-# when the first `name: value` line names an action one of the doors offers, the lines
-# become that door's spell (the action line's value fills the form's first field the
-# others leave open) and go to that door's receive. When it names a field of a door's form
-# instead (`colour: violet`, answering "I still need: colour"), the lines go to that door's
-# receive as they are, to complete the spell the door holds for the speaker.
+# Field lines with no delvetalk line: when the first names an action a door offers (`plant:
+# …`), the lines become that door's spell; when it names a field of a door's form (`colour:
+# violet`), they go to that door as they are, to complete the spell it holds.
 def fielded(input: Card.Reply, first: Spell.Binding, found: Lists.Maybe<Learned>, context: Abi.Context, state: State) -> Activity<Heard>:
   match found:
     case some(l): passOn(l.value.card, {text: if l.value.form.action == first.name then Mentions.spellFor(l.value.card, l.value.form, input.fields) else input.text, post: input.post}, false, context, state)
     case none(_): unaddressed(input, context, state)
-# Prose that names no door, card or field form: the menu once per principal; then, with a
-# policy, the town's model reads it against every door's forms: a proposal goes to the door
-# whose form it fits, a miss is asked once more, a second miss offers what is still needed
-# and the policy's escalation copy; `unclear: not addressed` gets nothing at all.
-# A reply a card handed on (context.caller is that card) gets no menu. Every prose reply,
-# handed on or posted under the hub by someone already greeted, reaches the model only when
-# it names a door word, a form action or a form field of the doors (`judged`).
+# Prose naming no door, card or field form: the menu once per principal. Prose reaches the
+# model only when it names a door word, a form action or field (`judged`). A reply handed on
+# by a card (context.caller) that names nothing gets nothing; a reply to the directory itself
+# (its thread, the play page) gets the menu, at most once an hour (`heardNothing`).
 def unaddressed(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
-  if context.caller != "" then handedOn(input, context, state) else if greetedBefore(context.principal, state) == false then greeting(input, context, state) else handedOn(input, context, state)
+  if context.caller != "" then handedOn(input, context, state) else if greetedBefore(context.principal, state) == false then greeting(input, context, state) else learning(input, Next.judged({}), Lists.List.nil(), doors(state), context, state)
 def handedOn(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
   if Plans.isNobody(state.policy) then Heard.silent({}) else learning(input, Next.judged({}), Lists.List.nil(), doors(state), context, state)
-# Prose naming none of the doors' words or fields is not read by the model (only the first
-# 2,000 characters are looked at: a 5,142-character post once burned the budget). A reply handed
-# on by a card does not count the words of that card's own family: its own actions and
-# fields, and the door it lives under with that door's (a bell's thread talking of the
-# garden, a cistern or rain is the bell's own business, not a request to another door).
+# Only the first 2,000 characters are scanned. A reply handed on by a card does not count its
+# own family's words (a bell's thread talking of rain is the bell's business).
 def judgedHandOn(input: Card.Reply, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
   if context.caller == "" then judged(input, learned, Lists.List.nil(), context, state) else ownFamily(input, learned, context, state)
 def ownFamily(input: Card.Reply, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -281,7 +264,7 @@ def ownFamily(input: Card.Reply, learned: Learning, context: Abi.Context, state:
 def familyDoor(caller: String, state: State) -> Lists.Maybe<Door>:
   Lists.find(doors(state), fn(d: Door) -> Bool: Plans.isNobody(d.to) == false && (caller == d.to.object || Text.starts(caller, "{d.to.object}/")))
 def judged(input: Card.Reply, learned: Learning, excluded: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Heard>:
-  if named(input, learned, excluded, state) then consulted(input, learned, false, context, state) else Heard.silent({})
+  if named(input, learned, excluded, state) && Plans.isNobody(state.policy) == false then consulted(input, learned, false, context, state) else quiet(false, input, learned, context, state)
 def named(input: Card.Reply, learned: Learning, excluded: Lists.List<String>, state: State) -> Bool:
   Mentions.mentions(textTake(input.text, 2000n), input.fields, Mentions.without(Lists.concat(Mentions.allDoorWords(doors(state)), Mentions.formWords(Mentions.formsOf(learned))), excluded), Mentions.without(Lists.concat(Mentions.formFields(Mentions.formsOf(learned)), Mentions.knownFields()), excluded))
 def consulted(input: Card.Reply, learned: Learning, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -302,13 +285,12 @@ def interpreting(input: Card.Reply, learned: Learning, policy: Policies.State, a
   match world.interpret::<Data>(Card.interpretation(input.text, Mentions.doorForms(learned), state.policy, policy, attempt, needs)):
     case proposal(p): proposed(p.object, p.method, p.argument, Mentions.doorForms(learned), policy, greet, context, state)
     case proposals(p): folding(p.items, Lists.List.nil(), "", policy, greet, context, state)
-    case unclear(u): if Card.silentNeeds(u.needs) then welcomed(greet, "", Heard.silent({}), context, state) else missed(input, learned, policy, attempt, u.needs, greet, context, state)
+    case unclear(u): if Card.silentNeeds(u.needs) then quiet(greet, input, learned, context, state) else missed(input, learned, policy, attempt, u.needs, greet, context, state)
     case replied(r): readBack(input, learned, policy, attempt, Card.prose(r.text), greet, context, state)
     case denied(_): refusing("policy", "The policy is not visible to you.", greet, context, state)
     case _: welcomed(greet, "", Heard.silent({}), context, state)
-# A proposal runs on its door as this turn (the door's own method, under the speaker), unless
-# the policy confirms that action first: then the speaker is shown the door's spell to send,
-# and sending it is the yes.
+# A proposal runs on its door as this turn, unless the policy confirms that action first: then
+# the speaker is shown the spell to send.
 def proposed(object: String, method: String, argument: Data, forms: Lists.List<Form.Form>, policy: Policies.State, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
   if Card.confirms(policy, method) then toldThen(Mentions.askedFirst(object, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == object && f.action == method)), Heard.asked({card: object}), greet, context, state) else calling(object, method, argument, greet, context, state)
 def calling(object: String, method: String, argument: Data, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -339,18 +321,40 @@ def folded(ran: Examples, first: String, greet: Bool, context: Abi.Context, stat
 def readBack(input: Card.Reply, learned: Learning, policy: Policies.State, attempt: Nat, fitted: Card.Fitted, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
   match fitted:
     case miss(m): missed(input, learned, policy, attempt, m.needs, greet, context, state)
-    case _: welcomed(greet, "", Heard.silent({}), context, state)
+    case _: quiet(greet, input, learned, context, state)
 # A miss naming an action no door offers is answered at once; any other is asked once more,
 # and the second is answered with the menu pruned to the doors the reply named (their words,
 # actions or fields), what is still needed above it.
 def missed(input: Card.Reply, learned: Learning, policy: Policies.State, attempt: Nat, needs: Form.Names, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
   if Mentions.unoffered(needs) then toldThen(Mentions.nearestFor(Mentions.missedAction(needs), learned, needs), Heard.unclear({needs: needs}), greet, context, state) else if attempt == 0n then interpreting(input, learned, policy, 1n, needs, greet, context, state) else Card.unfitted(policy, input.text, needs, context, missCard(input, learned, needs, context, state), Heard.unclear({needs: needs}))
 def missCard(input: Card.Reply, learned: Learning, needs: Form.Names, context: Abi.Context, state: State) -> Document.Document:
+  let touched = touchedDoors(input, learned, state)
+  if Lists.length(touched) == 0n then Document.text(Mentions.needsHead(needs)) else Menu.pruned(Mentions.needsHead(needs), touched, menu(state), state.news, context)
+def touchedDoors(input: Card.Reply, learned: Learning, state: State) -> Lists.List<Door>:
   let all = menu(state)
-  let touched = Lists.filter(all, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false && Menu.isArc(all, d) == false && Mentions.touches(input, d, learned))
-  if Lists.length(touched) == 0n then Document.text(Mentions.needsHead(needs)) else Menu.pruned(Mentions.needsHead(needs), touched, all, state.news, context)
-# A link door (no object; genesis's STUDIO) answers with its description, which carries the
-# URL; it has no card to ask for and no forms to read.
+  Lists.filter(all, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false && Menu.isArc(all, d) == false && Mentions.touches(input, d, learned))
+# Nothing came of a reply: a first reply's menu; a reply to the directory itself, the menu
+# pruned to the doors it named (all when none) under one line, once an hour per speaker
+# (`missed`, 60 clock minutes), then quiet: a conversation in its thread costs no model call
+# and at most one card an hour; a reply a card handed on, nothing.
+def quiet(greet: Bool, input: Card.Reply, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
+  if greet || context.caller != "" || missedLately(context, state) then welcomed(greet, "", Heard.silent({}), context, state) else heardNothing(touchedDoors(input, learned, state), context, state)
+def heardNothing(touched: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
+  let all = menu(state)
+  let written(_) = write {missed: upsert {principal: context.principal, at: context.clock}}
+  Card.tell(Heard.menu({}), Menu.pruned(Mentions.nothingHead(), if Lists.length(touched) == 0n then Lists.filter(all, fn(d: Door) -> Bool: Menu.isArc(all, d) == false) else touched, all, state.news, context))
+def missedLately(context: Abi.Context, state: State) -> Bool:
+  match Relations.lookup(state.missed, {principal: context.principal}, Menu.missedKey):
+    case some(m): context.clock < m.value.at + 60n
+    case none(_): false
+# For a card's default receive (Card.answerAs): whether a reply to it that fits no form is owed
+# its usage card, under the same hourly bound; asking marks it.
+def due(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
+  if missedLately(context, state) then false else marked(context)
+def marked(context: Abi.Context) -> Activity<Bool>:
+  let written(_) = write {missed: upsert {principal: context.principal, at: context.clock}}
+  true
+# A link door (no object) answers with its description.
 def linkDoor(door: Door) -> Activity<Heard>:
   Card.tell(Heard.door({object: ""}), Document.text("{door.label}\n{door.description}\n"))
 def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Heard>:
@@ -362,5 +366,5 @@ def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Heard>:
 # a field) and there is a policy, the request is read as any later one first, and the menu
 # follows what it drew, opening on the door a proposal went through (docs/MENU.md §2.2).
 def greeting(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
-  let written(_) = write {greeted: insert {principal: context.principal}}
+  let written(_) = write {greeted: insert {principal: context.principal}, missed: upsert {principal: context.principal, at: context.clock}}
   if Plans.isNobody(state.policy) then Card.tell(Heard.menu({}), render(state, context)) else learning(input, Next.greeting({}), Lists.List.nil(), doors(state), context, state)

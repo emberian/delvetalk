@@ -139,6 +139,8 @@ def touches(input: Card.Reply, door: Door, learned: Learning) -> Bool:
   let forms = formsOf(Lists.filter(learned, fn(l: Learned) -> Bool: l.door == door.to.object))
   mentions(textTake(input.text, 2000n), input.fields, Lists.concat(doorWords(door), formWords(forms)), formFields(forms))
 # The directory's cards for a miss and for an action asked first.
+def nothingHead() -> String:
+  "✾ DELVETALK · ROOT\n\nI heard no door, spell or field in that.\n"
 def needsHead(needs: Form.Names) -> String:
   "✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: {Text.joined(needs)}.\n"
 # The nearest door is one whose forms have an action resembling the miss; else a kind of card

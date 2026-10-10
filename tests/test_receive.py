@@ -176,7 +176,7 @@ def planted(context: Abi.Context) -> String:
         made = create("d1", record(owner=label("ember"), doors=doors))
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
-        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy", "news", "visits"])
+        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy", "news", "visits", "missed"])
         self.assertEqual(field(state, "doors"), doors)
         self.assertEqual(field(state, "greeted"), relation())
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
@@ -235,14 +235,15 @@ def planted(context: Abi.Context) -> String:
             "  » what addressed you since you last looked\n"
             "Every reply is a receipt, admitted or refused <clause>: <reading>. No reply: ask for the receipt; never repost.\n"))
         self.assertLess(len(text), 1400)
-        # The menu goes to each principal once; anything later that names no door, card or form
-        # gets no offer at all, and the owner nothing.
+        # The menu goes to each principal once; anything later within the hour that names no
+        # door, card or form gets no offer at all.
         for later in ("", "hello again?", "what a lovely thread, thank you all"):
             again = self.say(later, obj="root")
             self.assertEqual((again["status"], again["result"]["label"], again.get("offers", [])), ("admitted", "silent", []), again)
         self.assertTrue(self.card(self.say("hi", obj="root", who="kimik3")).startswith("✾ DELVETALK · ROOT"))
+        # The owner is greeted as anyone is (a direct reply is never quiet the first time).
         owner = self.say("@livedelvetalk", obj="root", who="ember")
-        self.assertEqual((owner["status"], owner["result"]["label"], owner.get("offers", [])), ("admitted", "silent", []), owner)
+        self.assertEqual((owner["status"], owner["result"]["label"]), ("admitted", "menu"), owner)
 
     def test_a_door_word_gets_that_doors_card(self):
         self.directory()
