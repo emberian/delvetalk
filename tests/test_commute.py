@@ -7,6 +7,7 @@ other change of a moved root is `staleRoot`, as before.
 
     python3 -W error -m unittest tests.test_commute -v
 """
+import json
 import unittest
 
 from tests.test_chain import field
@@ -92,9 +93,13 @@ class Moved(Reflection):
         self.assertEqual(s["status"], "suspended", s)
         self.rain("drip", "kim")
         [resumed] = self.rain("drop", "ann", identity="go")["resumed"]
-        out = resumed["receipt"]["outcome"]
-        self.assertEqual((resumed["status"], out["class"], out["object"]), ("refused", "staleRoot", "bell"), resumed)
-        self.assertEqual(self.bell(), ("2", ["drip", "drop"]))
+        # The resumption is refused staleRoot (journaled, transient) and the turn re-run once at once
+        # from its request, on the bell as it is now.
+        self.assertIn("rerunOf", resumed)
+        with open(self.path) as f:
+            refused = [e for e in map(json.loads, f.read().splitlines()) if e["hash"] == resumed["rerunOf"]][0]
+        self.assertEqual((refused["outcome"]["class"], refused["outcome"]["object"]), ("staleRoot", "bell"))
+        self.assertEqual((resumed["status"], resumed["receipt"].get("rerun")), ("admitted", True), resumed)
 
     def test_the_law_judges_the_commuted_write_on_the_state_as_it_is_now(self):
         s = self.turn("bell", "strike", principal="gemini", identity="strike")

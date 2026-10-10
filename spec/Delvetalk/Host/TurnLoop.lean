@@ -975,6 +975,8 @@ structure TurnMeta where
   via : String := ""
   ledger : Option Ledger := none
   delivery : Option (String × Json) := none
+  /-- This turn re-runs one whose resumption was refused `staleRoot` (`resumeOne`). -/
+  rerun : Bool := false
 
 def ledgerJson (l : Ledger) : Json := l.json
 
@@ -1015,6 +1017,8 @@ structure Ctx where
   timedOut : Bool := false
   /-- The recorded post this direct turn answers (journaled as `replyTo`), "" for none. -/
   answers : String := ""
+  /-- The turn re-runs a stale resumption (journaled as `rerun: true`, and so never re-run again). -/
+  rerun : Bool := false
 
 
 def sendJson (s : Send) : Json :=
@@ -1034,7 +1038,8 @@ def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
     (ctx.delivery.map fun (id, sender) => [("delivery", Json.mkObj ([("id", toJson id), ("from", sender)] ++
       (if ctx.via.isEmpty then [] else [("via", toJson ctx.via)])))]).getD [] ++
     (ctx.resumes.map fun h => [("resumes", toJson h)]).getD [] ++
-    (if ctx.answers.isEmpty then [] else [("replyTo", toJson ctx.answers)])
+    (if ctx.answers.isEmpty then [] else [("replyTo", toJson ctx.answers)]) ++
+    (if ctx.rerun then [("rerun", toJson true)] else [])
 
 /-- End a segment of a turn: commit it, refuse it, or journal its suspension. -/
 def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnState) :
@@ -1046,6 +1051,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       intent := ctx.intent
       roots := st.roots
       rootCids := st.rootCids
+      rebaseOwn := if ctx.resumes.isSome then some ctx.object else none
       writes := st.writes
       turn := w.height + 1
       programs := st.programs
@@ -1080,9 +1086,10 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (some { cls, reason := some reason, object := some ctx.object }) (onEnd := endedIfLate)
     return (w', turnReply w' r)
   | .error (.suspend sp si patience checkpoint interpretation post) =>
+    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
-      ("checkpoint", checkpoint.toJson),
+      ("checkpoint", journaledCheckpoint.1),
       ("roots", rootsJson st.roots st.rootCids), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
       ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson w.binary id c)),
@@ -1105,7 +1112,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
       ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.rootCids),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
-        newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs)) []
+        newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ journaledCheckpoint.2) []
     return (w', turnReply w' (reply entry))
   | .ok value =>
     match st.violation with
@@ -1175,7 +1182,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
       ticksStart := ticks
       caller := how.caller
       via := how.via
-      answers }
+      answers
+      rerun := how.rerun }
   let (w', r) ← finishTurn w ctx result st
   return (w', if req.profile then r.setObjVal! "profile" (profileJson st.profile) else r)
 
@@ -1217,7 +1225,7 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
 /-- Continue the activity a suspension entry journaled. The turn's roots are
     re-validated first: if anything it read or required absent has moved, the whole
     turn is refused `staleRoot` and journaled under its original identity. -/
-def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
+def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
   let hash ← sus.getObjValAs? String "hash"
   let identity ← sus.getObjVal? "identity"
   let principal ← identity.getObjValAs? String "principal"
@@ -1250,7 +1258,8 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       ticksStart := ticks
       caller := (act.getObjValAs? String "caller").toOption.getD ""
       via
-      timedOut := match kind with | .timedOut => true | _ => false }
+      timedOut := match kind with | .timedOut => true | _ => false
+      rerun := (sus.getObjValAs? Bool "rerun").toOption.getD false }
   -- A moved root whose staged changes so far all commute may still commit (`judge` decides at the
   -- end); one already changed otherwise cannot, and the turn is refused now.
   let staged ← parseRecordedWrites (← act.getObjVal? "writes")
@@ -1258,7 +1267,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     | some changes => changes.all fun c => c.kind == 0 && c.edits.all (·.kind.commutes)
     | none => true
   let stale? := (roots.find? fun (id, v) => match (w.objects[id]?).map (·.version) with
-      | some now => now != v && !(v < now && movable id)
+      | some now => now != v && !(v < now && (movable id || (id == object && rebasable w staged id v)))
       | none => true).map (·.1)
     <|> absent.find? fun id => w.objects.contains id
   if let some id := stale? then
@@ -1286,7 +1295,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration")))
   let laws ← ((← (← act.getObjVal? "laws").getArr?).toList.mapM fun r => do
     return (← r.getObjValAs? String "object", ← r.getObjValAs? String "law"))
-  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← act.getObjVal? "checkpoint")
+  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← expandCheckpoint w (← act.getObjVal? "checkpoint"))
   let init : TurnState :=
     { world := w
       roots := roots
@@ -1337,6 +1346,31 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     drive 0 object ctx.caller compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st
+
+/-- Continue a suspended activity. A direct turn whose resumption is refused `staleRoot` (its
+    roots moved past what `rebasable` allows while it waited) is re-run once, at once, from its
+    journaled request on the current state: the refusal is transient, so the identity is free, and
+    the re-run carries `rerun: true` so a second stale resumption of it is final. -/
+def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
+  let (w', r) ← resumeSegment w sus kind
+  let stale := (r.getObjVal? "receipt").toOption.any fun e =>
+    tagOf e == "refused" && ((e.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "class" |>.toOption)) == some "staleRoot"
+  if !stale || (sus.getObjVal? "delivery").toOption.isSome || (sus.getObjValAs? Bool "rerun").toOption == some true then
+    return (w', r)
+  let identity ← sus.getObjVal? "identity"
+  let act ← (← sus.getObjVal? "outcome").getObjVal? "activity"
+  let req : TurnRequest :=
+    { principal := ← identity.getObjValAs? String "principal"
+      object := ← act.getObjValAs? String "object"
+      method := ← act.getObjValAs? String "method"
+      argument := ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
+      intent := ← identity.getObjValAs? String "intent"
+      limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))]
+      digest := ← sus.getObjValAs? String "turnRequest"
+      replyTo := (sus.getObjValAs? String "replyTo").toOption.getD "" }
+  let (w'', again) ← runTurnWith w' req { rerun := true }
+  let staleHash := ((r.getObjVal? "receipt").toOption.bind (·.getObjValAs? String "hash" |>.toOption)).getD ""
+  return (w'', again.setObjVal! "rerunOf" (toJson staleHash))
 
 /-- The first suspended activity that can go on: its slot settled, or its deadline passed. -/
 def pickResumable (w : World) : Option (Json × Resume) :=

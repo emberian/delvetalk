@@ -316,6 +316,9 @@ structure World where
   /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
       entry's `replyTo`), which `awaitPost` settles on. -/
   replies : Std.HashMap String (String × String) := {}
+  /-- Checkpoint blocks by CID, from entries' `blocks`: a suspension journals each block of its
+      checkpoint's tokens once, and names the rest (`tokenTree`). Derived by `record`. -/
+  blocks : Std.HashMap String (Array Json) := {}
   /-- Memory only: the pin of the running host binary (set at open), recorded in `compiled`. -/
   binary : String := ""
   /-- Memory only: entries this process replayed whose recorded packet digest differs from

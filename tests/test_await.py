@@ -183,15 +183,18 @@ class Suspend(Await):
         self.assertEqual((r["status"], r["clock"]), ("advanced", 5))
         self.assertEqual(self.height(), h + 1)
 
-    def test_a_suspended_turn_whose_bell_was_written_meanwhile_is_refused_stale_on_resume(self):
+    def test_a_suspended_turn_whose_bell_was_rained_on_meanwhile_is_rebased_on_resume(self):
+        # The rain appended to `rains`; the strike sets only `rung`, which nothing else changed, so
+        # the resumed strike commits on the bell as it is now (a resumed turn's own object re-bases).
         self.bell()
         self.strike()
         rain = self.turn("bell", "rain", record(text=label("drip")), principal="kimik3")
         self.assertEqual(rain["status"], "admitted")
         settled = self.settle()
-        out = settled["resumed"][0]["receipt"]["outcome"]
-        self.assertEqual((settled["resumed"][0]["status"], out["class"], out["object"]), ("refused", "staleRoot", "bell"))
-        self.assertEqual(self.rung(), boolean(False))
+        [resumed] = settled["resumed"]
+        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", boolean(True)), resumed)
+        self.assertNotIn("rerunOf", resumed)
+        self.assertEqual(self.rung(), boolean(True))
 
     def test_restart_between_suspend_and_resume_rebuilds_the_activity_from_the_journal(self):
         self.bell()
@@ -226,7 +229,7 @@ class Suspend(Await):
         self.release()
         with open(self.path) as f:
             text = f.read()
-        i = text.index('"tokens"')
+        i = text.index('"items"')  # the checkpoint's tokens are journaled as blocks
         with open(self.path, "w") as f:
             f.write(text[:i] + text[i:].replace('"n":"', '"n":"9', 1))
         h = self.spawn()

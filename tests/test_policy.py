@@ -299,6 +299,51 @@ class PolicyObject(Chain):
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertNotEqual(resumed["result"]["label"], "planted", resumed)
 
+    def test_a_suspension_journals_its_checkpoint_blocks_once(self):
+        """Rehearsal run 5: a suspended entry cost about 236 KB, nearly all of it the program's own
+        terms in the checkpoint. Blocks are journaled once; a later suspension of the same package
+        names them."""
+        self.policy()
+        self.garden("policy")
+        sizes = []
+        for i, text in enumerate(["Could we plant a silver fern that remembers?",
+                                  "a violet moth for the lost ones, and something else entirely, please"]):
+            self.assertEqual(self.say(text, identity="p%d" % i)["status"], "suspended")
+            with open(self.path) as f:
+                sizes.append(len(f.read().splitlines()[-1]))
+        print("\n  suspended entries: %d bytes, then %d bytes" % tuple(sizes))
+        self.assertLess(sizes[1], 20000)
+        # Both resume from their reassembled checkpoints, after a restart too.
+        self.reopen()
+        for item in self.host.send(op="world-interpretations")["pending"]:
+            settled = self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
+            [resumed] = settled["resumed"]
+            self.assertEqual(resumed["status"], "admitted", resumed)
+
+    def test_a_resumed_interpretation_whose_directory_moved_meanwhile_still_admits(self):
+        """Rehearsal run 5, finding 6: inkling's prose resumed after another principal's greeting
+        had moved the directory, was refused staleRoot, and nobody retried it."""
+        self.policy()
+        made = self.host.send(op="world-create", principal="ember", identity="mk-dir", object="directory",
+                              modules=closure("Directory"), entry="initial",
+                              seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(made["status"], "created", made)
+        prose = lambda who, text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://" + ident)),
+                                                   principal=who, identity=ident)
+        self.assertEqual(prose("inkling", "hello, town", "i-1")["status"], "admitted")     # greeted once
+        waiting = prose("inkling", "an env interface card, perhaps?", "i-2")
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        moved = prose("zero", "what is this portal", "z-1")                                # greets zero: the directory moves
+        self.assertEqual(moved["status"], "admitted", moved)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=item["id"],
+                                 reply={"status": "replied", "json": None, "raw": "unclear: not addressed", "model": "m"})
+        [resumed] = settled["resumed"]
+        self.assertEqual(resumed["status"], "admitted", resumed)
+        self.assertNotIn("rerunOf", resumed)
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-receipt", principal="inkling", identity="i-2")["receipt"]["outcome"]["tag"], "admitted")
+
     def test_interpretations_have_their_own_capacity_apart_from_awaits(self):
         """The rehearsal rerun: the ninth prose reply in a batch was refused at the await cap."""
         self.policy()
