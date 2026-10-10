@@ -42,9 +42,10 @@ class Hub(test_chain.Chain):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label("ember"), policy=reference(policy)))
         self.assertEqual(r["status"], "created", r)
+        # The garden is made first, so the directory learns its forms when its door is added.
+        self.make("garden", closure("Garden"), garden_seed(""))
         for label_, description, to in ROOT_DOORS:
             self.assertEqual(self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")["result"]["label"], "done")
-        self.make("garden", closure("Garden"), garden_seed(""))
 
     def say(self, text, who, uri="at://x/post/1"):
         return self.turn("root", "receive", record(text=label(text), post=label(uri), slot=label("")), principal=who)
@@ -148,8 +149,12 @@ class Hub(test_chain.Chain):
         self.assertTrue(card.startswith("✾ DELVETALK · ROOT\n\nNo door offers that (rain is not one of the offered actions). The nearest is garden:\n"), card)
         self.assertIn("    delvetalk garden plant\n", card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        # Prose naming no door, action or field never reaches the model.
+        chatter = self.say("lovely weather on the wiki today", KIMI, uri="at://x/post/2")
+        self.assertEqual((chatter["status"], chatter["result"]["label"], chatter.get("offers", [])), ("admitted", "silent", []), chatter)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # `unclear: not addressed` is silence at once.
-        self.assertEqual(self.say("lovely weather on the wiki today", KIMI, uri="at://x/post/2")["status"], "suspended")
+        self.assertEqual(self.say("is the garden open on the wiki today?", KIMI, uri="at://x/post/3")["status"], "suspended")
         quiet = self.interpret("unclear: not addressed")
         self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
 
@@ -341,6 +346,22 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         # The directory's reading is bounded by interpretation overhead per word (about 200,000
         # ticks here); a word-set builtin in the kernel would take it to the scan's own cost.
         self.assertTrue(ticks and all(t is not None and t < 250000 for t in ticks), (ticks, delivered[:1]))
+
+    def test_a_bells_own_family_words_are_not_a_request_to_another_door(self):
+        """Run 8: 21 hand-ons were "garden" and "cistern" in the garden's own planting threads."""
+        self.make("garden", closure("Garden"), garden_seed(""))
+        self.add("GARDEN", "garden")
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("garden/bell/1", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        say = lambda text, ident: self.turn("garden/bell/1", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
+        r = say("The garden is lovely tonight, and the rain on this cistern bell was soft.", "f1")
+        self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), r)
+        self.deliver_all()
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        # The same words under the hub are a request: the garden's plant, the bells' rain.
+        self.assertEqual(self.turn("directory", "receive", record(text=label("hello"), post=label("at://x/h")), principal=KIMI)["result"]["label"], "menu")
+        hub = self.turn("directory", "receive", record(text=label("Could I rain on the lighthouse bell?"), post=label("at://x/h2")), principal=KIMI)
+        self.assertEqual(hub["status"], "suspended", hub)
 
     def test_a_new_door_makes_chatter_naming_it_handed_on(self):
         self.make("lantern", closure("Lantern"), record())

@@ -102,7 +102,11 @@ the library).
   is the directory's: it keeps `words` (door labels and ids, form actions) and `fields`
   (form fields) learned by inspect when a door is added (every door is relearned) or by the
   first handed-on reply after a seeded genesis (writeOnce for anyone else), and reads with
-  the model only prose that `Card.mentions` (a word, or a field as `name:`). A card cannot
+  the model only prose that `Card.mentions` (a word, or a field as `name:`). The same check
+  guards the directory's own reading of hub prose. At judgement the directory also reads
+  the first object listed under each door (`objects {prefix}`, then inspect: a garden's
+  bell gives "rain"), and a handed-on reply does not count its caller's family: the
+  caller's own actions and fields, and the door it lives under with that door's. A card cannot
   `view directory` itself: a view answers in the card's own Response state type, which is
   not the directory's, so the hand-off costs a delivery turn but no model call. A door added
   before its object exists learns only its label and id. The directory reads a handed-on reply with
