@@ -127,7 +127,7 @@ def passOn(card: String, input: {text: String, post: String}, context: Abi.Conte
   match world.call::<Data>({object: {world: context.world, object: card}, method: "receive", argument: input}):
     case returned(_): Heard.passed({card: card})
     case denied(_): refusing("notVisible", "The card {card} is not visible to you.")
-    case refused(r): refusing(r.clause, "Not passed to {card}.")
+    case refused(r): refusing(r.clause, if r.reading == "" then "Not passed to {card}." else r.reading)
 # A door word is short: only the first 65 scalars are looked at (measuring and trimming a
 # long reply would cost its bytes).
 def doorWord(text: String) -> String:
@@ -290,7 +290,7 @@ def calling(object: String, method: String, argument: Data, context: Abi.Context
   match world.call::<Data>({object: {world: context.world, object: object}, method: method, argument: argument}):
     case returned(_): Heard.passed({card: object})
     case denied(_): refusing("notVisible", "The card {object} is not visible to you.")
-    case refused(r): refusing(r.clause, "Not done at {object}.")
+    case refused(r): refusing(r.clause, if r.reading == "" then "Not done at {object}." else r.reading)
 def readBack(input: Card.Reply, learned: Learning, policy: Policies.State, attempt: Nat, fitted: Card.Fitted, context: Abi.Context, state: State) -> Activity<Heard>:
   match fitted:
     case miss(m): missed(input, learned, policy, attempt, m.needs, context, state)

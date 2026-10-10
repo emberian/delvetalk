@@ -35,10 +35,10 @@ class CallReading(Chain):
     def modules(self, name, source):
         with open(ON_DISK["World"], encoding="utf-8") as f:
             world = f.read()
-        self.assertIn(RETURNED[0], world)
+        self.assertIn(RETURNED[1], world)   # world/lib/World.obend carries the reading
         seen, out = set(), []
         for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out, {"World": world.replace(*RETURNED)})
+            closure(dep, seen, out)
         return out + [{"name": name, "source": source}]
 
     def setUp(self):

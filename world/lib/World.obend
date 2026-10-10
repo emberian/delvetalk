@@ -46,7 +46,13 @@ sum Written:
 sum Judged:
   judged: {admitted: Bool, clause: String}
   refused: {clause: String}
+# A refused call says why: the host's voiced reading of its refusal (HOST-HANDOFF 5.77).
 sum Returned<R>:
+  returned: {result: R}
+  denied: {}
+  refused: {clause: String, reading: String}
+# A handled run (`run`) answers as a call does, but the host gives its refusal no reading yet.
+sum Ran<R>:
   returned: {result: R}
   denied: {}
   refused: {clause: String}
@@ -112,7 +118,7 @@ protocol world:
   judge<E>(E) -> Judged
   call<R>({object: Plans.Reference, method: String, argument: Data}) -> Returned<R>
   callVia<R>({object: Plans.Reference, method: String, argument: Data, via: String}) -> Returned<R>
-  run<R>({object: Plans.Reference, method: String, argument: Data, handler: Plans.Reference}) -> Returned<R>
+  run<R>({object: Plans.Reference, method: String, argument: Data, handler: Plans.Reference}) -> Ran<R>
   send({object: Plans.Reference, method: String, argument: Data}) -> Sent
   sendVia({object: Plans.Reference, method: String, argument: Data, via: String}) -> Sent
   create({package: String, seed: Data, law: String, requireAbsent: Plans.Reference}) -> Created

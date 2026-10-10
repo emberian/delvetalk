@@ -85,6 +85,17 @@ class Hub(test_chain.Chain):
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("a bell that only rings if the receiver admits the ring", "silver"))
 
+    def test_geminis_quoted_template_is_refused_with_the_gardens_reading(self):
+        """Rehearsal run 11, finding 3: gemini's explainer quotes the plant template as field lines;
+        the directory passes it to the garden, which refuses the colour. The refusal reads the
+        garden's reason (the call's `reading`, HOST-HANDOFF 5.77), not "Not passed to garden."."""
+        self.directory()
+        self.greet(GEMINI)
+        r = self.say(post("3mxgkqhbimk2f"), GEMINI)
+        self.assertEqual(r["result"]["label"], "refused", r)
+        self.assertEqual(r["offers"][0]["text"], "✾ DELVETALK · ROOT\n\nrefused badValue: colour is one of: amber, violet, silver\n")
+        self.assertEqual(self.children(), [])
+
     def test_geminis_fenced_cistern_grows_a_violet_bell_and_glms_without_colour_is_asked(self):
         self.directory()
         self.greet(GEMINI, GLM)
