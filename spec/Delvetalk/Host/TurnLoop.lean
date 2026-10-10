@@ -242,6 +242,16 @@ def respond (bounds : DataBounds) (responseType : Ty) (label : String) (payloads
 def refusedWith (bounds : DataBounds) (responseType : Ty) (clause : String) : M Data :=
   respond bounds responseType "refused" [.record [("clause", .label clause)], emptyRecord]
 
+/-- `refused {clause, reading}` where the call site's result carries a reading (World's `call`
+    since run 11), the refusal's voiced reason (`Refusal.voiced`); `{clause}` otherwise. -/
+def refusedReading (bounds : DataBounds) (responseType : Ty) (clause reading : String) : M Data :=
+  respond bounds responseType "refused"
+    [.record [("clause", .label clause), ("reading", .label reading)], .record [("clause", .label clause)], emptyRecord]
+
+/-- The reading of a refused call: the voiced reason of the refusal it names. -/
+def callReading (cls object : String) (expected : Option Json := none) : String :=
+  (({ cls, object := some object, expected } : Refusal).voiced.reason).getD ""
+
 def compiledMethod (obj : Object) (method : String) : M Compiled := do
   let key := obj.inputsKey ++ "/" ++ method
   let s ← get
@@ -1153,13 +1163,13 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | .variant "callVia" _ => ((f.lookup "via").bind labelOf).getD ""
       | _ => ""
     match referenceId target with
-    | none => refusedWith bounds responseType "unknownObject"
+    | none => refusedReading bounds responseType "unknownObject" (callReading "unknownObject" "")
     | some id =>
-      if !(← get).world.objects.contains id then refusedWith bounds responseType "unknownObject"
-      else if helperOf (← get).world self id method then refusedWith bounds responseType "noMethod"
+      if !(← get).world.objects.contains id then refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
+      else if helperOf (← get).world self id method then refusedReading bounds responseType "noMethod" (noMethodReason id method)
       else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
       else match ← grantFor via self id method argument with
-        | .error clause => refusedWith bounds responseType clause
+        | .error clause => refusedReading bounds responseType clause s!"no grant lets this call run {method} on {id} ({clause})."
         | .ok (subject, argument) => do
           -- A called `receive` to a card of the message dialect is read as a spell, as a direct
           -- turn's is (never under a grant: it names the one method it may run).
@@ -1168,13 +1178,15 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
           let route := if via.isEmpty then routeSpell world subject id method argument false else .asIs
           let (method, argument, refusal) := match route with
             | .run _ m a _ => (m, a, none)
-            | .refuse _ clause _ _ => (method, argument, some clause)
+            | .refuse _ clause reason _ => (method, argument, some (clause, reason))
             | _ => (method, argument, none)
-          if let some clause := refusal then refusedWith bounds responseType clause else
-          if helperOf (← get).world self id method then refusedWith bounds responseType "noMethod" else
-          let some calleeObj := (← get).world.objects[id]? | refusedWith bounds responseType "unknownObject"
+          if let some (clause, reason) := refusal then refusedReading bounds responseType clause reason else
+          if helperOf (← get).world self id method then refusedReading bounds responseType "noMethod" (noMethodReason id method) else
+          let some calleeObj := (← get).world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
           let callee ← compiledMethod calleeObj method
-          if !argumentFits callee argument then refusedWith bounds responseType "typeMismatch" else
+          if !argumentFits callee argument then
+            refusedReading bounds responseType "typeMismatch"
+              (callReading "typeMismatch" id (some (Json.mkObj [("method", toJson method)]))) else
           spendGrant via
           let result ← runMethod (depth + 1) id method argument self subject via heard
           respond bounds responseType "returned" [.record [("result", result)]]

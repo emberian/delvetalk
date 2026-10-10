@@ -598,6 +598,13 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    actions. Forms are method inputs and are not filtered. Test: `tests/test_spell_turns.py`
    `FixedFields`.
 
+77. **A refused call says why (host11; rehearsal run 11 finding 3).** A `call`/`callVia` refused by the
+   host answers `refused {clause, reading}` where the call site's result has `reading` (World's
+   `Returned`, the objects lane's line), else `refused {clause}` as before (`refusedReading`). The
+   reading is the refusal's voiced reason (`callReading` over `Refusal.voiced`): a spell's badSpell
+   reason, `noMethodReason`, unknownObject's and typeMismatch's sentences; a grant clause says "no
+   grant lets this call run <m> on <id> (<clause>).". Test: `tests/test_call_reading.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
