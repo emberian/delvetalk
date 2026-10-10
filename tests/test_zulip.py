@@ -35,7 +35,7 @@ class FakeZulip:
     """The three endpoints the transport uses, over real HTTP with basic auth, holding one list of messages."""
 
     def __init__(self):
-        self.messages, self.calls, self.ids = [], [], {}
+        self.messages, self.calls, self.ids, self.narrows = [], [], {}, []
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -61,7 +61,9 @@ class FakeZulip:
                     return self.reply(200, {'result': 'success', **BOT})
                 if (method, url.path) == ('GET', '/api/v1/messages'):
                     narrow = json.loads(p['narrow'])
-                    inside = [m for m in fake.messages if m['display_recipient'] == narrow[0]['operand']]
+                    wanted = {n['operator']: n['operand'] for n in narrow}
+                    fake.narrows.append(wanted)
+                    inside = [m for m in fake.messages if m['display_recipient'] == wanted['channel'] and wanted.get('topic', m['subject']) == m['subject']]
                     if p['anchor'] != 'oldest':
                         inside = [m for m in inside if m['id'] > int(p['anchor'])]
                     page = inside[:int(p['num_after'])]
@@ -145,6 +147,17 @@ class Observing(ZulipCase):
         later = self.zulip.say('garden', 'Alice', 'more')
         self.assertEqual(self.observed()[-1]['replyTo'], uri('garden', 5), 'the previous message of a topic includes the bot own')
 
+    def test_a_topic_narrow_observes_only_that_topic(self):
+        self.zulip.say('mobo', 'Alice', 'in the topic')
+        self.zulip.say('elsewhere', 'Bob', 'in another topic')
+        self.zulip.say('mobo', 'Carol', 'and again')
+        ob = zulip.ZulipObserver(self.state, self.client(), topic='mobo')
+        ob.poll()
+        got = [json.loads(r[0]) for r in ob.db.execute('SELECT json FROM observations ORDER BY seq')]
+        self.assertEqual([o['text'] for o in got], ['in the topic', 'and again'])
+        self.assertEqual(self.zulip.narrows[-1], {'channel': 'delvetalk', 'topic': 'mobo'})
+        self.assertEqual(got[1]['replyTo'], got[0]['uri'])
+
     def test_a_bad_credential_is_a_failure_not_a_crash(self):
         self.rc.write_text(self.rc.read_text().replace(KEY, 'wrong'))
         ob = zulip.ZulipObserver(self.state, self.client())
@@ -194,6 +207,16 @@ class Bridging(ZulipCase):
         got = self.bridge()
         self.assertEqual((len(got['turns']), len(got['posted'])), (1, 1), got)
         self.assertIn('bell says', self.zulip.mine()[0]['content'])
+
+    def test_with_a_topic_the_bridge_reads_and_answers_only_there(self):
+        self.zulip.say('mobo', 'Alice', SPELL)
+        self.zulip.say('elsewhere', 'Bob', SPELL)
+        out = io.StringIO()
+        bridge.main(['run', '--once', '--state', str(self.state), '--host-socket', str(self.sock), '--source', 'zulip', '--topic', 'mobo',
+                     '--zuliprc', str(self.rc), '--since', '1970-01-01T00:00:00Z'], out)
+        got = json.loads(out.getvalue())
+        self.assertEqual((len(got['turns']), len(got['posted'])), (1, 1), got)
+        self.assertEqual([m['subject'] for m in self.zulip.mine()], ['mobo'])
 
     def test_a_mention_of_the_bot_summons_the_directory(self):
         self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** what is here?')

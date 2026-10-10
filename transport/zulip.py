@@ -6,7 +6,7 @@ The observer turns each message of the stream into the observation record observ
 which is a thread), classified by observe.classify. The poster puts a draft into its topic as a message. Neither
 decides anything: routing, quota and admission stay with the bridge and the host.
 
-    python3 -m transport.zulip observe --state DIR --zuliprc PATH [--stream delvetalk]
+    python3 -m transport.zulip observe --state DIR --zuliprc PATH [--stream delvetalk] [--topic T]
     python3 -m transport.zulip post --state DIR --zuliprc PATH --topic T --text-file F --object O --host-socket S
 """
 import argparse
@@ -81,10 +81,11 @@ class Client:
     def me(self):
         return self.call('GET', 'users/me')
 
-    def messages(self, stream, after=None):
-        """One page of the stream's messages after message id `after` (the oldest page when None), oldest first."""
+    def messages(self, stream, after=None, topic=None):
+        """One page of the stream's messages (of one topic when `topic` is given) after message id `after` (the oldest page when None), oldest first."""
+        narrow = [{'operator': 'channel', 'operand': stream}] + ([{'operator': 'topic', 'operand': topic}] if topic else [])
         params = {'anchor': 'oldest' if after is None else after, 'num_before': 0, 'num_after': BATCH,
-                  'narrow': json.dumps([{'operator': 'channel', 'operand': stream}]), 'apply_markdown': 'false'}
+                  'narrow': json.dumps(narrow), 'apply_markdown': 'false'}
         if after is not None:
             params['include_anchor'] = 'false'
         return self.call('GET', 'messages', params)
@@ -103,9 +104,9 @@ class ZulipObserver(Observer):
     """Observer over one stream. Same tables as Observer (posts, observations, emitted); a topic's last message is
     kept for replyTo, and the owner's own messages (drafts we posted) extend the thread but are never observed."""
 
-    def __init__(self, state_dir, client, stream=STREAM, since=None):
+    def __init__(self, state_dir, client, stream=STREAM, since=None, topic=None):
         super().__init__(state_dir, client, since)
-        self.stream, self.me = stream, None
+        self.stream, self.topic, self.me = stream, topic, None
         self.db.executescript(SCHEMA)
 
     def observation(self, m, bot):
@@ -160,7 +161,7 @@ class ZulipObserver(Observer):
         row = self.db.execute('SELECT id FROM zulip_cursor').fetchone()
         after = row[0] if row else None
         while True:
-            page = self.client.messages(self.stream, after)
+            page = self.client.messages(self.stream, after, self.topic)
             for m in page.get('messages') or []:
                 self.store(m, me)
                 after = m['id']
@@ -224,7 +225,7 @@ def main(argv=None, out=None, transport=http_transport):
         p.add_argument('--state', required=True)
         p.add_argument('--zuliprc', required=True, metavar='PATH')
         p.add_argument('--stream', default=STREAM)
-    p.add_argument('--topic', required=True)
+    p.add_argument('--topic', required=True, help='post: the topic to post in; observe: only this topic is read (default: every topic)')
     p.add_argument('--text-file', required=True)
     p.add_argument('--object', help='the object the post addresses: world-posted is called for it')
     p.add_argument('--slot', metavar='PRINCIPAL:INTENT')
@@ -233,7 +234,7 @@ def main(argv=None, out=None, transport=http_transport):
     try:
         client = Client(a.zuliprc, transport)
         if a.cmd == 'observe':
-            ob = ZulipObserver(a.state, client, a.stream)
+            ob = ZulipObserver(a.state, client, a.stream, topic=a.topic)
             ob.poll()
             ob.drain(lambda js: (out.write(js + '\n'), out.flush()))
             return 0
