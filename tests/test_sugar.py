@@ -508,7 +508,7 @@ class Writes(unittest.TestCase):
         reply = self.h.send({"op": "check-package", "entry": "plant",
                              "modules": library_modules("Abi", "List", "World") + [{"name": "Package", "source": source}]})
         self.assertEqual(reply["status"], "refused", reply)
-        self.assertIn("takes add, set, append, remove, removeItem, insert, upsert or retract, not bump", reply["diagnostic"]["message"])
+        self.assertIn("takes add, set, append, remove, amend, removeItem, insert, upsert or retract, not bump", reply["diagnostic"]["message"])
 
 
     def test_relation_edits_are_their_plans(self):
@@ -529,6 +529,52 @@ class Writes(unittest.TestCase):
                     packets.append(core(reply["artifact"]))
                 self.assertEqual(packets[0], packets[1])
 
+
+    def compiled_core(self, source, library=("Abi", "List", "World")):
+        reply = self.h.send({"op": "compile", "entry": "plant",
+                             "modules": library_modules(*library) + [{"name": "Package", "source": source}]})
+        self.assertEqual(reply["status"], "compiled", reply)
+        return core(reply["artifact"])
+
+    def test_remove_and_amend_name_items(self):
+        # Plan.obend lost the index forms: `remove ITEM` is removeItem, `amend ITEM with CHANGE` amendItem.
+        for sugared, explicit in [("children: remove input.child", "children: P.Entries::<P.Reference, {}>.removeItem({item: input.child})"),
+                                  ("children: amend input.child with {}", "children: P.Entries::<P.Reference, {}>.amendItem({item: input.child, change: {}})")]:
+            with self.subTest(edit=sugared):
+                self.assertEqual(self.compiled_core(GARDEN + "  let written(_) = write {%s}\n  state.planted\n" % sugared),
+                                 self.compiled_core(GARDEN + "  let written(_) = world.write(extend(keep(), {%s}))\n  state.planted\n" % explicit))
+
+    def test_remove_on_a_relation_is_a_retract_by_key(self):
+        sugared = ROWS + "  let written(_) = write {rows: remove {at: input.at}}\n  0n\n"
+        explicit = ROWS + "  let written(_) = world.write(extend(keep(), {rows: P.Entries::<Row, {}>.retract({key: {at: input.at}})}))\n  0n\n"
+        library = ("Abi", "List", "World", "Relation")
+        self.assertEqual(self.compiled_core(sugared, library), self.compiled_core(explicit, library))
+
+    def test_an_index_is_refused_by_name(self):
+        source = GARDEN + "  let written(_) = write {children: remove {index: 0n}}\n  state.planted\n"
+        reply = self.h.send({"op": "check-package", "entry": "plant",
+                             "modules": library_modules("Abi", "List", "World") + [{"name": "Package", "source": source}]})
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("names a position, and edits name items", reply["diagnostic"]["message"])
+        self.assertIn("children: remove ITEM", reply["diagnostic"]["message"])
+
+
+ROWS = HEAD + """import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as P
+import ./Relation.obend as Relations
+import ./World.obend as World
+record Row:
+  at: Nat
+  text: String
+record State:
+  rows: Relations.Relation<Row>
+record Edits:
+  rows: P.Entries<Row, {}>
+def keep() -> Edits:
+  {rows: P.Entries::<Row, {}>.keep({})}
+def plant(state: State, input: {at: Nat}, context: Abi.Context) -> Activity<Nat>:
+"""
 
 RELATIONS = HEAD + """import ./List.obend as Lists
 record Decl:
@@ -551,9 +597,22 @@ class Relations(unittest.TestCase):
         h = Host()
         self.addCleanup(h.close)
         art = h.compile(RELATIONS, "initial", ("List",))
-        self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"]}])
+        self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"], "limit": 0}])
         plain = h.compile(RELATIONS.replace("def relations()", "def declared()"), "initial", ("List",))
         self.assertNotIn("relations", plain)
+
+    def test_a_declaration_carries_its_limit_and_retention(self):
+        # RELATIONAL section 11: a limit (0 is the host's default) and the retention past it.
+        h = Host()
+        self.addCleanup(h.close)
+        bounded = (RELATIONS.replace("  key: Lists.List<String>\n", "  key: Lists.List<String>\n  limit: Nat\n  retain: String\n")
+                   .replace("tail: Lists.List.nil({})})})}, tail", "tail: Lists.List.nil({})})}), limit: 64n, retain: \"dropOldest\"}, tail"))
+        art = h.compile(bounded, "initial", ("List",))
+        self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"], "limit": 64, "retain": "dropOldest"}])
+        bad = h.send({"op": "compile", "entry": "initial", "modules": library_modules("List") + [
+            {"name": "Package", "source": bounded.replace("  limit: Nat\n", "  limit: String\n").replace("limit: 64n", "limit: \"many\"")}]})
+        self.assertEqual(bad["status"], "error", bad)
+        self.assertIn("relations(): a limit is a Nat", bad["message"])
 
 
 class LawReading(TurnWorld):
