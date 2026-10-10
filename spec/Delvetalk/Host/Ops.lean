@@ -1267,22 +1267,104 @@ def compactCheckpoint (w : World) (checkpoint : Json)
 /-- The CID a one-item block of `item` is journaled under. -/
 def blockCid (item : Json) : String := Journal.bodyHash (Json.arr #[item])
 
-/-- An interpretation as journaled: its `offers` (the same forms in every reading of one card) are a
-    one-item block named by CID (`offersBlock`), so a reading costs only what is new in it. The
-    blocks to journal with it are the second component. -/
-def compactInterpretation (i : Json) : Json × Array (Array Json) :=
-  match i.getObjVal? "offers" with
-  | .ok offers =>
-    let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "offers")
-    (Json.mkObj (rest ++ [("offersBlock", toJson (blockCid offers))]), #[#[offers]])
-  | .error _ => (i, #[])
+/-- A field this long (compact JSON bytes) or longer is journaled as a block (`blockField`); a
+    shorter one costs less inline than its CID. -/
+def blockThreshold : Nat := 256
 
-/-- An interpretation with its `offers` restored from the world's blocks. -/
-def expandInterpretation (w : World) (i : Json) : Option Json := do
-  let some cid := (i.getObjValAs? String "offersBlock").toOption | return i
-  let offers ← (w.blocks[cid]?).bind (·[0]?)
-  let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) => k != "offersBlock"
-  return Json.mkObj (rest ++ [("offers", offers)])
+/-- `field` of `j` as a one-item block named by CID (`<field>Block`) when it is at least `least`
+    bytes, so a value that recurs (the forms of every reading of one card, the utterance of one post
+    read again, a retried argument) is journaled once; the blocks to journal are the second part. -/
+def blockField (j : Json) (field : String) (least : Nat := blockThreshold) : Json × Array (Array Json) :=
+  match j.getObjVal? field with
+  | .ok v =>
+    if v.compress.utf8ByteSize < least then (j, #[]) else
+    let rest := ((j.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != field)
+    (Json.mkObj (rest ++ [(field ++ "Block", toJson (blockCid v))]), #[#[v]])
+  | .error _ => (j, #[])
+
+/-- `j` with `field` restored from the world's blocks (`blockField`); none when the block is not
+    journaled. -/
+def unblockField (w : World) (j : Json) (field : String) : Option Json := do
+  let some cid := (j.getObjValAs? String (field ++ "Block")).toOption | return j
+  let v ← (w.blocks[cid]?).bind (·[0]?)
+  let rest := ((j.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) => k != field ++ "Block"
+  return Json.mkObj (rest ++ [(field, v)])
+
+/-- Data wire JSON with every text of at least `blockThreshold` bytes journaled as a one-item block of
+    the string (`{tag: "labelBlock", cid}`): the same block the checkpoint's leaf for that text is, so
+    a reply's text is journaled once whether the argument or the machine holds it. -/
+partial def hoistLabels (j : Json) : Json × Array (Array Json) :=
+  match j with
+  | .obj _ =>
+    if (j.getObjValAs? String "tag").toOption == some "label" then
+      match j.getObjValAs? String "value" with
+      | .ok v => if v.utf8ByteSize < blockThreshold then (j, #[]) else
+          (Json.mkObj [("tag", toJson "labelBlock"), ("cid", toJson (blockCid (toJson v)))], #[#[toJson v]])
+      | .error _ => (j, #[])
+    else
+      let fields := (j.getObj?.toOption.map (·.toList)).getD []
+      let (out, blocks) := fields.foldl (fun (acc : List (String × Json) × Array (Array Json)) (k, v) =>
+        let (v', bs) := hoistLabels v; (acc.1 ++ [(k, v')], acc.2 ++ bs)) ([], #[])
+      (Json.mkObj out, blocks)
+  | .arr items =>
+    let (out, blocks) := items.foldl (fun (acc : Array Json × Array (Array Json)) v =>
+      let (v', bs) := hoistLabels v; (acc.1.push v', acc.2 ++ bs)) (#[], #[])
+    (.arr out, blocks)
+  | other => (other, #[])
+
+/-- `hoistLabels` undone from the world's blocks. -/
+partial def lowerLabels (w : World) (j : Json) : Except String Json :=
+  match j with
+  | .obj _ =>
+    if (j.getObjValAs? String "tag").toOption == some "labelBlock" then do
+      let cid ← j.getObjValAs? String "cid"
+      let some item := (w.blocks[cid]?).bind (·[0]?) | throw s!"text block {cid} is not journaled"
+      return Json.mkObj [("tag", toJson "label"), ("value", ← item.getStr?)]
+    else do
+      let fields := (j.getObj?.toOption.map (·.toList)).getD []
+      return Json.mkObj (← fields.mapM fun (k, v) => do return (k, ← lowerLabels w v))
+  | .arr items => return .arr (← items.mapM (lowerLabels w))
+  | other => return other
+
+/-- A suspended activity's `argument`, its long texts restored from the world's blocks (`hoistLabels`;
+    an older entry's whole `argumentBlock` too). -/
+def activityArgument (w : World) (act : Json) : Except String Json := do
+  match unblockField w act "argument" with
+  | some a => lowerLabels w (← a.getObjVal? "argument")
+  | none => throw "a suspended activity's argument block is not journaled"
+
+/-- An interpretation as journaled: its `offers` (the same forms in every reading of one card) are a
+    one-item block (`offersBlock`), and so is a long `utterance` (`utteranceBlock`; the directory reads
+    one post's text more than once), so a reading costs only what is new in it. The blocks to
+    journal with it are the second component. -/
+def compactInterpretation (i : Json) (argument : Data) : Json × Array (Array Json) :=
+  let (i, offers) := blockField i "offers" 0
+  -- A card reading its reply hands the model the reply's own text: then it is not journaled twice.
+  let text := match argument with
+    | .record fs => match fs.lookup "text" with
+      | some (.label t) => some t
+      | _ => none
+    | _ => none
+  if (i.getObjValAs? String "utterance").toOption == text && text.isSome then
+    let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "utterance")
+    (Json.mkObj (rest ++ [("utteranceIsText", toJson true)]), offers)
+  else
+    let (i, utterance) := blockField i "utterance"
+    (i, offers ++ utterance)
+
+/-- The interpretation of a suspended entry's `outcome`, with its `offers` and `utterance` restored
+    from the world's blocks, or the utterance from the activity's argument's `text`. -/
+def expandInterpretation (w : World) (outcome : Json) : Option Json := do
+  let i ← (outcome.getObjVal? "interpretation").toOption
+  let i ← unblockField w (← unblockField w i "offers") "utterance"
+  if (i.getObjValAs? Bool "utteranceIsText").toOption != some true then return i
+  let act ← (outcome.getObjVal? "activity").toOption
+  let argument ← (activityArgument w act).toOption
+  let text ← ((argument.getObjVal? "fields").toOption.bind (·.getArr?.toOption)).bind fun fs =>
+    fs.findSome? fun f => if (f.getObjValAs? String "name").toOption == some "text" then
+      ((f.getObjVal? "value").toOption.bind (·.getObjValAs? String "value" |>.toOption)) else none
+  let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "utteranceIsText")
+  return Json.mkObj (rest ++ [("utterance", toJson text)])
 
 /-- The blocks an entry carries, checked against their CIDs. -/
 def entryBlocks (entry : Json) : Except String (List (String × Array Json)) := do

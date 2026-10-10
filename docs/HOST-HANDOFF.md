@@ -513,6 +513,20 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    fence filling `source`, a declared text bound), `tests/test_hub.py`, `tests/test_hypermedia.py`
    (the garden's declared choice and 1..80 seed).
 
+70. **Suspension fields by block (host10).** A suspended activity's `argument` journals each text of
+   256 bytes or more as a one-item block of the string (`hoistLabels`: `{tag: "labelBlock", cid}`), which
+   is the same block as the checkpoint's leaf for that text (a token of 256 bytes or more is its own
+   leaf), so a reply's text is journaled once whether the argument or the machine holds it;
+   `activityArgument` restores it (`lowerLabels`; an entry's whole `argumentBlock` is read too). An
+   interpretation whose `utterance` is the argument's `text` journals `utteranceIsText: true` instead;
+   another long utterance is an `utteranceBlock` (`blockField`, `unblockField`; `offersBlock` as before).
+   `expandInterpretation` now takes the suspended entry's `outcome`. A fork's genesis carries both
+   restored. Measured on hbox, the offline rehearsal journal (55 directory suspensions): median
+   suspended entry 8,725 B with only argument and utterance blocked whole, 7,615 B with texts shared
+   with the checkpoint (foundation 5f3eddd: 10.1 KB); journal 2.57 MB. What remains is the kernel's
+   checkpoint blocks (median 4.7 KB fresh per entry) and the `tokenTree` roots (~1 KB); the 7 KB target
+   needs the kernel's share.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

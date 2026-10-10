@@ -1705,11 +1705,16 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (some { cls := "quota", reason := some reason, next := some next })
     return (w', turnReply w' r)
   | .error (.suspend sp si patience checkpoint interpretation post) =>
-    let interpretation := interpretation.map compactInterpretation
-    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson ((interpretation.map (·.2)).getD #[])
+    let interpretation := interpretation.map (compactInterpretation · ctx.argument)
+    -- An argument's long texts are blocks, the same the checkpoint holds them in (`activityArgument`
+    -- restores them): a reply's text is journaled once.
+    let (hoisted, argumentBlocks) := hoistLabels (dataJson ctx.argument)
+    let argument := Json.mkObj [("argument", hoisted)]
+    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson
+      (((interpretation.map (·.2)).getD #[]) ++ argumentBlocks)
     let interpretation := interpretation.map (·.1)
-    let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
-      ("argument", dataJson ctx.argument),
+    let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method)] ++
+      ((argument.getObj?.toOption.map (·.toList)).getD []) ++ [
       ("checkpoint", journaledCheckpoint.1),
       ("roots", allRootsJson st.roots st.fieldRoots), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
@@ -1913,7 +1918,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let act ← outcome.getObjVal? "activity"
   let object ← act.getObjValAs? String "object"
   let method ← act.getObjValAs? String "method"
-  let argument ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
+  let argument ← decodeData Limits.dataDepth (← activityArgument w act)
   let roots ← parseRoots (← act.getObjVal? "roots")
   let fieldRoots ← parseFieldRoots (← act.getObjVal? "roots")
   let absent := strings (act.getObjVal? "absent").toOption
@@ -2046,7 +2051,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     { principal := ← identity.getObjValAs? String "principal"
       object := ← act.getObjValAs? String "object"
       method := ← act.getObjValAs? String "method"
-      argument := ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
+      argument := ← decodeData Limits.dataDepth (← activityArgument w act)
       intent := ← identity.getObjValAs? String "intent"
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))]
       digest := ← sus.getObjValAs? String "turnRequest"
@@ -2345,7 +2350,7 @@ def policyJson (w : World) (id : String) (offers : Data) (utterance : String) : 
 
 /-- A suspension's interpretation, with what it journals by block restored (`expandInterpretation`). -/
 def interpretationOf (w : World) (s : Json) : Option Json :=
-  ((s.getObjVal? "outcome").toOption.bind fun o => (o.getObjVal? "interpretation").toOption).bind (expandInterpretation w)
+  (s.getObjVal? "outcome").toOption.bind (expandInterpretation w)
 
 /-- `world-interpretations`: every `interpret` still waiting for a reply. The world returned
     carries only the compiled prompts it cached; nothing is journaled. -/

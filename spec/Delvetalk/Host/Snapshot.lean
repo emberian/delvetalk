@@ -359,8 +359,11 @@ def forkGenesis (w : World) (principal world : String) (height : Nat) (cid : Str
     let outcome ← e.getObjVal? "outcome"
     let activity ← outcome.getObjVal? "activity"
     let activity := activity.setObjVal! "checkpoint" (← expandCheckpoint w (← activity.getObjVal? "checkpoint"))
+    -- A fork carries no blocks for these: the argument is restored whole.
+    let activity := ((Json.mkObj ((((activity.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "argumentBlock")) ++
+      [("argument", ← activityArgument w activity)])))
     let outcome := outcome.setObjVal! "activity" activity
-    let outcome := match (outcome.getObjVal? "interpretation").toOption.bind (expandInterpretation w) with
+    let outcome := match expandInterpretation w outcome with
       | some i => outcome.setObjVal! "interpretation" i
       | none => outcome
     return e.setObjVal! "outcome" outcome
