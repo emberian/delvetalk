@@ -452,7 +452,7 @@ def main(argv=None, out=None):
                 client = zulip.Client(a.zuliprc)
                 poll = lambda ob: ob.poll()
                 poll.client, poll.observer = client, lambda state, c: zulip.ZulipObserver(state, c, a.stream, since, a.topic)
-                after = lambda: zulip.post_drafts(a.state, host, client, a.stream)
+                after = lambda: zulip.post_drafts(a.state, host, client, a.stream, topic=a.topic)
             elif a.observe or a.poll or a.mock:
                 poll = lambda ob: ob.poll()
                 poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
