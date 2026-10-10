@@ -1365,7 +1365,10 @@ def derivedDecls (sources : Array Source) : Except String (Array (List Decl × D
       checkFixed index
       let edits := (← deriveEdits index).getD []
       let forms ← deriveForms index
-      out := out.push (edits ++ forms.decls, forms)
+      -- The canonical order: `forms()`, then `Edits` and `keep()`, then the form inputs. A
+      -- module that writes `forms()` at its end (its `Edits` and inputs derived) is this order.
+      let (functions, types) := forms.decls.partition (· matches .function ..)
+      out := out.push (functions ++ edits ++ types, forms)
     return out
   return (← probe.run (← initialState sources)).1
 
