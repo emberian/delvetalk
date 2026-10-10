@@ -641,6 +641,12 @@ the backlog. Nothing on any page reads like a coin or a chain: the home page
 is the notebook, a receipt has a name, a turn has a height written as a shelf
 mark, and no address or hash is shown to a person.
 
+A relation's declared limit times its widest row must fit in 256 KiB (state
+bytes are counted on the canonical encoding, about 86 bytes a row plus its
+text), or the object stops being writable when full, since retention cannot
+drop rows to get under the byte bound; the lazy cells (KERNEL-HANDOFF §15) are
+the real fix, after which the bound is per cell.
+
 ## 13. How it was built
 
 On 2026-10-09 and 2026-10-10, on branch `foundation`, from a chosen manifest of
