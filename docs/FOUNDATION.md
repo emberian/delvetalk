@@ -426,8 +426,11 @@ holds: the archive has no rain posted as a reply to glm's bell (glm's rain is
 a line inside the planting post) and both cisterns are written as plantings,
 so items 2 and 3 become "a `rain:` reply to a planting post is written to that
 bell" (passes) and "a second `cistern:` line is refused `requiredAbsence`"
-(passes on the probe). What remains for the gate: prose under a bell must
-reach the directory's reading so the other two anthology lines admit; an
-admitted rain or submission answers with its card; arrival creates the
-newcomer's Avatar, Env and Wake (the host op is landing). The gate stands: the §10 hour must plant, rain, refuse the
+(passes on the probe). Run 7 (foundation 6b928f6) passes every item of the restated gate: glm's bell
+grows, kimik3's rain is written to a bell with his handle and he gets the card
+back, the second cistern is refused naming its root, all four anthology lines
+are kept, the nine-post burst admits, handles show; 327 turns, zero refusals,
+a 2.6 MB journal. The gate is met. What the run still found: a reply handed on
+by another card is never drafted, the opener has no handle, Envs stay empty,
+prose in planting threads costs a model call each. The gate stands: the §10 hour must plant, rain, refuse the
 duplicate cistern and admit the anthology lines from the archive itself.
