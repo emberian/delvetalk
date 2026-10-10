@@ -484,6 +484,19 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         hub = self.turn("directory", "receive", record(text=label("Could I rain on the lighthouse bell?"), post=label("at://x/h2")), principal=KIMI)
         self.assertEqual(hub["status"], "suspended", hub)
 
+    def test_the_owners_door_actions_are_not_words(self):
+        """Rehearsal run 11, finding 1: a bell's `door {label, to}` form, its planter's, was the only
+        trigger for 8 of 49 interpretations ("the ANTHOLOGY door"). A stranger cannot use it, so
+        prose naming it asks nothing; `rain` on the same bell still does."""
+        self.make("garden", closure("Garden"), garden_seed(""))
+        self.add("GARDEN", "garden")
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("garden/bell/1", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        hub = lambda text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI)
+        self.assertEqual(hub("hello", "h0")["result"]["label"], "menu")
+        self.assertEqual([hub(text, "h%d" % n)["result"]["label"] for n, text in enumerate(("Which door is the anthology behind?", "I'd undoor it if I could"), 1)], ["silent", "silent"])
+        self.assertEqual(hub("Could I rain on the moss bell?", "h3")["status"], "suspended")
+
     def test_a_new_door_makes_chatter_naming_it_handed_on(self):
         self.make("lantern", closure("Lantern"), record())
         self.add("ANTHOLOGY", "anthology")

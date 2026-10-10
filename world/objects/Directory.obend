@@ -171,10 +171,11 @@ def childInspected(input: Card.Reply, next: Next, learned: Learning, door: Strin
   match world.inspect({object: {world: context.world, object: child}}):
     case inspected(i): learning(input, next, Lists.concat(learned, learnedOf(child, door, true, i.methods)), rest, context, state)
     case _: learning(input, next, learned, rest, context, state)
-# Only what a card offers counts: inspect lists the forms of its public methods and
-# `receive`, which no reader names as an action.
+# Only what a card offers a reader counts: inspect lists the forms of its public methods and
+# `receive`, which no reader names as an action, and the owner's door actions (`door` is a word
+# the town uses for the directory's doors; prose naming it asks nothing of a bell).
 def learnedOf(card: String, door: String, child: Bool, forms: Lists.List<Form.Form>) -> Learning:
-  Lists.map(Lists.filter(forms, fn(f: Form.Form) -> Bool: f.action != "receive"), fn(f: Form.Form) -> Learned: {card: card, door: door, child: child, form: f})
+  Lists.map(Lists.filter(forms, fn(f: Form.Form) -> Bool: f.action != "receive" && Lists.any(Card.ownerActions(), fn(a: String) -> Bool: a == f.action) == false), fn(f: Form.Form) -> Learned: {card: card, door: door, child: child, form: f})
 def learnedAll(input: Card.Reply, next: Next, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
   match next:
     case fielded(f): fielded(input, f.first, Lists.find(learned, fn(l: Learned) -> Bool: l.child == false && (l.form.action == f.first.name || Card.hasField(l.form, f.first.name))), context, state)
