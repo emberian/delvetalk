@@ -44,6 +44,39 @@ def methods() -> Lists.List<String>:
 """.replace("import ./Abi.obend as Abi\n", "import ./Abi.obend as Abi\nimport ./List.obend as Lists\n", 1)
 
 
+KIND = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  made: Nat
+def initial() -> State:
+  {made: 0n}
+def make(state: State, input: {source: String, body: String, id: String}, context: Abi.Context) -> Activity<String>:
+  match world.create({package: input.source, seed: Data.of::<{}>({}), law: "", requireAbsent: {world: "", object: input.id}}):
+    case created(c): grafted(input.id, input.body)
+    case refused(r): "create {r.clause}"
+    case _: "other"
+def grafted(id: String, body: String) -> Activity<String>:
+  match world.extend({object: {world: "", object: id}, package: body, migration: ""}):
+    case reprogrammed(p): "made {id}"
+    case refused(r): refuse("what was made could not be given its body, so nothing was made")
+    case _: "other"
+""", "make")
+
+DIM = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+type State = Super.State
+def dim(state: State, context: Abi.Context) -> Activity<Bool>:
+  let written(_) = write {lit: set false}
+  false
+def methods() -> Lists.List<String>:
+  Lists.List::<String>.cons({head: "light", tail: Lists.List::<String>.cons({head: "dim", tail: Lists.List::<String>.nil({})})})
+"""
+
+
 class Make(Reflection):
     def setUp(self):
         super().setUp()
@@ -80,6 +113,35 @@ class Make(Reflection):
             r = self.turn("workshop", "make", record(source=label(LAMP), id=label("lamp"), origin=label(frm),
                                                     receipt=label(receipt)), principal="kim")
             self.assertTrue(r["result"]["value"].startswith("madeFrom | "), r)
+
+
+class CreateThenExtend(Reflection):
+    """A turn reaches what it created (the rewrite lane's Kind): an `extend` of an object the same turn
+    created lays the layer into the creation, judged by the made thing's law, so a kind makes a thing
+    and grafts its body in one entry; a body that does not compile refuses with nothing made."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("kind", KIND, record(made=nat(0)))
+
+    def test_a_kind_makes_a_thing_and_grafts_its_body_in_one_turn(self):
+        r = self.turn("kind", "make", record(source=label(LAMP), body=label(DIM), id=label("lamp")), principal="kim")
+        self.assertEqual((r["status"], r.get("result")), ("admitted", label("made lamp")), r)
+        outcome = r["receipt"]["outcome"]
+        [made] = outcome["creates"]
+        self.assertNotIn("reprograms", outcome)
+        lamp = self.host.send(op="world-inspect", principal="kim", object="lamp")
+        self.assertEqual(lamp["pin"], made["pin"])
+        self.assertEqual(self.turn("lamp", "light", principal="kim")["status"], "admitted")
+        self.assertEqual(self.turn("lamp", "dim", principal="kim")["result"], {"tag": "boolean", "value": False})
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="lamp")["pin"], made["pin"])
+
+    def test_a_body_that_does_not_compile_leaves_nothing_made(self):
+        r = self.turn("kind", "make", record(source=label(LAMP), body=label(DIM.replace("false\n", "7n\n", 1)), id=label("lamp")), principal="kim")
+        self.assertEqual(r["status"], "refused", r)
+        self.assertNotEqual(self.host.send(op="world-inspect", principal="kim", object="lamp")["status"], "inspected")
 
 
 if __name__ == "__main__":
