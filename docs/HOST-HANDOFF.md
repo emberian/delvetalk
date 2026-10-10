@@ -601,11 +601,10 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    grant lets this call run <m> on <id> (<clause>).". Test: `tests/test_call_reading.py`.
 
 78. **Declarations from the artifact (host11).** Whether an entry module declares `forms`, `views`,
-   `lenses`, `blurb` (and, for `publicMethods`, `methods`) is read from the artifact's `declares:
-   [names]` when the kernel lists it, derived definitions included (`packageDeclares`,
-   `Object.declaresDef`; `Object.declares`, in snapshots); an artifact without the list falls back to
-   scanning the entry module's source for `def <name>(`. The scan goes when the kernel's list is in
-   foundation (coordinator's word). `#guard`s in `Ops.lean`.
+   `lenses`, `blurb` (and, for `publicMethods`, `methods`) is read only from the artifact's `declares:
+   [names]` (the kernel's `declaredNames`, derived definitions included; `Object.declares`, in
+   snapshots): a package with form blocks and no hand-written `forms()` has public, bounded actions.
+   The source scan is gone. Test: `tests/test_form_bounds.py` `DerivedForms`.
 
 79. **No write or migration moves a fixed field (host11).** `judge` refuses an admitted-to-be write
    (a `world-propose`'s edits, which the kernel never sees) that changes a field of `Object.fixed`:
