@@ -14,7 +14,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
 - Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
-- Tests: 1,079 `def test_` across `tests/test_*.py` (lane/kernel9). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
+- Tests: 1,093 `def test_` across `tests/test_*.py` (lane/kernel9). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
 - Open: section 9.
 
 ## 0. Working rules
@@ -594,6 +594,14 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   admits no input or `{}`. Structurally Garden's `Planting` equals `PlantInput` (`amber | violet
   | silver` is `Bell.Colour`). Counter and Loop import no List.obend, so they keep a hand-written
   `forms()` until they import it.
+- Order of the derived declarations (canonical): they end their module as `forms()`, then
+  `Edits` and `keep()`, then the form inputs and choice sums, and are specialized after every
+  module's own declarations. Knot fields (`forms`, `keep`) are numbered and their types interned
+  in declaration order, so this is the order in which a module that writes `forms()` at its end
+  (everything else derived) compiles to the same packets; with `keep` first, 10 entries of Env,
+  Garden, Policy, Scene and Workshop differed in their annotations' type indices. Pins
+  re-recorded for exactly those 10 (source pins unchanged). Test: `tests/test_derived_forms.py`
+  (every entry of Deal, Env, Garden, Policy, Scene, Workshop against `forms()` written at the end).
 - `fixed` State fields (coordinator's addition before commit 3). `colour: fixed Colour` in
   `record State` (`Surface.Field.fixed`; anywhere else "refused (fixed): only a State field is
   fixed") is a field the derived `Edits`/`keep()` omit, set only by `initial()` or a seed.
