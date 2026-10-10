@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, u
 
 
 WORD = re.compile(r'[\w-]+\Z')
+CARD = re.compile(r'[A-Za-z0-9._:/-]+\Z')  # the host's object id alphabet (validObjectId): a bell is garden/bell/1
 
 
 def spell_card(text):
@@ -41,7 +42,7 @@ def spell_card(text):
         body = line.lstrip(' \t')
         words = body.split()
         if (len(words) < 3 or words[0] != 'delvetalk' or not body.startswith(('delvetalk ', 'delvetalk\t'))
-                or not WORD.match(words[1]) or not WORD.match(words[2])):
+                or not CARD.match(words[1]) or not WORD.match(words[2])):
             continue
         if line.startswith(('    ', '\t')):
             quoted = words[1]

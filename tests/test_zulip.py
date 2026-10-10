@@ -185,6 +185,16 @@ class Bridging(ZulipCase):
         self.assertEqual(len(texts), 3, texts)
         self.assertTrue(all('garden-1 says' in t for t in texts), texts)
 
+    def test_a_bell_spell_in_a_new_topic_routes_to_the_bell(self):
+        body = OFFERING.replace('"hello "', '"bell says "')
+        r = self.host.send({'op': 'world-create', 'principal': OPENER, 'identity': 'mk-bell', 'object': 'garden/bell/1',
+                            'modules': [{'name': 'Echo', 'source': CARD % ('', body)}], 'entry': 'initial', 'seed': record(seen=nat(5))})
+        self.assertEqual(r['status'], 'created', r)
+        self.zulip.say('fresh topic', 'Alice', 'delvetalk garden/bell/1 plant\nseed: a\ncolour: amber')
+        got = self.bridge()
+        self.assertEqual((len(got['turns']), len(got['posted'])), (1, 1), got)
+        self.assertIn('bell says', self.zulip.mine()[0]['content'])
+
     def test_a_mention_of_the_bot_summons_the_directory(self):
         self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** what is here?')
         got = self.bridge()
