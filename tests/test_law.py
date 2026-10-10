@@ -41,7 +41,7 @@ def opened(reads: Lists.List<Abi.Read>) -> Bool:
     case nil(_): false
     case cons(c): c.head.object == "gate" && c.head.version > 0n
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if request.method == "poke" then Abi.Verdict.refused({clause: "method"}) else if request.context.principal == "mallory" then Abi.Verdict.refused({clause: "principal"}) else if new.count > old.count + 2n then Abi.Verdict.refused({clause: "tooMuch"}) else if opened(request.reads) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "closed"})
+  if request.method == "poke" then Abi.Verdict.refused({clause: "method", reading: "no poking"}) else if request.context.principal == "mallory" then Abi.Verdict.refused({clause: "principal", reading: "not mallory"}) else if new.count > old.count + 2n then Abi.Verdict.refused({clause: "tooMuch", reading: "two at most"}) else if opened(request.reads) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "closed", reading: "the gate is closed"})
 def lawReads() -> Lists.List<String>:
   Lists.List::<String>.cons({head: "gate", tail: Lists.List::<String>.nil({})})
 """)

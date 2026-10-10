@@ -1,4 +1,6 @@
 edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Relation.obend as Relations
 # The row types of the relations other objects read (WHOLENESS, root decisions, second set,
 # item 3): a subscriber's typed receiver takes `inserted` and `retracted` as lists of one of
 # these, so a Wake imports this module rather than the object that keeps the rows. Each
@@ -53,3 +55,35 @@ record Subscription:
   note: String
   since: Nat
   handle: String
+# A row as a rule reads it (a Wake's `On.rows`, RELATIONAL section 7): its columns by name, each
+# a natural or a text (Relations.Cell), since Bend cannot read Data. One projection per row type.
+record Column:
+  column: String
+  value: Relations.Cell
+type Columns = Lists.List<Column>
+def column(name: String, value: Relations.Cell) -> Column:
+  {column: name, value: value}
+def text(name: String, value: String) -> Column:
+  column(name, Relations.text(value))
+def nat(name: String, value: Nat) -> Column:
+  column(name, Relations.nat(value))
+def one(c: Column, rest: Columns) -> Columns:
+  Lists.List.cons({head: c, tail: rest})
+def none() -> Columns:
+  Lists.List.nil({})
+def rainColumns(r: Rain) -> Columns:
+  one(text("author", r.author), one(text("handle", r.handle), one(text("text", r.text), one(nat("at", r.at), one(nat("n", r.n), none())))))
+def sensedColumns(s: Sensed) -> Columns:
+  one(text("kind", s.kind), one(text("actor", s.actor), one(text("handle", s.handle), one(text("uri", s.uri), one(text("cid", s.cid), one(text("text", s.text), one(text("replyTo", s.replyTo), one(nat("at", s.at), one(nat("n", s.n), none())))))))))
+def greetingColumns(g: Greeting) -> Columns:
+  one(text("principal", g.principal), none())
+def statusName(status: Status) -> String:
+  match status:
+    case proposed(_): "proposed"
+    case admitted(_): "admitted"
+def proposalColumns(p: Proposal) -> Columns:
+  one(text("author", p.author), one(text("handle", p.handle), one(text("line", p.line), one(text("status", statusName(p.status)), one(nat("at", p.at), one(nat("n", p.n), none()))))))
+def traceColumns(t: Trace) -> Columns:
+  one(text("who", t.who), one(text("handle", t.handle), one(text("action", t.action), one(text("clause", t.clause), one(nat("at", t.at), one(nat("n", t.n), none()))))))
+def subscriptionColumns(s: Subscription) -> Columns:
+  one(text("who", s.who), one(nat("every", s.every), one(text("note", s.note), one(nat("since", s.since), one(text("handle", s.handle), none())))))

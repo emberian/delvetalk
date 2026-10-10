@@ -32,10 +32,11 @@ record NatField:
 # The two-tier law: a package's optional pure predicate
 #   def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict
 # judged by the host beside the law text (FOUNDATION section 13). A refusal names its
-# clause, as a law text's does.
+# clause and gives its reading, as a law text's does (the host copies it into the receipt's
+# `reason`).
 sum Verdict:
   admitted: {}
-  refused: {clause: String}
+  refused: {clause: String, reading: String}
 record Read:
   object: String
   version: Nat

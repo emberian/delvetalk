@@ -69,9 +69,9 @@ class Laws(LawWorld):
         self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))
         self.assertEqual(self.turn("dir", "add", record(door=door("garden")), principal=OWNER)["status"], "admitted")
         self.assertEqual(self.clause(self.turn("dir", "add", record(door=door("bazaar")), principal=OTHER)), "lawRefused/owner")
-        self.assertEqual(self.clause(self.turn("dir", "remove", record(label=label("garden")), principal=OTHER)), "lawRefused/owner")
+        self.assertEqual(self.clause(self.turn("dir", "remove", record(door=record(label=label("garden"))), principal=OTHER)), "lawRefused/owner")
         self.assertEqual(self.version("dir"), 1)
-        self.assertEqual(self.turn("dir", "remove", record(label=label("garden")), principal=OWNER)["status"], "admitted")
+        self.assertEqual(self.turn("dir", "remove", record(door=record(label=label("garden"))), principal=OWNER)["status"], "admitted")
         self.assertEqual(rows(get(self.state("dir"), "doors")), [])
 
     def test_a_directory_installed_for_someone_else_has_no_amendment_clause(self):
@@ -114,9 +114,9 @@ def wake_variant():
     with open("world/objects/Wake.obend") as handle:
         source = handle.read()
     source = source.replace('law owner "only its owner writes it": request.subject == new.owner', "law owner: request.kind == 0 or request.subject == new.owner", 1)
-    source = source.replace("if context.principal != state.owner then then(notOwner(state)) else if Lists.length(state.triggers) < 32n",
-                            "if Lists.length(state.triggers) < 32n", 1)
-    assert "request.kind == 0 or request.subject == new.owner" in source and "else if Lists.length(state.triggers) < 32n" not in source, \
+    source = source.replace("if context.principal != state.owner then notOwner(state) else if Lists.length(state.triggers) >= 32n",
+                            "if Lists.length(state.triggers) >= 32n", 1)
+    assert "request.kind == 0 or request.subject == new.owner" in source and "notOwner(state) else if Lists.length(state.triggers) >= 32n" not in source, \
         "Wake changed: the variant no longer skips its checks"
     return closure("Wake", override={"Wake": source})
 

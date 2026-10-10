@@ -60,7 +60,7 @@ law owner "only the owner reprograms or amends it; anyone enters, chooses and le
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if old.cooldown == 0n then Abi.Verdict.admitted({}) else arrivals(new.presence, request.context.clock, old)
 def arrivals(presence: Lists.List<Presence>, clock: Nat, old: State) -> Abi.Verdict:
-  if Lists.any(presence, fn(p: Presence) -> Bool: Lists.any(old.presence, fn(q: Presence) -> Bool: q.who == p.who) == false && cooling(p.who, clock, old)) then Abi.Verdict.refused({clause: "cooldown"}) else Abi.Verdict.admitted({})
+  if Lists.any(presence, fn(p: Presence) -> Bool: Lists.any(old.presence, fn(q: Presence) -> Bool: q.who == p.who) == false && cooling(p.who, clock, old)) then Abi.Verdict.refused({clause: "cooldown", reading: "A reader who left enters again only after the cooldown."}) else Abi.Verdict.admitted({})
 # The helpers take the State after their own inputs: a definition whose first parameter is
 # the State is a method any turn may run.
 def cooling(who: String, clock: Nat, state: State) -> Bool:
@@ -190,9 +190,6 @@ form choose:
 form leave:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: enterForm(), tail: Card.Forms.cons({head: chooseForm(), tail: Card.Forms.cons({head: leaveForm(), tail: Card.Forms.nil()})})})
-# The card as a public page under the door word (genesis posts one card per door).
-def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
-  Card.publishPage(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def blurb() -> Card.Door:
   {word: "scene", blurb: "A passage-and-choice scene: enter, choose, leave; post a ```spween block to make one."}
 # A ```spween block makes a new scene beside this one; anything else is the card's default.

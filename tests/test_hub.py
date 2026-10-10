@@ -100,7 +100,7 @@ class Hub(test_chain.Chain):
             "Reply with just the missing lines, or the spell filled in:\n"
             "\n"
             "    delvetalk garden plant\n"
-            "    seed: <what might grow here, 1 to 80 characters>\n"
+            "    seed: a cistern for refused proposals (by discovery, Kimi)\n"
             "    colour: <amber, violet or silver>\n"))
         self.assertIn("I still need: colour.", asked["offers"][0]["text"])
         self.assertEqual(len(self.children()), 1)
@@ -148,8 +148,8 @@ class Hub(test_chain.Chain):
         public = second["public"]
         self.assertEqual((public["object"], public["root"]["object"], public["root"]["version"]),
                          ("garden/cistern", "garden", garden["version"]), public)
-        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)["offers"][0]["text"]
-        self.assertIn("    delvetalk garden cistern\n    name: <text, 0 to 120 characters>\n", usage)
+        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)
+        self.assertIn("delvetalk garden cistern\nname: <text, 0 to 120 characters>\n", usage["text"])
 
     def interpret(self, raw):
         [pending] = self.host.send(op="world-interpretations")["pending"]
@@ -209,7 +209,7 @@ class Hub(test_chain.Chain):
         at the hub: the speaker is shown the door's spell to fill in and send, never run from prose."""
         self.policy()
         taught = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")
-        self.assertEqual(taught["result"]["label"], "done", taught)
+        self.assertEqual(taught["result"]["label"], "taught", taught)
         self.directory("policy")
         self.greet(GLM)
         self.assertEqual(self.say("Could we plant a silver fern that remembers yesterday?", GLM)["status"], "suspended")
@@ -334,6 +334,9 @@ class LinkDoors(test_chain.Chain):
         self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md\n")
         planted = say("plant: a lamp for moths\ncolour: amber")
         self.assertEqual(planted["result"]["label"], "passed", planted)
+        # A field line naming only the owner's `remove` is prose to the directory, never its spell.
+        label_line = say("label: moth")
+        self.assertEqual((label_line["status"], label_line["result"]["label"], label_line.get("offers", [])), ("admitted", "silent", []), label_line)
 
 
 class SpellsPassedOn(test_chain.Chain):

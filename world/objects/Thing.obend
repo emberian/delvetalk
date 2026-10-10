@@ -64,8 +64,8 @@ def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if Plans.same(old.holder, new.holder) || Plans.isNobody(old.holder) || Plans.isNobody(new.holder) then Abi.Verdict.admitted({}) else transferable(old.offer, new.holder, request.context)
 def transferable(offer: Offer, holder: Plans.Reference, context: Abi.Context) -> Abi.Verdict:
   match offer:
-    case none(_): Abi.Verdict.refused({clause: "noOffer"})
-    case open(o): if Plans.same(holder, o.to) == false || context.caller != o.to.object then Abi.Verdict.refused({clause: "notOffered"}) else if context.clock >= o.until then Abi.Verdict.refused({clause: "expired"}) else Abi.Verdict.admitted({})
+    case none(_): Abi.Verdict.refused({clause: "noOffer", reading: "The thing is not offered to anyone."})
+    case open(o): if Plans.same(holder, o.to) == false || context.caller != o.to.object then Abi.Verdict.refused({clause: "notOffered", reading: "The thing is offered to another, and only that avatar's own call takes it."}) else if context.clock >= o.until then Abi.Verdict.refused({clause: "expired", reading: "The offer has expired."}) else Abi.Verdict.admitted({})
 # Why a thing refuses: each arm is a clause, `why` its reading (names already shown).
 sum Why:
   alreadyHeld: {by: String}

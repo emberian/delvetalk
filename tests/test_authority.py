@@ -202,11 +202,11 @@ class LawsOnWho(Authority):
         self.assertEqual(r["status"], "created", r)
         self.assertEqual(self.turn("dir", "add", record(door=door))["status"], "admitted")
         version = self.version("dir")
-        stranger = self.turn("dir", "remove", record(label=label("garden")), principal="kim")
+        stranger = self.turn("dir", "remove", record(door=record(label=label("garden"))), principal="kim")
         self.assertEqual((stranger["status"], self.outcome(stranger)["class"], self.outcome(stranger)["clause"]),
                          ("refused", "lawRefused", "owner"))
         self.assertEqual(self.version("dir"), version)
-        owner = self.turn("dir", "remove", record(label=label("garden")))
+        owner = self.turn("dir", "remove", record(door=record(label=label("garden"))))
         self.assertEqual(owner["status"], "admitted", owner)
         self.assertEqual(self.version("dir"), version + 1)
 

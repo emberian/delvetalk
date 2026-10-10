@@ -73,26 +73,16 @@ form admit:
   number: natural 1..1000
 def forms() -> Card.Forms:
   Card.Forms.cons({head: submitForm(), tail: Card.Forms.cons({head: admitForm(), tail: Card.Forms.nil()})})
-# The card as a public page under the door word (genesis posts one card per door).
-def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
-  Card.publishPage(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
-# An action without a form: genesis publishes the page.
-def methods() -> Lists.List<String>:
-  Card.wordList("publishPage")
 def blurb() -> Card.Door:
   {word: "anthology", blurb: "Submit a line; the anthology's law admits it."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-def statusName(status: Rows.Status) -> String:
-  match status:
-    case proposed(_): "proposed"
-    case admitted(_): "admitted"
 def numbered(context: Abi.Context, proposals: Lists.List<Proposal>, n: Nat) -> Document.Documents:
   match proposals:
     case nil(_): Document.Documents.nil()
     case cons(c): Document.Documents.cons({head: Document.concat(Document.text("#{natText(n)} "), entry(context)(c.head)), tail: numbered(context, c.tail, n + 1n)})
 def entry(context: Abi.Context) -> Proposal -> Document.Document:
-  fn(proposal: Proposal) -> Document.Document: Document.text("[{statusName(proposal.status)}] {Card.shown(proposal.author, proposal.handle, context)}{Card.mine(proposal.author, context)}: {proposal.line}\n")
+  fn(proposal: Proposal) -> Document.Document: Document.text("[{Rows.statusName(proposal.status)}] {Card.shown(proposal.author, proposal.handle, context)}{Card.mine(proposal.author, context)}: {proposal.line}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology, admitted by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}\n"), tail: Card.clipped(numbered(context, Relations.rows(state.proposals), 1n), 8n)})})
