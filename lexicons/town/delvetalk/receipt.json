@@ -1,0 +1,43 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.receipt",
+  "description": "One journal entry, as the host projects it to the reader (world-entry, world-entries, world-resolve). The identity's own principal sees the whole entry; anyone else sees a refusal as its public projection and any other entry as its chain fields, identity, turn, outcome tag and the roots and writes of objects it may view.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: the entry's slug (two proquint words) or its CID. The record's cid is the entry's `hash`: the CID of its canonical DAG-CBOR bytes without `hash`; com.atproto.sync.getRecord serves those bytes to a reader who may see the whole entry.",
+      "record": {
+        "type": "object",
+        "required": ["height", "hash"],
+        "properties": {
+          "height": {"type": "integer", "minimum": 1, "description": "Journal height."},
+          "previous": {"type": "string", "format": "cid", "description": "The previous entry's hash (chain link)."},
+          "hash": {"type": "string", "format": "cid", "description": "This entry's CID (chain link)."},
+          "slug": {"type": "string", "description": "The first 32 bits of the hash's digest as two proquint words; what a post cites."},
+          "identity": {"type": "ref", "ref": "#identity"},
+          "turn": {"type": "integer", "minimum": 0},
+          "roots": {"type": "array", "items": {"type": "ref", "ref": "#root"}, "description": "The roots the turn read, those the reader may view."},
+          "outcome": {"type": "unknown", "description": "`{tag, ...}`: created, admitted, refused, suspended, ... (HOST-HANDOFF section 2). Projected: `{tag, writes?}`."},
+          "elided": {"type": "integer", "minimum": 0, "description": "Roots and writes of objects the reader may not view."},
+          "status": {"type": "string", "knownValues": ["refused"], "description": "Present on a public refusal."},
+          "class": {"type": "string", "description": "A public refusal's class (staleRoot, lawRefused, unknownObject, ...)."},
+          "root": {"type": "ref", "ref": "#root", "description": "A public refusal's root: the object and the version the turn read it at."},
+          "reason": {"type": "string", "description": "A public lawRefused refusal's reading."},
+          "object": {"type": "string", "description": "A public refusal's named object when it differs from its root."},
+          "hint": {"type": "string"}
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "required": ["principal", "intent"],
+      "properties": {"principal": {"type": "string"}, "intent": {"type": "string"}}
+    },
+    "root": {
+      "type": "object",
+      "required": ["object"],
+      "properties": {"object": {"type": "string"}, "version": {"type": "integer", "minimum": 0}}
+    }
+  }
+}

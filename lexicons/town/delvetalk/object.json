@@ -1,0 +1,68 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.object",
+  "description": "An object at a version, as world-object answers it to a reader who may view the object.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: `<object>/<version>`. The record's cid is `stateCid`, the CID of the state at that version as the journal names it (a write's `writes[].cid`, or a created seed).",
+      "record": {
+        "type": "object",
+        "required": [
+          "object",
+          "version",
+          "pin",
+          "stateCid"
+        ],
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "The object id."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pin": {
+            "type": "string",
+            "format": "cid",
+            "description": "The CID of the object's sealed source closure at that version (content name)."
+          },
+          "pinSlug": {
+            "type": "string"
+          },
+          "law": {
+            "type": "string",
+            "description": "The law text at that version."
+          },
+          "readings": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "town.delvetalk.law#reading"
+            },
+            "description": "The package's reading of each clause it gave one."
+          },
+          "laws": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "town.delvetalk.law"
+            },
+            "description": "The law's clauses, each a town.delvetalk.law record."
+          },
+          "stateCid": {
+            "type": "string",
+            "format": "cid"
+          },
+          "library": {
+            "type": "string",
+            "format": "cid",
+            "description": "The pin of the library the object compiles under (`library.pin`)."
+          }
+        }
+      }
+    }
+  }
+}

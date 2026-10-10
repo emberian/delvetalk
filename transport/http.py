@@ -25,6 +25,7 @@ from transport.hostd import CLOCK
 from transport.hostproc import HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
+from transport.repo import Repo
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
@@ -120,6 +121,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy, self.sleep = heaps, repl, trust_proxy, sleep
+        self.repo = Repo(origin)  # the journal as AT Protocol records, read only
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         info = {} if hasattr(host, 'binary') else host.send({'op': 'hostd-info'})
@@ -164,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
     def reply(self, code, body, ctype='application/json', headers=()):
         raw = body.encode() if isinstance(body, str) else body
         self.send_response(code)
-        self.send_header('Content-Type', ctype + ('' if ctype.startswith('image') else '; charset=utf-8'))
+        self.send_header('Content-Type', ctype + ('; charset=utf-8' if ctype.startswith(('text/', 'application/json')) else ''))
         self.send_header('Content-Length', str(len(raw)))
         self.send_header('Connection', 'close')
         for k, v in headers:
@@ -240,6 +242,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, (STATIC / parts[1]).read_bytes(), 'text/css' if parts[1].endswith('css') else 'text/javascript')
         if parts[:1] == ['AGENTS.md']:
             return self.agents(method, parts[1:])
+        if (parts[:1] == ['xrpc'] and len(parts) == 2) or path == '/.well-known/did.json':
+            return self.xrpc(method, parts[-1])
         if method == 'GET' and path == '/':
             return self.home()
         if method == 'GET' and parts == ['o']:
@@ -330,6 +334,21 @@ class Handler(BaseHTTPRequestHandler):
         reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
                            'argument': argument(data), 'identity': data.get('intent')})
         self.answer(compact(reply) if q.get('compact') == '1' and 'receipt' in reply else reply)
+
+    def xrpc(self, method, nsid):
+        """The read-only repository (transport/repo.py): no credential reads as the public reader, a bearer as its principal."""
+        auth = self.headers.get('Authorization') or ''
+        credential = auth[7:] if auth.startswith('Bearer ') else ''
+        who = self.principal(credential) if credential else {}
+        if who is None:
+            return self.reply(401, canonical({'error': 'InvalidToken', 'message': 'unverified or revoked credential'}))
+        if self.server.limited(credential or 'xrpc:' + self.client_ip()):
+            return self.reply(429, canonical({'error': 'RateLimitExceeded', 'message': f'more than {RATE} requests per {WINDOW} seconds'}))
+        if nsid == 'did.json' and method == 'GET':
+            return self.reply(200, canonical(self.server.repo.did_document()), 'application/did+json')
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        code, body, ctype = self.server.repo.serve(self.server.host, method, nsid, q, who.get('did'))
+        self.reply(code, body if isinstance(body, bytes) else canonical(body), ctype)
 
     def client_ip(self):
         forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[-1].strip()
