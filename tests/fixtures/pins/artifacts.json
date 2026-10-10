@@ -4137,87 +4137,95 @@
  "Table": {
   "entries": {
    "advanced": {
-    "packet": "bafyreigg4liwfxspr3ydspgqpzmid6zpqdpaxdfyukeeci3a7eachmypku",
+    "packet": "bafyreifb7w7xvjlxe7m5pahymu4ghl3wylsyzgmsqvvtdkz6v6z4kg34oe",
     "status": "compiled"
    },
    "advancedSouth": {
-    "packet": "bafyreiftp65az3hrygzownice2lyo4g53vlm5uw6d7wk7exzytvo6yqpda",
+    "packet": "bafyreiam4gxgatbejnuums4pxlsppimkojwoye5xctjhtdheoi63v4wbwu",
     "status": "compiled"
    },
    "blurb": {
-    "packet": "bafyreic3d6uz4fiiv3t5qqwqodvixbr66wqiwodezvuis6xxerxrqrxqcm",
+    "packet": "bafyreihsajhxwwtxwayrcoshdq742b4nw64lrlqertbobcnsgnffetuw6a",
     "status": "compiled"
    },
    "defaultSeed": {
-    "packet": "bafyreicgysiqrkedy4dfaqnn6v4lt7adtdj7ijgnxtliszsdoa72yibwny",
+    "packet": "bafyreibkwn76bk3x4lbndxwgrnihybkpytvuwmlhadgm2fwgvver6ezzea",
     "status": "compiled"
    },
    "forms": {
-    "packet": "bafyreicpbsckpho7ptxypqk2ltajcdqmfgx5tsjg7vsauynid2dtf5zsz4",
+    "packet": "bafyreidfvu3ufxst5y5ngs2augy3mrqrctd5oqrx4guy3jbh7zzvpyijaa",
     "status": "compiled"
    },
    "glyph": {
-    "packet": "bafyreia335ozlhgw4gk235yjpp4en33q2tcsgwqo2cyoq37b7id4zm762y",
+    "packet": "bafyreih2ka655mhvr4s3wr5xqughu63mgbjrrdqa2nuk73q5syfeifbebq",
     "status": "compiled"
    },
    "initial": {
-    "packet": "bafyreib373xvi64qf2ami6rsjgybnhc7sfaenmznbiio5ocemqpoc2jjbi",
+    "packet": "bafyreibmvqinzkn66gi4nuckdqjz4vcpm3qeki4z744qzxmkdzhktu47va",
+    "status": "compiled"
+   },
+   "keep": {
+    "packet": "bafyreiapiinkrxqp7mvtc5wxppaqnw36ofqrb4jmrgwd22ndo6kpsdnd6u",
+    "status": "compiled"
+   },
+   "methods": {
+    "packet": "bafyreiaeztzlhwp4ao2v6656iqvlf6rhyz7d2n6jmtd4cw5se2dcufm7ku",
     "status": "compiled"
    },
    "north": {
-    "packet": "bafyreigwytdu3hdrgfuolgb3ibfuikalxyw5fxq2ny7kuknjxd3rh2cbua",
+    "packet": "bafyreifsbjbdrvc4tnqf2w77foli6ozntexbotsavyo545xwsmymyarz4q",
     "status": "compiled"
    },
    "opening": {
-    "packet": "bafyreicustqqup6axnzutjqwj3yd7vulfavq2eheetzchfisy2h5dzs7h4",
+    "packet": "bafyreihjkd4bi4dvwukyqqrtlgl2mbfyiar4y5unfnnewuorln7vahyate",
     "status": "compiled"
    },
    "outcome": {
-    "packet": "bafyreicivhcahn5e2rwxitjqskou3r2gu4wcy3pypyvzyjz7id4xb4zite",
+    "packet": "bafyreif2sn4f2g6kzyroifq6v5agcekow2c6ffjctyu3nz4a7vtun52wjy",
     "status": "compiled"
    },
    "played": {
-    "packet": "bafyreigem7raq3ofxtppgza6vo4csmbdiq4gq6r65ixsgeborhnzb5tuee",
+    "packet": "bafyreiecv4df2yewf435jw5yix3yxh26uxwnatudkmb76mez4o4uw5jmm4",
     "status": "compiled"
    },
    "publishPage": {
-    "packet": "bafyreicxi4y3hzere2hqortisgmwg54msfsok7z5djdu5jahkgswll4ypq",
+    "packet": "bafyreiejtbtezyagzmmapyfl672akycg3tsktpczd5eubg7fyzwviokiyq",
     "status": "compiled"
    },
    "ready": {
-    "packet": "bafyreihvmr7yksqvluodklvp2xaklldu2zsbiza75x35xpp2k6viavzbai",
+    "packet": "bafyreifgu3vz2z6skju4xlkzc4yvas4vmpci7sgh7hisdtnmq7q5wh2dsi",
     "status": "compiled"
    },
    "receive": {
-    "packet": "bafyreibsuwzlu2fk2msmsirjvtf45u3hphlnmfgpig7h3isnfzal4je3ou",
+    "packet": "bafyreierfmau3wjhlnmxgwydvhzhiqksasvo5ekvua24cok3uqz2ntwoda",
     "status": "compiled"
    },
    "render": {
-    "packet": "bafyreiaskiwroqun7dyyp4d6uh46337yjbkvarkzyiu6wu3oywnbzpsswe",
+    "packet": "bafyreigj54ipvp4ruecup5ew66ksexv3hkwy2decqes7xlecogbzc3zk4m",
     "status": "compiled"
    },
    "resolve": {
-    "packet": "bafyreihwkjjecwwbwvwhpkql3qbpojzvz7ow4w6gzblp4n6ok72ybiqkwa",
+    "packet": "bafyreigomhueyhfgjewohc2l2cro4b2lpzoe7utxmrzzo2iejmmmdiuhqe",
     "status": "compiled"
    },
    "row": {
-    "packet": "bafyreiffagbbvmb7bqrw7is6aspzoaocrboxndl3lfjaf6g23w2uuhakku",
+    "packet": "bafyreiatvw6cwrrpx3jyllycoqn2jnyxngj7qj6zct6bstlf5zv2rgdkae",
     "status": "compiled"
    },
    "rows": {
-    "packet": "bafyreiexhnbhji6azmosadjxn7sixyyeu6n5acxqcwdz3cvga4cqwmpxji",
+    "packet": "bafyreibp5smt7n7otpuj6xngz3nj3d752wuixc6jcq2m7mysoz3pysrisu",
     "status": "compiled"
    },
    "seeded": {
-    "packet": "bafyreihp7op4p522tdwpsr73lzq5uqzpj3vfo2la2q423aznj4av5awpe4",
+    "packet": "bafyreid5ohmyiqxssfshuxanrbsvyph62bhfci2cb3srs3rk5bmzpcnfmy",
     "status": "compiled"
    },
    "south": {
-    "packet": "bafyreif7lqgjwmown7glblnyqrrll4w4bbb4wyggzfyngoztd724xhuxsm",
+    "packet": "bafyreif57q2ifyq2p5ny2ljyfqt7eqaxyxv45fb3axvytdvjabjes2rgaq",
     "status": "compiled"
    }
   },
-  "pin": "bafyreigh5cyuinwpskspourz7iy2fkn4cbnuhjonrmzarlq7shvvvocu2i"
+  "pin": "bafyreid3t56akvwptzfrvvbmqrfxcr3dr3sml66si2tw4hchnv5drtaquu"
  },
  "Thing": {
   "entries": {
