@@ -325,6 +325,70 @@ def recordAll (w : World) (entries : Array Json) : Except String World := do
     w := record w entry key touch
   return w
 
+/-! ## Forks
+
+`world-fork` writes a new journal whose genesis entry (`forked`) holds the shared world's store at a
+height as a snapshot body, with the pending deliveries and suspended activities of the objects it
+carries, and chains to the forked world's entry at that height. The fork's opener and clock
+principal are the forking principal. -/
+
+/-- The genesis entry of a fork of `w` (the world at `height`, whose entry there is `cid`) for
+    `principal`, and the ids it omitted: only objects the principal may view are carried, with their
+    grants, pending deliveries and suspended activities (checkpoints and offers written out whole). -/
+def forkGenesis (w : World) (principal world : String) (height : Nat) (cid : String) :
+    Except String (Json × List String) := do
+  let carried := w.objects.filter fun _ o => o.read.permits principal
+  let omitted := (w.objects.toList.filter fun (id, _) => !carried.contains id).map (·.1) |>.toArray.qsort (· < ·) |>.toList
+  let keeps := fun (id : String) => carried.contains id
+  let lawText ← libraryLawText principal
+  let grants := w.grants.filter fun _ g => keeps g.object
+  let shown : World := { w with objects := carried, modules := {}, posts := {}, grants, opener := principal,
+                                clockPrincipal := principal, settled := true, libraryLaw := lawText }
+  let state ← body shown
+  let pending := w.pending.filter fun p => keeps ((p.getObjValAs? String "to").toOption.getD "")
+  let suspended ← (w.suspended.filter fun e => keeps (((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
+      |>.bind (·.getObjValAs? String "object" |>.toOption)).getD "")).mapM fun e => do
+    let outcome ← e.getObjVal? "outcome"
+    let activity ← outcome.getObjVal? "activity"
+    let activity := activity.setObjVal! "checkpoint" (← expandCheckpoint w (← activity.getObjVal? "checkpoint"))
+    let outcome := outcome.setObjVal! "activity" activity
+    let outcome := match (outcome.getObjVal? "interpretation").toOption.bind (expandInterpretation w) with
+      | some i => outcome.setObjVal! "interpretation" i
+      | none => outcome
+    return e.setObjVal! "outcome" outcome
+  let origin := Json.mkObj [("world", toJson world), ("height", toJson height), ("cid", toJson cid)]
+  let handles := w.handles.toList.toArray.qsort (fun a b => a.1 < b.1) |>.map fun (did, h) =>
+    Json.mkObj [("did", toJson did), ("handle", toJson h)]
+  let outcome := Json.mkObj [("tag", toJson "forked"), ("forkedFrom", origin), ("state", state),
+    ("pending", Json.arr pending), ("suspended", Json.arr suspended), ("handles", Json.arr handles),
+    ("omitted", toJson omitted)]
+  let entry := Journal.sealEntry 1 cid [("identity", identityJson principal "fork"), ("roots", rootsJson []),
+    ("turn", toJson 0), ("request", toJson (Journal.bodyHash origin)), ("outcome", outcome)]
+  return (entry, omitted)
+
+/-- The world a fork's genesis entry starts: its store installed, its carried pending deliveries
+    and suspended activities, handles and origin, and the entry recorded. -/
+def installFork (entry : Json) : Except String World := do
+  let outcome ← entry.getObjVal? "outcome"
+  let state ← outcome.getObjVal? "state"
+  let w ← install state {}
+  let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+  let handles := (arr "handles").foldl (fun m h => match h.getObjValAs? String "did", h.getObjValAs? String "handle" with
+    | .ok d, .ok x => m.insert d x
+    | _, _ => m) ({} : Std.HashMap String String)
+  let clock ← natField state "clock"
+  let forkedFrom := (outcome.getObjVal? "forkedFrom").toOption
+  let cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {}
+  let w := { w with clock, pending := arr "pending", suspended := arr "suspended", handles, forkedFrom, cachedPackets }
+  let identity ← entry.getObjVal? "identity"
+  return record w entry (identityKey (← identity.getObjValAs? String "principal") (← identity.getObjValAs? String "intent")) []
+
+/-- Where replay of a journal starts: a fork's installed genesis and one entry consumed, else an empty world. -/
+def startOf (entries : Array Json) : Except String (World × Nat) := do
+  match entries[0]? with
+  | some e => if tagOf e == "forked" then return (← installFork e, 1) else return ({}, 0)
+  | none => return ({}, 0)
+
 /-- What the entries say each object is, without judging: created (with its pin), then each
     admitted write's recorded version and each reprogram's new pin. -/
 def expectedObjects (entries : Array Json) : Std.HashMap String (Nat × String) := Id.run do
@@ -334,6 +398,9 @@ def expectedObjects (entries : Array Json) : Std.HashMap String (Nat × String) 
     let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
     match tagOf entry with
+    | "forked" =>
+      for o in ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[] do
+        out := out.insert (text o "id") ((o.getObjValAs? Nat "version").toOption.getD 0, text o "pin")
     | "created" => out := out.insert (text outcome "object") (0, text outcome "pin")
     | "admitted" =>
       for c in arr "creates" do out := out.insert (text c "object") (0, text c "pin")
@@ -356,6 +423,10 @@ def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String :
     let arr := fun (j : Json) (k : String) => ((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
     match tagOf entry with
+    | "forked" =>
+      for o in ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[] do
+        if let (.ok v, .ok c) := (o.getObjValAs? Nat "version", o.getObjValAs? String "stateCid") then
+          out := out.insert (text o "id", v) c
     | "created" =>
       if let .ok seed := outcome.getObjVal? "seed" then out := out.insert (text outcome "object", 0) (Journal.bodyHash seed)
     | "admitted" =>
@@ -372,7 +443,8 @@ def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String :
 def resume (b : Json) (entries : Array Json) : Except String World := do
   let height ← natField b "height"
   let early := entries.extract 0 height
-  let booked ← recordAll {} early
+  let (start, skip) ← startOf entries
+  let booked ← recordAll start (early.extract skip early.size)
   let w ← install b booked.modules
   let w := { booked with library := w.library, libraries := w.libraries, libraryLaw := w.libraryLaw,
                          objects := w.objects, grants := w.grants, posts := w.posts,
@@ -412,6 +484,13 @@ def entriesOf (content : String) : Except String (Array Json) := do
     let entry ← match Json.parse line with
       | .ok e => pure e
       | .error _ => throw s!"journal broken at height {height}: unparsable line"
+    -- A fork's genesis chains to the forked world's entry at its height, which it names.
+    if height == 1 && tagOf entry == "forked" then
+      let previous := (entry.getObjValAs? String "previous").toOption.getD ""
+      unless ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "forkedFrom" |>.toOption)
+          |>.bind (·.getObjValAs? String "cid" |>.toOption)) == some previous do
+        throw "journal broken at height 1: a fork's genesis must chain to the cid it was forked from"
+      head := previous
     Journal.verify height head entry
     head := (entry.getObjValAs? String "hash").toOption.getD ""
     out := out.push entry
@@ -420,8 +499,9 @@ def entriesOf (content : String) : Except String (Array Json) := do
 
 /-- Full replay of verified entries. -/
 def replayAll (entries : Array Json) : Except String World := do
-  let mut w : World := {}
-  for entry in entries do
+  let (start, skip) ← startOf entries
+  let mut w := start
+  for entry in entries.extract skip entries.size do
     match replayEntry w entry with
     | .ok w' => w := w'
     | .error e => throw s!"journal broken at height {w.height + 1}: {e}"
@@ -448,8 +528,11 @@ def openContent (journal content : String) (verify : Bool := false) : IO (Except
   let mut report : Report := {}
   if verify then
     let heights := snaps.map (·.1)
-    let mut w : World := {}
-    for entry in entries do
+    let (start, skip) ← match startOf entries with
+      | .ok r => pure r
+      | .error e => return .error s!"journal broken at height 1: {e}"
+    let mut w := start
+    for entry in entries.extract skip entries.size do
       match replayEntry w entry with
       | .ok w' => w := w'
       | .error e => return .error s!"journal broken at height {w.height + 1}: {e}"
