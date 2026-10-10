@@ -1,6 +1,6 @@
 # Objects handoff
 
-State on 2026-10-10 (foundation f178383; §1a and the relational lines by lane/objects6 on foundation 613639d; the Wholeness migration section by lane/objects7 on foundation d55a8c6).
+State on 2026-10-10 (foundation f178383; §1a and the relational lines by lane/objects6 on foundation 613639d; the Wholeness migration section by lane/objects8 on foundation b44440e).
 
 ## Summary
 
@@ -151,86 +151,66 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   message-dialect object and runs it through the host: a write, a subscription and its
   `changed` delivery, `viewAt` and `viewDerived`.
 
-### Wholeness migration: where it stands (lane/objects7 stopped here; a successor starts from this)
+### Wholeness migration: where it stands (lane/objects8 stopped here; a successor starts from this)
 
-Measured against foundation a57f27c (host9 merged: typed receivers, words for sum cases, model
-replies fitted, lens `set`, the deletion pass). Full hbox run at lane/objects7's last commit: 1043
-tests, 0 failed classes; four expected failures name the host gap below.
+lane/objects8 (on foundation b44440e, tested against the host10 binary that adds called-receive
+reading, `proposal {object}`, Verdict readings and the default page) moved, one commit each:
+Scene, Workshop, Directory, Bell, Env and Wake together (coupled), Garden and Policy. It also added
+Lantern/Door `watch` and Commons `allow` to `methods()`, changed the Directory's `remove` to
+`{door: {label}}`, gave `Abi.Verdict.refused` a `reading`, and deleted the five pasted
+`publishPage`s. Seventeen objects now speak the message dialect. Still in the Plan dialect: **Place,
+Thing, Avatar** (and Seats/Encounter libraries they use).
 
-**Done, one commit each.** Step 0: Card's message-dialect helpers beside the Plan ones (below);
-World.obend's `subscribe`/`unsubscribe` take `method`; `world/lib/Rows.obend` (Rain, Sensed,
-Greeting, Proposal with its Status, Trace, Subscription; no object imports it yet: each takes its
-row type from there when it moves, and Wake imports it); every object's directory line is
-`blurb()`. Migrated: Counter, Loop, Cistern, Seat, Appointment and Appointments, Deal, Commons,
-Door and Lantern (watching by subscription), Table (only `resolve` plays), Tide (rows
-`Rows.Subscription`), Anthology (rows `Rows.Proposal`; `admit {number}` is the one admit).
-Objects with public actions that have no form declare `def methods() -> Lists.List<String>`
-(Table: resolve, publishPage; Tide, Anthology: publishPage) for the host's declared-methods
-rule, landing in parallel; add it to every door object as it moves. Also: the directory learns only forms (rehearsal 10
-finding 2), and every test reply dropped `slot`.
-
-**The message dialect, as written here.**
-* Imports `./World.obend as World`; no `type Plan`/`type Response`; activities `Activity<T>`;
-  `world.X(...)`, `::<T>` only where it cannot be inferred (`view`, `call` when read, `write` of a
-  whole Edits). `write {f: op v}` needs a `def keep() -> Edits`; an object whose action is named
-  `keep` (Appointment) cannot have one and writes `world.write::<Edits>({...})` whole.
-* Each spell action is a method of that name taking `input: {...}` of text, natural and
-  empty-case-sum fields (or no input); the host parses, fits and runs it, so a spell's result is
-  the method's own (tests read it: `nat(1)`, `booked`, a Bool), and a misfit is the host's `badSpell`
-  refusal (`receipt.outcome.clause/reason/hint`). `forms()` stays for usage cards.
-* `receive(state, input: Card.Reply, context) -> Activity<Card.Replied>` is `Card.answer(input,
-  context, forms(), render(...))`: blank text gets the card and its usage; a spell the host found
-  missing fields gets "Almost. I still need: …" (`unclear`); anything else is handed on
-  (`Card.handOn`, `silent`, no offer). A card completing a spell by its own policy reads
-  `Card.spellAction(input.text)` (Deal's countersign cites the reply's post).
-* **A definition whose first parameter is the State is a method any turn may run.** Helpers take
-  the State after their own inputs (or the Context first). Found and closed this way: Table's
-  `played` (a turn wrote any game result), Seat's `nextRound` (moved the round past `next`'s
-  check), Appointment's `due` (sent the note early), Bell's `rainOffered` (told row observers of a
-  rain that never fell). Pure `render`/`here` remain methods: the host lists them in `?` (host item).
-* A subscription receiver is `changed(state, input: {object, field, version, inserted:
-  Lists.List<T>, retracted: Lists.List<T>}, context)` and acts only when `context.caller` is the
-  watched object; the delivery runs under the subscriber's principal, so "who did it" is the
-  changed object's id (Door's `openedBy: bell`).
-* Card's Plan-dialect helpers are `tellPlan`, `tellToPlan`, `answerPlan`, `answerAsPlan`,
-  `publishPagePlan` (with `routeHeard`, `Routed`, `Heard`, observers, `broadcast`, `notifyRows`,
-  `fitting`, `asking`, `unfit`, the lens closures) until the last object moves.
-
-**The host gap that orders the rest.** The host reads spells only on a direct turn. A `receive`
-the Directory *calls* (its `passOn`: spells under the hub naming another card, field lines routed
-to a door, the model's proposals) or an Avatar *sends* (scoped resolution) reaches a
-message-dialect card unparsed and without `fields`, refused typeMismatch: test_hub
-`SpellsPassedOn` and test_places `Scoped` are expectedFailure with that reason, and so are the
-two hub cases where the model's submit reaches the Anthology (`AnthologyReachable`'s
-field-line-and-model case, `HandedToTheDirectory`). Migrating a door
-(Anthology, Tide, Scene/rooms, Table/play, Workshop) or Bell before this closes breaks the hub
-flows the rehearsal runs. Two ways out, both wanted: (a) host: read a called or delivered
-`receive {text, post}` to a message-dialect card as a direct one is read (parse, fit, run; no
-retarget); (b) objects: migrate the Directory first (the host now fits model replies, 5.54, so a
-proposal arrives typed and the Directory calls `p.method` with `p.argument`; a direct spell naming
-another card is retargeted by the host), then the doors; field-line routing and Avatar's send
-still need (a). When the Directory takes `Card.Reply`, `Card.handOn` sends `fields` too (TODO in
-Card). Also transport/http.py still sends `slot: ""`, which a message-dialect `receive {text, post,
-fields}` does not fit (host5.61: `receiveArgument` stays until transport stops).
+**What the moved objects settled (read the commits for the detail).**
+* A spell's method cannot see the reply's post. The Garden plants with `context.intent` as the
+  planting post when `inputOrigin.kind == "spell"` (the bridge names a turn by its post). Host item:
+  `Abi.Context.inputOrigin.post`. Deal's countersign still cites the post through `receive`.
+* A form-expressible method input becomes a host form, and the host routes a reply's first bare
+  field line to it. So a method that is not meant as a spell takes a nested record (Directory
+  `add {door}`, `remove {door: {label}}`). A form's fields are exactly what the host accepts: extra
+  lines are `unknownField`. Policy's macro expansion is therefore one field line that keeps its
+  slashes.
+* `?`, `set` routing, kind checks (`badValue`), unknown or extra lens fields, unclosed blocks and
+  unknown cards are the host's (badSpell). `receive` sees blank text, prose, spells missing fields
+  (with `fields`), and bare field lines naming no form. Blank-reply cards may add what the host's
+  `?` cannot know (Garden's shortcuts from its policy).
+* Interpretation: `world.interpret::<T>` with `Card.interpretation(...)`. A `proposal {object,
+  method, argument}` runs (the Directory calls the door's method). `unclear` needs that are
+  `not addressed` or empty mean silence; `model: …` means answer at once; any other is a miss
+  asked once more (escalate model), then `Card.unfitted`. A `replied` text reads through
+  `Card.prose` (`unclear: …` lines).
+* Subscriptions replace observers: Door/Lantern on `rung`/`open`; Wake on env `buffer`
+  (`changedSensed`), a scalar (`changedNat`, fires when the old value was at most `above` and the
+  new is over it) and relations (one receiver per Rows type; `Rows.*Columns` projections).
+  Receivers are helpers (the host delivers to them; no turn may name them) and check
+  `context.caller`.
+* Env takes mentions on `mention {text, post}`; `receive` would let the host retarget a quoted
+  spell. Transport item: `bridge.py` `mention_turns` must send `mention`.
+* Transport items left expectedFailure: http.py gives no `spell` template for a form with a choice
+  field (test_hypermedia ×2); the play page does not render the host's `?` usage reply
+  (test_http directory card).
 
 **Remaining, in order.**
-1. Directory (`interpreting`/`readBack` become a `world.interpret::<Data>` whose `proposal
-   {method, argument}` it calls; `door()` is `blurb()` already; words from each door's `forms()`
-   once it can `viewDerived::<Card.Forms>` a `forms` view or the host lists only activities).
-2. The rest of the doors and Bell (the coordinator accepts expectedFailure for the forwarded
-   cases until (a) lands): Scene, Workshop, Bell (Rows.Rain; `rang` writes `rung` and ends;
-   observers and `notifyRows` go; Garden, still the Plan dialect, imports Bell for `Colour`).
-3. Env and Wake: Env's buffer rows are Rows.Sensed; Wake subscribes with typed receivers
-   (`changedRains` over `List<Rows.Rain>`, and the like) instead of `observe`/`rows`.
-4. Garden (interpretation as the Directory's; `plant {colour: Bell.Colour}` now that the host
-   reads words as cases, 5.52; pending-per-speaker completion stays).
-5. Lens objects with `def lenses() -> Lists.List<Form.Field>` and `set(state, input: {field,
-   value: Form.Value}, context)` (5.54): Policy, Place, Thing, Avatar (mailing list -> `outbox`
-   relation followers subscribe to).
-6. With the last: delete Card's Plan helpers, Spell.obend's parser (keep a spell-line finder for
-   `spellAction`/`answer`), `Card.route`/`bare`/`mentions` users, observers, `broadcast`,
-   `notifyRows`, Plan.obend's sums; move Directory's and Deal's insert-only predicates into the law
-   text (`insertOnly(F)` is denoted now).
+1. Merge the host10 foundation merge, then flip the expectedFailures it answers:
+   test_hub's policy case (now `test_with_a_policy_the_models_spell_runs_on_the_door_it_names`)
+   and its confirm case (expected text: the door's usage template), test_spell_turns
+   `Interpreted` ×2, test_sum_words' proposal case, AnthologyReachable, HandedToTheDirectory,
+   test_places `Scoped`. test_outbound's slot case belongs to that merge.
+2. Place, Thing, Avatar together (Thing and Avatar import Place's State/Done; WORLD-REVIEW 20
+   moves those types to a library so Place can declare `law owner`). Lenses as data plus `set`
+   (Place and Thing: name/description; Avatar: handle; Thing: copyable). Avatar's mailing list
+   becomes an `outbox` relation (insert on `send`, limit with drop-oldest), followed by
+   subscription. test_mailbox's bell follower is expectedFailure until then. host10 declared
+   `methods()` for Place ("enter leave take put"), Thing ("transfer copy drop") and Avatar
+   ("observe unobserve notice hold release"); keep the names whose methods remain.
+3. With the last of them, the deletions: Card's `…Plan` helpers, `Routed`, `route`/`routeHeard`/
+   `withBare`/`bareSpell`/`fitting`/`asking`/`unfit`/`escalation`/`onlyFields`/`completed`/
+   `spellText`, observers (`Observer`, `observing`, `broadcast`, `notified`, `Change`,
+   `Column`/`Row` and `notifyRows`), `forwarding`/`forwarded`/`sending`/`offering`/
+   `answerLensed*`/`merge`/`checkpointed`, `Replied` (once nothing returns it), Spell.obend's
+   parser apart from what `spellAction` and the Garden's and Directory's macros need, and
+   Plan.obend's `Plan`/`Response` sums. Move Directory's and Deal's insert-only predicates into
+   the law text (`insertOnly(greeted)` keeps the Bend 4,096 check: WORLD-REVIEW 10's trap).
 ## 2. Limits found
 
 - An await only proves that some turn with that identity was admitted. A turn suspended on an object resumes refused `staleRoot` if anything wrote that object meanwhile, unless its writes are all keep/add/append (they commute).
