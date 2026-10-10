@@ -110,7 +110,7 @@ def main(path):
     w('### Spell shapes against a copy of the final world\n')
     w('| To | Shape | Status | Reply |\n| --- | --- | --- | --- |')
     for g in r.get('grammar', []):
-        said = ' / '.join(t.strip().split('\n')[0] + ('; ' + t.strip().split('\n')[2] if len(t.strip().split('\n')) > 2 else '') for t in g['offers'] if t) or g['reason'] or ('public: ' + json.dumps(g['public']) if g.get('public') else json.dumps(g['result']))
+        said = ' / '.join(t.strip().split('\n')[0] + ('; ' + t.strip().split('\n')[2] if len(t.strip().split('\n')) > 2 else '') for t in g['offers'] if t) or g['reason'] or (g.get('usage') or '').strip().replace('\n', ' / ') or ('public: ' + json.dumps(g['public']) if g.get('public') else json.dumps(g['result']))
         w(f"| {g['object']} | {g['what']} | {g['status']}{' ' + g['class'] if g['class'] else ''} | {said[:160]} |")
     w('')
     b = r.get('burst')

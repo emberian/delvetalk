@@ -258,7 +258,7 @@ def grammar_probes(out, binary):
             results.append({'object': obj, 'what': what, 'text': text, 'status': reply.get('status'),
                             'class': outcome.get('class'), 'reason': outcome.get('reason') or reply.get('message'),
                             'offers': [o.get('text') for o in reply.get('offers') or []], 'result': reply.get('result'),
-                            'public': reply.get('public')})
+                            'public': reply.get('public'), 'usage': reply.get('text') if reply.get('status') == 'usage' else None})
         burst = burst_probe(host)
         handle = handle_probe(host)
     finally:
