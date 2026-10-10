@@ -1,8 +1,9 @@
 #!/bin/sh
 # The offline rehearsal, run on a remote box (default hbox) with no network:
 #   rehearsal/run.sh [--keep] [HOST]
-# Copies this tree and the built host binary to ~/scratch/dt-rehearsal on HOST, runs
-# rehearsal/rehearse.py there, brings rehearsal/out/results.json back, writes
+# Copies this tree and the built host binary to ~/$DELVETALK_REHEARSAL_DIR (default
+# scratch/dt-rehearsal) on HOST, runs rehearsal/rehearse.py there under swarm-build with a 3 GB
+# memory cap (the cgroup's peak is printed), brings rehearsal/out/results.json back, writes
 # rehearsal/out/summary.md, and removes the remote directory unless --keep.
 # Fixtures: rehearsal/fixtures/posts.json (rebuilt by rehearsal/fixtures.py from the archive
 # listed in rehearsal/fixtures/SOURCES.txt) and rehearsal/fixtures/model-answers.json.
@@ -14,13 +15,14 @@ for arg in "$@"; do
     *) HOST=$arg ;;
   esac
 done
-DIR=scratch/dt-rehearsal
+DIR=${DELVETALK_REHEARSAL_DIR:-scratch/dt-rehearsal}
 BIN=${DELVETALK_REHEARSAL_BINARY:-scratch/dt-foundation/.lake/build/bin/delvetalk-obend}
 cd "$(dirname "$0")/.."
 mkdir -p rehearsal/out
 rsync -a --delete --exclude .git --exclude rehearsal/out --exclude .lake --exclude __pycache__ ./ "$HOST:$DIR/"
-ssh "$HOST" "cd $DIR && cp ~/$BIN ./delvetalk-obend && sha256sum delvetalk-obend && rm -rf rehearsal/out && \
-  python3 rehearsal/rehearse.py --binary ./delvetalk-obend --out rehearsal/out && du -sh rehearsal/out" \
+ssh "$HOST" "export PATH=\$HOME/.local/bin:\$PATH; cd $DIR && cp ~/$BIN ./delvetalk-obend && sha256sum delvetalk-obend && rm -rf rehearsal/out && \
+  SWARM_MEM_MAX=3G swarm-build sh -c 'python3 rehearsal/rehearse.py --binary ./delvetalk-obend --out rehearsal/out && \
+  echo peak memory \$(cat /sys/fs/cgroup\$(cut -d: -f3 /proc/self/cgroup)/memory.peak) bytes' && du -sh rehearsal/out" \
   | tee rehearsal/out/remote.log
 rsync -a "$HOST:$DIR/rehearsal/out/results.json" "$HOST:$DIR/rehearsal/out/programs.log" "$HOST:$DIR/rehearsal/out/hostd.stderr" rehearsal/out/
 python3 rehearsal/summary.py rehearsal/out/results.json > rehearsal/out/summary.md

@@ -7,6 +7,25 @@ import sys
 BRIDGED = ('summon',)
 
 
+def plain(v):
+    """A host value as plain JSON: a record a dict, a list or a relation (`rows`) a list, a label or number its value."""
+    if not isinstance(v, dict):
+        return v
+    tag = v.get('tag')
+    if tag == 'record':
+        return {f['name']: plain(f['value']) for f in v['fields']}
+    if tag == 'list':
+        return [plain(x) for x in v['items']]
+    if tag == 'variant':
+        if v.get('label') == 'rows':
+            return plain(v['payload']).get('items', [])
+        inner = plain(v.get('payload'))
+        return v['label'] if inner in ({}, None) else {v['label']: inner}
+    if tag in ('label', 'natural', 'integer', 'bool'):
+        return v.get('value')
+    return v
+
+
 def fence(text):
     return '```\n' + (text or '').rstrip('\n') + '\n```\n'
 
@@ -37,6 +56,11 @@ def main(path):
         w(f"| journal `{k}` entries | {outcomes.get(k, 0)} |")
     for cls, n in sorted(j['refusedByClass'].items()):
         w(f'| refused `{cls}` | {n} |')
+    if 'reached' in r:
+        asked = r.get('asked') or {}
+        w(f"| archived posts the reach rule returned (a turn at a card) | {len(r['reached'])} |")
+        w(f"| ... of them asked of the model | {sum(1 for u in r['reached'] if u in asked)} |")
+        w(f"| posts asked of the model twice or more; asked but never reached | {sum(1 for n in asked.values() if n > 1)}; {sum(1 for u in asked if u not in r['reached'])} |")
     for v, n in sorted((r.get('verdicts') or {}).items()):
         w(f"| interpretation verdict `{v}` | {n} |")
     w(f"| outbox drafts | {len(r['drafts'])} |")
@@ -57,7 +81,15 @@ def main(path):
     w(f"| objects | {r['status'].get('objects')} |")
     w(f"| clock at the end (unix minutes) | {r['status'].get('clock')} |\n")
     w('Recorded as posted: ' + ', '.join(f"`{x['uri'].rsplit('/', 1)[-1]}` for {x['object']} ({x['status']})" for x in r['recorded'])
-      + '. Planting posts recorded for their bells: ' + (', '.join(f"`{x['uri'].rsplit('/', 1)[-1]}` for {x['object']} ({x['status']})" for x in r.get('plantings') or []) or 'none') + '.\n')
+      + '. Planting posts recorded for their bells: ' + (', '.join(f"`{(x['uri'] or '-').rsplit('/', 1)[-1]}` ({x.get('createdAt', '?')[11:16]}) for {x['object']} at {x.get('recordedAt', '?')[11:16]} ({x['status']})" for x in r.get('plantings') or []) or 'none') + '.\n')
+    made = r.get('made') or {}
+    w(f"Made by kind/bell: {', '.join(made.get('kind/bell') or []) or 'none'}. By kind/cistern: {', '.join(made.get('kind/cistern') or []) or 'none'}.\n")
+    a = r.get('anthology')
+    if a:
+        w('The anthology\'s lines (`n`, author, text; admitted by the keeper or not):\n')
+        for line in a['lines']:
+            w(f"- #{line['n']} {line.get('handle') or line['author']}: {line['text']}{' (admitted)' if int(line['n']) in a['admitted'] else ''}")
+        w('')
 
     w('### Drafts by recipient\n')
     by = collections.Counter(d['to'] for d in r['drafts'])
@@ -82,7 +114,7 @@ def main(path):
             w(f"| `{g['uri'].rsplit('/', 1)[-1]}` | {g['step']} | {ents} | {offer.strip().replace(chr(10), ' / ')[:160]} |")
         w('')
         for obj, v in (r.get('views') or {}).items():
-            w(f"- `{obj}` v{v['version']}: `{json.dumps(v['state'], ensure_ascii=False)[:400]}`")
+            w(f"- `{obj}` v{v['version']}: `{json.dumps(plain(v['state']), ensure_ascii=False)[:400]}`")
         w('')
     w('### Host errors and Python exceptions, verbatim\n')
     seen = set()
