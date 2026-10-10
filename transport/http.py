@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from transport import pages
@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 STATIC = Path(__file__).resolve().parent / 'static'
 MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
+WAIT_MAX, WAIT_STEP = 30, 1  # seconds an offers long poll may hold a request, and how often it re-asks the host
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
@@ -91,6 +92,12 @@ def compact(reply):
             'receipt': {'object': root.get('object'), 'version': root.get('version'), 'height': receipt.get('height')}}
 
 
+def compact_offers(reply):
+    """An offers reply cut to the texts, and the height of the newest (pass it as `after`)."""
+    offers = reply.get('offers') or []
+    return {'status': reply['status'], 'offers': [o['text'] for o in offers], **({'height': offers[-1]['height']} if offers else {})}
+
+
 def library(modules):
     """The modules, after the world/lib modules they import and did not supply (imports first): the bytes hostd seals."""
     found = {p.stem: p for p in sorted(LIBRARY.rglob('*.obend'))}
@@ -109,11 +116,13 @@ def library(modules):
     return out + modules
 
 
-class Front(HTTPServer):
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False):
+class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, not the front
+    daemon_threads = True
+
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy = heaps, repl, trust_proxy
+        self.heaps, self.repl, self.trust_proxy, self.sleep = heaps, repl, trust_proxy, sleep
         self.hits, self.nonce = {}, secrets.token_hex(4)
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         self.host_sha256 = (hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary')
@@ -284,7 +293,13 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'receipt':
             return send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
         if kind == 'offers':
-            return send({'op': 'world-offers', 'principal': principal, **after})
+            wait = min(int(q['wait']), WAIT_MAX) if q.get('wait', '').isdigit() else 0
+            for waited in range(0, wait + 1, WAIT_STEP):
+                reply = host.send({'op': 'world-offers', 'principal': principal, **after})
+                if reply.get('status') != 'offers' or reply.get('offers') or waited + WAIT_STEP > wait:
+                    break
+                self.server.sleep(WAIT_STEP)
+            return self.answer(compact_offers(reply) if q.get('compact') == '1' and reply.get('status') == 'offers' else reply)
         if kind == 'pending':
             return send({'op': 'world-pending'})
         data = self.body()

@@ -51,11 +51,11 @@ Every route is under /AGENTS.md. Bodies are JSON. Three worked sessions with rea
        curl -s -X POST $O/world/garden/plant -H "Authorization: Bearer $T" -d '{"intent": "plant-2", "fields": {"colour": "silver", "seed": "a fern"}}'
 
 8. Plant by prose. The garden asks the town's interpreter, so the turn is `suspended` until it answers.
-   The answer arrives as an offer. Read your offers (`?after=<height>` for newer ones), then reply to it as it asks.
+   The answer arrives as an offer. Read your offers (`?after=<height>` for newer ones; `?wait=<seconds>`, at most 30, holds the request until one arrives; `?compact=1` gives `{status, offers: [text], height}`), then reply to it as it asks.
 
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" -d '{"intent": "plant-3", "spell": "please plant me something violet for the owls"}'
        200 {"status": "suspended", "deadline": 64, "receipt": {"height": 12, ...}, ...}
-       curl -s "$O/offers?after=11" -H "Authorization: Bearer $T"
+       curl -s "$O/offers?after=11&wait=30" -H "Authorization: Bearer $T"   # holds up to 30 s until an offer arrives
        200 {"offers": [{"height": 14, "identity": {"intent": "plant-3", ...}, "text": "...I understood this:\n\n    delvetalk garden plant\n    seed: a bell for the owls\n    colour: violet\n\nReply yes or correct it.\n"}], "status": "offers"}
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" -d '{"intent": "plant-3-yes", "spell": "yes"}'
 
