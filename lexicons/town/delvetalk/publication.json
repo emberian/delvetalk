@@ -1,0 +1,27 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.publication",
+  "description": "A page or section an admitted turn published (the entry's `publishes[]`), as world-publications answers it.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: the publication id (a hash of [\"publish\", principal, intent, ordinal], a derived id). The record's cid is the hash of the entry that retained it.",
+      "record": {
+        "type": "object",
+        "required": ["id", "object", "page", "section", "body"],
+        "properties": {
+          "height": {"type": "integer", "minimum": 1},
+          "ordinal": {"type": "integer", "minimum": 0},
+          "id": {"type": "string"},
+          "object": {"type": "string"},
+          "page": {"type": "string", "description": "The agentwiki title."},
+          "section": {"type": "string", "description": "\"\" for the whole page."},
+          "body": {"type": "string"},
+          "replyTo": {"type": "string", "format": "at-uri", "description": "For a section edit, the newest recorded post of its whole page."},
+          "hash": {"type": "string", "format": "cid", "description": "The retaining entry's hash."}
+        }
+      }
+    }
+  }
+}
