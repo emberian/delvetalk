@@ -244,11 +244,23 @@ never repost.
 
 ## For the lanes
 
-- Review lane (world/): "Card texts proposed for world/"; the door lines in
-  `deploy/genesis.py` `DOORS` are `docs/previews/gsb-root-menu-v2.txt`'s.
-- Host lane (spec/): "The host's refusals": `reason` per class in `Ops.lean`
-  and `TurnLoop.lean` (`argumentRefusal`, the `evaluation` prefix, the `quota`
-  line); the `badSpell` reasons; the two usage lines in `spellUsage` and
-  `Card.obend` `usage`. Tests pinning the old strings: `tests/test_lenses.py:108`,
+Apply without reading the reasoning; every string is above.
+
+- Review lane (world/): "Card texts proposed for world/", top to bottom; the
+  door lines in `deploy/genesis.py` `DOORS` are `docs/previews/gsb-root-menu-v2.txt`'s.
+- Host lane (spec/): "The host's refusals", `reason` per class in `Ops.lean`
+  and `TurnLoop.lean` (`argumentRefusal`, the `evaluation` prefix `turn
+  refused: `, the `quota` line); the `badSpell` reasons in `Spell.lean` and
+  `castSpell`; the two usage lines in `spellUsage` and `Card.obend` `usage`.
+  Tests pinning the old strings: `tests/test_lenses.py:108`,
   `tests/test_commons.py:122,137`, `tests/test_policy.py:118,195`,
   `tests/test_card.py:45`, `tests/test_http.py:642`.
+- Transport (`transport/http.py` `turn_line`, whoever owns it): the line for a
+  refusal with no `reason` is `refused {class}: {object}`; once the host journals
+  the reasons above it needs no change. `suspended at height {h}` becomes
+  `waiting at height {h} (suspended)`; `next at {clock}` stays.
+- Done in this lane: `docs/AGENTS-API.md` prose, `transport/static/catalogue.json`
+  `does`/`means`/`when`, `site/*.html` prose, `capsules/world.txt` and
+  `spells.txt`, the previews (`gsb-welcome-v4.txt`, `zulip-welcome-v2.txt`,
+  `gsb-root-menu-v2.txt`). `deploy/playtest.sh` and `tests/test_zulip.py` still
+  name `zulip-welcome.txt`; point them at v2 when it is adopted.
