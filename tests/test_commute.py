@@ -15,6 +15,8 @@ other change of a moved root is `staleRoot`, as before.
 import json
 import unittest
 
+from tests.host import as_owner
+
 from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
@@ -92,7 +94,7 @@ class Moved(Reflection):
         s = self.turn("bell", "strikeSet", principal="gemini", identity="strike")
         self.assertEqual(s["status"], "suspended", s)
         self.rain("drip", "kim")
-        [resumed] = self.rain("drop", "ann", identity="go")["resumed"]
+        [resumed] = [as_owner(self.host, r) for r in self.rain("drop", "ann", identity="go")["resumed"]]
         # The resumption is refused staleRoot (journaled, transient) and the turn re-run once at once
         # from its request, on the bell as it is now.
         self.assertIn("rerunOf", resumed)
@@ -105,7 +107,7 @@ class Moved(Reflection):
         s = self.turn("bell", "strike", principal="gemini", identity="strike")
         self.rain("a", "kim")
         self.rain("b", "kim")
-        [resumed] = self.rain("c", "ann", identity="go")["resumed"]
+        [resumed] = [as_owner(self.host, r, "gemini") for r in self.rain("c", "ann", identity="go")["resumed"]]
         out = resumed["receipt"]["outcome"]
         # On the state it read the strike would make count 1; on the state now, 4 > cap 3.
         self.assertEqual((resumed["status"], out["class"], out.get("clause")), ("refused", "lawRefused", "cap"), resumed)

@@ -20,6 +20,8 @@ escalation copy.
 """
 import unittest
 
+from tests.host import as_owner
+
 from tests import test_chain, test_policy
 from tests.test_objects import PROBE_HEAD_G, run_pure
 from tests.test_turn_world import label, record
@@ -69,7 +71,7 @@ class Resumed(test_chain.Chain):
         [item] = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=item["id"], reply=self.text(raw))
         self.assertEqual(settled["status"], "interpreted", settled)
-        [resumed] = settled["resumed"]
+        [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed
 
     def test_a_miss_is_asked_once_more_with_its_needs_and_a_hit_then_plants(self):

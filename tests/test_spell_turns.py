@@ -12,6 +12,8 @@ public projection hides the clause or hint.
 """
 import unittest
 
+from tests.host import as_owner
+
 from tests.test_reflection import POLICY, Reflection
 from tests.test_turn_world import label, nat, record, declared
 
@@ -261,6 +263,7 @@ class FixedFields(Reflection):
         self.assertEqual((self.field("mood"), self.field("name")), (label("calm"), label("Moth")))
 
 
+
 INTERPRETING = (GARDEN + """record Planting:
   colour: Colour
   seed: String
@@ -303,7 +306,7 @@ class Interpreted(Reflection):
         [item] = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=item["id"],
                                  reply={"status": "replied", "model": "m", "json": None, "raw": raw})
-        return settled["receipt"]["outcome"]["verdict"], settled["resumed"][0]["result"]
+        return settled["receipt"]["outcome"]["verdict"], as_owner(self.host, settled["resumed"][0])["result"]
 
     # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF 5.64).
     def test_a_fitting_spell_is_a_proposal(self):

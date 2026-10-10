@@ -219,6 +219,21 @@ def whole(host, reply):
     return r["receipt"]
 
 
+def as_owner(host, reply, principal=None):
+    """A settled turn's reply as its own principal would have had it: the whole receipt (read with
+    `world-entry` as that principal) and its `result` and `ticksUsed` lifted, as a turn's reply lifts
+    them. `principal` names the owner when the projection does not (a refusal's)."""
+    receipt = reply["receipt"]
+    principal = principal or receipt["identity"]["principal"]
+    r = host.send(op="world-entry", principal=principal, hash=receipt["hash"])
+    assert r.get("status") == "receipt", r
+    out = dict(reply, receipt=r["receipt"])
+    for k in ("result", "ticksUsed"):
+        if k in r["receipt"]:
+            out[k] = r["receipt"][k]
+    return out
+
+
 def card_texts(reply):
     """Every card and offer text in a host reply: what a reader sees, which never cites a hash."""
     out = []
