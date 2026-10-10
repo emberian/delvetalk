@@ -394,7 +394,7 @@ def snapshot_replay(out, binary, cuts=4):
     from that snapshot and replays the tail. Each reopen must report the snapshot it resumed, refuse none,
     and hold the straight replay's height, head, clock, posts, pending work and every object's state CID
     at every version. Last, `world-open {verify: true}` replays everything and checks each snapshot."""
-    src = out / 'state' / 'world.journal'
+    src = out / 'state' / 'town.journal'  # serve's journal for its home world (HOST-HANDOFF 125)
     lines = src.read_bytes().splitlines(keepends=True)
     base = out / 'snapshot'
     shutil.rmtree(base, ignore_errors=True)
@@ -410,8 +410,8 @@ def snapshot_replay(out, binary, cuts=4):
             h = Opened(binary, j)
             snapped = dict(h.send({'op': 'world-snapshot'}), openedAt=h.opened.get('height'))
             stderr += h.close()
-        for f in snapshots:
-            shutil.copy(f, d / f.name)
+        for f in snapshots:  # a snapshot belongs to the journal it is named after: <journal>.snapshot.<height>.cbor
+            shutil.copy(f, d / ('world.journal.snapshot.' + f.name.split('.snapshot.', 1)[1]))
         j.write_bytes(b''.join(lines))
         h = Opened(binary, j, verify=verify)
         try:
@@ -422,7 +422,7 @@ def snapshot_replay(out, binary, cuts=4):
         return dict(got, stderr=stderr.strip()[:300])
 
     straight = reopen('straight')
-    own = sorted((out / 'state').glob('world.journal.snapshot.*.cbor'))
+    own = sorted((out / 'state').glob('town.journal.snapshot.*.cbor'))
     cases = {'run': reopen('run', snapshots=own)} if own else {}
     for k in range(1, cuts + 1):
         at = len(lines) * k // (cuts + 1)
