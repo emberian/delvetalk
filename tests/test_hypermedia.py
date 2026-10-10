@@ -77,6 +77,7 @@ def walk(call, handle, prove, module):
 
 class Controls(FrontCase):
     fresh_world = True  # each test plants in a garden of its own and reads garden/bell/1
+    independent = True  # so the runner may deal the class into chunks
 
     def setUp(self):
         super().setUp()

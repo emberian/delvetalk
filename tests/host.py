@@ -162,7 +162,8 @@ def serve(server):
 
 
 def unsynced(process):
-    """A transport.hostproc.Host whose journal opens with `sync: none`, as test journals do."""
+    """A transport.hostproc.Host whose journal opens with `sync: none`. Heaps take no sync option
+    (Hostd passes its own to the shared world only), so their processes are wrapped here."""
     exchange = process._exchange
 
     def opening(request):
@@ -180,8 +181,7 @@ def start_hostd(state, binary_path=None, opener=None, library=None):
     if os.environ.get("DELVETALK_SPAWN_LOG"):
         with open(os.environ["DELVETALK_SPAWN_LOG"], "a") as f:
             f.write("hostd\n")
-    d = Hostd(state, os.path.join(state, "world.journal"), binary_path or binary(), opener=opener, library=library)
-    unsynced(d.shared)
+    d = Hostd(state, os.path.join(state, "world.journal"), binary_path or binary(), opener=opener, library=library, sync="none")
     get = d.heaps.get
     d.heaps.get = lambda did: unsynced(get(did)) if did not in d.heaps.pool else get(did)
     return serve(d)
