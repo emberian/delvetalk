@@ -34,6 +34,7 @@ RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
+UNKNOWN_OP = 'unknown world operation'
 IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
@@ -336,10 +337,13 @@ class Handler(BaseHTTPRequestHandler):
         for m in modules:
             if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > MAX_SOURCE:
                 return self.fail(413, f'module source exceeds {MAX_SOURCE} bytes', 'import the library by name (./Plan.obend); it is not sent')
-        repl, modules = self.server.repl, library(modules)
-        if kind == 'check':  # the verdict; ?full=1 adds the compiled artifact
-            checked = repl.send({'op': 'check-package', 'modules': modules, 'entry': data.get('entry')})
+        if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
+            checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})
+            if UNKNOWN_OP in str(checked.get('message')):
+                # TODO(world-check): delete this fallback, which reads world/lib from disk, once every host answers world-check.
+                checked = self.server.repl.send({'op': 'check-package', 'modules': library(modules), 'entry': data.get('entry')})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'})
+        repl, modules = self.server.repl, library(modules)
         compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry')})
         if compiled.get('status') != 'compiled':
             return self.answer(compiled)

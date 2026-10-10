@@ -300,6 +300,23 @@ class HttpFront(unittest.TestCase):
         s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
 
+    def test_check_asks_the_world_and_sends_only_the_callers_modules(self):
+        tok = self.login()
+        seen, real = [], self.host.send
+        def send(req, *a, **k):
+            seen.append(req)
+            return {'status': 'checked', 'entry': req['entry']} if req['op'] == 'world-check' else real(req, *a, **k)
+        self.host.send = send
+        s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
+        self.assertEqual((s, ok['status']), (200, 'checked'), ok)
+        self.assertEqual(seen, [{'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'}])
+
+    @unittest.expectedFailure
+    def test_end_to_end_world_check_against_the_real_host(self):
+        # Until the host lands world-check: {'message': 'unknown world operation world-check'}
+        got = self.host.send({'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'})
+        self.assertEqual(got.get('status'), 'checked', got)
+
     def test_list_card_source_offers_and_ids_with_slashes(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
