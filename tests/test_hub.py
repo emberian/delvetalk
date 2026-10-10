@@ -400,7 +400,8 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.add("LANTERN", "lantern")
         words = get(self.state("directory"), "words")["value"]
         self.assertIn(" lantern ", words)
-        self.assertIn(" light ", words)
+        # Only offered forms with fields count: the lantern's field-less light does not.
+        self.assertNotIn(" light ", words)
         self.assertEqual(self.say("Is the lantern lit tonight?", "c2"), 1)
 
 

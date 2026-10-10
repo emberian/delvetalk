@@ -109,7 +109,10 @@ the library).
   the model only prose that `Card.mentions` (a word, or a field as `name:`). The same check
   guards the directory's own reading of hub prose. At judgement the directory also reads
   the first object listed under each door (`objects {prefix}`, then inspect: a garden's
-  bell gives "rain"), and a handed-on reply does not count its caller's family: the
+  bell gives "rain"; only methods taking fields count, as offered forms do: the method table
+  also lists helpers like here, guard, reading; a bell's `rain` is always known, so a hub
+  rain still reaches its second-miss card),
+  and a handed-on reply does not count its caller's family: the
   caller's own actions and fields, and the door it lives under with that door's. A card cannot
   `view directory` itself: a view answers in the card's own Response state type, which is
   not the directory's, so the hand-off costs a delivery turn but no model call. A door added
