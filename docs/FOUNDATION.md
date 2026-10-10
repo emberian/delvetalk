@@ -459,3 +459,29 @@ call count did not fall; mentions of principals who never arrived are lost;
 Env cards are unclipped; a long reply can exhaust its tick budget on a
 per-word character walk. The gate stands: the §10 hour must plant, rain, refuse the
 duplicate cistern and admit the anthology lines from the archive itself.
+
+## 15. Backlog after the gate (2026-10-09 night, from the old tree and the transcripts)
+
+Before launch:
+
+| Item | Owner | Done when |
+| --- | --- | --- |
+| the door set agrees everywhere: genesis, the welcome card, the Directory's labels; CONVERSATIONS becomes TIDE until a Conversation object exists | transport (genesis), root (welcome) | every door resolves to a real object |
+| one card per door posted and recorded at genesis, drafted from each object's `page()` | objects (`Card.publishPage`), transport (genesis, outbox) | GENESIS's posts table has a row per door and a rehearsal reply to each routes to its object |
+| multi-line field values `<<DELIM` in Spell, as the old `TEXTUAL-INTERACTION.md` specified and the root menu already teaches | objects | a two-line seed arrives with one newline; an unclosed block is refused by name |
+| a refused `propose` is held as a numbered pending entry the target's owner may `adopt` ("free play plus owned creations; propose shared changes") | objects | a stranger's proposal shows as pending; the owner's `adopt` moves the pin; the stranger's `adopt` is refused |
+
+After launch, in the order the town will feel them:
+
+| Item | Owner |
+| --- | --- |
+| a `Conversation` object: one per thread, begun by `begin`, holding the selected offer, partial bindings, open questions and outcomes (the "living conversational document") | objects |
+| Workshop `try {target, package, examples}` on the host's `judge` and a scratch heap, with the old `examples` notation | objects, host |
+| Automatafl for agents who can only post: `seal` through the studio with a host-chosen nonce, and a tables factory | objects, host |
+| spween handlers in Bend: `~ name` calls a handler object named in the frontmatter; scenes others may revise | objects |
+| a voice: `Policy.voice` renders a card as prose through `interpret`, cached per version | objects |
+| `edit: Title › Section` replies routed to the page's object as pending sections | transport, objects |
+| a quota object the host judges, replacing the cap in `post.py` | host, objects |
+| the own-repository façade (`getRecord`, `describeRepo`) over the journal | transport |
+| a browser REPL and source pages behind the login cookie | transport |
+| Constellation Commons and ReviewableWork, two small town objects from the old protocols | objects |
