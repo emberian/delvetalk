@@ -53,7 +53,7 @@ record Planting:
 # Anyone plants, rains and replies; only the owner changes who owns it, its stance, its
 # policy or its page checkpoint (a set or a merge from anyone else is refused in Bend
 # first, by name; this law refuses the same write proposed any other way).
-law owner "only the owner changes the owner, what asks first, the policy or the page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(ownerHandle) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
+law owner "the owner never changes; only the owner changes what asks first, the policy or the page, and anyone else only by its methods": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(ownerHandle) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint)))
 def initial() -> State:
   {owner: "", ownerHandle: "", planted: 0n, policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty(), children: Relations.empty(), pageCheckpoint: ""}
 def relations() -> Relations.Decls:
@@ -144,12 +144,14 @@ def colourNamed(name: String) -> Lists.Maybe<Bell.Colour>:
   if name == "amber" then Lists.Maybe.some({value: Bell.Colour.amber({})}) else if name == "violet" then Lists.Maybe.some({value: Bell.Colour.violet({})}) else if name == "silver" then Lists.Maybe.some({value: Bell.Colour.silver({})}) else Lists.Maybe.none({})
 def spell(card: String, seed: String, colour: String) -> String:
   "    delvetalk {card} plant\n    seed: {seed}\n    colour: {colour}\n"
+# The acknowledgement is posted where the planting was, so it prints the new bell's whole rain
+# spell (a reply naming the bell reaches it from here).
 def plantedCard(context: Abi.Context, reference: Plans.Reference, colour: String, seed: String, count: Nat) -> Document.Document:
   let article = if colour == "amber" then "an" else "a"
   let what = "Planted for {Card.name(context.principal, context)}: {article} {colour} bell, “{seed}”."
   let where = "It lives at {reference.object}. The garden now holds {natText(count)} planted."
   let another = spell(context.object, "a fern that remembers yesterday", "silver")
-  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply on its card. To plant another:\n\n{another}")
+  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply:\n\n    delvetalk {reference.object} rain\n    text: <1 to 280 characters>\n\nTo plant another:\n\n{another}")
 def unclearCard(context: Abi.Context, needs: Form.Names, colour: String, seed: String) -> Document.Document:
   let again = spell(context.object, if seed == "" then "<what might grow here, 1 to 80 characters>" else seed, if colour == "" then "<amber, violet or silver>" else colour)
   Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Text.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
@@ -167,6 +169,7 @@ sum Why:
   notOwner: {owner: String}
   noField: {field: String}
   noPost: {}
+  seedLength: {length: Nat}
 def refusal(w: Why) -> Card.Refusal:
   match w:
     case world(r): {clause: r.clause, reading: "The world refused it ({r.clause})."}
@@ -180,6 +183,7 @@ def refusal(w: Why) -> Card.Refusal:
     case notOwner(n): {clause: "notOwner", reading: "Only the garden's owner sets it; that is {n.owner}"}
     case noField(n): {clause: "noField", reading: "No field called {n.field} can be set here."}
     case noPost(_): {clause: "noPost", reading: "A merge names the post it answers."}
+    case seedLength(l): {clause: "seedLength", reading: "A seed is 1 to {natText(seedMax())} characters; this one is {natText(l.length)}."}
 def refusedCard(refusal: Card.Refusal) -> Document.Document:
   Document.text("Not planted, refused {refusal.clause}: {refusal.reading}\n")
 # Answers a refusal with its card, first dropping the waiting proposal it superseded.
@@ -220,14 +224,21 @@ def completing(fields: Spell.Bindings, found: Held, context: Abi.Context, state:
   match found:
     case some(s): if Lists.length(s.item.needs) > 0n then fromFields(if colour == "" then s.item.colour else colour, if seed == "" then s.item.seed else seed, found, context, state) else fromFields(colour, seed, found, context, state)
     case none(_): fromFields(colour, seed, found, context, state)
-# A planting from text: what is missing is held for the speaker and asked for; the rest
-# plants (a colour's name is read here).
+# A planting from text: a seed past the form's bound is refused, what is missing is held for the
+# speaker and asked for, and the rest plants (a colour's name is read here). Lines that reach
+# receive were never fitted to the form, so its bound is checked here.
+def seedMax() -> Nat:
+  80n
 def fromFields(colour: String, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+  if textLength(seed) > seedMax() then refused(Why.seedLength({length: textLength(seed)}), found) else fromBounded(colour, seed, found, context, state)
+def fromBounded(colour: String, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   let needs = Lists.filter(Lists.append(Lists.append(Form.Names.nil(), "colour"), "seed"), fn(n: String) -> Bool: if n == "colour" then colour == "" else seed == "")
   if Lists.length(needs) > 0n then held({principal: context.principal, colour: colour, seed: seed, needs: needs}, unclearCard(context, needs, colour, seed), found, state) else named(colour, seed, false, found, context, state)
+# A planting completed from lines or confirmed by a yes is planted by this turn's post, which
+# the bell's strike awaits a reply to.
 def named(colour: String, seed: String, confirm: Bool, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   match colourNamed(colour):
-    case some(c): settled(c.value, seed, "", confirm, found, context, state)
+    case some(c): settled(c.value, seed, context.inputOrigin.post, confirm, found, context, state)
     case none(_): refused(Why.badColour({}), found)
 # Not a planting: a yes or no to what waits, a blank reply, or prose.
 def answered(input: Card.Reply, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:

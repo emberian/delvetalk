@@ -28,7 +28,8 @@ record Sensed:
 # A principal the directory's menu has gone to once, keyed {principal}.
 record Greeting:
   principal: String
-# A line submitted to an anthology, keyed {author, at, n}; admission upserts it admitted.
+# A line submitted to an anthology, keyed {n}, its number (which no later line reuses);
+# admission upserts it admitted.
 sum Status:
   proposed: {}
   admitted: {}

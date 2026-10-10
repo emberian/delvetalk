@@ -10,7 +10,7 @@ principal, and the reply card is what the turn offers.
 """
 import unittest
 
-from tests.test_replay import relation
+from tests.test_replay import get, relation, rows
 from tests.test_chain import Chain, boolean, field, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
@@ -62,9 +62,26 @@ class Cards(Chain):
                                "    delvetalk garden plant\n    seed: a fern that remembers yesterday\n    colour: <amber, violet or silver>\n")
         # The spell is held for glm, and the missing line alone completes it.
         self.assertEqual(self.version("garden"), 1)
-        planted = self.say("colour: silver")
+        planted = self.say("colour: silver", post="at://glm/post/2")
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("a silver bell, “a fern that remembers yesterday”", self.card(planted))
+        # The bell awaits a reply to the post that completed it (codex objects 12).
+        self.assertEqual(field(self.state("garden/bell/1"), "planting"), label("at://glm/post/2"))
+
+    def test_a_completed_seed_keeps_the_forms_eighty_characters(self):
+        """Field lines that reach receive (the first names no form) are held to the plant form's
+        bounds: an 81-character seed is refused by name, never planted or held (codex objects 11)."""
+        self.garden()
+        long = "x" * 81
+        reply = self.say("smell: sweet\ncolour: silver\nseed: %s" % long)
+        self.assertEqual(self.card(reply), "Not planted, refused seedLength: A seed is 1 to 80 characters; this one is 81.\n")
+        self.assertEqual(self.version("garden"), 0)
+        # Completing a held planting the same way: refused, and what was held is dropped.
+        self.assertIn("I still need: seed.", self.card(self.say("delvetalk garden plant\ncolour: silver")))
+        held = self.say("smell: sweet\nseed: %s" % long)
+        self.assertEqual(self.card(held), "Not planted, refused seedLength: A seed is 1 to 80 characters; this one is 81.\n")
+        self.assertEqual(rows(field(self.state("garden"), "pending")), [])
+        self.assertEqual(field(self.state("garden"), "planted"), nat(0))
 
     def test_nothing_known_repeats_the_whole_template(self):
         self.garden()
@@ -94,6 +111,16 @@ class Cards(Chain):
         self.assertEqual(reply["result"]["label"], "planted")
         self.assertIn("Planted for glm: a silver bell", reply["offers"][0]["text"])
 
+    def test_the_planting_acknowledgement_carries_the_new_bells_rain_spell(self):
+        """The acknowledgement is posted where the planting was, so it prints the whole rain spell
+        for the new bell; that spell, replied under it, rains on the bell (codex agent 1)."""
+        self.garden()
+        card = self.card(self.say("delvetalk garden plant\nseed: a fern\ncolour: silver"))
+        self.assertIn("To rain on it, reply:\n\n    delvetalk garden/bell/1 rain\n    text: <1 to 280 characters>\n", card)
+        rained = self.say("delvetalk garden/bell/1 rain\ntext: a drizzle", post="at://glm/post/2")
+        self.assertEqual(rained["status"], "admitted", rained)
+        self.assertEqual([get(r, "text")["value"] for r in rows(field(self.state("garden/bell/1"), "rains"))], ["a drizzle"])
+
     def test_an_amber_bell_takes_an(self):
         self.garden()
         reply = self.say("delvetalk garden plant / colour: amber / seed: a moth lamp")
@@ -117,7 +144,7 @@ def planted(context: Abi.Context) -> String:
         out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [context]})
         text = out["value"]["value"]
         self.assertEqual(text, "✾ THE NIGHT GARDEN\n\nPlanted for glm: a silver bell, “a fern that remembers yesterday”.\n"
-                               "It lives at garden/bell/1. The garden now holds 1 planted.\n\nTo rain on it, reply on its card. To plant another:\n\n"
+                               "It lives at garden/bell/1. The garden now holds 1 planted.\n\nTo rain on it, reply:\n\n    delvetalk garden/bell/1 rain\n    text: <1 to 280 characters>\n\nTo plant another:\n\n"
                                "    delvetalk garden plant\n    seed: a fern that remembers yesterday\n    colour: silver\n")
 
     def test_a_4096_byte_dense_reply_completes_under_the_default_budget(self):
