@@ -694,6 +694,11 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    of letters, digits and `. _ : / -` (`validObjectId`), refused by name otherwise, so every object has a record key;
    replay accepts any id a journal holds. (Zulip playtest principals are `zulip:<numeric id>`.)
 
+43. **Per-op timing (host7).** With `DELVETALK_TIMING=1` in its environment, the host binary writes one stderr line per
+   op after the reply: `timing<TAB>op<TAB>ms<TAB>object=…<TAB>method=…<TAB>principal=…<TAB>resumed=n<TAB>delivered=n`
+   (`PackageMain.timingLine`; ms from reading the request to writing the reply, the settling pass included). hostd's
+   children inherit the variable and the stderr, so a rehearsal run with it set leaves the lines in `hostd.stderr`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
