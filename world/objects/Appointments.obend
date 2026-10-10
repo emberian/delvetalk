@@ -21,29 +21,33 @@ type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
-  {booked: 0n, children: Lists.List::<Plans.Reference>.nil()}
+  {booked: 0n, children: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 sum Done:
   booked: {object: Plans.Reference}
   refused: {reason: String}
 def booking<T>(state: State, topic: String, to: String, after: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if after == 0n then then(Done.refused({reason: "after is at least 1."})) else creating::<T>(state, {owner: context.principal, topic: topic, to: {world: context.world, object: to}, after: after}, context, then)
+  if after == 0n then then(Done.refused({reason: "after is at least 1."})) else creating(state, {owner: context.principal, topic: topic, to: {world: context.world, object: to}, after: after}, context, then)
 def creating<T>(state: State, seed: Appointment.Seed, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.create({package: "Appointment", seed: Data.of::<Appointment.Seed>(seed), law: "", requireAbsent: {world: "", object: textConcat(context.object, textConcat("/", natText(state.booked + 1n)))}})):
-    case created(c): counted::<T>(c.object, seed, context, then)
+  match perform(Plan.create({package: "Appointment", seed: seed, law: "", requireAbsent: {world: "", object: "{context.object}/{natText(state.booked + 1n)}"}})):
+    case created(c): counted(c.object, seed, context, then)
     case refused(r): then(Done.refused({reason: r.clause}))
     case _: then(Done.refused({reason: "The book could not make it."}))
 def counted<T>(object: Plans.Reference, seed: Appointment.Seed, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: {booked: Plans.Edit::<Nat, Nat>.add({delta: 1n}), children: Plans.Entries::<Plans.Reference, {}>.append({item: object})}})):
-    case _: kept::<T>(object, seed, then)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {booked: Plans.Edit.add({delta: 1n}), children: Plans.Entries.append({item: object})}}))
+  kept(object, seed, then)
 def kept<T>(object: Plans.Reference, seed: Appointment.Seed, then: Done -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.send({object: object, method: "keep", argument: Plans.nothing()})):
     case _: then(Done.booked({object: object}))
 def book(state: State, input: {topic: String, to: String, after: Nat}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  booking::<Done>(state, input.topic, input.to, input.after, context, fn(done: Done) -> Done: done)
+  booking(state, input.topic, input.to, input.after, context, fn(done: Done) -> Done: done)
+form book:
+  topic: text 1..140
+  to: text 1..128
+  after: natural 1..1000000
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "book", fields: Form.Fields.cons({head: {name: "topic", kind: Form.Kind.text({min: 1n, max: 140n})}, tail: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 128n})}, tail: Form.Fields.cons({head: {name: "after", kind: Form.Kind.natural({min: 1n, max: 1000000n})}, tail: Form.Fields.nil()})})})}, tail: Card.Forms.nil()})
+  Card.Forms.cons({head: bookForm(), tail: Card.Forms.nil()})
 def door() -> Card.Door:
   {word: "appointments", blurb: "Book a note for later: it is sent when its time comes."}
 def bookedReply(done: Done) -> Card.Reply:
@@ -54,10 +58,10 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
   heard(state, Card.route(input.text, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): booking::<Card.Reply>(state, Card.text(a.fields, "topic"), Card.text(a.fields, "to"), Card.natural(a.fields, "after"), context, bookedReply)
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
+    case act(a): booking(state, Card.text(a.fields, "topic"), Card.text(a.fields, "to"), Card.natural(a.fields, "after"), context, bookedReply)
+    case _: Card.answer(routed, context, forms(), render(state, context))
 def childLine(reference: Plans.Reference) -> Document.Document:
-  Document.text(textConcat("- ", textConcat(reference.object, "\n")))
+  Document.text("- {reference.object}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("APPOINTMENTS: ", textConcat(natText(state.booked), " booked, newest first\n"))), tail: Card.clipped(Lists.map::<Plans.Reference, Document.Document>(Lists.reverse::<Plans.Reference>(state.children), childLine), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("APPOINTMENTS: {natText(state.booked)} booked, newest first\n"), tail: Card.clipped(Lists.map(Lists.reverse(state.children), childLine), 8n)})})
