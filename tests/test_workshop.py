@@ -195,6 +195,29 @@ class Workshop(Chain):
         self.assertNotEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
         self.assertNotIn("#1 for bell-1", self.say("")["offers"][0]["text"])
 
+    def test_a_package_the_target_cannot_take_is_refused_not_held_nor_blamed_on_adoption(self):
+        """A different State with no migration is the package's fault (`stateType`), not the
+        target law's: refused by name, not held; and an error adoption meets that is not the
+        law's is named as it is, not as the adopter's lack of ownership (codex agent 5)."""
+        self.make_workshop()
+        self.counter()
+        wide = "edition ObjectiveBend 1\nrecord State:\n  count: Nat\n  total: Nat\ndef initial() -> State:\n  {count: 0n, total: 0n}\n"
+        propose = lambda block, who, ident: self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % block),
+                                                                                  post=label("at://x/" + ident)), principal=who, identity=ident)
+        wrong = propose(wide, "kimik3", "w1")
+        self.assertEqual(self.card(wrong), "Not done: Its State is not bell-1's; name a migration from the old one.\n")
+        self.assertEqual(self.refusal(wrong)[0], "stateType")
+        self.assertNotIn("Held for", self.say("")["offers"][0]["text"])
+        # Held while it fit; the owner then changes the target's State, so adopting meets stateType.
+        held = propose(BLOCK, "kimik3", "w2")
+        self.assertIn("held as #1", self.card(held))
+        version = self.host.send(op="world-view", principal="glm", object="bell-1")["version"]
+        moved = self.host.send(op="world-reprogram", principal="glm", identity="widen", object="bell-1", version=version,
+                               package=wide.replace("{count: 0n, total: 0n}", "{count: 0n, total: 0n}\ndef migrate(old: {count: Nat}) -> State:\n  {count: old.count, total: 0n}"), migration="migrate")
+        self.assertEqual(moved["status"], "admitted", moved)
+        adopt = self.turn("workshop", "receive", record(text=label("delvetalk workshop adopt / n: 1"), post=label("at://x/a")), principal="glm")
+        self.assertEqual(self.card(adopt), "Not done: #1 cannot be applied to bell-1: Its State is not bell-1's; name a migration from the old one.\n")
+
     def test_a_proposer_withdraws_a_held_proposal(self):
         self.make_workshop()
         self.counter()

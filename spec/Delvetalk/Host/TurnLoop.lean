@@ -1109,7 +1109,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     let entry ← entryOf compiled
     -- A yield held in this process resumes from its machine state; no checkpoint is made.
     let next ← liftEval (Delvetalk.Turn.resumeSuspended entry suspension binding response b)
-    noteProfile fun _ => (Delvetalk.Turn.prepareResumeEntry entry suspension.checkpoint binding response |>.map fun (_, _, _, _, st, resumed) =>
+    noteProfile fun _ => (Delvetalk.Turn.prepareResumeEntry entry suspension.checkpoint suspension.checkpoint.digest binding response |>.map fun (_, _, _, _, st, resumed) =>
       Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ st) b.bytes b.ticks resumed)
     drive depth self caller compiled binding next 0
 
@@ -2192,7 +2192,8 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
     let binding := Delvetalk.Turn.Binding.make object principal intent
       (roots.filter (·.1 == object))
     let b ← budgetsNow
-    let next ← liftEval (Delvetalk.Turn.resumeEntryStep (← entryOf compiled) checkpoint binding response b compiled.dictionary)
+    -- `checkpoint` is the journaled one (`expandSuspended`), so its digest is the journal's.
+    let next ← liftEval (Delvetalk.Turn.resumeEntryStep (← entryOf compiled) checkpoint checkpoint.digest binding response b compiled.dictionary)
     drive 0 object ctx.caller compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st

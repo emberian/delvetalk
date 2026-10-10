@@ -39,9 +39,9 @@ def passage(pid, text, choices):
     return record(id=label(pid), text=label(text), choices=listing(choices))
 
 
-def scene_state(passages, start="gate", title="The Moss Gate"):
+def scene_state(passages, start="gate", title="The Moss Gate", cooldown=0):
     return record(owner=label("ember"), title=label(title), start=label(start), passages=listing(passages),
-                  presence=relation(), vars=listing([]), cooldown={"tag": "natural", "value": "0"},
+                  presence=relation(), vars=listing([]), cooldown={"tag": "natural", "value": str(cooldown)},
                   requires=listing([]), left=relation())
 
 
@@ -92,6 +92,23 @@ class Scenes(test_chain.Chain):
         v = self.host.send(op="world-view", principal="ember", object="scene")
         self.assertEqual(v["status"], "viewed", v)
         return v["version"], plain(v["state"])
+
+    def test_newer_departures_never_erase_an_unexpired_cooldown(self):
+        """`left` keeps 64 departures; one that is still cooling is never the one dropped: an
+        entry that could later push one out is refused `crowded` (codex objects 9)."""
+        self.scene(cooldown=1000)
+        self.assertEqual(self.say("delvetalk scene enter")["result"]["label"], "entered")
+        self.assertEqual(self.say("delvetalk scene leave")["result"]["label"], "left")
+        for i in range(63):
+            who = "did:plc:walker%d" % i
+            self.assertEqual(self.say("delvetalk scene enter", who)["result"]["label"], "entered")
+            self.assertEqual(self.say("delvetalk scene leave", who)["result"]["label"], "left")
+        crowded = self.say("delvetalk scene enter", "did:plc:walker63")
+        self.assertEqual(why(crowded), "crowded: 64 left within the cooldown; enter again from clock 1000.")
+        early = self.say("delvetalk scene enter")
+        self.assertEqual(why(early), "cooldown: You left at clock 0; enter again from clock 1000.")
+        self.host.send(op="world-advance", height=1000)
+        self.assertEqual(self.say("delvetalk scene enter", "did:plc:walker63")["result"]["label"], "entered")
 
     def test_the_owner_amends_the_scene_and_a_stranger_may_not(self):
         self.scene()

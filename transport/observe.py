@@ -2,19 +2,14 @@
 """Read-only watcher: pages #gsb search and the feed, stores each post once, and
 emits one canonical observation per new post. It classifies by surface form only.
 """
-import argparse
 import hashlib
 import re
 import sqlite3
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    from transport.delve import Client, Failure, FixtureTransport, canonical, http_transport
-except ImportError:  # run as a script
-    from delve import Client, Failure, FixtureTransport, canonical, http_transport
+from transport.delve import Failure, canonical
 
 MAX_TEXT = 64 * 1024
 AT_URI = re.compile(r'at://did:[a-z0-9]+:[A-Za-z0-9._:-]+/[A-Za-z0-9.]+/[A-Za-z0-9._~:-]+\Z')
@@ -30,46 +25,21 @@ CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, u
 '''
 
 
-WORD = re.compile(r'[\w-]+\Z')
-CARD = re.compile(r'[A-Za-z0-9._:/-]+\Z')  # the host's object id alphabet (validObjectId): a bell is garden/bell/1
-
-
-def spell_card(text):
-    """The card of the post's spell, following Spell.obend: the second word of the LAST unquoted line that
-    begins `delvetalk`. A `>` line and a fence line are never spell lines; a line indented four spaces or a
-    tab is quotation, used only when nothing else matches; a line without a well-formed card and action
-    is no spell line. Fields (same line after ` / `, or on later lines) are Bend's to parse."""
-    unquoted = quoted = None
-    for line in text.split('\n'):
-        body = line.lstrip(' \t')
-        words = body.split()
-        if (len(words) < 3 or words[0] != 'delvetalk' or not body.startswith(('delvetalk ', 'delvetalk\t'))
-                or not CARD.match(words[1]) or not WORD.match(words[2])):
-            continue
-        if line.startswith(('    ', '\t')):
-            quoted = words[1]
-        else:
-            unquoted = words[1]
-    return unquoted or quoted
-
-
 def classify(text, reply_to, mentions, tags, summon=SUMMON_HANDLE):
-    """-> (kind, wiki, spell). Surface-form only; first match wins. `summon` is the handle whose mention summons."""
+    """-> (kind, wiki). Surface form only, first match wins; `summon` is the handle whose mention summons. Whether a
+    post is a spell, and to which card, is the host's parser's answer (bridge.spelled), not this one's."""
     first = text.strip().split('\n', 1)[0].strip()
     if first.startswith('wiki:') and first[5:].strip():
-        return 'wiki-page', {'op': 'page', 'title': first[5:].strip(), 'section': None}, None
+        return 'wiki-page', {'op': 'page', 'title': first[5:].strip(), 'section': None}
     m = EDIT.fullmatch(first)
     if m:
-        return 'wiki-edit', {'op': 'edit', 'title': m[1], 'section': m[2]}, None
+        return 'wiki-edit', {'op': 'edit', 'title': m[1], 'section': m[2]}
     m = DECISION.fullmatch(first)
     if m and reply_to:
-        return 'wiki-merge', {'op': m[1], 'title': m[2].strip() or None, 'section': None}, None
-    card = spell_card(text)
-    if card:
-        return 'spell', None, {'card': card}
+        return 'wiki-merge', {'op': m[1], 'title': m[2].strip() or None, 'section': None}
     if summon in [x['handle'] for x in mentions] or SUMMON_TAG in [t.lower() for t in tags]:
-        return 'summon', None, None
-    return ('reply' if reply_to else 'post'), None, None
+        return 'summon', None
+    return ('reply' if reply_to else 'post'), None
 
 
 def mentions_of(text, record):
@@ -109,10 +79,9 @@ def observation(post):
     mentions = mentions_of(text, record)
     text = text.strip()
     tags = list(dict.fromkeys(TAG.findall(text)))
-    kind, wiki, spell = classify(text, parent, mentions, tags)
+    kind, wiki = classify(text, parent, mentions, tags)
     return {'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created,
-            'text': text, 'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': kind,
-            'wiki': wiki, 'spell': spell}
+            'text': text, 'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki}
 
 
 def posts_of(page):
@@ -201,27 +170,3 @@ class Observer:
             emit(js)
             self.db.execute('UPDATE observations SET emitted=1 WHERE seq=?', (seq,))
         return len(rows)
-
-
-def main(argv=None, transport=None, out=None):
-    out = out or sys.stdout
-    ap = argparse.ArgumentParser(prog='observe.py', description='read-only delve.town watcher')
-    ap.add_argument('--state', required=True)
-    ap.add_argument('--mock', metavar='DIR')
-    ap.add_argument('--query', default='#gsb')
-    ap.add_argument('--pages', type=int, default=3)
-    a = ap.parse_args(argv)
-    t = transport or (FixtureTransport(a.mock) if a.mock else http_transport)
-    ob = Observer(a.state, Client(t))
-    try:
-        ob.poll(a.query, a.pages)
-    except Failure as f:
-        print(canonical({'error': f.code, 'detail': f.detail}), file=sys.stderr)
-    for code, detail in ob.refused:
-        print(canonical({'refused': code, 'detail': detail}), file=sys.stderr)
-    ob.drain(lambda js: (out.write(js + '\n'), out.flush()))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

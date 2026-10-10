@@ -40,7 +40,7 @@ sum Answer:
 # law in source means a Directory is made with world-create, never by a creator that imports
 # it. Past 4,096 greeted the host drops the oldest row, and insertOnly counts a dropped row as
 # kept.
-law owner "only the owner changes the doors, the owner or the policy": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(doors) and unchanged(policy))
+law owner "the owner never changes; only the owner changes the doors or the policy, and anyone else only by its methods": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(doors) and unchanged(policy)))
 law greeted "anyone's summons only adds to who was greeted": request.subject == new.owner or insertOnly(greeted)
 def initial() -> State:
   {owner: "", doors: Relations.empty(), greeted: Relations.empty(), policy: Plans.nobody()}
@@ -150,10 +150,12 @@ record Learned:
   child: Bool
   form: Form.Form
 type Learning = Lists.List<Learned>
-# Where the walk goes next: the field lines' door, or the judging of prose.
+# Where the walk goes next: the field lines' door, the judging of prose, or a first greeting's
+# prose (the menu, then the prose read as any other).
 sum Next:
   fielded: {first: Spell.Binding}
   judged: {}
+  greeting: {}
 def fieldsOrProse(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
   match input.fields:
     case cons(c): learning(input, Next.fielded({first: c.head}), Lists.List.nil(), doors(state), context, state)
@@ -187,6 +189,7 @@ def learnedAll(input: Card.Reply, next: Next, learned: Learning, context: Abi.Co
   match next:
     case fielded(f): fielded(input, f.first, Lists.find(learned, fn(l: Learned) -> Bool: l.child == false && (l.form.action == f.first.name || Card.hasField(l.form, f.first.name))), context, state)
     case judged(_): judgedHandOn(input, learned, context, state)
+    case greeting(_): if named(input, learned, Lists.List.nil(), state) then greetedThen(input, learned, context, state) else Card.tell(Heard.menu({}), render(state, context))
 # Field lines with no delvetalk line (the gate's hour: `plant: … / colour: silver`, `rain: …`):
 # when the first `name: value` line names an action one of the doors offers, the lines
 # become that door's spell (the action line's value fills the form's first field the
@@ -211,7 +214,7 @@ def spellFor(card: String, form: Form.Form, fields: Spell.Bindings) -> String:
 # handed on or posted under the hub by someone already greeted, reaches the model only when
 # it names a door word, a form action or a form field of the doors (`judged`).
 def unaddressed(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
-  if context.caller != "" then handedOn(input, context, state) else if greetedBefore(context.principal, state) == false then greeting(context, state) else handedOn(input, context, state)
+  if context.caller != "" then handedOn(input, context, state) else if greetedBefore(context.principal, state) == false then greeting(input, context, state) else handedOn(input, context, state)
 def handedOn(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
   if Plans.isNobody(state.policy) then Heard.silent({}) else learning(input, Next.judged({}), Lists.List.nil(), doors(state), context, state)
 # Prose naming none of the doors' words or fields is not read by the model (only the first
@@ -232,7 +235,9 @@ def family(learned: Learning, door: Lists.Maybe<Door>) -> Lists.List<String>:
     case none(_): Lists.List.nil()
     case some(d): Lists.concat(doorWords(d.value), learnedWords(Lists.filter(learned, fn(l: Learned) -> Bool: l.child == false && l.card == d.value.to.object)))
 def judged(input: Card.Reply, learned: Learning, excluded: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Heard>:
-  if mentions(textTake(input.text, 2000n), input.fields, without(Lists.concat(allDoorWords(doors(state)), formWords(formsOf(learned))), excluded), without(Lists.concat(formFields(formsOf(learned)), knownFields()), excluded)) then consulted(input, learned, context, state) else Heard.silent({})
+  if named(input, learned, excluded, state) then consulted(input, learned, context, state) else Heard.silent({})
+def named(input: Card.Reply, learned: Learning, excluded: Lists.List<String>, state: State) -> Bool:
+  mentions(textTake(input.text, 2000n), input.fields, without(Lists.concat(allDoorWords(doors(state)), formWords(formsOf(learned))), excluded), without(Lists.concat(formFields(formsOf(learned)), knownFields()), excluded))
 def allDoorWords(doors: Lists.List<Door>) -> Lists.List<String>:
   Lists.fold(doors, Lists.List.nil(), fn(d: Door) -> Lists.List<String> -> Lists.List<String>: fn(rest: Lists.List<String>) -> Lists.List<String>: Lists.concat(doorWords(d), rest))
 def without(words: Lists.List<String>, excluded: Lists.List<String>) -> Lists.List<String>:
@@ -351,9 +356,14 @@ def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Heard>:
     case carded(c): Card.tell(Heard.door({object: to.object}), c.document)
     case _: Card.tell(Heard.refused({clause: "noCard", reading: "No card at {to.object}"}), Document.text("The door to {to.object} opens on nothing yet.\n"))
 # The menu once per principal: the greeting is remembered (the newest 4,096 principals).
-def greeting(context: Abi.Context, state: State) -> Activity<Heard>:
+# A first reply gets the menu; when it also asks for something (it names a door, an action or
+# a field) and there is a policy, the menu is offered and the request read as any later one.
+def greeting(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Heard>:
   let written(_) = write {greeted: insert {principal: context.principal}}
-  Card.tell(Heard.menu({}), render(state, context))
+  if Plans.isNobody(state.policy) then Card.tell(Heard.menu({}), render(state, context)) else learning(input, Next.greeting({}), Lists.List.nil(), doors(state), context, state)
+def greetedThen(input: Card.Reply, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.offer({to: "", document: render(state, context)}):
+    case _: consulted(input, learned, context, state)
 # The directory's mention scan (it alone reads prose for door words, before any model call).
 # Whether prose names one of `words` (door words and form actions, each a whole word) or,
 # as a `name:` line, one of `words` or `fields`. One pass: the text is split at blanks

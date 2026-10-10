@@ -245,7 +245,8 @@ class Made(test_chain.Chain):
         [left] = state["left"]
         self.assertEqual(left["who"], GLM)
         at = int(left["at"])
-        # Inside the cooldown: refused by name, and the same write proposed directly by the law.
+        # Inside the cooldown: refused by name, and the same write proposed directly by the law (no
+        # method made it).
         early = self.say(well, "delvetalk %s enter" % well)
         self.assertEqual(self.refusal(early), ("cooldown", "You left at clock %d; enter again from clock %d." % (at, at + 3)))
         append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), at=label("intro")))}
@@ -253,7 +254,7 @@ class Made(test_chain.Chain):
         forged = self.host.send(op="world-propose", principal=GLM, identity="forged", roots=[{"object": well, "version": version}],
                                 writes=[{"object": well, "edits": [record(presence=append, vars=keep, left=keep)]}])
         self.assertEqual((forged["status"], forged["receipt"]["outcome"]["class"], forged["receipt"]["outcome"].get("clause")),
-                         ("refused", "lawRefused", "cooldown"), forged)
+                         ("refused", "lawRefused", "methods"), forged)
         self.host.send(op="world-advance", height=at + 3)
         back = self.say(well, "delvetalk %s enter" % well)
         self.assertEqual(back["result"]["label"], "entered", back)

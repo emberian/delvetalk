@@ -341,6 +341,15 @@ def generate(count, seed=1025):
             term, kind = chain(g, rng), "chain"
         cases.append({"name": f"case-{index:04d}", "kind": kind, "term": term, "responses": responses,
                       "fuel": 100000})
+    # textHasAny at size, after the seeded stream (no generated case moves): 2,000 words each
+    # side, which a list search does as four million comparisons; no hit, a hit at the end,
+    # and a hit only after ASCII case-folding beside non-ASCII words.
+    many = " ".join(["a"] * 2000)
+    for name, text, words in (("has-any-miss", many, " ".join(["b"] * 2000)),
+                              ("has-any-last", many + " Zeta", " ".join(["b"] * 1999 + ["zeta"])),
+                              ("has-any-fold", ", ".join(["Café", "ÉTÉ"] * 1000) + " WORD!", " ".join(["été"] * 1999 + ["word"]))):
+        cases.append({"name": name, "kind": "term", "term": ["binary", "textHasAny", ["label", text], ["label", words]],
+                      "responses": [], "fuel": 100000})
     return cases
 
 

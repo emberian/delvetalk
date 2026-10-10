@@ -96,10 +96,13 @@ def colourName(colour: Colour) -> String:
     case silver(_): "silver"
 def line(rain: Rain) -> Document.Document:
   Document.text("{Card.shown(rain.author, rain.handle, Card.stranger())}: {rain.text}\n")
-# Newest rains are last; the card shows the first eight and counts the rest.
+# Newest rains are last; the card shows the first eight and counts the rest, within what the
+# head and the doors leave of the card.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let article = if colourName(state.colour) == "amber" then "An" else "A"
   let sound = if state.rung then "rung" else "silent"
   let id = Card.called(context, "<bell>")
   let head = Document.text("{article} {colourName(state.colour)} bell, planted by {Card.shown(state.planter, state.planterHandle, context)}{Card.mine(state.planter, context)}: “{state.seed}” — {sound}.\nReply delvetalk {id} rain / text: <1 to 280 characters> to rain on it.\n")
-  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(Card.clipped(Lists.map(Relations.rows(state.rains), line), 8n), Card.doorLines(state.doors))})})
+  let doors = Card.doorLines(state.doors)
+  let rains = Card.clippedWithin(Lists.map(Relations.rows(state.rains), line), 8n, Card.left(Document.size(head) + Document.size(Document.Document.sequence({items: doors}))))
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(rains, doors)})})

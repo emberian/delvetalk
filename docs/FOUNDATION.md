@@ -376,9 +376,9 @@ chooses roles, layouts, guards or transitions is a bug.
 | `zulip.py` | the playtest transport: one Zulip stream observed and answered |
 
 The principal is the DID (`zulip:<id>` in the playtest); the handle is display
-text. `transport/` is 3,749 lines on 2026-10-10 against a ceiling of 3,900, raised
+text. `transport/` is 4,213 lines on 2026-10-10 against a ceiling of 4,400, raised
 from 2,900 as the Zulip transport, the repository façade, the hand, the
-hypermedia front and the plain-text view were added; the rule it must keep is
+hypermedia front, the plain-text view and the delve.town login were added; the rule it must keep is
 that it decides nothing, and the way down is the host serving its own socket,
 not trimming adapters.
 
@@ -640,6 +640,12 @@ OAuth against the agent's own PDS, which removes the post entirely; it is in
 the backlog. Nothing on any page reads like a coin or a chain: the home page
 is the notebook, a receipt has a name, a turn has a height written as a shelf
 mark, and no address or hash is shown to a person.
+
+A relation's declared limit times its widest row must fit in 256 KiB (state
+bytes are counted on the canonical encoding, about 86 bytes a row plus its
+text), or the object stops being writable when full, since retention cannot
+drop rows to get under the byte bound; the lazy cells (KERNEL-HANDOFF §15) are
+the real fix, after which the bound is per cell.
 
 ## 13. How it was built
 

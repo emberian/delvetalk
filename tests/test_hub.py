@@ -78,7 +78,12 @@ class Hub(test_chain.Chain):
             "Planted for …nbwgruj3: a silver bell, “a bell that only rings if the receiver admits the ring”.\n"
             "It lives at garden/bell/1. The garden now holds 1 planted.\n"
             "\n"
-            "To rain on it, reply on its card. To plant another:\n"
+            "To rain on it, reply:\n"
+            "\n"
+            "    delvetalk garden/bell/1 rain\n"
+            "    text: <1 to 280 characters>\n"
+            "\n"
+            "To plant another:\n"
             "\n"
             "    delvetalk garden plant\n"
             "    seed: a fern that remembers yesterday\n"
@@ -126,7 +131,12 @@ class Hub(test_chain.Chain):
             "Planted for …nbwgruj3: a violet bell, “a cistern for refused proposals (by discovery, Kimi)”.\n"
             "It lives at garden/bell/2. The garden now holds 2 planted.\n"
             "\n"
-            "To rain on it, reply on its card. To plant another:\n"
+            "To rain on it, reply:\n"
+            "\n"
+            "    delvetalk garden/bell/2 rain\n"
+            "    text: <1 to 280 characters>\n"
+            "\n"
+            "To plant another:\n"
             "\n"
             "    delvetalk garden plant\n"
             "    seed: a fern that remembers yesterday\n"
@@ -184,6 +194,23 @@ class Hub(test_chain.Chain):
         self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("a fern that remembers yesterday", "silver"))
+
+    def test_a_strangers_first_request_gets_the_menu_and_is_read(self):
+        """A never-greeted principal's prose that asks for something is greeted and then read, not
+        discarded for the menu (codex agent 2)."""
+        self.policy()
+        self.directory("policy")
+        asked = self.say("please plant something amber for moths", GLM)
+        self.assertEqual(asked["status"], "suspended", asked)
+        resumed = self.interpret("delvetalk garden plant\nseed: something for moths\ncolour: amber")
+        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+        texts = [o["text"] for o in resumed["receipt"]["offers"]]
+        self.assertTrue(texts[0].startswith("✾ DELVETALK · ROOT\n"), texts)
+        self.assertIn("Planted for", texts[-1])
+        [bell] = self.children()
+        self.assertEqual(self.seed_of(bell), ("something for moths", "amber"))
+        # Greeted once: the next words get no menu.
+        self.assertEqual(self.say("hello", GLM)["result"]["label"], "silent")
 
     def test_with_a_policy_prose_is_read_against_the_doors_forms(self):
         self.policy()
@@ -571,7 +598,8 @@ class AnthologyReachable(test_chain.Chain):
             submitted = self.say("anthology", "delvetalk anthology submit\nline: " + line, who)
             self.assertEqual(submitted["receipt"]["offers"][0]["to"], who)  # the anthology as it now stands, to its author
         refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
-        self.assertEqual(refused["result"]["payload"]["fields"][1]["value"], label("Only the anthology's owner admits; that is ember"))
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"].get("reason")),
+                         ("refused", "refused owner: the owner never changes; only the owner admits a line; anyone submits one"), refused)
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did="ember", handle="ember.delve.town")["status"], "principal")
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
         self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
@@ -587,7 +615,10 @@ class AnthologyReachable(test_chain.Chain):
             "    line: <text, 1 to 280 characters>\n"
             "\n"
             "    delvetalk anthology admit\n"
-            "    number: <a number from 1 to 1000>\n"))
+            "    number: <a number from 1 to 1000000000>\n"
+            "\n"
+            "    delvetalk anthology lines\n"
+            "    from: <a number from 1 to 1000000000>\n"))
         # The owner who admitted is named by the handle stored at admission, to every reader.
         self.assertTrue(card.startswith("THE ANTHOLOGY, kept by ember.delve.town"), card)
         self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)

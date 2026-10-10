@@ -6,7 +6,8 @@
 #
 # The Delve credentials file goes in /etc/delvetalk/delve/credentials.json (directory owner 10425, mode 0700;
 # file mode 0400); the front reads it only when the owner clicks Post, so it may be placed after `up`.
-# Caddy answers 404 for /hand on every public name that proxies to :8765; reach it by an ssh forward.
+# The hand is never on :8765, the port Caddy proxies: the front serves it on its own listener, :8766, published on
+# workhorse's loopback only. Reach it by an ssh forward to 127.0.0.1:8766.
 
 services:
   delvetalk-http:
@@ -25,7 +26,13 @@ services:
       - --trust-proxy
       - --hand-token
       - ${DELVETALK_HAND_TOKEN:?set DELVETALK_HAND_TOKEN in .env}
+      - --hand-bind
+      - 0.0.0.0
+      - --hand-port
+      - "8766"
       - --credentials
       - /run/delve/credentials.json
+    ports:
+      - "127.0.0.1:8766:8766/tcp"
     volumes:
       - /etc/delvetalk/delve:/run/delve:ro

@@ -60,8 +60,8 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   has moved; then the old one goes. The installed config is `/etc/caddy/Caddyfile` on the anchor (native Caddy, no
   checkout there; dregg-infra's `edge/anchor/Caddyfile` is its source and had drifted from it on 2026-10-10). Install as
   that file's header says: write `Caddyfile.new`, `caddy validate`, `mv`, `systemctl reload caddy`. Both names answer
-  `respond @hand 404` for `path /hand /hand/*`: the front serves the owner's console on the same port Caddy makes
-  public, and the hand is for an ssh forward only. The gsb route as installed:
+  `respond @hand 404` for `path /hand /hand/*`, a belt only: the port Caddy proxies never serves the owner's console,
+  which has its own listener on workhorse's loopback (below). The gsb route as installed:
 
       gsb.fg-goose.online {
       	import baseline_headers
@@ -83,6 +83,14 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   `delvetalk-proxy.service`, `delvetalk-portal.service`; keep
   `delvetalk-tick.timer` disabled. Their data under `/var/lib/delvetalk/` (`world`, `town-v1`, `forge-v1`, `clerk`,
   `operator-service`; there is no `agents` directory there) stays where it is.
+- Log in with delve.town (`transport/oauth.py`) names the front by `--origin`: the client id is
+  `<origin>/oauth/client-metadata.json` and the callback `<origin>/oauth/callback`. The account's PDS fetches the
+  document itself, so it must answer 200 `application/json` over HTTPS at exactly that URL (no redirect); Caddy needs
+  nothing new, since the gsb route already proxies every path but `/hand`. A login started on another name is first
+  sent to the origin's, where its one-time cookie lives. Check it after a deploy:
+  `curl -s https://gsb.fg-goose.online/oauth/client-metadata.json` shows `client_id` equal to that URL. pds.delve.town
+  is its own authorization server (PAR, PKCE S256, DPoP ES256, `client_id_metadata_document_supported`; checked
+  2026-10-10). The image installs `cryptography` for ES256 from `deploy/requirements-transport.txt`, pinned by hash.
 - Firewall :8765 on the workhorse to Caddy's host (the anchor, 10.10.1.5) only: `--trust-proxy` believes the last
   `X-Forwarded-For` entry from whoever connects, so anything else on 10.10.1.0/24 that reaches the port can choose it.
   Measured 2026-10-10: the workhorse has no host firewall to add this to (no ufw; `nftables.service` disabled and
@@ -107,7 +115,10 @@ beside compose.yml; `/opt/delvetalk/deploy/` is the copy the timer runs.
 Two builds of one commit must print the same SHA-256; record it with the
 commit. (Measured: foundation 1cc552a gives `6604098861d4…` on an arm64 Mac
 under emulation and natively on hbox; foundation a3e1fb2, deployed 2026-10-10, gives
-`1efaa90465860427c46672497aad25b2c7bd265b9e841c1a27a0ec324d5774e7` on both.) The Lean compile runs inside dockerd's
+`1efaa90465860427c46672497aad25b2c7bd265b9e841c1a27a0ec324d5774e7` on both; foundation 18f1de9, deployed 2026-10-10 on hbox,
+gives `523ea05d7dca284f5119ed6a23cf33841c821e44347fd5a137775841d7bdc12f`.) The image id after `docker load` on the
+workhorse differs from hbox's (the two daemons' image stores); compare the binary instead:
+`docker run --rm --entrypoint sha256sum delvetalk:<sha12> /usr/local/bin/delvetalk-obend`. The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
@@ -130,7 +141,10 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
 `deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/`, so it, `deploy/library-update.sh` and
 `deploy.spend` run in `delvetalk-ops`). The opener arrives first (`world-arrive`), then creates `policy`,
 `directory`, `garden`, `tide`, `workshop`, `anthology`, `cistern`, `commons`, `rooms` and `play`, in that order. It
-refuses to run if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the
+refuses to run if any of them exists (`--opener` names another opener; the default is ember). The cistern is created
+with its law (`law owner`, `law level: monotone(level)`; `world-inspect cistern` shows it), and the opener's
+`wake/<did>` is given `arrived` and a schedule calling `tide.tick` every 60 clock minutes (its `triggers` in
+`world-view`). Genesis prints one line per object; a page that was not published is named on stderr. The rehearsal seeds the
 same way. `deploy.seed` creates one further object by hand.
 
 The welcome card's menu has six doors: GARDEN, ROOMS, WORKSHOP, TIDE, ANTHOLOGY and STUDIO (a link to
@@ -149,10 +163,13 @@ prints `--text-file TEXT` for a page; `--draft` reads the text from the outbox f
 
 (dry run first, then with `--i-am-ember-and-authorize-posting`), or `transport.hand post <n>-pub-<id> --object <object>`.
 
-The bridge's first poll reads the town as it already is: every post observed becomes an arrival (an Avatar, Env and
-Wake each), and a reply whose words fit a card with no recorded ancestor becomes a turn and a draft, so the outbox holds
-replies to posts written before the world existed and their writes are in the journal (measured 2026-10-10: 124
-objects, a Tide subscription and five reply drafts within four minutes of the first poll). Skip those drafts in the hand.
+The bridge observes nothing posted before its first start: a state that has observed nothing writes `<state>/since`
+(now) on the first poll, and posts older than it are never observed (`bridge run --since ISO` replays deliberately). So
+after genesis the journal holds genesis and the opener's arrival (the Avatar named by the DID, `env/<did>`, `wake/<did>`)
+and nobody who posted earlier, and the outbox holds only the five page drafts. (The deploy of a3e1fb2 read the whole town on its first poll: 124
+objects and five reply drafts to posts older than the world.) Posts made after `since` do arrive: the deploy of
+18f1de9 had genesis at height 25 and, within its first two polls, two bots' replies (berduck, dougbot) made each an
+Avatar, Env and Wake (heights 30 to 40) and were skipped with no draft.
 
     docker compose --profile town up -d --wait --remove-orphans
     docker compose ps
@@ -160,7 +177,7 @@ objects, a Tide subscription and five reply drafts within four minutes of the fi
 `delvetalk-interpret` is in the `town` profile, kept on purpose so a stack without the model key still comes up: every `up` that should run it names `--profile town` (as here, after a restore and after a new binary); without it the interpreter does not start and interpretations wait.
 
 `--wait` fails red unless the healthcheck passes: `/AGENTS.md` answers and the
-home page shows a journal height, `ht.<n>` (a refused `world-open` shows `ht.None`). From
+home page shows a journal height, `entry <n>` (a refused `world-open` shows `entry None`). From
 the laptop:
 
     deploy/smoke.sh https://gsb.fg-goose.online --pin <sha256> --handle <you>.delve.town
@@ -178,27 +195,33 @@ account's credentials file is mounted for that one command only:
       python3 -m transport.post --state /data/state post --text-file /data/welcome.txt \
       --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
 
-`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt`, placed in the data directory by hand. `--state /data/state` is
+`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt` at the deployed commit, placed in the data directory by hand
+(owner 10425, mode 0400); compare its SHA-256 with the repository's after any edit of the preview, since a re-genesis that
+carries the old data directory's copy forward carries the old text. `--state /data/state` is
 the hand's: the hourly quota is counted in `<state>/post-log.json`, so every post names the same state directory. Without
 `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
 read it, then add the flag. `--object` names the object the card addresses: after a
 confirmed post, post.py calls the host's `world-posted` for it, so every card posted
 is recorded in the same step (replies to it then route to that object). Post a card
-without `--object` only if no object should hear its replies.
+without `--object` only if no object should hear its replies. An intent posts once: `<state>/posting/` keeps, per
+intent, the record key chosen before the first send (Zulip: the stream's newest id) and the post that came back, so a
+rerun after a crash adopts the post instead of writing again. A draft whose `world-posted` failed keeps `sent` and is
+recorded by the bridge's next run, never posted twice.
 
 ## Open the hand
 
 The front keeps running, and the bridge and interpreter run against hostd (`bridge run --poll`, `interpret run --poll`, or
 `--once` by hand as in "First start"). The owner works the town from the hand, a console the front serves at `/hand/`
-only when it is started with a secret:
+only when it is started with a secret, and only on a listener of its own (`--hand-bind`, default 127.0.0.1, and
+`--hand-port`, default 8766), which serves nothing else; the public port never serves `/hand/`:
 
     python3 -m transport.http --state /data/state --hand-token <secret> --credentials /run/delve.json
 
 (in compose that is `deploy/compose.hand.yml`, named by `COMPOSE_FILE` in `.env` with `DELVETALK_HAND_TOKEN`; it mounts
 `/etc/delvetalk/delve/` (owner 10425, mode 0700) read-only, where the owner puts `credentials.json`, read only at a
-Post. Caddy answers 404 for `/hand/` on the public names, so reach it by a forward):
+Post, and publishes the hand's port on workhorse's loopback only, `127.0.0.1:8766`, so reach it by a forward):
 
-    ssh -L 8765:10.10.1.10:8765 root@workhorse     # then open http://127.0.0.1:8765/hand/?token=<secret>
+    ssh -L 8766:127.0.0.1:8766 root@workhorse     # then open http://127.0.0.1:8766/hand/?token=<secret>
 
 The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. The page
 has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
@@ -213,7 +236,8 @@ The same operations have a command-line face for the owner's assistant over ssh:
 --state /data/state [--credentials FILE] [--json]` (`DELVETALK_STATE` and `DELVETALK_CREDENTIALS` stand in for the
 flags; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):
 
-- `inbox [--since HEIGHT] [--kind spell|summon|reply|post]`: observations newest first, with what became of each.
+- `inbox [--since HEIGHT] [--kind summon|reply|post|wiki-page|wiki-edit|wiki-merge]`: observations newest first, with
+  what became of each (whether a post is a spell is the host's reading, shown in its fate).
 - `outbox [--all]`: drafts grouped by the post they answer (`--all` includes posted and skipped).
 - `show DRAFT`: the post, the draft text and its receipt line.
 - `edit DRAFT --text-file F | --stdin`: replace the draft text, keeping the original.
@@ -235,20 +259,31 @@ Before DelveTalk goes to delve.town, residents can play it in the owner's own Zu
 transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
 would (principal `zulip:<sender id>`, the full name as handle, `replyTo` the previous message of its topic, kind
 by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
-it as ever: a reply is its parent's address, a card word applies to a post with no recorded ancestor. Because this is
+it as ever: a reply is its parent's address, and a post with no recorded ancestor goes to the card of its spell as the
+host's parser reads it (`spell-parse`; Python only skips text without the word `delvetalk`). Because this is
 the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
-inside the host's `postQuota` per hour (a draft over it waits for the next round), and records each post with
+with no hourly cap (the host's `postQuota` is delve.town etiquette and does not apply to the owner's own Zulip), and records each post with
 `world-posted`, so a reply to it routes. The delve.town rule against automatic posting does not apply here and nothing
 in this path reads Delve credentials.
 
-    deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--poll 20]
+    deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20]
     deploy/playtest.sh --stop
 
 It starts hostd on a fresh journal under `~/.delvetalk-playtest/run-<stamp>/` (`--dir` or `DELVETALK_PLAYTEST_DIR`
 moves it; earlier runs are kept), runs genesis, posts `docs/previews/zulip-welcome-v2.txt` (its `<bot name>` filled in) to the stream's `welcome`
 topic and records it against `directory`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds). The
-`.zuliprc` is the bot's: its user must be subscribed to the stream. The model credentials are as under "Model
+`.zuliprc` is the bot's: its user must be subscribed to the stream (a guest cannot create one; check `users/me/subscriptions` first, since a stream the bot cannot see answers `Invalid channel name`). With `--topic NAME` the playtest joins an existing conversation: the welcome goes to that topic instead of `welcome`, and the observer reads only that topic (the Zulip narrow `channel` + `topic`), so the world never sees the stream's other topics; replies land in the same topic. A fresh bridge observes nothing posted before its start. The model credentials are as under "Model
 credentials" and are read from the environment of the script; `DELVETALK_OBEND` names the host binary.
+
+The bot's own messages are never observed (`ZulipObserver.store` skips its sender id), so the loop cannot be proved by posting as the bot: another user replies in the `welcome` topic. Two posts prove it, the spell and then prose:
+
+    delvetalk garden plant
+    colour: amber
+    seed: a bell for the mobo
+
+    could I have a violet one too, for the night?
+
+Within a poll the card comes back in the topic (the journal height grows by the planting) and the interpreter's proposal answers the prose. A guest bot cannot create or join a channel: it must already be subscribed (`users/me/subscriptions` lists it); one it cannot see answers `Invalid channel name`. Port 8765 may be held by another tenant of the host; give `--port`.
 
 The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
 `python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.

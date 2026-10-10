@@ -9,7 +9,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import signal
 import sqlite3
 import sys
@@ -26,7 +25,6 @@ from transport import observe
 from transport.observe import SCHEMA, Observer
 
 DELIVER_ROUNDS = 8
-KINDS = ('spell', 'summon')
 
 
 def uri_hash(uri):
@@ -74,7 +72,8 @@ def cite(object_, version, origin=None):
 
 
 def receipt_line(receipt, origin=None):
-    root = (receipt.get('roots') or [{}])[0]
+    """`receipt <slug>: <object> v<n> at height <h>`: the version the turn wrote, else the one it read."""
+    root = ((receipt.get('outcome') or {}).get('writes') or receipt.get('roots') or [{}])[0]
     text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
     name = f"receipt {receipt['slug']}" if receipt.get('slug') else 'receipt'  # the slug is the name people and posts use
     return f"{name}: {text} at height {receipt.get('height')}{link}\n"
@@ -90,19 +89,22 @@ def refusal_line(outcome, fallback_class=None):
 
 
 def draft_text(reply, origin=None):
-    """The only text a draft carries. A refusal is the turn line, the host's hint when it gives one, and the receipt's name;
-    no state, hash or CID. A usage answer is the host's text."""
+    """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
+    is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
+    receipt's name; no state, hash or CID. A usage answer is the host's text."""
     if reply.get('status') == 'usage':
         return str(reply.get('text', ''))
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':
+        if 'public' not in reply:
+            return ''
         hint = reply.get('hint') or (reply.get('public') or {}).get('hint')
         lines = [refusal_line(outcome, reply.get('class'))] + ([str(hint)] if hint else []) + ([f"receipt {receipt['slug']}"] if receipt.get('slug') else [])
         return '\n'.join(lines) + '\n'
     offers = [o['text'] for o in reply.get('offers') or []]
-    if offers:
-        return '\n'.join(offers)
+    if offers:  # every reply ends with its receipt's spoken name
+        return '\n'.join(offers).rstrip('\n') + '\n' + receipt_line(receipt, origin)
     if receipt.get('offers'):
         return 'reply card offered but not retained by the host; ' + receipt_line(receipt, origin)
     return ''  # no offer, no draft
@@ -127,10 +129,11 @@ def awaiting_path(state, uri):
     return Path(state) / 'awaiting' / f'{uri_hash(uri)}.json'
 
 
-def offer_drafts(state, host):
+def offer_drafts(state, host, origin=None):
     """Draft what resumed turns offered. A suspended turn leaves an `awaiting` record; once its interpretation
     settles the resumed entry's offer is in the host's outbox for the author, under the turn's identity (the
-    post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft."""
+    post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft. The draft ends
+    with the receipt of the author's turn on that post, as the host names it (`world-receipt`)."""
     outbox = Path(state) / 'outbox'
     waiting = [json.loads(p.read_text()) for p in sorted((Path(state) / 'awaiting').glob('*.json'))]
     drafted = []
@@ -153,11 +156,13 @@ def offer_drafts(state, host):
             if any(outbox.glob(f'*-off-{key}.json')):
                 continue
             w = mine[(principal, uri)]
+            rc = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri}).get('receipt')
+            text = '\n'.join(o['text'] for o in offers).rstrip('\n') + ('\n' + receipt_line(rc, origin) if rc else '')
             write_atomic(outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
                 'offer': {'height': offers[-1]['height'], 'identity': uri},
-                'text': '\n'.join(o['text'] for o in offers), 'posted': False})
+                'text': text, 'posted': False})
             drafted.append(uri)
     return drafted
 
@@ -171,8 +176,25 @@ def all_observations(state):
 
 
 def pending_observations(state, rows=None):
+    """What may be spoken to the system: a summon, a reply, a mention, or a post the host may read as a spell."""
     rows = all_observations(state) if rows is None else rows
-    return sorted((o for o in rows if o['kind'] in KINDS or o['replyTo'] or o['mentions']), key=lambda o: (o['createdAt'], o['uri']))
+    return sorted((o for o in rows if o['kind'] == 'summon' or o['replyTo'] or o['mentions'] or (o['kind'] == 'post' and 'delvetalk' in o['text'])),
+                  key=lambda o: (o['createdAt'], o['uri']))
+
+
+def spelled(host, obs):
+    """The card of the post's spell as the host's parser reads it (`spell-parse`), or None. A text without `delvetalk`
+    has no spell line to read and is not sent; a wiki post is a page, never a spell."""
+    if obs['kind'].startswith('wiki') or 'delvetalk' not in obs['text']:
+        return None
+    got = host.send({'op': 'spell-parse', 'text': obs['text']})
+    if got.get('status') != 'parsed':
+        raise Unread(got.get('message', got.get('status')))  # the host did not read it: the post waits for the next run
+    return (got.get('spell') or {}).get('card')
+
+
+class Unread(Exception):
+    pass
 
 
 def skipped(state):
@@ -181,17 +203,6 @@ def skipped(state):
 
 
 MAX_HOPS = 32
-FIELD_LINE = re.compile(r'^\s*[\w-]+:\s*\S', re.M)
-
-
-def addressed(obs):
-    """Was the observation spoken to the system: a spell or summon, or text with a `delvetalk` line or `name: value` field lines."""
-    text = obs['text']
-    return obs['kind'] in KINDS or 'delvetalk' in text.lower() or bool(FIELD_LINE.search(text))
-
-
-def refused(reply):
-    return reply.get('status') == 'refused' or reply['receipt'].get('outcome', {}).get('tag') == 'refused'
 MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ignored
 
 
@@ -239,8 +250,9 @@ def route(host, obs, known=None):
         got = host.send({'op': 'world-addressee', 'parent': root})
         if got.get('object'):
             return got['object'], got.get('slot')
-    if obs['kind'] == 'spell':
-        return obs['spell']['card'], None
+    card = spelled(host, obs)
+    if card:
+        return card, None
     if obs['kind'] == 'summon':
         return 'directory', None
     return None
@@ -300,6 +312,8 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     if poll:
         poll(getattr(poll, 'observer', Observer)(state, poll.client))
     tick(host, now)
+    from transport.post import record_sent
+    recorded = record_sent(state, host)  # posts whose registration failed, retried apart from sending
     done, failed, skip = [], [], skipped(state)
     rows = all_observations(state)
     observed = pending_observations(state, rows)
@@ -312,7 +326,11 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     for obs in observed:
         if obs['uri'] in skip or draft_exists(outbox, obs['uri']) or awaiting_path(state, obs['uri']).exists():
             continue
-        target = route(host, obs, known)
+        try:
+            target = route(host, obs, known)
+        except Unread as e:
+            failed.append({'uri': obs['uri'], 'message': str(e)})
+            continue
         if target is None:
             with open(state / 'skipped.txt', 'a') as f:
                 f.write(obs['uri'] + '\n')
@@ -346,8 +364,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         write_atomic(outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),
-            'receipt': reply['receipt'], 'posted': False,  # unaddressed chatter that was refused is journaled, never drafted
-            'text': '' if refused(reply) and not addressed(obs) else draft_text(reply, origin)})  # offerless: text '', hidden from outbox
+            'receipt': reply['receipt'], 'posted': False, 'text': draft_text(reply, origin)})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             write_atomic(awaiting_path(state, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot), 'height': reply['receipt']['height']})
         done.append(obs['uri'])
@@ -355,11 +372,11 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
         if not host.send({'op': 'world-pending'}).get('count'):
             break
         host.send({'op': 'world-deliver', 'limit': 16})
-    offered = offer_drafts(state, host)
+    offered = offer_drafts(state, host, origin)
     published, problem = publication_drafts(state, host)
     if problem:
         failed.append({'publications': problem})
-    return {'turns': done, 'failed': failed, **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
+    return {'turns': done, 'failed': failed, **({'recorded': recorded} if recorded else {}), **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
 def daemon(state, name, interval, step, stop=None, sleep=None):
@@ -414,6 +431,7 @@ def main(argv=None, out=None):
     r.add_argument('--source', choices=('delve', 'zulip'), default='delve', help='zulip: observe a stream of the owner\'s own Zulip and post drafts back automatically')
     r.add_argument('--zuliprc', metavar='PATH', help='--source zulip: the bot\'s .zuliprc')
     r.add_argument('--stream', default='delvetalk', help='--source zulip: the stream to observe')
+    r.add_argument('--topic', help='--source zulip: observe only this topic of the stream (default: all of them)')
     r.add_argument('--origin', default=ORIGIN, help='the front\'s origin, for the short links drafts cite')
     r.add_argument('--since', metavar='ISO', help='observe posts created at or after this time (a deliberate replay). Without it a state that has observed nothing starts from now')
     r.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default: the wall clock)')
@@ -450,8 +468,8 @@ def main(argv=None, out=None):
                     ap.error('--source zulip needs --zuliprc')
                 client = zulip.Client(a.zuliprc)
                 poll = lambda ob: ob.poll()
-                poll.client, poll.observer = client, lambda state, c: zulip.ZulipObserver(state, c, a.stream, since)
-                after = lambda: zulip.post_drafts(a.state, host, client, a.stream)
+                poll.client, poll.observer = client, lambda state, c: zulip.ZulipObserver(state, c, a.stream, since, a.topic)
+                after = lambda: zulip.post_drafts(a.state, host, client, a.stream, topic=a.topic)
             elif a.observe or a.poll or a.mock:
                 poll = lambda ob: ob.poll()
                 poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)

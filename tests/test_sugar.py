@@ -672,6 +672,28 @@ class Writes(unittest.TestCase):
         library = ("Abi", "List", "World", "Relation")
         self.assertEqual(self.compiled_core(sugared, library), self.compiled_core(explicit, library))
 
+    def test_remove_resolves_the_state_and_field_types_first(self):
+        # Refuted when `remove` on a relation reached through `type State = Lib.State` or a
+        # field typed by an alias lowers to removeItem (review kernel 6).
+        library = ("Abi", "List", "World", "Relation")
+        lib = {"name": "Lib", "source": ROWS.split("def plant")[0]}
+        head = (HEAD + "import ./Abi.obend as Abi\nimport ./Plan.obend as P\nimport ./World.obend as World\n"
+                "import ./Lib.obend as Lib\ntype State = Lib.State\n"
+                "def plant(state: State, input: {at: Nat}, context: Abi.Context) -> Activity<Nat>:\n")
+        def compiled(source, extra):
+            reply = self.h.send({"op": "compile", "entry": "plant", "modules": library_modules(*library) + extra +
+                                 [{"name": "Package", "source": source}]})
+            self.assertEqual(reply["status"], "compiled", reply)
+            return core(reply["artifact"])
+        sugared = head + "  let written(_) = write {rows: remove {at: input.at}}\n  0n\n"
+        explicit = head + "  let written(_) = world.write(extend(keep(), {rows: P.Entries::<Lib.Row, Lib.Row>.retract({key: {at: input.at}})}))\n  0n\n"
+        self.assertEqual(compiled(sugared, [lib]), compiled(explicit, [lib]))
+        rows = ROWS.replace("record State:\n  rows: Relations.Relation<Row>\n",
+                            "type Rows = Relations.Relation<Row>\nrecord State:\n  rows: Rows\n")
+        sugared = rows + "  let written(_) = write {rows: remove {at: input.at}}\n  0n\n"
+        explicit = rows + "  let written(_) = world.write(extend(keep(), {rows: P.Entries::<Row, Row>.retract({key: {at: input.at}})}))\n  0n\n"
+        self.assertEqual(compiled(sugared, []), compiled(explicit, []))
+
     def test_an_index_is_refused_by_name(self):
         source = GARDEN + "  let written(_) = write {children: remove {index: 0n}}\n  state.planted\n"
         reply = self.h.send({"op": "check-package", "entry": "plant",
@@ -940,6 +962,30 @@ class FixedFields(unittest.TestCase):
             self.assertEqual(reply["status"], "refused", reply)
             self.assertIn("refused (fixed): note is fixed; no edit names it", reply["diagnostic"]["message"])
 
+    def test_fixed_fields_follow_layers_and_alias_chains(self):
+        # Refuted by an artifact without `fixed` whose effective State has fixed fields: a layer
+        # with no State of its own, or a State aliasing an alias of one (review kernel 2).
+        base = [{"name": "Base", "source": FIXED_HEAD + DERIVED_REST}]
+        layer = ("layer over ./Base.obend\n" + HEAD + "import ./Abi.obend as Abi\n"
+                 "def louder(state: Super.State, context: Abi.Context) -> Nat:\n  state.planted + 2n\n")
+        for entry in ("plant", "louder"):
+            with self.subTest(layer=entry):
+                self.assertEqual(self.compiled(layer, entry, base).get("fixed"), ["note", "owner"])
+        lib = [{"name": "Lib", "source": FIXED_HEAD + DERIVED_REST + "type Shared = State\n"}]
+        aliased = (HEAD + "import ./Lib.obend as Lib\ntype Again = Lib.Shared\ntype State = Again\n"
+                   "def initial() -> State:\n  Lib.initial()\n")
+        self.assertEqual(self.compiled(aliased, "initial", lib).get("fixed"), ["note", "owner"])
+
+    def test_a_layer_write_naming_an_inherited_fixed_field_is_refused(self):
+        base = [{"name": "Base", "source": FIXED_HEAD + DERIVED_REST}]
+        layer = ("layer over ./Base.obend\n" + HEAD + "import ./Abi.obend as Abi\nimport ./Plan.obend as P\n"
+                 "import ./World.obend as World\n"
+                 "def retitle(state: Super.State, input: {}, context: Abi.Context) -> Activity<Nat>:\n"
+                 "  let written(_) = world.write::<Super.Edits>({note: P.Edit.set({value: \"\"})})\n  state.planted\n")
+        reply = self.send("check-package", layer, "retitle", base)
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (fixed): note is fixed; no edit names it", reply["diagnostic"]["message"])
+
     def test_only_a_state_field_is_fixed(self):
         source = DERIVED_HEAD.replace("  text: String\n", "  text: fixed String\n") + DERIVED_REST
         reply = self.send("check-package", source, "plant")
@@ -957,3 +1003,17 @@ class Declares(unittest.TestCase):
         plain = h.compile(FORM_STATE.replace("PlantInput", "{count: Nat}").replace("WaterInput", "{note: String}"),
                           "plant", ("List", "Form"))
         self.assertEqual(plain["declares"], [])
+
+    def test_a_layer_declares_what_its_stack_declares(self):
+        # Refuted by a layer that writes no forms() or initial() declaring neither, though both
+        # are inherited from the module below (review kernel 5): the host reads `declares`.
+        h = Host()
+        self.addCleanup(h.close)
+        base = FORM_STATE + FORM_BLOCKS + "def initial() -> State:\n  {planted: 0n}\ndef methods() -> Nat:\n  0n\n"
+        layer = "layer over ./Base.obend\n" + HEAD + "def extra(n: Nat) -> Nat:\n  n\n"
+        for entry in ("extra", "plant"):
+            with self.subTest(entry=entry):
+                reply = h.send({"op": "compile", "entry": entry, "modules": library_modules("List", "Form") +
+                                [{"name": "Base", "source": base}, {"name": "Package", "source": layer}]})
+                self.assertEqual(reply["status"], "compiled", reply)
+                self.assertEqual(reply["artifact"]["declares"], ["forms", "methods", "initial"])

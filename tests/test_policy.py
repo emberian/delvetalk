@@ -351,6 +351,9 @@ class PolicyObject(Chain):
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", planted["offers"][0]["text"])
         self.assertEqual(rows(self.pending()), [])
+        # The bell awaits a reply to the post that said yes (codex objects 12).
+        planting = [f["value"] for f in self.state("garden/bell/1")["fields"] if f["name"] == "planting"][0]
+        self.assertEqual(planting, label("at://glm/p/1"))
 
     def test_the_common_answers_confirm_or_drop_without_a_model(self):
         """Play mode: a proposal shown, then the speaker's answer in any of its usual words."""

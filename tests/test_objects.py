@@ -205,7 +205,7 @@ def one(n: Nat) -> String:
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 def one(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Relations.Relation.rows({items: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: Rows.Status.proposed({}), at: 1n, n: 0n}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: Rows.Status.admitted({}), at: 2n, n: 1n}, tail: Lists.List::<O.Proposal>.nil()})})})}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Relations.Relation.rows({items: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: Rows.Status.proposed({}), at: 1n, n: 1n}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: Rows.Status.admitted({}), at: 2n, n: 2n}, tail: Lists.List::<O.Proposal>.nil()})})}), next: 3n}, Card.stranger()))
 """
 
 
@@ -443,3 +443,62 @@ def f(n: Nat) -> Activity<Nat>:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+BUDGET_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./Card.obend as Card\nimport ./Relation.obend as Relations\n"
+REPEAT = """def rep(n: Nat, s: String) -> String:
+  match n:
+    case 0: ""
+    case 1+p: textConcat(s, rep(p, s))
+"""
+CLIPPED_PROBE = BUDGET_HEAD + REPEAT + """def one(n: Nat) -> String:
+  Document.plain(Document.Document.sequence({items: Card.clipped(Document.Documents.cons({head: Document.text(textConcat(rep(599n, "a"), "\\n")), tail: Document.Documents.cons({head: Document.text(textConcat(rep(599n, "b"), "\\n")), tail: Document.Documents.cons({head: Document.text("c\\n"), tail: Document.Documents.nil()})})}), 8n)}))
+"""
+BELL_BUDGET_PROBE = BUDGET_HEAD + "import ./Bell.obend as O\n" + REPEAT + """def rains(n: Nat) -> Lists.List<O.Rain>:
+  match n:
+    case 0: Lists.List::<O.Rain>.nil()
+    case 1+p: Lists.List::<O.Rain>.cons({head: {author: "did:plc:glm", handle: "", text: rep(280n, "r"), at: 1n, n: p}, tail: rains(p)})
+def doors(n: Nat) -> Card.Doorways:
+  match n:
+    case 0: Card.Doorways.nil()
+    case 1+p: Card.Doorways.cons({head: {label: textConcat(rep(31n, "d"), natText(p)), to: {world: "", object: rep(160n, "t")}}, tail: doors(p)})
+def one(n: Nat) -> String:
+  Document.plain(O.render({colour: O.Colour.silver({}), seed: rep(80n, "s"), rains: Relations.Relation.rows({items: rains(64n)}), rung: false, planting: "p", planter: "did:plc:glm", planterHandle: rep(64n, "h"), doors: doors(8n)}, Card.stranger()))
+"""
+SCENE_BUDGET_PROBE = BUDGET_HEAD + "import ./Scene.obend as O\nimport ./Scenes.obend as Scenes\nimport ./Rows.obend as Rows\n" + REPEAT + """def choices(n: Nat) -> Lists.List<Scenes.Choice>:
+  match n:
+    case 0: Lists.List::<Scenes.Choice>.nil()
+    case 1+p: Lists.List::<Scenes.Choice>.cons({head: {label: textConcat(rep(120n, "c"), natText(p)), to: "gate", effects: Lists.List::<Scenes.Effect>.nil(), guard: Lists.List::<Scenes.Clause>.nil()}, tail: choices(p)})
+def vars(n: Nat) -> Lists.List<Scenes.Var>:
+  match n:
+    case 0: Lists.List::<Scenes.Var>.nil()
+    case 1+p: Lists.List::<Scenes.Var>.cons({head: {name: textConcat("v", natText(p)), value: rep(200n, "x")}, tail: vars(p)})
+def one(n: Nat) -> String:
+  let gate = {id: "gate", text: rep(600n, "p"), choices: choices(8n)}
+  let here = Relations.Relation::<Rows.Presence>.rows({items: Lists.List::<Rows.Presence>.cons({head: {who: "did:plc:glm", at: "gate"}, tail: Lists.List::<Rows.Presence>.nil()})})
+  let state = {owner: "ember", title: rep(200n, "T"), start: "gate", passages: Lists.List::<Scenes.Passage>.cons({head: gate, tail: Lists.List::<Scenes.Passage>.nil()}), presence: here, vars: vars(16n), cooldown: 0n, requires: Lists.List::<Scenes.Clause>.nil(), left: Relations.Relation::<O.Left>.rows({items: Lists.List::<O.Left>.nil()})}
+  Document.plain(O.render(state, extend(Card.stranger(), {principal: "did:plc:glm"})))
+"""
+
+
+class Budgets(unittest.TestCase):
+    """A card keeps one character budget across its whole renderer (codex objects 14, 15)."""
+
+    def text(self, name, probe):
+        out = run_pure(name, "one", nat(0), probe=probe, limits=BIG)
+        self.assertEqual(out["status"], "finished", out)
+        return out["value"]["value"]
+
+    def test_clipped_reserves_its_footer_within_the_budget(self):
+        text = self.text("Lantern", CLIPPED_PROBE)
+        self.assertLessEqual(len(text), 1200, text[-80:])
+        self.assertTrue(text.endswith(" more\n"), text[-80:])
+
+    def test_a_bell_with_eight_long_doors_and_long_rains_stays_under_1400(self):
+        text = self.text("Bell", BELL_BUDGET_PROBE)
+        self.assertLessEqual(len(text), 1400, (len(text), text[-200:]))
+        self.assertIn("Doors: ", text)
+
+    def test_a_scene_passage_with_long_choices_and_vars_stays_under_1400(self):
+        text = self.text("Scene", SCENE_BUDGET_PROBE)
+        self.assertLessEqual(len(text), 1400, (len(text), text[-200:]))

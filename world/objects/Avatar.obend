@@ -37,6 +37,9 @@ record State:
   inbox: Relations.Relation<Note>
   outbox: Relations.Relation<Letter>
   following: Lists.List<Followed>
+# Only its own methods write it: a write no method made is refused (`methods`).
+def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
+  if Plans.unnamed(request) then Plans.proposedRefused() else Abi.Verdict.admitted({})
 def initial() -> State:
   {handle: "", at: Plans.nobody(), holding: Lists.List.nil(), inbox: Relations.empty(), outbox: Relations.empty(), following: Lists.List.nil()}
 def relations() -> Relations.Decls:

@@ -408,6 +408,17 @@ class Wakes(Chain):
             "    delvetalk tide tick\n"))
         self.assertIn("inkling.delve.town every 1 from tick 0: first light\n", card)
 
+    def test_every_subscriber_a_tide_holds_is_woken_in_one_tick(self):
+        """A tick sends to every due subscriber in one turn, and a turn sends at most 32, so the tide
+        holds 32 and a thirty-third is refused `full` (codex objects 10)."""
+        self.tide()
+        for i in range(33):
+            r = self.turn("tide", "subscribe", record(every=nat(1), note=label("n")), principal="did:plc:sub%d" % i)
+            self.assertEqual(self.label_of(r), "subscribed" if i < 32 else "refused", r)
+        tick = self.turn("tide", "tick", principal="did:plc:zero")
+        self.assertEqual((tick["status"], self.label_of(tick)), ("admitted", "ticked"), tick)
+        self.assertEqual(get(tick["result"]["payload"], "sent"), nat(32))
+
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()
         self.avatar(OTHER)
@@ -474,11 +485,11 @@ def verdict(v: Abi.Verdict) -> String:
 def subs(who: String) -> Lists.List<Tide.Sub>:
   Lists.List::<Tide.Sub>.cons({head: {who: who, every: 1n, note: "n", since: 0n, handle: ""}, tail: Lists.List::<Tide.Sub>.nil()})
 def tide(ticks: Nat, last: Nat, who: String) -> Tide.State:
-  {ticks: ticks, last: last, gap: 3n, subs: Relations.Relation.rows({items: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)})}
+  {owner: "", ticks: ticks, last: last, gap: 3n, subs: Relations.Relation.rows({items: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)})}
 def sub(who: String, every: Nat) -> Tide.Sub:
   {who: who, every: every, note: "n", since: 0n, handle: ""}
 def tideOf(items: Lists.List<Tide.Sub>) -> Tide.State:
-  {ticks: 0n, last: 0n, gap: 3n, subs: Relations.fromList(items, Tide.subKey)}
+  {owner: "", ticks: 0n, last: 0n, gap: 3n, subs: Relations.fromList(items, Tide.subKey)}
 def two(a: Tide.Sub, b: Tide.Sub) -> Lists.List<Tide.Sub>:
   Lists.List.cons({head: a, tail: Lists.List.cons({head: b, tail: Lists.List.nil({})})})
 def one(a: Tide.Sub) -> Lists.List<Tide.Sub>:

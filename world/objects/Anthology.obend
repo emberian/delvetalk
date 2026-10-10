@@ -9,9 +9,10 @@ import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
-# A proposal is keyed {author, at, n} (`at` the height its turn read, `n` the count of
-# proposals then), as a bell's rains are: key order is the order of submission, so a line's
-# number on the card stays its number. Admission upserts the row with its status flipped.
+# A proposal is keyed {n}, its number: `next` when it was submitted, which only counts up, so
+# key order is the order of submission and a line keeps its number after older ones are
+# dropped (two turns that read one `next` meet keyTaken). Admission upserts the row with its
+# status flipped.
 type Proposal = Rows.Proposal
 # ownerHandle: the owner's handle, from the seed (genesis passes it) and then as the host
 # knew it at their last admission, so the card names them to every reader.
@@ -19,31 +20,37 @@ record State:
   owner: String
   ownerHandle: String
   proposals: Relations.Relation<Proposal>
+  next: Nat
 # Anyone submits (submit only inserts); only the owner admits. The method named is the
 # package's own, so the law's trust in it is the pin's.
-law owner "only the owner changes it; anyone submits a line": request.subject == new.owner or (request.kind == 0 and request.method == "submit")
+law owner "the owner never changes; only the owner admits a line; anyone submits one": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and request.method == "submit"))
 def initial() -> State:
-  {owner: "", ownerHandle: "", proposals: Relations.empty()}
+  {owner: "", ownerHandle: "", proposals: Relations.empty(), next: 1n}
+# The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
 def relations() -> Relations.Decls:
-  Lists.append(Relations.Decls.nil(), {field: "proposals", key: Text.words("author at n"), limit: 1024n})
-def proposalKey(proposal: Proposal) -> {author: String, at: Nat, n: Nat}:
-  {author: proposal.author, at: proposal.at, n: proposal.n}
+  Lists.append(Relations.Decls.nil(), {field: "proposals", key: Text.words("n"), limit: 128n})
+def proposalKey(proposal: Proposal) -> {n: Nat}:
+  {n: proposal.n}
 def proposed(line: String, state: State, context: Abi.Context) -> Proposal:
-  {author: context.principal, handle: context.handle, line: line, status: Rows.Status.proposed({}), at: context.height, n: Relations.count(state.proposals)}
+  {author: context.principal, handle: context.handle, line: line, status: Rows.Status.proposed({}), at: context.height, n: state.next}
 # Submission only proposes; admission is the receiver's law, not the author's. The author is
-# the turn's principal, answered with the anthology as it now stands; the result is the count.
+# the turn's principal, answered with the line's number and the anthology as it now stands
+# (the card may not reach the new line); the result is the count.
 def submit(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:
   let proposal = proposed(input.line, state, context)
-  let written(_) = write {proposals: insert proposal}
-  Card.tellTo(Relations.count(state.proposals) + 1n, context.principal, render(extend(state, {proposals: Relations.insert(state.proposals, proposal, proposalKey)}), context))
-# admit {number}: the line's number on the card, from 1; the owner's, refused by name to
-# anyone else before the law is asked. The proposal is addressed by its key, so a submission
-# landing first shifts nothing; admission upserts it with its status flipped.
+  let written(_) = write {proposals: insert proposal, next: add 1n}
+  let said = Document.text("Submitted as #{natText(proposal.n)}: {proposal.line}\n\n")
+  Card.tellTo(Relations.count(state.proposals) + 1n, context.principal, Document.concat(said, renderFrom(extend(state, {proposals: Relations.insert(state.proposals, proposal, proposalKey)}), context, 0n, Card.budget() - Document.size(said))))
+# The card's lines from a number on, for review past the first eight.
+def lines(state: State, input: {from: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.tell(Card.Replied.done({action: "lines"}), renderFrom(state, context, input.from, Card.budget()))
+# admit {number}: the line's number on the card. Only the owner's admission stands: anyone
+# else's write is the owner law's to refuse, so the turn is refused and its receipt says why.
+# The number is the key, so neither a submission landing first nor an older line dropped
+# shifts it; admission upserts it with its status flipped.
 def admit(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
-  if context.principal != state.owner then Card.Replied.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(Lists.at(Relations.rows(state.proposals), input.number - 1n), input.number, context)
-def admittingAt(found: Lists.Maybe<Proposal>, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
-  match found:
-    case none(_): Card.Replied.refused({clause: "noLine", reading: "No line numbered {natText(number)}"})
+  match Relations.lookup(state.proposals, {n: input.number}, proposalKey):
+    case none(_): Card.tell(Card.Replied.refused({clause: "noLine", reading: "No line numbered {natText(input.number)}"}), Document.concat(Document.text("Not done: No line numbered {natText(input.number)}\n\n"), render(state, context)))
     case some(s): admitted(context, s.value)
 def admitted(context: Abi.Context, proposal: Proposal) -> Activity<Card.Replied>:
   let written(_) = write {proposals: upsert extend(proposal, {status: Rows.Status.admitted({})}), ownerHandle: set context.handle}
@@ -51,17 +58,30 @@ def admitted(context: Abi.Context, proposal: Proposal) -> Activity<Card.Replied>
 form submit:
   line: text 1..280
 form admit:
-  number: natural 1..1000
+  number: natural 1..1000000000
+form lines:
+  from: natural 1..1000000000
 def blurb() -> Card.Door:
   {word: "anthology", blurb: "Submit a line; the anthology's law admits it."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-def numbered(context: Abi.Context, proposals: Lists.List<Proposal>, n: Nat) -> Document.Documents:
+# At most eight lines and Card.budget() characters; when lines remain, the last row says how
+# many and the spell that shows them, and its characters are kept for it.
+def numbered(context: Abi.Context, proposals: Lists.List<Proposal>, shown: Nat, room: Nat, id: String) -> Document.Documents:
   match proposals:
     case nil(_): Document.Documents.nil()
-    case cons(c): Document.Documents.cons({head: Document.concat(Document.text("#{natText(n)} "), entry(context)(c.head)), tail: numbered(context, c.tail, n + 1n)})
+    case cons(c): numberedLine(context, Document.concat(Document.text("#{natText(c.head.n)} "), entry(context)(c.head)), c.head, c.tail, shown, room, id)
+def numberedLine(context: Abi.Context, line: Document.Document, proposal: Proposal, rest: Lists.List<Proposal>, shown: Nat, room: Nat, id: String) -> Document.Documents:
+  let more = moreLine(proposal.n, Lists.length(rest) + 1n, id)
+  let needed = Document.size(line) + if Lists.length(rest) == 0n then 0n else Document.size(more)
+  if shown == 0n || needed > room then Document.Documents.cons({head: more, tail: Document.Documents.nil()}) else Document.Documents.cons({head: line, tail: numbered(context, rest, shown - 1n, room - Document.size(line), id)})
+def moreLine(from: Nat, left: Nat, id: String) -> Document.Document:
+  Document.text("… and {natText(left)} more: delvetalk {id} lines / from: {natText(from)}\n")
 def entry(context: Abi.Context) -> Proposal -> Document.Document:
   fn(proposal: Proposal) -> Document.Document: Document.text("[{Rows.statusName(proposal.status)}] {Card.shown(proposal.author, proposal.handle, context)}{Card.mine(proposal.author, context)}: {proposal.line}\n")
 def render(state: State, context: Abi.Context) -> Document.Document:
+  renderFrom(state, context, 0n, Card.budget())
+# The card's lines numbered `from` on, within `room` characters of lines.
+def renderFrom(state: State, context: Abi.Context, from: Nat, room: Nat) -> Document.Document:
   let id = Card.called(context, "anthology")
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("THE ANTHOLOGY, kept by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}. Submit a line: delvetalk {id} submit / line: <1 to 280 characters>. The keeper admits by number.\n"), tail: Card.clipped(numbered(context, Relations.rows(state.proposals), 1n), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("THE ANTHOLOGY, kept by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}. Submit a line: delvetalk {id} submit / line: <1 to 280 characters>. The keeper admits by number.\n"), tail: numbered(context, Lists.filter(Relations.rows(state.proposals), fn(p: Proposal) -> Bool: p.n >= from), 8n, room, id)})})

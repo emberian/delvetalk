@@ -5,7 +5,7 @@ Evidence for FOUNDATION §4 (layer: objects).
 
 Laws in source on the objects.
 
-Policy: `owner: request.subject == new.owner` (it has no `describe`, which an older law admitted).
+Policy: `owner: unchanged(owner) and request.subject == new.owner` (it has no `describe`, which an older law admitted).
 Directory: only its owner adds or removes a door. Anthology: anyone submits, only its owner admits.
 Each is made with world-create (a lawful module cannot be imported by a creator) by its owner (a law
 must admit an amendment by its installer).
@@ -60,7 +60,7 @@ class Laws(LawWorld):
         self.create("policy", closure("Policy"), record(owner=label(OWNER), model=label("m"), system=label("s"),
                                                         lexicon=nil(), examples=nil(), escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
         law = self.host.send(op="world-inspect", principal=OWNER, object="policy")["law"]
-        self.assertIn('law owner: request.subject == new.owner', law)
+        self.assertIn('law owner: (unchanged(owner)) and (request.subject == new.owner)', law)
         self.assertNotIn("describe", law)
         r = self.turn("policy", "receive", heard("delvetalk policy set\nmodel: n"), principal=OWNER)
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
@@ -85,16 +85,51 @@ class Laws(LawWorld):
         self.assertEqual(self.turn("anthology", "submit", record(line=label("moths")), principal=OTHER)["status"], "admitted")
         spelled = self.turn("anthology", "receive", heard("delvetalk anthology submit\nline: lamps"), principal="did:plc:glm")
         self.assertEqual((spelled["status"], spelled["result"]), ("admitted", nat(2)), spelled)  # the method's own result: the count
-        # admit refuses a stranger by name before the law is asked; the law still refuses any
-        # other change of theirs (test above).
+        # A stranger's admit is the owner law's to refuse: the turn is refused, and its receipt
+        # reads why (codex agent 4); a line that is not there is refused by name with the card.
         stranger = self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)
-        self.assertEqual((stranger["status"], stranger["result"]["label"]), ("admitted", "refused"), stranger)
+        self.assertEqual(self.clause(stranger), "lawRefused/owner", stranger)
+        self.assertEqual(stranger["receipt"]["outcome"]["reason"], "refused owner: the owner never changes; only the owner admits a line; anyone submits one")
+        missing = self.turn("anthology", "admit", record(number=nat(9)), principal=OTHER)
+        self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
+        self.assertTrue(missing["offers"][0]["text"].startswith("Not done: No line numbered 9\n\nTHE ANTHOLOGY"), missing)
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
         statuses = [get(p, "status")["label"] for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(statuses, ["proposed", "admitted"])
         card = self.turn("anthology", "receive", heard(""), principal=OWNER)["offers"][0]["text"]
         self.assertTrue(card.startswith("THE ANTHOLOGY, kept by inkling (yours). Submit a line: delvetalk anthology submit / line: <1 to 280 characters>. The keeper admits by number.\n#1 [proposed] kimik3: moths\n"), card)
 
+
+    def test_a_line_keeps_its_number_after_the_oldest_is_dropped(self):
+        """The anthology keeps its newest 128 lines, which fit the host's state bytes at 280
+        four-byte characters each; past them the oldest goes and every other keeps its number, so
+        `admit / number: N` copied from a card admits that line (codex objects 13)."""
+        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
+        poet = "did:plc:" + "p" * 24
+        for i in range(1, 130):
+            r = self.turn("anthology", "submit", record(line=label("%04d" % i + "\U0001f319" * 276)), principal=poet)
+            self.assertEqual(r["status"], "admitted", (i, r.get("receipt", {}).get("outcome")))
+        lines = rows(get(self.state("anthology"), "proposals"))
+        self.assertEqual((len(lines), get(lines[0], "line")["value"][:4]), (128, "0002"))
+        gone = self.turn("anthology", "admit", record(number=nat(1)), principal=OWNER)
+        self.assertEqual(gone["result"]["label"], "refused", gone)
+        self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
+        admitted = [get(p, "line")["value"][:4] for p in rows(get(self.state("anthology"), "proposals")) if get(p, "status")["label"] == "admitted"]
+        self.assertEqual(admitted, ["0002"])
+
+    def test_the_ninth_line_is_in_its_acknowledgement_and_a_page_reaches_it(self):
+        """The card shows eight lines; a submission is acknowledged with its own number and line
+        whatever the card shows, and `lines / from: N` shows them from N (codex agent 7)."""
+        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
+        for i in range(1, 10):
+            r = self.turn("anthology", "submit", record(line=label("line %d" % i)), principal=OTHER)
+        ack = r["offers"][0]["text"]
+        self.assertTrue(ack.startswith("Submitted as #9: line 9\n\n"), ack)
+        self.assertIn("… and 1 more: delvetalk anthology lines / from: 9\n", ack)
+        page = self.turn("anthology", "receive", heard("delvetalk anthology lines / from: 9"), principal=OWNER)
+        text = page["offers"][0]["text"]
+        self.assertIn("#9 [proposed] kimik3: line 9\n", text)
+        self.assertNotIn("#8 ", text)
 
 TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation())
 

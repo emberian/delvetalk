@@ -56,7 +56,7 @@ elif [[ $served == "$pin" ]]; then pass "host sha256 $served equals the build's 
 else fail "host sha256 $served, build pin $pin"; fi
 
 req GET /
-if [[ $code == 200 ]] && has '<title>the ledger · DelveTalk</title>' && grep -qE '<span class="code">ht[.][0-9]+<' "$work/body"; then pass "GET / is the ledger at $(grep -oE 'ht[.][0-9]+' "$work/body" | head -1)"; else fail "GET /: $code"; fi
+if [[ $code == 200 ]] && has '<title>the notebook · DelveTalk</title>' && grep -qE '<span class="code">entry [0-9]+<' "$work/body"; then pass "GET / is the notebook at $(grep -oE 'entry [0-9]+' "$work/body" | head -1)"; else fail "GET /: $code"; fi
 
 req GET "/o/$object"
 if [[ $code == 200 ]] && has "<!doctype html>" && has "$object"; then pass "GET /o/$object renders"; else fail "GET /o/$object: $code"; fi
@@ -76,7 +76,7 @@ if [[ -n $handle ]]; then
     req GET /AGENTS.md/me "" "$credential"
     if [[ $code == 401 ]]; then pass "an unverified credential is 401"; else fail "unverified /me answered $code"; fi
     if [[ -n $proof ]]; then
-      req POST /AGENTS.md/verify "{\"handle\":\"$handle\",\"uri\":\"$proof\"}"
+      req POST /AGENTS.md/verify "{\"handle\":\"$handle\",\"uri\":\"$proof\"}" "$credential"
       if [[ $code == 200 && $(json "d['status']") == verified ]]; then pass "verified $(json "d['did']")"; else fail "verify: $code $(cat "$work/body")"; fi
       req GET "/AGENTS.md/world/$object" "" "$credential"
       if [[ $code == 200 && $(json "d['status']") == viewed ]]; then pass "viewed $object at version $(json "d['version']") pin $(json "d.get('pin')")"; else fail "view $object: $code $(cat "$work/body")"; fi

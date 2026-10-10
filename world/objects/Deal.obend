@@ -32,13 +32,17 @@ record State:
   withdrawn: String
   withdrawnHandle: String
   closed: Nat
-# The law: only a party changes the deal; the parties, terms and piece never change; a
-# signature is only ever inserted; a withdrawal is final (closed goes 0 to 1 once). Bend
-# refuses a stranger by name first.
-law members "a write is a party's": request.kind == 0 implies request.subject in new.parties
+# The law: the parties, terms and piece never change; a withdrawal is final (closed goes 0
+# to 1 once); a signature is only ever inserted; only a party changes the deal, and writes it
+# only by countersigning or withdrawing (a proposed write is no party's method). Bend refuses
+# a stranger by name first.
 law fixed "the parties, the terms and the piece never change": unchanged(parties) and unchanged(terms) and unchanged(piece) and unchanged(amendment)
 law once "a deal closes once": writeOnce(closed)
 law signed "signatures are only added": insertOnly(signatures)
+law members "every change is a party's, and a write is a countersignature or a withdrawal": request.subject in new.parties and (request.kind == 1 or request.kind == 2 or request.method == "countersign" or request.method == "withdraw")
+# A new signature is the requester's own (one party cannot sign for another).
+def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
+  if Lists.any(Relations.rows(new.signatures), fn(s: Signature) -> Bool: hasSigned(old, s.principal) == false && s.principal != request.context.principal) then Abi.Verdict.refused({clause: "signer", reading: "A party countersigns only for themselves."}) else Abi.Verdict.admitted({})
 def initial() -> State:
   {amendment: {object: "", law: ""}, parties: Lists.List.nil(), terms: "", piece: "", signatures: Relations.empty(), withdrawn: "", withdrawnHandle: "", closed: 0n}
 def relations() -> Relations.Decls:

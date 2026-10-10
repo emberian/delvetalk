@@ -53,7 +53,7 @@
    "method": "POST",
    "href": "/AGENTS.md/verify",
    "auth": "none",
-   "does": "the host finds the post; the challenge's `credential` then speaks for you",
+   "does": "the host finds the post; the challenge's `credential` then speaks for you. Send it as the bearer (a browser sends the cookie challenge set) and the post answers your own challenge, whoever asked another for your handle since",
    "body": {
     "handle": "text: the handle challenged",
     "uri": "text: the at:// URI of the post"
@@ -316,6 +316,11 @@
    "status": "error",
    "when": "the host refused the request as malformed; `message` (and a compile error's stage, module, span, hint) are the host's"
   },
+  "unspellable": {
+   "code": 400,
+   "status": "error",
+   "when": "the object name is one no spell can address: the host's parser does not read `delvetalk <name> ?`"
+  },
   "unauthenticated": {
    "code": 401,
    "status": "error",
@@ -344,12 +349,17 @@
   "requestTimeout": {
    "code": 408,
    "status": "error",
-   "when": "the request did not arrive within 30 seconds"
+   "when": "the request line, headers and body did not all arrive within 30 seconds of connecting"
   },
   "ambiguous": {
    "code": 409,
    "status": "refused",
    "when": "a spoken name names more than one receipt; ask with ?full=1 and cite the full id"
+  },
+  "replRestarted": {
+   "code": 409,
+   "status": "error",
+   "when": "the REPL restarted; start the module again (a checkpoint lives as long as the host)"
   },
   "bodyTooLarge": {
    "code": 413,
@@ -390,6 +400,11 @@
    "code": 502,
    "status": "error",
    "when": "the reply would be over 8388608 bytes; ask for less (compact, a page)"
+  },
+  "busy": {
+   "code": 503,
+   "status": "error",
+   "when": "every worker is taken; `Retry-After` says when to come back"
   },
   "hostUnavailable": {
    "code": 503,
