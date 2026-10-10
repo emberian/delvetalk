@@ -111,8 +111,6 @@ form subscribe:
   every: natural 1..1000
   note: text 1..140
 form tick:
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Card.Forms.nil(), subscribeForm()), tickForm())
 def blurb() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

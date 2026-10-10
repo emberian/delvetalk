@@ -56,8 +56,6 @@ form knock:
 # An action without a form: watching names an object.
 def methods() -> Lists.List<String>:
   Text.words("watch")
-def forms() -> Card.Forms:
-  Card.Forms.cons({head: knockForm(), tail: Card.Forms.nil()})
 def blurb() -> Card.Door:
   {word: "door", blurb: "Knock; a bell can open it too."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

@@ -29,7 +29,8 @@ record Pending:
 # the policy's own confirmFor (either asking is enough); empty by default, so a planting
 # understood from prose plants and the receipt is the answer.
 # owner: the human who owns the garden's wiki page (its `merge` checkpoints it, and only
-# the owner changes confirmFor). pageCheckpoint: the post the last merge answered.
+# the owner changes confirmFor). ownerHandle: the owner's handle, from the seed (genesis passes it),
+# so a refusal names the owner as the town does. pageCheckpoint: the post the last merge answered.
 # Whoever wants to know how many grow (a Wake) subscribes to `planted`.
 record Child:
   world: String
@@ -37,6 +38,7 @@ record Child:
   colour: Bell.Colour
 record State:
   owner: String
+  ownerHandle: String
   planted: Nat
   policy: Plans.Reference
   confirmFor: Lists.List<String>
@@ -51,9 +53,9 @@ record Planting:
 # Anyone plants, rains and replies; only the owner changes who owns it, its stance, its
 # policy or its page checkpoint (a set or a merge from anyone else is refused in Bend
 # first, by name; this law refuses the same write proposed any other way).
-law owner "only the owner changes the owner, what asks first, the policy or the page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
+law owner "only the owner changes the owner, what asks first, the policy or the page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(ownerHandle) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
 def initial() -> State:
-  {owner: "", planted: 0n, policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty(), children: Relations.empty(), pageCheckpoint: ""}
+  {owner: "", ownerHandle: "", planted: 0n, policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty(), children: Relations.empty(), pageCheckpoint: ""}
 def relations() -> Relations.Decls:
   Lists.append(Lists.append(Relations.Decls.nil(), {field: "pending", key: Text.words("principal"), limit: pendingMax()}), {field: "children", key: Text.words("object"), limit: 4096n})
 # Principals with a planting held at once: the Bend check refuses one more by name, since past
@@ -87,8 +89,6 @@ form plant as planting:
   seed: text 1..80
 form cistern as digging:
   name: text 0..120
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Card.Forms.nil(), planting()), digging())
 # A reader with a proposal waiting is reminded of it, first.
 def waiting(context: Abi.Context, state: State) -> String:
   match heldBy(context.principal, state):
@@ -203,7 +203,7 @@ def heldBy(principal: String, state: State) -> Held:
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Reply>:
   if Card.isMerge(input.text) then merging(input.post, context, state) else heard(input, Card.spellAction(input.text), heldBy(context.principal, state), context, state)
 def merging(post: String, context: Abi.Context, state: State) -> Activity<Reply>:
-  if state.owner == "" || context.principal != state.owner then Card.tell(Reply.refused({clause: "notOwner", reading: Card.notOwner(state.owner)}), Document.text("Not merged: {Card.notOwner(state.owner)}\n")) else if post == "" then Card.tell(Reply.refused(refusal(Why.noPost({}))), Document.text("Not merged: a merge names the post it answers.\n")) else merged(post)
+  if state.owner == "" || context.principal != state.owner then Card.tell(Reply.refused({clause: "notOwner", reading: Card.notOwner(ownerName(state, context))}), Document.text("Not merged: {Card.notOwner(ownerName(state, context))}\n")) else if post == "" then Card.tell(Reply.refused(refusal(Why.noPost({}))), Document.text("Not merged: a merge names the post it answers.\n")) else merged(post)
 def merged(post: String) -> Activity<Reply>:
   let written(_) = write {pageCheckpoint: set post}
   Card.tell(Reply.merged({post: post}), Document.text("Page checkpointed at {post}.\n"))
@@ -265,7 +265,9 @@ def fromCard(reply: Card.Replied) -> Reply:
 def lenses() -> Lists.List<Form.Field>:
   Lists.List.cons({head: {name: "confirm", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})}, tail: Lists.List.nil()})
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Reply>:
-  if context.principal != state.owner then setRefused(Why.notOwner({owner: Card.name(state.owner, context)})) else if input.field != "confirm" then setRefused(Why.noField({field: input.field})) else confirming(Card.valueText(input.value) == "yes", state)
+  if context.principal != state.owner then setRefused(Why.notOwner({owner: ownerName(state, context)})) else if input.field != "confirm" then setRefused(Why.noField({field: input.field})) else confirming(Card.valueText(input.value) == "yes", state)
+def ownerName(state: State, context: Abi.Context) -> String:
+  Card.shown(state.owner, state.ownerHandle, context)
 def setRefused(w: Why) -> Activity<Reply>:
   Card.tell(Reply.refused(refusal(w)), Document.text("Not done: {refusal(w).reading}\n"))
 def confirming(ask: Bool, state: State) -> Activity<Reply>:

@@ -99,8 +99,6 @@ def withdrawing(context: Abi.Context) -> Activity<Done>:
   Done.withdrawn({})
 form countersign:
 form withdraw:
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Card.Forms.nil(), countersignForm()), withdrawForm())
 def blurb() -> Card.Door:
   {word: "deal", blurb: "Terms every party countersigns; at rest when all have."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
