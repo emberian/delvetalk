@@ -1041,6 +1041,18 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `test_prose_after_a_blank_line_or_with_a_colon_is_no_value`; `tests/test_spell_turns.py`
    `test_values_without_names_plant_by_type`.
 
+121. **A direct turn's misfit goes to the card's `receive` (host13; docs/FLEX.md §4 host 4).** On a
+   direct turn, a spell refused `unknownField`, `noAction`, `badValue` or `otherCard` (`misfitClauses`)
+   runs instead the `receive` of the card the refusal names (the spell's card; the answering card for
+   `otherCard`) with the reply's `text`, `post`, its field lines as `fields` and `misfit {clause,
+   reason}`, when that `receive` takes a `misfit` (`heardArgument … misfitOnly`); the turn's reach is
+   `spell`, so the card may `interpret` with the `misfit` line (5.117) and hob asks one question. A
+   card whose `receive` takes no `misfit` refuses as before (`badSpell`, hint), and `duplicateField`,
+   `unclosedBlock`, `fixed`, the host spells' clauses and every call's or delivery's misfit (5.63)
+   stay refusals. A `receive` that takes `misfit` gets `{clause: "", reason: ""}` with every other
+   reply (`withFields`, `heardFits`). The objects lane's World/Card lines: `Reply.misfit`. Tests:
+   `tests/test_spell_turns.py` `Misfits`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1072,8 +1084,6 @@ dropped from this list: `proposed` by name (`4f8af5c`), Deal under kind 3 (`7017
 `proposals` arm and Bell's `actions` (`65c477f`), the Bell's limits under 5.108 (`8ddd2c4`), the
 transport on reservations, retries and cursors (`d99d691`, `e1f3359`, `e8cf553`).
 
-- **FLEX §4 host 2 to 4** (host, queued): case-folded names and the addressee-aware `parse`, bare
-  values bound by type, misfits of a direct turn to the card's `receive` with `misfit`.
 - **`world-posted` without `intent`** (host): the transport now reserves every post, so `postedOp`
   can refuse a `posted` naming no intent (one line). Closed by a test in `tests/test_post_reserve.py`.
 - **A receipt by intent apart from by slug** (transport; review docs 6): `/receipt/<x>` resolves a
