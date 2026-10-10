@@ -765,6 +765,12 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    new route's proposal. Test: `tests/test_spell_turns.py`
    `test_an_unchanged_spell_retry_after_a_reprogram_is_the_retained_receipt`.
 
+100. **An exhausted `lawReads()` is budget (host12; codex host 14).** `lawReadsOf` keeps the kernel's
+   `budget` apart from a failure, and `bendLaw` refuses it class `budget` ("law ticks"), transient as
+   the Bend law's own exhaustion is, so a retry after the program is fixed runs again; any other
+   failure stays `lawRefused`, clause `lawReads`. Test: `tests/test_law.py`
+   `test_an_exhausted_law_reads_is_transient_budget`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

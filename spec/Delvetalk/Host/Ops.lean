@@ -1643,6 +1643,8 @@ def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
   | .ok value => match labels [] value with
     | some ids => return ids.eraseDups.take Limits.maxRoots
     | none => throw "lawReads must return a List<String>"
+  -- Out of ticks is the turn's budget, transient, not the package's fault (codex host 14).
+  | .error "budget" => throw "budget"
   | .error _ => throw "lawReads did not finish"
 
 /-- A built package's relations, checked, and a state put in canonical form under them
@@ -1738,7 +1740,10 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   let refuse := fun (clause : String) => some ({ cls := "lawRefused", clause := some clause, object := some id } : Refusal)
   let .ok (c, _) := compileDef w o "law" | return refuse "law"
   let some entry := c.entry | return refuse "law"
-  let .ok ids := lawReadsOf w o | return refuse "lawReads"
+  let ids ← match lawReadsOf w o with
+    | .ok ids => pure ids
+    | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
+    | .error _ => return refuse "lawReads"
   let mut reads : List Data := []
   for r in ids do
     match w.objects[r]? with

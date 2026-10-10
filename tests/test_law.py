@@ -146,6 +146,18 @@ class TwoTier(Reflection):
         r = self.turn("s", "bump", record(n=nat(1)))
         self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["reason"]), ("budget", "the turn ran out of law ticks; make it smaller, or send it again later."), r)
 
+    def test_an_exhausted_law_reads_is_transient_budget(self):
+        # codex host 14: a lawReads() out of ticks bound the identity as a permanent lawRefused.
+        spinning = GUARD.replace("""def lawReads() -> Lists.List<String>:
+  Lists.List::<String>.cons""", """def spun(n: Nat) -> Bool:
+  spun(n + 1n)
+def lawReads() -> Lists.List<String>:
+  if spun(0n) then Lists.List::<String>.nil({}) else Lists.List::<String>.cons""")
+        self.assertNotEqual(spinning, GUARD)
+        self.make("sr", spinning, record(count=nat(0)))
+        r = self.turn("sr", "bump", record(n=nat(1)))
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "budget"), r)
+
     def test_a_law_refusing_every_write_cannot_seal_out_reprogram_or_amend(self):
         version = self.host.send(op="world-view", principal="ember", object="g")["version"]
         amended = self.host.send(op="world-amend", principal="ember", identity="a1", object="g", version=version,
