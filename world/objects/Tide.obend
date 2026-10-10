@@ -55,10 +55,11 @@ def subKey(sub: Sub) -> {who: String}:
   {who: sub.who}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "subs", key: Text.words("who"), limit: subsMax()})
-# Subscribers at most: a tick sends to every due one, and a new principal past them is refused
-# by name (the host's limit would drop someone else's row).
+# Subscribers at most: a tick sends to every due one in its own turn, which sends at most 32
+# (the host's sendsPerTurn; a thirty-third send would abort the tick), and a new principal past
+# them is refused by name (the host's limit would drop someone else's row).
 def subsMax() -> Nat:
-  64n
+  32n
 def initial() -> State:
   {owner: "", ticks: 0n, last: 0n, gap: 1n, subs: Relations.empty()}
 sum Done:
