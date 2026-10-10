@@ -34,6 +34,19 @@ The lock holds where one kernel sees the file: a local Linux
 filesystem (measured on ext4). Docker Desktop's file sharing on a Mac does not
 enforce it across containers (measured), so test the stack there on a named volume.
 
+## Costs
+
+The boundary between the Python programs and the host process, measured on hbox with `deploy/bench-boundary.py` (median
+per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
+
+| Path | `world-status` | Counter bump |
+| --- | --- | --- |
+| (a) hostd's socket, a connection per op | 0.43 to 0.46 ms | 1.27 to 1.29 ms |
+| (b) hostd's socket, one persistent connection | 0.21 ms | 1.03 to 1.08 ms |
+| (c) the raw pipe to the host process | 0.13 to 0.15 ms | 0.87 to 0.94 ms |
+
+A connection per op costs about 0.25 ms; hostd's own dispatch and the pipe add about 0.07 ms; the rest of a bump is the host.
+
 ## Prerequisites on the workhorse
 
 - Docker with compose v2, as for `/opt/dregg-edge`; `rsync` and `python3` for backups.
