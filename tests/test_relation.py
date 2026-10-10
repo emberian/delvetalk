@@ -146,6 +146,29 @@ class Relations(Reflection):
         self.reopen()
         self.assertEqual(self.rows(), [("bo", 1, "bo"), ("cy", 1, "cy")])
 
+    def reprogram(self, source, ident, name="b"):
+        version = self.host.send(op="world-view", principal="ember", object=name)["version"]
+        return self.host.send(op="world-reprogram", principal="ember", identity=ident, object=name, version=version,
+                              package=source.replace("LIMIT", f"{self.LIMIT}n"), migration="migrate")
+
+    def test_a_migration_result_is_made_canonical_and_a_duplicate_key_refuses_it(self):
+        # Refuted if the host journals the migration's rows in the order the migration wrote them,
+        # or admits a migration whose rows share a key.
+        self.assertEqual(self.make_bell()["status"], "created")
+        cons = lambda a, t, rest: f'Lists.List.cons({{head: {{author: "{a}", at: {t}n, text: "m"}}, tail: {rest}}})'
+        migrate = lambda rows: PACKAGE + "def migrate(old: State) -> State:\n  {count: old.count, rains: Relation.rows({items: " + rows + "})}\n"
+        unsorted = cons("kim", 5, cons("ann", 9, cons("ann", 2, "Lists.List.nil({})")))
+        r = self.reprogram(migrate(unsorted), "rp1")
+        self.assertEqual(r["receipt"]["outcome"]["tag"], "admitted", r)
+        self.assertEqual(self.rows(), [("ann", 2, "m"), ("kim", 5, "m"), ("ann", 9, "m")])
+        self.reopen()
+        self.assertEqual(self.rows(), [("ann", 2, "m"), ("kim", 5, "m"), ("ann", 9, "m")])
+        dup = self.reprogram(migrate(cons("ann", 2, cons("ann", 2, "Lists.List.nil({})"))) + "# again\n", "rp2")
+        self.assertEqual((dup["receipt"]["outcome"]["class"], dup["receipt"]["outcome"].get("clause")),
+                         ("programRefused", "migration"), dup)
+        self.assertIn("duplicateKey", dup["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.rows(), [("ann", 2, "m"), ("kim", 5, "m"), ("ann", 9, "m")])
+
 
 if __name__ == "__main__":
     unittest.main()
