@@ -213,6 +213,7 @@ def actions(base, obj, inspected, only=None):
     """One action per method in the host's method table that takes a context (a turn can run it), from world-inspect:
     the form's fields when the host has a form for it, else the method's input type; a spell when the object hears spells."""
     forms = {f['action']: f for f in plain(inspected.get('forms') or {'tag': 'list', 'items': []})}
+    hears = any(m['name'] == 'receive' for m in inspected.get('methods') or [])  # the object reads spells through receive
     out = []
     for m in inspected.get('methods') or []:
         if not m.get('context') or (only and m['name'] != only) or m.get('admits', True) is not True:  # `admits`: host op wanted
@@ -229,7 +230,7 @@ def actions(base, obj, inspected, only=None):
             continue
         spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: {shown(f['kind'])}\n" for f in form['fields'])
         out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
-                    **({'spell': spell} if 'receive' in forms else {})})
+                    **({'spell': spell} if hears else {})})
     return out
 
 
