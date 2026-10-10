@@ -159,6 +159,8 @@ form emote:
 form whisper:
   to: text 1..160
   line: text 1..280
+def methods() -> Lists.List<String>:
+  Card.wordList("enter leave take put")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: sayForm(), tail: Card.Forms.cons({head: emoteForm(), tail: Card.Forms.cons({head: whisperForm(), tail: Card.Forms.nil()})})})
 def talking(state: State, action: String, fields: Card.Fields, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:

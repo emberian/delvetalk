@@ -145,6 +145,8 @@ def publish(state: State, context: Abi.Context) -> Activity<Plan, Response, Stri
     case published(p): p.post
     case refused(r): r.clause
     case _: ""
+def methods() -> Lists.List<String>:
+  Card.wordList("observe unobserve publish")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: planting(), tail: Card.Forms.cons({head: digging(), tail: Card.Forms.nil()})})
 # The cistern form: the garden's one cistern, at garden/cistern, keeps refusals. Its

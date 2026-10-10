@@ -5,6 +5,7 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Seats.obend as Seats
+import ./List.obend as Lists
 # One player's seat. commit seals a digest of (table, round, seat, source, target,
 # nonce) in a turn whose intent is Seats.commitIntent, so the opponent's reveal can
 # await exactly that slot: the reveal opens the move only once the opponent's
@@ -76,6 +77,8 @@ def nextRound(round: Nat, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {round: add 1n, digest: set "", opened: set false, source: set 0n, target: set 0n}
   Done.next({round: round + 1n})
 # A seal is made off the town's posts (the move stays private): the card shows status.
+def methods() -> Lists.List<String>:
+  Card.wordList("next commit reveal")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def blurb() -> Card.Door:
