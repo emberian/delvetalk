@@ -104,6 +104,11 @@ class Run:
         return out
 
     def start_hostd(self):
+        # HOST-HANDOFF 125: `delvetalk-obend serve` replaces hostd once the transport lane moves the programs and
+        # the opener's turns to its root socket; until then the rehearsal runs what production runs.
+        if not (ROOT / 'transport' / 'hostd.py').exists():
+            raise SystemExit('transport/hostd.py is gone: start `delvetalk-obend serve --state <state> --opener <ember>` '
+                             'here, genesis and the hubs over its root socket, and read <state>/town.journal (HOST-HANDOFF 125)')
         self.hostd = subprocess.Popen([sys.executable, '-m', 'transport.hostd', '--state', str(self.state),
                                        '--journal', str(self.state / 'world.journal'), '--opener', OWNER],
                                       cwd=ROOT, env=self.env, stderr=open(self.out / 'hostd.stderr', 'w'))

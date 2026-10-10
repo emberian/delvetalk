@@ -46,7 +46,37 @@ directory", and the run fell to 20 turns, all `unknownObject`, with nothing rout
 `deploy/seed.py` passes the partial seed through, and `world-create` overlays it (host6). The
 interim overlay helper in `seed.py` is gone; `--owner` stays.
 
-## The gate as restated (lane rehearsal4, foundation ad785ec)
+## Run 12 (not yet run): the gate as restated
+
+Run 12 runs once the owner says the world rewrite (OBJECTS-HANDOFF 4b to 6, genesis to
+CATALOGUE §5) has landed on foundation, and hbox's dt-foundation is rebuilt from that head. One
+command, from a checkout of that head:
+
+    rehearsal/run.sh            # hbox, ~/scratch/dt-rehearsal, removed after; --keep keeps it
+
+It refuses a binary whose spec/ is not the checkout's. It runs under swarm-build with a 3 GB
+cap and prints the peak. It writes `rehearsal/out/summary.md`, the measured half of this
+report. `python3 -m tests.run test_archive` with `DELVETALK_OBEND` set asserts the same gate.
+If `transport/hostd.py` is gone by then (HOST-HANDOFF 125, `serve`), `rehearse.py` stops and
+says so: its `start_hostd` moves to `serve` and the root socket with the transport lane's switch.
+
+The gate as restated (FOUNDATION §11), and where run 12 reads each item:
+
+| Item | Passes when | summary.md |
+| --- | --- | --- |
+| 1. glm's planting grows a bell | kind/bell has made the bell, and its planting post `3mxghe7w33c2f` is recorded for it, before the replies | "Planting posts recorded" |
+| 2. a `rain:` reply to a planting post is written to that bell | kimik3's `3mxghh4qis22f` writes gemini's bell | the section 10 hour, step 4 |
+| 3. a second `cistern:` line is refused `requiredAbsence`, naming its root | the probe pair's second line | spell shapes, last row (fails on ad785ec: see below) |
+| 4. the four anthology lines reach a card by the reach rule and are written | four `write`s, two by glm and one each by gemini and kimik3; reach as below | the anthology's lines; step 6 |
+| 5. the nine-post burst admits | nine suspend, settle and plant | burst probe |
+| 6. cards show handles | the handle probe; no `did:plc:` or `bafy` in any card or reply | handle probe; cards |
+| model calls | **43**, the reach rule as d02c60f measured it; the rule returns 81 posts | "archived posts the reach rule returned", verdicts |
+| replay from a snapshot | every cut resumes and holds the straight replay's state; `verify` refuses none | replay from a snapshot |
+
+Its row for FOUNDATION §11's table: `| 12 | <foundation> | <turns> | <interpretations> | <height,
+bytes> | <gate> |`.
+
+## Before run 12: check runs on ad785ec (lane rehearsal4)
 
 FOUNDATION §11 now states item 4 and the interpretation target as below. The check runs on ad785ec
 (dt-foundation binary `c577bf90…`, spec identical to ad785ec file for file) use the harness as of
