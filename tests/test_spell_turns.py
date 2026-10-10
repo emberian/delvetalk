@@ -262,6 +262,16 @@ class FixedFields(Reflection):
         self.assertEqual(r["receipt"]["outcome"]["tag"], "admitted", r)
         self.assertEqual((self.field("mood"), self.field("name")), (label("calm"), label("Moth")))
 
+    def test_a_reprogram_cannot_unfix_a_fixed_field(self):
+        # codex host 5 / docs 1: code that no longer fixes `mood` would let a migration, or any later
+        # write, move it.
+        moved = LENSED + "def migrate(old: State) -> State:\n  {name: old.name, size: old.size, mood: \"wild\", origin: old.origin}\n"
+        for identity, package, migration in (("u1", moved, "migrate"), ("u2", LENSED, "")):
+            r = self.host.send(op="world-reprogram", principal="ember", identity=identity, object="lamp", version=0,
+                               package=package, migration=migration)
+            out = r["receipt"]["outcome"]
+            self.assertEqual((out["class"], out.get("clause")), ("programRefused", "fixed"), r)
+        self.assertEqual(self.field("mood"), label("calm"))
 
 
 INTERPRETING = (GARDEN + """record Planting:

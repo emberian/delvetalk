@@ -1915,13 +1915,17 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType && stateBytes state ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
-      -- A migration may not set a fixed field: one the new code fixes keeps the value it had.
-      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
-        throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
+      -- A fixed field stays fixed: new code must fix it too (codex host 5, docs 1).
+      if let some f := o.fixed.find? (!prog.fixed.contains ·) then
+        throw (refuse "fixed" s!"{f} is fixed; it is set when {id} is made and never after, so the new code must keep it fixed")
       -- A migration's result is put in canonical form under the new code's relations.
       state ← match canonicalState prog.relations state with
         | .ok s => pure s
         | .error e => throw (refuse "migration" s!"{e}: the converted state's relations are not canonical")
+      -- No migration sets a fixed field: one fixed before, or one the new code fixes that the old
+      -- state had, keeps the value it had, judged on the state as it will be held.
+      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
+        throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,

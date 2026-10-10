@@ -700,6 +700,12 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    creator itself) is told; the delivery's helper exemption (5.62) stands for those. Test:
    `tests/test_supervisors.py` `test_a_supervisor_must_offer_ended`.
 
+92. **A fixed field stays fixed (host12; codex host 5, docs 1).** A reprogram whose new code does not
+   fix every field the object fixes now is refused `programRefused`, clause `fixed` ("<f> is fixed; it
+   is set when <id> is made and never after, so the new code must keep it fixed"), with or without a
+   migration; the migration check (5.79) runs after canonicalization, on the state as it will be held.
+   Test: `tests/test_spell_turns.py` `test_a_reprogram_cannot_unfix_a_fixed_field`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
