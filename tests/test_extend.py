@@ -147,6 +147,34 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 """)
 
 
+class ExtensionPins(Reflection):
+    """An extension's pin is its compiled closure's (docs 2): the same layer over the same base under two
+    libraries is two closures and two pins."""
+
+    def test_the_same_layer_under_another_library_is_another_pin(self):
+        import os, shutil, tempfile
+        from tests.test_reflection import LIBRARY
+        with tempfile.TemporaryDirectory() as scratch:
+            lib = os.path.join(scratch, "lib")
+            shutil.copytree(LIBRARY, lib)
+            self.open_library(lib)
+            self.make("c", BASE, record(count=nat(0)))
+            self.make("d", BASE, record(count=nat(0)))
+            first = self.host.send(op="world-reprogram", principal="ember", identity="x1", object="c", version=0,
+                                   package=LAYER, mode="extend")
+            self.assertEqual(first["status"], "admitted", first)
+            with open(os.path.join(lib, "World.obend"), "a", encoding="utf-8") as f:
+                f.write("# another library\n")
+            self.assertEqual(self.host.send(op="world-library", principal="ember", identity="lib-2")["status"], "library")
+            second = self.host.send(op="world-reprogram", principal="ember", identity="x2", object="d", version=0,
+                                    package=LAYER, mode="extend")
+            self.assertEqual(second["status"], "admitted", second)
+            pins = [r["receipt"]["outcome"]["reprograms"][0]["newPin"] for r in (first, second)]
+            self.assertNotEqual(pins[0], pins[1])
+            self.reopen()
+            self.assertEqual([self.host.send(op="world-inspect", principal="ember", object=o)["pin"] for o in "cd"], pins)
+
+
 class LateBinding(Reflection):
     """The host writes `layer over` as the layer's first line, so the kernel binds the whole stack late:
     Bell's own rain reply calls render, which a Louder layer grafted by the extend Plan overrides.

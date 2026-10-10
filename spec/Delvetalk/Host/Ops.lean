@@ -1172,10 +1172,10 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
     throw ("compile", "initial() must return a closed record of first-order data")
   let packet ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
   let sourcePin ← (artifact.getObjValAs? String "sourcesSha256").mapError (("compile", ·))
-  -- The pin is the sources' CID. An extension's is its layer over the sources it extends,
-  -- whatever `initial` it reaches.
-  let pin := if extend then Journal.bodyHash (Json.arr #[toJson "extend", toJson o.pin, toJson (Journal.bodyHash (toJson source))])
-    else sourcePin
+  -- The pin is the sealed source closure's CID, an extension's too: its modules are the code it
+  -- extends, the layer and the library it compiled against now (docs 2: the same layer under two
+  -- libraries is two closures).
+  let pin := sourcePin
   let same := (← (canonicalTy assumptions.bounds ty).mapError (("stateType", ·))) ==
     (← (canonicalTy o.bounds o.stateType).mapError (("stateType", ·)))
   let migrated : Option Compiled ← if migration.isEmpty then
@@ -1210,17 +1210,20 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
            methods, predicate, predicateReads, packet, relations, fixed := fixedOf artifact,
            declares := declaresOf artifact }
 
-def programKey (o : Object) (source migration : String) (extend : Bool := false) : String :=
-  o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "")
+/-- A prepared reprogram's key: the object's inputs, the source, the migration, the mode, and the
+    library it compiles against now (a reprogram takes the world's current library). -/
+def programKey (w : World) (o : Object) (source migration : String) (extend : Bool := false) : String :=
+  o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "") ++
+    "/" ++ ((w.library.map (·.pin)).getD "")
 
 def programFor (w : World) (o : Object) (source migration : String) (extend : Bool := false) : Except (String × String) Program :=
-  match w.programs[programKey o source migration extend]? with
+  match w.programs[programKey w o source migration extend]? with
   | some p => pure p
   | none => prepareProgram w o source migration extend
 
 def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) (extend : Bool := false) : World :=
   if w.programs.size < Limits.maxPreparedPrograms then
-    { w with programs := w.programs.insert (programKey o source migration extend) p }
+    { w with programs := w.programs.insert (programKey w o source migration extend) p }
   else w
 
 /-! ## Sources by CID

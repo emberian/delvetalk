@@ -776,6 +776,14 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    them again and its stale re-run (`resumeOne`) runs with `inputOrigin.kind = "spell"`. Test:
    `tests/test_input_post.py` `test_a_second_suspension_keeps_the_spells_origin`.
 
+102. **An extension's pin is its closure's (host12; codex docs 2).** `prepareProgram` pins an extension
+   by the compiled closure's `sourcesSha256`, as every other package: the extended code's modules, the
+   layer and the library it compiled against now. (It hashed the old pin and the layer text, so the
+   same layer over the same base under two libraries had one pin for two closures.) Replay re-derives
+   `newPin` through the same function. The prepared-program cache (`programKey`) now names the
+   world's current library too: it served the first library's compile to a later reprogram under
+   another (the test found it). Test: `tests/test_extend.py` `ExtensionPins`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
