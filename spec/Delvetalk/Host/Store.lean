@@ -20,6 +20,12 @@ def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
 /-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
+/-- Model results one interpretation takes before a transient failure is its verdict (HOST-HANDOFF
+    5.107): the first `interpretAttempts - 1` transient failures are journaled `attempted`. -/
+def interpretAttempts : Nat := 8
+/-- The longest backoff between model attempts, in clock units. -/
+def interpretBackoffMax : Nat := 60
+def maxSourceBytes : Nat := 64
 /-- The one name rule (codex agent 14, docs 5): an object id, and the card a spell names, is
     1..`maxObjectIdBytes` of these (ASCII, so characters are bytes). `world/lib/Spell.obend`'s
     `cardAlphabet()` is the same string. -/
@@ -173,6 +179,18 @@ def Ledger.json (l : Ledger) : Json :=
 def Ledger.exhausted (l : Ledger) : Option String :=
   if l.depth == 0 then some "depth" else if l.work == 0 then some "work"
   else if l.storage == 0 then some "storage" else none
+
+/-- A post reserved against its source's hourly quota (HOST-HANDOFF 5.107), by intent: the source
+    (`delve` counts against `postQuota`; any other none), the clock hour it was reserved in, whether
+    it was released (the post certainly did not leave) or posted, and how many times the intent was
+    reserved before (a released intent may be reserved again). -/
+structure Reservation where
+  source : String
+  hour : Nat
+  released : Bool := false
+  posted : Bool := false
+  round : Nat := 0
+  deriving Inhabited
 
 /-- Who may `view` an object; fixed at creation and journaled with it. -/
 inductive ReadPolicy where
@@ -412,6 +430,11 @@ structure World where
       last one and how many that hour. Derived by `record` from `suspended` entries with an
       `interpretation`. -/
   interpretsStarted : Std.HashMap String (Nat × Nat) := {}
+  /-- Posting reservations by intent (`world-post-reserve`). Derived by `record`. -/
+  reservations : Std.HashMap String Reservation := {}
+  /-- Model attempts by interpretation id: the transient failures journaled `attempted` and the clock
+      at which the next may be asked. Derived by `record`. -/
+  attempts : Std.HashMap String (Nat × Nat) := {}
   /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
       entry's `replyTo`), which `awaitPost` settles on. -/
   replies : Std.HashMap String (String × String) := {}
