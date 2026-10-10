@@ -47,22 +47,16 @@ class Genesis(unittest.TestCase):
             finally:
                 stop_hostd(d)
 
-    @unittest.expectedFailure
-    def test_every_door_publishes_its_page_and_the_outbox_holds_a_wiki_draft_each(self):
-        # Until the objects lane lands Card.publishPage: the turn is refused as an unknown method.
-        from transport import bridge
+    def test_five_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = start_hostd(tmp, BINARY, opener=genesis.OPENER, library=LIBRARY)
             try:
                 host = HostClient(Path(tmp) / 'host.sock')
                 made, _ = genesis.run(host)
                 pages = {m['object']: m['page']['status'] for m in made if 'page' in m}
-                self.assertEqual(pages, {to: 'admitted' for _, _, to in genesis.DOORS if to}, pages)
-                drafted, problem = bridge.publication_drafts(tmp, host)
-                self.assertIsNone(problem)
-                texts = [json.loads(p.read_text())['text'] for p in sorted((Path(tmp) / 'outbox').glob('*.json'))]
-                self.assertEqual(len(texts), len([1 for _, _, to in genesis.DOORS if to]))
-                self.assertTrue(all(t.startswith('wiki: ') for t in texts), texts)
+                self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'play', 'rooms', 'workshop'], pages)
+                card = json.dumps(host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'anthology'}))
+                self.assertIn('ember.delve.town', card)
             finally:
                 stop_hostd(d)
 

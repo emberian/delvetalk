@@ -96,7 +96,7 @@ sum Heard:
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match Spell.parse(input.text):
     case spell(s): if s.card != context.object then passOn(s.card, input, context) else summoned(state, input, Spell.bare(input.text), context)
-    case notASpell(n): summoned(state, input, if n.fielded then Spell.bare(input.text) else Spell.Bindings.nil({}), context)
+    case notASpell(n): summoned(state, input, if n.fielded then Spell.bare(textTake(input.text, 2000n)) else Spell.Bindings.nil({}), context)
 # `env` and `wake` are the speaker's own (env/<did>, wake/<did>): a call names the object.
 def passOn(card: String, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Plan.call({object: {world: context.world, object: if card == "env" || card == "wake" then Card.own(card, context) else card}, method: "receive", argument: input})):
@@ -181,7 +181,8 @@ def childForms(state: State, input: Card.Heard, bindings: Spell.Bindings, id: St
   match perform(Plan.inspect({object: {world: context.world, object: id}})):
     case inspected(i): children(state, input, bindings, rest, "{words}{formWords(i.methods)}", "{fields}{formFields(i.methods)}", context)
     case _: children(state, input, bindings, rest, words, fields, context)
-# Prose naming none of the doors' words or fields is not read by the model. A reply handed
+# Prose naming none of the doors' words or fields is not read by the model (only the first
+# 2,000 characters are looked at: a 5,142-character post once burned the budget). A reply handed
 # on by a card does not count the words of that card's own family: its own actions and
 # fields, and the door it lives under with that door's (a bell's thread talking of the
 # garden, a cistern or rain is the bell's own business, not a request to another door).
@@ -200,16 +201,25 @@ def familyForms(state: State, input: Card.Heard, bindings: Spell.Bindings, words
     case inspected(i): judged(state, input, bindings, words, fields, "{excluded}{formWords(i.methods)}{formFields(i.methods)}", context)
     case _: judged(state, input, bindings, words, fields, excluded, context)
 def judged(state: State, input: Card.Heard, bindings: Spell.Bindings, words: String, fields: String, excluded: String, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  if Card.mentions(input.text, bindings, without(Card.wordList(words), Card.wordList(excluded)), without(Card.wordList(fields), Card.wordList(excluded))) then consulted(state, input, context) else Heard.silent({})
+  if Card.mentions(textTake(input.text, 2000n), bindings, without(Card.wordList(words), Card.wordList(excluded)), without(Card.wordList("{fields}{knownFields()}"), Card.wordList(excluded))) then consulted(state, input, context) else Heard.silent({})
 def without(words: Lists.List<String>, excluded: Lists.List<String>) -> Lists.List<String>:
   Lists.filter(words, fn(w: String) -> Bool: Lists.any(excluded, fn(x: String) -> Bool: x == w) == false)
 # Learning: a door's word and object id, and its forms' actions and fields, by inspect.
 def doorWords(door: Door) -> String:
   "{door.label} {door.to.object} "
+# Only what a door offers counts: the method table also lists helpers that take the state
+# and a context (here, guard, reading, admitted), so a method counts when it takes fields,
+# as an offered form does. (A form without fields, such as ring, is not a word here.)
+def offeredForm(form: Form.Form) -> Bool:
+  offered(form) && Lists.length(form.fields) > 0n
 def formWords(forms: Lists.List<Form.Form>) -> String:
-  textJoin(Lists.map(Lists.filter(forms, offered), fn(f: Form.Form) -> String: "{f.action} "), "")
+  textJoin(Lists.map(Lists.filter(forms, offeredForm), fn(f: Form.Form) -> String: "{f.action} "), "")
 def formFields(forms: Lists.List<Form.Form>) -> String:
-  textJoin(Lists.map(Lists.filter(forms, offered), fn(f: Form.Form) -> String: textJoin(Lists.map(f.fields, fn(x: Form.Field) -> String: "{x.name} "), "")), "")
+  textJoin(Lists.map(Lists.filter(forms, offeredForm), fn(f: Form.Form) -> String: textJoin(Lists.map(f.fields, fn(x: Form.Field) -> String: "{x.name} "), "")), "")
+# Known to the town though no door offers it: a bell's rain (a rain under the hub still
+# reaches the model, and so its second-miss card).
+def knownFields() -> String:
+  " rain "
 # Adding a door relearns every door (the owner's rare turn; the seeded ones included).
 def learnedDoor(state: State, door: Door, context: Abi.Context) -> Activity<Plan, Response, Answer>:
   addLearning(door, Lists.append(state.doors, door), " ", " ", context)

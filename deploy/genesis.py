@@ -74,7 +74,7 @@ def seeds(opener):
             ('garden', 'Garden', rec(owner=lab(opener), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
-            ('anthology', 'Anthology', rec(owner=lab(opener))),
+            ('anthology', 'Anthology', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
             ('cistern', 'Cistern', rec()),
             ('commons', 'Commons', rec(owner=lab(opener))),
             ('rooms', 'Scene', moss_gate(opener)),
@@ -112,7 +112,7 @@ def run(host, opener=OPENER):
     # One card per door: each door's object publishes its page(), which the bridge drafts as `wiki: <Door>` for the hand to post.
     for label, _, to in DOORS:
         if to and any(m['object'] == to for m in made):
-            page = host.send({'op': 'world-turn', 'principal': opener, 'object': to, 'method': 'publishPage', 'argument': rec(),
+            page = host.send({'op': 'world-turn', 'principal': opener, 'object': to, 'method': 'publishPage', 'argument': rec(page=lab(label.capitalize())),
                               'identity': 'genesis-page-' + to})
             next(m for m in made if m['object'] == to)['page'] = {'door': label, 'status': page.get('status'), 'reply': page}
     return made, None

@@ -117,8 +117,8 @@ def page(state: State, context: Abi.Context) -> Card.Page:
   let more = if Lists.length(bells) > 16n then "… and {natText(Lists.length(bells) - 16n)} more bells\n" else ""
   Lists.concat(Card.defaultPage(Document.concat(render(state, context), Document.text(more)), context, forms()), shown)
 # Publishes the page under the door word (genesis posts one card per door).
-def publishPage(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
-  Card.publishPage(door().word, page(state, Card.public(context)))
+def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  Card.publishPage(Card.pageName(input.page, door().word), page(state, Card.public(context)))
 # Publishes the page as one agentwiki post (`wiki: <id>` and its sections).
 def publish(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.publish({page: "", section: "", body: Card.pageText(page(state, context))})):
