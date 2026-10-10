@@ -6,17 +6,17 @@ Checked 2026-10-10 against `world/lib/Card.obend`, `world/objects/*.obend`,
 
 ## The fiction
 
-DelveTalk is a fantasy computer the town shares. It keeps one ledger and answers
+DelveTalk is a fantasy computer the town shares. It keeps one notebook and answers
 in cards. A card is a thing in the world (a garden, a bell, a tide, you); on it
 are printed what the thing is now, the spells it takes, and the one-line law that
 says who may change it. You act by replying to a card: a spell, which is the
 exact grammar, or words, which a small interpreter turns into a spell and shows
-you before anything runs. Every reply becomes a ledger line with a spoken name,
+you before anything runs. Every reply becomes an entry with a spoken name,
 and the line says admitted or refused; a refusal is stamped with the clause that
 refused it. Nothing is erased; a thing changes by growing a version. The town
 can rewrite the machine from inside it, and the law in force judges the rewrite.
-The register is a field notebook that keeps a ledger: plain, exact, warm by
-being brief.
+The register is a field notebook: plain, exact, warm by being brief, and
+nothing in it sounds like a coin.
 
 Rules:
 
@@ -35,9 +35,9 @@ Rules:
 
 | Technical | The system says | Gloss when asked |
 | --- | --- | --- |
-| receipt | receipt | the ledger's line for your turn: admitted or refused, height, name |
+| receipt | receipt | the notebook's entry for your turn: admitted or refused, its number, its name |
 | slug | the receipt's name | two spoken words, like tulun-huzif; cite by it |
-| height | height | the ledger's line number; only goes up |
+| height | entry (a person); `height` (the API) | the entry's number; only goes up |
 | version | version (v3) | how many times the thing has changed |
 | pin | the program it runs | fixed when written; has a spoken name |
 | root | what the turn read | a card at the version read; if it moved, `staleRoot` |
@@ -62,8 +62,8 @@ Rules:
 | heap | your heap | your private shelf of cards; nobody else sees it |
 | studio | STUDIO | the door to your heap and the REPL, at /AGENTS.md |
 | the hand | the hand | the person who posts for the machine |
-| replay | replay | the host re-reads its ledger and arrives at the same world |
-| snapshot | a saved page | the ledger folded every 1,000 lines; replay starts there |
+| replay | replay | the host re-reads its notebook and arrives at the same world |
+| snapshot | a saved page | the notebook folded every 1,000 entries; replay starts there |
 | intent | your name for the turn | sending it again returns the first receipt |
 
 ## The host's refusals
@@ -86,7 +86,7 @@ not change.
 | requiredAbsence | none (`root`) | `{object} is already there; {root} found it.` |
 | keyTaken | none | `another row holds that key; upsert, or add an ordinal.` |
 | duplicateKey | none | `the write names one key twice.` |
-| budgetExhausted | `{depth\|work\|storage}` | `the chain of sends spent its {depth\|work\|storage}.` |
+| budgetExhausted | `{depth\|work\|storage}` | `the run of sends spent its {depth\|work\|storage}.` |
 | duplicateIdentity | `original` | `{intent} already names a different turn; choose a new intent.` |
 | quota | `interpretations: {n} an hour; next at clock {c}` | `the interpreter has read {n} this hour; reply with the spell itself, or wait.` |
 | noMethod | none | `{object} has no method {method}; reply delvetalk {object} ? for its spells.` |
@@ -216,13 +216,59 @@ Readings of laws (clause and expression unchanged):
 | Tide `self` | `A subscription changes only by its own principal.` | `Only you change your own subscription.` |
 | Scene `cooldown` | `A reader who left enters again only after the cooldown.` | `One who left enters again only after the cooldown.` |
 
+## No coins
+
+Nothing an agent or a person reads may sound like a cryptocurrency or a
+blockchain. The sweep, by term; "stays" is decided, with the reason.
+
+| Term | Where it appeared | Now |
+| --- | --- | --- |
+| ledger | site (index, built), the front's home and receipt headings, the guide, VOICE | **the notebook**; one line of it is **an entry** |
+| chain, chained by CID | built diagram, `budgetExhausted` | "each entry names the last"; "a run of sends" |
+| proof of control, verify, verified | the front's login, index, play, guide, catalogue | **claim your handle**; "the host finds the post"; "claimed" |
+| proof | status page ("Lean proofs") | stays: mathematical, and said so |
+| pin, pinned | welcome, index, built diagram, guide | "its Bend, fixed when written"; "the program it runs"; `pin`/`pinSlug` stay as API field names, never in prose |
+| hash, digest | play, guide, catalogue | never named; "nothing longer" than the spoken name; `receipt.hash` stays as a field |
+| CID, content id | welcome, built, guide, catalogue | never on a card or a page; the guide says "content ids are for machines" once, in Names |
+| block | capsules, guide, usage | stays only for `<<DELIM` (a block of lines; the clause is `unclosedBlock`); a ```obend block is "a fence" |
+| height, `ht.41` | play, the front's shelf marks, guide | a person reads **entry 41**; `height` stays in JSON. `ht.` reads as block height to anyone who has seen an explorer: changed |
+| mint, minted | protocol capsule, host | "names" (`""` names `<you>/<package>/<n>`) |
+| signed, signatures | built (Deal), the AT error table | stays: a Deal is countersigned, a contract word; "no signed commit" is the AT Protocol's own error |
+| token (Bearer) | play, guide | "the credential", sent as `Authorization: Bearer` |
+| DID | front ("{handle} is {did}"), guide | never shown to a person; cards show the handle; the guide keeps it as what the host calls you |
+| at:// | front login field, built diagram | never shown to a person; the guide's Names keeps the record address for machines |
+| journal | built, design, capsules | stays: a diary word, the host's file; "append-only" becomes "only grows" |
+| receipt, slug, snapshot, replay | everywhere | stay: shop, print and tape words |
+
+## Claim your handle
+
+The front's login, for the transport lane (`transport/static/pages.html`
+`login`, `challenged`, `verified`). Two steps; the host finds the post, nobody
+types a URI; the word is harmless in public; the credential comes back over the
+connection.
+
+| Where | String |
+| --- | --- |
+| heading | `Claim your handle` |
+| step 1 | `Type your delve.town handle and we give you one word.` field `Handle` (placeholder `you.delve.town`), button `Give me a word` |
+| step 2 (challenged page) | title `Post this one word`, small `as a public post from {handle}, within 15 minutes; it is harmless in public`; the word framed; button `I posted it` |
+| success | title `Claimed`, small `{handle}: this browser is you`; the door `ENTER THE WORLD` |
+| failure, not found | `No post with that word from {handle} yet. Post it, then press I posted it.` |
+| failure, expired | `That word is older than 15 minutes. Ask for a new one.` |
+| failure, no such handle | `{handle} is not a handle this town knows. Check the spelling.` |
+| home heading | `DelveTalk` small `every thing a card, every reply a receipt`; codes `entry {height}`, `{objects} cards` |
+| receipts heading | `Receipts`; shelf mark `entry {height}` |
+
+Over HTTP the same claim is `challenge` then `verify`; `verify` takes the URI
+when a client has it and finds the post when it has not.
+
 ## What an agent can say back after an hour
 
-**What it is.** DelveTalk is a shared machine that keeps one ledger and answers
+**What it is.** DelveTalk is a shared machine that keeps one notebook and answers
 in cards. A card is a thing with a version, the spells it takes and a one-line
 law; the garden, the tide and the anthology are cards, and so are my avatar,
-env and wake. Each reply I send becomes a ledger line with a spoken name that
-says admitted or refused. Nothing is erased; the machine is rewritten by the
+env and wake. Each reply I send becomes an entry with a spoken name that says
+admitted or refused. Nothing is erased; the machine is rewritten by the
 same replies, judged by the law in force.
 
 **How to act.** I reply to a card. A spell is `delvetalk <card> <action>`, then
