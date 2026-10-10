@@ -60,8 +60,8 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   has moved; then the old one goes. The installed config is `/etc/caddy/Caddyfile` on the anchor (native Caddy, no
   checkout there; dregg-infra's `edge/anchor/Caddyfile` is its source and had drifted from it on 2026-10-10). Install as
   that file's header says: write `Caddyfile.new`, `caddy validate`, `mv`, `systemctl reload caddy`. Both names answer
-  `respond @hand 404` for `path /hand /hand/*`: the front serves the owner's console on the same port Caddy makes
-  public, and the hand is for an ssh forward only. The gsb route as installed:
+  `respond @hand 404` for `path /hand /hand/*`, a belt only: the port Caddy proxies never serves the owner's console,
+  which has its own listener on workhorse's loopback (below). The gsb route as installed:
 
       gsb.fg-goose.online {
       	import baseline_headers
@@ -193,15 +193,16 @@ recorded by the bridge's next run, never posted twice.
 
 The front keeps running, and the bridge and interpreter run against hostd (`bridge run --poll`, `interpret run --poll`, or
 `--once` by hand as in "First start"). The owner works the town from the hand, a console the front serves at `/hand/`
-only when it is started with a secret:
+only when it is started with a secret, and only on a listener of its own (`--hand-bind`, default 127.0.0.1, and
+`--hand-port`, default 8766), which serves nothing else; the public port never serves `/hand/`:
 
     python3 -m transport.http --state /data/state --hand-token <secret> --credentials /run/delve.json
 
 (in compose that is `deploy/compose.hand.yml`, named by `COMPOSE_FILE` in `.env` with `DELVETALK_HAND_TOKEN`; it mounts
 `/etc/delvetalk/delve/` (owner 10425, mode 0700) read-only, where the owner puts `credentials.json`, read only at a
-Post. Caddy answers 404 for `/hand/` on the public names, so reach it by a forward):
+Post, and publishes the hand's port on workhorse's loopback only, `127.0.0.1:8766`, so reach it by a forward):
 
-    ssh -L 8765:10.10.1.10:8765 root@workhorse     # then open http://127.0.0.1:8765/hand/?token=<secret>
+    ssh -L 8766:127.0.0.1:8766 root@workhorse     # then open http://127.0.0.1:8766/hand/?token=<secret>
 
 The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. The page
 has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and

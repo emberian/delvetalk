@@ -571,7 +571,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def route(self, method):
         path = urllib.parse.urlsplit(self.path).path
-        if path.split('/')[1:2] == ['hand'] and self.server.hand:  # the owner's console, not in the catalogue; without --hand-token an unknown route
+        if self.server.hand:  # the owner's console, on its own loopback listener and nothing else there; never in the catalogue
+            if path.split('/')[1:2] != ['hand']:
+                return self.fail('unknownRoute', f'no route at {path}')
             form = self.body() if method == 'POST' else None
             if method == 'POST' and form is None:
                 return
@@ -913,23 +915,25 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
-    ap.add_argument('--hand-token', metavar='SECRET', help='serve the owner\'s console at /hand/ (needs the token once); for an ssh forward, never public')
+    ap.add_argument('--hand-token', metavar='SECRET', help='serve the owner\'s console at /hand/ (needs the token once) on --hand-bind:--hand-port only')
+    ap.add_argument('--hand-bind', default='127.0.0.1', help='the hand\'s listener: loopback, reached by an ssh forward')
+    ap.add_argument('--hand-port', type=int, default=8766)
     ap.add_argument('--credentials', default=post.CREDENTIALS, help='the Delve credentials file the hand posts with')
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
     sock = a.host_socket or Path(a.state) / 'host.sock'
     host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
-    front = Front((a.bind, a.port), host, Identity(a.state, Client(http_transport), a.origin), a.origin,
-                  heaps=heaps, repl=repl, trust_proxy=a.trust_proxy,
-                  hand=hand.Hand(a.state, host, a.hand_token, a.credentials) if a.hand_token else None,
-                  access=AccessLog(Path(a.state) / 'access.log'))
+    ident = Identity(a.state, Client(http_transport), a.origin)
+    front = Front((a.bind, a.port), host, ident, a.origin, heaps=heaps, repl=repl, trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'))
+    if a.hand_token:  # never on the public port: its own listener, which serves /hand/ and nothing else
+        console = Front((a.hand_bind, a.hand_port), host, ident, a.origin, hand=hand.Hand(a.state, host, a.hand_token, a.credentials))
+        threading.Thread(target=console.serve_forever, daemon=True).start()
     try:
         front.serve_forever()
     finally:
         front.host.close()
         front.heaps.close()
         front.repl.close()
-
 
 if __name__ == '__main__':
     sys.exit(main())
