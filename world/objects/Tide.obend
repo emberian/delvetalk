@@ -56,8 +56,8 @@ def ownStep(order: Nat, old: Sub, olds: Lists.List<Sub>, new: Sub, news: Lists.L
   if order == 1n then (sameSub(old, new) || new.who == principal) && ownRows(olds, news, principal) else if order == 0n then old.who == principal && ownRows(olds, Lists.List.cons({head: new, tail: news}), principal) else new.who == principal && ownFrom(old, olds, news, principal)
 def sameSub(old: Sub, new: Sub) -> Bool:
   old.every == new.every && old.note == new.note && old.since == new.since && old.handle == new.handle
-def subKey(sub: Sub) -> Relations.Key:
-  Lists.List.cons({head: Relations.text(sub.who), tail: Lists.List.nil({})})
+def subKey(sub: Sub) -> {who: String}:
+  {who: sub.who}
 def relations() -> Relations.Decls:
   Relations.Decls.cons({head: {field: "subs", key: Lists.List.cons({head: "who", tail: Lists.List.nil({})}), limit: 1024n}, tail: Relations.Decls.nil({})})
 def defaultSeed() -> Seed:
@@ -104,7 +104,7 @@ def subscribed<T>(state: State, every: Nat, note: String, context: Abi.Context, 
 def subscribing<T>(state: State, sub: Sub, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   if Relations.count(state.subs) < 64n || Relations.exists(state.subs, fn(s: Sub) -> Bool: s.who == sub.who) then subWritten(sub, context, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context), then) else told(refused(Why.full({})), card, then)
 def subWritten<T>(sub: Sub, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {subs: Plans.Entries.upsert({row: sub})})}))
+  let written(_) = perform(write {subs: upsert sub})
   told(Done.subscribed({since: sub.since}), card, then)
 def same(done: Done) -> Done:
   done

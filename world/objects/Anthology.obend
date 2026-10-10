@@ -46,9 +46,8 @@ def initial() -> State:
   seeded(defaultSeed())
 def relations() -> Relations.Decls:
   Relations.Decls.cons({head: {field: "proposals", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})}), limit: 1024n}, tail: Relations.Decls.nil({})})
-# The key in canonical column order: n, at, author.
-def proposalKey(proposal: Proposal) -> Relations.Key:
-  Lists.List.cons({head: Relations.nat(proposal.n), tail: Lists.List.cons({head: Relations.nat(proposal.at), tail: Lists.List.cons({head: Relations.text(proposal.author), tail: Lists.List.nil({})})})})
+def proposalKey(proposal: Proposal) -> {author: String, at: Nat, n: Nat}:
+  {author: proposal.author, at: proposal.at, n: proposal.n}
 def proposed(state: State, line: String, context: Abi.Context) -> Proposal:
   {author: context.principal, handle: context.handle, line: line, status: Status.proposed({}), at: context.height, n: Relations.count(state.proposals)}
 # Submission only proposes; admission is the receiver's law, not the author's. The

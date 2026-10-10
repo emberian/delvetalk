@@ -52,27 +52,26 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
 ## 1a. Relational (objects6; docs/RELATIONAL.md is the contract)
 
 * **The library** (`world/lib/Relation.obend`, imported `as Relations`). `sum Relation<T>:
-  rows: {items: List<T>}`; `record Decl {field, key: List<String>}`; an object declares its
+  rows: {items: List<T>}`; `record Decl {field, key: List<String>, limit}`; an object declares its
   relation fields with `def relations() -> Relations.Decls`. Pure queries: `rows`, `empty`,
   `where`, `project` (a List), `count`, `exists`, `lookup(rel, key, keyOf)` (stops past the
-  key), `order(rel, by)` and `group(rel, by)` (a stable merge sort; `Group<T>.group {key,
+  key), `order(rel, by)` and `group(rel, by)` (a stable merge sort; `Group<T, K>.group {key,
   rows}`), `joinOn(left, right, leftKey, rightKey)` (one merge; both sides must already be
   in the order of their join keys, i.e. the relation's key or its leading canonical
   columns; `Joined<A, B>.pair {left, right}`), `fromList(items, keyOf)` (sort; of a key the
   first row kept), and `insert`/`upsert`/`retract`, the host's table applied in Bend so a
   card can show what its own write leaves.
-* **Keys in Bend.** No `canonicalCompare` builtin yet, so a key is `Relations.Key`, a list of
-  `Cell` (`Relations.nat(n)`, `Relations.text(s)`) in DAG-CBOR column order (shorter column
-  names first, then by bytes: `{author, at, n}` is `n, at, author`), and `compare` orders
-  cells as canonical bytes do: a natural before a text, naturals by value, texts by length
-  and then by bytes (a scalar's byte rank is its place in `ranks()`: ASCII, Latin-1 and
-  U+2010..U+2027; two scalars outside it compare equal). So Bend's order is the host's for
-  such keys. TODO(canonicalCompare): when the builtin lands, a key is the key projection as
-  Data and Cell goes; every object's `keyOf` changes then, nothing else.
+* **Keys in Bend.** A key is the key projection as a record (`rainKey(r) = {author: r.author,
+  at: r.at, n: r.n}`; `keyOf: T -> K`), and `Relations.compare` is the kernel's
+  `canonicalCompare` (0/1/2 by canonical DAG-CBOR bytes, the host's own order: a shorter map
+  key first, so `{author, at, n}` sorts by `n`, then `at`, then `author`; a text by byte
+  length, then bytes; it is written out from the type, any first-order type, monomorphised
+  in generic definitions). `Relations.Cell` (natural or text) stays as the value a Wake
+  pattern names and an observer's row column carries. `insertedOnly(old, new, keyOf)`
+  compares whole rows with it.
 * **Edits** (`Plans.Entries`): `insert {row}`, `upsert {row}`, `retract {key: Data}` (the key
-  projection as a record) beside the six; the kernel's `write {field: insert row}` sugar is
-  the kernel lane's, so until it lands a relation write is spelled
-  `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: Plans.Entries.insert({row: r})})})`.
+  projection as a record) beside the six; a self-write of one is `write {rains: insert rain}`
+  (`upsert row`, `retract key`); a computed or mixed edit stays `Plan.write(...)`.
 * **Declaring.** `def relations() -> Relations.Decls`, each `{field, key, limit}`; past
   `limit` rows the host drops the first in key order (0 is its default, 4,096). A relation is
   bounded: an unbounded collection is a sequence of child objects (`anthology/page/n`),
@@ -103,12 +102,10 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   (`doors(state)`). `add {door: Door}` is unchanged; `remove` is a `retract {label}`.
 * **Laws.** Tide's `ownSubs` is one merge of old and new rows: every key added, replaced or
   retracted must be the requester's (`tests/test_wakes.py` checks the four cases).
-  `insertOnly` is not in the kernel's fragment yet ("law outside the enforced fragment:
-  `insertOnly` where a reference new.FIELD or request.FACT was expected": a Directory or a
-  Deal with it cannot be created), so Directory's greeted and Deal's signatures say it in
-  the Bend predicate, `Relations.insertedOnly(old, new, keyOf, same)` (one merge; clauses
-  `greeted`, `signed`), with a TODO(insertOnly) beside each to move it into the law text
-  when the atom parses.
+  `insertOnly` parses now (kernel) but the host's Law.lean denotes it false (fail closed)
+  until relations day 2, so Directory's greeted and Deal's signatures say it in the Bend
+  predicate, `Relations.insertedOnly(old, new, keyOf)` (one merge; clauses `greeted`,
+  `signed`), with a TODO(insertOnly) beside each to move it into the law text then.
 * **Seeds on the wire.** A relation seed is the `rows` variant (`tests.test_turn_world.relation(*rows)`,
   rows in key order); `deploy/genesis.py` seeds the directory's doors that way with places.
 * **Against the host** (host7, foundation 613639d). The edits, canonical order, keys and
@@ -122,31 +119,11 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   creator), else creation fails "missing selected entry"; (2) that compile runs at every
   creation: 20 bells 6.7 s with `relations()` and 0.31 s without, so
   `test_journal.Maximum` (200 bells under 10 s) is an expectedFailure until the host reads
-  `relations` from the artifact. `insertOnly` parses (kernel) but the host's Law.lean fails
-  closed on it (false), so it stays in the Bend predicates. Wire: a relation is
+  `relations` from the artifact. Wire: a relation is
   `{"tag": "variant", "label": "rows", "payload": {items: [...]}}`; `tests.test_replay.rows`
   reads one, `tests.test_turn_world.relation` builds one.
-* **Costs** (hbox, `tests/test_relation_lib.py`): a compare of two equal two-cell keys about
-  450 ticks, one deciding on its first cell about 200 (about 30 ticks a call, which is the
-  machine's); `joinOn` of two stored 200-row relations 278,301 ticks with building them
-  (about 590 a row: linear, but RELATIONAL §4's "a few thousand ticks" for two hundred-row
-  relations is wrong by two orders); `fromList` of 64 reversed rows 90,496. So a card joins
-  at most a few dozen rows per turn, and sorting belongs to the host.
-
-## 2. Limits found
-
-- An await only proves that some turn with that identity was admitted. A turn suspended on an object resumes refused `staleRoot` if anything wrote that object meanwhile, unless its writes are all keep/add/append (they commute).
-- `run` refuses variant arguments and recursive results: build in a probe module.
-- A kernel hint can mislead: an unbalanced parenthesis is reported with "there is no Maybe builtin" or "definitions are `def name(x: T) -> U:`".
-- `transport/http.py` `MAX_BODY` (64 KiB) answers 413 for a larger body.
-
-## 3. Directory of objects
-
-Counter, Garden, Bell, Cistern, Anthology (owner admits), Directory (owner adds and removes), Door, Lantern, Loop, Place, Thing, Avatar (mailbox: subscribe, send, unsubscribe; handle lens), Policy (owner law with `request.method`; lenses), Workshop (check prints the checker's hint under its problem; inspect; propose), Env, Wake, Tide, Appointments/Appointment, Deal, Seat and Table, Scene (passages and choices as data; enter, choose, leave), Commons (places, paths, ways in, gates: open, members, object).
-
-## 4. Open
-
-- Place cannot declare a law while Thing and Avatar import it for State and Done (both still `import ./Place.obend`). Closes when those types move to a library module, as Seats did.
-- An addressee `slot` reaches receive but no object reads it (`Heard` is `{text, post}`).
-- A Scene passage is not editable once made; spween `tags`, custom fields, floats and negative numbers are skipped or compared as text; a scene near the 16 x 8 limit has not been measured.
-- A kernel word-set builtin would remove the per-word loop cost of `Card.mentions`.
+* **Costs** (hbox, `tests/test_relation_lib.py`, with canonicalCompare): `joinOn` of two
+  stored 200-row relations 188,023 ticks with building them (linear, about 400 a row: RELATIONAL
+  §4's "a few thousand ticks" for two hundred-row relations is two orders low); `fromList` of
+  64 reversed rows 57,457. So a card joins at most a few dozen rows per turn, and sorting
+  belongs to the host.

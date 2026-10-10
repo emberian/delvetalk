@@ -50,11 +50,9 @@ law members "a write is a party's": request.kind == 0 implies request.subject in
 law fixed "the parties, the terms and the piece never change": unchanged(parties) and unchanged(terms) and unchanged(piece) and unchanged(amendment)
 law once "a deal closes once": writeOnce(closed)
 # TODO(insertOnly): `law signed "signatures are only added": insertOnly(signatures)` once
-# the kernel parses the atom; until then the predicate says it.
+# the host denotes the atom (it parses; Law.lean fails closed); until then the predicate says it.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if Relations.insertedOnly(old.signatures, new.signatures, fn(s: Signature) -> Relations.Key: signatureKey(s.principal), sameSignature) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "signed"})
-def sameSignature(a: Signature) -> Signature -> Bool:
-  fn(b: Signature) -> Bool: a.principal == b.principal && a.handle == b.handle && a.post == b.post
+  if Relations.insertedOnly(old.signatures, new.signatures, signedBy) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "signed"})
 def defaultSeed() -> Seed:
   {amendment: {object: "", law: ""}, parties: Lists.List.nil(), terms: "", piece: ""}
 def seeded(seed: Seed) -> State:
@@ -63,8 +61,8 @@ def initial() -> State:
   seeded(defaultSeed())
 def relations() -> Relations.Decls:
   Relations.Decls.cons({head: {field: "signatures", key: Lists.List.cons({head: "principal", tail: Lists.List.nil({})}), limit: 64n}, tail: Relations.Decls.nil({})})
-def signatureKey(principal: String) -> Relations.Key:
-  Lists.List.cons({head: Relations.text(principal), tail: Lists.List.nil({})})
+def signedBy(signature: Signature) -> {principal: String}:
+  {principal: signature.principal}
 def keep() -> Edits:
   {signatures: Plans.Entries.keep({}), withdrawn: Plans.Edit.keep({}), withdrawnHandle: Plans.Edit.keep({}), closed: Plans.Edit.keep({})}
 sum Done:
@@ -95,7 +93,7 @@ def refused(w: Why) -> Done:
 def party(state: State, who: String) -> Bool:
   Lists.any(state.parties, fn(p: String) -> Bool: p == who)
 def hasSigned(state: State, who: String) -> Bool:
-  match Relations.lookup(state.signatures, signatureKey(who), fn(s: Signature) -> Relations.Key: signatureKey(s.principal)):
+  match Relations.lookup(state.signatures, {principal: who}, signedBy):
     case some(_): true
     case none(_): false
 def unsigned(state: State) -> Nat:
@@ -106,7 +104,7 @@ def atRest(state: State) -> Bool:
 def countersigned<T>(state: State, post: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else if party(state, context.principal) == false then then(refused(Why.notParty({act: "countersigns"}))) else if hasSigned(state, context.principal) then then(refused(Why.alreadySigned({}))) else signing(state, {principal: context.principal, handle: context.handle, post: post}, context, then)
 def signing<T>(state: State, signature: Signature, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {signatures: Plans.Entries.insert({row: signature})})}))
+  let written(_) = perform(write {signatures: insert signature})
   if unsigned(state) == 1n then amending(state.amendment, context, then) else then(Done.signed({remaining: unsigned(state) - 1n}))
 # At rest, the deal's amendment (if any) is proposed to its object, the deal as caller.
 def amending<T>(amendment: Amendment, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:

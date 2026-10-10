@@ -57,9 +57,8 @@ def initial() -> State:
   seeded(defaultSeed())
 def relations() -> Relations.Decls:
   Relations.Decls.cons({head: {field: "rains", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})}), limit: 2048n}, tail: Relations.Decls.nil({})})
-# The key in canonical column order: n, at, author.
-def rainKey(rain: Rain) -> Relations.Key:
-  Lists.List.cons({head: Relations.nat(rain.n), tail: Lists.List.cons({head: Relations.nat(rain.at), tail: Lists.List.cons({head: Relations.text(rain.author), tail: Lists.List.nil({})})})})
+def rainKey(rain: Rain) -> {author: String, at: Nat, n: Nat}:
+  {author: rain.author, at: rain.at, n: rain.n}
 def fallen(state: State, text: String, context: Abi.Context) -> Rain:
   {author: context.principal, handle: context.handle, text: text, at: context.height, n: Relations.count(state.rains)}
 def keep() -> Edits:
@@ -67,7 +66,7 @@ def keep() -> Edits:
 # The author of a rain is the turn's principal, never an argument.
 def rained(state: State, text: String, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let rain = fallen(state, text, context)
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rains: Plans.Entries.insert({row: rain})})}))
+  let written(_) = perform(write {rains: insert rain})
   Card.notifyRows(state.observers, "rains", rainRows(rain), fn(sent: Nat) -> Nat: Relations.count(state.rains) + 1n)
 # The rain as an observer of rows reads it.
 def rainRows(rain: Rain) -> Card.Rows:
@@ -131,7 +130,7 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
 # observers of rows are told.
 def rainedCard(state: State, text: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   let rain = fallen(state, text, context)
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rains: Plans.Entries.insert({row: rain})})}))
+  let written(_) = perform(write {rains: insert rain})
   rainOffered(state, rain, context)
 def rainOffered(state: State, rain: Rain, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match perform(Plan.offer({to: context.principal, document: render(extend(state, {rains: Relations.insert(state.rains, rain, rainKey)}), context)})):

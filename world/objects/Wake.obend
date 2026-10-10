@@ -144,7 +144,7 @@ def matched(on: On, object: String, field: String, rows: Card.Rows) -> Nat:
 def holds(row: Card.Row, where: Lists.List<Where>) -> Bool:
   Lists.any(where, fn(w: Where) -> Bool: Lists.any(row, fn(c: Card.Column) -> Bool: c.column == w.column && sameCell(c.value, w.equals)) == false) == false
 def sameCell(left: Relations.Cell, right: Relations.Cell) -> Bool:
-  Relations.compare(Lists.List.cons({head: left, tail: Lists.List.nil({})}), Lists.List.cons({head: right, tail: Lists.List.nil({})})) == 1n
+  Relations.compare(left, right) == 1n
 def passes(on: On, object: String, field: String, value: Nat) -> Bool:
   match on:
     case writes(w): w.object == object && w.field == field && value > w.above && value - 1n <= w.above

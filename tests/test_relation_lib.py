@@ -17,16 +17,17 @@ record Row:
   note: String
 record Pet:
   who: String
-  pet: String
-# The key {n, who}: canonical column order is n (one letter), then who.
-def key(row: Row) -> Relations.Key:
-  Lists.List.cons({head: Relations.nat(row.n), tail: Lists.List.cons({head: Relations.text(row.who), tail: Lists.List.nil({})})})
-def byWho(row: Row) -> Relations.Key:
-  Lists.List.cons({head: Relations.text(row.who), tail: Lists.List.nil({})})
-def petKey(pet: Pet) -> Relations.Key:
-  Lists.List.cons({head: Relations.text(pet.who), tail: Lists.List.cons({head: Relations.text(pet.pet), tail: Lists.List.nil({})})})
-def petWho(pet: Pet) -> Relations.Key:
-  Lists.List.cons({head: Relations.text(pet.who), tail: Lists.List.nil({})})
+  kind: String
+# The key {n, who}: canonical bytes put the shorter column name first, so n, then who.
+def key(row: Row) -> {n: Nat, who: String}:
+  {n: row.n, who: row.who}
+def byWho(row: Row) -> {who: String}:
+  {who: row.who}
+# {who, kind}: who first (three letters before four), so pets sort by who, then kind.
+def petKey(pet: Pet) -> {who: String, kind: String}:
+  {who: pet.who, kind: pet.kind}
+def petWho(pet: Pet) -> {who: String}:
+  {who: pet.who}
 def row(who: String, n: Nat, note: String) -> Row:
   {who: who, n: n, note: note}
 def unsorted() -> Lists.List<Row>:
@@ -35,17 +36,15 @@ def rel() -> Relations.Relation<Row>:
   Relations.fromList(unsorted(), key)
 def shown(items: Lists.List<Row>) -> String:
   textJoin(Lists.map(items, fn(r: Row) -> String: "{r.who}{natText(r.n)}{r.note}"), ",")
-def cell(c: Relations.Cell) -> Relations.Key:
-  Lists.List.cons({head: c, tail: Lists.List.nil({})})
-def c1(a: Relations.Cell, b: Relations.Cell) -> String:
-  natText(Relations.compare(cell(a), cell(b)))
+def t1(a: String, b: String) -> String:
+  natText(Relations.compare(a, b))
 def cmp(which: Nat) -> String:
-  let a = c1(Relations.nat(9n), Relations.nat(10n))
-  let b = c1(Relations.nat(300n), Relations.text("a"))
-  let c = c1(Relations.text("b"), Relations.text("aa"))
-  let d = c1(Relations.text("ab"), Relations.text("aB"))
-  let e = c1(Relations.text("did:plc:x"), Relations.text("did:plc:x"))
-  let f = c1(Relations.text("a…"), Relations.text("az"))
+  let a = natText(Relations.compare(9n, 10n))
+  let b = natText(Relations.compare(key(row("zz", 1n, "")), key(row("a", 2n, ""))))
+  let c = t1("b", "aa")
+  let d = t1("ab", "aB")
+  let e = t1("did:plc:x", "did:plc:x")
+  let f = t1("a…", "az")
   let g = natText(Relations.compare(key(row("a", 1n, "")), key(row("a", 1n, "q"))))
   "{a},{b},{c},{d},{e},{f},{g}"
 def fromListed(n: Nat) -> String:
@@ -69,16 +68,16 @@ def looked(n: Nat) -> String:
 def ordered(n: Nat) -> String:
   shown(Relations.order(rel(), byWho))
 def grouped(n: Nat) -> String:
-  textJoin(Lists.map(Relations.group(rel(), byWho), fn(g: Relations.Group<Row>) -> String: "{natText(Lists.length(Relations.groupRows(g)))}:{shown(Relations.groupRows(g))}"), ";")
+  textJoin(Lists.map(Relations.group(rel(), byWho), fn(g: Relations.Group<Row, {who: String}>) -> String: "{natText(Lists.length(Relations.groupRows(g)))}:{shown(Relations.groupRows(g))}"), ";")
 def pets() -> Relations.Relation<Pet>:
-  Relations.fromList(Lists.List.cons({head: {who: "bo", pet: "owl"}, tail: Lists.List.cons({head: {who: "al", pet: "cat"}, tail: Lists.List.cons({head: {who: "al", pet: "eel"}, tail: Lists.List.cons({head: {who: "dee", pet: "fox"}, tail: Lists.List.nil({})})})})}), petKey)
+  Relations.fromList(Lists.List.cons({head: {who: "bo", kind: "owl"}, tail: Lists.List.cons({head: {who: "al", kind: "cat"}, tail: Lists.List.cons({head: {who: "al", kind: "eel"}, tail: Lists.List.cons({head: {who: "dee", kind: "fox"}, tail: Lists.List.nil({})})})})}), petKey)
 def people() -> Relations.Relation<Row>:
   Relations.fromList(Lists.List.cons({head: row("bo", 0n, "b"), tail: Lists.List.cons({head: row("al", 0n, "a"), tail: Lists.List.cons({head: row("c", 0n, "c"), tail: Lists.List.nil({})})})}), byWho)
 def joined(n: Nat) -> String:
   textJoin(Lists.map(Relations.joinOn(people(), pets(), byWho, petWho), fn(j: Relations.Joined<Row, Pet>) -> String: pairText(j)), ",")
 def pairText(j: Relations.Joined<Row, Pet>) -> String:
   match j:
-    case pair(p): "{p.left.who}-{p.right.pet}"
+    case pair(p): "{p.left.who}-{p.right.kind}"
 def numbered(n: Nat) -> Lists.List<Row>:
   if n == 0n then Lists.List.nil({}) else Lists.List.cons({head: row("w", n, "x"), tail: numbered(n - 1n)})
 # Rows already in key order, as the host stores a relation.
@@ -115,8 +114,8 @@ class RelationLibrary(unittest.TestCase):
         return run(entry, n)["value"]["value"]
 
     def test_keys_compare_as_canonical_bytes(self):
-        # 9 < 10; a natural before any text; a shorter text first; 'B' (0x42) before 'b';
-        # equal; '…' (U+2026) after 'z'; equal keys whatever the rest of the row.
+        # 9 < 10; {n, who} decides on n first; a shorter text first; 'B' (0x42) before 'b';
+        # equal; '…' (three bytes) is longer than 'z'; equal keys whatever the rest of the row.
         self.assertEqual(self.value("cmp"), "0,0,0,2,1,2,1")
 
     def test_from_list_sorts_by_key_and_keeps_the_first_of_a_key(self):
@@ -134,7 +133,7 @@ class RelationLibrary(unittest.TestCase):
         self.assertEqual(self.value("grouped"), "1:c2w;2:al2z,al10y;1:bo2x")
 
     def test_join_on_merges_two_relations(self):
-        # pets keyed {who, pet}; people keyed {who}: al has two pets, c none, dee no person.
+        # pets keyed {who, kind}; people keyed {who}: al has two pets, c none, dee no person.
         self.assertEqual(self.value("joined"), "al-cat,al-eel,bo-owl")
 
     def test_insert_upsert_retract_mirror_the_host_table(self):

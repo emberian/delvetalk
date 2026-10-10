@@ -58,10 +58,10 @@ sum Answer:
 # predicate below, clause greeted). A law in source means a Directory is made with
 # world-create, never by a creator that imports it.
 law owner "only the owner changes its doors, owner or policy; anyone's summons only adds to who was greeted": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(doors) and unchanged(policy) and writeOnce(words) and writeOnce(fields))
-# TODO(insertOnly): `and insertOnly(greeted)` in the law text once the kernel parses the
+# TODO(insertOnly): `and insertOnly(greeted)` in the law text once the host denotes the
 # atom; until then the predicate says it.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if request.context.principal == new.owner || Relations.insertedOnly(old.greeted, new.greeted, greetingKey, fn(a: Greeting) -> Greeting -> Bool: fn(b: Greeting) -> Bool: a.principal == b.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "greeted"})
+  if request.context.principal == new.owner || Relations.insertedOnly(old.greeted, new.greeted, greetingKey) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "greeted"})
 def defaultSeed() -> Seed:
   {owner: "", policy: Plans.nobody()}
 def seeded(seed: Seed) -> State:
@@ -72,12 +72,10 @@ def initial() -> State:
   seeded(defaultSeed())
 def relations() -> Relations.Decls:
   Relations.Decls.cons({head: {field: "doors", key: Lists.List.cons({head: "label", tail: Lists.List.nil({})}), limit: 64n}, tail: Relations.Decls.cons({head: {field: "greeted", key: Lists.List.cons({head: "principal", tail: Lists.List.nil({})}), limit: 4096n}, tail: Relations.Decls.nil({})})})
-def labelKey(label: String) -> Relations.Key:
-  Lists.List.cons({head: Relations.text(label), tail: Lists.List.nil({})})
-def listedKey(listed: Listed) -> Relations.Key:
-  labelKey(listed.label)
-def greetingKey(greeting: Greeting) -> Relations.Key:
-  Lists.List.cons({head: Relations.text(greeting.principal), tail: Lists.List.nil({})})
+def listedKey(listed: Listed) -> {label: String}:
+  {label: listed.label}
+def greetingKey(greeting: Greeting) -> Greeting:
+  greeting
 def doorOf(listed: Listed) -> Door:
   {label: listed.label, description: listed.description, to: listed.to}
 # The doors in key order, for every walk whose order does not show; the card's menu is in
@@ -85,9 +83,9 @@ def doorOf(listed: Listed) -> Door:
 def doors(state: State) -> Lists.List<Door>:
   Relations.project(state.doors, doorOf)
 def menu(state: State) -> Lists.List<Door>:
-  Lists.map(Relations.order(state.doors, fn(l: Listed) -> Relations.Key: Lists.List.cons({head: Relations.nat(l.place), tail: Lists.List.nil({})})), doorOf)
+  Lists.map(Relations.order(state.doors, fn(l: Listed) -> Nat: l.place), doorOf)
 def position(state: State, label: String) -> Lists.Maybe<Listed>:
-  Relations.lookup(state.doors, labelKey(label), listedKey)
+  Relations.lookup(state.doors, {label: label}, listedKey)
 def greetedBefore(state: State, principal: String) -> Bool:
   match Relations.lookup(state.greeted, greetingKey({principal: principal}), greetingKey):
     case some(_): true
@@ -398,5 +396,5 @@ def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Respon
 def greeting(state: State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   if Relations.count(state.greeted) >= 4096n then Card.tell(Heard.menu({}), render(state, context)) else greeted(state, context)
 def greeted(state: State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {greeted: Plans.Entries.insert({row: {principal: context.principal}})})}))
+  let written(_) = perform(write {greeted: insert {principal: context.principal}})
   Card.tell(Heard.menu({}), render(state, context))
