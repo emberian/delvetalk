@@ -363,6 +363,9 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    true`, table order) of each listed id; the ids are the reader's as before. `methods` other than a
    boolean is a request error. Test: `tests/test_inspect_reads.py` `Listed`.
 
+57. **`world-inspect {source: false}` (host9).** Omits `source`; everything else is as with `source: true`
+   (the default). A non-boolean is a request error. Test: `tests/test_inspect_reads.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -398,10 +401,7 @@ the full `tests.run` once (1011 tests green at lane/host8's last commit).
 
 1. Done on lane/host9 (5.52).
 2. Done on lane/host9 (5.54).
-3. **Hypermedia reads** (docs/AGENTS-API.md "host ops wanted"): `world-inspect` lists per method `admits:
-   true | {clause, reading?}`, the text law's kind-0 verdict for the asking principal on the unchanged state;
-   `world-objects {methods: true}` answers `methods: {<id>: [names]}`; `world-inspect {source: false}` omits the
-   module text. One commit each.
+3. Done on lane/host9 (5.55 to 5.57).
 4. **Compile cache per process.** `World.compiled/requests/builds` are per world, so a fresh world recompiles
    every package (Place 0.11 s first, 0.02 s cached). Keys are content addresses (inputs digest with the
    library pin), so a process-wide cache is sound: keep it in the session (`PackageSession.Session.cache` sits

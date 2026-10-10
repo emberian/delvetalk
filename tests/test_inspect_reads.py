@@ -1,11 +1,11 @@
 """Hypermedia reads (docs/AGENTS-API.md "Host ops wanted"): `world-inspect` lists per turnable method
 `admits: true | {clause, reading?}`, the text law's verdict on a kind-0 change by the asking principal
 through that method on the unchanged state, `true` where the refusing clause reads the state (the
-commit decides); `world-objects {methods: true}` names each listed object's turnable methods.
+commit decides), and omits the module text under `source: false`; `world-objects {methods: true}` names each listed object's turnable methods.
 
-Evidence for HOST-HANDOFF 5.55 and 5.56 (layer: host). Refuted by a method the law refuses its caller
+Evidence for HOST-HANDOFF 5.55 to 5.57 (layer: host). Refuted by a method the law refuses its caller
 listed `true` on a request-only clause, a permitted method listed refused, a clause that reads the state
-answered as a refusal, or a listing whose methods name an object the reader may not view or a method a
+answered as a refusal, `source: false` answering the source, or a listing whose methods name an object the reader may not view or a method a
 turn cannot run.
 
     python3 -W error -m unittest tests.test_inspect_reads -v
@@ -47,6 +47,15 @@ class Admits(Reflection):
         # The verdict is the commit's for the request-only clauses.
         refused = self.turn("probe", "bump2", record(n=nat(1)), principal="kim")
         self.assertEqual((refused["receipt"]["outcome"]["class"], refused["receipt"]["outcome"]["clause"]), ("lawRefused", "owner"))
+
+
+    def test_source_false_leaves_the_source_out(self):
+        whole = self.host.send(op="world-inspect", principal="kim", object="probe")
+        bare = self.host.send(op="world-inspect", principal="kim", object="probe", source=False)
+        self.assertIn("def bump2", whole["source"])
+        self.assertNotIn("source", bare)
+        self.assertEqual({k: v for k, v in whole.items() if k != "source"}, bare)
+        self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="probe", source=0)["status"], "error")
 
 
 class Listed(Reflection):

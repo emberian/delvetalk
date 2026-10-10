@@ -2057,8 +2057,8 @@ def methodsFor (w : World) (o : Object) (principal : String) : Json :=
     | _, _ => m)
 
 /-- `world-inspect {principal, object}`: the pin, law text and entry source an object
-    shows a reader its read policy permits, and its method table with each turnable
-    method's `admits` for the reader. -/
+    shows a reader its read policy permits (`source: false` leaves the source out), and its method
+    table with each turnable method's `admits` for the reader. -/
 def inspectOp (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"
   let principal ← readerOf j
@@ -2067,11 +2067,15 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
   | some o =>
     if !o.read.permits principal then
       return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
-    return Json.mkObj [("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
-      ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")),
-      ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", methodsFor w o principal),
+    let withSource ← match j.getObjVal? "source" with
+      | .ok (.bool b) => pure b
+      | .ok _ => throw "source must be true or false"
+      | .error _ => pure true
+    return Json.mkObj ([("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
+      ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText)] ++
+      (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
-      ("forms", dataJson (listData (methodForms id o.methods)))] |> fun r =>
+      ("forms", dataJson (listData (methodForms id o.methods)))]) |> fun r =>
       -- The views its package declares (`views()`), which `viewDerived` answers.
       let init : TurnState := { world := w, principal, intent := "", subject := principal,
                                 ticks := Delvetalk.Bounds.lawTicks, limits := Json.mkObj [] }
