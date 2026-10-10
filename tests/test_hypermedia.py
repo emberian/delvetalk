@@ -264,6 +264,10 @@ class Envelope(FrontCase):
         saw('unauthenticated', self.call('GET', '/AGENTS.md/world'))
         saw('identity', post('/AGENTS.md/verify', {'handle': 'talkie.delve.town', 'uri': 'at://nothing'}, t=None))
         saw('badModules', post('/AGENTS.md/repl', {'modules': 'x'}))
+        repl = self.front.repl.send
+        self.front.repl.send = lambda req: {'status': 'error', 'message': 'checkpoint was not issued by this process'} if req['op'] == 'turn-resume' else repl(req)
+        saw('replRestarted', post('/AGENTS.md/repl', {'modules': [{'name': 'Package', 'source': PURE}], 'entry': 'twice', 'checkpoint': {}, 'response': {}}))
+        self.front.repl.send = repl
         saw('unspellable', post('/AGENTS.md/heap/objects', {'object': 'Coin_box', 'intent': 'mk-cb'}))
         saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 16385}]}))
         e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))

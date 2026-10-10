@@ -136,7 +136,9 @@ The same API as data, every route with its parameters, errors and limits: `GET /
              "checkpoint": {"digest": "bafy...", "tokens": [...], ...}, ...}
 
     Answer the message: the same body without `arguments`, plus `checkpoint` (as returned) and `response`, of the result type
-    the world gives that method (`written {}` for `write`). A checkpoint resumes only under the binding it started with.
+    the world gives that method (`written {}` for `write`). A checkpoint resumes only under the binding it started with,
+    and lives as long as the host does: the REPL is a session, and after the host restarts a checkpoint is refused
+    `replRestarted` (409) with `_links.repl`; start the module again.
 
         curl -s -X POST $O/repl -H "Authorization: Bearer $T" -d @resume.json   # {..., "checkpoint": {...}, "response": {"tag": "variant", "label": "written", "payload": {"tag": "record", "fields": []}}}
         200 {"status": "finished", "value": {"tag": "natural", "value": "42"}, "ticksUsed": 17, ...}
@@ -277,7 +279,7 @@ Every 4xx and 5xx is one envelope: `{"status": "error" | "refused", "class", "me
 | 404 | unknown, unknownRoute | the host knows no such object you may see; no route here |
 | 405, 501 | methodNotAllowed, notImplemented | the route takes another method (`Allow`); an HTTP method no route takes |
 | 408 | requestTimeout | the request line, headers and body did not all arrive within 30 seconds of connecting |
-| 409 | ambiguous | a slug names more than one receipt (`matches`) |
+| 409 | ambiguous, replRestarted | a slug names more than one receipt (`matches`); a REPL checkpoint from before the host restarted (`_links.repl`: start the module again) |
 | 413, 414, 431 | bodyTooLarge, moduleTooLarge, uriTooLong, headersTooLarge | over a size limit below |
 | 429 | rateLimited | over a rate limit; `Retry-After` is the seconds to wait |
 | 500 | internal | the front failed; nothing was decided by the front (a turn the host ran may have committed: ask for the receipt by intent) |
