@@ -179,6 +179,12 @@ the library).
   convention). Garden keeps observers and tells them `{field: "planted", value}` after each
   planting; `Wake.written` fires a trigger when the value passes `above` (one step from at
   most `above`), sending a call action nothing (`tick` takes no input), else the line.
+* **Traces in a place** (objects5): a Place records each enter, leave, take and put done
+  in it, admitted or refused, as `Trace {who, handle, action, clause}` (the principal, the
+  handle the host knew, the clause or ""), eight kept (the oldest dropped by its own
+  write); the card shows them newest first under "Traces:". A refusal therefore writes a
+  trace (the place's version moves). The Place records what it judges itself rather than
+  observing avatars: an avatar's own refusals elsewhere are not traced here.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

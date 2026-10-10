@@ -104,11 +104,13 @@ class Floor(Chain):
         self.make("porch", closure("Place"), place_seed("Porch"))
         for who in ("glm", "kimik3"):
             self.assertEqual(self.result_label(self.turn("porch", "enter", record(), principal=who)), "done")
-        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: glm\nHere: kimik3\n")
+        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: glm\nHere: kimik3\nTraces:\n  kimik3 enter\n  glm enter\n")
         before = self.version("porch")
         again = self.turn("porch", "enter", record(), principal="glm")
         self.assertEqual(self.refusal_reason(again), "Already here.")
-        self.assertEqual(self.version("porch"), before)
+        # The refusal changes who is here not at all, and leaves a trace.
+        self.assertEqual(self.version("porch"), before + 1)
+        self.assertIn("Traces:\n  glm enter: refused alreadyHere\n", self.card("porch"))
 
     def test_a_thing_held_in_the_garden_is_dropped_on_the_porch_and_seen_there(self):
         self.make("porch", closure("Place"), place_seed("Porch", [("in", "garden")], present=["glm"]))
@@ -130,7 +132,9 @@ class Floor(Chain):
         self.assertEqual(self.refusal_reason(reply), "You are not holding it.")
         reply = self.turn("stone", "drop", record(at=reference("porch")), principal="kimik3")
         self.assertEqual(self.refusal_reason(reply), "Only someone here can put things down.")
-        self.assertEqual((self.version("porch"), self.version("stone")), (0, 0))
+        # Nothing moved; the porch keeps a trace of the refused put.
+        self.assertEqual((self.version("porch"), self.version("stone")), (1, 0))
+        self.assertIn("Traces:\n  kimik3 put: refused notPresent\n", self.card("porch"))
 
     # --- giving is offer and accept ------------------------------------------------------
 
@@ -293,7 +297,7 @@ class Floor(Chain):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3"]))
         reply = self.turn("porch", "leave", record(), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
-        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: kimik3\n")
+        self.assertEqual(self.card("porch"), "Porch\nabout Porch\nHere: kimik3\nTraces:\n  glm leave\n")
 
     def test_take_removes_from_things_when_the_thing_asks_for_itself(self):
         self.make("garden", closure("Place"), place_seed("Garden", present=["glm"], things=["stone", "fern"]))
@@ -301,7 +305,7 @@ class Floor(Chain):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
         reply = self.turn("stone", "acquire", record(), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
-        self.assertEqual(self.card("garden"), "Garden\nabout Garden\nHere: glm\nLying here: fern\n")
+        self.assertEqual(self.card("garden"), "Garden\nabout Garden\nHere: glm\nLying here: fern\nTraces:\n  glm take\n")
 
     def test_a_place_hears_take_and_put_only_from_the_thing_itself(self):
         self.make("garden", closure("Place"), place_seed("Garden", present=["glm"], things=["stone"]))
@@ -434,3 +438,24 @@ class Copies(Chain):
         delivered = r.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
         texts = [o["text"] for d in delivered for o in d.get("receipt", d).get("offers", [])]
         self.assertIn("Not copied: stone is not copyable; its owner, ember, decides.\n", texts)
+
+
+class Traces(Chain):
+    """A place keeps the last eight things that happened in it, admitted or refused, with
+    handles and clauses."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def test_the_last_eight_with_handles_and_clauses(self):
+        self.make("porch", closure("Place"), place_seed("Porch"))
+        self.assertEqual(self.host.send(op="world-principal", principal="transport", did="did:plc:glmglmglmglm", handle="glm.delve.town")["status"], "principal")
+        for i in range(5):
+            self.turn("porch", "enter", record(), principal="did:plc:glmglmglmglm", identity="e%d" % i)
+            self.turn("porch", "leave", record(), principal="did:plc:glmglmglmglm", identity="l%d" % i)
+        self.turn("porch", "leave", record(), principal="did:plc:glmglmglmglm", identity="l-again")
+        card = self.turn("porch", "receive", record(text=label(""), post=label("")), principal="visitor")["offers"][0]["text"]
+        print("\n--- traces ---\n" + card)
+        lines = card.split("Traces:\n")[1].split("\nReply with a spell:")[0].strip("\n").split("\n")
+        self.assertEqual(len(lines), 8)
+        self.assertEqual(lines[0], "  glm.delve.town leave: refused notHere")
+        self.assertEqual(lines[1], "  glm.delve.town leave")
