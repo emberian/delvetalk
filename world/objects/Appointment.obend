@@ -43,26 +43,26 @@ def open(state: State) -> Bool:
 def keep(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   if open(state) then waiting(state, context) else Done.refused({reason: "This appointment is no longer booked."})
 def waiting(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.await({slot: {principal: context.object, intent: textConcat("keep/", context.intent)}, patience: state.after})):
+  match perform(Plan.await({slot: {principal: context.object, intent: "keep/{context.intent}"}, patience: state.after})):
     case timedOut(_): due(state, context)
     case _: Done.refused({reason: "The appointment was answered before its time."})
 def due(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: {status: Plans.Edit::<Status, {}>.set({value: Status.kept({})})}})):
-    case _: sent(state)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {status: Plans.Edit.set({value: Status.kept({})})}}))
+  sent(state)
 def sent(state: State) -> Activity<Plan, Response, Done>:
-  match perform(Plan.send({object: state.to, method: "note", argument: Data.of::<{text: String}>({text: textConcat("appointment: ", state.topic)})})):
+  match perform(Plan.send({object: state.to, method: "note", argument: {text: "appointment: {state.topic}"}})):
     case _: Done.kept({})
 def cancel(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.principal != state.owner then Done.refused({reason: textConcat("Only its owner cancels it; that is ", Card.name(state.owner, context))}) else if open(state) then cancelling(context) else Done.refused({reason: "This appointment is no longer booked."})
+  if context.principal != state.owner then Done.refused({reason: "Only its owner cancels it; that is {Card.name(state.owner, context)}"}) else if open(state) then cancelling(context) else Done.refused({reason: "This appointment is no longer booked."})
 def cancelling(context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: {status: Plans.Edit::<Status, {}>.set({value: Status.cancelled({})})}})):
-    case _: Done.cancelled({})
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {status: Plans.Edit.set({value: Status.cancelled({})})}}))
+  Done.cancelled({})
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def door() -> Card.Door:
   {word: "appointment", blurb: "A note sent when its time comes."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state, context))
+  Card.answer(Card.route(input.text, context, forms()), context, forms(), render(state, context))
 def statusName(status: Status) -> String:
   match status:
     case booked(_): "booked"
@@ -70,4 +70,4 @@ def statusName(status: Status) -> String:
     case cancelled(_): "cancelled"
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("Appointment: ", textConcat(state.topic, textConcat(" for ", textConcat(Card.name(state.to.object, context), textConcat(", after ", textConcat(natText(state.after), textConcat(" (", textConcat(statusName(state.status), textConcat(")", textConcat(Card.mine(state.owner, context), "\n")))))))))))
+  Document.text("Appointment: {state.topic} for {Card.name(state.to.object, context)}, after {natText(state.after)} ({statusName(state.status)}){Card.mine(state.owner, context)}\n")
