@@ -161,6 +161,14 @@ structure CreateRec where
   seed : Json
   /-- Its lineage, when a `make` made it: `{object, pin, receipt}` (docs/GROUND.md §6 change 6). -/
   madeFrom : Option Json := none
+  /-- What the turn asked (never journaled): the creating object, the package, the seed and law given,
+      and a layer an `extend` of the same turn laid into the making (`""` for none), so the creation
+      can be built again with it. -/
+  creator : String := ""
+  package : String := ""
+  seedArg : Data := .record []
+  lawArg : String := ""
+  layer : String := ""
 
 /-- One change to an object, by the object whose method made it. `caller` is the
     object that called the running one (empty when the running object was the turn's

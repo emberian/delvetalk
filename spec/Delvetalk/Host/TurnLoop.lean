@@ -426,8 +426,13 @@ def creationInputs (creator : Object) (package : String) : Except (String × Str
     else throw ("unknownPackage", "the creator has no sealed modules to name")
 
 def buildCreated (w : World) (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
-    (height : Nat) : Except (String × String) (CreateRec × Built) := do
+    (height : Nat) (layer : String := "") : Except (String × String) (CreateRec × Built) := do
   let inputs ← creationInputs creator package
+  -- A layer an `extend` of the same turn lays into the making: one closure, one pin.
+  let inputs ← if layer.isEmpty then pure inputs else do
+    if layer.utf8ByteSize > Limits.maxPackageBytes then
+      throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
+    (extendInputs inputs layer).mapError (("compile", ·))
   let built ← (compileObject w inputs).mapError (("compile", ·))
   let initial ← (initialState built).mapError (("compile", ·))
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
@@ -439,6 +444,33 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
     (fun e => (if isAmendmentRefusal e then "law"
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
   return ({ object := { object with relations }, sources, seed := dataJson state }, built)
+
+/-- An `extend` (or `reprogram {mode: extend}`) of `id`, which this turn created (`made`): the creation
+    built again with the layer over its package, judged by the made thing's own law as a reprogram
+    (kind 1) proposed by `self`. A replacing reprogram, a migration or a second layer of a thing not
+    made yet is refused; the creation journals one closure and its pin. -/
+def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) (made : CreateRec)
+    (source migration : String) (extend : Bool) : M Data := do
+  let s ← get
+  if !extend then return ← refusedReading bounds responseType "unknownObject" s!"{id} is not made until this turn ends; a layer may be laid into the making with extend"
+  if !migration.isEmpty then return ← refusedReading bounds responseType "migration" s!"{id} is being made: its state has no older type to migrate"
+  if !made.layer.isEmpty then return ← refusedWith bounds responseType "duplicate"
+  let some creator := s.world.objects[made.creator]? | evaluation "the creating object vanished"
+  match buildCreated s.world creator made.package made.seedArg made.lawArg s.principal (s.world.height + 1) source with
+  | .error (clause, message) =>
+    refusedReading bounds responseType clause
+      ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
+  | .ok (again, built) =>
+    let o := again.object
+    let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", []⟩
+    if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
+      return ← refusedReading bounds responseType clause s!"refused {clause}: the law of {id} does not admit this layer"
+    let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
+                              creator := made.creator, package := made.package, seedArg := made.seedArg,
+                              lawArg := made.lawArg, layer := source }
+    set { s with creates := s.creates.map (fun (k, c) => if k == id then (k, again) else (k, c)),
+                 world := cacheBuild s.world o.inputs built }
+    respond bounds responseType "reprogrammed" [.record [("pin", .label o.pin)]]
 
 /-- The subject a call or send of `method` on `callee` by the running object `self` acts
     with, and the argument it runs with: the running frame's own subject and the argument when
@@ -1434,6 +1466,11 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | _ => ((f.lookup "mode").bind labelOf) == some "extend"
     let some id := referenceId target | refusedWith bounds responseType "foreignWorld"
     let s ← get
+    -- An object this turn created is not made yet: an `extend` of it lays the layer into the making
+    -- (the creation built again with it, judged by the made thing's law), so a kind makes a thing and
+    -- grafts its body in one entry.
+    if let some (_, made) := s.creates.find? (·.1 == id) then
+      return ← extendCreation bounds responseType self id made source migration extend
     let some o := s.world.objects[id]? | refusedWith bounds responseType "unknownObject"
     -- Reprogramming another object is a change of it proposed by the running object: it reads
     -- the target, and the target's own law judges it with request.caller = the proposer.
@@ -1659,7 +1696,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       -- The checker's diagnostic goes back with the clause, where the call site's result has `reading`.
       | .error (clause, message) => refusedReading bounds responseType clause message
       | .ok (made, built) =>
-        let made := { made with object := { made.object with supervisor }, madeFrom }
+        let made := { made with object := { made.object with supervisor }, madeFrom, creator := self, package,
+                                seedArg := seed, lawArg }
         set { note s with creates := s.creates ++ [(id, made)], world := cacheBuild s.world made.object.inputs built }
         respond bounds responseType "created" [.record [("object", .record [("world", .label ""), ("object", .label id)])]]
   | .variant "send" (.record f) | .variant "sendVia" (.record f) =>

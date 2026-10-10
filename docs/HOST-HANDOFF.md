@@ -1053,6 +1053,20 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    reply (`withFields`, `heardFits`). The objects lane's World/Card lines: `Reply.misfit`. Tests:
    `tests/test_spell_turns.py` `Misfits`.
 
+122. **A turn's `extend` reaches what it created (host13; the rewrite lane's Kind).** An `extend` (or
+   `reprogram {mode: extend}`) naming an object the same turn created lays the layer into the making
+   (`extendCreation`): the creation is built again by `buildCreated … layer` from the package, seed
+   and law it was asked with (`CreateRec.creator`, `package`, `seedArg`, `lawArg`, `layer`, never
+   journaled), over which `extendInputs` lays the layer, so the `created` entry journals one closure and
+   its pin, and replay rebuilds it as any creation. The made thing's own text law judges it as a
+   reprogram (kind 1, proposer the running object) before it is staged; a compile failure answers
+   `refused {clause: compile, reading}` and nothing is staged, so a kind that `refuse`s on it leaves
+   nothing made. A replacing reprogram (`unknownObject`, with a reading), a migration (`migration`) or
+   a second layer (`duplicate`) of a thing not made yet is refused. A `call` or `write` to a creation of
+   the same turn is still `unknownObject` (judge and replay know only committed objects); the Kind's
+   send-then-graft can become create-then-extend. No replay edition change (creations replay from
+   their recorded inputs as before). Tests: `tests/test_make.py` `CreateThenExtend`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
