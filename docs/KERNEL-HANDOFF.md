@@ -864,4 +864,19 @@ better to an author.
   reply is ~1 MB of suffixes in the worst case, and the addresses of everything after
   the walk shift by the walk's cell count. `textHasAny` (above) removes both once the
   objects lane switches the check to it; measure the rehearsal again then.
+- Relational day 1 (docs/RELATIONAL.md §2, §3, §5). Law grammar (`ObjectiveBendLaw`):
+  `insertOnly(F)`, `count(new.F) <= INT`, `count(new.F) <= count(old.F) + INT` (the two
+  fields must be the same) and `REF in new.F.COL` (subject or caller; one column), as
+  `LawExpr.insertOnly/countLe/countGrowth/memberColumn`, each refused by name when
+  misshapen, compiled to `Pred.any []` like `appendOnly`/`member`; `parse_relational` and
+  `parse_refuses_relational` (native_decide) are the parse tests. `Host/Law.lean` gained
+  fail-closed cases (false) for the four so the tree builds: the host lane denotes them
+  (day 2). The `write {...}` atom takes `insert row`, `upsert row`, `retract key`
+  (`Plans.Entries.insert({row})`, `.upsert({row})`, `.retract({key})`; the Plan.obend
+  constructors are the objects lane's, `test_sugar ...test_relation_edits_are_their_plans`
+  compares against a Plan library that has them). `Package.relationsOf`: when the entry
+  module declares a nullary `relations()`, `compileEntryFrom` compiles and runs it once and
+  the artifact carries `relations: [{field, key: [columns]}]` (refusals name
+  `relations():`); `compileEntryCore` is the compile without it (check-package's path).
+  Test: `test_sugar.Relations`.
 

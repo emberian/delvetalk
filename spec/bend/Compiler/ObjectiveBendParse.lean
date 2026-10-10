@@ -523,7 +523,9 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
     -- `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: E, ...})})`
     -- with `E` = `Plans.Edit.add({delta: v})` (add), `Plans.Edit.set({value: v})` (set),
     -- `Plans.Entries.append({item: v})` (append), `Plans.Entries.remove({index: v})`
-    -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem); `Plans` is the module's
+    -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem), and for a relation
+    -- `Plans.Entries.insert({row: v})` (insert), `Plans.Entries.upsert({row: v})` (upsert),
+    -- `Plans.Entries.retract({key: v})` (retract); `Plans` is the module's
     -- alias of Plan.obend (`writePlansAlias`, resolved after parsing) and the type
     -- arguments are inferred from the object's Edits.
     else if firstText == "write" && (← peek env) == some "{" then
@@ -544,7 +546,10 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
           | "append" => pure ("Entries", "append", "item")
           | "remove" => pure ("Entries", "remove", "index")
           | "removeItem" => pure ("Entries", "removeItem", "item")
-          | other => throw ("Error: write {field: op value} takes add, set, append, remove or removeItem, not " ++ other)
+          | "insert" => pure ("Entries", "insert", "row")
+          | "upsert" => pure ("Entries", "upsert", "row")
+          | "retract" => pure ("Entries", "retract", "key")
+          | other => throw ("Error: write {field: op value} takes add, set, append, remove, removeItem, insert, upsert or retract, not " ++ other)
         edits := edits.push (tokenText name, .call (lib type ctor) [.record [(payload, value)] span] span)
         let next ← take env
         if tokenText next == "}" then break

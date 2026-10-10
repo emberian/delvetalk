@@ -149,6 +149,9 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
     match who, (rawField field new).bind (listItems []) with
     | some w, some items => items.contains (canon (.label w))
     | _, _ => false
+  -- Relations (RELATIONAL §5): parsed by the kernel; the host lane denotes them (day 2).
+  -- Until then they fail closed, as an unreadable field does.
+  | .insertOnly _ | .countLe _ _ | .countGrowth _ _ | .memberColumn _ _ _ => false
   | .not body => !denote facts old new body
   | .and left right => denote facts old new left && denote facts old new right
   | .or left right => denote facts old new left || denote facts old new right

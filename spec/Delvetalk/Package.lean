@@ -235,7 +235,7 @@ theorem lawTable_names (laws : List String) (ast : Minidregg.Compiler.ObjectiveB
 
 /-- Compile `entry` from a prepared closure: select its reached knot, build the proposal
 and packet once, check it. -/
-def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagnostic EntryCompiled := do
+def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagnostic EntryCompiled := do
   let prepared := request.prepared
   let modules := prepared.modules
   let lowered ← prepared.lower (modules.length - 1) entry (.arr #[]) (.arr #[]) request.limits "definition"
@@ -282,7 +282,7 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
 /-- Compile the request's entry: prepare its closure, then the entry. -/
 def compileEntry (j : Json) : Except Diagnostic EntryCompiled := do
   let request ← prepareRequest j
-  (compileEntryFrom request (← lift (j.getObjValAs? String "entry"))).mapError (withHint j)
+  (compileEntryCore request (← lift (j.getObjValAs? String "entry"))).mapError (withHint j)
 
 -- A law without a reading is in the artifact's table with reading "", beside one with a
 -- reading, in source order.
@@ -587,6 +587,42 @@ def executeDataEntry (entry : Delvetalk.CheckedEntry) (arguments : Array Data) (
   let argumentBytes := 2 + arguments.foldl (fun n value => n + dataJsonBytes value) 0 + (arguments.size - 1)
   executePreparedNative (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel arguments)
     argumentBytes limits
+
+/-- A package's declared relations (RELATIONAL §2): the value of its nullary `relations()`
+(a list of `{field, key: List<String>}`), evaluated once at compile so the host reads it from
+the artifact without compiling a def per object. `none` when the entry module declares none. -/
+def relationsOf (request : PreparedRequest) : Except Diagnostic (Option Json) := do
+  let ast := request.prepared.asts.getLastD default
+  unless (signaturesOf ast).any (fun s => s.1 == "relations" && s.2.isEmpty) do return none
+  let refusal := fun (message : String) =>
+    ({ stage := "objective-core-elaboration", message := "relations(): " ++ message,
+       sourceModule := (request.prepared.modules.getLast?).map (·.name) } : Diagnostic)
+  let compiled ← compileEntryCore request "relations"
+  match executeDataEntry compiled.entry #[] request.limits with
+  | .error e => throw (refusal e)
+  | .ok (.refused failure _) => throw (refusal failure)
+  | .ok (.finished value _ _ _) =>
+    let some rows := Minidregg.Compiler.ObjectiveBendDataWire.listItems? value
+      | throw (refusal "is not a list")
+    let decls ← rows.toList.mapM fun row => do
+      let .record fields := row | throw (refusal "a declaration is {field, key}")
+      let some (.label field) := fields.lookup "field" | throw (refusal "a declaration names its field")
+      let some keyData := fields.lookup "key" | throw (refusal "a declaration names its key")
+      let some keys := Minidregg.Compiler.ObjectiveBendDataWire.listItems? keyData
+        | throw (refusal "a key is a list of column names")
+      let columns ← keys.toList.mapM fun k => match k with
+        | .label c => pure c
+        | _ => throw (refusal "a key column is a String")
+      return Json.mkObj [("field", toJson field), ("key", toJson columns)]
+    return some (Json.arr decls.toArray)
+
+/-- Compile `entry` from a prepared closure; the artifact lists the package's `relations`
+when it declares them. -/
+def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagnostic EntryCompiled := do
+  let compiled ← compileEntryCore request entry
+  match ← relationsOf request with
+  | none => return compiled
+  | some relations => return { compiled with artifact := compiled.artifact.setObjVal! "relations" relations }
 
 /-- `run-data-v1` on a held entry (the strict typed-data wire). -/
 def executeDataEntryWire (entry : Delvetalk.CheckedEntry) (arguments limits : Json) : Except String Json := do
