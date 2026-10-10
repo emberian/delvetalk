@@ -86,10 +86,8 @@ On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` 
     docker compose up -d --wait delvetalk-hostd
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
 
-`deploy.genesis` is docs/GENESIS.md as one command. The transport image carries only `deploy/seed.py` of `deploy/`
-(`Dockerfile.transport`), so this command, `deploy/library-update.sh` and `deploy.spend` below do not run in
-`delvetalk-ops` until the image carries them; until then run them from a checkout of the same commit on the workhorse,
-as uid 10425, against the socket under the data directory (`--host-socket /var/lib/delvetalk/v2/state/host.sock`). The opener arrives first (`world-arrive`), then creates `policy`,
+`deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/`, so it, `deploy/library-update.sh` and
+`deploy.spend` run in `delvetalk-ops`). The opener arrives first (`world-arrive`), then creates `policy`,
 `directory`, `garden`, `tide`, `workshop`, `anthology`, `cistern`, `commons`, `rooms` and `play`, in that order. It
 refuses to run if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the
 same way. `deploy.seed` creates one further object by hand.

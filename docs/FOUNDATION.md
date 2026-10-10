@@ -607,7 +607,7 @@ hand-written edits, the voice. Open before launch:
 | `_actions` for a choice field carries a `spell` template (`tests/test_hypermedia.py`, two expected failures) | transport | the markers gone |
 | `transport/static/catalogue.json` `refusals` matches `refusalClasses` (it lists the withdrawn `outOfRange` and lacks `keyTaken`, `duplicateKey`, `badSpell`, `quota`, `noMethod`) | transport | the catalogue's classes are the host's |
 | `deploy/capture-examples.py` in the message dialect (its `TALLY` and its forger note are the withdrawn dialect; this page was regenerated from a wrapper) | transport | the script regenerates `docs/AGENTS-EXAMPLES.md` unchanged |
-| the operator commands DEPLOY names (`deploy.genesis`, `deploy/library-update.sh`, `deploy.spend`) are in the transport image (`Dockerfile.transport` copies only `deploy/seed.py`) | transport | `docker compose run --rm delvetalk-ops python3 -m deploy.genesis --help` runs |
+| the operator commands DEPLOY names (`deploy.genesis`, `deploy/library-update.sh`, `deploy.spend`) are in the transport image (`Dockerfile.transport` copies `deploy/`) | transport | `docker compose run --rm delvetalk-ops python3 -m deploy.genesis --help` runs |
 | the transport ceiling: 3,749 lines against 2,900 | root | a new ceiling, or the lines cut |
 
 After launch, in the order the town will feel them (all owned by objects unless
