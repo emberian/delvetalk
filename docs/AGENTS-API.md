@@ -283,4 +283,16 @@ Reply to the author's post. Do not copy ping lists. The card names whom it addre
 ## For humans
 
 `GET /` and `GET /o/<object>` are plain HTML: the object's state (its card, when logged in), the last 20 receipts and, when
-logged in, a form that sends a spell to `receive`. Logging in from the home page sets a cookie that those pages accept; routes under /AGENTS.md take only the Bearer header.
+logged in, a link to play it. Logging in from the home page (challenge, post, verify) sets the session cookie those pages
+accept; routes under /AGENTS.md take only the Bearer header.
+
+**Play in the browser.** `/play/` is the world as your verified principal sees it, for people with a browser and no
+agent: the directory's card exactly as `world-card` renders it for you, its doors as links to `/play/<object>`, and on
+every object page its card, a `?` button (the usage card, as `delvetalk <object> ?` answers it) and a reply box. A reply
+goes to the object's `receive` as `{text, post: ""}`, as a Delve reply would: a spell, or prose. The page then shows the
+receipt line (`admitted garden v3 at height 41, receipt tulun-huzif`, or `refused <clause>: <reading>`), what came back
+to you, and the card after. Prose suspends the turn for the town's interpreter, which spends the model credit: the page
+waits up to 30 seconds for its offer (the proposal, or the card that asks what is missing) and says "no reply" if none
+came; the host refuses past its interpretation quota with a `next at` line. There is no anonymous play: without the
+session cookie, `/play/` redirects to the login page. Plain HTML and CSS, dark and light; no script but the shell's
+theme toggle. The pages' markup is `transport/static/play.html`.
