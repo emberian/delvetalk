@@ -10,6 +10,7 @@ principal, and the reply card is what the turn offers.
 """
 import unittest
 
+from tests.test_replay import relation
 from tests.test_chain import Chain, boolean, field, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
@@ -136,7 +137,7 @@ def planted(context: Abi.Context) -> String:
 
     def directory(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), doors={"tag": "list", "items": []}, greeted={"tag": "list", "items": []}))
+                           entry="initial", seed=record(owner=label("ember"), doors=relation(), greeted=relation()))
         self.assertEqual(r["status"], "created", r)
         for label_, description, to in ROOT_DOORS:
             reply = self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")
@@ -146,13 +147,13 @@ def planted(context: Abi.Context) -> String:
         """Genesis scripts named every field and broke whenever an object gained one (`greeted`)."""
         create = lambda ident, seed: self.host.send(op="world-create", principal="ember", identity=ident, object=ident,
                                                     modules=closure("Directory"), entry="initial", seed=seed)
-        doors = {"tag": "list", "items": [door("GARDEN", "Plant something.", "garden")]}
+        doors = relation(record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"), place=nat(0)))
         made = create("d1", record(owner=label("ember"), doors=doors))
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
         self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy", "words", "fields"])
         self.assertEqual(field(state, "doors"), doors)
-        self.assertEqual(field(state, "greeted"), {"tag": "list", "items": []})
+        self.assertEqual(field(state, "greeted"), relation())
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
         # {doors} alone: a seed that does not set `owner` gets the creating principal, so the
         # creator owns what it makes and the law's dry run admits it.
@@ -251,8 +252,8 @@ def planted(context: Abi.Context) -> String:
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
         # A speaker without a wake: the host names what it looked for.
         missing = self.say("delvetalk wake watch / event: mention / actor: ember.delve.town", obj="root", who=did)
-        self.assertEqual(str(missing.get("offers", missing)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'Not passed to wake: unknownObject\\n'}]")
-        self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "Not passed to wake: unknownObject\n"), missing)
+        self.assertEqual(str(missing.get("offers", missing)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'No card named wake; reply here for the list of doors.\\n'}]")
+        self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "No card named wake; reply here for the list of doors.\n"), missing)
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
@@ -263,7 +264,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(self.version("garden"), 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden"})
         ghost = self.say("delvetalk forge make / name: sentry", obj="root")
-        self.assertEqual(ghost["offers"][0]["text"], "Not passed to forge: unknownObject\n")
+        self.assertEqual(ghost["offers"][0]["text"], "No card named forge; reply here for the list of doors.\n")
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()

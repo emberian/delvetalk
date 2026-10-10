@@ -4,6 +4,7 @@ import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
 import ./Card.obend as Card
+import ./Relation.obend as Relations
 record State:
   entries: Lists.List<Plans.Receipt>
 # What a creator may supply; the host lays it over initial().
@@ -18,6 +19,10 @@ def seeded(seed: Seed) -> State:
   {entries: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
+# None. The garden digs a cistern from its own chain, which declares relations (Garden,
+# Bell), and the host then compiles the created entry's relations(); it must exist.
+def relations() -> Relations.Decls:
+  Relations.Decls.nil({})
 # Retains a refusal (or any) receipt in the order it was offered.
 def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {entries: Plans.Entries.append({item: input.receipt})}}))

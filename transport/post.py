@@ -50,8 +50,7 @@ def mention_facets(client, text):
 
 
 def quota_limit(host):
-    """The hourly cap: the host's world-status `postQuota` when it has one, else this file's constant.
-    TODO(host quota object): the host will own this as a journaled object."""
+    """The hourly cap: the host's world-status `postQuota` when it has one, else this file's constant."""
     got = host.send({'op': 'world-status'}) if host else {}
     if isinstance(got.get('postQuota'), int):
         return got['postQuota'], 'host'
@@ -137,7 +136,7 @@ def send(request, intent, state, credentials, client=None, limit=LIMIT):
     return result
 
 
-def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=None, client=None, intent=None):
+def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=None, client=None, intent=None, object=None):
     """Post a bridge outbox draft (its replyTo, object and slot; `text` replaces its text), record it with the host, and
     mark it posted: what `post --draft ... --i-am-ember-and-authorize-posting` does, callable. -> the post result."""
     path = Path(path)
@@ -150,10 +149,11 @@ def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=Non
     request = build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body))
     limit, _ = quota_limit(host)
     result = send(request, intent or f'draft-{path.stem}', Path(state), credentials, client=client, limit=limit)
-    if d.get('object'):
-        result['recorded'] = record_posted(host, result, d['object'], slot, wiki_target(body))
+    object = object or d.get('object')
+    if object:
+        result['recorded'] = record_posted(host, result, object, slot, wiki_target(body))
     from transport.bridge import write_atomic
-    write_atomic(path, dict(d, text=body, posted=True, **({} if body == d['text'] else {'original': d['text']})))
+    write_atomic(path, dict(d, text=body, posted=True, **({} if body == d['text'] else {'original': d.get('original', d['text'])})))
     return result
 
 

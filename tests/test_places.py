@@ -12,6 +12,7 @@ end to end.
 """
 import unittest
 
+from tests.test_turn_world import relation
 from tests.test_chain import Chain, boolean, nil, reference
 from tests.test_objects import check, closure, compile_job, computation, row_names
 from tests.test_turn_world import label, nat, record
@@ -26,8 +27,13 @@ def listing(items):
 def place_seed(name, exits=(), present=(), things=(), owner="ember"):
     return record(owner=label(owner), name=label(name), description=label("about " + name),
                   exits=listing([record(label=label(l), to=reference(t)) for l, t in exits]),
-                  present=listing([reference(p) for p in present]),
-                  things=listing([reference(t) for t in things]))
+                  present=relation(*[reference(p) for p in keyed(present)]),
+                  things=relation(*[reference(t) for t in keyed(things)]))
+
+
+def keyed(ids):
+    """Object ids in the order of their key {object}: canonical text order, length then bytes."""
+    return sorted(ids, key=lambda i: (len(i.encode()), i.encode()))
 
 
 def thing_seed(name, holder="", location="", owner="ember"):
@@ -39,7 +45,8 @@ def avatar_seed(handle, at="", holding=()):
 
 
 def names(wire):
-    return [[f["value"]["value"] for f in item["fields"] if f["name"] == "object"][0] for item in wire["items"]]
+    rows = wire["payload"]["fields"][0]["value"]["items"] if wire.get("tag") == "variant" else wire["items"]
+    return [[f["value"]["value"] for f in item["fields"] if f["name"] == "object"][0] for item in rows]
 
 
 class Floor(Chain):
@@ -160,8 +167,7 @@ class Floor(Chain):
             "stone\n"
             "a stone\n"
             "Held by glm.\n"
-            "Offered to kimik3 (you): accept it from your avatar until clock 50.\n"
-            "(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n"))
+            "Offered to kimik3 (you): accept it from your avatar until clock 50.\n"))
         self.assertIn("Offered to kimik3 (you): accept it from your avatar until clock ", card)
         self.assertEqual(self.result_label(self.accept()), "done")
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("kimik3", "none"))
@@ -212,16 +218,6 @@ class Floor(Chain):
         self.assertEqual(self.result_label(by_spell), "done", by_spell)
         self.assertEqual((self.holder(), self.holding("kimik3")), ("kimik3", ["stone"]))
 
-    def test_give_is_an_offer_for_one_release(self):
-        self.holders()
-        h = self.now()
-        self.assertEqual(self.result_label(self.turn("stone", "give", record(to=reference("kimik3")), principal="glm")), "done")
-        until = [f["value"]["value"] for f in self.stone("offer")["payload"]["fields"] if f["name"] == "until"][0]
-        self.assertGreaterEqual(int(until), h + 1000)
-        self.assertEqual(self.holder(), "glm")
-        self.assertIn("(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)", self.card("stone"))
-        self.assertEqual(self.result_label(self.accept()), "done")
-
     def holding(self, name):
         return names([f["value"] for f in self.state(name)["fields"] if f["name"] == "holding"][0])
 
@@ -249,7 +245,7 @@ class Floor(Chain):
     def test_thing_inspect_offers_its_card(self):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
         card = self.turn("stone", "receive", record(text=label(""), post=label(""), slot=label("")), principal="visitor")["offers"][0]["text"]
-        self.assertTrue(card.startswith("stone\na stone\nNobody holds it.\n(give is now offer"), card)
+        self.assertTrue(card.startswith("stone\na stone\nNobody holds it.\n\nReply with a spell:\n"), card)
         self.assertIn("\nReply with a spell:\n\n    delvetalk stone acquire\n", card)
 
     def test_a_place_with_64_things_renders_under_the_default_budget(self):
@@ -382,9 +378,9 @@ class Talk(Chain):
     def test_say_and_emote_reach_everyone_present_whisper_one_and_a_stranger_is_refused(self):
         said = self.say("delvetalk porch say / line: the lamp is lit", "glm")
         self.assertEqual(said["result"]["label"], "done", said)
-        # The newest arrival first; each avatar's principal gets the line.
+        # In key order (who is here is keyed by object id); each avatar's principal gets the line.
         offers = [(o["to"], o["text"]) for o in said["receipt"]["offers"]]
-        self.assertEqual(offers, [("kimik3", "glm: the lamp is lit\n"), ("glm", "glm: the lamp is lit\n")])
+        self.assertEqual(offers, [("glm", "glm: the lamp is lit\n"), ("kimik3", "glm: the lamp is lit\n")])
         emoted = self.say("delvetalk porch emote / line: waves", "kimik3")
         self.assertEqual([o["text"] for o in emoted["receipt"]["offers"]], ["* kimik3 waves\n", "* kimik3 waves\n"])
         whispered = self.say("delvetalk porch whisper / to: kimik3 / line: psst", "glm")

@@ -35,31 +35,27 @@ def word (bytes : ByteArray) (at_ : Nat) : UInt32 :=
   (bytes.get! at_).toUInt32 <<< 24 ||| (bytes.get! (at_ + 1)).toUInt32 <<< 16 |||
   (bytes.get! (at_ + 2)).toUInt32 <<< 8 ||| (bytes.get! (at_ + 3)).toUInt32
 
-/-- The message schedule `W[0..63]` of the block at `offset`. -/
-def schedule (bytes : ByteArray) (offset : Nat) : Array UInt32 := Id.run do
-  let mut w : Array UInt32 := Array.mkEmpty 64
-  for t in [0:16] do w := w.push (word bytes (offset + 4 * t))
-  for t in [16:64] do
-    let x := w[t - 15]!
-    let y := w[t - 2]!
-    let s0 := rotr x 7 ^^^ rotr x 18 ^^^ (x >>> 3)
-    let s1 := rotr y 17 ^^^ rotr y 19 ^^^ (y >>> 10)
-    w := w.push (w[t - 16]! + s0 + w[t - 7]! + s1)
-  return w
-
-/-- Rounds `t..63` on the working variables (a recursive function, so the eight words stay
-unboxed), then the working variables. -/
-def rounds (w : Array UInt32) (t : Nat) (a b c d e f g h : UInt32) : UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 :=
+/-- Rounds `t..63` of the block at `offset`, then the working variables. The eight working
+variables and the last sixteen schedule words (`w0` the oldest) are arguments, so they stay
+unboxed and the schedule is never stored: `W[t]` is read from the block for `t < 16` and
+otherwise is `σ1(W[t-2]) + W[t-7] + σ0(W[t-15]) + W[t-16]`, then shifted into the window. -/
+def rounds (bytes : ByteArray) (offset : Nat) (t : Nat) (a b c d e f g h : UInt32)
+    (w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 : UInt32) :
+    UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 :=
   if t < 64 then
-    let t1 := h + (rotr e 6 ^^^ rotr e 11 ^^^ rotr e 25) + ((e &&& f) ^^^ (~~~e &&& g)) + k[t]! + w[t]!
+    let wt := if t < 16 then word bytes (offset + 4 * t) else
+      (rotr w14 17 ^^^ rotr w14 19 ^^^ (w14 >>> 10)) + w9 + (rotr w1 7 ^^^ rotr w1 18 ^^^ (w1 >>> 3)) + w0
+    let t1 := h + (rotr e 6 ^^^ rotr e 11 ^^^ rotr e 25) + ((e &&& f) ^^^ (~~~e &&& g)) + k[t]! + wt
     let t2 := (rotr a 2 ^^^ rotr a 13 ^^^ rotr a 22) + ((a &&& b) ^^^ (a &&& c) ^^^ (b &&& c))
-    rounds w (t + 1) (t1 + t2) a b c (d + t1) e f g
+    rounds bytes offset (t + 1) (t1 + t2) a b c (d + t1) e f g
+      w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 wt
   else (a, b, c, d, e, f, g, h)
 termination_by 64 - t
 
 def compress (state : Array UInt32) (bytes : ByteArray) (offset : Nat) : Array UInt32 :=
-  let (a, b, c, d, e, f, g, h) := rounds (schedule bytes offset) 0
+  let (a, b, c, d, e, f, g, h) := rounds bytes offset 0
     state[0]! state[1]! state[2]! state[3]! state[4]! state[5]! state[6]! state[7]!
+    0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
   #[state[0]! + a, state[1]! + b, state[2]! + c, state[3]! + d,
     state[4]! + e, state[5]! + f, state[6]! + g, state[7]! + h]
 

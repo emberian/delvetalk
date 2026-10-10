@@ -17,6 +17,7 @@ import unittest
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 FOUNDATION = "/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend"
 _copy = None
 

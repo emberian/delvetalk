@@ -553,7 +553,7 @@ class Pages(FrontCase):
         self.assertEqual(s, 200)
         self.assertIn(('CARD for ' + DID).encode(), page)
         self.assertEqual(real({'op': 'world-status'})['height'], before)  # no describe/present turn journaled
-        heights = [int(x) for x in __import__('re').findall(rb'<tr><td>(\d+)</td>', page)]
+        heights = [int(x) for x in __import__('re').findall(rb'<span class="code">ht.(\d+)</span>', page)]
         self.assertEqual(len(heights), 20)
         self.assertEqual(heights, sorted(heights, reverse=True))
         self.assertEqual(heights[0], newest)
@@ -622,7 +622,7 @@ class Play(FrontCase):
         card = self.host.send({'op': 'world-card', 'principal': DID, 'object': 'directory'})['text']
         self.assertEqual(s, 200)
         self.assertIn(html.escape(card).encode(), page)
-        self.assertIn(b'<a href="/play/garden">GARDEN</a>', page)
+        self.assertRegex(page, rb'<a class="door" href="/play/garden"[^>]*><span class="kind" data-id="garden"></span>GARDEN</a>')
         self.assertNotIn(b'<script>', page.split(b'</head>')[1])
         s, _, garden = self.play('/play/garden')
         self.assertIn(b'THE NIGHT GARDEN', garden)

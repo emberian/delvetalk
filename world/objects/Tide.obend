@@ -5,12 +5,14 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./Card.obend as Card
+import ./Relation.obend as Relations
 # kimik3's tide: programmable wakes as an object. Anyone subscribes themselves (the
 # subscriber is the turn's principal, never an argument); anyone may tick, but a tick
 # sooner than `gap` clock units after the last is refused tooSoon, naming when the next may
 # come. A tick sends each due subscriber's Avatar (its id is the DID) a note.
 # handle: the subscriber's handle as the host knew it at subscribe, shown as a bell
-# shows its planter's.
+# shows its planter's. The subscriptions are a relation keyed {who}: one per principal,
+# subscribing again is an upsert of the row, and the card lists them in key order.
 record Sub:
   who: String
   every: Nat
@@ -21,7 +23,7 @@ record State:
   ticks: Nat
   last: Nat
   gap: Nat
-  subs: Lists.List<Sub>
+  subs: Relations.Relation<Sub>
 record Seed:
   gap: Nat
 record Edits:
@@ -30,29 +32,38 @@ record Edits:
   subs: Plans.Entries<Sub, Sub>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
-# What the law can say today. "Subscribe only yourself" is an item of a list and
-# "tooSoon" compares old and new: neither is in today's fragment, so Bend refuses them.
-# With request.method and the two-tier law:
-#   self: request.method == "tick" or request.subject == <the appended item's who>
+# What the law text cannot say: "a changed subscription is its principal's own" ranges over
+# the rows, and "tooSoon" compares old and new; the Bend predicate says both.
 law clock "ticks only count up": monotone(ticks)
 law last "the last tick only moves forward": monotone(last)
-# The two-tier law, in Bend (stubbed against Abi.Request until the host runs it): a tick
-# sooner than gap after the last is tooSoon; a subscription that changed must be the
-# requesting principal's own.
+# The two-tier law, in Bend: a tick sooner than gap after the last is tooSoon; every key
+# the write changed (a row added, replaced or retracted) is the requesting principal's.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if new.ticks > old.ticks && old.ticks > 0n && request.context.clock < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon"}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self"})
-def ownSubs(old: Lists.List<Sub>, new: Lists.List<Sub>, principal: String) -> Bool:
-  match new:
-    case nil(_): true
-    case cons(n): changedSub(old, n.head, n.tail, principal)
-def changedSub(old: Lists.List<Sub>, head: Sub, rest: Lists.List<Sub>, principal: String) -> Bool:
+def ownSubs(old: Relations.Relation<Sub>, new: Relations.Relation<Sub>, principal: String) -> Bool:
+  ownRows(Relations.rows(old), Relations.rows(new), principal)
+# One merge of the old and new rows in key order: a key on one side only, or a row that
+# differs, is a changed key and must be the principal's.
+def ownRows(old: Lists.List<Sub>, new: Lists.List<Sub>, principal: String) -> Bool:
   match old:
-    case nil(_): head.who == principal && ownSubs(old, rest, principal)
-    case cons(o): (o.head.who == head.who && o.head.every == head.every && o.head.note == head.note && o.head.since == head.since && o.head.handle == head.handle || head.who == principal) && ownSubs(o.tail, rest, principal)
+    case nil(_): Lists.any(new, fn(n: Sub) -> Bool: n.who != principal) == false
+    case cons(o): ownFrom(o.head, o.tail, new, principal)
+def ownFrom(old: Sub, olds: Lists.List<Sub>, new: Lists.List<Sub>, principal: String) -> Bool:
+  match new:
+    case nil(_): old.who == principal && ownRows(olds, new, principal)
+    case cons(n): ownStep(Relations.compare(subKey(old), subKey(n.head)), old, olds, n.head, n.tail, principal)
+def ownStep(order: Nat, old: Sub, olds: Lists.List<Sub>, new: Sub, news: Lists.List<Sub>, principal: String) -> Bool:
+  if order == 1n then (sameSub(old, new) || new.who == principal) && ownRows(olds, news, principal) else if order == 0n then old.who == principal && ownRows(olds, Lists.List.cons({head: new, tail: news}), principal) else new.who == principal && ownFrom(old, olds, news, principal)
+def sameSub(old: Sub, new: Sub) -> Bool:
+  old.every == new.every && old.note == new.note && old.since == new.since && old.handle == new.handle
+def subKey(sub: Sub) -> {who: String}:
+  {who: sub.who}
+def relations() -> Relations.Decls:
+  Relations.Decls.cons({head: {field: "subs", key: Lists.List.cons({head: "who", tail: Lists.List.nil({})}), limit: 1024n}, tail: Relations.Decls.nil({})})
 def defaultSeed() -> Seed:
   {gap: 1n}
 def seeded(seed: Seed) -> State:
-  {ticks: 0n, last: 0n, gap: seed.gap, subs: Lists.List.nil()}
+  {ticks: 0n, last: 0n, gap: seed.gap, subs: Relations.empty()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
@@ -76,7 +87,7 @@ def clause(w: Why) -> String:
     case full(_): "full"
 def refused(w: Why) -> Done:
   Done.refused({clause: clause(w), reading: why(w)})
-# One subscription per principal: subscribing again replaces it.
+# One subscription per principal (the key): subscribing again replaces it.
 # Every subscribe and tick ends by offering what happened and the Tide's card as the
 # write leaves it (a refusal shows the card as read), refusals included.
 def told<T>(done: Done, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
@@ -88,14 +99,13 @@ def doneLine(done: Done) -> String:
     case tooSoon(t): "Too soon: the next tick may come at clock {natText(t.next)}.\n\n"
     case refused(r): "refused {r.clause}: {r.reading}\n\n"
 def subscribed<T>(state: State, every: Nat, note: String, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  if every == 0n then told(refused(Why.everyZero({})), card, then) else subscribing(state, Lists.find(state.subs, fn(s: Sub) -> Bool: s.who == context.principal), {who: context.principal, every: every, note: note, since: state.ticks, handle: context.handle}, context, card, then)
-def subscribing<T>(state: State, found: Lists.Maybe<Sub>, sub: Sub, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  match found:
-    case some(s): subWritten(Plans.Entries.amendItem({item: s.value, change: sub}), sub.since, context, render(extend(state, {subs: Lists.map(state.subs, fn(old: Sub) -> Sub: if old.who == sub.who then sub else old)}), context), then)
-    case none(_): if Lists.length(state.subs) < 64n then subWritten(Plans.Entries.append({item: sub}), sub.since, context, render(extend(state, {subs: Lists.append(state.subs, sub)}), context), then) else told(refused(Why.full({})), card, then)
-def subWritten<T>(edit: Plans.Entries<Sub, Sub>, since: Nat, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {subs: edit})}))
-  told(Done.subscribed({since: since}), card, then)
+  if every == 0n then told(refused(Why.everyZero({})), card, then) else subscribing(state, {who: context.principal, every: every, note: note, since: state.ticks, handle: context.handle}, context, card, then)
+# Sixty-four at most (a tick sends to every due one): a new principal past them is refused.
+def subscribing<T>(state: State, sub: Sub, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
+  if Relations.count(state.subs) < 64n || Relations.exists(state.subs, fn(s: Sub) -> Bool: s.who == sub.who) then subWritten(sub, context, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context), then) else told(refused(Why.full({})), card, then)
+def subWritten<T>(sub: Sub, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
+  let written(_) = perform(write {subs: upsert sub})
+  told(Done.subscribed({since: sub.since}), card, then)
 def same(done: Done) -> Done:
   done
 def subscribe(state: State, input: {every: Nat, note: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
@@ -109,7 +119,7 @@ def ticked<T>(state: State, context: Abi.Context, card: Document.Document, then:
   if state.ticks > 0n && context.clock < state.last + state.gap then told(Done.tooSoon({next: state.last + state.gap}), card, then) else tickWritten(state, context, card, then)
 def tickWritten<T>(state: State, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {ticks: add 1n, last: set context.clock})
-  woken(state.subs, state.ticks + 1n, 0n, render(extend(state, {ticks: state.ticks + 1n, last: context.clock}), context), then)
+  woken(Relations.rows(state.subs), state.ticks + 1n, 0n, render(extend(state, {ticks: state.ticks + 1n, last: context.clock}), context), then)
 # Sends to each due subscriber in turn, by explicit recursion.
 def woken<T>(subs: Lists.List<Sub>, tick: Nat, sent: Nat, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   match subs:
@@ -127,6 +137,9 @@ form subscribe:
 form tick:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})})
+# The card as a public page under the door word (genesis publishes one page per door).
+def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  Card.publishPage(Card.pageName(input.page, door().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def door() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def doneReply(done: Done) -> Card.Reply:
@@ -145,4 +158,4 @@ def line(context: Abi.Context) -> Sub -> Document.Document:
   fn(sub: Sub) -> Document.Document: Document.text("{Card.shown(sub.who, sub.handle, context)}{Card.mine(sub.who, context)} every {natText(sub.every)} from tick {natText(sub.since)}: {sub.note}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("TIDE at tick {natText(state.ticks)}, last at clock {natText(state.last)}; the next no sooner than {natText(state.last + state.gap)}\n"), tail: Card.clipped(Lists.map(state.subs, line(context)), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("TIDE at tick {natText(state.ticks)}, last at clock {natText(state.last)}; the next no sooner than {natText(state.last + state.gap)}\n"), tail: Card.clipped(Lists.map(Relations.rows(state.subs), line(context)), 8n)})})

@@ -59,9 +59,9 @@ class Genesis(unittest.TestCase):
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
         self.assertIn(ORIGIN + '/AGENTS.md', menu)
 
-    def test_five_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
+    def test_six_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
-        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'play', 'rooms', 'workshop'], pages)
+        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'play', 'rooms', 'tide', 'workshop'], pages)
         card = json.dumps(self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'anthology'}))
         self.assertIn('ember.delve.town', card)
 

@@ -13,7 +13,7 @@ import unittest
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_places import listing
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, relation  # noqa: F401 (relation: re-exported)
 
 PLANTING = "at://glm.delve.town/app.bsky.feed.post/3m-plant"
 
@@ -29,6 +29,12 @@ def bell_seed():
 
 def items(wire):
     return wire["items"]
+
+
+def rows(wire):
+    """The rows of a relation on the wire (`Relation.rows {items}`), in key order."""
+    assert wire["tag"] == "variant" and wire["label"] == "rows", wire
+    return get(wire["payload"], "items")["items"]
 
 
 def get(record_wire, name):
@@ -53,7 +59,8 @@ class Replay(Chain):
         self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
         self.assertEqual(get(bell, "rung"), boolean(False))            # the rest of the bell is its initial()
         self.assertEqual(self.host.send(op="world-view", principal="e", object="garden/bell/1")["version"], 0)
-        self.assertEqual(items(self.state_field("garden", "children")), [reference("garden/bell/1")])
+        self.assertEqual([(get(c, "object"), get(c, "colour")["label"]) for c in rows(self.state_field("garden", "children"))],
+                         [(label("garden/bell/1"), "silver")])
         self.assertEqual(self.state_field("garden", "planted"), nat(1))
 
     def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):
@@ -61,7 +68,7 @@ class Replay(Chain):
         for who, text in (("kimik3", "the moths know the way"), ("gemini", "or they have forgotten it")):
             reply = self.turn("bell", "rain", record(text=label(text)), principal=who)
             self.assertEqual(reply["status"], "admitted", reply)
-        rains = items(self.state_field("bell", "rains"))
+        rains = rows(self.state_field("bell", "rains"))
         self.assertEqual([get(r, "author")["value"] for r in rains], ["kimik3", "gemini"])
         self.assertEqual(self.state_field("bell", "planter"), label("glm"))
 
@@ -110,17 +117,17 @@ class Replay(Chain):
 
     def test_6_three_lines_are_retained_as_proposals_and_admission_is_the_receivers(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology",
-                           modules=closure("Anthology"), entry="initial", seed=record(owner=label("ember"), proposals=nil()))
+                           modules=closure("Anthology"), entry="initial", seed=record(owner=label("ember"), proposals=relation()))
         self.assertEqual(r["status"], "created", r)
         for who, line in (("glm", "moths"), ("kimik3", "lamps"), ("gemini", "rain")):
             reply = self.turn("anthology", "submit", record(line=label(line)), principal=who)
             self.assertEqual(reply["status"], "admitted", reply)
-        proposals = items(self.state_field("anthology", "proposals"))
+        proposals = rows(self.state_field("anthology", "proposals"))
         self.assertEqual([get(p, "author")["value"] for p in proposals], ["glm", "kimik3", "gemini"])
         self.assertEqual({get(p, "status")["label"] for p in proposals}, {"proposed"})
         admitted = self.turn("anthology", "admit", record(index=nat(1)), principal="ember")
         self.assertEqual(admitted["status"], "admitted", admitted)
-        proposals = items(self.state_field("anthology", "proposals"))
+        proposals = rows(self.state_field("anthology", "proposals"))
         self.assertEqual([get(p, "status")["label"] for p in proposals], ["proposed", "admitted", "proposed"])
 
 

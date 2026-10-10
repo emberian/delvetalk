@@ -275,6 +275,13 @@
    }
   },
   {
+   "name": "specimen",
+   "method": "GET",
+   "href": "/style/",
+   "auth": "none",
+   "does": "HTML: the style specimen, every element of the theme in both palettes"
+  },
+  {
    "name": "static",
    "method": "GET",
    "href": "/static/{file}",

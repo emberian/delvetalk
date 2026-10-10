@@ -116,12 +116,14 @@ BIG = {"ticks": "1000000"}
 
 PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Garden.obend as O\n"
 GARDEN_PROBE = PROBE_HEAD_G + """import ./Document.obend as Document
-def bells(n: Nat) -> Lists.List<Plans.Reference>:
+import ./Relation.obend as Relations
+import ./Bell.obend as Bell
+def bells(n: Nat) -> Lists.List<O.Child>:
   match n:
-    case 0: Lists.List::<Plans.Reference>.nil()
-    case 1+p: Lists.append::<Plans.Reference>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n))})
+    case 0: Lists.List::<O.Child>.nil()
+    case 1+p: Lists.append::<O.Child>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n)), colour: Bell.Colour.amber({})})
 def shown(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Lists.List::<O.Pending>.nil(), children: bells(n), pageCheckpoint: "", observers: Card.Observers.nil()}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Relations.empty(), children: Relations.Relation.rows({items: bells(n)}), pageCheckpoint: "", observers: Card.Observers.nil()}, Card.stranger()))
 """
 
 DOC_PROBE = """edition ObjectiveBend 1
@@ -136,12 +138,13 @@ def flat(n: Nat) -> Nat:
 
 PROBE_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./Card.obend as Card\nimport ./%s.obend as O\n"
 
-BELL_PROBE = PROBE_HEAD % "Bell" + """def rains(n: Nat) -> Lists.List<O.Rain>:
+BELL_PROBE = PROBE_HEAD % "Bell" + """import ./Relation.obend as Relations
+def rains(n: Nat) -> Lists.List<O.Rain>:
   match n:
     case 0: Lists.List::<O.Rain>.nil()
-    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: "a line of rain"}, tail: rains(previous)})
+    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: "a line of rain", at: 1n, n: previous}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
-  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", observers: Lists.List::<Card.Observer>.nil(), doors: Lists.List::<Card.Doorway>.nil()}
+  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: Relations.Relation.rows({items: rains}), rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", observers: Lists.List::<Card.Observer>.nil(), doors: Lists.List::<Card.Doorway>.nil()}
 def many(n: Nat) -> String:
   Document.plain(O.render(sample(rains(n)), Card.stranger()))
 def weight(n: Nat) -> Nat:
@@ -149,7 +152,7 @@ def weight(n: Nat) -> Nat:
 def lineCount(n: Nat) -> Nat:
   Lists.length::<String>(Document.lines(O.render(sample(rains(n)), Card.stranger())))
 def two(n: Nat) -> String:
-  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first"}), {author: "gemini", handle: "", text: "second"})), Card.stranger()))
+  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first", at: 1n, n: 0n}), {author: "gemini", handle: "", text: "second", at: 2n, n: 1n})), Card.stranger()))
 """
 
 DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:
@@ -169,8 +172,9 @@ CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
   Document.plain(O.render({entries: Lists.List::<Plans.Receipt>.cons({head: {slot: {principal: "glm", intent: "plant"}, height: 7n, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<Plans.Receipt>.nil()})}, Card.stranger()))
 """
 
-ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """def one(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}, Card.stranger()))
+ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """import ./Relation.obend as Relations
+def one(n: Nat) -> String:
+  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Relations.Relation.rows({items: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: O.Status.proposed({}), at: 1n, n: 0n}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: O.Status.admitted({}), at: 2n, n: 1n}, tail: Lists.List::<O.Proposal>.nil()})})})}, Card.stranger()))
 """
 
 
