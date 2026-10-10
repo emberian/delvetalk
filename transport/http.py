@@ -130,9 +130,9 @@ def terse(value, keep=(), root=True, own=False):
 
 
 def brief(value):
-    """A checkpoint's tokens (hundreds of KiB for a suspended turn) as their count."""
+    """A checkpoint's tokens and a suspended receipt's blocks (tens of KiB) as their count."""
     if isinstance(value, dict):
-        return {k: {'elided': len(v)} if k == 'tokens' and isinstance(v, list) else brief(v) for k, v in value.items()}
+        return {k: {'elided': len(v)} if k in ('tokens', 'blocks') and isinstance(v, (list, dict)) else brief(v) for k, v in value.items()}
     return [brief(v) for v in value] if isinstance(value, list) else value
 
 
@@ -143,6 +143,21 @@ def compact(reply):
     return {'status': reply.get('status'), 'outcome': receipt.get('outcome'),
             'offers': [o['text'] for o in reply.get('offers') or []],
             'receipt': {'object': root.get('object'), 'version': root.get('version'), 'height': receipt.get('height')}}
+
+
+def turn_view(reply):
+    """A turn reply's default rendering: the turn line with its stamp, the offered texts and where the receipt sits. The whole
+    receipt is `?full=1` and `GET /receipt/<slug>`."""
+    rc = reply['receipt']
+    line = turn_line(reply)
+    if rc.get('slug'):
+        line = line.removesuffix(f", receipt {rc['slug']}")
+    outcome = rc.get('outcome') or {}
+    cls = reply.get('class') or outcome.get('class')
+    return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
+            'line': f"{pages.stamp(reply.get('status'), word=False)} {line}",
+            'offers': [o['text'] for o in reply.get('offers') or []],
+            'receipt': {'slug': rc.get('slug'), 'height': rc.get('height')}}
 
 
 def compact_offers(reply):
@@ -162,8 +177,9 @@ def turn_line(r):
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
-        w = (out.get('writes') or [{}])[0]
-        return f"admitted {w.get('object')} v{w.get('version')} at height {rc.get('height')}, receipt {rc.get('slug')}"
+        w = (out.get('writes') or [None])[0]
+        return f"admitted {w['object']} v{w.get('version')} at height {rc.get('height')}, receipt {rc.get('slug')}" if w else \
+            f"admitted at height {rc.get('height')}, receipt {rc.get('slug')}"
     if r.get('status') == 'refused':
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
@@ -212,7 +228,6 @@ def actions(base, obj, inspected, only=None):
     """One action per method in the host's method table that takes a context (a turn can run it), from world-inspect:
     the form's fields when the host has a form for it, else the method's input type; a spell when the object hears spells."""
     forms = {f['action']: f for f in plain(inspected.get('forms') or {'tag': 'list', 'items': []})}
-    hears = any(m['name'] == 'receive' for m in inspected.get('methods') or [])  # the object reads spells through receive
     out = []
     for m in inspected.get('methods') or []:
         if not m.get('context') or (only and m['name'] != only) or m.get('admits', True) is not True:  # `admits`: host op wanted
@@ -229,7 +244,7 @@ def actions(base, obj, inspected, only=None):
             continue
         spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: {shown(f['kind'])}\n" for f in form['fields'])
         out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
-                    **({'spell': spell} if hears else {})})
+                    'spell': spell})
     return out
 
 
@@ -407,6 +422,7 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(reply.get('diagnostic'), dict) and 'hint' in reply['diagnostic']:
             reply = {**reply, 'hint': reply['diagnostic']['hint']}
         full = 'full' in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        acts = {a['name']: a['spell'] for a in acts or () if a.get('spell')}  # the spell templates; fields and hrefs follow the catalogue's rule
         body = reply if full else brief(terse(reply, keep))
         cls = reply.get('class') if reply.get('class') in ('hostUnavailable', 'hostTimeout') else \
             {'error': 'hostRequest', 'unknown': 'unknown', 'denied': 'denied', 'ambiguous': 'ambiguous'}.get(status)
@@ -529,7 +545,7 @@ class Handler(BaseHTTPRequestHandler):
         send = lambda req, links=None: self.answer(host.send(req), links=links)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
         if kind == 'world':
-            reply = host.send({'op': 'world-objects', 'principal': principal, **{k: q[k] for k in ('prefix', 'after') if k in q}})
+            reply = host.send({'op': 'world-objects', 'principal': principal, 'methods': True, **{k: q[k] for k in ('prefix', 'after') if k in q}})
             ids = reply.get('ids') or []
             nxt = urllib.parse.urlencode({**({'prefix': q['prefix']} if 'prefix' in q else {}), 'after': ids[-1]}) if ids and reply.get('more') else ''
             names = reply.get('methods') or {}  # per id, when the host answers them (host op wanted)
@@ -591,7 +607,9 @@ class Handler(BaseHTTPRequestHandler):
             seen = host.send({'op': 'world-inspect', 'principal': principal, 'object': obj})
             acts = actions(base, obj, seen, only=tail) if seen.get('status') == 'inspected' else None
             links.setdefault('hint', links['source'])
-        self.answer(compact(reply) if q.get('compact') == '1' and 'receipt' in reply else reply, links=links, acts=acts)
+        if 'receipt' in reply and reply.get('status') in ('admitted', 'refused', 'suspended') and 'full' not in q:
+            reply = compact(reply) if q.get('compact') == '1' else turn_view(reply)
+        self.answer(reply, links=links, acts=acts)
 
     def xrpc(self, method, nsid):
         """The read-only repository (transport/repo.py): no credential reads as the public reader, a bearer as its principal."""

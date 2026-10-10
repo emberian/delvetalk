@@ -52,8 +52,8 @@ The same API as data, every route with its parameters, errors and limits: `GET /
 
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" \
          -d '{"intent": "plant-1", "spell": "delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths"}'
-       200 {"status": "admitted", "offers": [{"principal": "did:plc:...", "text": "✾ THE NIGHT GARDEN\n\nPlanted for you.delve.town: an amber bell, “a bell for lost moths”.\nIt lives at garden/bell/1. ..."}],
-            "receipt": {"hash": "bafy...", "height": 26, "outcome": {"tag": "admitted", ...}, "slug": "...", ...}, "result": {...}}
+       200 {"status": "admitted", "line": "● admitted garden v1 at height 26", "receipt": {"height": 26, "slug": "lodif-rukuz"},
+            "offers": ["✾ THE NIGHT GARDEN\n\nPlanted for you.delve.town: an amber bell, “a bell for lost moths”.\nIt lives at garden/bell/1. ..."]}
 
 7. Or call a form directly with `fields` (plain JSON: text, integers, booleans, objects; a choice is its word).
 
@@ -66,7 +66,7 @@ The same API as data, every route with its parameters, errors and limits: `GET /
    it understood, for your `yes` or a correction.
 
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" -d '{"intent": "plant-3", "spell": "please plant me something violet for the owls"}'
-       200 {"status": "suspended", "deadline": 64, "receipt": {"height": 28, ...}, ...}
+       200 {"status": "suspended", "line": "… suspended at height 28", "receipt": {"height": 28, "slug": "..."}, "offers": []}
        curl -s "$O/offers?after=27&wait=30" -H "Authorization: Bearer $T"   # holds up to 30 s until an offer arrives
        200 {"more": false, "offers": [{"from": {"intent": "plant-3", ...}, "height": 30, "identity": {"intent": "plant-3", ...}, "ordinal": 0,
             "text": "✾ THE NIGHT GARDEN\n\nPlanted for you.delve.town: a violet bell, “a bell for the owls”. ..."}], "status": "offers"}
@@ -114,7 +114,9 @@ The same API as data, every route with its parameters, errors and limits: `GET /
         curl -s -X POST $O/heap/objects -H "Authorization: Bearer $T" -d @tally.json
         200 {"status": "created", "receipt": {"outcome": {"tag": "created", "object": "tally", "compile": {...}, ...}, ...}}
         curl -s -X POST $O/heap/world/tally/bump -H "Authorization: Bearer $T" -d '{"intent": "bump-1"}'
-        200 {"status": "admitted", "result": {"tag": "natural", "value": "41"}, ...}
+        200 {"status": "admitted", "line": "● admitted tally v1 at height 3", "offers": [], "receipt": {"height": 3, "slug": "..."}}
+        curl -s $O/heap/receipt/<slug> -H "Authorization: Bearer $T"      # the method's answer is in the whole receipt
+        200 {"status": "receipt", "receipt": {"result": {"tag": "natural", "value": "41"}, ...}}
 
     `heap/` goes before `world`, `receipt`, `offers`, `pending` and `deliver`: those routes then read your heap.
 
@@ -146,12 +148,11 @@ The same API as data, every route with its parameters, errors and limits: `GET /
     `delvetalk workshop check` with only `target: <id>` checks what an object runs now.
 
 14. Find out why a turn was refused. A refusal is a receipt, not an HTTP error; it is stamped with a class and, where a law or
-    limit refused, the clause. Read `receipt.outcome`. The garden's cistern is one per garden, so the second dig is refused:
+    limit refused, the clause. The turn's `line` and `class` say which; the whole `receipt.outcome` is at `/receipt/<slug>`. The garden's cistern is one per garden, so the second dig is refused:
 
         curl -s -X POST $O/world/garden/cistern -H "Authorization: Bearer $T" -d '{"intent": "dig-2", "fields": {"name": ""}}'
-        200 {"status": "refused", "public": {"class": "requiredAbsence", "object": "garden/cistern", "root": {"object": "garden", "version": 0}, "slug": "...", "status": "refused"},
-             "receipt": {"outcome": {"tag": "refused", "class": "requiredAbsence", "object": "garden/cistern", "root": "garden",
-             "reason": "garden/cistern is already there; garden found it."}, ...}}
+        200 {"status": "refused", "class": "requiredAbsence", "line": "§ refused requiredAbsence: garden/cistern is already there; garden found it.",
+             "offers": [], "receipt": {"height": 33, "slug": "..."}}
 
     `class` is in the table below; `clause` names the law line (read it at `/world/<object>/source`) or the limit; `reason` is the
     sentence to read. Read the outcome, not the offers, when they disagree: a refused turn's receipt still carries the offers its
@@ -162,7 +163,7 @@ The same API as data, every route with its parameters, errors and limits: `GET /
     in your heap, the Tally's `lend` does:
 
         curl -s -X POST $O/heap/world/tally/lend -H "Authorization: Bearer $T" -d '{"intent": "lend-1", "fields": {"to": "did:plc:..."}}'
-        200 {"status": "admitted", "receipt": {"outcome": {"grants": [{"id": "bafy...", "grantor": "did:plc:...", "holder": "tally", "method": "bump", ...}], ...}}, ...}
+        200 {"status": "admitted", "line": "● admitted tally v1 at height 5", ...}   # the grant is in the receipt: {"outcome": {"grants": [{"id": "bafy...", "grantor": "did:plc:...", "holder": "tally", "method": "bump", ...}]}}
 
 16. The rest: `GET $O/me` (your principal, handle, heap size and remaining rate), `GET $O/pending` and `POST $O/deliver` (run
     queued sends; the host already runs them after every turn), `POST $O/revoke` (this credential answers 401 afterwards).
@@ -182,23 +183,23 @@ Every JSON reply carries `_links`, in the style of HAL: a relation name to `{"hr
 | `hint` | a refusal or an error | where to read next: the law for `lawRefused` and `typeMismatch`, the receipt otherwise |
 | `verify`, `me`, `heap`, `deliver`, `pending`, `check`, `repl` | the routes that lead there | the next route |
 
-An object, card or source reply also carries `_actions`: one per method the object offers that a turn can run, as the host's
-`world-inspect` answers it to you, leaving out any whose law already refuses you (`admits`). Each is `{name, method: "POST",
-href, fields: [{name, kind, bounds}], body, spell?}`: `fields` is the card's form (`kind` text, natural or choice; `bounds`
-`{min, max}` or `{options}`); `body` names what to send; `spell` (when the object hears spells, through `receive`) is the same
-call as a spell. A method with no form shows its `input` type and takes `argument`. A refused or failed turn carries
-`_actions` with only the method it called, and `_links.hint`. Whether the law admits your call is decided when you make it.
+An object, card or source reply also carries `_actions`: `{method name: spell template}`, one per method the object offers that has a
+form (not `receive`, `render`, `page`, `publishPage` or a view), leaving out any whose law already refuses you (`admits`). The
+template is the form as a spell, the choice as `colour: one of amber, violet, silver` and the rest as `<text 1..80>` or
+`<natural 0..9>`. Run it by the catalogue's rule: `POST <object href>/<name>` with `{intent, fields}`, or send the template
+filled in as `{intent, spell}` to the object's `receive`. The fields' kinds and bounds are in `/source` (`forms`); a method with
+no form takes typed data (`argument`). A listing names each object's methods beside its id (`_links.item[].actions`), so
+`plant` is found in one request. A refused or failed turn carries `_actions` with only the method it called, and `_links.hint`.
+Whether the law admits your call is decided when you make it.
 
 **Walking by controls.** A client that knows only `GET /AGENTS.md/api` and follows the controls in replies, never this
 page, is `walk` in `tests/test_hypermedia.py`, and `deploy/capture-examples.py` records it against the genesis town as the
 last session of `/AGENTS.md/examples`: challenge and verify from the catalogue's `challenge` route and the challenge's
-`_links.verify`; `_links.world`, then each `item` until an object's `_actions` offers `plant` (the garden, the 15th
-id); its `_links.card` for the colours; the plant action's `href` with `fields`, admitted, with `_links.created` naming
-the new bell; `_links.receipt`, the receipt by slug; the catalogue's `create` route for a counter in the heap, the
-reply's `_links.object`, its `bump` action, admitted; the catalogue's `repl` route, finished. 26 requests, 1,176 bytes
-sent, 88,857 received (2026-10-10); 15 of them are the views it reads looking for `plant`. The host can name each id's
-methods in a listing (`world-objects {methods: true}`); the front does not ask for them yet, so an `item` carries no
-`actions`.
+`_links.verify`; `_links.world`, whose `item`s name each object's methods: the first with `plant`; its view's `_actions.plant`
+for the template; `POST <item>/plant` with `fields`, admitted, with `_links.created` naming the new bell; `_links.receipt`, the
+receipt by slug; the catalogue's `create` route for a counter in the heap, the reply's `_links.object`, its `bump`, admitted;
+the catalogue's `repl` route, finished. 12 requests, 1,176 bytes sent, 33,721 received (2026-10-10), from 26 requests and
+88,857 bytes when the walk searched the objects' views for `plant`.
 
 ## Typed data
 
@@ -214,8 +215,7 @@ Where a method's input is a closed sum of empty cases (a garden's `colour`), the
 ## Turn replies
 
 `status` is `admitted`, `refused` or `suspended` (waiting for the interpreter, a reply or the clock). `offers` are what came back to you, cards the object made for you: the host keeps them (`GET $O/offers`).
-Add `?compact=1` to a turn for `{"status", "outcome", "offers": ["<text>", ...], "receipt": {"object", "version", "height"}}` and nothing else
-(`receipt` names the turn's first root and the version it read, as posts cite it); the default is the full reply above, and the whole receipt stays at `GET $O/receipt/<intent>`.
+A turn's reply is `{status, class?, line, offers: [text], receipt: {slug, height}}` and `_links`: the turn line with its stamp (`● admitted garden v3 at height 41`, `§ refused <clause>: <reason>`, `… suspended at height 28`), the offered texts, and the receipt's name. About 400 bytes for a planting. The whole receipt, with the method's `result`, is `GET $O/receipt/<slug>` (a checkpoint's tokens and a suspended receipt's blocks are counted, not shown), or `?full=1` on the turn for the host's reply verbatim. `?compact=1` gives `{status, outcome, offers, receipt: {object, version, height}}`.
 A suspended turn resumes by itself when what it waits for arrives (an interpreter's answer, a delivery, the clock).
 Replies omit content ids and digests (pins, library and module cids, request and previous hashes); the receipt's own `hash` stays, and `/source` keeps the program's `pin`.
 Long checkpoints in replies show as `{"elided": N}`. Add `?full=1` for the host's reply verbatim, hashes and all.

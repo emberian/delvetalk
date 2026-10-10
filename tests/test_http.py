@@ -257,19 +257,24 @@ class Turns(FrontCase):
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         s, r = self.call('GET', '/AGENTS.md/receipt/i1', token=tok)
         self.assertEqual(s, 200)
-        self.assertEqual(r['receipt'], t['receipt'])
+        self.assertEqual(r['receipt']['slug'], t['receipt']['slug'])
+        self.assertEqual(r['receipt']['height'], t['receipt']['height'])
         self.assertEqual(self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok)[1]['version'], 1)
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
         self.assertEqual(self.call('POST', '/AGENTS.md/deliver', {}, tok)[0], 200)
 
     def test_compact_turn_reply_is_four_keys_and_the_default_stays_full(self):
         tok = self.login()
-        s, full = self.turn(tok, 'k1')
+        s, full = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?full=1', {'argument': record(), 'intent': 'k1'}, tok)
+        whole = self.call('GET', '/AGENTS.md/receipt/k1', token=tok)[1]['receipt']
         s, c = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
         self.assertEqual(s, 200)
-        self.assertEqual(bare(c), {'status': 'admitted', 'outcome': full['receipt']['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
+        self.assertEqual(bare(c), {'status': 'admitted', 'outcome': whole['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
                              'receipt': {'object': self.c, 'version': 0, 'height': full['receipt']['height']}})
         self.assertIn('hash', full['receipt'])
+        s, d = self.turn(tok, 'k1')  # the default: the line, the offers' text, the slug
+        self.assertEqual((set(d), d['receipt']['slug']), ({'status', 'line', 'offers', 'receipt', '_links'}, full['receipt']['slug']))
+        self.assertTrue(d['line'].startswith(f"● admitted {self.c} v1 at height {full['receipt']['height']}"), d['line'])
         s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
         self.assertEqual((s, e['status']), (400, 'error'))  # a host error is not compacted
 
@@ -299,7 +304,7 @@ class Turns(FrontCase):
         def send(req, *a, **k):
             seen.append(req['op'])
             if req['op'] == 'world-resolve':
-                return {'status': 'resolved', 'receipt': made['receipt']} if req['slug'] == 'babab-dabab' else {'status': 'error', 'message': 'no such slug'}
+                return {'status': 'resolved', 'receipt': by_intent['receipt']} if req['slug'] == 'babab-dabab' else {'status': 'error', 'message': 'no such slug'}
             return real(req, *a, **k)
         self.host.send = send
         by_slug = self.call('GET', '/AGENTS.md/receipt/babab-dabab', token=tok)
@@ -309,8 +314,9 @@ class Turns(FrontCase):
 
     def test_a_receipt_slug_resolves_to_the_same_receipt_hash_over_http(self):
         tok = self.login()
-        receipt = self.turn(tok, 'sl2')[1]['receipt']
-        s, r = self.call('GET', '/AGENTS.md/receipt/' + receipt['slug'], token=tok)
+        slug = self.turn(tok, 'sl2')[1]['receipt']['slug']
+        receipt = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?full=1', {'argument': record(), 'intent': 'sl2'}, tok)[1]['receipt']
+        s, r = self.call('GET', '/AGENTS.md/receipt/' + slug, token=tok)
         self.assertEqual((s, r['receipt']['hash']), (200, receipt['hash']))
 
     def test_offers_wait_re_asks_until_an_offer_appears_or_time_runs_out(self):
@@ -465,7 +471,8 @@ class Heaps(FrontCase):
                                                              'entry': 'initial', 'seed': record(), 'intent': 'mk-tally'}, tok)
         self.assertEqual((s, r['status']), (200, 'created'), r)
         s, t = self.call('POST', '/AGENTS.md/heap/world/tally/bump', {'intent': 'b1'}, tok)
-        self.assertEqual((s, t['status'], t['result']), (200, 'admitted', nat(1)), t)
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/' + t['receipt']['slug'], token=tok)[1]['receipt']['result'], nat(1))
 
     def test_a_heap_is_private_and_missing_is_404_not_403(self):
         a, b = self.login(), self.login('glm.delve.town')
@@ -520,7 +527,7 @@ class Pages(FrontCase):
         # by spell, then by fields; the bell the garden makes has a slashed id, reached without escaping
         s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'p1', 'spell': 'delvetalk garden plant\ncolour: amber\nseed: a moth bell'}, tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
-        self.assertIn('garden/bell/1', t['offers'][0]['text'])
+        self.assertIn('garden/bell/1', t['offers'][0])
         s, t = self.call('POST', '/AGENTS.md/world/garden/plant', {'intent': 'p2', 'fields': {'colour': 'silver', 'seed': 'a fern'}}, tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         s, bell = self.call('GET', '/AGENTS.md/world/garden/bell/1', token=tok)
@@ -693,6 +700,17 @@ class Play(FrontCase):
         t.join(60)
         self.assertIn(b'suspended at height', out['page'])
         self.assertIn(b'a bell for the owls', out['page'])  # the interpreter's proposal, as the offer to this turn
+
+    def test_a_suspended_turn_is_a_line_under_a_kilobyte_and_its_full_reply_elides_the_blocks(self):
+        tok = self.cookie.split('=', 1)[1]
+        self.front.sleep = lambda seconds: None
+        s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'wait-1', 'spell': 'something green perhaps'}, tok)
+        self.assertEqual((s, t['status']), (200, 'suspended'), t)
+        self.assertLess(len(json.dumps(t)), 1024, t)
+        self.assertTrue(t['line'].startswith('… suspended at height '), t['line'])
+        s, whole = self.call('GET', '/AGENTS.md/receipt/' + t['receipt']['slug'], token=tok)
+        self.assertNotIn('"blocks": [', json.dumps(whole))  # the receipt's blocks are counted, not shown
+        self.answer('delvetalk garden plant\nseed: a bell\ncolour: violet')  # settle the pending interpretation for the next test
 
     def test_prose_the_interpreter_never_answers_is_stated_as_no_reply(self):
         self.front.sleep = lambda seconds: None
