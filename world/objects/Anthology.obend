@@ -8,6 +8,7 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
+import ./Text.obend as Text
 # A proposal is keyed {author, at, n} (`at` the height its turn read, `n` the count of
 # proposals then), as a bell's rains are: key order is the order of submission, so a line's
 # number on the card stays its number. Admission upserts the row with its status flipped.
@@ -35,7 +36,7 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "proposals", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})}), limit: 1024n}, tail: Relations.Decls.nil({})})
+  Lists.append(Relations.Decls.nil(), {field: "proposals", key: Text.words("author at n"), limit: 1024n})
 def proposalKey(proposal: Proposal) -> {author: String, at: Nat, n: Nat}:
   {author: proposal.author, at: proposal.at, n: proposal.n}
 def proposed(line: String, state: State, context: Abi.Context) -> Proposal:
@@ -48,22 +49,15 @@ def submit(state: State, input: {line: String}, context: Abi.Context) -> Activit
   let proposal = proposed(input.line, state, context)
   let written(_) = write {proposals: insert proposal}
   Card.tellTo(Relations.count(state.proposals) + 1n, context.principal, render(extend(state, {proposals: Relations.insert(state.proposals, proposal, proposalKey)}), context))
-sum Found:
-  none: {}
-  some: {proposal: Proposal}
-def at(items: Lists.List<Proposal>, index: Nat) -> Found:
-  match items:
-    case nil(_): Found.none({})
-    case cons(c): if index == 0n then Found.some({proposal: c.head}) else at(c.tail, index - 1n)
 # admit {number}: the line's number on the card, from 1; the owner's, refused by name to
 # anyone else before the law is asked. The proposal is addressed by its key, so a submission
 # landing first shifts nothing; admission upserts it with its status flipped.
 def admit(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
-  if context.principal != state.owner then Card.Replied.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(Relations.rows(state.proposals), input.number - 1n), input.number, context)
-def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
+  if context.principal != state.owner then Card.Replied.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(Lists.at(Relations.rows(state.proposals), input.number - 1n), input.number, context)
+def admittingAt(found: Lists.Maybe<Proposal>, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
   match found:
     case none(_): Card.Replied.refused({clause: "noLine", reading: "No line numbered {natText(number)}"})
-    case some(s): admitted(context, s.proposal)
+    case some(s): admitted(context, s.value)
 def admitted(context: Abi.Context, proposal: Proposal) -> Activity<Card.Replied>:
   let written(_) = write {proposals: upsert extend(proposal, {status: Rows.Status.admitted({})}), ownerHandle: set context.handle}
   Card.tell(Card.Replied.done({action: "admit"}), Document.text("Admitted: {proposal.line}\n"))
@@ -72,7 +66,7 @@ form submit:
 form admit:
   number: natural 1..1000
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: submitForm(), tail: Card.Forms.cons({head: admitForm(), tail: Card.Forms.nil()})})
+  Lists.append(Lists.append(Card.Forms.nil(), submitForm()), admitForm())
 def blurb() -> Card.Door:
   {word: "anthology", blurb: "Submit a line; the anthology's law admits it."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
