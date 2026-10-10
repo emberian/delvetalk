@@ -24,7 +24,7 @@ the library).
   nobody's), `forms() -> Card.Forms`, `door()`, and `receive(state, input: Card.Heard,
   context)` with `Heard = {text, post}` (a turn's argument may carry more fields, such as
   the bridge's `slot`; the record reads these two). The usual receive is `Card.route(text, context, forms())`, `act` dispatched
-  by action, anything else `Card.answer::<Edits, S, R>(routed, context, forms(),
+  by action, anything else `Card.answer(routed, context, forms(),
   render(state, context))`.
 * **Handles and the clock.** `Card.name(did, context)` shows the reader's own observed
   handle (`context.handle`, from the host's registry) and anyone else as `Card.handle`:
@@ -39,7 +39,7 @@ the library).
 * **Lenses and `set`/`?`** (Policy, Avatar, Garden confirm, Place and Thing name and
   description; Workshop has none and says so; `Card.answerLensedAs` for an object's own
   result type). `Form.Lens<E>.lens {field, form: Form.Kind, put: Form.Value -> E}`;
-  an object exports `lenses()` and answers with `Card.answerLensed::<E, S, R>(routed,
+  an object exports `lenses()` and answers with `Card.answerLensed(routed,
   context, forms(), lenses(), guard, card)`: `delvetalk <card> set` plus one `<field>:
   <value>` line is judged against the kind and written through put (guard "" admits; a
   non-empty guard refuses by name first; the law judges the write); `delvetalk <card> ?`
@@ -92,7 +92,17 @@ the library).
   when none). Find the stored item with `Lists.find`, then address it.
 * **Composition.** An activity composes only in tail position; a reusable method takes
   `then: Result -> T`. No `else match`: put the match in its own def.
-* **Payloads are Data.** `Data.of::<T>(value)`; `Plans.nothing()` is the empty payload.
+* **Payloads are Data.** Give the value where Data is expected (the compiler injects it);
+  `Plans.nothing()` is the empty payload.
+* **Idioms** (kernel handoff section 11; world/ uses them throughout since objects5). No
+  `::<…>`: type arguments are inferred (a definition whose parameter appears in no
+  argument, like the old `Lists.kept<T, U>`, needs them or a smaller signature). A
+  self-write is `write {field: add n | set v | append x | remove i | removeItem x, …}`
+  (amendItem, keep-only and computed Entries stay `Plan.write(...)`); a write's answer is
+  bound with `let written(_) = perform(…)` and the block goes on. Forms are `form ACTION [as
+  NAME]:` blocks (default name `ACTIONForm`). Strings are interpolated (`"{expr}"`, a
+  literal brace `{{`); an `if` inside a string is a `let` first. Every law has a reading:
+  `law owner "only …": …`.
 * **Observers / mailbox.** `Card.observing` (16) and `Card.observingUpTo(…, cap)`;
   `Card.broadcast`. An Avatar's mailing list holds 32, the host's `sendsPerTurn` (a turn
   past it is refused whole, "turn exceeds the send capacity"); its inbox keeps 64.
@@ -108,7 +118,7 @@ the library).
 
 * The closure cap is gone; Counter with Card runs 200 HTTP turns in 0.50 s on hbox
   (0.39 s bare). The REPL's `MAX_BODY` refuses Counter's closure with Card (413).
-* Ticks: Bell card of 1,025 rains 76,476; spell parse of 64 fields 75,412 (dense 4,057 bytes 83,238); an Avatar send
+* Ticks: Bell card of 1,025 rains 76,106 (76,476 before its head was interpolated); spell parse of 64 fields 75,412 (dense 4,057 bytes 83,238); an Avatar send
   to 32 observers 5,213.
 * An await only proves that some turn with that identity was admitted. A turn suspended
   on an object resumes refused `staleRoot` if anything wrote that object meanwhile,
