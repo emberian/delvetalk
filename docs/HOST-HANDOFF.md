@@ -206,6 +206,22 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    twice per yield) is built once per compiled method (`Compiled.dictionary`) and passed to `Turn.startEntry` /
    `resumeEntry` (an optional parameter added to the kernel's functions): a directory prose turn 310 -> 180 ms.
 
+45. **Relations, day 1 (host7; RELATIONAL.md §2, §3, §11 item 1).** A package declares relations with `def relations() ->
+   Lists.List<Decl>` (`{field, key: List<String>, limit: Nat, retain?}`; `retain` only `dropOldest`). The host reads it
+   only when a module of the package has a `def relations(` line (`declaresRelations`), compiling it as a held entry
+   (`relationDecls`; `prepareProgram` compiles it from the program's resolved inputs) into `Object.relations` /
+   `Program.relations : List RelDecl` (snapshots keep `relations` per object). A relation field holds
+   `rows {items: List<T>}` of records `T`; `checkRelations` refuses at creation (and reprogram, clause `key`) a field that
+   is not one or a key column `T` lacks, by name. `canonicalRows`: rows sorted by the canonical DAG-CBOR bytes of their
+   key projection (NB: DAG-CBOR orders map keys by length first, so key `{author, at}` sorts by `at` before `author`; the
+   contract's "sorted by key" means these bytes), no key twice (`duplicateKey`, refused by name at creation), at most
+   `limit` rows (0: `Limits.maxRelationRows` 4,096), the oldest by key order dropped. Seeds are canonicalized before they
+   are journaled (`create`, `buildCreated`, `buildObjectIn`), migration results in `judge`, and every write of a relation
+   field (`applyStep` with the object's decls). Edits `insert {row}`, `upsert {row}`, `retract {key}` (`EditKind`,
+   `relationEdit`) follow the nine-cell table; `keyTaken` and `duplicateKey` are refusal classes. The host reads edit
+   labels, not type names, so a package may declare its own `Relation<T>` and row-edit sum until `Relation.obend` and
+   Plan.obend's constructors land. Tests: `tests/test_relation.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

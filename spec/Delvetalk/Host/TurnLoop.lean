@@ -348,11 +348,13 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   let initial ← (initialState built).mapError (("compile", ·))
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
   let state := withOwner state seed principal
+  let (relations, state) ← (relationsFor w inputs built state).mapError fun e =>
+    (if e.startsWith "duplicateKey" then "duplicateKey" else "key", e)
   let lawText := if lawArg.startsWith "law " then some lawArg else none
   let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
     (fun e => (if isAmendmentRefusal e then "law"
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
-  return ({ object, sources, seed := dataJson state }, built)
+  return ({ object := { object with relations }, sources, seed := dataJson state }, built)
 
 /-- The subject a call or send of `method` on `callee` by the running object `self` acts
     with, and the argument it runs with: the running frame's own subject and the argument when
