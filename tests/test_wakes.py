@@ -251,6 +251,29 @@ class Wakes(Chain):
             # 10 does not pass 10; 11 does, once; 12 does not fire again.
             self.assertEqual(ticks(), [0, 1, 1][i], i)
 
+    def test_a_rows_rule_on_a_bells_rains_ticks_the_tide_when_its_author_rains(self):
+        """A Wake as a rule: When a row inserted into bell's rains has author OTHER, Wish a tick.
+        The bell tells its observers of rows each rain (Card.notifyRows)."""
+        from tests.test_replay import bell_seed
+        self.tide()
+        self.make("bell", closure("Bell"), bell_seed())
+        wake = self.wake()
+        where = {"tag": "list", "items": [record(column=label("author"), equals={"tag": "variant", "label": "text", "payload": record(value=label(OTHER))})]}
+        rule = {"tag": "variant", "label": "rows", "payload": record(object=label("bell"), field=label("rains"), where=where, atLeast=nat(1))}
+        call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
+        self.assertEqual(self.label_of(self.turn(wake, "watch", record(event=rule, action=call), principal=OWNER)), "watching")
+        self.deliver_all()
+        observers = items(get(self.state("bell"), "observers"))
+        self.assertEqual([(get(get(o, "object"), "object")["value"], get(o, "method")["value"]) for o in observers], [(wake, "rows")])
+        ticks = lambda: int(get(self.state("tide"), "ticks")["value"])
+        for who, expected in ((OWNER, 0), (OTHER, 1)):
+            r = self.turn("bell", "rain", record(text=label("a drizzle")), principal=who)
+            self.assertEqual(r["status"], "admitted", r)
+            self.deliver_all()
+            self.assertEqual(ticks(), expected, who)
+        card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
+        self.assertIn("on 1 new rows of bell.rains where author = %s: call tide tick" % OTHER, card)
+
     def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
         """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
         and subscribe, tick and a tick too soon each answer with what happened and the card."""
@@ -324,6 +347,7 @@ import ./Plan.obend as Plans
 import ./Tide.obend as Tide
 import ./Wake.obend as Wake
 import ./Relation.obend as Relations
+import ./Card.obend as Card
 def request(principal: String, clock: Nat) -> Abi.Request:
   {context: {world: "", object: "tide", principal: principal, handle: "", caller: "", intent: "t", height: 0n, clock: clock, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
 def verdict(v: Abi.Verdict) -> String:
@@ -342,6 +366,16 @@ def two(a: Tide.Sub, b: Tide.Sub) -> Lists.List<Tide.Sub>:
   Lists.List.cons({head: a, tail: Lists.List.cons({head: b, tail: Lists.List.nil({})})})
 def one(a: Tide.Sub) -> Lists.List<Tide.Sub>:
   Lists.List.cons({head: a, tail: Lists.List.nil({})})
+def cell(text: String) -> Relations.Cell:
+  Relations.text(text)
+def row(author: String, n: Nat) -> Card.Row:
+  Card.Row.cons({head: Card.column("author", cell(author)), tail: Card.Row.cons({head: Card.column("n", Relations.nat(n)), tail: Card.Row.nil({})})})
+def rule(field: String, author: String, atLeast: Nat) -> Wake.On:
+  Wake.On.rows({object: "bell", field: field, where: Lists.List.cons({head: {column: "author", equals: cell(author)}, tail: Lists.List.nil({})}), atLeast: atLeast})
+# Rows (kimik3 0, glm 1, kimik3 2) on bell.rains: how many match each rule.
+def rowsMatched(which: Nat) -> Nat:
+  let rows = Card.Rows.cons({head: row("kimik3", 0n), tail: Card.Rows.cons({head: row("glm", 1n), tail: Card.Rows.cons({head: row("kimik3", 2n), tail: Card.Rows.nil({})})})})
+  if which == 0n then Wake.matched(rule("rains", "kimik3", 1n), "bell", "rains", rows) else if which == 1n then Wake.matched(rule("rains", "zero", 1n), "bell", "rains", rows) else if which == 2n then Wake.matched(rule("doors", "kimik3", 1n), "bell", "rains", rows) else Wake.matched(rule("rains", "kimik3", 1n), "garden", "rains", rows)
 # Each case: old subs, new subs, requester glm. "own" adds glm beside an unchanged kimik3;
 # "theirs" changes kimik3's row; "drop" retracts kimik3's; "mine" replaces and drops glm's own.
 def changedBy(which: Nat) -> String:
@@ -383,6 +417,9 @@ class LawPredicates(unittest.TestCase):
     def test_a_subscription_is_only_ever_the_requesters_own(self):
         self.assertEqual(self.run_probe("subscribeAs", label("kimik3")), "admitted")
         self.assertEqual(self.run_probe("subscribeAs", label("glm")), "refused self")
+
+    def test_a_rows_rule_counts_the_rows_matching_its_patterns_on_its_object_and_field(self):
+        self.assertEqual([self.run_probe("rowsMatched", nat(n)) for n in range(4)], ["2", "0", "0", "0"])
 
     def test_the_changed_keys_of_a_subscription_write_are_the_requesters(self):
         self.assertEqual([self.run_probe("changedBy", nat(n)) for n in range(4)],

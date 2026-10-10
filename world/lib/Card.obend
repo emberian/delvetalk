@@ -6,6 +6,7 @@ import ./Form.obend as Form
 import ./Spell.obend as Spell
 import ./Plan.obend as Plans
 import ./Policies.obend as Policies
+import ./Relation.obend as Relations
 # The uniform card protocol. Every object has a pure render(state, context) ->
 # Document (its card as the reader in the context sees it: a member may see more than a
 # stranger; the host's `card {object}` passes the reader's context), exports forms() (the
@@ -357,6 +358,24 @@ def notified<E, S, R, T>(head: Observer, tail: Observers, argument: Data, sent: 
   match perform(Plans.Plan.send({object: head.object, method: head.method, argument: argument})):
     case delivery(_): broadcast(tail, argument, sent + 1n, then)
     case _: broadcast(tail, argument, sent, then)
+# Rows as observers read them (docs/RELATIONAL.md section 7). An observer whose method is
+# `rows` is told the rows a write inserted into a relation, `{field, rows}`, each row its
+# columns by name with natural or text values (Data cannot be read in Bend, so the observed
+# object projects its own rows to this shape); every other observer gets the object's own
+# message (`ownObservers`), so a door told on a ring is never sent rows.
+record Column:
+  column: String
+  value: Relations.Cell
+type Row = Lists.List<Column>
+type Rows = Lists.List<Row>
+def column(name: String, value: Relations.Cell) -> Column:
+  {column: name, value: value}
+def rowObservers(observers: Observers) -> Observers:
+  Lists.filter(observers, fn(o: Observer) -> Bool: o.method == "rows")
+def ownObservers(observers: Observers) -> Observers:
+  Lists.filter(observers, fn(o: Observer) -> Bool: o.method != "rows")
+def notifyRows<E, S, R, T>(observers: Observers, field: String, inserted: Rows, then: Nat -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  broadcast(rowObservers(observers), {field: field, rows: inserted}, 0n, then)
 # A principal's name on a card: the reader's own observed handle (context.handle, which
 # the host fills from its registry) when the principal is the reader, else handle(did).
 def name(did: String, context: Abi.Context) -> String:

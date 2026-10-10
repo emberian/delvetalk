@@ -6,6 +6,7 @@ import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./Card.obend as Card
 import ./Event.obend as Events
+import ./Relation.obend as Relations
 # mimo's reflex arc: an owner's triggers, each an event to match and an action to take.
 # The owner's Env sends every event to `sense`; a matching trigger notifies the owner's
 # Avatar (its id is the owner's DID), asks the Env to show itself, or calls a card.
@@ -17,6 +18,14 @@ sum On:
   reply: {card: String}
   schedule: {every: Nat}
   writes: {object: String, field: String, above: Nat}
+  rows: {object: String, field: String, where: Lists.List<Where>, atLeast: Nat}
+# A rule's pattern (docs/RELATIONAL.md section 7, Realtalk's When): a column equal to a
+# value, compared as canonical bytes order them (Relations.compare). A trigger stored as
+# data holds no closure, so a pattern is equalities; a rule needing a join or arithmetic is
+# a layer over Wake with the predicate in code.
+record Where:
+  column: String
+  equals: Relations.Cell
 sum Action:
   notify: {}
   observe: {}
@@ -89,20 +98,53 @@ def watched<T>(state: State, event: On, action: Action, context: Abi.Context, th
 def added<T>(state: State, event: On, action: Action, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {triggers: Plans.Entries.append({item: {id: state.nextId, event: event, action: action}}), nextId: Plans.Edit.add({delta: 1n})}}))
   observing(event, Done.watching({id: state.nextId}), context, then)
-# A trigger on another object's writes registers this wake as that object's observer
-# (the observers convention: its `observe {object, method}`), by a send.
+# A trigger on another object's writes or rows registers this wake as that object's
+# observer (the observers convention: its `observe {object, method}`), by a send: `written`
+# for a field's value, `rows` for the rows a write inserts.
 def observing<T>(event: On, done: Done, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   match event:
-    case writes(w): observed(w.object, done, context, then)
+    case writes(w): observed(w.object, "written", done, context, then)
+    case rows(r): observed(r.object, "rows", done, context, then)
     case _: then(done)
-def observed<T>(object: String, done: Done, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.send({object: {world: context.world, object: object}, method: "observe", argument: {object: Plans.self(context), method: "written"}})):
+def observed<T>(object: String, method: String, done: Done, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.send({object: {world: context.world, object: object}, method: "observe", argument: {object: Plans.self(context), method: method}})):
     case _: then(done)
 # What an observed object sends on a write: the field and its value now. A trigger on
 # that object and field fires when the value passes `above` (it was at most `above`
 # before this write, as one step up from it); a call action is sent with nothing.
 def written(state: State, input: {field: String, value: Nat}, context: Abi.Context) -> Activity<Plan, Response, Done>:
   passing(state, state.triggers, context.caller, input.field, input.value, 0n)
+# What an observed object sends after inserting rows (Card.notifyRows). A trigger on that
+# object and field fires once when at least `atLeast` (at least one) of the rows match
+# every pattern; a call action is sent with nothing, any other the line.
+def rows(state: State, input: {field: String, rows: Card.Rows}, context: Abi.Context) -> Activity<Plan, Response, Done>:
+  ruled(state, state.triggers, context.caller, input.field, input.rows, 0n)
+def ruled(state: State, triggers: Lists.List<Trigger>, object: String, field: String, rows: Card.Rows, count: Nat) -> Activity<Plan, Response, Done>:
+  match triggers:
+    case nil(_): Done.fired({count: count})
+    case cons(c): ruledBy(state, c.head, c.tail, object, field, rows, matched(c.head.event, object, field, rows), count)
+def ruledBy(state: State, trigger: Trigger, rest: Lists.List<Trigger>, object: String, field: String, rows: Card.Rows, hits: Nat, count: Nat) -> Activity<Plan, Response, Done>:
+  if hits > 0n && hits >= least(trigger.event) then ruleFired(state, trigger.action, rest, object, field, rows, hits, count) else ruled(state, rest, object, field, rows, count)
+def ruleFired(state: State, action: Action, rest: Lists.List<Trigger>, object: String, field: String, rows: Card.Rows, hits: Nat, count: Nat) -> Activity<Plan, Response, Done>:
+  match perform(Plan.send({object: target(state, action), method: method(action), argument: ruleArgument(action, object, field, hits)})):
+    case _: ruled(state, rest, object, field, rows, count + 1n)
+def ruleArgument(action: Action, object: String, field: String, hits: Nat) -> Data:
+  match action:
+    case call(_): Plans.nothing()
+    case _: {text: "{object}.{field}: {natText(hits)} new {if hits == 1n then \"row\" else \"rows\"} matched"}
+def least(on: On) -> Nat:
+  match on:
+    case rows(r): r.atLeast
+    case _: 1n
+# How many of the rows match a rows trigger on this object and field (0 for any other).
+def matched(on: On, object: String, field: String, rows: Card.Rows) -> Nat:
+  match on:
+    case rows(r): if r.object == object && r.field == field then Lists.length(Lists.filter(rows, fn(row: Card.Row) -> Bool: holds(row, r.where))) else 0n
+    case _: 0n
+def holds(row: Card.Row, where: Lists.List<Where>) -> Bool:
+  Lists.any(where, fn(w: Where) -> Bool: Lists.any(row, fn(c: Card.Column) -> Bool: c.column == w.column && sameCell(c.value, w.equals)) == false) == false
+def sameCell(left: Relations.Cell, right: Relations.Cell) -> Bool:
+  Relations.compare(Lists.List.cons({head: left, tail: Lists.List.nil({})}), Lists.List.cons({head: right, tail: Lists.List.nil({})})) == 1n
 def passes(on: On, object: String, field: String, value: Nat) -> Bool:
   match on:
     case writes(w): w.object == object && w.field == field && value > w.above && value - 1n <= w.above
@@ -158,6 +200,7 @@ def matches(on: On, event: Events.Event) -> Bool:
     case reply(r): event.kind == "reply" && event.replyTo == r.card
     case schedule(_): false
     case writes(_): false
+    case rows(_): false
 # Each matching trigger acts, in order, by explicit recursion (a send never sits in a
 # lambda: an activity in a closure is refused).
 def fire(state: State, triggers: Lists.List<Trigger>, event: Events.Event, count: Nat) -> Activity<Plan, Response, Done>:
@@ -213,6 +256,15 @@ def onText(on: On) -> String:
     case reply(r): "a reply to {r.card}"
     case schedule(s): "every {natText(s.every)}"
     case writes(w): "{w.object}.{w.field} passing {natText(w.above)}"
+    case rows(r): "{natText(r.atLeast)} new rows of {r.object}.{r.field}{wheres(r.where)}"
+def wheres(where: Lists.List<Where>) -> String:
+  if Lists.length(where) == 0n then "" else textConcat(" where ", textJoin(Lists.map(where, whereText), ", "))
+def whereText(w: Where) -> String:
+  "{w.column} = {cellText(w.equals)}"
+def cellText(cell: Relations.Cell) -> String:
+  match cell:
+    case natural(n): natText(n.value)
+    case text(t): t.value
 def actionText(action: Action) -> String:
   match action:
     case notify(_): "note me"

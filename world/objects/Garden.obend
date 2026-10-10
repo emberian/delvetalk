@@ -421,7 +421,7 @@ def bellSeed(context: Abi.Context, post: String, colour: Bell.Colour, seed: Stri
 # principal had waiting.
 def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit.add({delta: 1n}), pending: forget(found), children: Plans.Entries.insert({row: reference})})}))
-  notified(state.observers, state.planted + 1n, Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, Card.name(context.principal, context), reference, colour, seed, state.planted + 1n))
+  notified(Card.ownObservers(state.observers), state.planted + 1n, Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, Card.name(context.principal, context), reference, colour, seed, state.planted + 1n))
 # Observers (a Wake watching `planted`) are told the count after each planting, by their
 # method, as `{field: "planted", value}`; then the planter gets the card.
 def notified(observers: Card.Observers, planted: Nat, reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
