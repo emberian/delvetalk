@@ -1,0 +1,22 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.source",
+  "description": "One module's source, named by its CID: the `sources[].cid` and compile inputs' `{name, cid}` of the journal (world-source, world-sources).",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: the module's CID, which is also the record's cid.",
+      "record": {
+        "type": "object",
+        "required": ["cid", "name", "text"],
+        "properties": {
+          "cid": {"type": "string", "format": "cid"},
+          "name": {"type": "string", "description": "The module name the closure that introduced it gave it."},
+          "text": {"type": "string", "description": "The source, verbatim.", "maxLength": 524288},
+          "height": {"type": "integer", "minimum": 1, "description": "The entry that first carried it."}
+        }
+      }
+    }
+  }
+}
