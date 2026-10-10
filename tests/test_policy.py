@@ -509,7 +509,7 @@ class PolicyObject(Chain):
             self.assertEqual(r["status"], "suspended", (i, r))
         over = self.say("one more fern", identity="p64")
         out = over["receipt"]["outcome"]
-        self.assertEqual((over["status"], out["class"], out["reason"]), ("refused", "capacity", "pendingInterpretationsPerObject"))
+        self.assertEqual((over["status"], out["class"], out["reason"]), ("refused", "capacity", "the host's pendingInterpretationsPerObject is full; try later."))
         pending = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual(len(pending), 64)
         # A capacity refusal is transient: once the interpretations settle, the same post

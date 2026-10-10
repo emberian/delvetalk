@@ -60,8 +60,8 @@ class Parse(unittest.TestCase):
         for prose in ("Could we plant a silver fern whose leaves remember last night's rain?",
                       "", "\n\n# only a comment\n"):
             with self.subTest(prose=prose[:30]):
-                self.assertTrue(parse(prose).startswith("not a spell: The reply has no delvetalk line"))
-        self.assertTrue(propose("Could we plant a fern?").startswith("refused The reply has no delvetalk line"))
+                self.assertTrue(parse(prose).startswith("not a spell: No delvetalk line; the spell is the last unquoted one"))
+        self.assertTrue(propose("Could we plant a fern?").startswith("refused No delvetalk line; the spell is the last unquoted one"))
 
     def test_lines_before_the_spell_are_skipped_so_a_quoted_invitation_may_precede_it(self):
         quoted = ("> ✾ DELVETALK · ROOT\n> \n> GARDEN\n> Plant something.\n> Say: delvetalk is the word\n"
@@ -69,7 +69,7 @@ class Parse(unittest.TestCase):
         self.assertEqual(propose(quoted), "proposal garden-1 plant colour=silver;seed=fern;")
         self.assertEqual(propose("Sure!\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver"),
                          "proposal garden-1 plant colour=silver;seed=fern;")
-        self.assertEqual(parse("one\ntwo\nthree"), "not a spell: The reply has no delvetalk line.")
+        self.assertEqual(parse("one\ntwo\nthree"), "not a spell: No delvetalk line; the spell is the last unquoted one.")
 
     def test_the_one_line_form_takes_comma_separated_fields_after_the_action(self):
         self.assertEqual(parse("delvetalk garden-1 plant seed: fern, colour: silver"),
@@ -145,7 +145,7 @@ class Parse(unittest.TestCase):
         """The town writes `plant: a fern` for the seed (the §11 hour)."""
         self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern\ncolour: silver"), "proposal garden-1 plant colour=silver;seed=a fern;")
         self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern"), "unclear colour|")
-        self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver"), "refused Unknown field plant")
+        self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver"), "refused No field plant in this spell; it takes colour, seed.")
 
     def test_a_fence_with_an_info_string_is_code_never_a_spell(self):
         """Rehearsal run 4, finding C: gemini's 3mxhfzx7rlk2f proposes code in a ```bend block that
@@ -181,7 +181,7 @@ class Blocks(unittest.TestCase):
 
     def test_an_unclosed_block_is_refused_by_name(self):
         self.assertEqual(self.parsed("delvetalk w c\nsource: <<BEND\nline\n"),
-                         "not a spell: the block <<BEND for source is never closed by a line BEND")
+                         "not a spell: The block <<BEND for source needs a last line that is exactly BEND.")
 
 
 class Fit(unittest.TestCase):
@@ -190,10 +190,10 @@ class Fit(unittest.TestCase):
         self.assertEqual(propose("delvetalk garden-1 plant"), "unclear colour|seed|")
 
     def test_an_unknown_field_is_refused_by_name(self):
-        self.assertEqual(propose("delvetalk garden-1 plant\nseed: fern\ncolour: silver\nsmell: sweet"), "refused Unknown field smell")
+        self.assertEqual(propose("delvetalk garden-1 plant\nseed: fern\ncolour: silver\nsmell: sweet"), "refused No field smell in this spell; it takes colour, seed.")
 
     def test_a_refusal_wins_over_a_missing_field(self):
-        self.assertEqual(propose("delvetalk garden-1 plant\nsmell: sweet"), "refused Unknown field smell")
+        self.assertEqual(propose("delvetalk garden-1 plant\nsmell: sweet"), "refused No field smell in this spell; it takes colour, seed.")
 
     def test_a_choice_outside_the_set_is_refused(self):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: fern\ncolour: green"), "refused colour is one of: amber, violet, silver")
@@ -206,15 +206,15 @@ class Fit(unittest.TestCase):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: %s\ncolour: silver" % (ok + "é")), "refused seed takes 1 to 80 characters.")
 
     def test_a_name_outside_the_identifier_alphabet_is_an_unknown_field(self):
-        self.assertEqual(propose("delvetalk garden-1 plant\nSeed: fern\ncolour: silver"), "refused Unknown field Seed")
-        self.assertEqual(propose("delvetalk garden-1 plant\nsee d: fern\ncolour: silver"), "refused Unknown field see d")
+        self.assertEqual(propose("delvetalk garden-1 plant\nSeed: fern\ncolour: silver"), "refused No field Seed in this spell; it takes colour, seed.")
+        self.assertEqual(propose("delvetalk garden-1 plant\nsee d: fern\ncolour: silver"), "refused No field see d in this spell; it takes colour, seed.")
 
     def test_a_duplicate_field_is_refused(self):
-        self.assertEqual(propose("delvetalk garden-1 plant\nseed: a\nseed: b\ncolour: amber"), "refused Duplicate field seed")
+        self.assertEqual(propose("delvetalk garden-1 plant\nseed: a\nseed: b\ncolour: amber"), "refused seed is given twice; keep one.")
 
     def test_another_card_or_action_is_refused(self):
-        self.assertEqual(propose("delvetalk garden-2 plant\nseed: a\ncolour: amber"), "refused This card offers garden-1 plant")
-        self.assertEqual(propose("delvetalk garden-1 prune\nseed: a\ncolour: amber"), "refused This card offers garden-1 plant")
+        self.assertEqual(propose("delvetalk garden-2 plant\nseed: a\ncolour: amber"), "refused This card answers garden-1 plant.")
+        self.assertEqual(propose("delvetalk garden-1 prune\nseed: a\ncolour: amber"), "refused This card answers garden-1 plant.")
 
     def test_naturals_are_read_in_plain_digits_within_bounds(self):
         form = {"card": "c", "action": "a", "fields": [{"name": "n", "kind": {"natural": {"min": 2, "max": 300}}}]}

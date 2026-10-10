@@ -406,6 +406,45 @@ structure Refusal where
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
 
+/-- The prefix the kernel puts in front of a refusal it reports as text. -/
+def kernelPrefix : String := "turn refused: "
+
+/-- A ledger field a chain of sends spent (`budgetExhausted`), as its reason says it. -/
+def exhaustedReason (field : String) : String := s!"the chain of sends spent its {field}."
+
+/-- A refusal's `reason` as the town reads it (docs/VOICE.md, "The host's refusals"), from what the
+    refusal names: the class, the object, the limit or resource, the clause. Classes whose reason the
+    site writes (lawRefused, quota, noMethod, badSpell) keep it. Applied once, where `commit`
+    journals the refusal. -/
+def Refusal.voiced (r : Refusal) : Refusal :=
+  let obj := r.object.getD ""
+  let given := (r.reason.map fun t => if t.startsWith kernelPrefix then (t.drop kernelPrefix.length).toString else t)
+  let reason := match r.cls with
+    | "staleRoot" => some s!"{obj} moved while you wrote; send the same spell again."
+    | "budget" => some s!"the turn ran out of {given.getD "ticks"}; make it smaller, or send it again later."
+    | "evaluation" => given
+    | "capacity" => match given with
+      | some m => if m.any (· == ' ') then some m else some s!"the host's {m} is full; try later."
+      | none => some s!"the host's {if obj.isEmpty then "capacity" else obj} is full; try later."
+    | "typeMismatch" =>
+      let method := ((r.expected.bind fun e => (e.getObjValAs? String "method").toOption)).getD "it"
+      let pointer := s!"reply delvetalk {obj} ? for its spell."
+      -- A word that names no case says which: "colour is one of: amber, violet (not gold)".
+      match given with
+      | some m => if m.startsWith "argument does not conform to its type: " then some s!"{(m.drop 39).toString}; {pointer}"
+        else if m.startsWith "argument does not conform" || m.isEmpty then some s!"not what {method} takes; {pointer}"
+        else some s!"{m}; {pointer}"
+      | none => some s!"not what {method} takes; {pointer}"
+    | "unknownObject" => some s!"no card {obj} that you may see; the directory lists the doors."
+    | "programRefused" => some s!"the package was refused at {r.clause.getD "compile"}; the workshop's check shows where."
+    | "absentItem" => some "that item is not in the list now."
+    | "requiredAbsence" => some s!"{obj} is already there; {r.root.getD ""} found it."
+    | "keyTaken" => some "another row holds that key; upsert, or add an ordinal."
+    | "duplicateKey" => some "the write names one key twice."
+    | "budgetExhausted" => given.map exhaustedReason
+    | _ => given
+  { r with reason }
+
 /-- Why an edit does not apply: `typeMismatch` (the field or value is not of the kind the
     edit needs), `absentItem`, `keyTaken`, `duplicateKey`. -/
 abbrev EditResult := Except String
@@ -1790,7 +1829,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     if w.objects.contains id then throw { cls := "staleRoot", object := id }
   if w.objects.size + p.creates.length > Limits.maxObjects then
     throw { cls := "evaluation", reason := some "object capacity reached" }
-  if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants" }
+  if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants", reason := some "maxGrants" }
   -- Subscriptions stand at most `subscribersPerObject` to an object, counted as they will be.
   for x in p.subscribes do
     let standing := ((w.subscriptions.getD x.object #[]).toList ++ p.subscribes).filter fun y =>
@@ -1823,7 +1862,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       | .error clause => throw { cls := clause, object := id }
     unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
     unless stateBytes written ≤ Limits.maxStateBytes do
-      throw { cls := "capacity", object := id }
+      throw { cls := "capacity", object := id, reason := some "maxStateBytes" }
     -- A reprogram replaces code and, through its migration, the state's type.
     let mut next := o
     let mut state := written
@@ -2052,6 +2091,7 @@ def reply (entry : Json) : Json :=
 def duplicate (principal intent : String) (entry : Json) : Json :=
   Json.mkObj [("status", toJson "refused"), ("class", toJson "duplicateIdentity"),
     ("identity", identityJson principal intent),
+    ("reason", toJson s!"{intent} already names a different turn; choose a new intent."),
     ("original", entry.getObjVal? "hash" |>.toOption |>.getD Json.null)]
 
 /-- Retry rule shared by every journaled op: the same identity and request returns
@@ -2122,6 +2162,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       match forced with | some r => .error r | none => judge w (w.height + 1) p
     match verdict with
     | .error r =>
+      let r := r.voiced
       let outcome := Json.mkObj ([("tag", toJson "refused"), ("class", toJson r.cls)] ++
         (r.clause.map fun c => [("clause", toJson c)]).getD [] ++
         (r.object.map fun o => [("object", toJson o)]).getD [] ++
@@ -2668,7 +2709,7 @@ def checkDelivery (w : World) (entry : Json) (principal intent : String) (outcom
     throw "delivery names another grant than its send"
   if (outcome.getObjValAs? String "class").toOption == some "budgetExhausted" then
     let ledger ← ledgerOf (← p.getObjVal? "ledger")
-    unless ledger.exhausted == (outcome.getObjValAs? String "reason").toOption do
+    unless ledger.exhausted.map exhaustedReason == (outcome.getObjValAs? String "reason").toOption do
       throw "budget refusal names a field that is not exhausted"
   else if (← ledgerOf (← p.getObjVal? "ledger")).exhausted.isSome then
     throw "a delivery with an exhausted ledger ran"

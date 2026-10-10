@@ -82,13 +82,13 @@ Outcomes:
 
 - `created`: `{object, pin, sourcesSha256, compile, seed, read, chain, supervisor?, owner?}`; `roots []`, `turn 0`. Replay recompiles, requires the pin to match the source closure, the seed to conform and the amendment dry run to pass at the entry's height.
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
-- `refused`: `{class, clause?, object?, reason?, expected?, root?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (reason = machine resource: ticks, heap, stack, nodes, bytes, or `law ticks`), budgetExhausted (reason = ledger field), programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence. Replay checks only that the class is known. A text-law refusal with a reading journals `reason: "refused <name>: <reading>"`; `publicRefusal` shows it.
+- `refused`: `{class, clause?, object?, reason?, expected?, root?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (reason "the turn ran out of <resource>; …", resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted (reason "the chain of sends spent its <ledger field>."), programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence. Replay checks only that the class is known. A text-law refusal with a reading journals `reason: "refused <name>: <reading>"`; `publicRefusal` shows it.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
 Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes`):
 - A `sends` id equals `deliveryId principal intent ordinal` (CID of `[principal, intent, ordinal]`).
-- An entry with `delivery` consumes exactly the pending delivery it names, under the sender's principal, `intent == id`. A `budgetExhausted` refusal names a ledger field that is zero.
+- An entry with `delivery` consumes exactly the pending delivery it names, under the sender's principal, `intent == id`. A `budgetExhausted` refusal's reason names a ledger field that is zero (`exhaustedReason`).
 - An entry with `resumes` names a waiting suspension of the same identity.
 - `record` derives `pending`, `suspended`, `clock`, `touched`, `receipts`, `outbox`, `handles`, `posts`, `replies`, `blocks`, `modules`.
 
@@ -389,7 +389,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `suspended` entries carrying an `interpretation`, by the identity's principal at the entry's clock;
    the clock counts minutes, so the hour is `clock / 60`. An `interpret` Plan past the cap refuses the
    whole turn with class `quota` (in `refusalClasses` and `transientClasses`, so the identity runs again
-   later), `reason` "interpretations: N an hour; next at clock M" and `next: M`, both in the public
+   later), `reason` "the interpreter has read N this hour; reply with the spell itself, or wait." and `next: M`, both in the public
    projection. The opener and the clock principal are exempt. `world-status` reports `interpretQuota`,
    and with `principal` `interpretations: {remaining, next} | "exempt"`. `tests/test_policy.py`'s
    65-interpretation capacity test lifts the quota. Test: `tests/test_interpret_quota.py`.
@@ -422,7 +422,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    (`markHelpers`; snapshots keep the marks, edition `delvetalk.snapshot.v2`, so an older snapshot is
    refused and the journal replayed). `Object.offers`: a row not marked helper. A direct turn or a
    delivery naming a method the object does not offer (a helper, or a definition that is no method) is
-   refused class `noMethod` (in `refusalClasses`, binding), reason "<m> is not a method <id> offers; …";
+   refused class `noMethod` (in `refusalClasses`, binding), reason "<id> has no method <m>; reply delvetalk <id> ? for its spells.";
    a `call`, `run`, `send` or `sendVia` naming one is answered `refused {clause: noMethod}` (an object
    may call its own helpers). Two deliveries may name a helper, because the receiving object chose the
    receiver: a change to its subscription's method (the delivery has `field`), and `ended` to the
@@ -574,6 +574,20 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `tests/test_relation.py` `test_insert_only_does_not_count_the_rows_retention_drops` (limit 2, three
    inserts admitted, an upsert and a retract of a kept row refused). The Directory's Bend 4,096 check
    (`greeted`) may now be `law greeted "...": insertOnly(greeted)` (objects lane).
+
+75. **Refusal reasons in the town's voice (host11; docs/VOICE.md "The host's refusals").** `commit`
+   journals every refusal through `Refusal.voiced` (Ops), which writes `reason` from what the refusal
+   names, by class: staleRoot, budget, capacity (a limit's name; a sentence a site wrote stays),
+   typeMismatch (the method from `expected`; a word naming no case keeps its "… is one of: …"),
+   unknownObject, programRefused (the clause only: a compile diagnostic is no longer in the receipt;
+   the workshop's check shows it), absentItem, requiredAbsence, keyTaken, duplicateKey,
+   budgetExhausted; evaluation drops the kernel's `turn refused: ` prefix; lawRefused, quota, noMethod
+   and badSpell keep the reason their site writes, now VOICE's text. `duplicateIdentity`'s reply
+   carries `reason`. The badSpell reasons (Spell.lean, `castSpell`, `lensSpell`) and the two usage
+   lines (`spellUsage`) are VOICE's; an unknown field names the fields the spell takes ("none" for a
+   form without fields). Clause names and classes are unchanged. `world/lib/Spell.obend`'s no-line
+   reason moved with the host's, for `tests/test_spell.py` `BendReading`'s parity (pins re-recorded).
+   Tests and `tests/fixtures/spells/` updated to the new text.
 
 ## 6. Gotchas
 

@@ -650,7 +650,7 @@ def dryChange (w : World) (s : TurnState) (self id : String) (version : Nat) (pr
 
 /-- Why a turn naming a helper is refused (class `noMethod`). -/
 def noMethodReason (id method : String) : String :=
-  s!"{method} is not a method {id} offers; its package names its methods in forms() or methods()"
+  s!"{id} has no method {method}; reply delvetalk {id} ? for its spells."
 
 /-- Is `method` refused to `self` calling object `id`: not a method `id` offers? An object may call
     its own helpers. -/
@@ -717,10 +717,10 @@ def lensTemplate (card : String) (lens : Spell.Field) (value : Option String := 
 
 /-- A card's usage (`Card.help`): every form as a template, then every lens. -/
 def spellUsage (card : String) (forms : List Spell.Form) (lenses : List Spell.Field := []) : String :=
-  if forms.isEmpty && lenses.isEmpty then s!"{card} takes no spells." else
+  if forms.isEmpty && lenses.isEmpty then s!"{card} takes no spells; reply in words and the directory places them." else
   (if forms.isEmpty then "" else "Reply with a spell:\n" ++ String.join (forms.map fun f => "\n" ++ spellTemplate card f)) ++
   (if lenses.isEmpty then "" else
-    "\nTo change a field, reply (one field a spell):\n" ++ String.join (lenses.map fun l => "\n" ++ lensTemplate card l))
+    "\nTo set a field, reply with one of these (one field a spell):\n" ++ String.join (lenses.map fun l => "\n" ++ lensTemplate card l))
 
 /-- The spell line a reply's spell stands on, for `inputOrigin.command`. -/
 def spellLine (card action : String) : String := s!"delvetalk {card} {action}"
@@ -823,7 +823,7 @@ def lensSpell (w : World) (id : String) (argument : Data) (target : Object) (car
   | [b] =>
     match lenses.find? (·.name == b.name) with
     | none => .refuse id "unknownField"
-        s!"Unknown field {b.name}; set takes one of: {", ".intercalate (lenses.map (·.name))}" (spellUsage id [] lenses)
+        s!"No field {b.name} in this spell; it takes {", ".intercalate (lenses.map (·.name))}." (spellUsage id [] lenses)
     | some lens =>
       match Spell.judge lens b.value with
       | some (clause, reason) => .refuse id clause.name reason (lensTemplate id lens b.value)
@@ -860,9 +860,9 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
     (fields : List Spell.Binding) (retarget : Bool) : SpellRoute := Id.run do
   let id := resolveCard principal card
   let usageHere := spellUsage self (spellForms w self o)
-  let some target := w.objects[id]? | return .refuse self "otherCard" s!"There is no card {card}." usageHere
+  let some target := w.objects[id]? | return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." usageHere
   unless target.read.permits principal && (retarget || id == self) do
-    return .refuse self "otherCard" s!"There is no card {card}." usageHere
+    return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." usageHere
   let forms := spellForms w id target
   let lenses := declaredLenses w target
   if action == "?" then return .usage id (spellUsage id forms lenses)
@@ -870,7 +870,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   if action == "set" && !lenses.isEmpty && !forms.any (·.action == "set") then
     return lensSpell w id argument target card lenses fields
   let some form := forms.find? (·.action == action)
-    | return .refuse id "noAction" s!"{id} has no action {action}." (spellUsage id forms lenses)
+    | return .refuse id "noAction" s!"{id} has no spell {action}; it has these:" (spellUsage id forms lenses)
   let fields := withFence w target action argument fields
   match Spell.fit (.spell id action fields) form with
   | .proposal _ _ entries => match spellArgumentFor w target action entries with
@@ -891,7 +891,7 @@ def routeSpell (w : World) (principal id method : String) (argument : Data) (ret
   match Spell.parse text with
   | .spell card action fields => return castSpell w principal id argument o card action fields retarget
   | .notASpell reason fielded =>
-    if reason.startsWith "the block <<" then
+    if reason.startsWith "The block <<" then
       return .refuse id "unclosedBlock" reason (spellUsage id (spellForms w id o))
     let bare := Spell.bare text
     -- A reply with no spell line whose first field line names an action or a field of one of this
@@ -959,7 +959,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .error e => evaluation e
     | .ok (.refused failure usage) =>
       spend (usage.ticksUsed + usage.conversionNodes)
-      evaluation s!"turn refused: {failure}"
+      evaluation failure
     | .ok (.finished value _ _ usage) =>
       spend (usage.ticksUsed + usage.conversionNodes)
       let .record fields := value | evaluation "a pure method must return the state record"
@@ -1110,7 +1110,7 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
         | some (h, n) => if h == hour then n else 0
         | none => 0
       unless s.principal == w.opener || s.principal == w.clockPrincipal || used < w.interpretQuota do
-        throw (.quota s!"interpretations: {w.interpretQuota} an hour; next at clock {(hour + 1) * 60}" ((hour + 1) * 60))
+        throw (.quota s!"the interpreter has read {w.interpretQuota} this hour; reply with the spell itself, or wait." ((hour + 1) * 60))
       mayWait depth self checkpoint (interpreting := true)
       let id := Journal.bodyHash (Json.arr #[toJson s.principal, toJson s.intent, toJson s.awaits])
       set { s with awaits := s.awaits + 1 }

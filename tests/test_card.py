@@ -48,9 +48,9 @@ class Receive(TurnWorld):
     def test_another_card_or_an_unknown_action_is_refused_by_name(self):
         """The host reads the spell (the lantern speaks the message dialect): a misfit is a refused
         turn of class badSpell with its clause, reason and hint, the hint the spell to send."""
-        for i, (text, clause, reason) in enumerate([("delvetalk c2 light", "otherCard", "There is no card c2."),
-                                                    ("delvetalk c1 admire\nplant: open gate\nstatus: rooted", "noAction", "c1 has no action admire."),
-                                                    ("delvetalk c1 light\nby: someone", "unknownField", "Unknown field by")]):
+        for i, (text, clause, reason) in enumerate([("delvetalk c2 light", "otherCard", "There is no card c2; the directory lists the doors."),
+                                                    ("delvetalk c1 admire\nplant: open gate\nstatus: rooted", "noAction", "c1 has no spell admire; it has these:"),
+                                                    ("delvetalk c1 light\nby: someone", "unknownField", "No field by in this spell; it takes none.")]):
             r = self.turn("c1", "receive", heard(text), principal="glm", identity="bad%d" % i)
             out = r["receipt"]["outcome"]
             self.assertEqual((r["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", clause, reason), r)

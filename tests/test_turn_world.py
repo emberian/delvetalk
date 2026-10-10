@@ -236,7 +236,7 @@ class CounterTurns(TurnWorld):
         self.create("c1", counter_modules(), 0)
         r = self.turn("c1", "bump", ticks="10")
         out = r["receipt"]["outcome"]
-        self.assertEqual((r["status"], out["class"], out["reason"]), ("refused", "budget", "ticks"))
+        self.assertEqual((r["status"], out["class"], out["reason"]), ("refused", "budget", "the turn ran out of ticks; make it smaller, or send it again later."))
         self.assertEqual(self.count("c1"), (0, "0"))
 
 

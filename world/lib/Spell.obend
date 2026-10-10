@@ -57,7 +57,7 @@ def chosen(unquoted: Candidate, quoted: Candidate) -> Parsed:
 def fallback(quoted: Candidate) -> Parsed:
   match quoted:
     case at(a): spelled(a.card, a.action, inline(a.tail))
-    case none(_): Parsed.notASpell({reason: "The reply has no delvetalk line."})
+    case none(_): Parsed.notASpell({reason: "No delvetalk line; the spell is the last unquoted one."})
 def isSpellAt(text: String, indent: Nat) -> Bool:
   textTake(textDrop(text, indent), 10n) == "delvetalk " || textTake(textDrop(text, indent), 10n) == "delvetalk\t"
 def isQuote(text: String) -> Bool:
