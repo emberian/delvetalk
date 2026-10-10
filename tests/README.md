@@ -71,10 +71,8 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 
 `world/lib` and `world/objects` run through the host: the cards, laws and protocols the town meets.
 
-- `test_appointments` (§3 Time): A booking creates an Appointment that waits for its time in its own turn and then notes the recipient; a cancelled one sends nothing.
 - `test_artifact_pins` (§2 Store): Every entry of every world module keeps its source pin and still compiles, and every object activity yields over the Plan library and hears its silences.
 - `test_card` (§5): The card protocol: a spell naming the card runs its action, an empty reply gets the card, prose addressed to nobody gets nothing.
-- `test_commons` (§8): The commons: a place graph whose gates admit anyone, a list of principals, or only a turn their gate object calls.
 - `test_deal` (§8 governance): A Deal at rest, countersigned by every party, applies its amendment under the target's own law; its own law keeps signatures append-only and a withdrawal final.
 - `test_interpret_text` (§6): The garden fits the model's own words with Spell: a spell plants, `unclear: not addressed` is silence, a miss is asked once more and then answered with what is still needed.
 - `test_laws` (§4): The world's objects carry their laws in source: only owners change directories and admit anthology lines, and Tide's and Wake's predicates refuse what their code would.

@@ -81,7 +81,7 @@ record Subscription:
   note: String
   since: Nat
   handle: String
-# Who stands where in a scene or a commons (`at` a passage or a place), keyed {who}.
+# Who stands where in a scene (`at` a passage or a place), keyed {who}.
 record Presence:
   who: String
   at: String

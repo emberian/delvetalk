@@ -81,7 +81,7 @@ def refused(w: Why) -> Done:
 def told(w: Why) -> Activity<Done>:
   Card.tell(refused(w), Document.text("Not done: {refusal(w).reading}\n"))
 # --- The inbox ---------------------------------------------------------------------
-# A note from the turn's principal (a Tide's tick, an appointment, anyone's line).
+# A note from the turn's principal (a Tide's tick, anyone's line).
 def note(state: State, input: {text: String}, context: Abi.Context) -> Activity<Done>:
   noted({from: context.principal, handle: context.handle, text: input.text, at: context.height, n: Relations.count(state.inbox)})
 def noted(note: Note) -> Activity<Done>:

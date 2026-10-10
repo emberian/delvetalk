@@ -9,8 +9,8 @@ conventional name (`receive`, `render`, `set`, ...). Every other State-first def
 helper: refused class `noMethod` by name, absent from `world-inspect`'s methods and forms. A
 change is still delivered to the receiver its subscriber named, helper or not.
 
-Refuted by: a stranger declaring a winner with `Table.played`, resetting a seat with
-`Seat.nextRound` or keeping an appointment early with `Appointment.due`; a helper listed by
+Refuted by: a stranger declaring a winner with `Table.played`, or resetting a seat with
+`Seat.nextRound`; a helper listed by
 `world-inspect`; a bare package's undeclared method running; a change not reaching a helper
 receiver; a direct turn reaching that receiver.
 """
@@ -24,9 +24,7 @@ from tests.test_objects import closure
 from tests.test_reflection import Reflection
 from tests.test_table import NORTH, OPENING, SOUTH
 from tests.test_turn_world import FIXTURE_HEAD, declared, label, nat, record
-from tests.test_places import avatar_seed
 
-KIM = "did:plc:kimik3"
 STRANGER = "did:plc:stranger"
 
 
@@ -74,22 +72,6 @@ class Reproductions(Chain):
         listed = self.host.send(op="world-objects", principal=STRANGER, methods=True)
         self.assertNotIn("played", listed["methods"]["table"])
         self.assertIn("resolve", listed["methods"]["table"])
-
-
-class Appointments(Chain):
-
-    def setUp(self):
-        super().setUp()
-        self.make("book", closure("Appointments"), record())
-        self.make(KIM, closure("Avatar"), avatar_seed("kimik3", "porch"))
-
-    def test_a_stranger_cannot_keep_an_appointment_early_with_due(self):
-        r = self.turn("book", "receive", record(text=label("delvetalk book book\ntopic: tea\nto: %s\nafter: 50" % KIM),
-                                                post=label("at://p")), principal="glm")
-        self.assertEqual(r["status"], "admitted", r)
-        refused_no_method(self, self.turn("book/1", "due", principal=STRANGER), "due", "book/1")
-        status = [f["value"] for f in self.state("book/1")["fields"] if f["name"] == "status"][0]
-        self.assertEqual(status["label"], "booked")
 
 
 BARE = FIXTURE_HEAD + """def bump(state: State, context: Abi.Context) -> Activity<Nat>:

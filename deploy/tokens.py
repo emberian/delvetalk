@@ -89,8 +89,8 @@ def extras(m, cap):
     print('place:', made.get('status'), made.get('message') or '', file=sys.stderr)
     moth = m.PEOPLE['moth.delve.town']
     cap.token = cap.tokens['moth.delve.town']
-    for obj in ('directory', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'commons', 'cistern',
-                'policy', 'play', 'yard', f'env/{moth}', f'wake/{moth}', moth):
+    for obj in ('directory', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern',
+                'policy', 'yard', f'env/{moth}', f'wake/{moth}', moth):
         cap.step('GET', f'/world/{obj}/card')
     cap.step('GET', '/world/directory')
     for href in ('/world/garden?text=1', '/world/garden/bell/1?text=1', ''):
@@ -190,7 +190,7 @@ def posts():
     return [p['record']['text'] for p in json.loads((ROOT / 'rehearsal' / 'fixtures' / 'posts.json').read_text())]
 
 
-CARDS = ('directory', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'commons', 'cistern', 'policy', 'play', 'yard')
+CARDS = ('directory', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern', 'policy', 'yard')
 
 
 def town_cards(cap):

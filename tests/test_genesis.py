@@ -44,7 +44,7 @@ class Genesis(unittest.TestCase):
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
-        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 11))
+        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 9))
         made_names = {m['object'] for m in made}
         self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if to and to not in made_names], [])  # every door with an object resolves
         self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if not to], ['STUDIO'])
@@ -57,8 +57,6 @@ class Genesis(unittest.TestCase):
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']
         self.assertTrue(said['ROOMS'].startswith('SCENE The Moss Gate'), said)
-        self.assertNotIn('PLAY', menu_words(host))
-        self.assertEqual(host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'play'})['status'], 'viewed')  # created, not a door
         # The link door has no object: naming it reaches Plan.card on the empty reference (the Directory answers
         # "The door to  opens on nothing yet."), so only the menu carries its URL.
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']

@@ -33,7 +33,7 @@ def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(i
 
 
 # (label, description, object, watched field, [(spell, what comes back)]): every door with an object points at a
-# genesis object; `play` is created but is not a door. The spells and their `»` lines are the root menu's
+# genesis object. The spells and their `»` lines are the root menu's
 # (docs/previews/gsb-root-menu-v3.txt, docs/MENU.md §1); the watched field is the count on the door line.
 DOORS = [
     ('GARDEN', "Plant something; rain on another's planting. Each bell keeps who helped it grow.", 'garden', 'children',
@@ -114,9 +114,7 @@ def seeds(opener):
             ('anthology', 'Anthology', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
             ('cistern', 'Cistern', rec(level=nat(0))),  # created with cistern_law(opener)
-            ('commons', 'Commons', rec(owner=lab(opener))),
-            ('rooms', 'Scene', moss_gate(opener)),
-            ('play', 'Table', rec())]  # the Automatafl opening is the package's default; seats join when players sit
+            ('rooms', 'Scene', moss_gate(opener))]
 
 
 def existing(host, opener):

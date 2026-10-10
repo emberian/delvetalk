@@ -5,7 +5,7 @@ Evidence for FOUNDATION §5 (layer: objects).
 
 Compile and exercise the Bend standard library and the first objects.
 
-Every module under world/lib and world/objects goes through the real checker
+Every module under world/lib and world/objects (and the fixtures in tests/fixtures/objects and examples/automatafl) goes through the real checker
 binary (read-only, built elsewhere). Run from the repository root:
 
     python3 -m unittest tests.test_objects -v
@@ -26,7 +26,7 @@ DEF = re.compile(r"^def (\w+)(<[^>]*>)?\(.*\) -> (.*):$", re.M)
 
 def modules_on_disk():
     found = {}
-    for root in (os.path.join(WORLD, "lib"), os.path.join(WORLD, "objects")):
+    for root in (os.path.join(WORLD, "lib"), os.path.join(WORLD, "objects"), os.path.join(ROOT, "tests", "fixtures", "objects"), os.path.join(ROOT, "examples", "automatafl")):
         for directory, _, files in os.walk(root):
             for name in files:
                 if name.endswith(".obend"):
@@ -286,7 +286,7 @@ class Objects(unittest.TestCase):
 
     def test_every_object_is_made_from_initial_alone(self):
         """A creator's seed is laid over `initial()`; no object keeps a Seed ritual beside it
-        (WORLD-REVIEW 4), and only the Appointment types the Seed its book creates it with."""
+        (WORLD-REVIEW 4)."""
         for name in OBJECT_NAMES:
             with self.subTest(object=name):
                 entries = [d[0] for d in definitions(name)]
