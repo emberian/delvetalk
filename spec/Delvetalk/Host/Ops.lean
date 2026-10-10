@@ -204,6 +204,9 @@ structure Proposal where
   unsubscribes : List Subscription := []
   /-- Fields of objects the turn read alone (`viewField`), at the version it read. -/
   fieldRoots : List (String × String × Nat) := []
+  /-- A reprogram's lineage, by object (`become`: the kind whose body it laid), journaled on the
+      reprogram as `madeFrom {object, pin, receipt}`. -/
+  madeFrom : List (String × Json) := []
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
       moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
   rebaseOwn : Option String := none
@@ -1985,7 +1988,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),
-        ("result", dataJson state)] |> fun j => if extend then j.setObjVal! "mode" (toJson "extend") else j]
+        ("result", dataJson state)] |> (fun j => if extend then j.setObjVal! "mode" (toJson "extend") else j) |>
+          fun j => match p.madeFrom.lookup id with
+            | some m => j.setObjVal! "madeFrom" m
+            | none => j]
     -- The current law judges the whole write, under the pin the object will run. Every
     -- kind of change the object undergoes in this turn is judged, once for each object
     -- that called the running one to make it: the subject is the principal, the caller
@@ -3141,6 +3147,10 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration"))
     let layered := recordedPrograms.toList.filterMap fun r =>
       if (r.getObjValAs? String "mode").toOption == some "extend" then (r.getObjValAs? String "object").toOption else none
+    let madeFrom : List (String × Json) := recordedPrograms.toList.filterMap fun r =>
+      match r.getObjValAs? String "object", r.getObjVal? "madeFrom" with
+      | .ok o, .ok m => some (o, m)
+      | _, _ => none
     let laws ← recordedLaws.toList.mapM fun r => do
       return (← r.getObjValAs? String "object", ← r.getObjValAs? String "new")
     let recordedCreates := (outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption) |>.getD #[]
@@ -3159,7 +3169,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let subscribes ← subs "subscribes"
     let unsubscribes ← subs "unsubscribes"
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, fieldRoots }
+                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, fieldRoots, madeFrom }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))

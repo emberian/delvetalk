@@ -181,6 +181,55 @@ class ReprogramReading(Reflection):
         self.assertIn("nope", said)
 
 
+# A card of the base (it hears replies), and a kind: any object whose state holds a layer `body`.
+CARD = BASE + """def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Nat>:
+  0n
+"""
+
+KIND = declared("""edition ObjectiveBend 1
+record State:
+  name: String
+  body: String
+def initial() -> State:
+  {name: "", body: ""}
+""")
+
+
+class HostSpells(Reflection):
+    """docs/CATALOGUE.md §2: the host's own spells on any card, each a direct turn judged by the card's
+    own law: `become` lays a kind's body over the card."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("c", CARD, record(count=nat(0)))
+        self.make("kind/louder", KIND, record(name=label("louder"), body=label(LAYER)))
+
+    def say(self, text, who="ember", identity=None):
+        return self.turn("c", "receive", record(text=label(text), post=label("")), principal=who, identity=identity)
+
+    def test_become_lays_the_kinds_body_under_the_cards_own_law(self):
+        self.assertIn("delvetalk c become\nkind:", self.say("delvetalk c ?")["text"])
+        self.assertNotIn("become", self.say("delvetalk c ?", who="kim")["text"])
+        stranger = self.say("delvetalk c become\nkind: kind/louder", who="kim", identity="b0")
+        self.assertEqual((stranger["status"], stranger["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), stranger)
+        r = self.say("delvetalk c become\nkind: kind/louder", identity="b1")
+        self.assertEqual(r["status"], "admitted", r)
+        [prog] = r["receipt"]["outcome"]["reprograms"]
+        kind = self.host.send(op="world-inspect", principal="ember", object="kind/louder")
+        self.assertEqual(prog["mode"], "extend")
+        self.assertEqual((prog["madeFrom"]["object"], prog["madeFrom"]["pin"]), ("kind/louder", kind["pin"]))
+        self.assertTrue(prog["madeFrom"]["receipt"].startswith("bafy"), prog)
+        self.assertEqual(self.turn("c", "bump")["status"], "admitted")
+        self.assertEqual(field(self.state("c"), "count")["value"], "10")
+        self.assertEqual(self.say("delvetalk c become\nkind: kind/louder", identity="b1"), r)   # a retry: the receipt
+        self.reopen()
+        self.assertEqual(self.turn("c", "bump")["status"], "admitted")
+        self.assertEqual(field(self.state("c"), "count")["value"], "20")
+        missing = self.say("delvetalk c become\nkind: kind/none", identity="b2")["receipt"]["outcome"]
+        self.assertEqual((missing["class"], missing["clause"]), ("badSpell", "unknownKind"), missing)
+
+
 class ExtensionPins(Reflection):
     """An extension's pin is its compiled closure's (docs 2): the same layer over the same base under two
     libraries is two closures and two pins."""

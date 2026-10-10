@@ -899,6 +899,9 @@ inductive SpellRoute where
   | run (object method : String) (argument : Data) (command : String)
   | usage (object text : String)
   | refuse (object clause reason hint : String)
+  /-- One of the host's own spells on any card (`become`, `adopt`, `lend`; `hostSpell`), a direct
+      turn's only. -/
+  | host (object action : String) (fields : List Spell.Binding)
 
 /-- `receive` with the bare field lines (`Heard.fields`): completion is the card's policy. -/
 def receiveHeard (w : World) (id : String) (o : Object) (argument : Data) (fields : List Spell.Binding) : SpellRoute :=
@@ -946,6 +949,20 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   | some name, some code => fields ++ [{ name, value := code }]
   | _, _ => fields
 
+/-- The host's own spells on every card (docs/CATALOGUE.md §2, higher-order cards). -/
+def hostSpells : List String := ["become"]
+
+/-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
+    it stands? As `methodAdmits` judges a method. -/
+def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) : Bool :=
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", []⟩
+  (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
+
+/-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
+def hostUsage (w : World) (o : Object) (principal card : String) : String :=
+  let lines := (if kindAdmits w o principal 1 then [s!"delvetalk {card} become\nkind: <a kind's id>\n"] else [])
+  if lines.isEmpty then "" else "\nThe host's spells for any card:\n" ++ String.join (lines.map ("\n" ++ ·))
+
 /-- Why `me` names nothing yet. -/
 def noAvatarReason : String := "You have no avatar here yet; your first arrival in the town makes one, and then me is it."
 
@@ -973,7 +990,12 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let lenses := declaredLenses w target
   -- Lenses are `set`'s: shown only when `set` is offered to the speaker.
   let shownLenses := if offeredTo w id target principal "set" then lenses else []
-  if action == "?" then return .usage id (spellUsage shown shownForms shownLenses)
+  if action == "?" then return .usage id (spellUsage shown shownForms shownLenses ++ hostUsage w target principal shown)
+  -- The host's own spells, on any card that does not define the action itself (`hostSpell`).
+  if hostSpells.contains action && !forms.any (·.action == action) then
+    if !retarget then
+      return .refuse id "noAction" s!"{action} is a speaker's own spell, from a direct reply." (spellUsage shown shownForms shownLenses)
+    return .host id action fields
   -- `set` with one `<field>: <value>` line goes through a lens (`lensSpell`).
   if action == "set" && (!lenses.isEmpty || (hasMethod target "set" && !target.fixed.isEmpty)) && !forms.any (·.action == "set") then
     return lensSpell w id argument target card lenses fields
@@ -1999,6 +2021,49 @@ def hobTail (w : World) (principal text line : String) : String :=
 def hobUsageLine : String := "hob: how a spell is read: delvetalk library read / page: spells"
 def hobHintLine : String := "hob: the page on this: delvetalk library read / page: spells"
 
+/-- The text field `name` of a state, if it has one. -/
+def textField (state : Data) (name : String) : Option String :=
+  match Law.rawField name state with
+  | some (.label t) => some t
+  | _ => none
+
+/-- The hash of the entry that made `id`'s current version (its newest touching entry). -/
+def versionReceipt (w : World) (id : String) : String :=
+  (((w.touched[id]?).bind (·.back?)).bind fun i => w.entries[i]?.bind fun e => (e.getObjValAs? String "hash").toOption).getD ""
+
+/-- The host's spells on any card (docs/CATALOGUE.md §2), each a direct turn of the speaker judged by
+    the card's own law, journaled under the turn's identity:
+
+    - `become / kind: <id>` lays the kind's `body` (a layer source; the kind is any object whose state
+      has a text `body`) over the card's package: a reprogram in extend mode, `madeFrom {object, pin,
+      receipt}` naming the kind, the pin it runs and the entry that made its current version. -/
+def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : List Spell.Binding) : Except String (World × Json) := do
+  let value := fun (n : String) => ((fields.find? (·.name == n)).map (·.value)).filter (!·.isEmpty)
+  let some o := w.objects[id]? | refuseSpell w req id "otherCard" s!"There is no card {id}." ""
+  let ctx : Ctx := { principal := req.principal, intent := req.intent, object := id, method := action,
+                     argument := req.argument, digest := req.digest, ledger := Ledger.start, delivery := none, ticksStart := 0 }
+  let base := entryBase ctx 0
+  let template := (s!"delvetalk {id} {action}\n" ++ match action with
+    | "become" => "kind: <a kind's id>\n"
+    | "adopt" => "law: <a kind's or a page's id>\n"
+    | _ => "to: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n")
+  match action with
+  | "become" =>
+    let some kindId := value "kind" | refuseSpell w req id "missingField" "become takes kind: the id of a kind." template
+    let some k := w.objects[kindId]? | refuseSpell w req id "unknownKind" s!"There is no kind {kindId}." template
+    unless k.read.permits req.principal do return ← refuseSpell w req id "unknownKind" s!"There is no kind {kindId}." template
+    let some body := (textField k.state "body").filter (!·.isEmpty)
+      | refuseSpell w req id "noBody" s!"{kindId} names no body to lay over {id}." template
+    let madeFrom := Json.mkObj [("object", toJson kindId), ("pin", toJson k.pin), ("receipt", toJson (versionReceipt w kindId))]
+    let p : Proposal := { principal := req.principal, intent := req.intent, roots := [(id, o.version), (kindId, k.version)],
+                          writes := [], programs := [(id, (body, ""))], layered := [id], madeFrom := [(id, madeFrom)],
+                          turn := w.height + 1 }
+    let (w', r) := match programFor w o body "" true with
+      | .error (clause, message) => commit w p base (some { cls := "programRefused", clause := some clause, object := some id, reason := some message })
+      | .ok prog => commit (cacheProgram w o body "" prog true) p base
+    return (w', turnReply w' r)
+  | _ => refuseSpell w req id "noAction" s!"{id} has no spell {action}." template
+
 /-- A direct turn's `receive` read as a spell (`routeSpell`); `none` when the host leaves the turn as asked. -/
 def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) :=
   match routeSpell w req.principal req.object req.method req.argument true with
@@ -2013,6 +2078,7 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
     some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object),
       ("text", toJson (hobTail w req.principal text hobUsageLine))]))
   | .refuse object clause reason hint => some (refuseSpell w req object clause reason (hobTail w req.principal hint hobHintLine))
+  | .host object action fields => some (hostSpell w req object action fields)
 
 /-- A direct turn; `env` and `wake` name the principal's own (`resolveCard`), refused
     `unknownObject` naming `env/<principal>` when it has none. A `receive` to a card of the message

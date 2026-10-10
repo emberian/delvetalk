@@ -931,6 +931,19 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`Created`, `Programmed`, `Amended`). Plan.obend gains `record MadeFrom`; pins re-recorded. Test:
    `tests/test_make.py`.
 
+113. **The host's spells: `become` (host12; docs/CATALOGUE.md §2, higher-order cards).** A spell whose
+   action is one of `hostSpells` on a card that defines no form of that name is the host's
+   (`SpellRoute.host`, `hostSpell`), a direct turn's only (a call or delivery naming one is refused
+   `noAction`). `delvetalk <card> become / kind: <id>` lays the kind's `body` (any readable object whose
+   state has a non-empty text `body`: a layer source over the card's package) over the card: a reprogram
+   in extend mode by the speaker, judged by the card's own law (kind 1; the default law admits the
+   creator only), journaled under the turn's identity (a retry answers the receipt) with `madeFrom
+   {object: <kind>, pin, receipt: the entry that made the kind's current version}` on the reprogram
+   (`Proposal.madeFrom`; replay reads it back). Refusals: `missingField`, `unknownKind`, `noBody`
+   (badSpell), the law's, or `programRefused` with the compiler's diagnostic. `?` usage adds "The
+   host's spells for any card" with `become` when the law would admit the speaker's reprogram
+   (`kindAdmits`, as `methodAdmits` on the state as it stands). Test: `tests/test_extend.py` `HostSpells`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
