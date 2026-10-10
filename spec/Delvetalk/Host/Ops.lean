@@ -2663,6 +2663,30 @@ def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener 
      ("outcome", Json.mkObj ([("tag", toJson "settings")] ++ fields))] []
   return (w', reply entry)
 
+/-- The words a world's name may not be: the first segments of the ids and references a name would
+    be read against (docs/FEDERATION.md §1). -/
+def reservedWorldNames : List String := ["did", "zulip", "at", "world", "me", "scratch"]
+
+/-- `[a-z][a-z0-9-]{0,31}`, not a reserved word. -/
+def validWorldName (n : String) : Bool :=
+  let cs := n.toList
+  !cs.isEmpty && cs.length ≤ 32 && (cs.head!.isLower) &&
+    cs.all (fun c => c.isLower || c.isDigit || c == '-') && !reservedWorldNames.contains n
+
+/-- `world-open {name}`: the world's name, journaled once (`named {name}`, identity `world/name`); a
+    world that holds another name refuses this one. -/
+def nameOp (w : World) (name : String) : Except String (World × Json) := do
+  if name.isEmpty || name == w.name then return (w, Json.null)
+  if !w.name.isEmpty then throw s!"this journal is the world {w.name}, not {name}"
+  unless validWorldName name do
+    throw s!"a world's name is a-z, digits and -, starting with a letter, at most 32, and not one of {", ".intercalate reservedWorldNames}"
+  let fields := [("name", toJson name)]
+  let (w', entry) := push { w with name } (identityKey "world" "name")
+    [("identity", identityJson "world" "name"), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson (Journal.bodyHash (Json.mkObj fields))),
+     ("outcome", Json.mkObj ([("tag", toJson "named")] ++ fields))] []
+  return (w', reply entry)
+
 def parseSlot (j : Json) : Except String Json := do
   let principal ← boundedText "slot principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let intent ← boundedText "slot intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
@@ -3052,6 +3076,11 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
                            postQuota := ← natField outcome "postQuota", settled := true,
                            interpretQuota := (outcome.getObjValAs? Nat "interpretQuota").toOption.getD 48,
                            opener := (outcome.getObjValAs? String "opener").toOption.getD "" } entry key []
+  | "named" =>
+    if !w.name.isEmpty then throw "a world named twice"
+    let name ← outcome.getObjValAs? String "name"
+    unless validWorldName name do throw "a world name outside the rule"
+    return record { w with name } entry key []
   | "principal" =>
     discard <| outcome.getObjValAs? String "did"
     discard <| outcome.getObjValAs? String "handle"
