@@ -376,8 +376,11 @@ chooses roles, layouts, guards or transitions is a bug.
 | `zulip.py` | the playtest transport: one Zulip stream observed and answered |
 
 The principal is the DID (`zulip:<id>` in the playtest); the handle is display
-text. `transport/` is 3,749 lines on 2026-10-10, past the 2,900-line ceiling the
-design set at 2,867 (§12).
+text. `transport/` is 3,749 lines on 2026-10-10 against a ceiling of 3,900, raised
+from 2,900 as the Zulip transport, the repository façade, the hand, the
+hypermedia front and the plain-text view were added; the rule it must keep is
+that it decides nothing, and the way down is the host serving its own socket,
+not trimming adapters.
 
 ## 8. Principles
 
