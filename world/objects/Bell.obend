@@ -24,27 +24,20 @@ type Rain = Rows.Rain
 # planting: the uri of the post that planted the bell, which the strike awaits the
 # answer to; planter: the principal of the planting turn (the garden writes both).
 record State:
-  colour: Colour
-  seed: String
+  colour: fixed Colour
+  seed: fixed String
   rains: Relations.Relation<Rain>
   rung: Bool
-  planting: String
-  planter: String
-  planterHandle: String
+  planting: fixed String
+  planter: fixed String
+  planterHandle: fixed String
   doors: Card.Doorways
-# Its own Edits, without the fields nothing may change (it has no law to say so).
-record Edits:
-  rains: Plans.Entries<Rain, {}>
-  rung: Plans.Edit<Bool, {}>
-  doors: Plans.Entries<Card.Doorway, {}>
 def initial() -> State:
   {colour: Colour.amber({}), seed: "", rains: Relations.empty(), rung: false, planting: "", planter: "", planterHandle: "", doors: Lists.List.nil()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "rains", key: Text.words("author at n"), limit: 2048n})
 def rainKey(rain: Rain) -> {author: String, at: Nat, n: Nat}:
   {author: rain.author, at: rain.at, n: rain.n}
-def keep() -> Edits:
-  {rains: Plans.Entries.keep({}), rung: Plans.Edit.keep({}), doors: Plans.Entries.keep({})}
 # The author of a rain is the turn's principal, never an argument. The rain is answered with
 # the bell as it now stands, to its author, and with the count of rains.
 def rain(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
@@ -91,7 +84,7 @@ def doored(edit: Card.DoorEdit, action: String) -> Activity<Card.Replied>:
   match edit:
     case refused(r): Card.tell(Card.Replied.refused(r), Document.text("Not done: {r.reading}\n"))
     case edit(e): doorWritten(e.entries, action)
-def doorWritten(entries: Plans.Entries<Card.Doorway, {}>, action: String) -> Activity<Card.Replied>:
+def doorWritten(entries: Plans.Entries<Card.Doorway, Card.Doorway>, action: String) -> Activity<Card.Replied>:
   let written(_) = world.write(extend(keep(), {doors: entries}))
   Card.Replied.done({action: action})
 def blurb() -> Card.Door:

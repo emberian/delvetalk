@@ -214,6 +214,47 @@ class Lenses(Reflection):
         self.assertIn("delvetalk lamp set\nmood: <calm, wild>", usage["text"])
 
 
+# The lamp with `mood` fixed: set when the lamp is made, never by an edit, so no lens names it.
+FIXED = (LENSED.replace("  mood: String\n  origin: String", "  mood: fixed String\n  origin: String", 1)
+         .replace("  mood: Plans.Edit<String, {}>\n", "")
+         .replace(" mood: Plans.Edit.keep({}),", "")
+         .replace("extend(keep(), {mood: Plans.Edit.set({value: value}), origin: origin(context)})",
+                  "extend(keep(), {name: Plans.Edit.set({value: value}), origin: origin(context)})"))
+
+
+class FixedFields(Reflection):
+    """A `fixed` State field (the artifact's `fixed`): the creating seed sets it; no lens offers it,
+    `delvetalk <card> set` naming it is refused `fixed`, and world-inspect lists it."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-lamp", object="lamp",
+                           modules=[{"name": "Lamp", "source": FIXED}], entry="initial", seed=record(mood=label("calm")))
+        self.assertEqual(r["status"], "created", r)
+
+    def say(self, text, identity=None):
+        return self.turn("lamp", "receive", record(text=label(text), post=label("")), principal="glm", identity=identity)
+
+    def field(self, name):
+        return {f["name"]: f["value"] for f in self.state("lamp")["fields"]}[name]
+
+    def test_a_fixed_field_is_set_at_creation_and_no_lens_names_it(self):
+        self.assertEqual(self.field("mood"), label("calm"))
+        inspected = self.host.send(op="world-inspect", principal="glm", object="lamp", source=False)
+        self.assertEqual(inspected.get("fixed"), ["mood"], inspected)
+        usage = self.say("delvetalk lamp ?")
+        self.assertIn("delvetalk lamp set\nname: <text, 1 to 12 characters>", usage["text"])
+        self.assertNotIn("mood", usage["text"])
+        out = self.say("delvetalk lamp set\nmood: wild", identity="fix")["receipt"]["outcome"]
+        self.assertEqual((out["class"], out["clause"]), ("badSpell", "fixed"), out)
+        self.assertEqual(out["reason"], "mood is fixed; it is set when lamp is made and never after.")
+        self.assertEqual(self.field("mood"), label("calm"))
+        self.assertEqual(self.say("delvetalk lamp set\nname: Moth")["status"], "admitted")
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-inspect", principal="glm", object="lamp", source=False).get("fixed"), ["mood"])
+
+
 INTERPRETING = (GARDEN + """record Planting:
   colour: Colour
   seed: String

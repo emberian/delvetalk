@@ -589,6 +589,15 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    reason moved with the host's, for `tests/test_spell.py` `BendReading`'s parity (pins re-recorded).
    Tests and `tests/fixtures/spells/` updated to the new text.
 
+76. **Fixed State fields (host11; kernel9).** The artifact lists an entry's `fixed` State fields;
+   `makeObject` and `prepareProgram` keep them as `Object.fixed` (snapshots carry them). The creating
+   seed and `initial()` set them, as the kernel says; no edit can. `declaredLenses` drops them, so `?`
+   usage offers no lens for one; `delvetalk <card> set` naming one is refused `badSpell` clause
+   `fixed` ("<f> is fixed; it is set when <card> is made and never after."), also when it is the
+   card's only lens; `world-inspect` answers `fixed: [names]` when there are any, for transport's
+   actions. Forms are method inputs and are not filtered. Test: `tests/test_spell_turns.py`
+   `FixedFields`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

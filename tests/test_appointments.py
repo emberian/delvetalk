@@ -6,7 +6,9 @@ Evidence for FOUNDATION §3 Time (layer: objects).
 Appointments: a booking creates an Appointment that waits in its own turn (an await on
 a slot nobody settles, resumed timedOut when the clock passes) and then notes its
 recipient's Avatar. Cancelling writes the appointment, so the waiting turn resumes on a
-stale root and sends nothing.
+stale root and sends nothing. Its owner, topic, target and time are `fixed` State fields: the
+artifact lists them and no edit of its own names them. A proposed write naming one is not yet
+refused by the host (expected failure, the host lane's: `world-propose` reads the artifact's `fixed`).
 """
 import unittest
 
@@ -73,6 +75,20 @@ class Appointments(Chain):
         self.deliver_all()
         self.assertEqual(self.status("book/1"), "cancelled")
         self.assertEqual(self.inbox(), [])
+
+    def test_the_booked_fields_are_fixed(self):
+        artifact = self.host.send(op="compile", modules=closure("Appointment"), entry="initial")["artifact"]
+        self.assertEqual(artifact["fixed"], ["owner", "topic", "to", "after"])
+
+    @unittest.expectedFailure
+    def test_a_proposed_write_naming_a_fixed_field_is_refused(self):
+        self.book()
+        version = self.host.send(op="world-view", principal="glm", object="book/1")["version"]
+        keep = {"tag": "variant", "label": "keep", "payload": record()}
+        edits = record(topic={"tag": "variant", "label": "set", "payload": record(value=label("moths"))}, status=keep)
+        r = self.host.send(op="world-propose", principal="glm", identity="retopic", roots=[{"object": "book/1", "version": version}],
+                           writes=[{"object": "book/1", "edits": [edits]}])
+        self.assertEqual(get(self.state("book/1"), "topic"), label("tea"), r)
 
 
 if __name__ == "__main__":

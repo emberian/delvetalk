@@ -626,3 +626,13 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   `Bell.Colour`). With `forms()` also deleted from objects: Counter and Loop import no
   List.obend (derived `forms()` refused by name); Cistern, Seat, Table and Workshop have no form
   blocks and keep theirs.
+- `fixed` State fields (coordinator's addition before commit 3). `colour: fixed Colour` in
+  `record State` (`Surface.Field.fixed`; anywhere else "refused (fixed): only a State field is
+  fixed") is a field the derived `Edits`/`keep()` omit, set only by `initial()` or a seed.
+  `Generics.checkFixed` (in the probe, also through `type State = M.S`) refuses a hand-written
+  `Edits` field or any `world.write(...)` argument (a record, or `extend(keep(), {...})`, so every
+  `write {...}`) naming one: "refused (fixed): colour is fixed; no edit names it". The artifact of
+  an entry whose State has fixed fields lists them, `fixed: [names]` in State order (absent
+  otherwise; `Package.fixedFields`), for the host's actions, inspect and the Workshop's `set`.
+  Pins: 0 recompiled. Tests: `test_sugar.FixedFields` (the packet equals the module whose
+  hand-written pair omits the fixed fields; both refusals).
