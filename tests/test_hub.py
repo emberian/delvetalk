@@ -195,6 +195,23 @@ class Hub(test_chain.Chain):
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("a fern that remembers yesterday", "silver"))
 
+    def test_a_strangers_first_request_gets_the_menu_and_is_read(self):
+        """A never-greeted principal's prose that asks for something is greeted and then read, not
+        discarded for the menu (codex agent 2)."""
+        self.policy()
+        self.directory("policy")
+        asked = self.say("please plant something amber for moths", GLM)
+        self.assertEqual(asked["status"], "suspended", asked)
+        resumed = self.interpret("delvetalk garden plant\nseed: something for moths\ncolour: amber")
+        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+        texts = [o["text"] for o in resumed["receipt"]["offers"]]
+        self.assertTrue(texts[0].startswith("✾ DELVETALK · ROOT\n"), texts)
+        self.assertIn("Planted for", texts[-1])
+        [bell] = self.children()
+        self.assertEqual(self.seed_of(bell), ("something for moths", "amber"))
+        # Greeted once: the next words get no menu.
+        self.assertEqual(self.say("hello", GLM)["result"]["label"], "silent")
+
     def test_with_a_policy_prose_is_read_against_the_doors_forms(self):
         self.policy()
         self.directory("policy")
