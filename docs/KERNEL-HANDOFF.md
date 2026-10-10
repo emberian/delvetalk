@@ -695,4 +695,68 @@ fixture recorded by the foundation binary).
   For the host lane: `compactCheckpoint`'s `dynamic` marking looks for `{"s": text}`
   tokens; v2 strings are bare or `str` references, so the utterance is no longer cut into
   its own leaf (it sits in the v2 header).
+- Correction to the v2 note above ("still quadratic: a forced literal argument"): measured,
+  it is not. `keep(value: Data)` with a forced list of 1,000 / 4,000 items checkpoints at
+  89,115 / 375,135 bytes, linear. `settle` gives every forced cell a self origin, so only
+  unforced cells carry a term, and those are disjoint subtrees of the literal. A
+  checkpoint-local term table (an edition v3, built and proved on the way to this
+  finding) bought nothing there and, chosen where it was shorter, cost the nine-prose
+  dedup (median 9,950 -> 10,680), so it was not committed.
+
+## 13. Design note: late binding across extension layers (HOST-HANDOFF §7 item 1)
+
+**Today.** A layered object is the modules `Base`, `Layer1`..`LayerN` (each layer imports
+the one below as `Super`), elaborated as one package. Every declaration is a field of one
+knot, `fix (spec meta (λself. λsuper. extend super {Module.name: body, ...})) {}`, and
+every reference to a declaration, even within its own module, is already `self.key`
+(`globalRef` is a `get` of the knot variable). So the calculus already late-binds; what
+pins a call to its own module is the key: `Base.hello` calls `Base.greet`, a different
+field from `Layer1.greet`. The host's `delegate` then picks the top layer's field per
+method, which binds only the entry point.
+
+**Proposal: override the key, keep the original under a private one.** When the front
+end is told the module order is a layer stack (a `layers` list in the compile request,
+which the host already counts as `inputs.layers`; or a surface line `layer over Super`),
+`emitDecl` does, for each declaration `L.f` of a layer whose module below (transitively)
+declares `B.f`:
+
+- the field `B.f` holds `self.L.f` (the topmost definition wins; each lower key is an
+  alias of the one above);
+- the overridden body moves to a fresh field `B.f#below` (hygienic, like
+  `__generic_N`), and a layer's `Super.f` resolves to the key below it, `B.f#below`,
+  never to `B.f` (else `super` would loop into the override).
+
+No new core term: `fix`/`extend` and lazy `get` do it, and the existing typing applies.
+The checker needs `L.f`'s type to agree with `B.f`'s declared type (the knot row types
+`B.f` once); the elaborator refuses a mismatch by name ("refused (layer-override): L.f
+is A -> B, below it B.f is A -> C"), with the located diagnostic of §12. `mix` would be
+the textbook form (`fix (mix layer base)` with unqualified method names), but it needs
+method names shared across modules, which module-qualified keys deliberately are not;
+renaming keys gets the same semantics without changing how modules name things.
+
+**Cost per call.** An intra-object call to a non-overridden declaration is unchanged. A
+call to an overridden one forces `B.f`, whose body is `self.L.f`: one extra `get` and
+one knot cell the first time per turn segment, then cached (knot fields are lazy cells),
+so amortized zero. `super.f` is a direct field read as today. No new frame, no change to
+the machine, tariff or checkpoint codec; `checkpoint_resume_segment` and the collector
+proofs are untouched.
+
+**What changes in the artifact.** For a layered package only: its packets (aliased
+fields and `#below` fields, reached ones only, as `Elaborated.select` already prunes),
+hence its entries' `packetSha256`, and the method table, which the kernel can now list
+whole (every method resolved to its top layer), so `delegate`'s per-method choice can
+be deleted from the host. The law shape and readings are unchanged. Checkpoints of a
+layered object suspended before the change reference the old packet by pin and keep
+resuming against it, since the host holds entries by pin.
+
+**Pins of unlayered objects do not move.** Without a layer list the emitted knot is
+byte-identical (`tests/test_artifact_pins.py` would show 0 recompiled differently). An
+object's source pin (`["extend", old pin, source CID]`) is unchanged for layered ones
+too; only their packet CIDs move, once.
+
+**Open.** Whether a layer may override a declaration's type at all (the proposal says
+no); whether `Super` should bind to the stack below (as here) or only to the module
+directly below (equivalent today: imports form a chain); and the surface form of the
+layer list (request field vs source line). The objects lane should say which reads
+better to an author.
 
