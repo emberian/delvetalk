@@ -21,7 +21,7 @@ services:
       - --port
       - "8765"
       - --origin
-      - https://gsb.fg-goose.online
+      - ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
       - --trust-proxy
       - --hand-token
       - ${DELVETALK_HAND_TOKEN:?set DELVETALK_HAND_TOKEN in .env}
