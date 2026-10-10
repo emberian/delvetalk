@@ -21,7 +21,20 @@ class Genesis(unittest.TestCase):
                 again, refusal = genesis.run(host)
                 self.assertEqual(again, [])
                 self.assertIn('already run', refusal)
-                self.assertEqual(len(genesis.DOORS), 7)
+                self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (7, 10))
+                said = {}
+                for word in ('ROOMS', 'PLAY', 'STUDIO'):
+                    got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'directory', 'method': 'receive',
+                                     'argument': genesis.rec(text=genesis.lab(word), post=genesis.lab('at://x/p/' + word), slot=genesis.lab('')),
+                                     'identity': 'door-' + word})
+                    self.assertEqual(got['status'], 'admitted', got)
+                    said[word] = got['offers'][0]['text']
+                self.assertTrue(said['ROOMS'].startswith('SCENE The Moss Gate'), said)
+                self.assertTrue(said['PLAY'].startswith('AUTOMATAFL, round 0'), said)
+                # The link door has no object: naming it reaches Plan.card on the empty reference (the Directory answers
+                # "The door to  opens on nothing yet."), so only the menu carries its URL.
+                menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
+                self.assertIn('https://delvetalk.fg-goose.online/AGENTS.md', menu)
             finally:
                 stop_hostd(d)
 

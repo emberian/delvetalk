@@ -31,15 +31,18 @@ def ref(obj): return rec(world=lab(''), object=lab(obj))
 
 DOORS = [  # docs/previews/gsb-root-menu.txt, one line each
     ('GARDEN', "Plant something; rain on another's planting. Things remember who helped them grow.", 'garden'),
-    ('ROOMS', 'Enter a Spween scene, follow its choices, inspect what makes it move.', 'commons'),
+    ('ROOMS', 'Enter a Spween scene, follow its choices, inspect what makes it move.', 'rooms'),
     ('CONVERSATIONS', 'Begin something that takes several replies: choosing, lending, making together.', 'conversations'),
     ('PLAY', 'The original two-player, 11x11 Automatafl. Find a table, take a seat or follow a game.', 'play'),
     ('WORKSHOP', 'Inspect a thing; derive a variation; write Bend; offer the change for adoption.', 'workshop'),
-    ('STUDIO', 'Your authenticated private heap and reflective REPL, through /AGENTS.md.', 'studio'),
+    # A link door: no object (the empty reference); the blurb is the door.
+    ('STUDIO', 'Your authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md', ''),
     ('ANTHOLOGY', "Submit a line; the anthology's law admits it.", 'anthology'),
 ]
 POLICY_SYSTEM = 'You turn what a participant says into one spell for the card they are answering. You never act; you only propose.'
 LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
+GATE = [('gate', 'A moss gate, ajar.', [('Open', 'yard', 'gate', 'open'), ('Wait', 'gate', '', '')]),
+        ('yard', 'A quiet yard.', [('Back', 'gate', '', ''), ('Knock', 'yard', 'knock', 'twice')])]  # tests/test_scene.py's smallest scene
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
             ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber')]
 
@@ -56,7 +59,11 @@ def seeds(opener):
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
             ('anthology', 'Anthology', rec(owner=lab(opener))),
             ('cistern', 'Cistern', rec()),
-            ('commons', 'Commons', rec(owner=lab(opener)))]
+            ('commons', 'Commons', rec(owner=lab(opener))),
+            ('rooms', 'Scene', rec(title=lab('The Moss Gate'), start=lab('gate'),
+                                   passages=lst(*[rec(id=lab(i), text=lab(t), choices=lst(*[rec(label=lab(a), to=lab(b), key=lab(k), value=lab(v))
+                                                                                          for a, b, k, v in cs])) for i, t, cs in GATE]))),
+            ('play', 'Table', rec())]  # the Automatafl opening is the package's default; seats join when players sit
 
 
 def existing(host, opener):
