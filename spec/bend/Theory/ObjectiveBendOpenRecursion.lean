@@ -18,6 +18,8 @@ inductive Primitive where
   | add | multiply | equal | conjunction | labelEqual
   | subtract | divide | less | lessEqual | modulo
   | textConcat | textTake | textDrop | textSpan | textBreak
+  /-- Hosted: whether any word of the right text is a word of the left (`textWordsOf`). -/
+  | textHasAny
   deriving Repr, DecidableEq
 
 /-- DelveTalk hosted text extension; not part of the pinned upstream edition. -/
@@ -240,6 +242,17 @@ def textPrefixScan (alphabet : String) (member : Bool) :
           textPrefixScan alphabet member remaining cursor.next (count + 1) (visited + 1)
         else (count, visited + 1, true)
 
+/-- A word character: an ASCII letter or digit, or any non-ASCII scalar. -/
+def textWordChar (c : Char) : Bool := c.isAlphanum || c.toNat ≥ 128
+
+/-- The words of a text: its maximal runs of word characters, ASCII letters lowercased.
+Whitespace and ASCII punctuation separate words. -/
+def textWordsOf (s : String) : List String :=
+  let (words, current) := s.toList.foldl (fun (acc : List String × List Char) c =>
+    if textWordChar c then (acc.1, c.toLower :: acc.2)
+    else if acc.2.isEmpty then acc else (String.ofList acc.2.reverse :: acc.1, [])) ([], [])
+  (if current.isEmpty then words else String.ofList current.reverse :: words).reverse
+
 def primitiveResult : Primitive → Term → Term → Option Term
   | .add, .nat a, .nat b => some (.nat (a + b))
   | .multiply, .nat a, .nat b => some (.nat (a * b))
@@ -252,6 +265,9 @@ def primitiveResult : Primitive → Term → Term → Option Term
   | .lessEqual, .nat a, .nat b => some (.boolean (decide (a ≤ b)))
   | .modulo, .nat a, .nat b => some (.nat (a % b))
   | .textConcat, .label a, .label b => some (.label (a ++ b))
+  | .textHasAny, .label text, .label words =>
+      let wanted := textWordsOf words
+      some (.boolean ((textWordsOf text).any wanted.contains))
   | .textSpan, .label text, .label alphabet =>
       some (.nat (textPrefixScan alphabet true text.utf8ByteSize (String.Legacy.iter text) 0 0).1)
   | .textBreak, .label text, .label alphabet =>

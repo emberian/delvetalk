@@ -400,7 +400,7 @@ def primitiveOf : String → Except String CorePrimitive
   | "subtract" => .ok .subtract | "divide" => .ok .divide | "less" => .ok .less | "lessEqual" => .ok .lessEqual
   | "modulo" => .ok .modulo
   | "textConcat" => .ok .textConcat | "textTake" => .ok .textTake | "textDrop" => .ok .textDrop
-  | "textSpan" => .ok .textSpan | "textBreak" => .ok .textBreak
+  | "textSpan" => .ok .textSpan | "textBreak" => .ok .textBreak | "textHasAny" => .ok .textHasAny
   | other => .error ("primitive " ++ other ++ " is not a Core4 constructor yet")
 
 def unaryPrimitiveOf : String → Except String CoreUnaryPrimitive
@@ -1195,6 +1195,7 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
           if name == "textLength" && args.length == 1 then return some .natural
           if name == "textConcat" && args.length == 2 then return some .label
           if ["textSpan", "textBreak"].contains name && args.length == 2 then return some .natural
+          if name == "textHasAny" && args.length == 2 then return some .boolean
           if ["textTake", "textDrop"].contains name && args.length == 2 then return some .label
           if name == "textSlice" && args.length == 3 then return some .label
           if name == "textJoin" && args.length == 2 then return some .label
@@ -1853,13 +1854,17 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         return .inject caseLabel type (if type.isSome then none else some ("sum " ++ key ++ " type unresolved")) payload
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
-          if ["natText", "textLength", "sha256Text", "textConcat", "textSlice", "textSpan", "textBreak", "textTake", "textDrop", "textJoin"].contains name then
+          if ["natText", "textLength", "sha256Text", "textConcat", "textSlice", "textSpan", "textBreak", "textHasAny", "textTake", "textDrop", "textJoin"].contains name then
             for a in args do noActivity c fuel a env m "effect-in-text" "text operands are pure"
             match name, args with
             | "natText", [a] | "textLength", [a] | "sha256Text", [a] => return .unary name (← expression c fuel a env m)
             | "textConcat", [a,b] => return .binary "textConcat" (← expression c fuel a env m) (← expression c fuel b env m)
             | "textSpan", [a,b] | "textBreak", [a,b] | "textTake", [a,b] | "textDrop", [a,b] =>
               return .binary name (← expression c fuel a env m) (← expression c fuel b env m)
+            | "textHasAny", [text, words] =>
+              -- The word list once, as text (`textJoin`, linear), then one pass over both.
+              return .binary "textHasAny" (← expression c fuel text env m)
+                (.textJoin (← expression c fuel words env m) (.label " "))
             | "textJoin", [list, separator] =>
               return .textJoin (← expression c fuel list env m) (← expression c fuel separator env m)
             | "textSlice", [a,start,count] =>

@@ -13,7 +13,7 @@ const arities = new Map(Object.entries({
 }));
 const primitives = new Set(['add', 'multiply', 'equal', 'conjunction',
   'labelEqual', 'subtract', 'divide', 'less', 'lessEqual', 'modulo',
-  'textConcat', 'textTake', 'textDrop', 'textSpan', 'textBreak']);
+  'textConcat', 'textTake', 'textDrop', 'textSpan', 'textBreak', 'textHasAny']);
 const unaries = new Set(['natText', 'textLength', 'sha256Text']);
 const values = new Set(['lam', 'nat', 'boolean', 'label', 'record',
   'specification', 'prototype', 'inject']);
@@ -109,7 +109,23 @@ function prefixLength(text, alphabet, member) {
   for (const c of scalars(text)) { if (set.has(c) !== member) break; count++; }
   return count;
 }
+// Maximal runs of word characters (ASCII letters and digits, any non-ASCII scalar),
+// ASCII letters lowercased.
+function wordsOf(text) {
+  const out = []; let current = '';
+  for (const c of scalars(text)) {
+    const code = c.codePointAt(0);
+    if (/[A-Za-z0-9]/.test(c) || code >= 128) current += code < 128 ? c.toLowerCase() : c;
+    else if (current) { out.push(current); current = ''; }
+  }
+  if (current) out.push(current);
+  return out;
+}
 function primitive(op, left, right) {
+  if (op === 'textHasAny') {
+    if (left[0] !== 'label' || right[0] !== 'label') return null;
+    return () => { const wanted = new Set(wordsOf(right[1])); return bool(wordsOf(left[1]).some(w => wanted.has(w))); };
+  }
   if (op === 'conjunction')
     return left[0] === 'boolean' && right[0] === 'boolean' ? () => bool(left[1] && right[1]) : null;
   if (op === 'labelEqual')

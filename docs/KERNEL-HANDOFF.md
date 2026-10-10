@@ -827,4 +827,21 @@ better to an author.
   `tests.test_extend.LouderBell` (Louder grafted over Bell through the host, Bell's
   `receive` rendering Louder's card) was marked an expected failure and now passes; the
   marker is removed.
+- `textHasAny(text, words: List<String>) -> Bool` (hosted primitive `Primitive.textHasAny`,
+  checkpoint code 16): whether a word of the list is a whole word of the text. Words are
+  maximal runs of ASCII letters, digits and non-ASCII scalars (`textWordChar`), ASCII
+  letters lowercased (`textWordsOf`); whitespace and ASCII punctuation separate. The
+  elaborator lowers the call to `binary textHasAny text (textJoin words " ")`, so the
+  list is walked once by the join (linear) and the primitive makes one pass over each text;
+  tariff `1 + 2 * (bytes of both)`, reserving those bytes. An 1,800-character reply checked
+  against ten words: 3,942 ticks (the Bend walk the objects lane measured: ~200,000).
+  Python, JS and C evaluators and the generator have it; the generator no longer gives the
+  FIRST item of a generated join a non-text head (a join of one non-text item is that item
+  in the reference expansion but refused by the machine, an untyped-only divergence the
+  new primitive's shifted random stream exposed). Conformance 1500: 1435 agree per
+  evaluator, 65 known, 0 unexpected. Test: `tests/test_text_words.py`.
+  Not done: `textWords(s) -> List<String>`. A primitive returning a list needs a new term
+  form (the machine allocating a native list cell, typed by its annotation like `refuse`),
+  the full `textJoin`-scale change across the core, machine, Fast and collector proofs and
+  both codecs; the directory check only needs `textHasAny`. Queued for decision.
 
