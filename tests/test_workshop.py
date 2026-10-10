@@ -71,23 +71,27 @@ class Workshop(Chain):
     def verdict(self, reply):
         return reply["result"]["label"]
 
+    def refusal(self, reply):
+        fields = {f["name"]: f["value"]["value"] for f in reply["result"]["payload"]["fields"]}
+        return fields["clause"], fields["reading"]
+
     def test_prose_is_handed_on_and_a_blank_reply_gets_the_usage_card(self):
         self.make_workshop()
         reply = self.say("please make my bell louder")
         self.assertEqual((reply["status"], self.verdict(reply), reply.get("offers", [])), ("admitted", "silent", []), reply)
         blank = self.say("")
-        self.assertEqual(self.verdict(blank), "refused")
+        self.assertEqual(self.verdict(blank), "usage")
         self.assertIn("delvetalk workshop check", self.card(blank))
 
     def test_a_check_with_neither_block_nor_target_and_a_wrong_card_are_refused_by_name(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop check")
-        self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Include a fenced obend block.")
+        self.assertEqual(self.refusal(reply), ("noSource", "Include a fenced obend block."))
         # A spell naming another card is the host's: an unknown card is refused by name.
         reply = self.say("delvetalk orchard check\n```obend\nx\n```")
         self.assertEqual((reply["status"], reply["receipt"]["outcome"]["class"], reply["receipt"]["outcome"]["clause"]), ("refused", "badSpell", "otherCard"), reply)
         reply = self.say("delvetalk workshop propose\n```obend\nx\n```")
-        self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Name a target to propose to.")
+        self.assertEqual(self.refusal(reply), ("noTarget", "Name a target to propose to."))
 
     def test_the_root_menus_source_block_is_checked(self):
         """The root menu teaches `source: <<BEND` … `BEND`."""
