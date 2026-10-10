@@ -2374,7 +2374,9 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
-      ("forms", dataJson (listData (spellFormsData w id o)))] ++
+      ("forms", dataJson (listData (spellFormsData w id o))),
+      -- The numbers `request.kind` reads, by name (`proposed`: a write no method of the object made).
+      ("requestKinds", Json.mkObj (Law.kindNames.map fun (n, k) => (n, toJson k)))] ++
       (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)])) |> fun r =>
       -- The views its package declares (`views()`), which `viewDerived` answers.
       let init : TurnState := { world := w, principal, intent := "", subject := principal,

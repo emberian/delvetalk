@@ -293,8 +293,12 @@ class Retry(WorldCase):
         self.assertEqual(self.host.send(op="world-status")["height"], height)
 
     def test_identity_is_per_principal(self):
-        a = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))], principal="a")
-        b = self.propose("p1", [root("c1", 1)], [write("c1", add("count", 1))], principal="b")
+        # The default law admits only the creator's proposals (kind 3, proposed); open them to anyone.
+        opened = self.host.send(op="world-amend", principal="ember", identity="open", object="c1", version=0,
+                                law='law open: request.kind == 0 or request.kind == 3 or request.subject == "ember"')
+        self.assertEqual(opened["status"], "admitted", opened)
+        a = self.propose("p1", [root("c1", 1)], [write("c1", add("count", 1))], principal="a")
+        b = self.propose("p1", [root("c1", 2)], [write("c1", add("count", 1))], principal="b")
         self.assertEqual((a["status"], b["status"]), ("admitted", "admitted"))
 
     def test_receipt_lookup_by_identity_and_the_silence_for_an_unknown_one(self):
