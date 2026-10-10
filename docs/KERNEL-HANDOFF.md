@@ -564,3 +564,11 @@ fixture recorded by the foundation binary).
   templates never interpolate (same decoded strings, same packets). Parse fuel is now the
   expression's characters plus tokens (nested interpolations parse their own tokens).
   A `${`/`f"` line hints the form.
+- Form blocks (`ObjectiveBendParse.formRe`/`formKind`): `form ACTION [as NAME]:` with
+  indented `field: text A..B | natural A..B | a | b | c` lines declares the nullary
+  `def NAME() -> F.Form` (default `ACTIONForm`) whose body is the Form record built from
+  the module's alias `F` of `Form.obend` (`F.Fields.cons`, `F.Kind.choice`,
+  `F.Names.cons`, lists ending in `nil({})`). Refused by name without a Form import or
+  with an unknown kind. Garden's `planting()` (World ~85) is the motivating case; its
+  explicit spelling builds options with `Lists.append`, so converting it moves its
+  packet (not its behaviour).

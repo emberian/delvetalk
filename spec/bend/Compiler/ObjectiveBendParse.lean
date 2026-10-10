@@ -818,6 +818,41 @@ def splitChar (s : List Char) (sep : Char) : List (List Char) :=
 
 def cap (s : List Char) (caps : Caps) (i : Nat) : String := String.ofList ((capture s caps i).getD [])
 
+/-! ## Form blocks
+
+    form plant as planting:
+      colour: amber | violet | silver
+      seed: text 1..80
+      count: natural 1..1000
+
+declares `def planting() -> F.Form` (default name `plantForm`) whose body is the Form
+record the library uses, `F` being the module's alias of `Form.obend`:
+`{card: "", action: "plant", fields: F.Fields.cons({head: {name: "colour", kind:
+F.Kind.choice({options: F.Names.cons(...)})}, tail: ...})}`, each list ending in `nil({})`. -/
+def formRe : Re := seqs [str "form", many1 space, group 1 ident,
+  opt (seqs [many1 space, str "as", many1 space, group 2 ident]), many space, chr ':', .done]
+def rangeKindRe : Re := seqs [group 1 (alts [str "text", str "natural"]), many1 space,
+  group 2 (many1 (.char asciiDigit)), opt (chr 'n'), many space, str "..", many space,
+  group 3 (many1 (.char asciiDigit)), opt (chr 'n'), many space, .done]
+
+/-- One form field's kind, as the Form library's constructor application. -/
+def formKind (alias : String) (line : Line) (spec : List Char) : PS Expr := do
+  let span := line.span
+  let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
+  let trimmed := String.ofList spec |>.trimAscii |>.toString
+  if let some (_, caps) ← matchAt line rangeKindRe trimmed.toList then
+    let kind := cap trimmed.toList caps 1
+    let low := natValue ((capture trimmed.toList caps 2).getD [])
+    let high := natValue ((capture trimmed.toList caps 3).getD [])
+    return .call (lib "Kind" kind) [.record [("min", .nat low span), ("max", .nat high span)] span] span
+  let options := (trimmed.splitOn "|").map fun o => o.trimAscii.toString
+  if options.length < 2 || options.any (fun o => !isIdent o.toList) then
+    fail line "a form field is `name: text MIN..MAX`, `name: natural MIN..MAX` or `name: a | b | c`"
+  let names := options.foldr (fun o acc =>
+      Expr.call (lib "Names" "cons") [.record [("head", .str o span), ("tail", acc)] span] span)
+    (.call (lib "Names" "nil") [.record [] span] span)
+  return .call (lib "Kind" "choice") [.record [("options", names)] span] span
+
 def genericParameters (raw : List Char) : Except String (List String) := do
   let names := (splitPieces raw).map jsTrim
   if names.isEmpty || names.any (fun n => !isIdent n) then throw "Error: generic parameters must be type names"
@@ -932,6 +967,33 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
       if cases.isEmpty then fail line "empty sum"
       if labels.eraseDups.length != labels.length then fail line "duplicate sum label"
       decls := decls.push (.sum (cap line.text caps 1) cases.toList typeParameters line.span)
+      continue
+    if let some (_, caps) ← matchAt line formRe line.text then
+      let action := cap line.text caps 1
+      let name := match capture line.text caps 2 with
+        | some n => String.ofList n
+        | none => action ++ "Form"
+      let some formImport := imports.find? (·.path.endsWith "Form.obend")
+        | fail line "a form block needs the Form library: import ./Form.obend as Form"
+      let alias := formImport.importAlias
+      let span := line.span
+      let mut fields : Array (String × Expr) := #[]
+      for _ in [0:lines.size] do
+        let j ← get
+        let some c := lines[j]? | break
+        if c.indent == 0 then break
+        set (j + 1)
+        let some (_, m) ← matchAt c sumCaseRe c.text | fail c "expected a form field: name: kind"
+        let fieldName := cap c.text m 1
+        if fields.any (·.1 == fieldName) then fail c "duplicate form field"
+        fields := fields.push (fieldName, ← formKind alias c ((capture c.text m 2).getD []))
+      let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
+      let list := fields.toList.foldr (fun (n, kind) acc =>
+          Expr.call (lib "Fields" "cons") [.record [("head", .record [("name", .str n span), ("kind", kind)] span),
+            ("tail", acc)] span] span)
+        (.call (lib "Fields" "nil") [.record [] span] span)
+      let value := Expr.record [("card", .str "" span), ("action", .str action span), ("fields", list)] span
+      decls := decls.push (.function ⟨name, [], alias ++ ".Form", span⟩ none (.expr value span) span)
       continue
     if let some (_, caps) ← matchAt line recordRe line.text then
       let mut methods : Array Signature := #[]

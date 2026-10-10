@@ -330,6 +330,17 @@ TEXT_PAIRS = [
 ]
 
 
+FORM_HEAD = HEAD + "import ./List.obend as Lists\nimport ./Form.obend as F\n"
+FORM_EXPLICIT = FORM_HEAD + """def planting() -> F.Form:
+  {card: "", action: "plant", fields: F.Fields.cons({head: {name: "colour", kind: F.Kind.choice({options: F.Names.cons({head: "amber", tail: F.Names.cons({head: "violet", tail: F.Names.cons({head: "silver", tail: F.Names.nil({})})})})})}, tail: F.Fields.cons({head: {name: "seed", kind: F.Kind.text({min: 1n, max: 80n})}, tail: F.Fields.cons({head: {name: "count", kind: F.Kind.natural({min: 1n, max: 1000n})}, tail: F.Fields.nil({})})})})}
+"""
+FORM_SUGARED = FORM_HEAD + """form plant as planting:
+  colour: amber | violet | silver
+  seed: text 1..80
+  count: natural 1..1000n
+"""
+
+
 COUNTER = HEAD + """import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -383,6 +394,35 @@ class Interpolation(unittest.TestCase):
         reply = self.h.send({"op": "check-package", "entry": "f", "modules": [
             {"name": "Package", "source": SCENE + "def f(s: State) -> String:\n  `SCENE ${s.title}`\n"}]})
         self.assertIn("text interpolation is", reply["diagnostic"].get("hint", ""), reply)
+
+
+class Forms(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.close()
+
+    def check(self, source, entry):
+        return self.h.send({"op": "check-package", "entry": entry,
+                            "modules": library_modules("List", "Form") + [{"name": "Package", "source": source}]})
+
+    def test_a_form_block_is_its_form_record(self):
+        a = self.h.compile(FORM_EXPLICIT, "planting", ("List", "Form"))
+        b = self.h.compile(FORM_SUGARED, "planting", ("List", "Form"))
+        self.assertEqual(core(a), core(b))
+
+    def test_the_default_name_is_the_action_and_form(self):
+        source = FORM_HEAD + "form plant:\n  seed: text 1..80\n"
+        self.assertEqual(self.check(source, "plantForm")["status"], "checked")
+
+    def test_a_form_block_needs_the_form_library_and_known_kinds(self):
+        reply = self.check(HEAD + "form plant:\n  seed: text 1..80\n", "plantForm")
+        self.assertIn("a form block needs the Form library", reply["diagnostic"]["message"])
+        reply = self.check(FORM_HEAD + "form plant:\n  seed: words 1..80\n", "plantForm")
+        self.assertIn("a form field is `name: text MIN..MAX`", reply["diagnostic"]["message"])
 
 
 class LawReading(TurnWorld):
