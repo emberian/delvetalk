@@ -280,7 +280,7 @@ class Bridging(ZulipCase):
         self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': again['posted'][0]})['object'], 'garden-1')
 
     def test_the_welcome_is_posted_and_recorded_so_replies_to_it_reach_the_directory(self):
-        welcome = Path(__file__).resolve().parent.parent / 'docs' / 'previews' / 'zulip-welcome-v2.txt'
+        welcome = Path(__file__).resolve().parent.parent / 'docs' / 'previews' / 'zulip-welcome-v3.txt'
         out = io.StringIO()
         code = zulip.main(['post', '--state', str(self.state), '--zuliprc', str(self.rc), '--topic', 'welcome',
                            '--text-file', str(welcome), '--object', 'directory', '--host-socket', str(self.sock)], out)
