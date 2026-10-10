@@ -157,11 +157,13 @@ def body (w : World) : Except String Json := do
       Json.mkObj [("pin", toJson pin), ("modules", modulesJson l.modules)])),
     ("settings", Json.mkObj ([("settled", toJson w.settled), ("clock", toJson w.clockPrincipal),
       ("postQuota", toJson w.postQuota), ("interpretQuota", toJson w.interpretQuota)] ++
+      (if w.modelQuota == Limits.modelQuota then [] else [("modelQuota", toJson w.modelQuota)]) ++
       (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]) ++
       (if w.name.isEmpty then [] else [("name", toJson w.name)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
     ("grants", Json.arr (grants.toArray.map fun (_, g) => (g.json).setObjVal! "revoked" (toJson g.revoked))),
     ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))] ++
+    (if w.shadowed.isEmpty then [] else [("shadowed", Json.arr w.shadowed)]) ++
     derived w)
 
 def fileOf (journal : String) (height : Nat) : String := s!"{journal}.snapshot.{height}.cbor"
@@ -258,6 +260,7 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
                 clockPrincipal := ← settings.getObjValAs? String "clock",
                 postQuota := ← natField settings "postQuota",
                 interpretQuota := (settings.getObjValAs? Nat "interpretQuota").toOption.getD 48,
+                modelQuota := (settings.getObjValAs? Nat "modelQuota").toOption.getD Limits.modelQuota,
                 opener := (settings.getObjValAs? String "opener").toOption.getD "",
                 name := (settings.getObjValAs? String "name").toOption.getD "" }
   let mut types : Std.HashMap String (Ty × DataBounds × Json × Bool × Bool) := {}
@@ -321,7 +324,12 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
     outbox, publications, sources, pending deliveries, suspensions, the clock. -/
 def recordAll (w : World) (entries : Array Json) : Except String World := do
   let mut w := w
+  let shadowed := w.shadowed.toList.filterMap (·.getObjValAs? Nat "height" |>.toOption)
   for entry in entries do
+    -- An ignored or shadowed entry has no effect to book.
+    if w.ignoring.contains (w.height + 1) || shadowed.contains (w.height + 1) then
+      w := recordInert w entry
+      continue
     let identity ← entry.getObjVal? "identity"
     let key := identityKey (← identity.getObjValAs? String "principal") (← identity.getObjValAs? String "intent")
     -- `touched` is the objects an entry wrote, created or held a grant of, as `commit` indexed it.
@@ -408,9 +416,10 @@ def startOf (entries : Array Json) (caches : Caches := {}) : Except String (Worl
 
 /-- What the entries say each object is, without judging: created (with its pin), then each
     admitted write's recorded version and each reprogram's new pin. -/
-def expectedObjects (entries : Array Json) : Std.HashMap String (Nat × String) := Id.run do
+def expectedObjects (entries : Array Json) (inert : List Nat := []) : Std.HashMap String (Nat × String) := Id.run do
   let mut out : Std.HashMap String (Nat × String) := {}
-  for entry in entries do
+  for (entry, i) in entries.zipIdx do
+    if inert.contains (i + 1) then continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
@@ -428,15 +437,29 @@ def expectedObjects (entries : Array Json) : Std.HashMap String (Nat × String) 
       for r in arr "reprograms" do
         let id := text r "object"
         out := out.insert id (((out[id]?).map (·.1)).getD 0, text r "newPin")
+    | "root" =>
+      -- A root act names the version and pin it leaves (`set state`, `owner`, `version`, `program`, `pin`).
+      let id := text outcome "object"
+      let after := (outcome.getObjVal? "after").toOption.getD Json.null
+      if actOf outcome == "delete" then out := out.erase id else
+      if let some (v, pin) := out[id]? then
+        let v := (outcome.getObjValAs? Nat "version").toOption.getD
+          (if text outcome "field" == "version" then (after.getNat?.toOption.getD v) else v)
+        let pin := match text outcome "field" with
+          | "pin" => (after.getStr?.toOption).getD pin
+          | "program" => (outcome.getObjValAs? String "pin").toOption.getD pin
+          | _ => pin
+        out := out.insert id (v, pin)
     | _ => pure ()
   return out
 
 /-- The law text each object holds by the entries, without judging: a fork genesis's, a creation's
     (`lawText`, or the `law` a creating turn journals), then each amendment's `new`. An object whose
     creation journals no law (a journal from before host12) is absent. -/
-def expectedLaws (entries : Array Json) : Std.HashMap String String := Id.run do
+def expectedLaws (entries : Array Json) (inert : List Nat := []) : Std.HashMap String String := Id.run do
   let mut out : Std.HashMap String String := {}
-  for entry in entries do
+  for (entry, i) in entries.zipIdx do
+    if inert.contains (i + 1) then continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption
@@ -451,14 +474,21 @@ def expectedLaws (entries : Array Json) : Std.HashMap String String := Id.run do
         if let (some id, some law) := (text c "object", text c "law") then out := out.insert id law
       for a in arr "amendments" do
         if let (some id, some law) := (text a "object", text a "new") then out := out.insert id law
+    | "root" | "moderated" =>
+      let act := actOf outcome
+      if let some id := text outcome "object" then
+        if act == "delete" then out := out.erase id
+        else if (act == "set" && text outcome "field" == some "law") || act == "retire" || act == "unretire" then
+          if let some law := (outcome.getObjVal? "after").toOption.bind (·.getStr?.toOption) then out := out.insert id law
     | _ => pure ()
   return out
 
 /-- The state CIDs the journal itself commits to, by object and version: a created state (its
     seed is the whole state) and a write's `cid` (host7). -/
-def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String := Id.run do
+def anchoredStates (entries : Array Json) (inert : List Nat := []) : Std.HashMap (String × Nat) String := Id.run do
   let mut out : Std.HashMap (String × Nat) String := {}
-  for entry in entries do
+  for (entry, i) in entries.zipIdx do
+    if inert.contains (i + 1) then continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (j : Json) (k : String) => ((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
@@ -475,6 +505,9 @@ def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String :
       for x in arr outcome "writes" do
         if let (.ok v, .ok c) := (x.getObjValAs? Nat "version", x.getObjValAs? String "cid") then
           out := out.insert (text x "object", v) c
+    | "root" =>
+      if let (.ok v, .ok c) := (outcome.getObjValAs? Nat "version", outcome.getObjValAs? String "cid") then
+        out := out.insert (text outcome "object", v) c
     | _ => pure ()
   return out
 
@@ -483,36 +516,40 @@ def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String :
 def resume (b : Json) (entries : Array Json) (caches : Caches := {}) : Except String World := do
   let height ← natField b "height"
   let early := entries.extract 0 height
+  -- An ignore after the snapshot changes what every entry before it did (docs/ROOT.md §1.3).
+  if (entries.extract height entries.size).any isIgnoreAct then throw "an ignore after it changes what it holds"
   let (start, skip) ← startOf entries caches
-  let booked ← recordAll start (early.extract skip early.size)
+  let shadowed := ((b.getObjVal? "shadowed").toOption.bind (·.getArr?.toOption)).getD #[]
+  let inert := ignoreSet entries ++ shadowed.toList.filterMap (·.getObjValAs? Nat "height" |>.toOption)
+  let booked ← recordAll { start with ignoring := ignoreSet entries, ignoreNamed := ignoreNamed entries, shadowed } (early.extract skip early.size)
   let w ← install b booked.modules
   let w := { booked with library := w.library, libraries := w.libraries, libraryLaw := w.libraryLaw,
                          objects := w.objects, grants := w.grants, posts := w.posts,
                          cachedPackets := w.objects.fold (fun m _ o =>
                            if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {},
                          clockPrincipal := w.clockPrincipal, postQuota := w.postQuota, opener := w.opener,
-                         interpretQuota := w.interpretQuota,
+                         interpretQuota := w.interpretQuota, modelQuota := w.modelQuota,
                          settled := w.settled }
   for (k, v) in derived w do
     unless (b.getObjVal? k).toOption == some v do throw s!"its {k} is not the journal's"
-  let expected := expectedObjects early
+  let expected := expectedObjects early inert
   unless expected.size == w.objects.size do throw "its objects are not the journal's"
   for (id, o) in w.objects.toList do
     unless expected[id]? == some (o.version, o.pin) do throw s!"object {id} is not at the journal's version and pin"
   -- Each law against the one the journal gives it (codex host 7: a forger who rewrites a law and
   -- recomputes the snapshot's CID moves no version, pin or state).
-  let laws := expectedLaws early
+  let laws := expectedLaws early inert
   for (id, o) in w.objects.toList do
     if let some law := laws[id]? then
       unless law == o.lawText do throw s!"the law of {id} is not the journal's"
   -- Each state against the CID the journal commits to at its version, where it names one.
-  let anchored := anchoredStates entries
+  let anchored := anchoredStates entries inert
   for (id, o) in w.objects.toList do
     if let some cid := anchored[(id, o.version)]? then
       unless cid == stateCid o.state do throw s!"the state of {id} is not the one the journal commits to at version {o.version}"
   let mut w := w
   for entry in entries.extract height entries.size do
-    match replayEntry w entry with
+    match replayStep w entry with
     | .ok w' => w := w'
     | .error e => throw s!"the entry at height {w.height + 1} does not replay on it: {e}"
   return w
@@ -547,9 +584,9 @@ def entriesOf (content : String) : Except String (Array Json) := do
 /-- Full replay of verified entries. -/
 def replayAll (entries : Array Json) (caches : Caches := {}) : Except String World := do
   let (start, skip) ← startOf entries caches
-  let mut w := start
+  let mut w := { start with ignoring := ignoreSet entries, ignoreNamed := ignoreNamed entries }
   for entry in entries.extract skip entries.size do
-    match replayEntry w entry with
+    match replayStep w entry with
     | .ok w' => w := w'
     | .error e => throw s!"journal broken at height {w.height + 1}: {e}"
   return w
@@ -584,9 +621,9 @@ def openContent (journal content : String) (verify : Bool := false) (caches : Ca
     let (start, skip) ← match startOf entries caches with
       | .ok r => pure r
       | .error e => return .error s!"journal broken at height 1: {e}"
-    let mut w := start
+    let mut w := { start with ignoring := ignoreSet entries, ignoreNamed := ignoreNamed entries }
     for entry in entries.extract skip entries.size do
-      match replayEntry w entry with
+      match replayStep w entry with
       | .ok w' => w := w'
       | .error e => return .error s!"journal broken at height {w.height + 1}: {e}"
       if heights.contains w.height then

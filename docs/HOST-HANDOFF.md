@@ -58,7 +58,8 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Open and status: `world-open {path, library?, principal?, libraryLaw?, sync?, verify?, clock?, postQuota?, opener?}`, `world-status`, `world-snapshot`.
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
-- Registry and arrival: `world-principal`, `world-arrive`, `world-posted`, `world-library`, `world-fork`. `library-load {path}` is a stateless op.
+- Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
+- Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 
 Rules:
 - `turn` is host-assigned on propose, amend and reprogram; a client-sent `turn` is a request error.
@@ -1132,6 +1133,65 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      socket. Tests: `tests/test_serve.py` (test_hostd's cases against the Lean server, named worlds, the
      root socket).
 
+126. **ROOT and MODERATION in one edition (host14; docs/ROOT.md §1 to §3; replay edition 3).**
+   - *`world-root {principal, reason, act}`* (`Host/Root.lean`, `rootOp`): the opener only (`serve` keeps it to
+     the root socket), `reason` one line of 1..256 bytes. Acts: `set {object, field, value}` for `state`, `law`,
+     `program` (`{modules}` over the object's entry and limits, recompiled; the outcome names the new `pin`),
+     `pin` (stored alone: turns still run the closure the sources compile to, the reply says so), `owner`, `read`,
+     `version`, `fixed`, `supervisor`, `ledger`, `readings`, `activities` (the suspension hashes of the object to
+     keep); `delete {object}` (`before` the whole record, `objectRecord`; the id is free); `as {principal, turn
+     {object, method, argument, identity}}` (`runTurnWith` with `TurnMeta.root`: an ordinary judged entry with
+     `root {by, reason}` beside it, inside the hash); `settings {clock?, clockPrincipal?, postQuota?,
+     interpretQuota?, modelQuota?, opener?, libraryLaw?}` (`clock` the clock's value, either way; the reply lists
+     the `suspensions` and `grants` whose deadline or end lies between, `clockAffected`); `library {modules}`;
+     `ignore`/`unignore {height}`; `card {object, text|null}`; `quiet {principal, hours}` (0 clears), `hide`,
+     `show`, `retire`, `unretire` (`object`), `revoke {grant}`, unjudged. `expire` is a request error until
+     scratch worlds exist.
+   - *Entry:* `{identity {opener, root:<n>}, root: true, reason, turn 0, roots [], request, outcome {tag: root,
+     kind, object?, field?, height?, principal?, grant?, before, after, version?, cid?, pin?}}`; `projectEntry`
+     shows it (and every `moderated` entry) whole to any reader. A state or owner set raises the version and
+     pushes a `Touch` with unknown edits, so a turn that read the old version is stale.
+   - *Replay:* `rootBefore` reads the replaced value from the store, `applyRoot` lays `after` on it (no judge,
+     no conformance, no pin check), `recordActs` moves the derived indexes (clock, `cards`, `quiets`, `hidden`,
+     `ignored`, `rootActs`, suspensions); live and replay call the same three, and replay refuses "root entry N:
+     before does not match". `ignoreSet` finds the journal's final ignore set before replay; `replayStep` records an
+     ignored height inert (`recordInert`: in the chain, its sources and blocks known, its identity unbound), and
+     after the lowest height any `ignore`/`unignore` names, an entry that no longer replays is shadowed
+     (`World.shadowed [{height, by, reason}]`, `world-status.shadowed`, `world-open`'s reply, `verify`); before
+     it a disagreement still breaks the journal. An `ignore` or `unignore` re-derives the live store by
+     `Snapshot.replayAll`. A snapshot with an `ignore`/`unignore` after it is refused ("an ignore after it changes
+     what it holds"); a snapshot carries `shadowed`, and `expectedObjects`/`expectedLaws`/`anchoredStates` read root
+     entries and skip inert heights.
+   - *The metarule, widened (§2.1), held by the host:* an amendment (kind 2) whose subject is the world's opener
+     is admitted whatever the law (`openerAmends`, in `judge`), and the proposer half of the metarule is not
+     asked of it. ROOT says each law must admit it, checked at creation; that would refuse every town object
+     whose law reads `request.subject == new.owner` (Avatar, Env, Wake, Library, …), since the law grammar
+     cannot name the opener and a package's law is written before any world. So the default law is unchanged and
+     `world-inspect`'s `laws` gain a first row `{name: opener, clause, reading, host: true}`. test_wakes' Env
+     test now expects the opener's amendment admitted.
+   - *Powers (§2.2):* `world-turn` on `world` (`quiet`, `unquiet`, `settings`, `revoke`) and on a card
+     (`retire`, `unretire`, `hide`, `show`, when the card has no such method), or the same as spells
+     (`delvetalk world quiet / who: … / hours: … / reading: …`; `hostSpells` gains the card powers). Opener only,
+     else `badSpell` clause `opener`; `reading` required (one line, no quotes). `quiet`/`unquiet`, `hide`/`show`
+     journal `moderated {power, …, before, after, reading}` (replay: the opener's, `before` checked, applied as
+     root's); a quieted principal's direct turns are refused `quiet` (new transient class: clause `until clock
+     N`, `next` N); `retire` is the opener's amendment appending `law retired "<reading>": request.kind == 2 and
+     request.subject == "<opener>"`, `unretire` removes it; `revoke` is a `commit` with `revokes` (judge lets the
+     opener revoke any grant, so `world-revoke` is widened too). `world-settings {principal, reading, identity?,
+     postQuota?, interpretQuota?, modelQuota?}` and the `settings` power journal a later `settings` entry under the
+     opener (`settingsChange`; replay takes quotas only). `modelQuota` (default 2,000 a clock day) counts
+     interpretations started and attempts (`modelDay`), refuses `interpret` `quota` with `next` the next day,
+     nobody exempt. `world-status` answers `modelQuota {quota, used, next}`, `hour {hour, turns, refused {class:
+     n}, interpretations, attempts}` (`hourCounts`, derived by `record`), `shadowed` and `ignored`.
+   - *`unposted`:* `world-posted {principal, uri, unposted: true, reason}` journals `unposted {uri, reason,
+     object}` (identity `unposted:<uri>`); the post's record (`Post.unposted`, `world-addressee`) says so; a uri
+     never recorded is a request error; the reservation stays settled.
+   - Not built: a `before`/`after` past `maxEntryBytes` by CID in `blocks` (a root act that large is refused by
+     `durable`'s entry bound); retries of a root act (every one is a new `root:<n>`). Tests: `tests/test_root.py`
+     (each act's `before` and a reopen; an ignored entry, a shadowed one, the snapshot before it refused, `verify`,
+     `unignore`; the powers), `tests/test_post_reserve.py` `Unposted`; the catalogue and AGENTS-API's class table
+     gain `quiet`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1141,7 +1201,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   edition does not reopen: make it again with a new genesis" (a journal without the field is
   edition 1). **Bump it in the same commit as any change to what replay derives or checks** (a judging
   rule, a derived index, a journaled field replay compares), and say so in the item. 2 is host12
-  (evictions and changes owed as facts, lineage, reservations, attempts). Test:
+  (evictions and changes owed as facts, lineage, reservations, attempts); 3 is host14 (root, ignore and
+  shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126). Test:
   `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

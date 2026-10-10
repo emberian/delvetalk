@@ -267,6 +267,7 @@ Every `reason` is written by one table in the host (`Refusal.voiced`); `{…}` i
 | evaluation | the program's own words: `refuse("why")`, a `let` that met another response, a malformed message | yes |
 | capacity | `the host's {limit} is full; try later.` (or the sentence the limit's site wrote) | yes |
 | quota | `the interpreter has read {n} this hour; reply with the spell itself, or wait.`, with `next`: the clock to try at | yes |
+| quiet | `the hand quieted you until clock {n}: {reading}`, with `clause` `until clock {n}` and `next`: the clock to try at | yes |
 | typeMismatch | `not what {method} takes; reply delvetalk {object} ? for its spell.`, or what is wrong first (`colour is one of: amber, violet, silver (not gold); reply delvetalk garden ? for its spell.`); `expected` shows the form | no |
 | lawRefused | `refused {clause}: {reading}`: the law line and its plain sentence (or `noGrant`, `grantSpent`, `notGrantor`, `denied`) | no |
 | unknownObject | `no card {object} that you may see; the directory lists the doors.` | no |

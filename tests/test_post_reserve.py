@@ -80,6 +80,33 @@ class Reservations(Chain):
         self.assertEqual(self.posts()["delve"]["used"], 1)
 
 
+class Unposted(Chain):
+    """`unposted`: our own post deleted on Delve or Zulip leaves the town as a journaled fact."""
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.host.send(op="world-open", path=self.path, clock=CLOCK)["status"], "opened")
+        self.make("hub", closure("Counter"), record())
+
+    def test_an_unposted_post_says_so_and_a_post_never_made_is_refused(self):
+        uri = "at://did:plc:t/app.bsky.feed.post/a"
+        self.host.send(op="world-post-reserve", principal=CLOCK, intent="a", source="delve")
+        self.assertEqual(self.host.send(op="world-posted", principal=CLOCK, uri=uri, cid="c1", object="hub", intent="a")["status"], "posted")
+        never = self.host.send(op="world-posted", principal=CLOCK, uri=uri + "x", cid="c", object="hub", intent="a",
+                               unposted=True, reason="wrong card")
+        self.assertEqual(never["status"], "error", never)
+        r = self.host.send(op="world-posted", principal=CLOCK, uri=uri, cid="c1", object="hub", intent="a",
+                           unposted=True, reason="the wrong card")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["tag"], r["receipt"]["outcome"]["reason"]),
+                         ("unposted", "unposted", "the wrong card"), r)
+        self.reopen()
+        again = self.host.send(op="world-posted", principal=CLOCK, uri=uri, cid="c1", object="hub", intent="a",
+                               unposted=True, reason="twice")
+        self.assertEqual((again["status"], again["class"]), ("refused", "duplicateIdentity"), again)
+        # The reservation stays settled: posted, never released.
+        self.assertEqual(self.host.send(op="world-post-release", principal=CLOCK, intent="a", reason="x")["status"], "error")
+        self.assertEqual(self.host.send(op="world-addressee", parent=uri)["unposted"], "the wrong card")
+
+
 class Retries(Chain):
     policy = test_policy.PolicyObject.policy
     garden = test_policy.PolicyObject.garden

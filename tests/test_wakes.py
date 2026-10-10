@@ -104,7 +104,7 @@ class Wakes(Chain):
         self.assertEqual(fields, {"clause": label("misplaced"), "reading": label("An env lives at env/did:plc:inkling")})
         self.assertEqual(self.version("env/elsewhere"), 0)
 
-    def test_the_opener_creates_an_env_for_its_owner_who_alone_may_amend_it(self):
+    def test_the_opener_creates_an_env_for_its_owner_whom_only_the_opener_joins_in_amending(self):
         """Rehearsal finding 10: genesis seeds each principal's Env as the world's opener."""
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="ember")["status"], "opened")
         seed = record(owner=label(OWNER), buffer=relation(), seen=nat(0))
@@ -120,7 +120,8 @@ class Wakes(Chain):
                                                  version=self.version("env/" + OWNER), law=law)
         refused = amend(OTHER, "am-other")
         self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "owner"), refused)
-        self.assertEqual(amend("ember", "am-ember")["status"], "refused")
+        # The opener amends any law (docs/ROOT.md §2.1, the metarule widened): its amendment is the host's to admit.
+        self.assertEqual(amend("ember", "am-ember")["status"], "admitted")
         self.assertEqual(amend(OWNER, "am-owner")["status"], "admitted")
         # A seed that leaves `owner` out gets the named owner.
         other = self.host.send(op="world-create", principal="ember", identity="mk-other", object="env/" + OTHER,
@@ -128,7 +129,7 @@ class Wakes(Chain):
         self.assertEqual(other["status"], "created", other)
         self.assertEqual(get(self.state("env/" + OTHER), "owner"), label(OTHER))
         self.reopen()
-        self.assertEqual(self.version("env/" + OWNER), 1)
+        self.assertEqual(self.version("env/" + OWNER), 2)                              # the opener's amendment and the owner's
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="glm")["status"], "error")
 
     def test_each_principal_creates_and_amends_their_own_env_and_wake(self):

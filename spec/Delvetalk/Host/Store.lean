@@ -25,8 +25,15 @@ def cardShownChars : Nat := 1400
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
     with every change to what replay derives (judging, a derived field, an index replay checks).
-    1: before host12 (no field); 2: host12 (evictions and changes owed as facts, lineage, reservations). -/
-def replayEdition : Nat := 2
+    1: before host12 (no field); 2: host12 (evictions and changes owed as facts, lineage, reservations);
+    3: host14 (root entries, ignored and shadowed entries, moderation, the metarule widened to the opener,
+    later settings, `unposted`). -/
+def replayEdition : Nat := 3
+/-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
+    "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
+def modelQuota : Nat := 2000
+/-- Bytes of a root act's or a moderation power's `reason`/`reading`. -/
+def maxReasonBytes : Nat := 256
 /-- Model results one interpretation takes before a transient failure is its verdict (HOST-HANDOFF
     5.107): the first `interpretAttempts - 1` transient failures are journaled `attempted`. -/
 def interpretAttempts : Nat := 8
@@ -337,17 +344,20 @@ structure Post where
   page : String := ""
   part : String := ""
   height : Nat := 0
+  /-- Why the post left the town (an `unposted` entry: our own post deleted on Delve or Zulip); "" while it stands. -/
+  unposted : String := ""
 
 def Post.json (uri : String) (p : Post) : Json :=
   Json.mkObj ([("uri", toJson uri), ("object", toJson p.object)] ++ (p.slot.map fun s => [("slot", s)]).getD [] ++
     (if p.page.isEmpty then [] else [("page", toJson p.page), ("section", toJson p.part)]) ++
-    [("height", toJson p.height)])
+    [("height", toJson p.height)] ++ (if p.unposted.isEmpty then [] else [("unposted", toJson p.unposted)]))
 
 def Post.ofJson (j : Json) : Except String (String × Post) := do
   return (← j.getObjValAs? String "uri",
     { object := ← j.getObjValAs? String "object", slot := (j.getObjVal? "slot").toOption,
       page := (j.getObjValAs? String "page").toOption.getD "", part := (j.getObjValAs? String "section").toOption.getD "",
-      height := (j.getObjValAs? Nat "height").toOption.getD 0 })
+      height := (j.getObjValAs? Nat "height").toOption.getD 0,
+      unposted := (j.getObjValAs? String "unposted").toOption.getD "" })
 
 /-- A package compiled as an object's code: artifact, entry type, declared laws. -/
 structure Built where
@@ -396,6 +406,21 @@ structure Touch where
   version : Nat
   edits : Option (List (String × Data))
   deriving Inhabited
+
+/-- The clock hour's counts (`world-status.hour`, docs/ROOT.md §2.3): turns journaled (admitted,
+    refused, suspended), refusals by class, interpretations started and model attempts. Derived by
+    `record`; a new hour starts them again. -/
+structure HourCounts where
+  hour : Nat := 0
+  turns : Nat := 0
+  refused : List (String × Nat) := []
+  interpretations : Nat := 0
+  attempts : Nat := 0
+
+def HourCounts.json (h : HourCounts) : Json :=
+  Json.mkObj [("hour", toJson h.hour), ("turns", toJson h.turns),
+    ("refused", Json.mkObj (h.refused.map fun (c, n) => (c, toJson n))),
+    ("interpretations", toJson h.interpretations), ("attempts", toJson h.attempts)]
 
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),
@@ -485,6 +510,30 @@ structure World where
   /-- Memory only: compiled packages by the digest of their compile inputs, so replay and
       repeated creation compile each distinct package once. -/
   builds : Std.HashMap String Built := {}
+  /-- Root acts journaled (`root:<n>` intents). Derived by `record`. -/
+  rootActs : Nat := 0
+  /-- A root `card` override: the text `world-card` answers in place of `render`. Derived by `record`. -/
+  cards : Std.HashMap String String := {}
+  /-- Principals quieted (`quiet`): the clock until which their turns are refused, and the reading.
+      Derived by `record`. -/
+  quiets : Std.HashMap String (Nat × String) := {}
+  /-- Objects hidden (`hide`): the read policy `show` restores. Derived by `record`. -/
+  hidden : Std.HashMap String Json := {}
+  /-- Heights this world replays as refused (docs/ROOT.md §1.3): the ignore set of the whole journal,
+      found before replay starts (`ignoreSet`) and kept by every `ignore`/`unignore`. -/
+  ignoring : List Nat := []
+  /-- Every height an `ignore` or `unignore` of the journal names: after the lowest, an entry that no
+      longer replays is shadowed, since an unignored entry changes later ones as an ignored one does. -/
+  ignoreNamed : List Nat := []
+  /-- Heights ignored by the root entries recorded so far (what an `ignore`'s `before` reads). -/
+  ignored : List Nat := []
+  /-- Entries that no longer replay after an ignored one, skipped: `{height, by, reason}`. -/
+  shadowed : Array Json := #[]
+  /-- Model calls one clock day may start (`Limits.modelQuota`; `world-settings`), and the day's count. -/
+  modelQuota : Nat := Limits.modelQuota
+  modelDay : Nat × Nat := (0, 0)
+  /-- This clock hour's counts. -/
+  hourCounts : HourCounts := {}
 
 /-- `w` with the memory-only compile caches of `src` (a world a step derived from `w`): what a
     step compiled stays compiled whether or not its world is kept. -/
