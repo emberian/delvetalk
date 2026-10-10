@@ -274,7 +274,7 @@ class StoredHandles(test_chain.Chain):
             "An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\n"
             "Reply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.\n"
             "kimik3.delve.town: drizzle\n"
-            "garden: garden\n"
+            "Doors: garden\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
