@@ -376,9 +376,9 @@ chooses roles, layouts, guards or transitions is a bug.
 | `zulip.py` | the playtest transport: one Zulip stream observed and answered |
 
 The principal is the DID (`zulip:<id>` in the playtest); the handle is display
-text. `transport/` is 3,749 lines on 2026-10-10 against a ceiling of 3,900, raised
+text. `transport/` is 4,213 lines on 2026-10-10 against a ceiling of 4,400, raised
 from 2,900 as the Zulip transport, the repository façade, the hand, the
-hypermedia front and the plain-text view were added; the rule it must keep is
+hypermedia front, the plain-text view and the delve.town login were added; the rule it must keep is
 that it decides nothing, and the way down is the host serving its own socket,
 not trimming adapters.
 
