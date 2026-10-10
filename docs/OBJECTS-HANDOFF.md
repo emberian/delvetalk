@@ -185,6 +185,11 @@ the library).
   write); the card shows them newest first under "Traces:". A refusal therefore writes a
   trace (the place's version moves). The Place records what it judges itself rather than
   observing avatars: an avatar's own refusals elsewhere are not traced here.
+* **A Deal amends** (objects5): `amendment {object, law}` (fixed by the deal's law; object ""
+  for none). The countersignature that brings the deal to rest performs `amend {object,
+  law}` with the deal as caller, judged by the object's own law (which must admit the
+  deal, and the new law its proposer); a refusal is answered `amendRefused`, the signature
+  standing. The card shows the amendment.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

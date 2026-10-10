@@ -24,7 +24,7 @@ class Deals(Chain):
     def deal(self, parties, terms="the like is the placeholder", piece="", name="deal"):
         r = self.host.send(op="world-create", principal=parties[0], identity="mk-" + name, object=name,
                            modules=closure("Deal"), entry="initial",
-                           seed=record(parties=listing([label(p) for p in parties]), terms=label(terms), piece=label(piece),
+                           seed=record(amendment=record(object=label(""), law=label("")), parties=listing([label(p) for p in parties]), terms=label(terms), piece=label(piece),
                                        signatures=nil(), withdrawn=label(""), closed={"tag": "natural", "value": "0"}))
         self.assertEqual(r["status"], "created", r)
         return name
@@ -33,6 +33,30 @@ class Deals(Chain):
         r = self.turn(name, "receive", say("delvetalk %s countersign" % name, post), principal=who)
         self.assertEqual(r["status"], "admitted", r)
         return r
+
+    def test_three_countersignatures_amend_an_objects_law_and_a_stranger_is_refused(self):
+        """A deal at rest applies its amendment by `amend`, the deal as caller, judged by the
+        object's own law."""
+        from tests.test_objects import MODULES
+        from tests.test_turn_world import closure as world_closure
+        law = 'law steward: request.subject == "ember" or request.caller == "deal"\n'
+        source = open(MODULES["Counter"]).read().replace("record State:", law + "record State:", 1)
+        r = self.host.send(op="world-create", principal="ember", identity="mk-ledger", object="ledger",
+                           modules=world_closure("Counter", override={"Counter": source}), entry="initial", seed=record(count={"tag": "natural", "value": "0"}))
+        self.assertEqual(r["status"], "created", r)
+        new = 'law steward: request.caller == "deal" or request.subject == "did:plc:glm"'
+        r = self.host.send(op="world-create", principal=ARTIST, identity="mk-deal", object="deal", modules=closure("Deal"), entry="initial",
+                           seed=record(amendment=record(object=label("ledger"), law=label(new)), parties=listing([label(p) for p in (ARTIST, GALLERY, CURATOR)]),
+                                       terms=label("glm stewards the ledger"), piece=label(""), signatures=nil(), withdrawn=label(""), closed={"tag": "natural", "value": "0"}))
+        self.assertEqual(r["status"], "created", r)
+        self.assertIn("At rest it amends ledger to:\n    " + new, self.turn("deal", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"])
+        stranger = self.sign("did:plc:zero", "at://zero/p/1")
+        self.assertEqual(stranger["result"]["label"], "refused")
+        for who in (ARTIST, GALLERY, CURATOR):
+            self.assertEqual(self.sign(who, "at://%s/p" % who)["result"]["label"], "done")
+        inspected = self.host.send(op="world-inspect", principal="ember", object="ledger")
+        self.assertIn('request.caller == "deal"', inspected["law"])
+        self.assertIn('did:plc:glm', inspected["law"])
 
     def test_an_exhibition_is_at_rest_when_all_three_have_countersigned(self):
         self.deal([ARTIST, GALLERY, CURATOR], "hang it in the east room for a week", "a bell for lost moths", "exhibition")
