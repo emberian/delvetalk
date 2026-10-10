@@ -598,3 +598,31 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   Card's `DoorEdit` type `Entries<Doorway, {}>`, now `Entries<Doorway, Doorway>`), Policy
   (`asked` returns `Entries<String, {}>`), Wake (`world.write::<Edits>({…})` names two fields
   of a record that now has all of them). Those are the review lane's edits.
+- 8c, form blocks. The parser keeps each block as `Surface.FormBlock {action, value, fields:
+  [{name, kind: FormKind}]}` in `Module.forms` beside the Form value it writes in place
+  (unchanged); a new kind `T` (an identifier or `Alias.T`) stands in the value as the marker
+  `$formChoice(F, T)`. `Generics.deriveForms`, in the same probe as the Edits: resolves `T` to
+  the labels of a closed sum of empty cases ("refused (form-kind): form water offers shade:
+  Mixed, which is not a closed sum of empty cases"), replaces the marker by the choice, and
+  derives, at the end of the module, `record NameInput` (`type NameInput = {}` for a block
+  without fields; text and source String, natural Nat, `a | b | c` the generated `sum
+  NameField` of empty cases, `T` itself) and, when the module declares no `forms`,
+  `def forms() -> L.List<F.Form>` of the values in source order (needs an import of List.obend,
+  else "refused (derived-forms)"). A declaration named like a generated one is "refused
+  (form-input): form plant declares PlantInput, its method's input, and so does the module".
+  `Elaborate.Module.forms` carries the resolved blocks; a method row with a block gains `form:
+  [{name, kind}]`, kind the `Form.Kind` value on the Data wire (`source` is `{"tag":"variant",
+  "label":"source","payload":{"tag":"record","fields":[]}}`). Pins: 0 recompiled (every world
+  object hand-writes `forms()`, and the input types number no instance). A derived `forms()`
+  that instantiates `List<F.Form>` for the first time adds a bound to every packet of the
+  package (bounds are package-wide), so a module that drops its `forms()` moves its packets
+  only if nothing else names that list. Tests: `test_sugar.FormInputs`; `test_sugar.Forms`'s
+  explicit spellings now include the `forms()` the block derives.
+- Not yet enforced (commit 3, with the refusal of hand-written pairs): "refused (form-input):
+  plant has a form block, so its input is PlantInput", by `sameTy` of the method's input and
+  `NameInput` after typing (`checkFormInputs` beside `checkProtocols`, drafted). In world/ only Deal
+  disagrees: `form countersign:` has no fields and `countersign` takes `{post: String}`.
+  Structurally, Garden's `Planting` already equals `PlantInput` (`amber | violet | silver` is
+  `Bell.Colour`). With `forms()` also deleted from objects: Counter and Loop import no
+  List.obend (derived `forms()` refused by name); Cistern, Seat, Table and Workshop have no form
+  blocks and keep theirs.

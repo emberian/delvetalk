@@ -143,6 +143,8 @@ structure Module where
   protocols : List (String × List (String × String × String × ObjectiveBendSurface.Span)) := []
   /-- `implements NAME` lines. -/
   implements : List (String × ObjectiveBendSurface.Span) := []
+  /-- The module's `form` blocks (a field naming a closed sum resolved to its choice). -/
+  forms : List ObjectiveBendSurface.FormBlock := []
   deriving Inhabited
 
 /-! ## Reading the parsed surface -/
@@ -223,7 +225,7 @@ def ofSurface (name : String) (imports : List (String × String)) (m : Objective
     else decls := decls ++ [← Surface.decl d]
   ObjectiveBendLaw.checkNames laws
   let layerOver := m.layerOver.bind fun _ => (imports.find? (·.1 == "Super")).map (·.2)
-  return ⟨name, imports, decls, laws, layerOver, protocols, m.implements⟩
+  return ⟨name, imports, decls, laws, layerOver, protocols, m.implements, m.forms⟩
 
 /-! ## Proposal types (the `Ty` JSON wire of Theory.ObjectiveBendTyping.typeJson, plus `variant`) -/
 

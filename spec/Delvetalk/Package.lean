@@ -120,16 +120,38 @@ def peelPTy : Nat → PTy → List PTy × PTy
   | n + 1, .arrow _ _ domain codomain => let (rest, result) := peelPTy n codomain; (domain :: rest, result)
   | _, ty => ([], ty)
 
+/-- A form field's kind as the Form library's `Kind` value, on the Data wire. -/
+def formKindJson : Minidregg.Compiler.ObjectiveBendSurface.FormKind → Json
+  | kind =>
+    let range := fun (min max : Nat) => Minidregg.Theory.ObjectiveBendDemandData.Data.record [("min", .natural min), ("max", .natural max)]
+    let data : Minidregg.Theory.ObjectiveBendDemandData.Data := match kind with
+      | .text min max => .variant "text" (range min max)
+      | .natural min max => .variant "natural" (range min max)
+      | .source => .variant "source" (.record [])
+      | .choice options => .variant "choice" (.record [("options", options.foldr
+          (fun o acc => .variant "cons" (.record [("head", .label o), ("tail", acc)])) (.variant "nil" (.record [])))])
+      | .named type => .variant "named" (.label type)
+    Minidregg.Compiler.ObjectiveBendDataWire.dataJson data
+
+/-- A method's form block as its row's `form`: each field's name and kind. -/
+def formRow (forms : List Minidregg.Compiler.ObjectiveBendSurface.FormBlock) (method : String) : List (String × Json) :=
+  match forms.find? (·.action == method) with
+  | some block => [("form", Json.arr (block.fields.map fun f =>
+      Json.mkObj [("name", toJson f.name), ("kind", formKindJson f.kind)]).toArray)]
+  | none => []
+
 open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- The entry module's method table: every definition whose first parameter is
 `State`, called as `(state, [input,] [context])`, with its input type (`{}` when
 it takes none), result type and whether it is an activity. Type JSON is the
 packet's (recursive sums are variables of the packet's bounds). Definitions with
 more than one input beyond state and context are not callable methods and are
-left out. -/
-def methodTable (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy) : Json :=
-  Json.arr (methodRows moduleName signatures globals).toArray
-where methodRows (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy) : List Json :=
+left out. A method with a form block lists its fields as `form`. -/
+def methodTable (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy)
+    (forms : List Minidregg.Compiler.ObjectiveBendSurface.FormBlock := []) : Json :=
+  Json.arr (methodRows moduleName signatures globals forms).toArray
+where methodRows (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy)
+    (forms : List Minidregg.Compiler.ObjectiveBendSurface.FormBlock) : List Json :=
   signatures.filterMap fun ((fname, types) : String × List String) => do
     guard (types.head? == some "State")
     let ty ← lookupRow globals (moduleName ++ "." ++ fname)
@@ -140,17 +162,18 @@ where methodRows (moduleName : String) (signatures : List (String × List String
     let input := if inputs.length == 1 then (domains[1]?.map PTy.json).getD (Json.mkObj [("tag", toJson "emptyRow")])
       else Json.mkObj [("tag", toJson "emptyRow")]
     let activity := match result with | .computation .. => true | _ => false
-    return Json.mkObj [("name", toJson fname), ("input", input), ("result", result.json),
-      ("activity", toJson activity), ("context", toJson context)]
+    return Json.mkObj ([("name", toJson fname), ("input", input), ("result", result.json),
+      ("activity", toJson activity), ("context", toJson context)] ++ formRow forms fname)
 
 open Minidregg.Compiler.ObjectiveBendElaborate (PTy) in
 /-- A layer stack's method table: every method of every layer, the topmost definition of a
 name winning (the one every call reaches). `stack` is top first: (module, its signatures). -/
-def stackMethodTable (stack : List (String × List (String × List String))) (globals : Option PTy) : Json := Id.run do
+def stackMethodTable (stack : List (String × List (String × List String))) (globals : Option PTy)
+    (forms : String → List Minidregg.Compiler.ObjectiveBendSurface.FormBlock := fun _ => []) : Json := Id.run do
   let mut seen : List String := []
   let mut rows : Array Json := #[]
   for (moduleName, signatures) in stack do
-    for row in methodTable.methodRows moduleName (signatures.filter fun s => !seen.contains s.1) globals do
+    for row in methodTable.methodRows moduleName (signatures.filter fun s => !seen.contains s.1) globals (forms moduleName) do
       rows := rows.push row
     seen := seen ++ signatures.map (·.1)
   return Json.arr rows
@@ -274,11 +297,12 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
   let globals := lowered.output.globalRow
   let law ← lawShape entryModule.name signatures globals lowered.output.sumBounds
   let stack := prepared.elaborated.ctx.stack.toList.reverse
-  let methods := if stack.isEmpty then methodTable entryModule.name signatures globals else
+  let forms := fun (name : String) => ((prepared.decoded.find? (·.name == name)).map (·.forms)).getD []
+  let methods := if stack.isEmpty then methodTable entryModule.name signatures globals (forms entryModule.name) else
     stackMethodTable (stack.filterMap fun name => do
       let i ← modules.findIdx? (·.name == name)
       let ast ← prepared.asts[i]?
-      return (name, signaturesOf ast)) globals
+      return (name, signaturesOf ast)) globals forms
   let pin := Delvetalk.Canonical.cidJson packet
   let artifact := Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),

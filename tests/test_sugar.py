@@ -351,6 +351,8 @@ TEXT_PAIRS = [
 FORM_HEAD = HEAD + "import ./List.obend as Lists\nimport ./Form.obend as F\n"
 FORM_EXPLICIT = FORM_HEAD + """def planting() -> F.Form:
   {card: "", action: "plant", fields: F.Fields.cons({head: {name: "colour", kind: F.Kind.choice({options: F.Names.cons({head: "amber", tail: F.Names.cons({head: "violet", tail: F.Names.cons({head: "silver", tail: F.Names.nil({})})})})})}, tail: F.Fields.cons({head: {name: "seed", kind: F.Kind.text({min: 1n, max: 80n})}, tail: F.Fields.cons({head: {name: "count", kind: F.Kind.natural({min: 1n, max: 1000n})}, tail: F.Fields.nil({})})})})}
+def forms() -> Lists.List<F.Form>:
+  Lists.List.cons({head: planting(), tail: Lists.List.nil({})})
 """
 FORM_SUGARED = FORM_HEAD + """form plant as planting:
   colour: amber | violet | silver
@@ -470,7 +472,8 @@ class Forms(unittest.TestCase):
         explicit = FORM_HEAD + ("def workshopForm() -> F.Form:\n  {card: \"\", action: \"compile\", fields: "
                                 "F.Fields.cons({head: {name: \"program\", kind: F.Kind.source({})}, tail: "
                                 "F.Fields.cons({head: {name: \"note\", kind: F.Kind.text({min: 1n, max: 80n})}, "
-                                "tail: F.Fields.nil({})})})}\n")
+                                "tail: F.Fields.nil({})})})}\n"
+                                "def forms() -> Lists.List<F.Form>:\n  Lists.List.cons({head: workshopForm(), tail: Lists.List.nil({})})\n")
         sugared = FORM_HEAD + "form compile as workshopForm:\n  program: source\n  note: text 1..80\n"
         replies = [self.h.send({"op": "compile", "entry": "workshopForm",
                                 "modules": modules + [{"name": "Package", "source": text}]}) for text in (explicit, sugared)]
@@ -487,6 +490,119 @@ class Forms(unittest.TestCase):
         reply = self.check(FORM_HEAD + "form plant:\n  seed: words 1..80\n", "plantForm")
         self.assertIn("a form field is `name: text MIN..MAX`", reply["diagnostic"]["message"])
         self.assertIn("`name: source`", reply["diagnostic"]["message"])
+
+
+# KERNEL-HANDOFF §16 item 8c: a form block declares its method's input record and, without a
+# hand-written forms(), forms() of the blocks in source order.
+FORM_STATE = FORM_HEAD + """sum Colour:
+  amber: {}
+  violet: {}
+  silver: {}
+record State:
+  planted: Nat
+def plant(state: State, input: PlantInput) -> Nat:
+  state.planted + input.count
+def water(state: State, input: WaterInput) -> Nat:
+  textLength(input.note)
+"""
+FORM_BLOCKS = """form plant as planting:
+  colour: amber | violet | silver
+  seed: text 1..80
+  count: natural 1..1000
+form water:
+  note: text 0..40
+  shade: Colour
+"""
+FORM_BLOCKS_EXPLICIT = """def planting() -> F.Form:
+  {card: "", action: "plant", fields: F.Fields.cons({head: {name: "colour", kind: F.Kind.choice({options: F.Names.cons({head: "amber", tail: F.Names.cons({head: "violet", tail: F.Names.cons({head: "silver", tail: F.Names.nil({})})})})})}, tail: F.Fields.cons({head: {name: "seed", kind: F.Kind.text({min: 1n, max: 80n})}, tail: F.Fields.cons({head: {name: "count", kind: F.Kind.natural({min: 1n, max: 1000n})}, tail: F.Fields.nil({})})})})}
+def waterForm() -> F.Form:
+  {card: "", action: "water", fields: F.Fields.cons({head: {name: "note", kind: F.Kind.text({min: 0n, max: 40n})}, tail: F.Fields.cons({head: {name: "shade", kind: F.Kind.choice({options: F.Names.cons({head: "amber", tail: F.Names.cons({head: "violet", tail: F.Names.cons({head: "silver", tail: F.Names.nil({})})})})})}, tail: F.Fields.nil({})})})}
+"""
+FORM_INPUTS_EXPLICIT = """sum PlantColour:
+  amber: {}
+  violet: {}
+  silver: {}
+record PlantInput:
+  colour: PlantColour
+  seed: String
+  count: Nat
+record WaterInput:
+  note: String
+  shade: Colour
+def forms() -> Lists.List<F.Form>:
+  Lists.List.cons({head: planting(), tail: Lists.List.cons({head: waterForm(), tail: Lists.List.nil({})})})
+"""
+
+
+def kind(label, payload):
+    return {"tag": "variant", "label": label, "payload": {"tag": "record", "fields": payload}}
+
+
+def nat_field(name, n):
+    return {"name": name, "value": {"tag": "natural", "value": str(n)}}
+
+
+def choice(*options):
+    return kind("choice", [{"name": "options", "value": {"tag": "list", "items": [{"tag": "label", "value": o} for o in options]}}])
+
+
+class FormInputs(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.close()
+
+    def send(self, op, source, entry):
+        return self.h.send({"op": op, "entry": entry,
+                            "modules": library_modules("List", "Form") + [{"name": "Package", "source": source}]})
+
+    def compiled(self, source, entry):
+        reply = self.send("compile", source, entry)
+        self.assertEqual(reply["status"], "compiled", reply)
+        return reply["artifact"]
+
+    def test_form_blocks_are_their_values_inputs_and_forms(self):
+        sugared = FORM_STATE + FORM_BLOCKS
+        explicit = FORM_STATE + FORM_BLOCKS_EXPLICIT + FORM_INPUTS_EXPLICIT
+        for entry in ("plant", "water", "planting", "waterForm", "forms"):
+            with self.subTest(entry=entry):
+                self.assertEqual(core(self.compiled(sugared, entry)), core(self.compiled(explicit, entry)))
+
+    def test_a_method_row_carries_its_form(self):
+        rows = {row["name"]: row for row in self.compiled(FORM_STATE + FORM_BLOCKS, "plant")["methods"]}
+        self.assertEqual(rows["plant"]["form"], [
+            {"name": "colour", "kind": choice("amber", "violet", "silver")},
+            {"name": "seed", "kind": kind("text", [nat_field("min", 1), nat_field("max", 80)])},
+            {"name": "count", "kind": kind("natural", [nat_field("min", 1), nat_field("max", 1000)])}])
+        # A field naming a closed sum is offered as the choice of its labels.
+        self.assertEqual(rows["water"]["form"][1], {"name": "shade", "kind": choice("amber", "violet", "silver")})
+        # A module without form blocks has rows without `form`.
+        plain = self.compiled(FORM_STATE.replace("PlantInput", "{count: Nat}").replace("WaterInput", "{note: String}"), "plant")
+        self.assertTrue(all("form" not in row for row in plain["methods"]), plain["methods"])
+
+    def test_a_hand_written_forms_is_kept(self):
+        # The derived forms() lists both blocks in source order (the first test); a module's own wins.
+        own = "def forms() -> Lists.List<F.Form>:\n  Lists.List.cons({head: waterForm(), tail: Lists.List.nil({})})\n"
+        inputs = FORM_INPUTS_EXPLICIT[:FORM_INPUTS_EXPLICIT.index("def forms()")]
+        self.assertEqual(core(self.compiled(FORM_STATE + FORM_BLOCKS + own, "forms")),
+                         core(self.compiled(FORM_STATE + FORM_BLOCKS_EXPLICIT + inputs + own, "forms")))
+
+    def test_a_named_kind_must_be_a_closed_sum_of_empty_cases(self):
+        source = FORM_STATE.replace("record State:", "sum Mixed:\n  one: {}\n  two: {n: Nat}\nrecord State:") + \
+            FORM_BLOCKS.replace("shade: Colour", "shade: Mixed")
+        reply = self.send("check-package", source, "plant")
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (form-kind): form water offers shade: Mixed, which is not a closed sum of empty cases",
+                      reply["diagnostic"]["message"])
+
+    def test_a_declared_input_beside_its_form_block_is_refused_by_name(self):
+        source = FORM_STATE + FORM_BLOCKS + "record PlantInput:\n  count: Nat\n"
+        reply = self.send("check-package", source, "plant")
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (form-input): form plant declares PlantInput, its method's input, and so does the module", reply["diagnostic"]["message"])
 
 
 class Writes(unittest.TestCase):

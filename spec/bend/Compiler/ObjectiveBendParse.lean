@@ -21,7 +21,7 @@ import Compiler.ObjectiveBendLaw
 import Compiler.ObjectiveBendSurface
 namespace Minidregg.Compiler.ObjectiveBendParse
 open Lean (Json toJson)
-open ObjectiveBendSurface (Param Expr Pattern Body Signature Method Claim Field Spec Decl Import Module)
+open ObjectiveBendSurface (Param Expr Pattern Body Signature Method Claim Field Spec Decl Import Module FormKind FormField FormBlock)
 set_option autoImplicit false
 
 /-! ## ECMAScript character classes -/
@@ -909,24 +909,39 @@ def rangeKindRe : Re := seqs [group 1 (alts [str "text", str "natural"]), many1 
   group 2 (many1 (.char asciiDigit)), opt (chr 'n'), many space, str "..", many space,
   group 3 (many1 (.char asciiDigit)), opt (chr 'n'), many space, .done]
 
-/-- One form field's kind, as the Form library's constructor application. -/
-def formKind (alias : String) (line : Line) (spec : List Char) : PS Expr := do
+/-- The marker a form field naming a closed sum (`colour: Bell.Colour`) stands as in its Form
+value until the generics pass knows the sum's labels: `$formChoice("F", "Bell.Colour")`. Not an
+identifier a source can spell. -/
+def formChoiceMarker : String := "$formChoice"
+
+/-- `F.Kind.choice({options: F.Names.cons(...)})` over `options`. -/
+def choiceKind (alias : String) (options : List String) (span : Span) : Expr :=
+  let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
+  let names := options.foldr (fun o acc =>
+      Expr.call (lib "Names" "cons") [.record [("head", .str o span), ("tail", acc)] span] span)
+    (.call (lib "Names" "nil") [.record [] span] span)
+  .call (lib "Kind" "choice") [.record [("options", names)] span] span
+
+/-- One form field's kind, as the Form library's constructor application, and as written. -/
+def formKind (alias : String) (line : Line) (spec : List Char) : PS (Expr × FormKind) := do
   let span := line.span
   let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
   let trimmed := String.ofList spec |>.trimAscii |>.toString
-  if trimmed == "source" then return .call (lib "Kind" "source") [.record [] span] span
+  if trimmed == "source" then return (.call (lib "Kind" "source") [.record [] span] span, .source)
   if let some (_, caps) ← matchAt line rangeKindRe trimmed.toList then
     let kind := cap trimmed.toList caps 1
     let low := natValue ((capture trimmed.toList caps 2).getD [])
     let high := natValue ((capture trimmed.toList caps 3).getD [])
-    return .call (lib "Kind" kind) [.record [("min", .nat low span), ("max", .nat high span)] span] span
+    let value := Expr.call (lib "Kind" kind) [.record [("min", .nat low span), ("max", .nat high span)] span] span
+    let (lowN, highN) := (low.toNat!, high.toNat!)
+    return (value, if kind == "text" then .text lowN highN else .natural lowN highN)
   let options := (trimmed.splitOn "|").map fun o => o.trimAscii.toString
+  if options.length == 1 && (trimmed.splitOn ".").length ≤ 2 && (trimmed.splitOn ".").all (isIdent ·.toList) then
+    return (.call (.var formChoiceMarker span) [.str alias span, .str trimmed span] span, .named trimmed)
   if options.length < 2 || options.any (fun o => !isIdent o.toList) then
-    fail line "a form field is `name: text MIN..MAX`, `name: natural MIN..MAX`, `name: source` or `name: a | b | c`"
-  let names := options.foldr (fun o acc =>
-      Expr.call (lib "Names" "cons") [.record [("head", .str o span), ("tail", acc)] span] span)
-    (.call (lib "Names" "nil") [.record [] span] span)
-  return .call (lib "Kind" "choice") [.record [("options", names)] span] span
+    fail line ("a form field is `name: text MIN..MAX`, `name: natural MIN..MAX`, `name: source`, `name: a | b | c` " ++
+      "or `name: Sum` (a closed sum of empty cases)")
+  return (choiceKind alias options span, .choice options)
 
 def genericParameters (raw : List Char) : Except String (List String) := do
   let names := (splitPieces raw).map jsTrim
@@ -1027,12 +1042,13 @@ def protocolSignature (text : String) : Option (Except String (String × List St
   else none
 
 def declarations (lines : Array Line) :
-    PS (Array Import × Array Decl × Option (String × Span) × Array (String × Span)) := do
+    PS (Array Import × Array Decl × Option (String × Span) × Array (String × Span) × Array FormBlock) := do
   let fuel := lines.size + 1
   let mut layer : Option (String × Span) := none
   let mut implements : Array (String × Span) := #[]
   let mut imports : Array Import := #[]
   let mut decls : Array Decl := #[]
+  let mut forms : Array FormBlock := #[]
   for _ in [0:lines.size] do
     let i ← get
     let some line := lines[i]? | break
@@ -1172,6 +1188,7 @@ def declarations (lines : Array Line) :
       let alias := formImport.importAlias
       let span := line.span
       let mut fields : Array (String × Expr) := #[]
+      let mut written : Array FormField := #[]
       for _ in [0:lines.size] do
         let j ← get
         let some c := lines[j]? | break
@@ -1180,7 +1197,11 @@ def declarations (lines : Array Line) :
         let some (_, m) ← matchAt c sumCaseRe c.text | fail c "expected a form field: name: kind"
         let fieldName := cap c.text m 1
         if fields.any (·.1 == fieldName) then fail c "duplicate form field"
-        fields := fields.push (fieldName, ← formKind alias c ((capture c.text m 2).getD []))
+        let (kind, asWritten) ← formKind alias c ((capture c.text m 2).getD [])
+        fields := fields.push (fieldName, kind)
+        written := written.push ⟨fieldName, asWritten, c.span⟩
+      if forms.any (·.action == action) then fail line ("a second form block for " ++ action)
+      forms := forms.push ⟨action, name, written.toList, span⟩
       let lib := fun (type name : String) => Expr.member (.member (.var alias span) type span) name span
       let list := fields.toList.foldr (fun (n, kind) acc =>
           Expr.call (lib "Fields" "cons") [.record [("head", .record [("name", .str n span), ("kind", kind)] span),
@@ -1231,12 +1252,12 @@ def declarations (lines : Array Line) :
       decls := decls.push (.function sig none functionBody line.span)
       continue
     fail line "unsupported Objective Bend declaration"
-  return (imports, decls, layer, implements)
+  return (imports, decls, layer, implements, forms)
 
 /-- Parse one module's source text. -/
 def parseObjective (source : String) : Except Diagnostic Module := do
   let lines ← sourceLines source
-  let ((imports, decls, layer, implements), _) ← (declarations lines).run 0
+  let ((imports, decls, layer, implements, forms), _) ← (declarations lines).run 0
   -- `write {...}` names the Plan library by placeholder; it becomes the module's alias.
   let plans := ((imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias)).getD "Plans"
   let decls := decls.map (·.mapVars fun n => if n == writePlansAlias then plans else n)
@@ -1262,7 +1283,7 @@ def parseObjective (source : String) : Except Diagnostic Module := do
       if imports.any (fun i => i.importAlias == "Super" && i.path == path) then imports
       else #[(⟨path, "Super", span⟩ : Import)] ++ imports
     | none => imports
-  return ⟨imports.toList, decls.toList, layer.map (·.1), implements.toList⟩
+  return ⟨imports.toList, decls.toList, layer.map (·.1), implements.toList, forms.toList⟩
 
 /-- Strict UTF-8 decoding as `new TextDecoder("utf-8",{fatal:true})`: invalid bytes refuse and a
 leading byte-order mark is consumed. -/

@@ -170,6 +170,42 @@ def Decl.kind : Decl → String
   | .typeAlias .. => "typeAlias" | .sum .. => "sum" | .record .. => "record" | .law .. => "law"
   | .function .. => "function" | .protocol .. => "protocol"
 
+/-- A form field's kind as a `form` block writes it. `named` is a closed sum of empty cases
+in scope (`colour: Bell.Colour`), offered as a choice of its labels: the generics pass resolves
+it to `choice` once types are known. -/
+inductive FormKind where
+  | text (min max : Nat)
+  | natural (min max : Nat)
+  | source
+  | choice (options : List String)
+  | named (type : String)
+  deriving Inhabited, Repr, BEq
+
+structure FormField where
+  name : String
+  kind : FormKind
+  span : Span
+  deriving Inhabited, Repr, BEq
+
+/-- `form ACTION [as VALUE]:`: the method it is the input of, the name of its Form value, its fields. -/
+structure FormBlock where
+  action : String
+  value : String
+  fields : List FormField
+  span : Span
+  deriving Inhabited, Repr, BEq
+
+def capitalized (s : String) : String :=
+  match s.toList with
+  | c :: rest => String.ofList (c.toUpper :: rest)
+  | [] => s
+
+/-- The record a form block declares as its method's input (`form plant` declares `PlantInput`). -/
+def FormBlock.input (f : FormBlock) : String := capitalized f.action ++ "Input"
+
+/-- The closed sum a choice field `a | b | c` declares (`plant`'s `colour` declares `PlantColour`). -/
+def FormBlock.choiceSum (f : FormBlock) (field : String) : String := capitalized f.action ++ capitalized field
+
 structure Import where
   path : String
   importAlias : String
@@ -184,6 +220,8 @@ structure Module where
   layerOver : Option String := none
   /-- `implements NAME` lines: the protocols the module claims, with where it says so. -/
   implements : List (String × Span) := []
+  /-- The module's `form` blocks, in source order. -/
+  forms : List FormBlock := []
   deriving Inhabited, Repr, BEq
 
 /-! ## The JSON rendering (`dregg.objective-bend.module.v1`) -/
@@ -470,6 +508,8 @@ def Module.mapSpans (f : Span → Span) (m : Module) : Module :=
   let imports := m.imports.map fun i => { i with span := f i.span }
   let decls := m.decls.map fun x => x.mapSpans f
   let implements := m.implements.map fun (n, s) => (n, f s)
-  { m with imports, decls, implements }
+  let forms := m.forms.map fun b =>
+    { b with span := f b.span, fields := b.fields.map fun x => { x with span := f x.span } }
+  { m with imports, decls, implements, forms }
 
 end Minidregg.Compiler.ObjectiveBendSurface
