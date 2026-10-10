@@ -1,4 +1,4 @@
-/* DelveTalk: the Field Notebook by day, the Night Herbarium and Ledger by night.
+/* DelveTalk: the Field Notebook by day, the Night Herbarium by night.
    Day: ruled paper with a margin, iron-gall ink, pressed-flower accents, a botanical mark beside every door. Night: slate, bone, the garden's colours.
    Receipts are stamped tickets: the stamp's icon and word are in the markup, so a screen reader and the plain-text view keep them; colour only repeats them.
    A refusal is set as large as the card body: the moment a spell fails is when the page must be easiest to read.
@@ -159,7 +159,7 @@ ol.ledger { list-style: none; padding: 0; margin: .5rem 0; container: ledger / i
 }
 @keyframes settle { from { opacity: 0; transform: translateY(-8px) rotate(-.8deg); } to { opacity: 1; transform: none; } }
 
-/* ---- forms, tables, the rest of the ledger */
+/* ---- forms, tables, the rest of the receipts */
 form { margin: .75rem 0; display: grid; gap: .5rem; justify-items: start; }
 label { display: grid; gap: .2rem; width: 100%; font: .8rem var(--mono); color: var(--muted); letter-spacing: .04em; }
 textarea, input { width: 100%; font: 14px/1.5 var(--mono); background: var(--leaf); color: var(--ink); border: 1px solid var(--rule); border-radius: 2px; padding: .55rem .7rem; }
