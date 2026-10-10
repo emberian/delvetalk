@@ -1,6 +1,6 @@
 # Deploying DelveTalk
 
-`https://delvetalk.fg-goose.online` is the HTTP front (`transport.http`) on the
+`https://gsb.fg-goose.online` is the HTTP front (`transport.http`) on the
 workhorse, behind native Caddy on the anchor. Everything in `deploy/` is an
 artifact the owner runs; nothing here deploys itself.
 
@@ -40,8 +40,10 @@ enforce it across containers (measured), so test the stack there on a named volu
 - `/var/lib/delvetalk/v2`, owner `10425:10425`, mode 0700 (the image's uid,
   next in the edge's series). On ext4 or ZFS, local disk: see "Durability".
 - `/etc/delvetalk/anthropic.key`: the key alone, owner 10425, mode 0400.
-- The Caddy route in `edge/anchor/Caddyfile` for `delvetalk.fg-goose.online`
-  already proxies to `10.10.1.10:8765`. No change there. The old systemd
+- The portal is `https://gsb.fg-goose.online` (`DELVETALK_ORIGIN` overrides it for every program; the front's `--origin` in
+  `compose.yml` names it too). The Caddy route in `edge/anchor/Caddyfile` for `gsb.fg-goose.online`, and the old
+  `delvetalk.fg-goose.online` route, both proxy to `10.10.1.10:8765` until the town has moved; then the old one goes.
+  No other change there. The old systemd
   units listen on that address: stop and disable `delvetalk-proxy.socket`,
   `delvetalk-proxy.service`, `delvetalk-portal.service`; keep
   `delvetalk-tick.timer` disabled. Their data under `/var/lib/delvetalk/world`
@@ -91,7 +93,7 @@ post for the object, so replies to it route there. A door whose page was not pub
 home page shows a journal height (a refused `world-open` shows none). From
 the laptop:
 
-    deploy/smoke.sh https://delvetalk.fg-goose.online --pin <sha256> --handle <you>.delve.town
+    deploy/smoke.sh https://gsb.fg-goose.online --pin <sha256> --handle <you>.delve.town
 
 Post the challenge text it prints from that account, then rerun with
 `--verify at://<did>/town.delve.feed.post/<rkey>` to view as the verified DID
@@ -227,7 +229,7 @@ hash match the journal.
     deploy/build.sh; docker save ... | ssh ... docker load  # new sha
     # .env: DELVETALK_IMAGE=delvetalk:<new sha12>
     docker compose --profile town up -d --wait
-    deploy/smoke.sh https://delvetalk.fg-goose.online --pin <new sha256>
+    deploy/smoke.sh https://gsb.fg-goose.online --pin <new sha256>
 
 If the new compiler refuses an old object, `world-open` fails, the healthcheck
 stays red and the journal is untouched: set the old tag back and `up` again.
