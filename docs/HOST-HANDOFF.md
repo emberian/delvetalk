@@ -741,7 +741,11 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 96. **Creations spend storage (host12; codex host 9).** `commit` hands `onAdmit` the created objects
    beside the updated ones, so `childLedger` lowers the storage a turn's sends and changes inherit by
    each created object's whole state as well as by its writes' growth; a factory chain cannot allocate
-   past its ledger. Test: `tests/test_deliveries.py` `test_a_created_child_spends_the_storage_its_sends_inherit`.
+   past its ledger. Replay re-derives the changes owed with the same updates and creations (a fix after
+   the playtest: replay passed the updates alone, so every turn that created an object and owed a
+   change, a planting watched by a Wake, refused a restart at its height). Tests:
+   `tests/test_deliveries.py` `test_a_created_child_spends_the_storage_its_sends_inherit`,
+   `tests/test_arrive.py` `test_a_world_with_an_arrival_a_subscription_and_a_change_reopens_as_written`.
 
 97. **`inspect` and `subscribe` read roots (host12; codex host 11).** The `inspect` Plan records the
    inspected object as a root at its version, so a turn that inspected, waited and commits after the

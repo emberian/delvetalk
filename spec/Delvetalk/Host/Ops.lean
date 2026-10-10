@@ -3190,7 +3190,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         | .ok l => ledgerOf l
         | .error _ => pure Ledger.start
       let usedTicks := (entry.getObjValAs? Nat "ticksUsed").toOption.getD 0
-      let owed := changesJson w principal intent entryLedger usedTicks sentCount updates p.allWrites
+      -- As `commit` handed `onAdmit` them: the updates and the creations (whose state the child
+      -- ledger spends, codex host 9).
+      let owed := changesJson w principal intent entryLedger usedTicks sentCount (updates ++ judged.creations) p.allWrites
       unless owed.lookup "changes" == (entry.getObjVal? "changes").toOption &&
           owed.lookup "unserved" == (entry.getObjVal? "unserved").toOption do
         throw "the changes owed to subscribers do not replay"
