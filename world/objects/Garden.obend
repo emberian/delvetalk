@@ -232,9 +232,11 @@ def fromFields(colour: String, seed: String, found: Held, context: Abi.Context, 
 def fromBounded(colour: String, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   let needs = Lists.filter(Lists.append(Lists.append(Form.Names.nil(), "colour"), "seed"), fn(n: String) -> Bool: if n == "colour" then colour == "" else seed == "")
   if Lists.length(needs) > 0n then held({principal: context.principal, colour: colour, seed: seed, needs: needs}, unclearCard(context, needs, colour, seed), found, state) else named(colour, seed, false, found, context, state)
+# A planting completed from lines or confirmed by a yes is planted by this turn's post, which
+# the bell's strike awaits a reply to.
 def named(colour: String, seed: String, confirm: Bool, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   match colourNamed(colour):
-    case some(c): settled(c.value, seed, "", confirm, found, context, state)
+    case some(c): settled(c.value, seed, context.inputOrigin.post, confirm, found, context, state)
     case none(_): refused(Why.badColour({}), found)
 # Not a planting: a yes or no to what waits, a blank reply, or prose.
 def answered(input: Card.Reply, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:

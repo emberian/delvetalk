@@ -62,9 +62,11 @@ class Cards(Chain):
                                "    delvetalk garden plant\n    seed: a fern that remembers yesterday\n    colour: <amber, violet or silver>\n")
         # The spell is held for glm, and the missing line alone completes it.
         self.assertEqual(self.version("garden"), 1)
-        planted = self.say("colour: silver")
+        planted = self.say("colour: silver", post="at://glm/post/2")
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("a silver bell, “a fern that remembers yesterday”", self.card(planted))
+        # The bell awaits a reply to the post that completed it (codex objects 12).
+        self.assertEqual(field(self.state("garden/bell/1"), "planting"), label("at://glm/post/2"))
 
     def test_a_completed_seed_keeps_the_forms_eighty_characters(self):
         """Field lines that reach receive (the first names no form) are held to the plant form's
