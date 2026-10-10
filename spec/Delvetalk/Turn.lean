@@ -416,16 +416,18 @@ def prepareStartEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) :
   return (current, plan, response, result)
 
 /-- `startActivity` on a held entry. -/
-def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (binding : Binding) (b : Budgets) :
+def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (binding : Binding) (b : Budgets)
+    (dictionary : Option Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary := none) :
     Except String Delvetalk.Turn.Outcome := do
   let (applied, plan, response, result) ← prepareStartEntry entry arguments
   let capacities : Limits := ⟨b.heap, b.stack⟩
   let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ applied.source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude (Dictionary.ofProgram entry.source.term) entry.pin binding applied.source.assumptions.bounds plan response result b capacities outcome
+  conclude (dictionary.getD (Dictionary.ofProgram entry.source.term)) entry.pin binding applied.source.assumptions.bounds plan response result b capacities outcome
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
-def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data) :
+def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data)
+    (dictionary : Option Dictionary := none) :
     Except String (DataBounds × Ty × Ty × Ty × State × State) := do
   let assumptions := entry.source.assumptions
   let (plan, response, result) ← activityShape assumptions (peelArrows Bounds.entryArrowDepth entry.type)
@@ -436,7 +438,7 @@ def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint
   unless checkpoint.principal == binding.principal do throw "checkpoint belongs to another principal"
   unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
   unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
-  let some state := decodeStateAny (Dictionary.ofProgram entry.source.term) checkpoint.tokens
+  let some state := decodeStateAny (dictionary.getD (Dictionary.ofProgram entry.source.term)) checkpoint.tokens
     | throw "checkpoint does not decode"
   unless value.conformsUnder assumptions.bounds response do throw "turn refused: response does not conform to the response type"
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
@@ -446,12 +448,14 @@ def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint
 open Minidregg.Theory.ObjectiveBendDemandCollect in
 /-- `resumeActivity` on a held entry. -/
 def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data)
-    (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
-  let (bounds, plan, response, result, state, resumed) ← prepareResumeEntry entry checkpoint binding value
+    (b : Budgets) (dictionary : Option Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary := none) :
+    Except String Delvetalk.Turn.Outcome := do
+  let dictionary := dictionary.getD (Dictionary.ofProgram entry.source.term)
+  let (bounds, plan, response, result, state, resumed) ← prepareResumeEntry entry checkpoint binding value (some dictionary)
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
   let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude (Dictionary.ofProgram entry.source.term) entry.pin binding bounds plan response result b capacities outcome
+  conclude dictionary entry.pin binding bounds plan response result b capacities outcome
 
 def wantsProfile (request : Json) : Bool := (request.getObjValAs? Bool "profile").toOption.getD false
 
