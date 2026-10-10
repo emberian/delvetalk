@@ -111,5 +111,20 @@ class WorkshopSource(Chain):
         self.assertIn("16384", str(forms))
 
 
+class ExpectedForm(Chain):
+    """A typeMismatch's `expected.form` is the card's declared form (the Garden's `seed: text 1..80`),
+    the bounds the spell path and the front's actions use, not the input type's default 0..1400."""
+
+    def test_the_expected_form_carries_the_declared_bounds(self):
+        from tests.test_chain import garden_seed
+        from tests.test_turn_world import nat
+        self.make("garden", closure("Garden"), garden_seed())
+        r = self.turn("garden", "plant", record(colour=label("amber"), seed=nat(3)), principal="glm")
+        out = r["receipt"]["outcome"]
+        self.assertEqual(out["class"], "typeMismatch", r)
+        fields = {f["name"]: f["kind"] for f in out["expected"]["form"]["fields"]}
+        self.assertEqual((fields["seed"]["min"], fields["seed"]["max"]), (1, 80), fields)
+
+
 if __name__ == "__main__":
     unittest.main()
