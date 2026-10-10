@@ -409,7 +409,8 @@ class Interpret(Reflection):
         r = self.ask()
         self.assertEqual(r["status"], "suspended", r)
         [item] = self.pending()
-        self.assertEqual(set(item), {"id", "object", "policy", "utterance", "offers"})
+        self.assertEqual(set(item), {"id", "object", "policy", "utterance", "offers", "attempts", "next"})
+        self.assertEqual((item["attempts"], item["next"]), (0, None))
         self.assertEqual(item["object"], "probe")
         self.assertEqual(item["utterance"], "ring it three times")
         self.assertEqual(item["policy"], {"model": "claude-test", "system": "Be literal.", "examples": "one example"})
@@ -445,8 +446,9 @@ class Interpret(Reflection):
     def test_a_failed_reply_resumes_unclear_naming_the_reason(self):
         self.ask()
         [item] = self.pending()
-        settled = self.settle(item, {"status": "failed", "reason": "rate", "detail": "429"})
-        self.assertIn("rate", settled["receipt"]["outcome"]["verdict"]["needs"][0])
+        # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF 5.107).
+        settled = self.settle(item, {"status": "failed", "reason": "refused", "detail": "400"})
+        self.assertIn("refused", settled["receipt"]["outcome"]["verdict"]["needs"][0])
         self.assertEqual(self.seen("probe"), "unclear")
 
     def test_a_reply_nobody_is_waiting_for_is_refused_and_a_retry_returns_the_same_receipt(self):

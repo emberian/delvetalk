@@ -294,7 +294,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
-          ("postQuota", toJson s.world.postQuota), ("locked", toJson true), ("sync", toJson s.sync.name),
+          ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world), ("locked", toJson true), ("sync", toJson s.sync.name),
           ("recompiledDifferently", toJson s.world.recompiledDifferently),
           -- What this process holds compiled (carried from world to world it opens).
           ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
@@ -303,6 +303,8 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
             | some f => r.setObjVal! "forkedFrom" f
             | none => r) |> fun r => interpretStatus s.world r (request.getObjValAs? String "principal").toOption))
       | "world-posted" => durable s reader (fun w => postedOp w request)
+      | "world-post-reserve" => durable s reader (fun w => postReserveOp w request)
+      | "world-post-release" => durable s reader (fun w => postReleaseOp w request)
       | "world-principal" => durable s reader (fun w => principalOp w request)
       | "world-arrive" => durable s reader (fun w => arriveWith w request)
       | "world-addressee" => return (session, addressee s.world request)
