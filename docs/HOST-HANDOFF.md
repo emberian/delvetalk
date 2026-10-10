@@ -308,7 +308,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    the entry, so a retry returns them identically); receipts in `delivered`, `resumed` and `world-deliver`'s
    `receipts` carry none, since the op's caller is not their addressee. Reads under authority: `world-receipt
    {principal, identity, of?}` reads identity (`of`, default the reader); `projectEntry` gives the identity's own
-   principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root}`, root
+   principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root, reason?}`, root
    `{object, version?, cid?}`; 5.22)
    and other entries as chain fields, identity, turn, outcome tag, the roots and writes of objects the reader may
    view and an `elided` count (no result, offers, sends, sources, checkpoint). `world-history` takes a principal
@@ -566,6 +566,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    module is a request error naming it, and nothing is journaled (the step is one durable write). GENESIS.md says when
    transport calls it. Tests: `tests/test_arrive.py` (a library of world/lib plus Avatar, Env, Wake and Place).
 
+32. **Law readings in refusals (host7).** `Object.readings` holds the artifact's `laws[]` readings (`artifactReadings`,
+   empty ones dropped) for the clauses that are still the package's: `makeObject` keeps those whose clause the effective
+   law (the package's, or a law text given at creation) leaves equal; an amendment keeps those whose clause it leaves
+   equal (by parsed `LawExpr`); a reprogram keeps them (the law is not code). Snapshots carry `readings` only when non-empty.
+   A refusal by a text-law clause with a reading journals `reason: "refused <name>: <reading>"` (`readingOf`), and
+   `publicRefusal` shows a `lawRefused` outcome's `reason` (the package's public text, never state), so the receipt, the
+   turn reply's `public` and other readers' projections say it. Bend-law (`law(old, new, request)`) clauses and the
+   metarule have no readings. Tests: `test_law.Readings`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -672,7 +681,7 @@ quotes the old metarule message.
 
 lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27);
 `world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29);
-another object's reprogram or amendment is dry-run against its law in the turn (5.30); `world-arrive` (5.31).
+another object's reprogram or amendment is dry-run against its law in the turn (5.30); `world-arrive` (5.31); law readings in refusals (5.32).
 Section 7's queue items 1 to 5 above are unchanged.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch

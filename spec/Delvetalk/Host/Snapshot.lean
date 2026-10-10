@@ -164,7 +164,9 @@ def body (w : World) (binary : String) : Except String Json := do
       ("version", toJson o.version), ("state", dataJson o.state), ("read", o.read.json),
       ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)] ++
       (if o.minted == 0 then [] else [("minted", toJson o.minted)]) ++
-      (if o.packet.isEmpty then [] else [("packet", toJson o.packet)])))
+      (if o.packet.isEmpty then [] else [("packet", toJson o.packet)]) ++
+      (if o.readings.isEmpty then [] else [("readings", Json.arr (o.readings.toArray.map fun (n, r) =>
+        Json.mkObj [("name", toJson n), ("reading", toJson r)]))])))
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
@@ -312,7 +314,8 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
         predicateReads := predicateReads
         supervisor := (o.getObjValAs? String "supervisor").toOption.getD ""
         minted := (o.getObjValAs? Nat "minted").toOption.getD 0
-        packet := (o.getObjValAs? String "packet").toOption.getD "" }
+        packet := (o.getObjValAs? String "packet").toOption.getD ""
+        readings := artifactReadings (Json.mkObj [("laws", (o.getObjVal? "readings").toOption.getD (Json.arr #[]))]) }
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do

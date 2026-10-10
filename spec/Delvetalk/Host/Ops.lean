@@ -722,6 +722,17 @@ def extendInputs (inputs : Json) (source : String) : Except String Json := do
   return Json.mkObj ([("modules", .arr (modules.push (Json.mkObj [("name", toJson name), ("source", toJson withSuper)]))),
     ("layers", toJson n)] ++ fields)
 
+/-- The readings an artifact's `laws` table gives (`[{name, reading}]`), the empty ones left out. -/
+def artifactReadings (artifact : Json) : List (String × String) :=
+  (((artifact.getObjVal? "laws").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun l =>
+    match l.getObjValAs? String "name", l.getObjValAs? String "reading" with
+    | .ok n, .ok r => if r.isEmpty then none else some (n, r)
+    | _, _ => none
+
+/-- What a refusal by law clause `name` of `o` says, when the package gave the clause a reading. -/
+def readingOf (o : Object) (name : String) : Option String :=
+  (o.readings.lookup name).map fun r => s!"refused {name}: {r}"
+
 /-- The method table and the Bend-law shape an artifact records. -/
 def artifactShape (artifact : Json) : Json × Bool × Bool :=
   let law := (artifact.getObjVal? "law").toOption.getD Json.null
@@ -1327,7 +1338,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
       let facts : Law.Facts := ⟨subject, caller, height, p.turn, next.pin, kind, method⟩
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
-        throw { cls := "lawRefused", clause, object := id }
+        throw { cls := "lawRefused", clause, object := id, reason := readingOf o clause }
     -- The Bend law, after the text admits: once for each ordinary change, with its argument.
     if o.predicate then
       let seen := (changes.filter (·.kind == 0)).foldl (fun (acc : List (String × Written)) c =>
@@ -1343,7 +1354,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error _ => throw (refuse "law syntax")
       let amender := ((changes.find? (·.kind == 2)).map (·.caller)).getD ""
       if let some message := amendable law p.principal amender height p.turn next.pin state then throw (refuse message)
-      next := { next with law, lawText := text }
+      -- A reading stays with its clause only while the amendment leaves that clause as it was.
+      next := { next with law, lawText := text,
+                          readings := o.readings.filter fun (n, _) => law.lookup n == o.law.lookup n }
       amendments := amendments ++ [Json.mkObj [("object", toJson id), ("old", toJson o.lawText), ("new", toJson text)]]
     out := out ++ [(id, { next with version := o.version + 1, state })]
   return { updates := out, reprograms, amendments,
@@ -1631,7 +1644,10 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     | none => if b.laws.isEmpty then defaultLaw creator else pure b.laws
   if let some message := amendable laws creator "" height 0 pin state then throw message
   let (methods, predicate, predicateReads) := artifactShape b.artifact
-  return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty,
+  -- Readings belong to the package's clauses; a law given at creation keeps those it left alone.
+  let readings := (artifactReadings b.artifact).filter fun (n, _) =>
+    (laws.lookup n).isSome && laws.lookup n == b.laws.lookup n
+  return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty, readings,
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet }, sources)
 
@@ -2261,7 +2277,10 @@ def publicRefusal (w : World) (reader : String) (entry : Json) : Json :=
   let cid := if viewable w reader id then (parseRootCids roots).lookup id else none
   let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [] ++
     (cid.map fun c => [("cid", toJson c)]).getD [])
+  -- A law's reading is the package's public text about the clause, never state.
+  let reading := if cls == "lawRefused" then (outcome.getObjValAs? String "reason").toOption else none
   Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", root)] ++
+    (reading.map fun r => [("reason", toJson r)]).getD [] ++
     (if cls == "unknownObject" then
       [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
     else []))
