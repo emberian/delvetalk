@@ -127,7 +127,8 @@ class Extend(Reflection):
         self.turn("c", "bump")
         self.assertEqual(self.count(), "10")
         theirs = self.turn("forge", "graft", record(target=label("c"), package=label(SECOND)), principal="kim")
-        self.assertEqual(theirs["status"], "refused", theirs)
+        self.assertEqual((theirs["status"], theirs["result"]), ("admitted", label("owner")), theirs)
+        self.assertNotIn("reprograms", theirs["receipt"]["outcome"])
 
     def test_an_extension_is_judged_by_the_objects_law_and_a_broken_layer_is_refused(self):
         stranger = self.extend(LAYER, who="mallory")

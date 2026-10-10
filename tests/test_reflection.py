@@ -557,10 +557,13 @@ class ReprogramAnother(Reflection):
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="c")["pin"], after)
 
     def test_the_default_law_refuses_a_stranger_reprogramming_through_a_forge(self):
-        self.make("c", PACKAGE, source_seed())
+        before = self.make("c", PACKAGE, source_seed())["receipt"]["outcome"]["pin"]
         r = self.rework("c", principal="kim")
-        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]),
-                         ("refused", "lawRefused", "owner"), r)
+        # The target's law is asked in the turn: the forge hears `refused {owner}`, never `reprogrammed`,
+        # and its own turn commits what it says about that.
+        self.assertEqual((r["status"], r["result"]), ("admitted", label("owner")), r)
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="c")["pin"], before)
+        self.assertNotIn("c", [w["object"] for w in r["receipt"]["outcome"]["writes"]])
 
     def test_a_law_naming_the_forge_admits_anyone_through_it_and_no_other_object(self):
         law = 'law forge: request.kind == 0 or request.caller == "forge" or request.subject == "ember"\n'
@@ -568,7 +571,7 @@ class ReprogramAnother(Reflection):
         self.make("other", FORGE, record(note=label("")))
         self.assertEqual(self.rework("c", principal="kim")["status"], "admitted")
         refused = self.rework("c", principal="kim", obj="other")
-        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "forge"))
+        self.assertEqual((refused["status"], refused["result"]), ("admitted", label("forge")), refused)
 
     def test_an_amend_of_another_object_is_judged_by_its_law(self):
         self.make("c", PACKAGE, source_seed())
@@ -577,7 +580,15 @@ class ReprogramAnother(Reflection):
         self.assertEqual((r["status"], r["result"]), ("admitted", label("amended")), r)
         self.assertIn("small", self.host.send(op="world-inspect", principal="ember", object="c")["law"])
         kim = self.turn("forge", "relaw", record(target=label("c"), law=label(text)), principal="kim")
-        self.assertEqual((kim["status"], kim["receipt"]["outcome"]["clause"]), ("refused", "owner"))
+        self.assertEqual((kim["status"], kim["result"]), ("admitted", label("owner")), kim)
+
+    def test_an_amendment_that_would_seal_out_its_proposer_is_answered_in_the_turn(self):
+        self.make("c", PACKAGE, source_seed())
+        sealed = 'law owner: request.kind == 0 or request.subject == "nobody"'
+        r = self.turn("forge", "relaw", record(target=label("c"), law=label(sealed)))
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertIn("law does not admit an amendment by its proposer ember", r["result"]["value"])
+        self.assertNotIn("nobody", self.host.send(op="world-inspect", principal="ember", object="c")["law"])
 
 
 class Maximum(Reflection):

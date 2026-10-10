@@ -544,6 +544,16 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `refused {clause: typeMismatch}`. The package loader's "import must name an earlier supplied module" now ends
    `: <path>` (`Package.modulesAndAsts`, a one-line edit in the kernel's file). Tests: `test_integration.Integration`.
 
+30. **Another object's law is asked in the turn (host7).** A `reprogram`/`extend` or `amend` Plan naming an object other
+   than the running one records the target as a root and dry-runs that change alone through `judge` (`dryChange`: the
+   target's law text with kind 1 or 2, `request.caller` = the proposer, the frame's subject or grantor; a reprogram's
+   compile, migration and state type; an amendment's syntax and metarule), at the version read. A refusal is answered
+   `refused {clause}` (the class when there is no clause; the metarule's message as the clause) and nothing is staged, so
+   the proposer commits what it says about the refusal and never offers "Reprogrammed X" in a turn the target's law
+   would refuse. The commit still judges the whole turn (the dry run cannot see a change the same turn makes later). A
+   change of the running object itself is judged only at the commit, as before. Tests: `test_reflection.ReprogramAnother`,
+   `test_workshop.Workshop`, `test_extend.Extend`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -649,7 +659,8 @@ with `opener`; `transport/model.py`'s comment ("the host fits raw") is now the o
 quotes the old metarule message.
 
 lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27);
-`world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29).
+`world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29);
+another object's reprogram or amendment is dry-run against its law in the turn (5.30).
 Section 7's queue items 1 to 5 above are unchanged.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch

@@ -510,6 +510,22 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   | .error "budget" => throw (.budget "ticks")
   | .error e => evaluation s!"handle refused: {e}"
 
+/-- The clause that would refuse a reprogram (kind 1) or amendment (kind 2) of `id`, another
+    object than the running one, proposed by `proposer` in the running frame: the target's law
+    (text and metarule; a reprogram's compile and migration too) judges that change alone, at the
+    version the turn reads, now. `none` when it would admit, and always for the running object
+    itself, whose change the commit judges with the rest of the turn. `change` carries the
+    proposal's `programs`/`layered` or `laws`. -/
+def dryChange (w : World) (s : TurnState) (self id : String) (version : Nat) (proposer : String) (kind : Nat)
+    (change : Proposal) : Option String :=
+  if id == self then none else
+  let written : Written := { caller := proposer, kind, edits := [], method := s.method, via := s.via, argument := s.argument }
+  let p : Proposal := { change with principal := s.principal, intent := s.intent, roots := [(id, version)],
+                                    writes := [(id, [written])], turn := w.height + 1 }
+  match judge w (w.height + 1) p with
+  | .ok _ => none
+  | .error r => some (r.clause.getD r.cls)
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -786,6 +802,16 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     else match programFor s.world o source migration extend with
       | .error (clause, _) => refusedWith bounds responseType clause
       | .ok prog =>
+        -- Another object's law is asked now, so the proposer never hears `reprogrammed` in a turn
+        -- whose commit that law refuses.
+        -- The verdict depends on the target as read: it is a root whatever the answer.
+        recordRoot id o.version
+        let world := cacheProgram s.world o source migration prog extend
+        let change : Proposal := { principal := s.principal, intent := s.intent, roots := [], writes := [],
+                                   programs := [(id, (source, migration))], layered := if extend then [id] else [] }
+        match dryChange world s self id o.version proposer 1 change with
+        | some clause => refusedWith bounds responseType clause
+        | none =>
         recordRoot id o.version
         if !(← ensureWrite id proposer 1) then refusedWith bounds responseType "capacity"
         else
@@ -804,6 +830,11 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     else match parseLawText text with
       | .error _ => refusedWith bounds responseType "law syntax"
       | .ok _ =>
+        recordRoot id o.version
+        let change : Proposal := { principal := s.principal, intent := s.intent, roots := [], writes := [], laws := [(id, text)] }
+        match dryChange s.world s self id o.version proposer 2 change with
+        | some clause => refusedWith bounds responseType clause
+        | none =>
         recordRoot id o.version
         if !(← ensureWrite id proposer 2) then refusedWith bounds responseType "capacity"
         else
