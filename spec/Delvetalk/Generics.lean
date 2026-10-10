@@ -463,6 +463,77 @@ def inferArguments (callee : Callee) (args : List IType) (expected : IType) : Li
   for (p, a) in callee.params.zip args do σ := unify true σ p a
   return σ
 
+/-! ## World calls -/
+
+/-- The world's protocol: the module named `World` and its `protocol world:` methods. -/
+def worldProtocol : M (Option (Nat × List ObjectiveBendSurface.Field)) := do
+  let sources := (← get).sources
+  for i in [:sources.size] do
+    if sources[i]!.module.name == "World" then
+      for d in sources[i]!.ast.decls do
+        if let .protocol "world" methods _ _ := d then return some (i, methods)
+  return none
+
+/-- `world` as the reserved receiver: not a local, a declaration or an import alias. -/
+def isWorldReceiver (site : Site) (names : List String) : Expr → M Bool
+  | .var "world" _ => do
+    if names.contains "world" then return false
+    if (← originModule site.origin).imports.any (·.importAlias == "world") then return false
+    return (← resolveQuiet site.origin "world").isNone
+  | _ => pure false
+
+/-- A world call's method, its type arguments as written (if any) and its argument. -/
+def worldCallOf (site : Site) (names : List String) : Expr → M (Option (String × Option (List String) × List Expr))
+  | .call (.specialize (.member receiver method _) types _) args _ => do
+    if ← isWorldReceiver site names receiver then return some (method, some types, args) else return none
+  | .call (.member receiver method _) args _ => do
+    if ← isWorldReceiver site names receiver then return some (method, none, args) else return none
+  | _ => pure none
+
+/-- A world method's input and result type texts (its type is `INPUT -> RESULT`). -/
+def worldSignature (f : ObjectiveBendSurface.Field) : String × String :=
+  match split f.type "->" with
+  | input :: rest => (trim input, trim (String.intercalate "->" rest))
+  | [] => (f.type, "")
+
+/-- The world method `method` of the package's protocol, refused by name when absent. -/
+def worldMethod (method : String) : M (Nat × ObjectiveBendSurface.Field) := do
+  let some (origin, methods) ← worldProtocol
+    | throw ("refused (world-call): world." ++ method ++ " is a call of the world's protocol, which no module " ++
+        "named World in this package declares (`protocol world:`); import ./World.obend")
+  let some f := methods.find? (·.name == method)
+    | throw ("refused (world-call): the world has no method " ++ method ++ "; its methods are " ++
+        ", ".intercalate (methods.map (·.name)))
+  return (origin, f)
+
+/-- The type arguments of a world call written without `::<...>`: a method whose input is
+exactly its one type parameter (`write<E>(E)`, `judge<E>(E)`) takes the argument's type. -/
+def worldArgumentsOf (synth : Expr → M IType) (method : String)
+    (f : ObjectiveBendSurface.Field) (args : List Expr) : M (List IType) := do
+  let (input, _) := worldSignature f
+  let cannot : M (List IType) := throw ("refused (world-call): cannot infer the type argument" ++
+    (if f.typeParameters.length > 1 then "s " else " ") ++ ", ".intercalate f.typeParameters ++ " of world." ++
+    method ++ "; write world." ++ method ++ "::<" ++ ", ".intercalate f.typeParameters ++ ">(...)")
+  match f.typeParameters, args with
+  | [], _ => return []
+  | [p], [arg] =>
+    if trim input != p then return ← cannot
+    let t ← synth arg
+    if !t.complete then return ← cannot
+    return [t]
+  | _, _ => cannot
+
+/-- `write {...}` (`ObjectiveBendParse.writeMarker`) in its definition's dialect: in an
+`Activity<R>` the world call `world.write(edits)`, else the Plan
+`Plan.write({object, edits})`. -/
+def writeLowered (site : Site) : Expr → M (Option Expr)
+  | .call (.var "$write" vs) [.record fields rs] span => do
+    match (← site.result), fields.lookup "edits" with
+    | .applied "Activity" [_], some edits =>
+      return some (.call (.member (.var "world" vs) "write" vs) [edits] span)
+    | _, _ => return some (.call (.member (.var "Plan" vs) "write" vs) [.record fields rs] span)
+  | _ => pure none
+
 /-- The type an expression synthesizes, without rewriting or instantiating anything.
 `locals` holds each local's type, computed on demand. -/
 partial def synthI (site : Site) (locals : List (String × M IType)) (e : Expr) : M IType := do
@@ -503,6 +574,14 @@ partial def synthI (site : Site) (locals : List (String × M IType)) (e : Expr) 
         return c.params.foldr .arrow c.result
     fieldOf (← synthI site locals target) n
   | .call callee args _ =>
+    if let some (method, given, args) ← worldCallOf site names e then
+      let (origin, f) ← worldMethod method
+      let types ← match given with
+        | some ts => ts.mapM (itypeAt site)
+        | none => worldArgumentsOf (synthI site locals) method f args
+      if types.length != f.typeParameters.length then return .unknown
+      return ← itypeOf origin (f.typeParameters.zip types) (worldSignature f).2
+    if let some lowered ← writeLowered site e then return ← synthI site locals lowered
     if let some name := path names callee then
       if (← resolveQuiet site.origin name).isNone then
         if name == "perform" then
@@ -706,6 +785,29 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
           let lowered := Expr.call (.member planExpr "viewAs" vspan)
             [.record [("object", .member arg "object" span), ("as", .str label span)] span] span
           return ← rewriteExpr fuel site locals expected lowered
+    if let some lowered ← writeLowered site e then
+      return ← rewriteExpr fuel site locals expected lowered
+    if let some (method, given, args) ← worldCallOf site names e then
+      let (origin, f) ← tryCatch (worldMethod method) fun why => throw (why ++ " (line " ++ toString e.span.line ++ ")")
+      let at_ := " (line " ++ toString e.span.line ++ ")"
+      let [arg] := args | throw ("refused (world-call): world." ++ method ++ " takes exactly one argument" ++ at_)
+      let (input, result) := worldSignature f
+      let (types, itypes) ← match given with
+        | some written =>
+          if written.length != f.typeParameters.length then
+            throw ("refused (world-call): world." ++ method ++ " takes " ++ toString f.typeParameters.length ++
+              " type argument" ++ (if f.typeParameters.length == 1 then "" else "s") ++ ", not " ++ toString written.length ++ at_)
+          pure (← written.mapM (typeOf fuel site.origin site.bindings), ← written.mapM (itypeAt site))
+        | none =>
+          let itypes ← tryCatch (worldArgumentsOf (synthI site locals) method f args) fun why => throw (why ++ at_)
+          pure (← itypes.mapM (toG fuel), itypes)
+      let target := site.target
+      let inputShown ← render target (← typeOf fuel origin (f.typeParameters.zip types) input)
+      let resultShown ← render target (← typeOf fuel origin (f.typeParameters.zip types) result)
+      spendString inputShown
+      spendString resultShown
+      let arg ← rewriteExpr fuel site locals (itypeOf origin (f.typeParameters.zip itypes) input) arg
+      return .worldCall method inputShown resultShown arg (match e with | .call _ _ sp => sp | _ => e.span)
     if let .call (.specialize target types _) args span := e then
       if path names target == some "Data.of" && (← resolve site.origin "Data").isNone then
         let [typeArgument] := types | throw "Data.of takes exactly one type argument"
@@ -807,7 +909,7 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
       let value ← rewriteExpr fuel site locals (if trim t == "_" then pure .unknown else declared) v
       let body ← rewriteExpr fuel site ((n, declared) :: locals) expected b
       return .letE n (← rewriteType fuel site t) value body s
-    | .specialize .. | .dataOf .. => return e
+    | .specialize .. | .dataOf .. | .worldCall .. => return e
 
 def rewriteBody : Nat → Site → List (String × M IType) → M IType → Body → M Body
   | 0, _, _, _, _ => throw "generic AST nesting capacity"
@@ -891,7 +993,11 @@ def rewriteDecl : Nat → Site → List (String × M IType) → Decl → M Decl
     | .protocol name methods shown span =>
       -- The implementer's State, Plan and Response stay names (the elaborator binds them).
       let free := { site with bindings := ["State", "Plan", "Response"].map (fun n => (n, GType.atom n)) ++ site.bindings }
-      let methods ← methods.mapM fun f => do return { f with type := ← rewriteType fuel free f.type }
+      -- A method with its own type parameters (the world's, `view<S>(...)`) is
+      -- instantiated at each call (`lowerWorldCall`), so its text stays as written.
+      let methods ← methods.mapM fun f => do
+        if !f.typeParameters.isEmpty then return f
+        return { f with type := ← rewriteType fuel free f.type }
       return .protocol name methods shown span
 end
 
@@ -907,7 +1013,9 @@ def exprGenerics : Expr → Bool
   | .var .. | .nat .. | .bool .. | .str .. | .unit .. => false
   | .record fs _ => fieldsHaveGenerics fs
   | .extend i fs _ => (exprGenerics i) || fieldsHaveGenerics fs
+  | .member (.var "world" _) _ _ => true
   | .member t _ _ => (exprGenerics t)
+  | .call (.var "$write" _) _ _ => true
   | .call c args _ => (exprGenerics c) || listHasGenerics args
   | .compose specs _ => listHasGenerics specs
   | .fix spec inherited _ => (exprGenerics spec) || (exprGenerics inherited)
@@ -915,7 +1023,7 @@ def exprGenerics : Expr → Bool
   | .binary _ l r _ => (exprGenerics l) || (exprGenerics r)
   | .ite c t f _ => (exprGenerics c) || (exprGenerics t) || (exprGenerics f)
   | .letE _ _ v b _ => (exprGenerics v) || (exprGenerics b)
-  | .dataOf _ v _ => (exprGenerics v)
+  | .dataOf _ v _ | .worldCall _ _ _ v _ => (exprGenerics v)
 def fieldsHaveGenerics : List (String × Expr) → Bool
   | [] => false
   | (_, v) :: rest => (exprGenerics v) || fieldsHaveGenerics rest
@@ -972,6 +1080,7 @@ def exprStrings : Expr → List String
   | .letE n t v b _ => n :: t :: (exprStrings v) ++ (exprStrings b)
   | .specialize t types _ => (exprStrings t) ++ types
   | .dataOf t v _ => t :: (exprStrings v)
+  | .worldCall m i r v _ => m :: i :: r :: (exprStrings v)
 def fieldStrings : List (String × Expr) → List String
   | [] => []
   | (n, v) :: rest => n :: (exprStrings v) ++ fieldStrings rest
@@ -1073,13 +1182,13 @@ def run (sources : Array Source) : Except String Output := do
         if mine.any (·.2.1 == i.declarationName) then
           let some view := cases.find? (·.name == "view") | continue
           if !cases.any (·.name == "viewAs") then
-            widened := widened.set! index { i with ast := some (.sum name (cases ++ [⟨"viewAs", view.type ++ " with {as: String}", view.span⟩]) ps span) }
+            widened := widened.set! index { i with ast := some (.sum name (cases ++ [⟨"viewAs", view.type ++ " with {as: String}", view.span, []⟩]) ps span) }
         else if i.declarationName == "Response" then
           let some viewed := cases.find? (·.name == "viewed") | continue
           let mut extra : List ObjectiveBendSurface.Field := []
           for (_, _, label, shown) in mine do
             if !(cases ++ extra).any (·.name == label) then
-              extra := extra ++ [⟨label, "{version: Nat, state: " ++ shown ++ "}", viewed.span⟩]
+              extra := extra ++ [⟨label, "{version: Nat, state: " ++ shown ++ "}", viewed.span, []⟩]
           widened := widened.set! index { i with ast := some (.sum name (cases ++ extra) ps span) }
       modify fun s => { s with instances := widened }
     let state ← get

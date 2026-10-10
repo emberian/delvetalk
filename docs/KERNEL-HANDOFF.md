@@ -342,6 +342,35 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
+## 17. World calls (WHOLENESS §1, lane/kernel6)
+
+- Day 1. `Ty.isPlanUnder` admits a record row of data (a message) beside a variant;
+  `Ty.performResponse plan T` is `Data` for a record plan, else `T`, and
+  `PartialTyping.perform` concludes `computation plan (plan.performResponse T) T`, the checker
+  taking `T` from the perform's annotation codomain. A sum-Plan activity is unchanged
+  (`sum_plan_response_unchanged`); `message_sites_accepted` sequences a view and a write with
+  different result types in one `computation Message Data Nat`;
+  `message_then_sum_plan_refused` keeps the dialects apart. Surface `Activity<A>` is
+  `computation Message Data A`, `Message` the record of the module named `World` ("…yields
+  World.Message, but no module named World is in this package"). The `protocol world:`
+  lines are signature form `name<Ps>(INPUT) -> RESULT` (`protocolSignature`; one input,
+  refused by name otherwise), stored as `Field {name, type := "INPUT -> RESULT",
+  typeParameters}`; the generics pass leaves such methods unrewritten and instantiates them
+  at each call. `world.X::<T>(arg)` / `world.X(arg)` (`world` not a local, declaration or
+  alias) lowers in the generics pass (`worldCallOf`, `worldMethod`) to the Surface node
+  `worldCall method input result arg` with both types rendered for the calling module; `T`
+  is inferred only when the input is exactly the one type parameter (`write<E>`,
+  `judge<E>`). The elaborator makes it `ATerm.perform Message RESULT {object: {world: "",
+  object: "world"}, method, argument: toData INPUT arg}`, the argument injected where the
+  input has `Data` fields (`coerceGo`), else refused with `expected`/`found`. `isPerform`
+  accepts it, so `let label(x) = world.X(...)` and the shared-position rules hold.
+  `write {...}` emits the marker callee `$write` (`writeMarker`); the generics pass makes it
+  `world.write(edits)` in an `Activity<R>` definition, `Plan.write({object, edits})`
+  otherwise. Surface `perform` in an `Activity<R>` and a world call in an
+  `Activity<P, R, A>` are refused by name. Old-dialect packets are byte-identical (pins: 0
+  recompiled). Test: `tests/test_world_calls.py` (its `WORLD` is a stand-in for the objects
+  lane's World.obend).
+
 ## 16. Queue for the successor (lane/kernel5 at 9a29080, after foundation b47046b)
 
 Done on this lane and committed (each green on hbox, details in §14 and §15): typed views
