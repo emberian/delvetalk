@@ -406,6 +406,8 @@ class Handler(BaseHTTPRequestHandler):
             {'error': 'hostRequest', 'unknown': 'unknown', 'denied': 'denied', 'ambiguous': 'ambiguous'}.get(status)
         if cls:  # the host said no, or was not there: the envelope, over the host's own words
             return self.fail(cls, reply.get('message'), reply.get('hint'), links, body, acts)
+        if self.browser():
+            return self.html(200, pages.rendered(getattr(self, 'kind', 'reply'), body, links or {}, *((self.who['handle'], self.who['did']) if getattr(self, 'who', None) else (None,))))
         self.reply(200, canonical({**body, '_links': {'self': link(self.path), **(links or {})}, **({'_actions': acts} if acts else {})}))
 
     def cookie(self):
@@ -454,6 +456,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail('unknownRoute', f'no route at {path}', ROUTE_HINT)
         if name == 'guide' and 'application/json' not in (self.headers.get('Accept') or ''):
             return self.reply(200, self.server.guide(), 'text/plain', [('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
+        if name == 'api' and self.browser():
+            return self.html(200, pages.catalogue(self.server.catalogue(self.path), None))
         if name in ('guide', 'api'):
             return self.reply(200, canonical(self.server.catalogue(self.path)), headers=[('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
         if name == 'examples':
@@ -497,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
         if who is None:
             return self.fail('unauthenticated', hint='POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>',
                              links={'hint': link(PREFIX + '/challenge')})
-        wait = self.server.limited(credential)
+        wait, self.kind, self.who = self.server.limited(credential), kind, who
         if wait:
             return self.fail('rateLimited', f'more than {RATE} requests per {WINDOW} seconds', links={'hint': link(PREFIX + '/me')},
                              headers=[('Retry-After', str(wait))])
@@ -605,6 +609,8 @@ class Handler(BaseHTTPRequestHandler):
         AT Protocol's shape, verbatim: its `cursor` is its control."""
         error = {'status': 'refused' if code == 403 else 'error', 'class': body['error'],
                  '_links': {'self': link(self.path), 'api': link(PREFIX + '/api')}}
+        if self.browser():
+            return self.html(code, pages.refusal(f"{code} {body['error']}", None, {**body, **error}), headers)
         self.reply(code, canonical({**body, **error}), headers=headers)
 
     def client_ip(self):
@@ -641,10 +647,9 @@ class Handler(BaseHTTPRequestHandler):
     def me(self, credential, who):
         heap = self.server.heaps.get(who['did'], create=False)
         count = heap.send({'op': 'world-status'}).get('objects') if heap else 0
-        self.reply(200, canonical({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'],
-                                   'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))},
-                                   'heapObjects': count, '_links': {'self': link(self.path), 'world': link(PREFIX + '/world'),
-                                   'heap': link(PREFIX + '/heap/world'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')}}))
+        self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'heapObjects': count,
+                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))}},
+                    links={'world': link(PREFIX + '/world'), 'heap': link(PREFIX + '/heap/world'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')})
 
     def run_repl(self, principal, kind='repl'):
         data = self.body()

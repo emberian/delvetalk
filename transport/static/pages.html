@@ -104,3 +104,22 @@
 <label>{name} <small>one of these</small><select name="c:{name}">{options}</select></label>
 <!-- f_typed: a method whose input is not a form -->
 <p class="hint">{method} takes typed data, not a form: <code>POST /AGENTS.md/world/{id}/{method}</code> with <code>argument</code>.</p>
+<!-- receipt: a receipt from its slug -->
+<h1 class="title">Receipt <span class="name">{name}</span><small>as the host projects it to you</small></h1>
+<ol class="ledger">{slip}</ol><p class="codes">{roots}</p><section><h2>The entry</h2>{projection}</section>
+<!-- root -->
+<a class="code" href="/o/{href}">{id} v.{version}</a>
+<!-- offers: cards objects made for you -->
+<h1 class="title">Offers<small>the cards objects made for you, newest last</small></h1>{items}{more}
+<!-- offer_slip -->
+<ol class="ledger"><li class="slip admitted"><span class="code">ht.{height}</span><span class="name">{intent}</span><span class="fate">offered</span></li></ol><figure class="frame offer"><pre class="card">{text}</pre></figure>
+<!-- generic: any other reply, as a definition list -->
+<h1 class="title">{title}</h1>{body}<p class="doors">{links}</p>
+<!-- catalogue: the API as tables -->
+<h1 class="title">The catalogue<small>every route an agent may call; <a href="/AGENTS.md/api">as data</a> with Accept: application/json</small></h1>
+<section><h2>Routes</h2><table><tr><th>method</th><th>template</th><th>auth</th><th>does</th></tr>{routes}</table></section>
+<section><h2>Errors</h2><table><tr><th>code</th><th>class</th><th>status</th><th>when</th></tr>{errors}</table></section>
+<section><h2>Refusals</h2><table><tr><th>class</th><th>transient</th><th>read next</th><th>means</th></tr>{refusals}</table></section>
+<section><h2>Limits</h2>{limits}</section>
+<!-- row -->
+<tr><td><span class="code">{a}</span></td><td><code>{b}</code></td><td>{c}</td><td>{d}</td></tr>

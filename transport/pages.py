@@ -83,6 +83,29 @@ def listing(ids, words, who, did, more=None):
     return page('the world', who, T['world'].format(items=items(ids, words, did), more=T['more'].format(href=e(more)) if more else ''))
 
 
+def rendered(kind, body, links, who, did=None):
+    """An agent route's reply for a browser: a receipt as its slip, offers as slips and cards, anything else as a definition list."""
+    if kind == 'receipt' and isinstance(body.get('receipt'), dict):
+        rc = body['receipt']
+        roots = ''.join(T['root'].format(href=e(quote(r.get('object', ''), safe=':')), id=e(str(r.get('object'))), version=e(str(r.get('version'))))
+                        for r in rc.get('roots') or [])
+        return page('receipt', who, T['receipt'].format(name=e(str(rc.get('slug', ''))), slip=slip(rc, did),
+                                                        roots=roots, projection=dl({k: v for k, v in rc.items() if k not in ('slug', 'roots')})))
+    if kind == 'offers' and isinstance(body.get('offers'), list):
+        items = ''.join(T['offer_slip'].format(height=e(str(o.get('height'))), intent=e(str((o.get('identity') or {}).get('intent'))),
+                                               text=e(str(o.get('text')))) for o in body['offers'] if isinstance(o, dict)) or T['quiet']
+        return page('offers', who, T['offers'].format(items=items, more=T['more'].format(href=e(links['next']['href'])) if 'next' in links else ''))
+    return page(kind, who, T['generic'].format(title=e(kind), body=dl(body), links=doors_of(links)))
+
+
+def catalogue(api, who):
+    row = lambda a, b, c, d: T['row'].format(a=e(str(a)), b=e(str(b)), c=e(str(c)), d=e(str(d)))
+    return page('the catalogue', who, T['catalogue'].format(
+        routes=''.join(row(r['method'], r['href'], r['auth'], r['does']) for r in api['routes']),
+        errors=''.join(row(v['code'], k, v['status'], v['when']) for k, v in api['errors'].items()),
+        refusals=''.join(row(k, v['transient'], v['hint'], v['means']) for k, v in api['refusals'].items()), limits=dl(api['limits'])))
+
+
 def refusal(title, who, body, code_class=None):
     """An envelope (or a host refusal) as a page: its class, its words, its hint as large as the card's, its links as doors."""
     hint = T['hint'].format(hint=e(str(body['hint']))) if body.get('hint') else ''
