@@ -66,11 +66,11 @@ The gate as restated (FOUNDATION §11), and where run 12 reads each item:
 | --- | --- | --- |
 | 1. glm's planting grows a bell | kind/bell has made the bell, and its planting post `3mxghe7w33c2f` is recorded for it, before the replies | "Planting posts recorded" |
 | 2. a `rain:` reply to a planting post is written to that bell | kimik3's `3mxghh4qis22f` writes gemini's bell | the section 10 hour, step 4 |
-| 3. a second `cistern:` line is refused `requiredAbsence`, naming its root | the probe pair's second line | spell shapes, last row (fails on ad785ec: see below) |
+| 3. a second `cistern:` line digs garden/cistern/2, and the receipt names it | the probe pair: garden/cistern/1, then garden/cistern/2 | spell shapes, last two rows |
 | 4. the four anthology lines reach a card by the reach rule and are written | four `write`s, two by glm and one each by gemini and kimik3; reach as below | the anthology's lines; step 6 |
 | 5. the nine-post burst admits | nine suspend, settle and plant | burst probe |
 | 6. cards show handles | the handle probe; no `did:plc:` or `bafy` in any card or reply | handle probe; cards |
-| model calls | **43**, the reach rule as d02c60f measured it; the rule returns 81 posts | "archived posts the reach rule returned", verdicts |
+| model calls | **70**: every reached post that is not a spell goes to hob (FLEX §2); the rule returns 81 posts, none asked twice | "archived posts the reach rule returned", verdicts |
 | replay from a snapshot | every cut resumes and holds the straight replay's state; `verify` refuses none | replay from a snapshot |
 
 Its row for FOUNDATION §11's table: `| 12 | <foundation> | <turns> | <interpretations> | <height,
@@ -88,11 +88,11 @@ at hbox load 27 to 33, with a peak of 219 MB in its 3 GB cgroup.
 | --- | --- |
 | 1. glm's planting grows a bell | **pass.** garden/bell/2 is made by kind/bell, and its post `3mxghe7w33c2f` is recorded for it at 07:31. All three plantings are recorded again (07:27, 07:31, 07:32). |
 | 2. a `rain:` reply to a planting post is written to that bell | **pass.** kimik3's `3mxghh4qis22f` reaches garden/bell/3 by reply address and writes it. |
-| 3. a second `cistern:` line is refused `requiredAbsence` | **fails.** The garden digs through kind/cistern, and each dig makes the next `garden/cistern/<n>`. The probe pair digs garden/cistern/1, then garden/cistern/2. Owner: objects. Either one cistern a garden, with Garden `cistern` refusing by name once kind/cistern has made one under it (or a law clause over the garden's made set), or this item is restated to what kinds make. |
+| 3. a second `cistern:` line digs garden/cistern/2, and the receipt names it (restated by the owner, 6efd489) | **pass.** The garden digs through kind/cistern, and each dig makes the next `garden/cistern/<n>`: the probe pair digs garden/cistern/1, then garden/cistern/2, each named in its result and its offer. A garden holds many cisterns under the cut. The old item's `requiredAbsence` refusal was the prototype's, not a folkway. |
 | 4. the four anthology lines reach a card by the reach rule and are written | **pass, 4 of 4,** each line reaching as the transport lane measured at d02c60f. gemini's `3mxghd6kvo22f` reaches the directory by its field lines (reach `fields`; its thread's card is the directory). glm's `3mxghgacmlc2f` and `3mxghjmm6zc2f` and kimik3's `3mxghjyx4pk2f` reach the anthology's card by the word ANTHOLOGY (reach `door`). That card has no policy, so it hands the words to the directory (reach `delivery`). hob's `delvetalk anthology write / text: …` is fitted against the directory's door forms, and the line is written: #1 gemini, #2 glm, #3 glm (guestbook), #4 kimik3, none admitted yet. |
 | 5. the nine-post burst admits | **pass.** The probe now states reach `mention`. Without a reach the host answers prose `unclear: not addressed` at once (HOST-HANDOFF 118), so the probe had been "admitting" nine turns that planted nothing. Now nine suspend, nine settle, and nine plant through kind/bell. |
 | 6. cards show handles | **pass** (handle probe). |
-| model calls, target 43 | **70, not met.** The next subsection explains the difference. |
+| model calls, target 70 (restated by the owner, 6efd489) | **70, met.** The next subsection explains why 43 was the target before FLEX. |
 
 Rechecked on foundation 907d4bb after host14 merged (reach on handed-on replies, replay
 edition 3, minting past held ids), with a binary built from that head in a lane directory. Every
@@ -137,13 +137,11 @@ post that is not a spell to hob. The breakdown of the 70 by reach:
 | `fields` | 10 |
 | `mention` | 8 |
 
-So 43 can be met again only by asking fewer of the reached posts, and that contradicts FLEX §2
-as written. Two other targets are coherent:
-- 70, FLEX's "every reached non-spell", with the property `tests/test_archive.py` now asserts:
-  81 reached, none asked twice, none asked without reaching;
-- a narrower reach rule.
-
-That is the owner's call. test_archive keeps 43 as an expected failure that names the 27.
+So 43 could be met again only by asking fewer of the reached posts, and that contradicts FLEX §2
+as written. The owner chose FLEX: the target is **70**, with the rule that produced it (every
+reached post that is not a spell goes to hob; the mention gate is gone). 43 stays on record as
+the count before FLEX. `tests/test_archive.py` expects 70, and asserts that the 81 reached
+posts are each asked at most once and that nothing is asked without reaching.
 OBJECTS-HANDOFF's open item "a handed-on reply costs a reading whatever its reach" is not the 27:
 each of the 16 `delivery` readings answers a post that did reach a card (a bell by reply address,
 or the anthology by its door word).
