@@ -1,7 +1,9 @@
 """HTML for people. The markup is transport/static/pages.html (named sections), the look transport/static/style.css;
-no script is needed to read. Python fills the sections with escaped host facts and decides nothing."""
+no script is needed to read. Python fills the sections with escaped host facts and decides nothing. `text` reads any
+page back off its own markup as plain text, so the two views cannot drift."""
 import re
 from html import escape as e
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
 
@@ -119,3 +121,132 @@ def refusal(title, who, body, code_class=None):
     hint = T['hint'].format(hint=e(str(body['hint']))) if body.get('hint') else ''
     return page(title, who, T['refusal'].format(cls=e(str(code_class or body.get('class') or body.get('status'))), title=e(title),
                                                 message=e(str(body.get('message') or f"no object {title} that you may see")), hint=hint, links=doors_of(body.get('_links')) or T['link'].format(href='/', rel='the ledger')))
+
+
+VOID = {'input', 'br', 'img', 'meta', 'link', 'hr', 'source', 'wbr', 'col', 'area', 'base'}
+BLOCKS = {'header', 'main', 'footer', 'nav', 'section', 'div', 'p', 'figure', 'figcaption', 'aside', 'details', 'summary', 'h1', 'h2', 'h3',
+          'li', 'tr', 'dt', 'ol', 'ul', 'dl', 'table', 'br'}
+
+
+class Plain(HTMLParser):
+    """A page as plain text, read off the markup the browser gets: each link a door (`[ GARDEN ] /play/garden`, `label <href>`),
+    each form its method, action and fields as spell slots, each card, spell, law and listing verbatim between fences, each
+    receipt its ticket line (stamp, clause, height, slug, who), the quiet line as it stands. Decoration (svg, CSS marks) is not text."""
+    def __init__(self):
+        super().__init__()
+        self.out, self.bufs, self.lists, self.skip, self.form, self.prefix, self.options, self.spans = [], [['line', '', {}]], [], 0, None, '', [], []
+
+    def add(self, text):
+        self.bufs[-1][1] += text
+
+    def soft(self):
+        if self.bufs[-1][1] and not self.bufs[-1][1].endswith(' '):
+            self.add('  ')
+
+    def flush(self):
+        text = re.sub(' {3,}', '  ', self.bufs[0][1]).strip()
+        if text:
+            self.out.append('  ' * max(0, len(self.lists) - 1) + self.prefix + text)
+        self.bufs[0][1], self.prefix = '', ''
+
+    def emit(self, *lines):
+        self.flush()
+        self.out += [*lines, '']
+
+    def control(self, line):
+        self.form.append('  ' + line) if self.form is not None else (self.soft(), self.add(line))
+
+    def slot(self, a, value=''):
+        """A control as a spell's line: `name: value` when it is fixed, `name: <what goes here>` when it is yours to fill."""
+        name, label = a.get('name', ''), next((b[1] for b in reversed(self.bufs) if b[0] == 'label'), '').strip()
+        bare = name.split(':')[-1]
+        label = label[len(bare):].strip() if label.lower().startswith(bare.lower()) else label
+        hint = '; '.join(x for x in (label, a.get('placeholder')) if x) or a.get('type') or 'text'
+        return f'{name}: {value}' if value or a.get('type') == 'hidden' else f'{name}: <{hint}>'
+
+    def handle_starttag(self, tag, attrs):
+        a, top = dict(attrs), self.bufs[-1]
+        cls = (a.get('class') or '').split()
+        if self.skip or tag in ('head', 'script', 'style', 'svg', 'template') or 'hidden' in a:
+            self.skip += tag not in VOID
+        elif top[0] == 'pre':
+            pass
+        elif tag in ('pre', 'a', 'button', 'option', 'textarea', 'label'):
+            if tag == 'pre':
+                self.flush()
+            self.bufs.append([tag, '', {**a, 'cls': cls, 'kind': cls[-1] if cls else 'text'}])
+        elif tag == 'form':
+            self.flush()
+            self.form = [f"{(a.get('method') or 'get').upper()} {a.get('action') or '.'}"]
+        elif tag == 'input':
+            self.control(self.slot(a, a.get('value', '') if a.get('type') == 'hidden' else ''))
+        elif tag == 'select':
+            self.options = []
+            self.bufs.append(['select', '', a])
+        elif tag == 'span':
+            self.spans.append(bool(cls))
+            if cls:
+                self.soft()
+        elif tag in ('td', 'th') and top[1].strip():
+            self.add(' | ')
+        elif tag == 'dd':
+            self.add(': ')
+        elif tag == 'small' and self.prefix == '# ':
+            self.add(' · ')
+        elif tag in BLOCKS:
+            self.flush()
+            if tag in ('ol', 'ul', 'dl'):
+                self.lists.append([tag, 0])
+            elif tag == 'li' and self.lists:
+                self.lists[-1][1] += 1
+                self.prefix = '' if 'slip' in cls else f'{self.lists[-1][1]}. ' if self.lists[-1][0] == 'ol' else '- '
+            elif tag in ('h1', 'h2', 'h3'):
+                self.prefix = '#' * int(tag[1]) + ' '
+
+    def handle_endtag(self, tag):
+        if self.skip:
+            self.skip -= tag not in VOID
+            return
+        kind, text, a = self.bufs[-1]
+        if kind == tag:
+            self.bufs.pop()
+            text = text.strip('\n') if tag in ('pre', 'textarea') else re.sub(r'\s+', ' ', text).strip()
+            if tag == 'pre':
+                self.emit(f"--- {a['kind']} ---", text, '---')
+            elif tag == 'a':
+                self.soft()
+                href = a.get('href', '')
+                self.add(f'[ {text} ] {href}' if 'door' in a['cls'] else f'<{href}>' if text == href else f'{text} <{href}>')
+            elif tag == 'button':
+                self.control(f'[ {text} ]' + (f" {a['name']}={a.get('value', '')}" if a.get('name') else ''))
+            elif tag == 'option':
+                self.options.append(text)
+            elif tag == 'textarea':
+                self.control(self.slot(a, text))
+            elif tag == 'select':
+                self.control(f"{a.get('name', '')}: <one of: {' | '.join(self.options)}>")
+        elif kind == 'pre':
+            pass
+        elif tag == 'span' and self.spans:
+            if self.spans.pop():
+                self.soft()
+        elif tag == 'form' and self.form is not None:
+            form, self.form = self.form, None
+            self.emit(*form)
+        elif tag in BLOCKS:
+            self.flush()
+            if tag in ('ol', 'ul', 'dl') and self.lists:
+                self.lists.pop()
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.add(data if self.bufs[-1][0] in ('pre', 'textarea') else re.sub(r'\s+', ' ', data))
+
+
+def text(markup):
+    """A page as plain text: every action and rule the HTML carries, from the HTML itself (`?text=1`, or Accept: text/plain)."""
+    p = Plain()
+    p.feed(markup)
+    p.close()
+    p.flush()
+    return re.sub(r'\n{3,}', '\n\n', '\n'.join(p.out)).strip() + '\n'
