@@ -410,6 +410,7 @@ on a probe pair). Item 4 rests on the mock's four `submit` answers.
 | 7 | 6b928f6 | 327 (195 / 0 / 132) | 132 | 636, 2.6 MB | **met** |
 | 8 | 8b9359b | 619 (410 / 78 / 131) | 131 | 1,007, 3.3 MB | met; first snapshot |
 | 9 | 5434fa7 | 564 (486 / 1 / 77) | 77 | 1,062, 6.1 MB | met; wall time 104 to 110 s against 39 s |
+| 10 | 3836be7 | 544 (488 / 0 / 56) | 56 | 1,021, 4.7 MB | met; 38 s; relations in; checkpoint blocks still not deduplicating (median suspension 47 KB) |
 
 `rehearsal/REPORT.md` has every run's full row and the findings.
 
