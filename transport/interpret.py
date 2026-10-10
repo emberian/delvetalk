@@ -7,7 +7,7 @@
 whose `next` is not null waits). Python decides nothing. The reply is cached by id before it is submitted, so a crash
 resubmits it and never calls the model twice; a request the host lists as pending is submitted again from that cache
 whatever happened before (a restored journal). A `retrying` answer drops the cache, so the next ask is a new call.
-Run as `python3 -m transport.interpret run --state DIR --journal J --once`.
+Run as `python3 -m transport.interpret run --state DIR [--world W] --once`.
 """
 import argparse
 import hashlib
@@ -18,7 +18,7 @@ from pathlib import Path
 from transport import model
 from transport.bridge import daemon, write_atomic
 from transport.delve import canonical
-from transport.hostproc import add_host_args, connect
+from transport.host import add_host_args, connect
 
 
 def cache_path(state, request_id):

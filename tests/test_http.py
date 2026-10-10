@@ -8,7 +8,6 @@ import http.client
 import json
 import re
 import time
-import os
 import tempfile
 import threading
 import unittest
@@ -46,10 +45,10 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
 ''')
 from tests.test_turn import variant
 from transport import delve, identity
-from tests.host import HostdCase, serve, start_hostd, stop_hostd
+from tests.host import HostdCase, serve, served
 from tests.test_turn_world import declared
-from transport.hostproc import HostClient
-from transport.http import AccessLog, Front, RemoteHeaps
+from transport.host import HostClient
+from transport.http import AccessLog, Front
 from transport.identity import ORIGIN
 
 HANDLE = 'talkie.delve.town'
@@ -86,43 +85,34 @@ class Provider:
 
 
 class FrontCase(HostdCase):
-    """One hostd per class, opened by the front's DID with the library sealed; each test gets its
-    own front (identity database, rate limits, clock) and its own counter object. A class whose
-    tests each need the world as genesis left it sets `fresh_world`: a hostd per test."""
-    OPENER = DID
+    """One `serve` per class, opened by OPENER (not a person the front logs in: the opener speaks on the root socket)
+    with the library sealed; each test gets its own front (identity database, rate limits, clock) and its own counter
+    object. A class whose tests each need the world as genesis left it sets `fresh_world`: a `serve` per test."""
+    OPENER = 'did:plc:' + 'o' * 24
     made = 0
     fresh_world = False
 
     @classmethod
     def setUpClass(cls):
-        if cls.fresh_world:
-            return
-        unittest.TestCase.setUpClass()
-        from tests.test_reflection import LIBRARY
-        cls.hostd_dir = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(cls.hostd_dir.cleanup)
-        cls.hostd = start_hostd(cls.hostd_dir.name, opener=cls.OPENER, library=LIBRARY)
-        cls.addClassCleanup(stop_hostd, cls.hostd)
-        cls.socket = os.path.join(cls.hostd_dir.name, "host.sock")
-        cls.host = HostClient(cls.socket)
-        cls.hostd.heaps.size = 2
+        if not cls.fresh_world:
+            super().setUpClass()
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         if self.fresh_world:
-            from tests.test_reflection import LIBRARY
+            from deploy.serve import LIBRARY
             self.hostd_dir = tempfile.TemporaryDirectory()
             self.addCleanup(self.hostd_dir.cleanup)
-            self.hostd = start_hostd(self.hostd_dir.name, opener=self.OPENER, library=LIBRARY)
-            self.addCleanup(stop_hostd, self.hostd)
-            self.socket = os.path.join(self.hostd_dir.name, "host.sock")
+            self.hostd = served(self.hostd_dir.name, opener=self.OPENER, library=LIBRARY)
+            self.addCleanup(self.hostd.stop)
+            self.socket, self.root = self.hostd.sock, HostClient(self.hostd.root)
         self.provider = Provider()
         self.now = [1000.0]
         self.host = HostClient(self.socket)  # a test may replace its send
         ident = identity.Identity(self.tmp.name, delve.Client(self.provider), clock=lambda: self.now[0])
         self.front = serve(Front(('127.0.0.1', 0), self.host, ident, clock=lambda: self.now[0],
-                                 heaps=RemoteHeaps(self.socket, Path(self.hostd_dir.name) / 'heaps'), repl=HostClient(self.socket, stateless=True)))
+                                 heaps=Path(self.hostd_dir.name) / 'heaps', repl=HostClient(self.socket, stateless=True)))
         self.addCleanup(self.front.server_close)
         self.addCleanup(self.front.shutdown)
         self.port = self.front.server_address[1]
@@ -550,8 +540,10 @@ class Repl(FrontCase):
         mods = closure('World') + [{'name': 'Package', 'source': PLANS}]
         s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)], **self.BIND)
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
-        self.hostd.stateless.proc.kill()  # what a hostd restart does to the REPL: a new process, which issued nothing
-        self.hostd.stateless.proc.wait()
+        from deploy.serve import LIBRARY
+        self.hostd.stop()  # a restart of serve: a new stateless session, which issued nothing
+        type(self).hostd = served(self.hostd_dir.name, opener=self.OPENER, library=LIBRARY)
+        type(self).addClassCleanup(type(self).hostd.stop)
         s, e = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
         self.assertEqual((s, e['class'], e['message'], e['_links']['repl']), (409, 'replRestarted', 'the REPL restarted; start the module again',
                                                                               {'href': '/AGENTS.md/repl'}), e)
@@ -660,22 +652,6 @@ class Heaps(FrontCase):
         self.assertEqual((s, v['status'], v['class']), (404, 'refused', 'unknown'))
         self.assertEqual(self.call('GET', '/AGENTS.md/world/h1', token=a)[0], 404)  # the shared world never sees it
         self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/t1', token=b)[1].get('class'), 'unknown')
-
-    def test_pool_eviction_reopens_by_replay(self):
-        names = ['glm.delve.town', 'mimo.delve.town', 'selene.delve.town']
-        toks = [self.login(h) for h in names]
-        for i, t in enumerate(toks[:2]):
-            self.heap_create(t, 'h')
-            self.call('POST', '/AGENTS.md/heap/world/h/bump', {'argument': record(), 'intent': 'b'}, t)
-        pool = self.hostd.heaps.pool
-        first = pool[PEOPLE[names[0]]]
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h', token=toks[2])[0], 404)  # third heap evicts the first
-        self.assertNotIn(PEOPLE[names[0]], pool)
-        self.assertIsNone(first.proc)
-        self.assertEqual(len(pool), 2)
-        s, v = self.call('GET', '/AGENTS.md/heap/world/h', token=toks[0])
-        self.assertEqual((s, v['version']), (200, 1), v)
-
 
 class Pages(FrontCase):
     def test_list_card_source_offers_and_ids_with_slashes(self):
@@ -787,7 +763,7 @@ class Play(FrontCase):
     def setUpClass(cls):
         super().setUpClass()
         from deploy import genesis
-        made, refusal = genesis.run(HostClient(cls.socket), cls.OPENER)
+        made, refusal = genesis.run(cls.root, cls.OPENER)
         assert refusal is None, refusal
 
     def setUp(self):
@@ -930,8 +906,6 @@ class StubHost:
     def send(self, req):
         self.ops.append(req['op'])
         return {'status': 'viewed', 'version': 0} if req['op'] == 'world-view' else {'status': 'ok'}
-
-    binary = BINARY
 
 
 class Concurrent(unittest.TestCase):

@@ -2,37 +2,48 @@
 # In /opt/delvetalk/.env (mode 0600):
 #
 #   COMPOSE_FILE=compose.yml:compose.hand.yml
-#   DELVETALK_HAND_TOKEN=<secret>
 #
+# The token is a file, /etc/delvetalk/hand.token (owner 10425, mode 0400), read by the hand at start; never an argv
+# (`ps` shows argv to every local user) and never .env.
 # The Delve credentials file goes in /etc/delvetalk/delve/credentials.json (directory owner 10425, mode 0700;
-# file mode 0400); the front reads it only when the owner clicks Post, so it may be placed after `up`.
-# The hand is never on :8765, the port Caddy proxies: the front serves it on its own listener, :8766, published on
-# workhorse's loopback only. Reach it by an ssh forward to 127.0.0.1:8766.
+# file mode 0400); the hand reads it only when the owner clicks Post, so it may be placed after `up`.
+# The hand is its own service, never the front on :8765, the port Caddy proxies: `transport.hand serve` listens on
+# :8766, published on workhorse's loopback only (reach it by an ssh forward to 127.0.0.1:8766), and it alone of the
+# long-running services mounts the root socket: it speaks as the opener (docs/ROOT.md section 1.4).
 
 services:
-  delvetalk-http:
-    command:
-      - python3
-      - -m
-      - transport.http
-      - --state
-      - /data/state
-      - --bind
-      - 0.0.0.0
-      - --port
-      - "8765"
-      - --origin
-      - ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
-      - --trust-proxy
-      - --hand-token
-      - ${DELVETALK_HAND_TOKEN:?set DELVETALK_HAND_TOKEN in .env}
-      - --hand-bind
-      - 0.0.0.0
-      - --hand-port
-      - "8766"
-      - --credentials
-      - /run/delve/credentials.json
+  delvetalk-hand:
+    image: ${DELVETALK_IMAGE:-delvetalk:current}
+    restart: unless-stopped
+    user: "10425:10425"  # serve's uid: both of its sockets are 0600 (umask 0177), so a uid of the hand's own needs a group-readable root socket from serve first
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10425,gid=10425
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    init: true
+    command: ["python3", "-m", "transport.hand", "serve", "--state", "/data/state", "--bind", "0.0.0.0", "--port", "8766",
+              "--credentials", "/run/delve/credentials.json"]
+    environment:
+      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
+      DELVETALK_HAND_TOKEN_FILE: /run/secrets/hand_token
+      DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
     ports:
       - "127.0.0.1:8766:8766/tcp"
+    secrets: [hand_token]
     volumes:
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}/state:/data/state
+      - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
       - /etc/delvetalk/delve:/run/delve:ro
+    depends_on:
+      delvetalk-host: { condition: service_healthy }
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+secrets:
+  hand_token:
+    file: ${DELVETALK_HAND_TOKEN_PATH:-/etc/delvetalk/hand.token}

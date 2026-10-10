@@ -24,16 +24,17 @@ class Open(unittest.TestCase):
         code = opener.main(['--state', str(self.state), *argv], out)
         return code, out.getvalue()
 
-    def test_a_zulip_world_gets_its_row_and_the_commands_for_its_own_hostd_bridge_and_interpreter(self):
+    def test_a_zulip_world_gets_its_row_and_the_commands_for_its_bridge_and_interpreter_on_serve(self):
         code, out = self.open('--world', 'ring', '--transport', 'zulip', '--realm', 'tulip.arke.me', '--channel', 'ring', '--zuliprc', '/etc/z/ring')
         self.assertEqual(code, 0)
         self.assertEqual(json.loads((self.state / 'bridges' / 'ring.json').read_text()),
                          {'world': 'ring', 'transport': 'zulip', 'realm': 'tulip.arke.me', 'channel': 'ring', 'zuliprc': '/etc/z/ring', 'topicMode': 'channel'})
         lines = [shlex.split(l.rstrip(' &')) for l in out.splitlines()[1:]]
         home = str(self.state / 'worlds' / 'ring')
-        self.assertEqual([l[2] for l in lines], ['transport.hostd', 'transport.bridge', 'transport.interpret'])
-        self.assertEqual(lines[0][3:], ['--state', home, '--journal', home + '/world.journal'])
-        self.assertEqual(lines[1][4:], ['--state', home, '--source', 'zulip', '--zuliprc', '/etc/z/ring', '--stream', 'ring', '--poll', '60'])
+        self.assertEqual([l[2] for l in lines], ['transport.bridge', 'transport.interpret'])  # serve holds every world: no host per world
+        on = ['--host-socket', str(self.state / 'host.sock'), '--world', 'ring']
+        self.assertEqual(lines[0][4:], ['--state', home, *on, '--source', 'zulip', '--zuliprc', '/etc/z/ring', '--stream', 'ring', '--poll', '60'])
+        self.assertEqual(lines[1][4:], ['--state', home, *on, '--poll', '60'])
         self.assertEqual(list((self.state / 'worlds').glob('*')) if (self.state / 'worlds').exists() else [], [])  # nothing started or made
 
     def test_a_delve_world_observes_its_pds(self):

@@ -23,7 +23,8 @@ sys.path.insert(0, str(ROOT))
 from deploy import genesis  # noqa: E402
 from transport import interpret, model  # noqa: E402
 from transport.delve import canonical  # noqa: E402
-from transport.hostproc import HostClient  # noqa: E402
+from deploy.serve import LIBRARY, Pipe, Served  # noqa: E402
+from transport.host import HostClient  # noqa: E402
 from transport import post as post_py  # noqa: E402
 
 OWNER = genesis.OPENER  # ember.delve.town (docs/GENESIS.md)
@@ -103,21 +104,13 @@ class Run:
         return out
 
     def start_hostd(self):
-        self.hostd = subprocess.Popen([sys.executable, '-m', 'transport.hostd', '--state', str(self.state),
-                                       '--journal', str(self.state / 'world.journal'), '--opener', OWNER],
-                                      cwd=ROOT, env=self.env, stderr=open(self.out / 'hostd.stderr', 'w'))
-        sock = self.state / 'host.sock'
-        for _ in range(200):
-            if sock.exists():
-                break
-            time.sleep(0.05)
-        self.host = HostClient(sock)
+        self.hostd = Served(self.state, self.env['DELVETALK_OBEND'], opener=OWNER, library=LIBRARY, sync='fsync')
+        self.host = HostClient(self.hostd.root)  # genesis is the opener's; the bridge and interpreter take the public socket
         status = self.host.send({'op': 'world-status'})  # spawns the host and opens the journal
         assert status.get('status') == 'world', status
 
     def stop_hostd(self):
-        self.hostd.terminate()
-        self.hostd.wait(timeout=60)
+        self.hostd.stop()
 
     def seed(self, top):
         """deploy/genesis.py, the production seed: the same world the operator creates."""
@@ -244,11 +237,10 @@ GRAMMAR = [
 
 
 def grammar_probes(out, binary):
-    from transport.hostproc import Host
     probe = out / 'probe'
     probe.mkdir(exist_ok=True)
-    shutil.copy(out / 'state' / 'world.journal', probe / 'world.journal')
-    host = Host(str(probe / 'world.journal'), binary, clock='transport')
+    shutil.copy(out / 'state' / 'town.journal', probe / 'world.journal')
+    host = Pipe(binary, probe / 'world.journal', clock='transport')
     results = []
     try:
         for i, (obj, what, text) in enumerate(GRAMMAR):
@@ -415,7 +407,7 @@ def main(argv=None):
         # Offers the host holds for each principal, against what the outbox drafted (by height).
         drafted = {int(p.name.split('-')[0]) for p in (r.state / 'outbox').glob('*.json')}
         held = []
-        for principal in sorted({e['identity']['principal'] for e in map(json.loads, open(r.state / 'world.journal')) if 'identity' in e}):
+        for principal in sorted({e['identity']['principal'] for e in map(json.loads, open(r.state / 'town.journal')) if 'identity' in e}):
             got = r.host.send({'op': 'world-offers', 'principal': principal})
             for o in got.get('offers') or []:
                 held.append({'principal': principal, 'height': o['height'], 'intent': (o.get('identity') or {}).get('intent'),
@@ -426,9 +418,9 @@ def main(argv=None):
     finally:
         r.stop_hostd()
     results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
-    entries, tags, classes, reasons = journal_stats(r.state / 'world.journal')
-    results['journal'] = {'height': len(entries), 'bytes': (r.state / 'world.journal').stat().st_size,
-                          'sha256': __import__('hashlib').sha256((r.state / 'world.journal').read_bytes()).hexdigest(),
+    entries, tags, classes, reasons = journal_stats(r.state / 'town.journal')
+    results['journal'] = {'height': len(entries), 'bytes': (r.state / 'town.journal').stat().st_size,
+                          'sha256': __import__('hashlib').sha256((r.state / 'town.journal').read_bytes()).hexdigest(),
                           'outcomes': dict(tags), 'refusedByClass': dict(classes), 'refusals': reasons,
                           'bytesByOutcome': journal_stats.sizes, 'suspendedByObject': journal_stats.suspended}
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))

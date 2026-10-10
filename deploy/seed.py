@@ -2,7 +2,7 @@
 """Create one object in a world journal from a module in world/ and its imports.
 
 Run as `python3 -m deploy.seed` from the repository root. Carries bytes: the operator names the object, the module, the creating principal
-and the typed seed; the host compiles, judges and journals. Through hostd's socket.
+and the typed seed; the host compiles, judges and journals. Through serve's socket.
 
 The seed is PARTIAL: only the fields the operator means. The host lays it over the package's own
 initial() (mergeSeed), refuses a field the state does not have by name, and fills an unset text
@@ -19,7 +19,7 @@ import re
 import sys
 from pathlib import Path
 
-from transport.hostproc import HostClient
+from transport.host import HostClient
 
 ROOT = Path(__file__).resolve().parent.parent
 IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
@@ -50,13 +50,14 @@ def create(host, principal, obj, module, intent, seed, law=None, owner=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='seed.py')
-    ap.add_argument('--host-socket', required=True, help='hostd socket')
+    ap.add_argument('--host-socket', required=True, help="serve's socket: its root socket when the principal is the opener")
+    ap.add_argument('--world', default='town')
     for flag in ('--principal', '--object', '--module', '--intent', '--seed'):
         ap.add_argument(flag, required=True)
     ap.add_argument('--law', help='law text; default: the host default law')
     ap.add_argument('--owner', help="the object's owner, when the opener creates it for another principal")
     a = ap.parse_args(argv)
-    host = HostClient(a.host_socket)
+    host = HostClient(a.host_socket, a.world)
     try:
         reply = create(host, a.principal, a.object, a.module, a.intent, json.loads(a.seed), a.law, a.owner)
     finally:

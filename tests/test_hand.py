@@ -6,7 +6,9 @@ The hand: the owner's console at /hand/, over a real front with a stub host and 
 
     python3 -W ignore -m tests.run test_hand
 """
+import contextlib
 import http.client
+import io
 import json
 import tempfile
 import threading
@@ -157,24 +159,28 @@ class Hand(HandCase):
 
 
 class Listener(unittest.TestCase):
-    def test_the_hand_is_served_on_a_loopback_listener_never_on_the_public_port(self):
+    def test_the_hand_is_its_own_listener_and_the_public_front_has_no_hand(self):
         from unittest import mock
-        from transport import http as front
+        from transport import hand as console, http as front
         made, stub = [], StubHost()
-        stub.close = lambda: None
-        with tempfile.TemporaryDirectory() as d, mock.patch.object(front, 'HostClient', lambda *a, **k: stub), \
-                mock.patch.object(front, 'RemoteHeaps', lambda *a, **k: stub), mock.patch.object(Front, 'serve_forever', lambda self, *a: made.append(self)):
-            front.main(['--state', d, '--bind', '127.0.0.2', '--port', '0', '--hand-token', TOKEN, '--hand-port', '0'])
+        stub.close, stub.path = lambda: None, '/nonexistent/host.sock'
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(front, 'connect', lambda *a, **k: stub), \
+                mock.patch.object(front, 'HostClient', lambda *a, **k: stub), mock.patch.object(Front, 'serve_forever', lambda self, *a: made.append(self)):
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                front.main(['--state', d, '--port', '0', '--hand-token', TOKEN])  # the front takes no hand
+            front.main(['--state', d, '--bind', '127.0.0.2', '--port', '0'])
+            (Path(d) / 'token').write_text(TOKEN + '\n')
+            console.main(['serve', '--state', d, '--token-file', str(Path(d) / 'token'), '--port', '0'], host=stub)
         for f in made:
             self.addCleanup(f.server_close)
             threading.Thread(target=super(Front, f).serve_forever, daemon=True).start()
             self.addCleanup(f.shutdown)
-        hand_at = {f.server_address[0]: f for f in made}
-        self.assertEqual(set(hand_at), {'127.0.0.2', '127.0.0.1'})
+        at = {f.server_address[0]: f for f in made}
+        self.assertEqual(set(at), {'127.0.0.2', '127.0.0.1'})
         get = lambda f, path: (lambda c: (c.request('GET', path), c.getresponse().status)[1])(http.client.HTTPConnection(*f.server_address[:2]))
-        self.assertEqual(get(hand_at['127.0.0.2'], '/hand/?token=' + TOKEN), 404)  # the public port has no hand
-        self.assertEqual(get(hand_at['127.0.0.1'], '/hand/?token=' + TOKEN), 302)
-        self.assertEqual(get(hand_at['127.0.0.1'], '/AGENTS.md'), 404)  # and the hand's listener nothing else
+        self.assertEqual(get(at['127.0.0.2'], '/hand/?token=' + TOKEN), 404)  # the public port has no hand
+        self.assertEqual(get(at['127.0.0.1'], '/hand/?token=' + TOKEN), 302)
+        self.assertEqual(get(at['127.0.0.1'], '/AGENTS.md'), 404)  # and the hand's listener nothing else
 
 
 class Unpost(HandCase):

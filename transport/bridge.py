@@ -20,9 +20,8 @@ import time
 from pathlib import Path
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.hostd import CLOCK
+from transport.host import CLOCK, ON_ROOT, add_host_args, connect
 from transport.identity import ORIGIN
-from transport.hostproc import add_host_args, connect
 from transport import observe
 from transport.observe import SCHEMA, Observer
 
@@ -418,6 +417,10 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': obj, 'slot': slot_arg(slot), 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
             done.append(obs['uri'])
+            continue
+        if reply.get('message') == ON_ROOT:  # the opener's own post: her authority is the root socket, which the bridge never holds
+            with open(state / 'skipped.txt', 'a') as f:
+                f.write(obs['uri'] + '\n')
             continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})

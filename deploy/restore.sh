@@ -2,7 +2,7 @@
 # Restore a DelveTalk data directory from a backup tarball. Verifies the
 # tarball's checksum and every journal in it before touching DATA; moves the
 # current DATA aside to DATA.before-<UTC stamp> (never deletes it); refuses
-# while any process holds DATA/journal.lock, i.e. while the stack is up.
+# while any process holds DATA/state/journal.lock, i.e. while serve is up.
 #
 #   deploy/restore.sh (--binary PATH | --image IMAGE) TARBALL DATA
 set -euo pipefail
@@ -17,9 +17,9 @@ if [[ -f $tarball.sha256 ]]; then
 else
   echo "restore: no $tarball.sha256; restoring unchecked bytes" >&2
 fi
-if [[ -e $data/journal.lock ]] && command -v flock >/dev/null; then
-  exec 9>>"$data/journal.lock"
-  flock -n 9 || { echo "restore: $data/journal.lock is held; stop the stack first" >&2; exit 75; }
+if [[ -e $data/state/journal.lock ]] && command -v flock >/dev/null; then
+  exec 9>>"$data/state/journal.lock"
+  flock -n 9 || { echo "restore: $data/state/journal.lock is held; stop the stack first" >&2; exit 75; }
 fi
 
 stage="$data.restore-$$"

@@ -1,6 +1,6 @@
 """Every route a browser reaches is a page in the theme's vocabulary, never a JSON dump; JSON stays JSON for agents.
 
-Against the genesis town on a real hostd, logged in through the login page's forms (the session cookie)."""
+Against the genesis town on a real `serve`, logged in through the login page's forms (the session cookie)."""
 import html
 import json
 import os
@@ -11,7 +11,6 @@ from html.parser import HTMLParser
 
 from tests.test_turn_world import ROOT, closure, declared
 from tests.test_http import DID, FORM, HANDLE, FrontCase, browser_login
-from transport.hostproc import HostClient
 
 HTML = {'Accept': 'text/html,application/xhtml+xml'}
 
@@ -82,9 +81,9 @@ class Pages(FrontCase):
     def setUpClass(cls):
         super().setUpClass()
         from deploy import genesis
-        made, refusal = genesis.run(HostClient(cls.socket), cls.OPENER)
+        made, refusal = genesis.run(cls.root, cls.OPENER)
         assert refusal is None, refusal
-        r = HostClient(cls.socket).send({'op': 'world-create', 'principal': cls.OPENER, 'identity': 'mk-picker', 'object': 'picker',
+        r = cls.root.send({'op': 'world-create', 'principal': cls.OPENER, 'identity': 'mk-picker', 'object': 'picker',
                                          'modules': closure('World') + [{'name': 'Picker', 'source': PICKER}], 'entry': 'initial', 'seed': {'tag': 'record', 'fields': []}})
         assert r['status'] == 'created', r
 

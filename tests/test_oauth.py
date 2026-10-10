@@ -24,7 +24,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from tests.host import serve
 from transport import delve, identity, oauth
-from transport.hostd import CLOCK
+from transport.host import CLOCK
 from transport.http import Front
 
 HANDLE, DID = 'talkie.delve.town', 'did:plc:' + 'a' * 24

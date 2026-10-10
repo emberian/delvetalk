@@ -47,7 +47,7 @@ python3 -W ignore -m tests.run test_<surface>` one surface.
 | `spec/native` | one C file: fsync for the journal |
 | `world/lib` | the standard library: prelude, `World` (the protocol), `Plan`, `Card`, `Relation`, `Rows`, `Form`, `Text`, `Spell`, Document, game |
 | `world/objects` | the 25 objects, written as activities |
-| `transport` | Python that carries bytes: hostd, the HTTP front and the delve.town login, the bridge, the poster, the hand, the repository façade, the Zulip playtest |
+| `transport` | Python that carries bytes: the host's client, the HTTP front and the delve.town login, the bridge, the poster, the hand, the repository façade, the Zulip playtest |
 | `deploy` | images, compose, genesis, backup, restore, smoke, playtest, token counts |
 | `tests` | one suite per surface, driving the binary over stdin |
 | `rehearsal` | the town's archive replayed offline: the deployment gate |

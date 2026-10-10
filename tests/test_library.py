@@ -6,12 +6,11 @@ hob's line, a page that is not its file, a "next" pointing at no page, or a stra
 """
 import tempfile
 import unittest
-from pathlib import Path
 
 from deploy import genesis
-from tests.host import start_hostd, stop_hostd
-from tests.test_turn_world import BINARY
-from transport.hostproc import LIBRARY, HostClient
+from tests.host import served
+from deploy.serve import LIBRARY
+from transport.host import HostClient
 
 
 class Library(unittest.TestCase):
@@ -19,9 +18,9 @@ class Library(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.hostd = start_hostd(cls.tmp.name, BINARY, opener=genesis.OPENER, library=LIBRARY)
-        cls.addClassCleanup(stop_hostd, cls.hostd)
-        cls.host = HostClient(Path(cls.tmp.name) / 'host.sock')
+        cls.hostd = served(cls.tmp.name, opener=genesis.OPENER, library=LIBRARY)
+        cls.addClassCleanup(cls.hostd.stop)
+        cls.host = HostClient(cls.hostd.root)  # genesis is the opener's: the root socket
         cls.made, cls.refusal = genesis.run(cls.host)
         cls.n = 0
 

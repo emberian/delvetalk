@@ -6,7 +6,6 @@ Carries bytes and a verified principal; it validates nothing but size and JSON
 well-formedness. Host replies pass through verbatim.
 """
 import argparse
-import hashlib
 import html
 import json
 import os
@@ -21,10 +20,9 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import bridge, hand, oauth, pages, post
+from transport import bridge, oauth, pages
 from transport.bridge import door_rows, plain
-from transport.hostd import CLOCK
-from transport.hostproc import HOST_TIMEOUT, HostClient, RemoteHeaps, add_host_args
+from transport.host import CLOCK, HOST_TIMEOUT, HostClient, add_host_args, connect
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
 from transport.repo import Repo
@@ -301,16 +299,15 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         threading.Thread(target=self.reap, daemon=True).start()
         self.access = access
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps, repl, trust_proxy, sleep, hand
+        self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps and Path(heaps), repl, trust_proxy, sleep, hand  # heaps: serve's heaps/ directory
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
-        info = {} if hasattr(host, 'binary') else host.send({'op': 'hostd-info'})
-        self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
-        self.host_timeout = getattr(host, "timeout", HOST_TIMEOUT + 30)
-        self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library hostd sealed; the REPL compiles against it by name
+        info = host.send({'op': 'hostd-info'})
+        self.host_sha256, self.host_timeout = info.get('hostSha256', 'unknown'), getattr(host, 'timeout', HOST_TIMEOUT)
+        self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library serve sealed; the REPL compiles against it by name
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):  # every worker is taken: say so at once rather than queue behind them
@@ -341,10 +338,12 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                 except OSError:
                     pass
 
+    def heap(self, did, create=True):
+        """A principal's private heap over the host's socket; None for one never made, unless `create`."""
+        return self.host.at(did) if create or (self.heaps / f'{did}.journal').exists() else None
+
     def sync_library(self, force=False):
-        """Re-read hostd-info when hostd's pid changed (it restarted, maybe with a new library), or when forced."""
-        if hasattr(self.host, 'binary'):
-            return
+        """Re-read hostd-info when serve's pid changed (it restarted, maybe with a new library), or when forced."""
         info = self.host.send({'op': 'hostd-info'})
         if force or info.get('pid') != self.hostd_pid:
             self.library, self.hostd_pid = info.get('library'), info.get('pid')
@@ -636,7 +635,7 @@ class Handler(BaseHTTPRequestHandler):
                               headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
         if kind in ('repl', 'check'):
             return self.run_repl(who['did'], kind)
-        host = self.server.heaps.get(who['did']) if heap else self.server.host
+        host = self.server.heap(who['did']) if heap else self.server.host
         principal = who['did']  # the principal the host sees; the handle is display only
         base = PREFIX + ('/heap' if heap else '')
         if self.browser() and kind in ('object', 'card', 'source') and not heap:
@@ -784,7 +783,7 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, canonical({**terse(out), '_links': links}), headers=keep)
 
     def me(self, credential, who):
-        heap = self.server.heaps.get(who['did'], create=False)
+        heap = self.server.heap(who['did'], create=False)
         count = heap.send({'op': 'world-status'}).get('objects') if heap else 0
         self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'heapObjects': count,
                      'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))}},
@@ -920,24 +919,16 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
-    ap.add_argument('--hand-token', metavar='SECRET', help='serve the owner\'s console at /hand/ (needs the token once) on --hand-bind:--hand-port only')
-    ap.add_argument('--hand-bind', default='127.0.0.1', help='the hand\'s listener: loopback, reached by an ssh forward')
-    ap.add_argument('--hand-port', type=int, default=8766)
-    ap.add_argument('--credentials', default=post.CREDENTIALS, help='the Delve credentials file the hand posts with')
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
-    sock = a.host_socket or Path(a.state) / 'host.sock'
-    host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
+    host = connect(a)
     ident = Identity(a.state, Client(http_transport), a.origin)
-    front = Front((a.bind, a.port), host, ident, a.origin, heaps=heaps, repl=repl, trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'))
-    if a.hand_token:  # never on the public port: its own listener, which serves /hand/ and nothing else
-        console = Front((a.hand_bind, a.hand_port), host, ident, a.origin, hand=hand.Hand(a.state, host, a.hand_token, a.credentials))
-        threading.Thread(target=console.serve_forever, daemon=True).start()
+    front = Front((a.bind, a.port), host, ident, a.origin, heaps=Path(host.path).parent / 'heaps', repl=HostClient(host.path, stateless=True),
+                  trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'))
     try:
         front.serve_forever()
     finally:
         front.host.close()
-        front.heaps.close()
         front.repl.close()
 
 if __name__ == '__main__':

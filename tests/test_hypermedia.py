@@ -22,7 +22,7 @@ from tests.test_chain import garden_state, town_kinds
 from tests.test_http import DID, PEOPLE, REPL_COUNTER, FrontCase, StubHost
 import transport.http
 from transport import delve, identity
-from transport.hostproc import HostClient
+from transport.host import HostClient
 from transport.http import CATALOGUE, ERRORS, GUIDE, REFUSALS, Front, resolve
 from tests.test_turn_world import closure
 

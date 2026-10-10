@@ -17,14 +17,25 @@ import threading
 import unittest
 from pathlib import Path
 
-from tests.host import Host, Served, binary
+from tests.host import Host, binary, served as Served
 from tests.test_reflection import WORLD_LIBRARY
-from tests.test_hostd import TALLY
-from tests.test_turn_world import counter_modules, nat, record
-from transport.hostproc import HostClient
+from tests.test_turn_world import counter_modules, declared, nat, record
+from transport.host import HostClient
 
 DID = 'did:plc:' + 'a' * 24
 OPENER = 'did:plc:' + 'o' * 24
+TALLY = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  count: Nat
+def initial() -> State:
+  {count: 0n}
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
+    case _: state.count + 1n
+""")
 
 
 def send(path, request):

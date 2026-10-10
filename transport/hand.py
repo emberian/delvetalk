@@ -1,8 +1,9 @@
 """The hand: the owner's operator console, one module with two faces.
 
 Every operation is a method of Hand returning plain data (raising HandError to refuse). The web face is the front's
-/hand/ page, served only with --hand-token; the CLI face is `python3 -m transport.hand <verb> [--json]`, for the owner's
-assistant over ssh. Both read the bridge's state directory and ask hostd; nothing is posted without Post (a click, or
+/hand/ page, served by `hand serve` on a listener of its own; the CLI face is `python3 -m transport.hand <verb> [--json]`,
+for the owner's assistant over ssh. Both read the bridge's state directory and ask the host on its root socket, the
+opener's (HOST-HANDOFF 5.125), which only the hand's and the ops containers mount; nothing is posted without Post (a click, or
 the `post` verb), with the owner's credentials file. Every action appends a line to <state>/hand-log.jsonl.
 """
 import argparse
@@ -23,8 +24,7 @@ from deploy.genesis import OPENER as OWNER
 from transport import post, pages
 from transport.bridge import all_observations, awaiting_path, skipped, uri_hash, write_atomic
 from transport.delve import Failure, canonical
-from transport.hostd import CLOCK
-from transport.hostproc import HostClient
+from transport.host import CLOCK, add_host_args, connect
 
 CLIP, HAND_COOKIE = 400, 'dt_hand'
 
@@ -79,7 +79,7 @@ class Hand:
         return {'journal height': st.get('height'), 'posts this hour': f'{delve.get("used", 0)} of {delve.get("quota", "?")}',
                 f'model spend {month}': f'${spent.get("dollars", 0):.4f} ({spent.get("calls", 0)} calls)',
                 'interpretations pending': f'{len(waiting)} ({len(retrying)} retrying)',
-                'hostd pid': pid.read_text().strip() if pid.exists() else 'none'}
+                'host pid': pid.read_text().strip() if pid.exists() else 'none'}
 
     def probe(self, backups=None, journal=None):
         """The one monitoring probe (`status --json`, docs/OPERATIONS.md section b): plain numbers, every threshold the watch's."""
@@ -94,7 +94,7 @@ class Hand:
             hour = {'window': f'{len(entries)} newest entries', 'turns': len(entries), 'refused': dict(collections.Counter(
                 o.get('class') or '?' for o in outcomes if o.get('tag') == 'refused'))}
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
-        journal = Path(journal) if journal else self.state.parent / 'world.journal'
+        journal = Path(journal) if journal else self.state / 'town.journal'
         sizes = []
         if journal.exists():
             with open(journal, 'rb') as f:
@@ -317,11 +317,25 @@ def zulip_client(rc):
     return Client(rc)
 
 
+def serve(a, host):
+    """The web face on its own listener, which serves /hand/ and nothing else; never the public port."""
+    from transport.http import Front
+    token = Path(a.token_file).read_text().strip() if a.token_file else os.environ.get('DELVETALK_HAND_TOKEN', '')
+    if not token:
+        raise SystemExit('hand serve: a token, from --token-file or DELVETALK_HAND_TOKEN, is required')
+    console = Front((a.bind, a.port), host, None, hand=Hand(a.state, host, token, a.credentials))
+    try:
+        console.serve_forever()
+    finally:
+        host.close()
+    return 0
+
+
 def main(argv=None, out=None, host=None, poster=post.post_draft):
     out = out or sys.stdout
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument('--state', default=os.environ.get('DELVETALK_STATE'), help='the bridge state directory (or DELVETALK_STATE)')
-    common.add_argument('--host-socket', metavar='PATH')
+    add_host_args(common, root=True)
     common.add_argument('--credentials', default=os.environ.get('DELVETALK_CREDENTIALS', post.CREDENTIALS))
     common.add_argument('--json', action='store_true', help='one JSON document instead of text')
     ap = argparse.ArgumentParser(prog='hand.py', description='the owner\'s console, command-line face')
@@ -331,10 +345,12 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
             'edit': [('draft', {}), ('--text-file', {}), ('--stdin', dict(action='store_true'))],
             'post': [('draft', {}), ('--object', {})], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],
             'unpost': [('draft', {}), ('--reason', dict(required=True)), ('--zuliprc', dict(default=os.environ.get('DELVETALK_ZULIPRC')))],
-            'status': [('--journal', dict(help='--json: the world journal (default <state>/../world.journal)')),
+            'status': [('--journal', dict(help='--json: the world journal (default <state>/town.journal)')),
                        ('--backups', dict(help='--json: the backup directory (default DELVETALK_BACKUPS or /var/backups/delvetalk)'))], 'search': [('slug', {})], 'retry': [('uri', {})],
             'reply': [('uri', {}), ('--text-file', dict(required=True)), ('--object', dict(required=True))],
-            'log': [('--tail', dict(type=int, default=20))]}
+            'log': [('--tail', dict(type=int, default=20))],
+            'serve': [('--token-file', dict(default=os.environ.get('DELVETALK_HAND_TOKEN_FILE'), help='the file holding the secret asked once (or DELVETALK_HAND_TOKEN); never argv')),
+                      ('--bind', dict(default='127.0.0.1', help='loopback, reached by an ssh forward')), ('--port', dict(type=int, default=8766))]}
     for name, args in spec.items():
         p = sub.add_parser(name, parents=[common])
         for a, k in args:
@@ -342,7 +358,9 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
     a = ap.parse_args(argv)
     if not a.state:
         ap.error('--state (or DELVETALK_STATE) is required')
-    h = Hand(a.state, host or HostClient(a.host_socket or Path(a.state) / 'host.sock'), credentials=a.credentials, poster=poster, who='cli')
+    if a.verb == 'serve':
+        return serve(a, host or connect(a))
+    h = Hand(a.state, host or connect(a), credentials=a.credentials, poster=poster, who='cli')
     try:
         read = lambda p: Path(p).read_text()
         data = {'inbox': lambda: h.inbox(a.since, a.kind), 'outbox': lambda: h.outbox(a.all), 'show': lambda: h.show(a.draft),

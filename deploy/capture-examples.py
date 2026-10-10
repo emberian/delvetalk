@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate docs/AGENTS-EXAMPLES.md from a real stack.
 
-Starts a throwaway hostd (opener named, library sealed), seeds the town's objects as docs/GENESIS.md does, starts
+Starts a throwaway `delvetalk-obend serve` (opener named, library sealed), seeds the town's objects as docs/GENESIS.md does, starts
 the HTTP front with a mocked account host, then runs four sessions (a planter, a wake registrar, a forger, a stranger by the controls) as
 literal requests and writes down the replies. Nothing is edited by hand: the page is whatever this prints.
 
@@ -25,8 +25,8 @@ sys.path.insert(0, str(ROOT))
 
 from deploy import genesis  # noqa: E402
 from transport import delve, identity  # noqa: E402
-from transport.hostd import Hostd  # noqa: E402
-from transport.hostproc import BINARY, LIBRARY, HostClient, RemoteHeaps  # noqa: E402
+from deploy.serve import BINARY, LIBRARY, Served  # noqa: E402
+from transport.host import HostClient  # noqa: E402
 from transport.http import Front  # noqa: E402
 from tests.test_hypermedia import walk  # noqa: E402
 
@@ -59,7 +59,7 @@ FLIP = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Li
 HEAD = '''# DelveTalk: four worked sessions
 
 Literal requests and replies, captured on {date} by `deploy/capture-examples.py` from a real stack started as
-docs/DEPLOY.md says: hostd over a fresh journal with the opener named and the library sealed, genesis by the seeds
+docs/DEPLOY.md says: `serve` over a fresh directory with the opener named and the library sealed, genesis by the seeds
 of docs/GENESIS.md, `python3 -m transport.http`. Two things were not real: the account host (each challenge text
 was "posted" by writing it where a mocked PDS serves it) and the town's interpreter (its one answer is written in
 the script). Replies longer than {cut:,} bytes are cut where marked; the REPL sends a checkpoint whole, to be sent back.
@@ -152,7 +152,7 @@ class Capture:
 
 def seed_town(sock):
     """The town as production creates it: deploy/genesis.py, run by the opener."""
-    made, refusal = genesis.run(HostClient(sock), OPENER)
+    made, refusal = genesis.run(HostClient(sock), OPENER)  # the root socket: the opener speaks there only
     assert refusal is None and all(m['status'] == 'created' for m in made), (refusal, made)
 
 
@@ -237,15 +237,15 @@ def main(argv=None):
     ap.add_argument('--binary', default=BINARY)
     a = ap.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix='dt-capture-') as tmp:
-        hostd = Hostd(tmp, str(Path(tmp) / 'world.journal'), a.binary, opener=OPENER, library=LIBRARY)
-        threading.Thread(target=hostd.serve_forever, daemon=True).start()
-        sock = Path(tmp) / 'host.sock'
-        seed_town(sock)
+        served = Served(Path(tmp) / 'state', a.binary, opener=OPENER, library=LIBRARY)
+        sock = served.sock
+        seed_town(served.root)
         provider = Provider()
         front = Front(('127.0.0.1', 0), HostClient(sock), identity.Identity(tmp, delve.Client(provider), clock=lambda: NOW),
-                      clock=lambda: NOW, heaps=RemoteHeaps(sock, Path(tmp) / 'heaps'), repl=HostClient(sock, stateless=True))
+                      clock=lambda: NOW, heaps=Path(tmp) / 'state' / 'heaps', repl=HostClient(sock, stateless=True))
         threading.Thread(target=front.serve_forever, daemon=True).start()
         cap = Capture(front.server_address[1], sock, provider, tmp)
+        cap.root = served.root
         cap.whole = lambda reply: reply['checkpoint']
         cap.out = HEAD.format(date=datetime.date.today().isoformat(), cut=CUT).split('\n')
         try:
@@ -254,8 +254,7 @@ def main(argv=None):
         finally:
             front.shutdown()
             front.server_close()
-            hostd.shutdown()
-            hostd.close()
+            served.stop()
     Path(a.out).write_text('\n'.join(cap.out).rstrip('\n') + '\n')
     return 0
 

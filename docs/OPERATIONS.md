@@ -100,12 +100,12 @@ from it. No agent, no exporter.
 | model calls and spend per hour | `hour.interpretations + attempts`; `model-spend.jsonl` summed by hour | > 120 calls/h, or the day past the cap (below) |
 | reservations held | `world-status.posts.sources[delve]`: `used` of `quota`, `next` | 16 of 16 for two hours (the hand is not clicking, or a loop is drafting) |
 | scratch worlds | `world-status.scratches {open, expiring}` (FEDERATION 2) | open > 40, or any over 16 MiB |
-| journal height and size | `world-status.height`; `stat world.journal` | height unchanged for an hour while posts were observed; bytes > 200 MiB (see §c) |
+| journal height and size | `world-status.height`; `stat state/town.journal` | height unchanged for an hour while posts were observed; bytes > 200 MiB (see §c) |
 | suspension median | `harvest.py`'s `medianSuspendedBytes` (weekly) | > 8 KB |
 | the clock advancing | `world-status.clock` against `now // 60` | behind by > 3 minutes: the bridge is dead (its `tick` is the only clock) |
 | pending interpretations | `world-interpretations`: count and the oldest's `attempts` | > 20, or any at attempt 8 |
 | the backup verify | the timer's last exit and the newest tarball's age in `/var/backups/delvetalk` | exit ≠ 0, or age > 7 h |
-| the processes | compose healthchecks (`hostd` answers status; the front's `entry N`; `bridge.pid`/`interpret.pid` younger than 180 s) | any unhealthy |
+| the processes | compose healthchecks (`delvetalk-host` answers status; the front's `entry N`; `bridge.pid`/`interpret.pid` younger than 180 s) | any unhealthy |
 | disk | `df /var/lib/delvetalk /var/backups` | < 20% free |
 
 **Decision:** one probe, one JSONL file, one timer; the counters the host
@@ -182,7 +182,7 @@ to record. The channel line is the host's or hob's register (VOICE): no
 apology, what happened, what to do next.
 
 **A. The host will not start.** Healthcheck red; every reply "host
-unavailable". `docker compose logs delvetalk-hostd` names it: `journal
+unavailable". `docker compose logs delvetalk-host` names it: `journal
 broken at height N: unterminated final line` (a torn tail: DEPLOY "A torn
 tail", via a verified copy); `height out of sequence` (a second writer: find
 it before anything else; `journal.lock` exit 75 says who); `journal replay

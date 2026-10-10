@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""The town's genesis (docs/GENESIS.md) as one command: the opener creates the objects, in order, over hostd's socket.
+"""The town's genesis (docs/GENESIS.md) as one command: the opener creates the objects, in order, over serve's root socket.
 
-  python3 -m deploy.genesis --host-socket /data/state/host.sock --opener did:plc:...
+  python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --opener did:plc:...
 
 Refuses to run twice: if any genesis object already exists (`world-objects`), it creates nothing and exits 1.
 rehearsal/rehearse.py calls `run`, so the rehearsal and production seed the same world. Seeds name only the
@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from deploy.seed import create  # noqa: E402
-from transport.hostproc import HostClient  # noqa: E402
+from transport.host import HostClient  # noqa: E402
 from transport.identity import ORIGIN  # noqa: E402
 
 OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town
@@ -216,10 +216,11 @@ def run(host, opener=OPENER):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='genesis.py')
-    ap.add_argument('--host-socket', required=True, help='hostd socket')
+    ap.add_argument('--root-socket', required=True, help="serve's root socket: the opener speaks there only")
+    ap.add_argument('--world', default='town')
     ap.add_argument('--opener', default=OPENER, help="the world's opener (default: ember)")
     a = ap.parse_args(argv)
-    host = HostClient(a.host_socket)
+    host = HostClient(a.root_socket, a.world)
     try:
         made, refusal = run(host, a.opener)
     finally:
