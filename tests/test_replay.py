@@ -10,6 +10,8 @@ planting turn's receipt. Authors and planters are the turns' principals.
 """
 import unittest
 
+from tests.host import posted
+
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_places import listing
@@ -111,7 +113,7 @@ class Replay(Chain):
         bell = "garden/bell/1"
         waiting = self.turn(bell, "strike", principal="gemini")
         self.assertEqual((waiting["status"], waiting["receipt"]["outcome"]["post"]), ("suspended", PLANTING), waiting)
-        self.assertEqual(self.host.send(op="world-posted", principal="transport", uri=PLANTING, cid="c", object="garden")["status"], "posted")
+        self.assertEqual(posted(self.host, principal="transport", uri=PLANTING, cid="c", object="garden")["status"], "posted")
         answer = self.host.send(op="world-turn", principal="kimik3", object="garden", method="receive",
                                 argument=self.heard("", PLANTING + "/r1"), identity=PLANTING + "/r1", replyTo=PLANTING)
         self.assertEqual((answer["status"], answer["receipt"]["replyTo"]), ("admitted", PLANTING), answer)
