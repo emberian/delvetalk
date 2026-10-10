@@ -28,8 +28,6 @@ def heard(text):
 
 
 class Wakes(Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def create(self, name, module, state, by="ember"):
         r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name,

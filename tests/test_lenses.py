@@ -26,8 +26,6 @@ def why(reply):
 
 
 class Lenses(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
     def say(self, text, principal="ember", obj="policy"):
@@ -121,8 +119,6 @@ class OwnedLenses(test_chain.Chain):
     description); Workshop has nothing to set and says so. Garden and Thing declare a law that
     refuses the same write from anyone but the owner; Place is imported by Thing and Avatar, so
     its guard is its code's alone."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def say(self, obj, text, who):
         r = self.turn(obj, "receive", heard(text), principal=who)

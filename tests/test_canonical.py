@@ -72,9 +72,10 @@ def boolean(b):
 
 
 class Canonical(unittest.TestCase):
-    def setUp(self):
-        self.host = Host()
-        self.addCleanup(self.host.close)
+    @classmethod
+    def setUpClass(cls):
+        cls.host = Host()
+        cls.addClassCleanup(cls.host.close)
 
     def encode(self, **kw):
         return self.host.send(op="canonical-encode", **kw)
@@ -223,7 +224,7 @@ class JournalCids(unittest.TestCase):
             return [json.loads(line) for line in handle if line.strip()]
 
     def populate(self, host):
-        self.assertEqual(host.send(op="world-open", path=self.path)["status"], "opened")
+        self.assertEqual(host.send(op="world-open", path=self.path, sync="none")["status"], "opened")
         made = host.send(op="world-create", principal="ember", identity="mk", object="counter",
                          modules=closure("Counter"), entry="initial", seed=record(count=nat(5)))
         self.assertEqual(made["status"], "created", made)

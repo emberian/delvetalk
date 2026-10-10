@@ -268,7 +268,9 @@ def poked(target: String) -> Activity<Plan, Response, String>:
 """
 
 
-class Offers(Reflection):
+class TellerWorld(Reflection):
+    """A world with a teller, whose turns offer text to principals."""
+
     def setUp(self):
         super().setUp()
         self.open_library()
@@ -282,6 +284,8 @@ class Offers(Reflection):
         self.assertEqual(r["status"], "offers", r)
         return [o["text"] for o in r["offers"]]
 
+
+class Offers(TellerWorld):
     def test_an_offer_to_b_in_a_turn_run_by_a_is_readable_by_b_and_not_by_c(self):
         r = self.turn("teller", "tell", record(to=label("bea"), text=label("for bea")), principal="ann", identity="t-1")
         self.assertEqual(r["status"], "admitted", r)
@@ -609,7 +613,7 @@ OLD_RECEIVE = POST_WAITER.replace("input: {text: String, post: String}", "input:
     "noted(input.text, context)\n", "noted(input.slot, context)\n")
 
 
-class ReplyIsAddress(Reflection):
+class PostWaiterWorld(Reflection):
     """awaitPost waits for the reply that answers a post: the first turn on the post's recorded
     object whose `replyTo` names it. receive's slot is the host's."""
     def setUp(self):
@@ -630,6 +634,8 @@ class ReplyIsAddress(Reflection):
     def note(self, obj="w"):
         return field(self.host.send(op="world-view", principal="ann", object=obj)["state"], "note")["value"]
 
+
+class ReplyIsAddress(PostWaiterWorld):
     def test_a_reply_to_the_awaited_post_resumes_the_waiter(self):
         waiting = self.turn("w", "waitFor", record(post=label(URI)), principal="ann", identity="wait-1")
         self.assertEqual((waiting["status"], waiting["receipt"]["outcome"]["post"]), ("suspended", URI), waiting)

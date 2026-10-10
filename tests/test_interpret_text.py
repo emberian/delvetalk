@@ -47,8 +47,6 @@ class Classified(unittest.TestCase):
 
 
 class Resumed(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
     garden = test_policy.PolicyObject.garden
     say = test_policy.PolicyObject.say

@@ -34,8 +34,6 @@ def post(rkey):
 
 
 class Hub(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
     def directory(self, policy=""):
@@ -186,8 +184,6 @@ if __name__ == "__main__":
 class CardsReadFieldLines(test_chain.Chain):
     """Run 5, finding 1: every card reads field lines with no delvetalk line through Card.route
     (Spell.bare): a bell reads a fenced `rain: …` as rain, the garden reads `plant: …` itself."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def bell(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
@@ -220,8 +216,6 @@ class CardsReadFieldLines(test_chain.Chain):
 class BellDoors(test_chain.Chain):
     """Doors on any card: a bell is planted with a door home to its garden; its planter adds
     and removes doors, nobody else."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_a_planted_bell_has_a_door_to_its_garden_and_its_planter_keeps_them(self):
         self.make("garden", closure("Garden"), garden_seed("", confirm=False))
@@ -244,8 +238,6 @@ class BellDoors(test_chain.Chain):
 class BellsAreQuiet(test_chain.Chain):
     """Run 5, finding 2: 38 bell cards went to people talking about something else in the planting
     threads. A bell answers prose naming none of its forms with no offer."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_the_replies_under_glms_planting_get_nothing(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
@@ -259,8 +251,6 @@ class BellsAreQuiet(test_chain.Chain):
 class LinkDoors(test_chain.Chain):
     """The deploy pass: genesis's STUDIO door names no object; a stranger's "STUDIO" got "The
     door to  opens on nothing yet.". A link door answers with its description (its URL)."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     STUDIO = ("STUDIO", "Your authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md", "")
 
     def test_studio_answers_with_its_url_and_field_lines_pass_it_by(self):
@@ -284,8 +274,6 @@ class HandedToTheDirectory(test_chain.Chain):
     no policy and no anthology form, and were lost. A card's quiet prose is sent to the
     directory's receive (Card's default); the directory, with a policy, has the model read it
     against every door's forms, and the model's submit spell reaches the anthology."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
     def test_two_anthology_lines_under_glms_planting_are_submitted(self):
@@ -328,8 +316,6 @@ class HandedOnlyWhenNamed(test_chain.Chain):
     (127 of 132 came back "not addressed"). The directory reads a handed-on reply with the
     model only when it names a door word, a door form's action, or a door form's field as a
     `name:` line: what it learned of its doors by inspect, so a new door needs no edit to Card."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
     def setUp(self):
@@ -406,8 +392,6 @@ class HandedOnlyWhenNamed(test_chain.Chain):
 
 
 class AnthologyOwner(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_the_seeded_owner_handle_names_the_owner_before_any_admission(self):
         r = self.host.send(op="world-create", principal="did:plc:6amo7col5h4ciq2gpm5eur7b", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
@@ -420,8 +404,6 @@ class AnthologyOwner(test_chain.Chain):
 class AnthologyReachable(test_chain.Chain):
     """Run 5, finding 4: the anthology has a door, forms (submit {line}; admit {number}, the
     owner's) and receive, so a submit line or the model's submit spell reaches it."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
     interpret = Hub.interpret
 

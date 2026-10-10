@@ -10,8 +10,6 @@ from tests.test_turn_world import label, record
 
 
 class Page(Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_a_garden_of_twenty_bells_publishes_eighteen_sections_each_under_2000_characters(self):
         self.make("garden", closure("Garden"), garden_seed())

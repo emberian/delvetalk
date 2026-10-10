@@ -38,7 +38,6 @@ def names(wire):
 
 
 class Floor(Chain):
-    test_ring_then_open_then_light = None  # inherited from Chain; not a floor test
 
     def world(self):
         self.make("porch", closure("Place"), place_seed("Porch", [("in", "garden")], present=["glm"]))
@@ -322,8 +321,6 @@ class Scoped(Chain):
     """Scoped resolution: an avatar's principal says `acquire the stone`, `look`, `bump counter`;
     the avatar finds the object (a thing lying in its place by name, then id; else an object
     of that name) and sends it the matching form."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def setUp(self):
         super().setUp()
@@ -363,8 +360,6 @@ class Scoped(Chain):
 
 class Talk(Chain):
     """say and emote offer a line to every avatar present; whisper to one; only someone here talks."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def setUp(self):
         super().setUp()
@@ -393,8 +388,6 @@ class Talk(Chain):
 class Copies(Chain):
     """Copy as a right: a thing is copyable unless its owner says no; the Workshop's `create /
     like: stone` has the thing copy itself from its own package, without holder and offer."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_create_like_copies_a_thing_and_the_owner_may_forbid_it(self):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm"], things=["stone"]))
@@ -426,8 +419,6 @@ class Copies(Chain):
 class Traces(Chain):
     """A place keeps the last eight things that happened in it, admitted or refused, with
     handles and clauses."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_the_last_eight_with_handles_and_clauses(self):
         self.make("porch", closure("Place"), place_seed("Porch"))

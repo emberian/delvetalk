@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-from tests.host import binary
+from tests.host import HostCase, binary
 from tests.wire import cid_of
 BINARY = binary()
 
@@ -54,39 +54,12 @@ def keep(field):
     return field, variant("keep")
 
 
-class Host:
-    def __init__(self):
-        self.proc = subprocess.Popen([BINARY], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     text=True, bufsize=1)
+class WorldCase(HostCase):
+    """One host process per class, a fresh journal per test (tests.host.HostCase)."""
 
-    def send(self, **request):
-        self.proc.stdin.write(json.dumps(request) + "\n")
-        self.proc.stdin.flush()
-        return json.loads(self.proc.stdout.readline())
-
-    def close(self):
-        self.proc.stdin.close()
-        self.proc.wait(timeout=30)
-        self.proc.stdout.close()
-
-
-class WorldCase(unittest.TestCase):
-    def setUp(self):
-        self.dir = tempfile.TemporaryDirectory()
-        self.path = os.path.join(self.dir.name, "world.journal")
-        self.hosts = []
-        self.host = self.spawn()
-        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
-
-    def tearDown(self):
-        for h in self.hosts:
-            h.close()
-        self.dir.cleanup()
-
-    def spawn(self):
-        h = Host()
-        self.hosts.append(h)
-        return h
+    def let_go(self):
+        """Close this test's hold on the journal, so another process may open it."""
+        self.release()
 
     def create(self, obj="c1", source=COUNTER, count=0, identity=None, host=None):
         return (host or self.host).send(op="world-create", principal="ember",
@@ -367,8 +340,7 @@ class Restart(WorldCase):
         receipts["p4"] = self.propose("p4", [root("c1", 1), root("c2", 0)],
                                       [write("c2", put("name", {"tag": "label", "value": "q"}))])
         before = (self.view("c1"), self.view("c2"), self.host.send(op="world-status"))
-        self.host.close()
-        self.hosts.remove(self.host)
+        self.let_go()
         fresh = self.spawn()
         opened = fresh.send(op="world-open", path=self.path)
         self.assertEqual(opened["status"], "opened")
@@ -387,8 +359,7 @@ class Restart(WorldCase):
     def test_the_new_chain_continues_the_old_head_after_restart(self):
         self.create()
         head = self.host.send(op="world-status")["head"]
-        self.host.close()
-        self.hosts.remove(self.host)
+        self.let_go()
         fresh = self.spawn()
         fresh.send(op="world-open", path=self.path)
         r = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))], host=fresh)
@@ -400,8 +371,7 @@ class Tamper(WorldCase):
         self.create()
         for i in range(4):
             self.propose(f"p{i}", [root("c1", i)], [write("c1", add("count", 1))])
-        self.host.close()
-        self.hosts.remove(self.host)
+        self.let_go()
 
     def open_fresh(self):
         h = self.spawn()

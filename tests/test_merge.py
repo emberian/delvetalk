@@ -20,8 +20,6 @@ def heard(text, post=PAGE):
 
 
 class Merge(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def setUp(self):
         super().setUp()

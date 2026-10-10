@@ -256,7 +256,7 @@ class Suspend(Await):
         self.release()
         with open(self.path) as f:
             text = f.read()
-        i = text.index('"items"')  # the checkpoint's tokens are journaled as blocks
+        i = text.index('"items"', text.rindex("\n", 0, len(text) - 1))  # the strike's checkpoint tokens, journaled as blocks
         with open(self.path, "w") as f:
             # A v2 checkpoint's tokens are bare: change the first number in the blocks.
             j = next(k for k in range(i, len(text)) if text[k].isdigit() and text[k - 1] in "[,")
@@ -264,7 +264,7 @@ class Suspend(Await):
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")
-        self.assertIn("height 5", r["message"])  # the clock setting, the hub and the Maker creator's two entries come first
+        self.assertIn("height 4", r["message"])  # the strike's entry: after the clock setting, the hub and the bell
 
 
 class Seeds(TurnWorld):

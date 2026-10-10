@@ -18,8 +18,6 @@ ACTOR, CLAIMED = "kimik3", "glm"
 
 
 class Principal(Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def forged(self, obj, method, argument, field):
         forged = dict(argument["fields"] and {f["name"]: f["value"] for f in argument["fields"]} or {})

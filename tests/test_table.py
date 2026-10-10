@@ -33,8 +33,6 @@ def pure_play(board, automaton, s0, t0, s1, t1):
 
 
 class Table(Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     NONCE0, NONCE1 = "a" * 64, "b" * 64
     # North moves the attractor at C... (4,0) to (2,0); South the attractor at (4,10) to (2,10).
     MOVES = (4, 2, 114, 112)

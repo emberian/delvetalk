@@ -65,9 +65,16 @@ class BridgeCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.state = Path(self.tmp.name) / 'state'
-        self.hostd = start_hostd(str(Path(self.tmp.name) / 'hostd'), BINARY)
-        self.addCleanup(stop_hostd, self.hostd)
-        self.host = HostClient(Path(self.tmp.name) / 'hostd' / 'host.sock')
+
+    @property
+    def host(self):
+        """A hostd of this test's own, started by the first test that talks to a real host
+        (the routing tests drive a Stub and never do)."""
+        if '_host' not in self.__dict__:
+            hostd = start_hostd(str(Path(self.tmp.name) / 'hostd'), BINARY)
+            self.addCleanup(stop_hostd, hostd)
+            self._host = HostClient(Path(self.tmp.name) / 'hostd' / 'host.sock')
+        return self._host
 
     def make(self, name, body=OFFERING, law=''):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-' + name, 'object': name,
@@ -425,7 +432,7 @@ class Silence(BridgeCase):
         self.assertIn('=== reply to:', out.getvalue())
 
 
-class RealOffers(test_outbound.Offers):
+class RealOffers(test_outbound.TellerWorld):
     def test_offer_drafts_match_the_hosts_real_identity_shape(self):
         self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
         self.assertIsInstance(self.host.send(op="world-offers", principal="ann")["offers"][0]["identity"], dict)
@@ -483,7 +490,7 @@ class Principals(BridgeCase):
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-arrive']), 2)
 
 
-class RealAwaitPost(test_outbound.ReplyIsAddress):
+class RealAwaitPost(test_outbound.PostWaiterWorld):
     def test_a_bridged_reply_settles_a_waiting_awaitPost_on_the_real_host(self):
         waiting = self.turn("w", "waitFor", record(post=label(test_outbound.URI)), principal="ann", identity="wait-1")
         self.assertEqual(waiting["status"], "suspended", waiting)

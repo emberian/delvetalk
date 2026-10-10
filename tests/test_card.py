@@ -60,15 +60,11 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class CounterCard(Receive):
-    """Counter, the host suites' timed reference, follows the protocol too (200 HTTP turns: 0.50 s
-    on hbox with Card in its closure, 0.39 s without; test_http's bound is 10 s)."""
-    test_a_spell_naming_the_card_and_an_action_runs_it = None
-    test_prose_is_not_addressed_and_gets_nothing_and_an_empty_reply_the_card = None
-    test_another_card_or_an_unknown_action_is_refused_by_name = None
+class CounterCard(TurnWorld):
+    """Counter, the host suites' reference object, follows the protocol too."""
 
     def setUp(self):
-        HostCase.setUp(self)
+        super().setUp()
         r = self.host.send(op="world-create", principal="ember", identity="mk-k", object="k", modules=closure("Counter"),
                            entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)

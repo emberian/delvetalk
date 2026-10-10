@@ -187,18 +187,23 @@ def key_tags(case):
     return sorted(found)
 
 
-def report(count=COUNT, impl=os.path.join(ROOT, "impl")):
-    cases = generate(count)
+def report(count=COUNT, impl=os.path.join(ROOT, "impl"), cases=None):
+    cases = cases if cases is not None else generate(count)
     with tempfile.TemporaryDirectory() as scratch:
         evaluators, skipped = build_evaluators(impl, scratch)
         ref = Reference()
         try:
-            reference = {c["name"]: normalize_reference(ref.evaluate(c)) for c in cases}
+            raw = {c["name"]: ref.evaluate(c) for c in cases}
         finally:
             ref.close()
-        out = {"cases": len(cases), "skipped": skipped, "evaluators": {}}
+        reference = {name: normalize_reference(r) for name, r in raw.items()}
+        out = {"cases": len(cases), "skipped": skipped, "evaluators": {},
+               "unevaluated": [name for name, r in raw.items() if r["status"] == "reference-error"]}
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(len(evaluators) or 1) as pool:  # three processes side by side
+            ran = dict(zip([ev.name for ev in evaluators], pool.map(lambda ev: ev.run_all(cases), evaluators)))
         for ev in evaluators:
-            raw = ev.run_all(cases)
+            raw = ran[ev.name]
             agree, first, bad = 0, {}, []
             excused = 0
             for c in cases:
@@ -232,24 +237,20 @@ def render(out):
 class Conformance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = report()
+        cls.cases = generate(COUNT)
+        cls.out = report(cases=cls.cases)
         print("\n" + render(cls.out))
 
     def test_generator_covers_every_constructor_and_primitive(self):
         seen = set()
-        for c in generate(COUNT):
+        for c in self.cases:
             tags(c["term"], seen)
         self.assertEqual(sorted(set(TAGS) - seen), [])
         self.assertEqual(sorted(set("binary:" + b for b in BINARY) - seen), [])
         self.assertEqual(sorted(set("unary:" + u for u in UNARY) - seen), [])
 
     def test_the_machine_evaluates_every_generated_term(self):
-        ref = Reference()
-        try:
-            for c in generate(COUNT):
-                self.assertNotEqual(ref.evaluate(c)["status"], "reference-error", c["name"])
-        finally:
-            ref.close()
+        self.assertEqual(self.out["unevaluated"][:3], [])
 
     def test_evaluators_agree_with_the_machine_except_known_divergence(self):
         self.assertTrue(self.out["evaluators"], "no evaluator could run")

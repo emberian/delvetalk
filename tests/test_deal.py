@@ -18,8 +18,6 @@ def say(text, post):
 
 
 class Deals(Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def deal(self, parties, terms="the like is the placeholder", piece="", name="deal"):
         r = self.host.send(op="world-create", principal=parties[0], identity="mk-" + name, object=name,

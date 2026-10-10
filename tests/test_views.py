@@ -26,8 +26,6 @@ def silver():
 
 
 class Views(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def card(self, name, principal):
         reply = self.turn(name, "receive", heard(), principal=principal)
@@ -91,8 +89,6 @@ class Views(test_chain.Chain):
 class Handles(test_chain.Chain):
     """Rehearsal finding 8: a card never shows a raw DID. A real did:plc (24 characters after the
     method) shows as "…" and its last eight; a short test DID shows whole."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_a_real_did_is_shown_by_its_last_eight(self):
         did = "did:plc:a5uoyxqts4y3iwo2dk74ygma"
@@ -107,8 +103,6 @@ class Handles(test_chain.Chain):
 class ObservedHandles(test_chain.Chain):
     """A card names its reader by the handle the host's registry holds (context.handle, filled by
     the clock principal with world-principal); anyone else by "…" and the DID's last eight."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     DID = "did:plc:nmjdxe6fex23zslnnbwgruj3"
 
     def test_the_reader_sees_their_handle_and_a_stranger_the_last_eight(self):
@@ -136,8 +130,6 @@ class StoredHandles(test_chain.Chain):
     planter. Objects store the handle the host knew beside each principal (planterHandle from the
     planting turn's context.handle, a rain's and an anthology line's handle), and Card.shown
     prefers it."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     GLM, KIMI = "did:plc:nmjdxe6fex23zslnnbwgruj3", "did:plc:j2hnfjwlnm2mau24vnmpir6d"
 
     def test_strangers_read_the_planter_and_the_rains_by_handle(self):
@@ -159,8 +151,6 @@ class StoredHandles(test_chain.Chain):
 
 
 class PartyViews(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     deal = test_deal.Deals.deal
     sign = test_deal.Deals.sign
 

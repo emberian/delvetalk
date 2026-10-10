@@ -175,15 +175,14 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 """
 
 
-class LateBinding(Extend):
+class LateBinding(Reflection):
     """The host writes `layer over` as the layer's first line, so the kernel binds the whole stack late:
     Bell's own rain reply calls render, which a Louder layer grafted by the extend Plan overrides.
     Refuted by a rain reply without LOUDER, or by losing it on replay."""
-    test_a_layer_overrides_what_it_defines_and_keeps_the_rest = None
-    test_layers_stack_and_a_layer_reaches_two_down = None
-    test_a_snapshot_holding_a_layer_of_the_older_form_still_runs = None
-    test_the_extend_plan_grafts_a_layer_from_another_object = None
-    test_an_extension_is_judged_by_the_objects_law_and_a_broken_layer_is_refused = None
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
 
     def rain(self, text, ident):
         r = self.turn("bell", "receive", record(text=label("rain: " + text), post=label("at://x/" + ident)),

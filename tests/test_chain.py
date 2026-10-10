@@ -47,67 +47,19 @@ def garden_state(planted=0, owner="ember"):
                   pending=nil(), children=nil(), pageCheckpoint=label(""), observers=nil())
 
 
-# A package that declares a law cannot be imported by a creator ("a law belongs to the
-# package's entry module"), so make() creates it with world-create: the whole State is
-# these defaults with the Seed's fields laid over them (as the host's create does), made
-# by the seed's owner (a law must admit an amendment by its installer).
-def lawful_defaults():
-    return {
-        "Garden": [("owner", label("ember")), ("planted", {"tag": "natural", "value": "0"}), ("policy", reference("")),
-                   ("confirmFor", asking(True)), ("pending", nil()), ("children", nil()), ("pageCheckpoint", label("")), ("observers", nil())],
-        "Thing": [("owner", label("ember")), ("name", label("")), ("description", label("")), ("holder", reference("")),
-                  ("location", reference("")), ("offer", {"tag": "variant", "label": "none", "payload": record()})],
-    }
-
-
 def field(state, name):
     return [f["value"] for f in state["fields"] if f["name"] == name][0]
 
 
-# Objects are born the way the world makes them: a creator performs `create` with a
-# Seed and the host lays it over the child's initial(). The host's own world-create
-# still takes a whole state, so a test that wants a Seed borrows a one-method creator.
-MAKER = """edition ObjectiveBend 1
-import ./Abi.obend as Abi
-import ./Plan.obend as Plans
-import ./PACKAGE.obend as Child
-record State:
-  made: Nat
-record Edits:
-  made: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
-def initial() -> State:
-  {made: 0n}
-def make(state: State, input: {id: String, seed: Child.Seed}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.create({package: "PACKAGE", seed: Data.of::<Child.Seed>(input.seed), law: "", requireAbsent: {world: "", object: input.id}})):
-    case created(_): "created"
-    case refused(r): r.clause
-    case _: "no answer"
-"""
-
-
 class Chain(TurnWorld):
     def make(self, name, modules, seed):
-        """Create object `name` from the last module of `modules` with a Seed, through a creator
-        (or, for a package that declares a law, with world-create by the seed's owner)."""
-        package = modules[-1]["name"]
-        if any(line.startswith("law ") for line in modules[-1]["source"].splitlines()):
-            given = {f["name"]: f["value"] for f in seed["fields"]}
-            whole = [(k, given.get(k, v)) for k, v in lawful_defaults()[package]]
-            owner = given.get("owner", label("ember"))["value"]
-            r = self.host.send(op="world-create", principal=owner, identity="mk-" + name, object=name,
-                               modules=modules, entry="initial", seed={"tag": "record", "fields": [{"name": k, "value": v} for k, v in whole]})
-            self.assertEqual(r["status"], "created", r)
-            return
-        maker = "maker-" + name
-        creator = modules + [{"name": "Maker", "source": MAKER.replace("PACKAGE", package)}]
-        r = self.host.send(op="world-create", principal="ember", identity="mk-" + maker, object=maker,
-                           modules=creator, entry="initial", seed=record(made=nat(0)))
+        """Create object `name` from the last module of `modules` with a Seed, which world-create
+        lays over the package's initial() as a creator's `create` does; the seed's owner, if it
+        names one, creates it (a law must admit an amendment by its installer)."""
+        owner = {f["name"]: f["value"] for f in seed["fields"]}.get("owner", label("ember"))["value"]
+        r = self.host.send(op="world-create", principal=owner, identity="mk-" + name, object=name,
+                           modules=modules, entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)
-        made = self.host.send(op="world-turn", principal="ember", object=maker, method="make",
-                              argument=record(id=label(name), seed=seed), identity="make-" + name)
-        self.assertEqual((made["status"], made.get("result")), ("admitted", label("created")), made)
 
     def state(self, name):
         view = self.host.send(op="world-view", principal="ember", object=name)
@@ -122,6 +74,9 @@ class Chain(TurnWorld):
                 break
         return replies
 
+
+
+class Chains(Chain):
     def test_ring_then_open_then_light(self):
         self.make("lantern", closure("Lantern"), record())
         self.make("door", closure("Door"), record())

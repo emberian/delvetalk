@@ -14,7 +14,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from tests.host import start_hostd, stop_hostd
+from tests.host import serve, start_hostd, stop_hostd
 from tests.test_chain import garden_state
 from tests.test_http import DID, PEOPLE, Provider
 from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
@@ -93,7 +93,7 @@ class Repository(unittest.TestCase):
         cls.front = Front(('127.0.0.1', 0), cls.host, ident, clock=lambda: cls.now[0],
                           heaps=RemoteHeaps(sock, Path(cls.tmp.name) / 'heaps'), repl=HostClient(sock, stateless=True))
         cls.port = cls.front.server_address[1]
-        threading.Thread(target=cls.front.serve_forever, daemon=True).start()
+        serve(cls.front)
         send = cls.host.send
         seeded = [
             send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
