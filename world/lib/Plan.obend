@@ -38,10 +38,11 @@ import ./Form.obend as Form
 # only in tail position, so a method that another activity reuses takes its finish as a
 # pure function `then: Result -> T`.
 #
-# Writes are staged. A `write` is answered `written` always; whether the law
-# admits it is decided once, at commit, and a refusal there ends the whole turn.
-# An activity therefore has no `refused` arm after a write: such an arm is dead
-# code. (`create`, `call` and `view` can still be answered `refused` or `denied`.)
+# Writes are staged. A `write` of the object's own state is answered `written`; whether the
+# law admits it is decided once, at commit, and a refusal there ends the whole turn, so
+# after a self-write a `refused` arm is dead code. A write naming another object is
+# answered `refused {clause: notSelf}` at once (an object writes only itself; it calls or
+# sends the other). (`create`, `call` and `view` can still be answered `refused` or `denied`.)
 #
 # Recursive data (List, Document) may cross a Plan or Response: the first
 # checker refused it with "the checker refused the front end's typed packet",
