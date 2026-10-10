@@ -62,7 +62,8 @@ class Reproductions(Chain):
         # The declared `next` still runs, and still checks its caller.
         nxt = self.turn("north", "next", principal=STRANGER)
         self.assertEqual(nxt["status"], "admitted", nxt)
-        self.assertEqual(nxt["result"]["payload"]["fields"][0]["value"]["value"], "Only the table moves the round.")
+        self.assertEqual({f["name"]: f["value"]["value"] for f in nxt["result"]["payload"]["fields"]},
+                         {"clause": "notTable", "reading": "Only the table moves the round."})
 
     def test_the_table_still_calls_next_and_nobody_sees_the_helpers(self):
         inspected = self.host.send(op="world-inspect", principal=STRANGER, object="table", source=False)

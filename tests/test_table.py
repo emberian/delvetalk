@@ -63,7 +63,7 @@ class Table(Chain):
 
     def reason(self, reply):
         self.assertIn("result", reply, reply)
-        return reply["result"]["payload"]["fields"][0]["value"]["value"]
+        return {f["name"]: f["value"]["value"] for f in reply["result"]["payload"]["fields"]}["reading"]
 
     def test_the_owner_amends_the_table_and_a_stranger_may_not(self):
         version = self.host.send(op="world-view", principal="ember", object="table")["version"]

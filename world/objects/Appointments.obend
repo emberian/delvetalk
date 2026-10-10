@@ -8,7 +8,7 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Appointment.obend as Appointment
 # A book of appointments. Booking creates one Appointment object (owned by the turn's
-# principal) and sends it `keep`, so each waits in its own turn: a later booking writes
+# principal) and sends it `wait`, so each waits in its own turn: a later booking writes
 # the book, never the appointment, and cannot stale another's wait.
 record State:
   booked: Nat
@@ -38,7 +38,7 @@ def counted(object: Plans.Reference) -> Activity<Done>:
   let written(_) = write {booked: add 1n, children: append object}
   kept(object)
 def kept(object: Plans.Reference) -> Activity<Done>:
-  match world.send({object: object, method: "keep", argument: Plans.nothing()}):
+  match world.send({object: object, method: "wait", argument: Plans.nothing()}):
     case _: Done.booked({object: object})
 form book:
   topic: text 1..140
