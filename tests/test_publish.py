@@ -1,9 +1,15 @@
-"""publish end to end (FOUNDATION section 4): an object's published page reaches the outbox as a
+"""A published page reaches the outbox as a draft, is recorded when posted, and a merge reply to it
+routes back to its object.
+
+Evidence for FOUNDATION §5, §7 (layer: transport).
+
+publish end to end: an object's published page reaches the outbox as a
 draft marked like a reply draft and never posted by the bridge; post.py --record records the post's
 page and section; a `merge` reply to the recorded page post routes to the object by reply-is-address.
 
 Refuted by: a Garden page draft without its eighteen sections in order; the bridge drafting a
-publication twice; a merge reply to the page post going anywhere but the garden."""
+publication twice; a merge reply to the page post going anywhere but the garden.
+"""
 import unittest
 
 from tests.test_bridge import BridgeCase

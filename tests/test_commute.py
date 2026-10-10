@@ -1,4 +1,9 @@
-"""Commutative edits commit against moved roots (FOUNDATION section 13, row 1), and list items
+"""Commutative edits (keep, add, append) commit against a moved root and are judged on the state as
+it is now; any other change of a moved root is stale.
+
+Evidence for FOUNDATION §2 Turn, §8 (layer: host).
+
+Commutative edits commit against moved roots, and list items
 addressed by their canonical bytes.
 
 A root whose every change in the turn is `keep`, `add` or `append` need only be a version the

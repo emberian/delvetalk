@@ -1,4 +1,9 @@
-"""The spell grammar in Bend: parse a card reply, fit it to the card's form.
+"""The spell grammar in Bend: the last unquoted delvetalk line, field lines, slash forms, blocks,
+fences skipped, fitted to a form or refused by name, within budget at 4 KB.
+
+Evidence for FOUNDATION §5 Spell grammar (layer: objects).
+
+The spell grammar in Bend: parse a card reply, fit it to the card's form.
 
     python3 -m unittest tests.test_spell -v
 """
@@ -85,7 +90,7 @@ def parse(reply):
 
 
 class Parse(unittest.TestCase):
-    def test_the_v1_cards_two_sample_spells(self):
+    def test_the_v1_card_sample_spells_parse_and_become_proposals_with_fields_sorted(self):
         self.assertEqual(parse("delvetalk garden-1 plant\nseed: fern\ncolour: silver\n"),
                          "spell garden-1 plant seed=fern;colour=silver;")
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: fern\ncolour: silver\n"),
@@ -156,7 +161,7 @@ class Parse(unittest.TestCase):
                 self.assertNotEqual(propose(bad, card="env/x").split(" ")[0], "proposal", bad)
         self.assertTrue(parse("delvetalk env/x ??").startswith("not a spell"))
 
-    def test_the_slash_form_the_town_writes(self):
+    def test_the_slash_form_separates_fields_and_a_field_line_keeps_its_slashes(self):
         """All five spells in the archive use ` / ` (rehearsal/REPORT.md, finding 1)."""
         self.assertEqual(parse("delvetalk tide subscribe / every: 1 / note: WC-01, first light"),
                          "spell tide subscribe every=1;note=WC-01, first light;")
@@ -183,7 +188,7 @@ class Parse(unittest.TestCase):
         self.assertEqual(propose(post), "proposal garden-1 plant colour=silver;seed=fern;")
 
     def test_a_field_named_as_the_action_fills_the_open_text_field(self):
-        """The town writes `plant: a fern` for the seed (the §10 hour)."""
+        """The town writes `plant: a fern` for the seed (the §11 hour)."""
         self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern\ncolour: silver"), "proposal garden-1 plant colour=silver;seed=a fern;")
         self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern"), "unclear colour|")
         self.assertEqual(propose("delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver"), "refused Unknown field plant")

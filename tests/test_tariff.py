@@ -1,31 +1,34 @@
-"""The tariff, measured: exact tick counts for three reference workloads, with the
-counts before the kernel lane's tariff work for comparison.
+"""The tariff, pinned: exact tick counts of workloads whose code lives in the test, so only a change
+to the machine's charges moves them.
+
+Evidence for FOUNDATION §2 Limits (layer: kernel).
+
+The tariff, pinned: exact tick counts of workloads whose code is fixed in this file, so
+only a change to the machine's charges can move them.
 
     python3 -m unittest tests.test_tariff -v
 
-Conformance compares values, never costs, so these counts are the regression
-guard for the tariff: a change to the machine or to `textStepCost` that moves
-one of them must update the number here and say why.
+Conformance compares values, never costs, so these counts are the regression guard for
+the tariff: a change to the machine or to `textStepCost` that moves one of them must
+update the number here and say why. Workloads over world library code (a Bell card, a
+spell parse) are bounded where that code is tested, never pinned here: their counts move
+with every edit of the library.
 
 | workload                                   | before  | after   |
 | ------------------------------------------ | ------- | ------- |
 | one `bump` turn (start 56 + resume 10)     | 66      | 66      |
-| spell parse, 4,096 bytes, 64 fields        | 97,355  | 56,957  |
 | `Document.plain`, 1,025 leaves (with build)| 336,659 | 129,272 |
 | the same document's `Document.size` walk   | 120,037 | 120,037 |
-| Bell card, 1,025 rains                     | 848,680 | 333,209 |
 
 Before: `Document.plain` joined adjacent pairs in rounds (every byte copied about
 log2(leaves) times); `textTake`/`textDrop` were charged 2 x min(B, 4n) bytes.
 After: `plain` is one `textJoin` (charged by the bytes it appends), and take/drop
-are charged by the exact bytes of the prefix they traverse. No transition count
-changed (the spell parse is 19,971 transitions either way).
+are charged by the exact bytes of the prefix they traverse.
 """
 import unittest
 
 from tests.test_turn import Host, PLANS, BINDING, nat, variant
-from tests.test_objects import BELL_PROBE, run_pure
-from tests import test_spell
+from tests.test_objects import run_pure
 
 BIG = {"ticks": "1000000"}
 
@@ -55,7 +58,7 @@ def size(n: Nat) -> Nat:
 
 
 class TariffTests(unittest.TestCase):
-    def test_bump_turn(self):
+    def test_a_bump_turn_costs_56_ticks_to_start_and_10_to_resume(self):
         h = Host()
         self.addCleanup(h.close)
         art = h.compile(PLANS, "bump")
@@ -64,13 +67,7 @@ class TariffTests(unittest.TestCase):
         print("\n  bump: start %d + resume %d ticks" % (started["ticksUsed"], resumed["ticksUsed"]))
         self.assertEqual((started["ticksUsed"], resumed["ticksUsed"]), (56, 10))
 
-    def test_spell_parse_of_64_fields(self):
-        out = test_spell.run("fieldCount", test_spell.text(test_spell.Maximum().reply(44)))
-        print("\n  spell, 64 fields: %d ticks (75,421 before block values; 75,412 before the walk carried whether a line might be a field; 68,150 before tagged fences; 57,044 before the last-spell search; 56,957 before card names took :/.; 97,355 before that)" % out["ticksUsed"])
-        self.assertEqual(out["value"]["value"], "64")
-        self.assertEqual(out["ticksUsed"], 79583)
-
-    def test_plain_of_1025_leaves(self):
+    def test_document_plain_over_1025_leaves_costs_its_pinned_ticks(self):
         flat = run_pure("Document", "flat", nat(1025), probe=DOCUMENT, limits=BIG)
         sized = run_pure("Document", "sized", nat(1025), probe=DOCUMENT, limits=BIG)
         print("\n  plain, 1,025 leaves: %d ticks (was 336,659); size walk %d; plain's own work %d"
@@ -79,12 +76,6 @@ class TariffTests(unittest.TestCase):
         self.assertEqual(flat["ticksUsed"], 129272)
         self.assertEqual(sized["ticksUsed"], 120037)
         self.assertLess(flat["ticksUsed"] - sized["ticksUsed"], 50000)
-
-    def test_bell_card_of_1025_rains(self):
-        out = run_pure("Bell", "many", nat(1025), probe=BELL_PROBE, limits=BIG)
-        print("\n  Bell card, 1,025 rains: %d ticks (76,106 before its doors were listed; 76,476 before its head was one interpolated string; 75,740 before rains kept handles; 75,748 before the planter was a field of its own; 75,701 before the reader's handle; 75,985 before handles were shortened; 75,997 through the one-argument wrapper; 75,830 before the planter saw (yours); 848,680; 333,209 before the card showed eight)" % out["ticksUsed"])
-        self.assertEqual(out["status"], "finished", out)
-        self.assertEqual(out["ticksUsed"], 76485)
 
     def test_text_join_is_linear_in_its_output(self):
         # Refuted if a join re-reads its accumulator: doubling the elements would

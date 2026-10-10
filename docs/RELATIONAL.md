@@ -186,3 +186,23 @@ work. Four mitigations, the first three landing with the slice:
 Bounds that go with them: subscribers per object 64, `changed` deliveries
 under the per-turn send bound, a per-object index of height to keys touched so
 `keysChangedSince` is constant.
+
+## 12. Corrections from the first migration (2026-10-10)
+
+- Canonical order sorts the key projection by its DAG-CBOR bytes, which puts
+  the shorter column name first: `{author, at, n}` orders by `n`, then `at`,
+  then `author`. Objects that need arrival order keep an explicit position
+  column (the Directory's `place`).
+- A merge join of two 200-row relations costs about 188,000 ticks with
+  `canonicalCompare`, two orders of magnitude above §4's estimate; a card that
+  joins should join bounded relations or precompute.
+- Wake patterns compare a column against a `Relations.Cell` (a natural or a
+  text), not against `Data`, since Bend cannot read `Data`; observers receive
+  rows as `Card.Row`.
+- Rows are records: a relation of principals is `Greeting {principal}`, not a
+  bare text.
+- A per-turn ordinal from the count at read time does not separate two
+  concurrent turns by one author at one read height; no current object needs
+  that, and one that does should key by the receipt's intent.
+- `insertOnly` is enforced in the Bend predicate until the host denotes the
+  fragment atom (a host defect, in its queue).

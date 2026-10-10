@@ -1,4 +1,9 @@
-"""Supervisors (FOUNDATION section 13, row 5): an object names a supervisor at creation, and an
+"""A supervisor named at creation is told when a supervised activity breaks, runs out of budget or
+times out, and of nothing else.
+
+Evidence for FOUNDATION §8 supervisors (layer: host).
+
+Supervisors: an object names a supervisor at creation, and an
 activity of it that ends `broken`, out of `budget`, or after its await `timedOut` is delivered to
 the supervisor as `ended {receipt, how}` under the causal ledger.
 

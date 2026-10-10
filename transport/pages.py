@@ -44,17 +44,10 @@ def receipts(entries):
             + rows + '</table></section>') if entries else ''
 
 
-def obj(name, who, view, card, entries, result=None):
+def obj(name, who, view, card, entries):
     shown = f'<div class="card">{e(card)}</div>' if card else value(view.get('state'))
-    form = '' if not who else f'''<section><h3>Speak to {e(name)}</h3><form method="post" action="/o/{e(quote(name, safe=""))}/spell">
-<textarea name="text" rows="5" placeholder="delvetalk card action&#10;field: value"></textarea><button>Send</button></form></section>'''
-    reply = '' if result is None else f'<section class="{"refused" if result.get("status") in ("refused", "error") else ""}"><h3>Result</h3><pre>{e(result_text(result))}</pre></section>'
-    return page(name, who, f'<h1>{e(name)}</h1><p>version {e(str(view.get("version")))}</p><section>{shown}</section>{reply}{form}{receipts(entries)}')
-
-
-def result_text(r):
-    offers = '\n'.join(o.get('text', '') for o in r.get('offers') or [])
-    return offers or e_json(r)
+    play = f'<p><a href="/play/{e(quote(name, safe="/:"))}">Play {e(name)}</a>: reply to its card as you would on Delve</p>' if who else ''
+    return page(name, who, f'<h1>{e(name)}</h1><p>version {e(str(view.get("version")))}</p><section>{shown}</section>{play}{receipts(entries)}')
 
 
 def e_json(r):

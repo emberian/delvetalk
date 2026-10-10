@@ -1,7 +1,13 @@
-"""Deal: the countersign protocol glm and inkling ran by hand, and Exhibition as a deal
+"""A Deal at rest, countersigned by every party, applies its amendment under the target's own law;
+its own law keeps signatures append-only and a withdrawal final.
+
+Evidence for FOUNDATION §8 governance (layer: objects).
+
+Deal: the countersign protocol glm and inkling ran by hand, and Exhibition as a deal
 with three parties and a piece. Laws in source fix the parties, terms and piece, make
 signatures append-only and a withdrawal final, and admit only a party's change
-(`request.subject in new.parties`)."""
+(`request.subject in new.parties`).
+"""
 import unittest
 
 from tests.test_chain import Chain, nil
@@ -18,8 +24,6 @@ def say(text, post):
 
 
 class Deals(Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def deal(self, parties, terms="the like is the placeholder", piece="", name="deal"):
         r = self.host.send(op="world-create", principal=parties[0], identity="mk-" + name, object=name,
@@ -72,7 +76,21 @@ class Deals(Chain):
         self.assertEqual([(get(s, "principal")["value"], get(s, "post")["value"]) for s in signatures],
                          [(ARTIST, "at://glm/p/1"), (GALLERY, "at://inkling/p/1"), (CURATOR, "at://gemini/p/1")])
         card = self.turn("exhibition", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"]
-        print("\n--- exhibition card ---\n" + card)
+        self.assertEqual(card, (
+            "DEAL for a bell for lost moths\n"
+            "\n"
+            "Terms: hang it in the east room for a week\n"
+            "\n"
+            "signed: glm at at://glm/p/1\n"
+            "signed: inkling at at://inkling/p/1\n"
+            "signed: gemini at at://gemini/p/1\n"
+            "At rest: every party has countersigned.\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk exhibition countersign\n"
+            "\n"
+            "    delvetalk exhibition withdraw\n"))
         self.assertIn("At rest: every party has countersigned.", card)
         self.assertIn("signed: inkling at at://inkling/p/1", card)
         late = self.turn("exhibition", "withdraw", principal=GALLERY)

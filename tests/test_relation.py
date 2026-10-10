@@ -1,4 +1,9 @@
-"""Relations in objects (docs/RELATIONAL.md §2, §3): a `Relation<T>` field the package declares in
+"""A Relation field stays sorted by its key's canonical bytes with no key twice, within its limit,
+and insert, upsert and retract commit or refuse by the nine-cell table.
+
+Evidence for FOUNDATION §9 (layer: host).
+
+Relations in objects (docs/RELATIONAL.md §2, §3): a `Relation<T>` field the package declares in
 `relations()` is kept sorted by its key's canonical bytes with no key twice and at most its limit of
 rows; `insert`, `upsert`, `retract` follow the nine-cell table. Each case names what would refute it.
 
@@ -127,7 +132,7 @@ class Relations(RelationCase):
         self.assertEqual(r["status"], "error", r)
         self.assertIn("key: relation rains names column when, which its rows lack", r["message"])
 
-    def test_the_nine_cells(self):
+    def test_insert_upsert_and_retract_follow_the_nine_cell_table_and_replay(self):
         self.assertEqual(self.make_bell()["status"], "created")
         result = lambda r: (r["status"], r.get("result", {}).get("value"), r["receipt"]["outcome"].get("class"))
         # insert: absent adds; same row is no change; other row is keyTaken.

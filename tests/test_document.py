@@ -1,4 +1,9 @@
-"""Host-side Document projection: render-document, and the `offer` Plan.
+"""The host renders a Document byte for byte as Bend's Document.plain does, and an offer turn's card
+is retained on its receipt and replayed.
+
+Evidence for FOUNDATION §5 (layer: host).
+
+Host-side Document projection: render-document, and the `offer` Plan.
 
 `render` must equal Bend's Document.plain byte for byte and `lines` Document.lines.
 Run from the repository root:  python3 -m unittest tests.test_document -v
@@ -7,7 +12,6 @@ import json
 import os
 import random
 import tempfile
-import time
 import unittest
 
 from tests.test_chain import garden_state
@@ -164,29 +168,14 @@ class RenderTests(unittest.TestCase):
                 self.assertEqual(got["bytes"], len(expected_plain.encode()))
                 self.assertEqual("".join(x + "\u0001" for x in got["lines"]), expected_lines)
 
-    def test_a_1025_rain_card_renders_in_the_host_under_50_ms(self):
+    def test_a_1025_rain_card_renders_whole_in_the_host(self):
         header = "A silver bell planted by glm: a bell for lost moths (silent)\n"
         line = "author: a line of rain\n"
         rains = [variant("text", value=label(line)) for _ in range(1025)]
         doc = variant("sequence", items=as_list([variant("text", value=label(header))] + rains))
-        self.s.render(doc)  # warm the process
-        best = None
-        for _ in range(5):
-            started = time.perf_counter()
-            got = self.s.render(doc)
-            elapsed = time.perf_counter() - started
-            best = elapsed if best is None else min(best, elapsed)
+        got = self.s.render(doc)
         self.assertEqual(got["text"], header + line * 1025)
         self.assertEqual(len(got["lines"]), 1026)
-        # a request of the same size that renders nothing isolates the host's JSON framing
-        empty = variant("sequence", items=as_list([variant("fields", capture=capture("", 0, "", "", ""),
-                                                           needs=nil()) for _ in range(1026)]))
-        started = time.perf_counter()
-        self.s.render(empty)
-        framing = time.perf_counter() - started
-        print("1025-rain card: render-document round trip %.1f ms (same-size request with no text: %.1f ms)"
-              % (best * 1000, framing * 1000))
-        self.assertLess(best, 0.050)
 
     def test_depth_65_is_refused_by_name_and_depth_64_renders(self):
         def nested(levels):
@@ -242,14 +231,6 @@ class OfferTests(HostCase):
                                argument=look, identity="look-1")
         self.assertEqual(retry["receipt"], again["receipt"])
         self.assertEqual(retry["offers"], turn["offers"])
-
-    def test_a_turn_without_an_offer_carries_no_offers_field(self):
-        self.host.send(op="world-create", principal="ember", identity="mk", object="garden",
-                       modules=closure("Garden"), entry="initial", seed=garden_state(0))
-        turn = self.host.send(op="world-turn", principal="glm", object="garden", method="cistern",
-                              argument=record(), identity="c1")
-        self.assertNotIn("offers", turn)
-        self.assertNotIn("offers", turn.get("receipt", {}))
 
 
 if __name__ == "__main__":

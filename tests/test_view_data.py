@@ -1,4 +1,9 @@
-"""viewData / viewDataField: a card reads another object's state, or one field of it, as `Data` it may pass
+"""A card reads another object's state, or one field, as Data, the root recorded and a private object
+denied.
+
+Evidence for FOUNDATION §3 (layer: host).
+
+viewData / viewDataField: a card reads another object's state, or one field of it, as `Data` it may pass
 along but not take apart (a Bell's `view` of the directory could not carry the directory's state type).
 Read authority and the root are `view`'s. Refuted by a value other than the field's, a field read without
 recording the root, or a private object answered.

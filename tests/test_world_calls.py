@@ -1,4 +1,9 @@
-"""World calls (WHOLENESS §1): `Activity<R>` yields `World.Message`s, `world.METHOD::<T>(arg)`
+"""A world call is a typed perform of the world object: each call site resumes at its own result
+type, checked against the world's protocol.
+
+Evidence for FOUNDATION §10 (layer: kernel).
+
+World calls (WHOLENESS §1): `Activity<R>` yields `World.Message`s, `world.METHOD::<T>(arg)`
 is the perform of `{object: {world: "", object: "world"}, method, argument: Data}` typed by
 the world's protocol at T, and each call site resumes at its own result type.
 

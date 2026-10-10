@@ -1,4 +1,9 @@
-"""Extend, not replace (FOUNDATION section 13, row 3): `reprogram {mode: extend}` and Plan
+"""Extend, not replace: a layer grafted by reprogram or the extend Plan overrides what it defines,
+stacks, survives snapshots and replay, and is judged by the object's law.
+
+Evidence for FOUNDATION §8 extend (layer: host).
+
+Extend, not replace: `reprogram {mode: extend}` and Plan
 `extend` add the offered module as a layer over the object's current code, which it sees as
 `Super`; what the layer defines overrides, everything else is the code below.
 
@@ -71,43 +76,6 @@ def graft(state: State, input: {target: String, package: String}, context: Abi.C
     case refused(r): r.clause
     case _: "other"
 """
-
-
-# The layer of tests/test_layers.py, grafted by the host's extend Plan.
-LOUDER = """layer over ./Bell.obend
-edition ObjectiveBend 1
-import ./Abi.obend as Abi
-import ./Document.obend as Document
-type State = Super.State
-def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.concat(Document.text("LOUDER\\n"), Super.render(state, context))
-"""
-
-
-class LouderBell(Reflection):
-    """Louder over Bell through the host's `extend` Plan: a rain reply's card is the bell as the
-    layer renders it (Bell's receive calls render; with late binding across the stack,
-    KERNEL-HANDOFF section 13, that is Louder's): the host writes the layer line (HOST-HANDOFF 5.18)."""
-
-    def setUp(self):
-        super().setUp()
-        self.open_library()
-        with open("world/objects/Bell.obend") as handle:
-            bell = handle.read()
-        empty = {"tag": "list", "items": []}
-        self.make("bell", bell, record(colour={"tag": "variant", "label": "amber", "payload": record()}, seed=label("a fern"),
-                                       rains=empty, rung={"tag": "boolean", "value": False}, planting=label(""),
-                                       planter=label("glm"), planterHandle=label(""), observers=empty))
-        self.make("forge", FORGE, record(note=label("")))
-
-    def test_a_rain_reply_after_the_graft_shows_louders_card(self):
-        graft = self.turn("forge", "graft", record(target=label("bell"), package=label(LOUDER)))
-        self.assertEqual((graft["status"], graft["result"]), ("admitted", label("grafted")), graft)
-        rain = self.turn("bell", "receive", record(text=label("delvetalk bell rain\ntext: a drizzle"), post=label("at://x/1")), principal="glm")
-        self.assertEqual((rain["status"], rain["result"]["label"]), ("admitted", "done"), rain)
-        card = rain["offers"][0]["text"]
-        self.assertIn("a drizzle", card)
-        self.assertTrue(card.startswith("LOUDER\n"), card)
 
 
 class Extend(Reflection):
@@ -212,15 +180,14 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 """
 
 
-class LateBinding(Extend):
+class LateBinding(Reflection):
     """The host writes `layer over` as the layer's first line, so the kernel binds the whole stack late:
     Bell's own rain reply calls render, which a Louder layer grafted by the extend Plan overrides.
     Refuted by a rain reply without LOUDER, or by losing it on replay."""
-    test_a_layer_overrides_what_it_defines_and_keeps_the_rest = None
-    test_layers_stack_and_a_layer_reaches_two_down = None
-    test_a_snapshot_holding_a_layer_of_the_older_form_still_runs = None
-    test_the_extend_plan_grafts_a_layer_from_another_object = None
-    test_an_extension_is_judged_by_the_objects_law_and_a_broken_layer_is_refused = None
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
 
     def rain(self, text, ident):
         r = self.turn("bell", "receive", record(text=label("rain: " + text), post=label("at://x/" + ident)),

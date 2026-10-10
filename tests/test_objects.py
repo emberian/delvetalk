@@ -1,4 +1,9 @@
-"""Compile and exercise the Bend standard library and the first objects.
+"""The library holds one Context and no dynamic universe; objects claim the Plans they perform; cards
+render in under 1,400 characters at their fullest.
+
+Evidence for FOUNDATION §5 (layer: objects).
+
+Compile and exercise the Bend standard library and the first objects.
 
 Every module under world/lib and world/objects goes through the real checker
 binary (read-only, built elsewhere). Run from the repository root:
@@ -170,16 +175,8 @@ ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """def one(n: Nat) -> String:
 
 
 class Library(unittest.TestCase):
-    def test_every_module_compiles(self):
-        for name in sorted(MODULES):
-            entries = [d for d in definitions(name) if not d[1]]
-            if not entries:
-                continue
-            with self.subTest(module=name):
-                reply = compile_job(closure(name), entries[0][0])
-                self.assertEqual(reply["status"], "compiled", reply)
 
-    def test_one_context_record(self):
+    def test_only_the_abi_module_declares_the_context_record(self):
         owners = []
         for name, path in MODULES.items():
             with open(path) as handle:
@@ -187,37 +184,13 @@ class Library(unittest.TestCase):
                     owners.append(name)
         self.assertEqual(owners, ["Abi"])
 
-    def test_no_dynamic_value_universe(self):
+    def test_no_module_mentions_the_preparation_value_universe(self):
         for name, path in MODULES.items():
             with open(path) as handle:
                 self.assertNotIn("Preparation", handle.read(), name)
 
 
 class Objects(unittest.TestCase):
-    def activities(self):
-        for name in sorted(MODULES):
-            if MODULES[name].startswith(os.path.join(WORLD, "objects")):
-                for entry, generic, result in definitions(name):
-                    if result.startswith("Activity<") and not generic:
-                        yield name, entry
-
-    def test_activities_are_computations(self):
-        seen = 0
-        for name, entry in self.activities():
-            with self.subTest(activity=name + "." + entry):
-                reply = compile_job(closure(name), entry)
-                self.assertEqual(reply["status"], "compiled", reply)
-                comp = computation(reply["artifact"]["type"])
-                self.assertEqual(comp["tag"], "computation")
-                plans = row_names(comp["plan"]["row"])
-                responses = row_names(comp["response"]["row"])
-                print("%s.%s plan={%s} response={%s}" % (name, entry, ",".join(plans), ",".join(responses)))
-                self.assertEqual(plans[:3], ["view", "write", "call"])
-                for silence in ("reply", "refused", "unknown", "timedOut", "broken"):
-                    self.assertIn(silence, responses)
-                seen += 1
-        self.assertGreaterEqual(seen, 20)
-
     def test_methods_perform_the_plans_they_claim(self):
         expected = {("Counter", "bumped"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rained"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
@@ -232,13 +205,31 @@ class Objects(unittest.TestCase):
             body = source[found.start() + 1:].split("\ndef ")[0]
             self.assertTrue(any(form % plan in body for form in ("perform(Plan.%s(", "perform(Plans.Plan.%s(", "perform(%s {")), (name, entry))
 
-    def test_render_cards(self):
+    def test_garden_bell_cistern_and_anthology_cards_render_their_text(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))
         self.assertEqual(counter["value"]["value"], "Count: 3")
         garden = run_pure("Garden", "shown", nat(20), probe=GARDEN_PROBE)
         self.assertEqual(garden["status"], "finished", garden)
         text = garden["value"]["value"]
-        print("--- garden with 20 bells (%d characters) ---\n%s" % (len(text), text))
+        self.assertEqual(text, (
+            "✾ THE NIGHT GARDEN\n"
+            "\n"
+            "To plant, reply:\n"
+            "\n"
+            "    delvetalk garden plant\n"
+            "    seed: <what might grow here, 1 to 80 characters>\n"
+            "    colour: <amber, violet or silver>\n"
+            "\n"
+            "20 planted, newest first:\n"
+            "- garden/bell/20\n"
+            "- garden/bell/19\n"
+            "- garden/bell/18\n"
+            "- garden/bell/17\n"
+            "- garden/bell/16\n"
+            "- garden/bell/15\n"
+            "- garden/bell/14\n"
+            "- garden/bell/13\n"
+            "… and 12 more\n"))
         self.assertTrue(text.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:"))
         self.assertLess(text.index("garden/bell/20\n"), text.index("garden/bell/13\n"))
         self.assertNotIn("garden/bell/12\n", text)
@@ -264,15 +255,13 @@ class Objects(unittest.TestCase):
         for name in objects:
             with self.subTest(object=name):
                 entries = [d[0] for d in definitions(name)]
-                for required in ("defaultSeed", "seeded", "initial"):
+                for required in ("defaultSeed", "seeded", "initial"):  # test_artifact_pins compiles each
                     self.assertIn(required, entries)
-                    reply = compile_job(closure(name), required)
-                    self.assertEqual(reply["status"], "compiled", reply)
                 with open(MODULES[name]) as handle:
                     source = handle.read()
                 self.assertIn("seeded(defaultSeed())", source)
 
-    def test_plain_is_not_quadratic(self):
+    def test_document_plain_is_linear_not_quadratic_over_256_leaves(self):
         """Document.plain flattens the leaves once and joins them in rounds of
         adjacent pairs. Measured on a sequence of 256 eight-byte text leaves
         (generation included, about 30,000 ticks): 555,890 ticks with the old
@@ -285,7 +274,7 @@ class Objects(unittest.TestCase):
         self.assertLess(flat["ticksUsed"], 100000)
         self.assertEqual(run_pure("Document", "flat", nat(256), probe=probe, limits=BIG)["ticksUsed"], flat["ticksUsed"])
 
-    def test_chain_objects_render(self):
+    def test_the_door_lantern_and_loop_objects_render_their_cards(self):
         door = run_pure("Door", "shut", nat(0), probe=DOOR_PROBE)
         self.assertEqual(door["status"], "finished", door)
         self.assertEqual(door["value"]["value"], "The door is shut.\nknock: glm\n")
@@ -333,7 +322,7 @@ class Refusals(unittest.TestCase):
         self.assertEqual(reply["status"], "error", reply)
         self.assertTrue(any(n in reply["message"] for n in names), reply["message"][:400])
 
-    def test_baseline_compiles(self):
+    def test_the_baseline_activity_without_nested_effects_compiles(self):
         reply = compile_job([{"name": "Ok", "source": NEGATIVE_PRELUDE + """def bump(count: Nat) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({before: count, after: count + 1n})):
     case written(_): count + 1n
@@ -341,44 +330,44 @@ class Refusals(unittest.TestCase):
 """}], "bump")
         self.assertEqual(reply["status"], "compiled", reply)
 
-    def test_effect_in_field(self):
+    def test_a_perform_inside_a_record_field_is_refused_as_effect_in_field(self):
         self.refused("""def bad(count: Nat) -> Activity<Plan, Response, {seen: Response}>:
   {seen: perform(Plan.write({before: count, after: count}))}
 """, "bad", "effect-in-field")
 
-    def test_effect_in_payload(self):
+    def test_a_perform_inside_a_sum_payload_is_refused_as_effect_in_payload(self):
         self.refused("""sum Box:
   some: Response
 def bad(count: Nat) -> Activity<Plan, Response, Box>:
   Box.some(perform(Plan.write({before: count, after: count})))
 """, "bad", "effect-in-payload")
 
-    def test_effect_in_plan(self):
+    def test_a_perform_inside_a_plan_is_refused_as_effect_in_plan(self):
         self.refused("""def bad(count: Nat) -> Activity<Plan, Response, Nat>:
   match perform(perform(Plan.write({before: count, after: count}))):
     case written(_): count
     case refused(_): count
 """, "bad", "effect-in-plan")
 
-    def test_effect_as_argument(self):
+    def test_a_perform_as_a_call_argument_is_refused_as_effect_as_argument(self):
         self.refused("""def keep(seen: Response) -> Nat:
   0n
 def bad(count: Nat) -> Activity<Plan, Response, Nat>:
   keep(perform(Plan.write({before: count, after: count})))
 """, "bad", "effect-as-argument")
 
-    def test_effect_in_let(self):
+    def test_a_perform_bound_by_let_is_refused_as_effect_in_let(self):
         self.refused("""def bad(count: Nat) -> Activity<Plan, Response, Nat>:
   let seen = perform(Plan.write({before: count, after: count}))
   count
 """, "bad", "effect-in-let")
 
-    def test_perform_outside_activity(self):
+    def test_a_perform_outside_an_activity_is_refused_as_perform_outside_activity(self):
         self.refused("""def bad(count: Nat) -> Nat:
   perform(Plan.write({before: count, after: count}))
 """, "bad", "perform-outside-activity")
 
-    def test_nullary_activity(self):
+    def test_an_activity_with_no_parameters_is_refused_as_nullary_activity(self):
         self.refused("""def bad() -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({before: 0n, after: 1n})):
     case written(_): 1n

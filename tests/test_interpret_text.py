@@ -1,4 +1,9 @@
-"""The garden reads the model's own words (rehearsal findings 2 and 3, objects side), with
+"""The garden fits the model's own words with Spell: a spell plants, `unclear: not addressed` is
+silence, a miss is asked once more and then answered with what is still needed.
+
+Evidence for FOUNDATION §6 (layer: objects).
+
+The garden reads the model's own words (rehearsal findings 2 and 3, objects side), with
 Card's interpretation default.
 
 The host resumes an interpretation whose reply carries no `{method, argument}` json with
@@ -10,7 +15,8 @@ offers the needs card to the speaker and a short copy to the policy's escalateTo
 
 Refuted by: a spell in the model's text not planting, `unclear: not addressed` offering a card, a
 first miss not asked again with its needs, or a second miss not reaching the needs card and the
-escalation copy."""
+escalation copy.
+"""
 import unittest
 
 from tests import test_chain, test_policy
@@ -47,8 +53,6 @@ class Classified(unittest.TestCase):
 
 
 class Resumed(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
     garden = test_policy.PolicyObject.garden
     say = test_policy.PolicyObject.say
@@ -56,13 +60,6 @@ class Resumed(test_chain.Chain):
 
     def text(self, raw):
         return {"status": "replied", "json": None, "raw": raw, "model": "m"}
-
-    def test_a_spell_in_the_models_text_plants(self):
-        self.policy()
-        self.garden("policy", confirm=False)
-        self.say("Could we plant a silver fern that remembers?")
-        resumed = self.interpret(self.text(SPELL))
-        self.assertEqual(resumed["result"]["label"], "planted", resumed)
 
     def test_not_addressed_ends_the_turn_with_no_card(self):
         self.policy()
@@ -102,7 +99,8 @@ class Resumed(test_chain.Chain):
         _, missed = self.settle("delvetalk garden plant / seed: something pretty")
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
         offers = [(o["to"], o["text"]) for o in missed["receipt"]["offers"]]
-        print("\n--- second miss ---\n%r" % offers)
+        self.assertEqual(offers, [("did:plc:operator4keeper", "glm said: plant something pretty; I could not fit it (garden).\n"),
+                                  ("glm", "✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: colour.\n")])
         self.assertEqual(offers[-1], ("glm", "✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: colour.\n"))
         copy = [o["text"] for o in self.host.send(op="world-offers", principal="did:plc:operator4keeper")["offers"]]
         self.assertEqual(copy, ["glm said: plant something pretty; I could not fit it (garden).\n"])

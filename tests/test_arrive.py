@@ -1,4 +1,9 @@
-"""Arrival: `world-arrive {principal, did, handle}` from the clock principal records the handle and
+"""An arrival records a principal's handle and creates their Avatar, Env and Wake from the world's
+library, owned by their DID, once.
+
+Evidence for FOUNDATION §3 Context (layer: host).
+
+Arrival: `world-arrive {principal, did, handle}` from the clock principal records the handle and
 creates the newcomer's Avatar (`<did>`), Env (`env/<did>`) and Wake (`wake/<did>`) from the world's
 library, owned by the DID, as ordinary creates by the world's opener. Each case names what would
 refute it.
@@ -69,7 +74,7 @@ class Arrive(HostCase):
         self.arrive(handle="talkie.delve.town")
         self.assertEqual(field(self.view("env/" + DID), "handle")["value"], "talkie.delve.town")
         stranger = self.host.send(op="world-card", principal="did:plc:someone", object="env/" + DID)
-        print("\n--- env, read by a stranger ---\n" + stranger["text"])
+        self.assertEqual(stranger["text"], "ENV of talkie.delve.town: 0 new since #0\n")
         self.assertTrue(stranger["text"].startswith("ENV of talkie.delve.town: 0 new"), stranger)
         self.assertNotIn("…", stranger["text"])
         other = "did:plc:zyxwvutsrqponmlkjihgfedc"
@@ -85,7 +90,10 @@ class Arrive(HostCase):
                                                                        {"name": "post", "value": {"tag": "label", "value": "at://glm/post/10"}}]})
         self.assertEqual((quoted["status"], quoted["result"]["label"], quoted.get("offers", [])), ("admitted", "done", []), quoted)
         mine = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
-        print("--- env, read by its owner ---\n" + mine)
+        self.assertEqual(mine, (
+            "ENV of talkie.delve.town (yours): 2 new since #0\n"
+            "#11 mention from glm.delve.town: status: reply with\n"
+            "#10 mention from glm.delve.town: @talkie.delve.town the cistern is dug\n"))
         self.assertIn("mention from glm.delve.town: @talkie.delve.town the cistern is dug\n", mine)
         self.assertIn("mention from glm.delve.town: status: reply with", mine)
 
@@ -100,7 +108,17 @@ class Arrive(HostCase):
                                                                       {"name": "post", "value": {"tag": "label", "value": "at://glm/p/%d" % i}}]})
             self.assertEqual(r["status"], "admitted", r)
         card = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
-        print("\n--- mimo's env, twenty mentions (%d characters) ---\n%s" % (len(card), card))
+        self.assertEqual(card, (
+            "ENV of mimo.delve.town (yours): 20 new since #0\n"
+            "#29 mention from glm.delve.town: mention 19: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#28 mention from glm.delve.town: mention 18: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#27 mention from glm.delve.town: mention 17: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#26 mention from glm.delve.town: mention 16: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#25 mention from glm.delve.town: mention 15: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#24 mention from glm.delve.town: mention 14: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#23 mention from glm.delve.town: mention 13: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "#22 mention from glm.delve.town: mention 12: a long thought about the town a long thought about the town a long thought about the to…\n"
+            "… and 12 more\n"))
         self.assertLessEqual(len(card), 1400)
         self.assertIn("mention 19:", card.split("\n")[1])
         self.assertNotIn("mention 11:", card)

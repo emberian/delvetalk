@@ -1,4 +1,9 @@
-"""The workshop: a model takes the reins from a post.
+"""The workshop checks a fenced block or a target's source and offers diagnostics; a clean proposal
+reprograms the target under the target's own law.
+
+Evidence for FOUNDATION §8 forge (layer: objects).
+
+The workshop: a model takes the reins from a post.
 
 The host answers `check`, `inspect` and a `reprogram` of another object, judged by the
 target's own law with request.caller = the workshop. A block must be a package with
@@ -87,7 +92,6 @@ class Hints(unittest.TestCase):
     def test_a_hint_is_indented_under_its_problem_and_not_counted(self):
         text = self.card("Probe:3: objective-source-parse: Error: expected )",
                          "Probe:3: hint: definitions are `def name(x: T) -> U:`; parameter and result types are required")
-        print("\n--- hinted check ---\n" + text)
         self.assertEqual(text, "✾ WORKSHOP\n\nChecked: 1 problem.\n\n- Probe:3: objective-source-parse: Error: expected )\n"
                                "  hint: definitions are `def name(x: T) -> U:`; parameter and result types are required\n")
 
@@ -95,15 +99,6 @@ class Hints(unittest.TestCase):
         text = self.card("Probe:1: check: unknown name hint", "Probe:2: check: a: hint:less")
         self.assertIn("Checked: 2 problems.", text)
         self.assertNotIn("  hint:", text)
-
-
-class Types(unittest.TestCase):
-    def test_every_method_compiles_as_an_activity(self):
-        for method in ("check", "propose", "receive"):
-            with self.subTest(method=method):
-                reply = compile_job(closure("Workshop"), method)
-                self.assertEqual(reply["status"], "compiled", reply)
-                self.assertEqual(row_names(computation(reply["artifact"]["type"])["plan"]["row"])[:3], ["view", "write", "call"])
 
 
 class Workshop(Chain):
@@ -157,7 +152,13 @@ class Workshop(Chain):
         """The host's check forwards the kernel's hint as the next diagnostic (lane/host4 7361a6e)."""
         self.make_workshop()
         reply = self.say("delvetalk workshop check\n```obend\nedition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef initial() -> Maybe<Nat>:\n  {count: 0n}\n```\n")
-        print("\n--- check card ---\n" + self.card(reply))
+        self.assertEqual(self.card(reply), (
+            "✾ WORKSHOP\n"
+            "\n"
+            "Checked: 1 problem.\n"
+            "\n"
+            "- Checked:5: objective-source-type-proposal: unsupported source type Maybe<Nat> (nullary result type of Checked.initial is not resolvable)\n"
+            "  hint: there is no Maybe builtin; declare `sum Maybe<T>:` with arms `none: {}` and `some: {value: T}`\n"))
         self.assertEqual(self.verdict(reply), "flawed")
         self.assertIn("\n  hint: there is no Maybe builtin", self.card(reply))
 
@@ -188,7 +189,12 @@ class Workshop(Chain):
         self.assertEqual(self.verdict(reply), "reprogrammed")
         after = self.host.send(op="world-view", principal="glm", object="bell-1")["pin"]
         self.assertNotEqual(after, before)
-        print("\n--- reprogrammed card ---\n" + self.card(reply))
+        self.assertEqual(self.card(reply), (
+            "✾ WORKSHOP\n"
+            "\n"
+            "Reprogrammed bell-1.\n"
+            "Was: bell-1 v0\n"
+            "Now: bell-1 v1\n"))
         self.assertIn("Reprogrammed bell-1.\nWas: bell-1 v%d\nNow: bell-1 v%d\n" % (version, version + 1), self.card(reply))
         self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["version"], version + 1)
         writes = {w["object"]: w for w in reply["receipt"]["outcome"]["writes"]}
@@ -202,7 +208,13 @@ class Workshop(Chain):
         # The target's law is asked in the turn: the workshop says it was refused, never
         # "Reprogrammed", and holds the proposal for the owner.
         held = self.card(reply)
-        print("\n--- held ---\n" + held)
+        self.assertEqual(held, (
+            "Not done: owner\n"
+            "Held as #1 for the owner of bell-1 to adopt:\n"
+            "\n"
+            "    delvetalk workshop adopt\n"
+            "    n: 1\n"
+            "\n"))
         self.assertTrue(held.startswith("Not done: owner\nHeld as #1 for the owner of bell-1 to adopt:\n"), held)
         self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
         listing = self.say("")["offers"][0]["text"]

@@ -1,3 +1,8 @@
+"""The model client and interpreter: replies parsed, each pending interpretation asked once and
+settled verbatim, failures retried with backoff, credentials never shown.
+
+Evidence for FOUNDATION §6 (layer: transport).
+"""
 import io
 import json
 import os
@@ -31,7 +36,7 @@ class Model(unittest.TestCase):
             self.assertEqual((r['status'], r['json'], r['raw'], r['model']), ('replied', {'a': 1}, text, 'claude-haiku-5-5'), text)
             self.assertEqual(r['usage'], {'input_tokens': 3, 'output_tokens': 4})
 
-    def test_failure_reasons(self):
+    def test_model_replies_map_to_replied_malformed_rate_transport_or_refused(self):
         text_only = self.ask(200, body('no json here'))  # a plain-text reply is a reply; the host fits raw
         self.assertEqual((text_only['status'], text_only['json'], text_only['raw']), ('replied', None, 'no json here'))
         self.assertEqual(self.ask(200, b'not json')['reason'], 'malformed')
@@ -41,7 +46,7 @@ class Model(unittest.TestCase):
         self.assertEqual(self.ask(200, body('{}', stop_reason='refusal'))['reason'], 'refused')
         self.assertEqual(self.ask(401, b'{}')['reason'], 'refused')
 
-    def test_request_on_the_wire(self):
+    def test_the_request_posts_to_the_api_url_with_the_key_header_and_max_tokens_capped_at_4096(self):
         seen = []
         with mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY': 'sekret'}):
             model.ask({**REQ, 'maxTokens': 10 ** 6}, transport=lambda *a: seen.append(a) or (200, body('{}')))
@@ -187,7 +192,7 @@ class Interpret(unittest.TestCase):
         r = interpret.run(self.state, self.host, lambda req: model.failed('malformed'))
         self.assertEqual((r['settled'], r.get('retrying')), (['i1', 'i2'], None))
 
-    def test_end_to_end_against_the_real_host(self):
+    def test_interpret_against_the_real_host_settles_every_request_without_failures(self):
         from tests.host import Host as RealHost, binary
         host = Host(str(Path(self.tmp.name) / 'real.journal'), binary())
         self.addCleanup(host.close)
@@ -238,7 +243,7 @@ class OAuth(unittest.TestCase):
         r = model.ask(REQ, transport=self.transport(200), tokeman=self.probes(0.1, 0.5, opus))
         self.assertEqual(r['account'], 'main')  # haiku ignores the Opus bucket
 
-    def test_named_account_wins(self):
+    def test_the_account_named_in_the_environment_is_the_one_used(self):
         os.environ['DELVETALK_MODEL_ACCOUNT'] = 'main'
         r = model.ask(REQ, transport=self.transport(200), tokeman=self.probes(0.9, 0.0))
         self.assertEqual(r['account'], 'main')

@@ -1,4 +1,9 @@
-"""`canonicalCompare(a, b)`: two values of one first-order type ordered by their canonical
+"""canonicalCompare orders two values of one type exactly as their canonical bytes do, so a relation
+sorts inside a turn in the host's order.
+
+Evidence for FOUNDATION §9 (layer: kernel).
+
+`canonicalCompare(a, b)`: two values of one first-order type ordered by their canonical
 DAG-CBOR bytes (0 less, 1 equal, 2 greater), written out from the type as Bend, so a
 relation can be sorted and merged inside a turn in the host's own order. Refuted by any pair
 of a hundred random records whose Bend order differs from the order of their bytes as the
