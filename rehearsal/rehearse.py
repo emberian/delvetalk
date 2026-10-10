@@ -73,6 +73,7 @@ DOORS = [  # docs/previews/gsb-root-menu.txt, one line each
     ('PLAY', 'The original two-player, 11x11 Automatafl. Find a table, take a seat or follow a game.', 'play'),
     ('WORKSHOP', 'Inspect a thing; derive a variation; write Bend; offer the change for adoption.', 'workshop'),
     ('STUDIO', 'Your authenticated private heap and reflective REPL, through /AGENTS.md.', 'studio'),
+    ('ANTHOLOGY', "Submit a line; the anthology's law admits it.", 'anthology'),  # docs/GENESIS.md
 ]
 POLICY_SYSTEM = 'You turn what a participant says into one spell for the card they are answering. You never act; you only propose.'
 LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
@@ -89,7 +90,7 @@ def seeds(top):
                examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
            ('directory', 'Directory', OWNER, None, 'genesis-directory', rec(
                owner=lab(OWNER), policy=ref('policy'), doors=lst(*[rec(label=lab(l), description=lab(d), to=ref(t)) for l, d, t in DOORS]))),
-           ('garden', 'Garden', OWNER, None, 'genesis-garden', rec(owner=lab(OWNER), policy=ref('policy'), confirm=boo(True))),
+           ('garden', 'Garden', OWNER, None, 'genesis-garden', rec(owner=lab(OWNER), policy=ref('policy'), confirm=boo(False))),
            ('tide', 'Tide', OWNER, None, 'genesis-tide', rec(gap=nat(1))),
            ('workshop', 'Workshop', OWNER, None, 'genesis-workshop', rec(title=lab('Workshop'))),
            ('anthology', 'Anthology', OWNER, None, 'genesis-anthology', rec(owner=lab(OWNER))),
@@ -207,21 +208,18 @@ class Run:
         return [next(x['value']['value'] for x in c['fields'] if x['name'] == 'object') for c in f.get('items', [])]
 
     def record_plantings(self, posts, before):
-        """Every bell grown since `before` has its planting post recorded for it, with the planting slot (the
-        turn's principal and intent, read from the bell's own state), so replies to that post reach the bell
-        by reply address. In production ember records the post that answers; the rehearsal records the
-        planting post itself, as the gate asks."""
+        """Every bell grown since `before` has its planting post (the bell's own `planting` field) recorded for
+        it, so replies to that post reach the bell by reply address. In production ember records the post that
+        answers; the rehearsal records the planting post itself, as the gate asks. Bells take {text, post}: no slot."""
         for bell in [c for c in self.children() if c not in before]:
             v = self.host.send({'op': 'world-view', 'principal': OWNER, 'object': bell})
-            slot = next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'planting'), None)
-            if not slot:
+            uri = next((f['value'].get('value') for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'planting'), None)
+            if not uri:
                 continue
-            slot = {f['name']: f['value']['value'] for f in slot['fields']}
-            uri = slot.get('intent')
             if uri not in posts:
-                self.plantings.append({'object': bell, 'uri': uri, 'status': 'planting intent is not an archived post'})
+                self.plantings.append({'object': bell, 'uri': uri, 'status': 'planting post is not an archived post'})
                 continue
-            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': posts[uri]['cid']}, bell, slot)
+            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': posts[uri]['cid']}, bell)
             self.plantings.append({'object': bell, 'uri': uri, 'status': reply.get('status'), 'message': reply.get('message')})
 
     def window(self, window, now, texts, posts):
@@ -275,6 +273,9 @@ GRAMMAR = [
     ('directory', 'a door word, as the directory card invites', 'garden'),
     ('tide', 'subscribe', 'delvetalk tide subscribe\nevery: 60\nnote: wake me hourly'),
     ('tide', 'tick', 'delvetalk tide tick'),
+    # FOUNDATION section 10 step 3 in the Garden's own grammar, which the archive never wrote: the second is refused.
+    ('garden', 'a cistern: line digs garden/cistern', 'cistern: a stone cistern for refused proposals'),
+    ('garden', 'a second cistern: line', 'cistern: a cistern for refused proposals (by discovery, Kimi)'),
 ]
 
 
@@ -293,7 +294,8 @@ def grammar_probes(out, binary):
             outcome = (reply.get('receipt') or {}).get('outcome') or {}
             results.append({'object': obj, 'what': what, 'text': text, 'status': reply.get('status'),
                             'class': outcome.get('class'), 'reason': outcome.get('reason') or reply.get('message'),
-                            'offers': [o.get('text') for o in reply.get('offers') or []], 'result': reply.get('result')})
+                            'offers': [o.get('text') for o in reply.get('offers') or []], 'result': reply.get('result'),
+                            'public': reply.get('public')})
         burst = burst_probe(host)
         handle = handle_probe(host)
     finally:
@@ -357,10 +359,15 @@ def handle_probe(host):
 def journal_stats(path):
     lines = [l for l in open(path, 'rb') if l.strip()]
     entries = [json.loads(l) for l in lines]
-    sizes = collections.defaultdict(list)
+    sizes, suspended = collections.defaultdict(list), collections.defaultdict(list)
     for l, e in zip(lines, entries):
-        sizes[(e.get('outcome') or {}).get('tag', '?')].append(len(l))
-    journal_stats.sizes = {t: {'count': len(v), 'bytes': sum(v), 'max': max(v)} for t, v in sizes.items()}
+        o = e.get('outcome') or {}
+        sizes[o.get('tag', '?')].append(len(l))
+        if o.get('tag') == 'suspended':
+            suspended[(o.get('activity') or {}).get('object', '?')].append(len(l))
+    journal_stats.sizes = {t: {'count': len(v), 'bytes': sum(v), 'max': max(v), 'median': sorted(v)[len(v) // 2]} for t, v in sizes.items()}
+    journal_stats.suspended = {o: {'count': len(v), 'bytes': sum(v), 'first': v[0], 'max': max(v), 'median': sorted(v)[len(v) // 2]}
+                               for o, v in suspended.items()}
     tags, classes, ops = collections.Counter(), collections.Counter(), collections.Counter()
     reasons = collections.defaultdict(list)
     for e in entries:
@@ -432,12 +439,12 @@ def main(argv=None):
         envs.sort(key=lambda e: -e[0])
         results['envs'] = envs
         views = {}
-        for obj in ['garden', 'anthology', 'cistern'] + r.children():
+        for obj in ['garden', 'anthology', 'cistern', 'garden/cistern'] + r.children():
             v = r.host.send({'op': 'world-view', 'principal': OWNER, 'object': obj})
             views[obj] = {'version': v.get('version'), 'state': v.get('state'), 'status': v.get('status')}
         results['views'] = views
         results['cards'] = {}
-        for obj in ('directory', 'garden', 'tide', envs[0][1], 'policy', 'workshop'):
+        for obj in ('directory', 'garden', 'tide', envs[0][1], 'policy', 'workshop', 'anthology', *r.children()):
             c = r.host.send({'op': 'world-card', 'principal': OWNER, 'object': obj})
             results['cards'][obj] = {'status': c.get('status'), 'text': c.get('text'), 'clause': c.get('clause'),
                                      'chars': len(c.get('text') or '')}
@@ -458,7 +465,7 @@ def main(argv=None):
     entries, tags, classes, reasons = journal_stats(r.state / 'world.journal')
     results['journal'] = {'height': len(entries), 'bytes': (r.state / 'world.journal').stat().st_size,
                           'outcomes': dict(tags), 'refusedByClass': dict(classes), 'refusals': reasons,
-                          'bytesByOutcome': journal_stats.sizes}
+                          'bytesByOutcome': journal_stats.sizes, 'suspendedByObject': journal_stats.suspended}
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))
     obs = [json.loads(js) for (js,) in __import__('sqlite3').connect(r.state / 'observe.sqlite').execute('SELECT json FROM observations ORDER BY seq')]
     results['observed'] = {'count': len(obs), 'kinds': dict(collections.Counter(o['kind'] for o in obs))}
@@ -490,6 +497,8 @@ def main(argv=None):
         mine = [e for e in entries if (e.get('identity') or {}).get('intent') == uri]
         gate.append({'uri': uri, 'step': step, 'routed': results['observations'].get(uri, {}).get('kind'),
                      'entries': [{'tag': (e.get('outcome') or {}).get('tag'), 'class': (e.get('outcome') or {}).get('class'),
+                                  'to': ((e.get('roots') or [{}])[0]).get('object') or ((e.get('outcome') or {}).get('activity') or {}).get('object'),
+                                  'replyTo': e.get('replyTo'),
                                   'reason': (e.get('outcome') or {}).get('reason'),
                                   'writes': [w.get('object') for w in (e.get('outcome') or {}).get('writes') or []],
                                   'offers': [o.get('text') for o in e.get('offers') or []]} for e in mine]})
