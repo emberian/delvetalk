@@ -30,21 +30,22 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {round: Plans.Edit::<Nat, Nat>.keep({}), digest: Plans.Edit::<String, {}>.keep({}), opened: Plans.Edit::<Bool, {}>.keep({}), source: Plans.Edit::<Nat, {}>.keep({}), target: Plans.Edit::<Nat, {}>.keep({})}
+  {round: Plans.Edit.keep({}), digest: Plans.Edit.keep({}), opened: Plans.Edit.keep({}), source: Plans.Edit.keep({}), target: Plans.Edit.keep({})}
 type Done = Seats.Done
 def framed(text: String) -> String:
-  textConcat(natText(textLength(text)), textConcat(":", text))
+  "{natText(textLength(text))}:{text}"
 def commitment(table: String, round: Nat, seat: Nat, source: Nat, target: Nat, nonce: String) -> String:
-  sha256Text(textConcat(framed("delvetalk.automatafl.commit.v2"), textConcat(framed(table), textConcat(framed(natText(round)), textConcat(framed(natText(seat)), textConcat(framed(natText(source)), textConcat(framed(natText(target)), framed(nonce))))))))
+  let tag = framed("delvetalk.automatafl.commit.v2")
+  sha256Text("{tag}{framed(table)}{framed(natText(round))}{framed(natText(seat))}{framed(natText(source))}{framed(natText(target))}{framed(nonce)}")
 def hex(text: String) -> Bool:
   textLength(text) == 64n && textSpan(text, "0123456789abcdef") == 64n
 def mine(state: State, round: Nat, context: Abi.Context) -> String:
-  if context.principal != state.owner then textConcat("This seat is ", Card.name(state.owner, context)) else if round != state.round then textConcat("The round is ", natText(state.round)) else ""
+  if context.principal != state.owner then "This seat is {Card.name(state.owner, context)}" else if round != state.round then "The round is {natText(state.round)}" else ""
 def commit(state: State, input: {round: Nat, digest: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if mine(state, input.round, context) != "" then Done.refused({reason: mine(state, input.round, context)}) else if state.digest != "" then Done.refused({reason: "Already sealed this round."}) else if hex(input.digest) == false then Done.refused({reason: "A digest is 64 lower-case hex characters."}) else if context.intent != Seats.commitIntent(state.table.object, state.round) then Done.refused({reason: textConcat("Seal in the turn named ", Seats.commitIntent(state.table.object, state.round))}) else sealed(input.digest, context)
+  if mine(state, input.round, context) != "" then Done.refused({reason: mine(state, input.round, context)}) else if state.digest != "" then Done.refused({reason: "Already sealed this round."}) else if hex(input.digest) == false then Done.refused({reason: "A digest is 64 lower-case hex characters."}) else if context.intent != Seats.commitIntent(state.table.object, state.round) then Done.refused({reason: "Seal in the turn named {Seats.commitIntent(state.table.object, state.round)}"}) else sealed(input.digest, context)
 def sealed(digest: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {digest: Plans.Edit::<String, {}>.set({value: digest})})})):
-    case _: Done.committed({})
+  let written(_) = perform(write {digest: set digest})
+  Done.committed({})
 # Open the move: it must match the seal, and the opponent's commitment must be admitted;
 # until it is, the turn waits on the opponent's slot.
 def reveal(state: State, input: {round: Nat, source: Nat, target: Nat, nonce: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
@@ -65,21 +66,22 @@ def checked(state: State, source: Nat, target: Nat, context: Abi.Context) -> Act
     case viewed(v): if v.state.round == state.round && v.state.digest != "" then opening(source, target, context) else Done.refused({reason: "The opponent has not sealed this round."})
     case _: Done.refused({reason: "The opponent's seat did not answer."})
 def opening(source: Nat, target: Nat, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {opened: Plans.Edit::<Bool, {}>.set({value: true}), source: Plans.Edit::<Nat, {}>.set({value: source}), target: Plans.Edit::<Nat, {}>.set({value: target})})})):
-    case _: Done.opened({})
+  let written(_) = perform(write {opened: set true, source: set source, target: set target})
+  Done.opened({})
 # The table, having resolved, moves every seat to the next round.
 def next(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   if context.caller != state.table.object then Done.refused({reason: "Only the table moves the round."}) else nextRound(state, context)
 def nextRound(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.write({object: Plans.self(context), edits: {round: Plans.Edit::<Nat, Nat>.add({delta: 1n}), digest: Plans.Edit::<String, {}>.set({value: ""}), opened: Plans.Edit::<Bool, {}>.set({value: false}), source: Plans.Edit::<Nat, {}>.set({value: 0n}), target: Plans.Edit::<Nat, {}>.set({value: 0n})}})):
-    case _: Done.next({round: state.round + 1n})
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {round: Plans.Edit.add({delta: 1n}), digest: Plans.Edit.set({value: ""}), opened: Plans.Edit.set({value: false}), source: Plans.Edit.set({value: 0n}), target: Plans.Edit.set({value: 0n})}}))
+  Done.next({round: state.round + 1n})
 # A seal is made off the town's posts (the move stays private): the card shows status.
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def door() -> Card.Door:
   {word: "seat", blurb: "Your seat at a commit-reveal table."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state, context))
+  Card.answer(Card.route(input.text, context, forms()), context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), textConcat("'s seat, round ", textConcat(natText(state.round), textConcat(": ", textConcat(if state.opened then textConcat("opened ", textConcat(natText(state.source), textConcat(" to ", natText(state.target)))) else if state.digest != "" then "sealed" else "choosing", "\n")))))))
+  let where = if state.opened then "opened {natText(state.source)} to {natText(state.target)}" else if state.digest != "" then "sealed" else "choosing"
+  Document.text("{Card.name(state.owner, context)}{Card.mine(state.owner, context)}'s seat, round {natText(state.round)}: {where}\n")
