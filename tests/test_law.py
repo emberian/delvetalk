@@ -125,7 +125,7 @@ class TwoTier(Reflection):
     def test_an_exhausted_law_refuses_budget(self):
         self.make("s", SPIN, record(count=nat(0)))
         r = self.turn("s", "bump", record(n=nat(1)))
-        self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["reason"]), ("budget", "law ticks"), r)
+        self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["reason"]), ("budget", "the turn ran out of law ticks; make it smaller, or send it again later."), r)
 
     def test_a_law_refusing_every_write_cannot_seal_out_reprogram_or_amend(self):
         version = self.host.send(op="world-view", principal="ember", object="g")["version"]

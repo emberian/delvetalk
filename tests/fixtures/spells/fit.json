@@ -124,8 +124,8 @@
     }
    ]
   },
-  "expected": "refused The reply has no delvetalk line.",
-  "parsed": "not a spell: The reply has no delvetalk line."
+  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
+  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
  },
  {
   "text": "> ✾ DELVETALK · ROOT\n> \n> GARDEN\n> Plant something.\n> Say: delvetalk is the word\n---\nSure!\n\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver\n---\ntrailing prose",
@@ -412,8 +412,8 @@
     }
    ]
   },
-  "expected": "refused The reply has no delvetalk line.",
-  "parsed": "not a spell: The reply has no delvetalk line."
+  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
+  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
  },
  {
   "text": "delvetalk env/did:plc:x? seen",
@@ -444,8 +444,8 @@
     }
    ]
   },
-  "expected": "refused The reply has no delvetalk line.",
-  "parsed": "not a spell: The reply has no delvetalk line."
+  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
+  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
  },
  {
   "text": "delvetalk env_did seen",
@@ -476,8 +476,8 @@
     }
    ]
   },
-  "expected": "refused The reply has no delvetalk line.",
-  "parsed": "not a spell: The reply has no delvetalk line."
+  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
+  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
  },
  {
   "text": "delvetalk env/did:plc:x se:en",
@@ -508,8 +508,8 @@
     }
    ]
   },
-  "expected": "refused The reply has no delvetalk line.",
-  "parsed": "not a spell: The reply has no delvetalk line."
+  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
+  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
  },
  {
   "text": "delvetalk env/x see/n",
@@ -540,8 +540,8 @@
     }
    ]
   },
-  "expected": "refused The reply has no delvetalk line.",
-  "parsed": "not a spell: The reply has no delvetalk line."
+  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
+  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
  },
  {
   "text": "delvetalk env/x seen\na.b: 1",
@@ -572,7 +572,7 @@
     }
    ]
   },
-  "expected": "refused This card offers env/x plant",
+  "expected": "refused This card answers env/x plant.",
   "parsed": "spell env/x seen a.b=1;"
  },
  {
@@ -732,7 +732,7 @@
     }
    ]
   },
-  "expected": "refused Unknown field plant",
+  "expected": "refused No field plant in this spell; it takes colour, seed.",
   "parsed": "spell garden-1 plant plant=a fern;seed=moss;colour=silver;"
  },
  {
@@ -892,7 +892,7 @@
     }
    ]
   },
-  "expected": "refused Unknown field smell",
+  "expected": "refused No field smell in this spell; it takes colour, seed.",
   "parsed": "spell garden-1 plant seed=fern;colour=silver;smell=sweet;"
  },
  {
@@ -924,7 +924,7 @@
     }
    ]
   },
-  "expected": "refused Unknown field smell",
+  "expected": "refused No field smell in this spell; it takes colour, seed.",
   "parsed": "spell garden-1 plant smell=sweet;"
  },
  {
@@ -1116,7 +1116,7 @@
     }
    ]
   },
-  "expected": "refused Unknown field Seed",
+  "expected": "refused No field Seed in this spell; it takes colour, seed.",
   "parsed": "spell garden-1 plant Seed=fern;colour=silver;"
  },
  {
@@ -1148,7 +1148,7 @@
     }
    ]
   },
-  "expected": "refused Unknown field see d",
+  "expected": "refused No field see d in this spell; it takes colour, seed.",
   "parsed": "spell garden-1 plant see d=fern;colour=silver;"
  },
  {
@@ -1180,7 +1180,7 @@
     }
    ]
   },
-  "expected": "refused Duplicate field seed",
+  "expected": "refused seed is given twice; keep one.",
   "parsed": "spell garden-1 plant seed=a;seed=b;colour=amber;"
  },
  {
@@ -1212,7 +1212,7 @@
     }
    ]
   },
-  "expected": "refused This card offers garden-1 plant",
+  "expected": "refused This card answers garden-1 plant.",
   "parsed": "spell garden-2 plant seed=a;colour=amber;"
  },
  {
@@ -1244,7 +1244,7 @@
     }
    ]
   },
-  "expected": "refused This card offers garden-1 plant",
+  "expected": "refused This card answers garden-1 plant.",
   "parsed": "spell garden-1 prune seed=a;colour=amber;"
  },
  {
@@ -1308,8 +1308,8 @@
     }
    ]
   },
-  "expected": "refused the block <<S for seed is never closed by a line S",
-  "parsed": "not a spell: the block <<S for seed is never closed by a line S"
+  "expected": "refused The block <<S for seed needs a last line that is exactly S.",
+  "parsed": "not a spell: The block <<S for seed needs a last line that is exactly S."
  },
  {
   "text": "delvetalk garden-1 plant\nplant: a\nseed: b\nplant: c\ncolour: amber",
@@ -1340,7 +1340,7 @@
     }
    ]
   },
-  "expected": "refused Unknown field plant",
+  "expected": "refused No field plant in this spell; it takes colour, seed.",
   "parsed": "spell garden-1 plant plant=a;seed=b;plant=c;colour=amber;"
  }
 ]

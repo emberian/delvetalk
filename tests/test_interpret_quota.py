@@ -40,7 +40,7 @@ class InterpretQuota(Reflection):
         r = self.ask(identity="a3")
         out = r["receipt"]["outcome"]
         self.assertEqual((r["status"], out["class"], out["next"]), ("refused", "quota", 60), r)
-        self.assertEqual(out["reason"], "interpretations: 3 an hour; next at clock 60")
+        self.assertEqual(out["reason"], "the interpreter has read 3 this hour; reply with the spell itself, or wait.")
         public = self.host.send(op="world-receipt", principal="lee", identity="a3", of="kim")
         self.assertEqual((public["class"], public["next"], public["reason"]), ("quota", 60, out["reason"]), public)
         # Another principal has its own count; the opener is exempt.

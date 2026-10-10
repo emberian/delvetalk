@@ -406,6 +406,45 @@ structure Refusal where
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
 
+/-- The prefix the kernel puts in front of a refusal it reports as text. -/
+def kernelPrefix : String := "turn refused: "
+
+/-- A ledger field a chain of sends spent (`budgetExhausted`), as its reason says it. -/
+def exhaustedReason (field : String) : String := s!"the chain of sends spent its {field}."
+
+/-- A refusal's `reason` as the town reads it (docs/VOICE.md, "The host's refusals"), from what the
+    refusal names: the class, the object, the limit or resource, the clause. Classes whose reason the
+    site writes (lawRefused, quota, noMethod, badSpell) keep it. Applied once, where `commit`
+    journals the refusal. -/
+def Refusal.voiced (r : Refusal) : Refusal :=
+  let obj := r.object.getD ""
+  let given := (r.reason.map fun t => if t.startsWith kernelPrefix then (t.drop kernelPrefix.length).toString else t)
+  let reason := match r.cls with
+    | "staleRoot" => some s!"{obj} moved while you wrote; send the same spell again."
+    | "budget" => some s!"the turn ran out of {given.getD "ticks"}; make it smaller, or send it again later."
+    | "evaluation" => given
+    | "capacity" => match given with
+      | some m => if m.any (· == ' ') then some m else some s!"the host's {m} is full; try later."
+      | none => some s!"the host's {if obj.isEmpty then "capacity" else obj} is full; try later."
+    | "typeMismatch" =>
+      let method := ((r.expected.bind fun e => (e.getObjValAs? String "method").toOption)).getD "it"
+      let pointer := s!"reply delvetalk {obj} ? for its spell."
+      -- A word that names no case says which: "colour is one of: amber, violet (not gold)".
+      match given with
+      | some m => if m.startsWith "argument does not conform to its type: " then some s!"{(m.drop 39).toString}; {pointer}"
+        else if m.startsWith "argument does not conform" || m.isEmpty then some s!"not what {method} takes; {pointer}"
+        else some s!"{m}; {pointer}"
+      | none => some s!"not what {method} takes; {pointer}"
+    | "unknownObject" => some s!"no card {obj} that you may see; the directory lists the doors."
+    | "programRefused" => some s!"the package was refused at {r.clause.getD "compile"}; the workshop's check shows where."
+    | "absentItem" => some "that item is not in the list now."
+    | "requiredAbsence" => some s!"{obj} is already there; {r.root.getD ""} found it."
+    | "keyTaken" => some "another row holds that key; upsert, or add an ordinal."
+    | "duplicateKey" => some "the write names one key twice."
+    | "budgetExhausted" => given.map exhaustedReason
+    | _ => given
+  { r with reason }
+
 /-- Why an edit does not apply: `typeMismatch` (the field or value is not of the kind the
     edit needs), `absentItem`, `keyTaken`, `duplicateKey`. -/
 abbrev EditResult := Except String
@@ -887,40 +926,21 @@ partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theo
   | .emptyRow => some []
   | _ => none
 
-/-- Does a package's entry module (the last of its modules, or its one `source`) declare
-    `relations()`? Only the entry module's declaration counts: a package whose other modules
-    declare one, and its entry module none, has no relations. -/
-def entryDeclaresRelations (inputs : Json) : Bool :=
-  let src := match inputs.getObjVal? "modules" with
-    | .ok (.arr ms) => (ms.back?.bind fun m => (m.getObjValAs? String "source").toOption).getD ""
-    | _ => (inputs.getObjValAs? String "source").toOption.getD ""
-  (src.splitOn "\n").any (·.startsWith "def relations(")
-
-/-- The relation declarations `relations()` returned (a list of `{field, key, limit?, retain?}`). -/
-def parseDecls (value : Data) : Except String (List RelDecl) := do
-  let some items := listOf value | throw "relations() must return a list of Decl"
-  items.mapM fun d => do
-    let .record f := d | throw "a relation Decl is a record"
-    let some (.label field) := f.lookup "field" | throw "a relation Decl names its field"
-    let some keys := (f.lookup "key").bind listOf | throw s!"relation {field} declares no key list"
-    let key ← keys.mapM fun k => match k with
-      | .label c => pure c
-      | _ => throw s!"relation {field}'s key names columns by text"
-    if key.isEmpty then throw s!"key: relation {field} declares an empty key"
-    let limit := match f.lookup "limit" with
-      | some (.natural n) => n
-      | _ => 0
-    match f.lookup "retain" with
-    | some (.label r) => unless r.isEmpty || r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
-    | some (.variant r _) => unless r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
-    | _ => pure ()
-    return { field, key, limit }
-
-/-- The relations a compiled `relations()` entry declares, run as a pure entry. -/
-def declsOfEntry (entry : Delvetalk.CheckedEntry) : Except String (List RelDecl) := do
-  match Package.executeDataEntry entry #[] (Json.mkObj [("ticks", toJson (toString Delvetalk.Bounds.lawTicks))]) with
-  | .ok (.finished value _ _ _) => parseDecls value
-  | _ => throw "relations() did not evaluate"
+/-- The relations an artifact lists (`relations [{field, key, limit, retain?}]`, the value of the
+    entry module's `relations()`, which the kernel evaluates once per prepared closure); `none` when
+    the entry module declares none. An empty key or a retention other than `dropOldest` refuses. -/
+def declsOfArtifact (artifact : Json) : Except String (Option (List RelDecl)) := do
+  let some raw := (artifact.getObjVal? "relations").toOption | return none
+  let items ← raw.getArr?
+  some <$> items.toList.mapM fun d => do
+    let field ← d.getObjValAs? String "field"
+    let key ← d.getObjValAs? (List String) "key"
+    if key.isEmpty then throw s!"relation {field} declares an empty key"
+    let limit := (d.getObjValAs? Nat "limit").toOption.getD 0
+    match (d.getObjValAs? String "retain").toOption with
+    | some r => unless r.isEmpty || r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
+    | none => pure ()
+    return ({ field, key, limit } : RelDecl)
 
 /-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
     machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/
@@ -1099,7 +1119,11 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
         pure (replaced.setObjVal! "library" (toJson lib.pin)) else pure replaced
     | none => pure replaced)
   let resolved := fun (entry : String) => (resolveInputs w (inputs.setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
-  let (artifact, ty, _) ← (Package.compileKeepingLaws (← resolved "initial")).mapError (("compile", ·))
+  -- One prepared closure for the entry, its declared methods and (in the artifact) its relations.
+  let entryInputs ← resolved "initial"
+  let request ← (Package.prepareRequest entryInputs).mapError (("compile", ·.render))
+  let c ← (Package.compileEntryFrom request "initial").mapError fun d => ("compile", (Package.withHint entryInputs d).render)
+  let (artifact, ty) := (c.artifact, c.entry.type)
   let decoded ← (do
     Minidregg.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
   let assumptions := decoded.source.assumptions
@@ -1130,17 +1154,16 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
   -- is the stack's when a layer declares a law, else the code's below.
   let (methods, predicate, predicateReads) := artifactShape artifact
-  let exposed ← (publicMethods inputs fun name => do
-    let c ← (Package.compileEntry (← (resolved name).mapError (·.2))).mapError (·.render)
-    pure c.entry).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
+  let exposed ← (publicMethods inputs fun name =>
+    ((Package.compileEntryCore request name).mapError (·.render)).map (·.entry)).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
   -- A layer keeps what the code below it declared public and may declare more.
   let methods := markHelpers methods (if extend then exposed ++ declaredRows o.methods else exposed)
   let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
     else (o.predicate, o.predicateReads)
   -- A layer that declares no relations keeps the relations of the code below it, as it keeps its law.
-  let relations ← if !entryDeclaresRelations (← resolved "initial") then pure (if extend then o.relations else []) else do
-    let compiled ← (Package.compileEntry (← resolved "relations")).mapError (("key", ·.render))
-    (declsOfEntry compiled.entry).mapError (("key", ·))
+  let relations ← match ← (declsOfArtifact artifact).mapError (("key", ·)) with
+    | some ds => pure ds
+    | none => pure (if extend then o.relations else [])
   (checkRelations relations assumptions.bounds ty).mapError (("key", ·))
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
            methods, predicate, predicateReads, packet, relations }
@@ -1806,7 +1829,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     if w.objects.contains id then throw { cls := "staleRoot", object := id }
   if w.objects.size + p.creates.length > Limits.maxObjects then
     throw { cls := "evaluation", reason := some "object capacity reached" }
-  if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants" }
+  if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants", reason := some "maxGrants" }
   -- Subscriptions stand at most `subscribersPerObject` to an object, counted as they will be.
   for x in p.subscribes do
     let standing := ((w.subscriptions.getD x.object #[]).toList ++ p.subscribes).filter fun y =>
@@ -1839,7 +1862,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       | .error clause => throw { cls := clause, object := id }
     unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
     unless stateBytes written ≤ Limits.maxStateBytes do
-      throw { cls := "capacity", object := id }
+      throw { cls := "capacity", object := id, reason := some "maxStateBytes" }
     -- A reprogram replaces code and, through its migration, the state's type.
     let mut next := o
     let mut state := written
@@ -2068,6 +2091,7 @@ def reply (entry : Json) : Json :=
 def duplicate (principal intent : String) (entry : Json) : Json :=
   Json.mkObj [("status", toJson "refused"), ("class", toJson "duplicateIdentity"),
     ("identity", identityJson principal intent),
+    ("reason", toJson s!"{intent} already names a different turn; choose a new intent."),
     ("original", entry.getObjVal? "hash" |>.toOption |>.getD Json.null)]
 
 /-- Retry rule shared by every journaled op: the same identity and request returns
@@ -2138,6 +2162,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       match forced with | some r => .error r | none => judge w (w.height + 1) p
     match verdict with
     | .error r =>
+      let r := r.voiced
       let outcome := Json.mkObj ([("tag", toJson "refused"), ("class", toJson r.cls)] ++
         (r.clause.map fun c => [("clause", toJson c)]).getD [] ++
         (r.object.map fun o => [("object", toJson o)]).getD [] ++
@@ -2252,16 +2277,14 @@ def compileObject (w : World) (inputs : Json) : Except String Built := do
   let resolved ← resolveInputs w inputs
   -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
   let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
-  let c ← (Package.compileEntryCore request (← resolved.getObjValAs? String "entry")).mapError
+  let c ← (Package.compileEntryFrom request (← resolved.getObjValAs? String "entry")).mapError
     fun d => (Package.withHint resolved d).render
   let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
   unless stateTypeOk decoded.source.assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
-  let relations ← if !entryDeclaresRelations resolved then pure [] else do
-    let r ← (Package.compileEntryCore request "relations").mapError fun d => s!"key: relations(): {d.render}"
-    declsOfEntry r.entry
+  let relations := ((← (declsOfArtifact artifact).mapError (s!"key: " ++ ·))).getD []
   let exposed ← publicMethods inputs fun name =>
     ((Package.compileEntryCore request name).mapError Package.Diagnostic.render).map (·.entry)
   return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations, exposed }
@@ -2686,7 +2709,7 @@ def checkDelivery (w : World) (entry : Json) (principal intent : String) (outcom
     throw "delivery names another grant than its send"
   if (outcome.getObjValAs? String "class").toOption == some "budgetExhausted" then
     let ledger ← ledgerOf (← p.getObjVal? "ledger")
-    unless ledger.exhausted == (outcome.getObjValAs? String "reason").toOption do
+    unless ledger.exhausted.map exhaustedReason == (outcome.getObjValAs? String "reason").toOption do
       throw "budget refusal names a field that is not exhausted"
   else if (← ledgerOf (← p.getObjVal? "ledger")).exhausted.isSome then
     throw "a delivery with an exhausted ledger ran"

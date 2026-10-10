@@ -6,22 +6,22 @@
  },
  {
   "text": "",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
   "text": "\n\n# only a comment\n",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
   "text": "Could we plant a silver fern whose leaves remember last night's rain?",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
   "text": "one\ntwo\nthree",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
@@ -46,12 +46,12 @@
  },
  {
   "text": "delvetalk garden-1\nseed: fern",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": "seed=fern;"
  },
  {
   "text": "delvetalk Garden-1 plant",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
@@ -86,12 +86,12 @@
  },
  {
   "text": "delvetalk env/did:plc:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa seen",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
   "text": "delvetalk env/x ??",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
@@ -131,7 +131,7 @@
  },
  {
   "text": "> delvetalk garden-1 plant\n> seed: fern",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
@@ -141,7 +141,7 @@
  },
  {
   "text": "```json\ndelvetalk garden-1 plant\n```",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {
@@ -176,7 +176,7 @@
  },
  {
   "text": "delvetalk w c\nsource: <<BEND\nline\n",
-  "expected": "not a spell: the block <<BEND for source is never closed by a line BEND",
+  "expected": "not a spell: The block <<BEND for source needs a last line that is exactly BEND.",
   "bare": "source=<<BEND;"
  },
  {
@@ -206,7 +206,7 @@
  },
  {
   "text": "note: hi\nprose only",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": "note=hi;"
  },
  {
@@ -261,7 +261,7 @@
  },
  {
   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
-  "expected": "not a spell: The reply has no delvetalk line.",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  }
 ]
