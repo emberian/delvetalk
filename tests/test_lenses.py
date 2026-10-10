@@ -88,7 +88,8 @@ class Lenses(test_chain.Chain):
                                "    spell: <text, 1 to 280 characters>\n\n    delvetalk policy define\n    word: <text, 1 to 64 characters>\n"
                                "    meaning: <text, 1 to 280 characters>\n\nTo change a field, reply (one field a spell):\n\n"
                                "    delvetalk policy set\n    model: <text, 1 to 64 characters>\n\n    delvetalk policy set\n"
-                               "    escalate: <text, 0 to 64 characters>\n\n    delvetalk policy set\n    system: <text, 1 to 1000 characters>\n")
+                               "    escalate: <text, 0 to 64 characters>\n\n    delvetalk policy set\n    escalate-to: <text, 0 to 160 characters>\n\n"
+                               "    delvetalk policy set\n    system: <text, 1 to 1000 characters>\n")
         self.assertEqual(self.version(), 0)
 
     def test_an_object_without_lenses_answers_set_and_question_by_its_forms(self):

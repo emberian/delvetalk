@@ -85,12 +85,15 @@ record View:
 record Await:
   slot: Slot
   patience: Nat
-# The forms an interpretation may answer with, in the spell grammar.
+# The forms an interpretation may answer with, in the spell grammar. `model` names the
+# model to ask instead of the policy's own ("" for the policy's): a card's second attempt
+# names the policy's `escalate` model (Card.asking).
 type Forms = Lists.List<Form.Form>
 record Interpret:
   utterance: String
   offers: Forms
   policy: Reference
+  model: String
 # `to` is a principal; "" is the acting principal.
 record Offering:
   to: String

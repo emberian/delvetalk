@@ -87,7 +87,7 @@ def first(context: Abi.Context, found: Lists.List<String>) -> Activity<Plan, Res
     case nil(_): note(context, 0n, "clean")
     case cons(c): note(context, 0n, c.head)
 def ask(state: State, input: {utterance: String, policy: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.interpret({utterance: input.utterance, offers: offered(), policy: {world: "", object: input.policy}})):
+  match perform(Plan.interpret({utterance: input.utterance, offers: offered(), policy: {world: "", object: input.policy}, model: ""})):
     case proposal(p): note(context, p.argument.n, p.method)
     case unclear(_): note(context, 0n, "unclear")
     case timedOut(_): note(context, 0n, "timedOut")

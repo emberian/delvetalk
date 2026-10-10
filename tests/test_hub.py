@@ -6,8 +6,9 @@ colour: silver`), gemini with the same lines in a bare fence, rains are `rain: �
 reads a post's `name: value` lines; when the first names an action one of its doors offers (the
 door object's method table, read with `inspect`), the lines become that door's spell and go to its
 receive by call. Other prose, from a principal the menu has already reached, is read by the town's
-model under the directory's policy against every door's forms; a spell in its answer goes to the
-door it names, and anything else (`unclear: not addressed`, a rain no door offers) gets no offer.
+model under the directory's policy against every door's forms; a spell in its answer that fits a
+door's form goes to that door, `unclear: not addressed` gets no offer, and a miss (a rain no door
+offers) is asked once more and then answered with what is still needed.
 
 Refuted by: glm's or gemini's §10 planting not growing a bell, a rain or chatter drawing a card, or
 the model's spell not reaching the garden."""
@@ -120,9 +121,18 @@ class Hub(test_chain.Chain):
         self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("a fern that remembers yesterday", "silver"))
-        # The rehearsal's mock answer for kimik3's rain: no door offers rain; nothing is offered.
+        # The rehearsal's mock answer for kimik3's rain: no door offers rain. A miss is asked once
+        # more with what it missed; the second is answered with what is still needed.
         self.assertEqual(self.say(post("3mxghh4qis22f"), KIMI)["status"], "suspended")
-        quiet = self.interpret("unclear: rain is not one of the offered actions")
+        again = self.interpret("unclear: rain is not one of the offered actions")
+        self.assertEqual(again["status"], "suspended", again)
+        missed = self.interpret("unclear: rain is not one of the offered actions")
+        self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
+        self.assertEqual([o["text"] for o in missed["receipt"]["offers"]],
+                         ["✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: rain is not one of the offered actions.\n"])
+        # `unclear: not addressed` is silence at once.
+        self.assertEqual(self.say("lovely weather on the wiki today", KIMI, uri="at://x/post/2")["status"], "suspended")
+        quiet = self.interpret("unclear: not addressed")
         self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
 
 

@@ -5,6 +5,7 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Spell.obend as Spell
 import ./Plan.obend as Plans
+import ./Policies.obend as Policies
 # The uniform card protocol. Every object has a pure render(state, context) ->
 # Document (its card as the reader in the context sees it: a member may see more than a
 # stranger; the host's `card {object}` passes the reader's context), exports forms() (the
@@ -321,3 +322,62 @@ def defaultPage(card: Document.Document, context: Abi.Context, forms: Forms) -> 
   Page.cons({head: {title: "Card", body: card}, tail: Page.cons({head: {title: "How to reply", body: usage(context.object, forms)}, tail: Page.nil()})})
 def pageText(page: Page) -> String:
   textJoin(Lists.map::<Section, String>(page, fn(section: Section) -> String: textConcat("## ", textConcat(section.title, textConcat("\n\n", Document.plain(section.body))))), "\n")
+# Interpretation, the card default (FOUNDATION section 5). A card with a policy views it
+# (its Response's state type is Policies.State) and asks the model with `asking`, offering
+# its forms. It reads the model's words (`replied {text}`) with `fitting`: a spell that fits
+# an offered form is a hit; `unclear: not addressed` (or an empty `unclear:`) is silence; a
+# spell that does not fit, any other `unclear: <need>` and words that are no spell are a
+# miss with the needs computed. A miss is asked ONCE more: the utterance with
+# "missing: <needs>", naming the policy's escalate model. A second miss is answered with
+# the needs card to the speaker (none when nothing is named) and, when the policy has an
+# escalateTo principal, a short copy to that principal (`escalation`, `unfit`).
+sum Fitted:
+  hit: {card: String, parsed: Spell.Parsed}
+  miss: {needs: Form.Names}
+  silent: {}
+def fitting(text: String, forms: Forms) -> Fitted:
+  fittedSpell(Spell.parse(text), textDrop(text, textSpan(text, " \n\t\r")), forms)
+def fittedSpell(parsed: Spell.Parsed, text: String, forms: Forms) -> Fitted:
+  match parsed:
+    case spell(s): fittedForm(parsed, s.card, s.action, Lists.find(forms, fn(f: Form.Form) -> Bool: f.card == s.card && f.action == s.action))
+    case notASpell(_): if textTake(text, 8n) == "unclear:" then needOf(Spell.trimEnd(Spell.trimStart(textTake(textDrop(text, 8n), textBreak(textDrop(text, 8n), "\n"))))) else Fitted.miss({needs: Form.Names.nil()})
+def fittedForm(parsed: Spell.Parsed, card: String, action: String, found: Lists.Maybe<Form.Form>) -> Fitted:
+  match found:
+    case none(_): Fitted.miss({needs: one("{card} {action} is not offered")})
+    case some(f): fitOf(card, parsed, Spell.fit(parsed, f.value))
+def fitOf(card: String, parsed: Spell.Parsed, fit: Spell.Fit) -> Fitted:
+  match fit:
+    case proposal(_): Fitted.hit({card: card, parsed: parsed})
+    case unclear(u): Fitted.miss({needs: u.needs})
+    case refused(r): Fitted.miss({needs: one(r.reason)})
+def needOf(need: String) -> Fitted:
+  if need == "" || need == "not addressed" then Fitted.silent({}) else Fitted.miss({needs: one(need)})
+def one(need: String) -> Form.Names:
+  Form.Names.cons({head: need, tail: Form.Names.nil()})
+# Whether a host verdict `unclear {needs}` says the prose was addressed to nobody.
+def notAddressed(needs: Form.Names) -> Bool:
+  Lists.any(needs, fn(need: String) -> Bool: need == "not addressed")
+# The interpret Plan of attempt 0 (the utterance, the policy's model) or 1 (the utterance
+# with what the first answer missed, the policy's escalate model).
+def asking<E>(utterance: String, forms: Forms, reference: Plans.Reference, policy: Policies.State, attempt: Nat, needs: Form.Names) -> Plans.Plan<E>:
+  if attempt == 0n then Plans.Plan::<E>.interpret({utterance: utterance, offers: forms, policy: reference, model: ""}) else Plans.Plan::<E>.interpret({utterance: retried(utterance, needs), offers: forms, policy: reference, model: policy.escalate})
+def retried(utterance: String, needs: Form.Names) -> String:
+  "{utterance}\n\nmissing: {missing(needs)}"
+def missing(needs: Form.Names) -> String:
+  match needs:
+    case nil(_): "one spell for an offered form, or unclear: <what is missing>"
+    case cons(_): Spell.joined(needs)
+# The short copy for the policy's escalateTo principal.
+def escalation<E>(policy: Policies.State, utterance: String, context: Abi.Context) -> Plans.Plan<E>:
+  Plans.Plan::<E>.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; I could not fit it ({context.object}).\n")})
+# The second miss of a card with no writes of its own to make: the copy to escalateTo (when
+# the policy names one), then the needs card to the speaker (when a need is named).
+def unfit<E, R, T>(policy: Policies.State, utterance: String, needs: Form.Names, context: Abi.Context, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<Policies.State, R>, T>:
+  if policy.escalateTo == "" then needed::<E, Policies.State, R, T>(needs, card, result) else escalating::<E, R, T>(policy, utterance, needs, context, card, result)
+def escalating<E, R, T>(policy: Policies.State, utterance: String, needs: Form.Names, context: Abi.Context, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<Policies.State, R>, T>:
+  match perform(escalation::<E>(policy, utterance, context)):
+    case _: needed::<E, Policies.State, R, T>(needs, card, result)
+def needed<E, S, R, T>(needs: Form.Names, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  match needs:
+    case nil(_): result
+    case cons(_): tell::<E, S, R, T>(result, card)

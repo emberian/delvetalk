@@ -17,7 +17,7 @@ import ./List.obend as Lists
 import ./Form.obend as Form
 import ./Policy.obend as Policy
 def sample() -> Policy.State:
-  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: ""}
+  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: "", escalateTo: ""}
 # Garden's plant form (Garden.planting), written out: Garden and Policy together exceed
 # one closure's declaration capacity.
 def plantForm(context: Abi.Context) -> Form.Form:
@@ -31,7 +31,7 @@ def examples(n: Nat) -> Lists.List<Policy.Example>:
     case 0: Lists.List::<Policy.Example>.nil()
     case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
-  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: ""}, forms(context), "plant me a moth"))
+  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: "", escalateTo: ""}, forms(context), "plant me a moth"))
 """
 
 
@@ -80,13 +80,13 @@ SPELL = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
 
 
 class PolicyObject(Chain):
-    def policy(self, name="policy"):
+    def policy(self, name="policy", escalate="", escalate_to=""):
         """world-create with the whole state: a creator cannot import Policy, whose source
         declares a law ("a law belongs to the package's entry module; Policy is imported")."""
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
                            modules=closure("Policy"), entry="initial",
                            seed=record(owner=label("ember"), model=label("claude-haiku"), system=label("S"),
-                                       lexicon=nil(), examples=nil(), escalate=label("")))
+                                       lexicon=nil(), examples=nil(), escalate=label(escalate), escalateTo=label(escalate_to)))
         self.assertEqual(r["status"], "created", r)
 
     def card(self, name, principal="glm"):
@@ -99,13 +99,14 @@ class PolicyObject(Chain):
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "taught"), reply)
         reply = self.turn("policy", "define", record(term=record(word=label("moth"), meaning=label("a seed"))), principal="ember")
         self.assertEqual(reply["status"], "admitted", reply)
-        for spell in ("delvetalk policy set\nmodel: claude-sonnet", "delvetalk policy set\nescalate: claude-opus"):
+        for spell in ("delvetalk policy set\nmodel: claude-sonnet", "delvetalk policy set\nescalate: claude-opus",
+                      "delvetalk policy set\nescalate-to: did:plc:operator4keeper"):
             reply = self.turn("policy", "receive", record(text=label(spell), post=label(""), slot=label("")), principal="ember")
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
         card = self.card("policy")
         print("\n--- policy card ---\n" + card)
         self.assertIn("Model: claude-sonnet", card)
-        self.assertIn("When unsure I escalate to claude-opus.", card)
+        self.assertIn("When unsure I escalate to claude-opus.\nWhat a card cannot fit twice goes to …r4keeper.\n", card)
         self.assertIn("delvetalk policy teach", card)
         self.assertIn("- moth: a seed", card)
         self.assertLess(card.index("Participant: a fern"), card.index("Participant: a moth"))
@@ -124,6 +125,7 @@ class PolicyObject(Chain):
                                   writes=[{"object": "policy", "edits": [record(
                                       model={"tag": "variant", "label": "set", "payload": record(value=label("evil"))},
                                       escalate={"tag": "variant", "label": "keep", "payload": record()},
+                                      escalateTo={"tag": "variant", "label": "keep", "payload": record()},
                                       system={"tag": "variant", "label": "keep", "payload": record()},
                                       lexicon={"tag": "variant", "label": "keep", "payload": record()},
                                       examples={"tag": "variant", "label": "keep", "payload": record()})]}])

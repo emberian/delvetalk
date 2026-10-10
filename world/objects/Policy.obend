@@ -6,43 +6,37 @@ import ./Plan.obend as Plans
 import ./Spell.obend as Spell
 import ./Form.obend as Form
 import ./Card.obend as Card
-record Term:
-  word: String
-  meaning: String
-record Example:
-  utterance: String
-  spell: String
+import ./Policies.obend as Policies
+type Term = Policies.Term
+type Example = Policies.Example
 # The interpretation policy as an ordinary object: the host sends prompt(...) to
-# the configured model and returns the answer as a proposal, never as authority.
-record State:
-  owner: String
-  model: String
-  system: String
-  lexicon: Lists.List<Term>
-  examples: Lists.List<Example>
-  escalate: String
+# the configured model and returns the answer as a proposal, never as authority. Its
+# State is Policies.State, so a card may import the type and view it.
+type State = Policies.State
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
   owner: String
   model: String
   system: String
   escalate: String
+  escalateTo: String
 record Edits:
   model: Plans.Edit<String, {}>
   escalate: Plans.Edit<String, {}>
+  escalateTo: Plans.Edit<String, {}>
   system: Plans.Edit<String, {}>
   lexicon: Plans.Entries<Term, {}>
   examples: Plans.Entries<Example, {}>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
-  {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", escalate: ""}
+  {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", escalate: "", escalateTo: ""}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, model: seed.model, system: seed.system, lexicon: Lists.List::<Term>.nil(), examples: Lists.List::<Example>.nil(), escalate: seed.escalate}
+  {owner: seed.owner, model: seed.model, system: seed.system, lexicon: Lists.List::<Term>.nil(), examples: Lists.List::<Example>.nil(), escalate: seed.escalate, escalateTo: seed.escalateTo}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {model: Plans.Edit::<String, {}>.keep({}), escalate: Plans.Edit::<String, {}>.keep({}), system: Plans.Edit::<String, {}>.keep({}), lexicon: Plans.Entries::<Term, {}>.keep({}), examples: Plans.Entries::<Example, {}>.keep({})}
+  {model: Plans.Edit::<String, {}>.keep({}), escalate: Plans.Edit::<String, {}>.keep({}), escalateTo: Plans.Edit::<String, {}>.keep({}), system: Plans.Edit::<String, {}>.keep({}), lexicon: Plans.Entries::<Term, {}>.keep({}), examples: Plans.Entries::<Example, {}>.keep({})}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
 # stranger by name before writing. `describe` is the one method open to everyone: it
 # writes nothing today, and a describe that ever wrote would be the package's to answer.
@@ -70,10 +64,11 @@ def teach(state: State, input: {example: Example}, context: Abi.Context) -> Acti
 # Define a word of the lexicon.
 def define(state: State, input: {term: Term}, context: Abi.Context) -> Activity<Plan, Response, Taught>:
   defined::<Taught>(state, input.term, context, same)
-# The model, the stronger one to escalate to when it is unsure ("" for none) and the
+# The model, the stronger one a second attempt names ("" for the same), the principal a
+# card tells what it could not fit after two attempts (`escalate-to`, a DID, "" for nobody) and the
 # system instruction are set through lenses: `delvetalk <policy> set` and `model: ...`.
 def lenses() -> Lists.List<Form.Lens<Edits>>:
-  Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "model", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {model: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "escalate", form: Form.Kind.text({min: 0n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {escalate: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "system", form: Form.Kind.text({min: 1n, max: 1000n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {system: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})})})
+  Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "model", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {model: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "escalate", form: Form.Kind.text({min: 0n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {escalate: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "escalate-to", form: Form.Kind.text({min: 0n, max: 160n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {escalateTo: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.cons({head: Form.Lens::<Edits>.lens({field: "system", form: Form.Kind.text({min: 1n, max: 1000n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {system: Plans.Edit::<String, {}>.set({value: Card.valueText(v)})})}), tail: Lists.List::<Form.Lens<Edits>>.nil()})})})})
 # Who may set a lens: the owner; anyone else is refused by name before the law is asked.
 def guard(state: State, context: Abi.Context) -> String:
   if context.principal == state.owner then "" else textConcat("Only the policy's owner may teach it; that is ", Card.name(state.owner, context))
@@ -117,14 +112,16 @@ def prompt(state: State, offers: Lists.List<Form.Form>, utterance: String) -> St
   Document.joinAll(Lists.concat::<String>(Lists.concat::<String>(Lists.concat::<String>(Lists.concat::<String>(Lists.concat::<String>(part(textConcat(state.system, "\n\nLexicon:\n")), Lists.map::<Term, String>(state.lexicon, termLine)), part("\nExamples:\n")), Lists.map::<Example, String>(state.examples, exampleLine)), part("Offered forms (a spell is the delvetalk line, then one field: value line per field):\n\n")), Lists.concat::<String>(many(offers), part(textConcat("\nAnswer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.\n\nParticipant: ", utterance)))))
 def exampleCard(example: Example) -> Document.Document:
   Document.text(exampleLine(example))
-def stance(state: State) -> String:
-  textConcat("I only propose; the card I serve decides whether to ask first.\n", if state.escalate == "" then "" else textConcat("When unsure I escalate to ", textConcat(state.escalate, ".\n")))
+def stance(state: State, context: Abi.Context) -> String:
+  let escalation = if state.escalate == "" then "" else "When unsure I escalate to {state.escalate}.\n"
+  let told = if state.escalateTo == "" then "" else "What a card cannot fit twice goes to {Card.name(state.escalateTo, context)}.\n"
+  "I only propose; the card I serve decides whether to ask first.\n{escalation}{told}"
 def teaching() -> String:
   "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nWhat I know:\n"
 # The policy as a card, including how to teach it.
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let head = Document.text(textConcat("✾ INTERPRETATION POLICY\n\nModel: ", textConcat(state.model, textConcat("\n", textConcat(stance(state), if Card.reads(state.owner, context) then teaching() else textConcat("\nOnly its owner, ", textConcat(Card.name(state.owner, context), ", teaches it.\n\nWhat I know:\n")))))))
+  let head = Document.text(textConcat("✾ INTERPRETATION POLICY\n\nModel: ", textConcat(state.model, textConcat("\n", textConcat(stance(state, context), if Card.reads(state.owner, context) then teaching() else textConcat("\nOnly its owner, ", textConcat(Card.name(state.owner, context), ", teaches it.\n\nWhat I know:\n")))))))
   let terms = Lists.map::<Term, Document.Document>(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map::<Example, Document.Document>(state.examples, exampleCard)
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat::<Document.Document>(terms, shown)})})
