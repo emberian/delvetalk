@@ -844,4 +844,24 @@ better to an author.
   form (the machine allocating a native list cell, typed by its annotation like `refuse`),
   the full `textJoin`-scale change across the core, machine, Fast and collector proofs and
   both codecs; the directory check only needs `textHasAny`. Queued for decision.
+- Checkpoint edition v3 (rehearsal run 9, finding 1): v2 with every address written
+  relative to its holder. `relativeState` renames each cell's addresses by `toRelative i`
+  (i the cell's number), the control's and stack's by the heap size; v3 encodes that state
+  as v2 and decodes with `absoluteState` after. `toRelative i a` is `2*zigzag(i,a)+1` when
+  that is shorter than `2*a`, else `2*a`: the skeleton the collector numbers first (knot,
+  state) is written absolute from everywhere, data near its holder relative, so a region
+  that moved as a whole encodes the same. Proofs: `ofRelative_toRelative`,
+  `mapValue/Cell/Frame/Control_inverse`, `absolute_relative`, `stateV3_roundTrip`
+  (`ObjectiveBendCheckpointV2RoundTrip.lean`); v2 still decodes. Measured:
+  `tests.test_suspension_size` nine speakers median 11,440 -> 10,223 bytes, edit runs
+  between consecutive checkpoints 21-107 -> 15-22; one speaker 7,101 -> 8,161 (the
+  same 4-6 edits; checkpoints are 8% more tokens, so its fresh blocks are larger). The
+  offline rehearsal (`rehearsal/rehearse.py`, same fixtures, both binaries): journal
+  6,130,497 -> 5,454,097 bytes, suspended entries median 52,050 -> 41,023. What keeps them
+  large: every suspension is the directory's `receive`, and its word check walks the
+  reply with `textDrop`, leaving every SUFFIX of the reply as a cached string in the
+  heap (the local string table holds them all, quadratic in the reply); a 1,500-character
+  reply is ~1 MB of suffixes in the worst case, and the addresses of everything after
+  the walk shift by the walk's cell count. `textHasAny` (above) removes both once the
+  objects lane switches the check to it; measure the rehearsal again then.
 

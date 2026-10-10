@@ -27,7 +27,7 @@ open Minidregg.Theory.ObjectiveBendTypes
 open Minidregg.Theory.ObjectiveBendDemandMachine
 open Minidregg.Theory.ObjectiveBendDemandData
 open Minidregg.Compiler.ObjectiveBendDataWire
-open Minidregg.Theory.ObjectiveBendCheckpoint (Dictionary encodeStateV2 decodeStateAny checkpointEditionV2)
+open Minidregg.Theory.ObjectiveBendCheckpoint (Dictionary encodeStateV3 decodeStateAny)
 
 namespace Delvetalk.Turn
 
@@ -328,7 +328,7 @@ def conclude (dictionary : Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary) 
       | .ok extracted =>
           if !extracted.value.conformsUnder bounds plan then .error "turn refused: Plan does not conform to its type"
           else .ok (.yielded extracted.value plan response
-            (Checkpoint.makeFor pin binding (encodeStateV2 dictionary (checkpoint extracted.state)))
+            (Checkpoint.makeFor pin binding (encodeStateV3 dictionary (checkpoint extracted.state)))
             (b.ticks - extracted.remaining.ticks))
   | .error (failure, st, rem) =>
       match exhaustedResource limits failure st rem with
