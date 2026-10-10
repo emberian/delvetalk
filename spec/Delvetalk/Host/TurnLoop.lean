@@ -997,13 +997,24 @@ def hostUsage (w : World) (o : Object) (principal card : String) : String :=
 /-- Why `me` names nothing yet. -/
 def noAvatarReason : String := "You have no avatar here yet; your first arrival in the town makes one, and then me is it."
 
+/-- The one object whose id folds to `id`'s fold; none when no object or several do. -/
+def foldedId (w : World) (id : String) : Option String :=
+  let key := Spell.fold id
+  match w.objects.fold (fun acc k _ => if Spell.fold k == key then k :: acc else acc) [] with
+  | [k] => some k
+  | _ => none
+
 /-- What a spell naming `card` and `action` with `fields` asks of card `self` (`o`), read for
     `principal`. `retarget`: a direct turn goes to the card the spell names; a call or a delivery
     reads only spells naming the card it was sent to (another is `otherCard`), since its sender chose
     that object. -/
 def castSpell (w : World) (principal self : String) (argument : Data) (o : Object) (card action : String)
     (fields : List Spell.Binding) (retarget : Bool) : SpellRoute := Id.run do
+  -- A card's name is read in any case (docs/FLEX.md §4 host 2): `me` and `env` folded, and a name
+  -- no object has as written is the one object whose id it folds to.
+  let card := if Spell.fold card == meCard || ownCards.contains (Spell.fold card) then Spell.fold card else card
   let id := resolveCard principal card
+  let id := if w.objects.contains id then id else (foldedId w id).getD id
   -- The card as the speaker named it (`env`, never `env/<did>`): usage and reasons speak it.
   let shown := card
   -- The answering card's own spells when it has some; else where the doors are listed.
@@ -1043,13 +1054,16 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
 /-- A `receive {text, …}` to `id`, read as a spell by the host when the card speaks the message
     dialect (WHOLENESS §2): a direct turn's, a called one's and a delivered one's alike (`retarget`
     only for a direct turn). `asIs` when the host leaves it as asked. -/
-def routeSpell (w : World) (principal id method : String) (argument : Data) (retarget : Bool) : SpellRoute := Id.run do
+def routeSpell (w : World) (principal id method : String) (argument : Data) (retarget : Bool)
+    (addressed : Bool := false) : SpellRoute := Id.run do
   if method != "receive" then return .asIs
   let .record args := argument | return .asIs
   let some (.label text) := args.lookup "text" | return .asIs
   let some o := w.objects[id]? | return .asIs
   unless heardFits w o argument do return .asIs
-  match Spell.parse text with
+  -- A direct reply to the card needs no `delvetalk` before one of its actions (docs/FLEX.md §4 host 2).
+  let addressee := if addressed then some (id, (spellForms w id o).map (·.action)) else none
+  match Spell.parseFor text addressee with
   | .spell card action fields => return castSpell w principal id argument o card action fields retarget
   | .notASpell reason fielded =>
     if reason.startsWith "The block <<" then
@@ -2167,7 +2181,7 @@ def reachOf (w : World) (req : TurnRequest) : String :=
 
 /-- A direct turn's `receive` read as a spell (`routeSpell`); `none` when the host leaves the turn as asked. -/
 def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) :=
-  match routeSpell w req.principal req.object req.method req.argument true with
+  match routeSpell w req.principal req.object req.method req.argument true (req.reach == "direct" || req.reach == "reply") with
   | .asIs => none
   | .run object method argument command =>
     let asked := { req with object := object, method := method, argument := argument,
@@ -2862,7 +2876,7 @@ def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (L
     | .refused _ reason => .error [reason]
   match Spell.parse text with
   | .spell card action fields =>
-    match offered.find? fun f => f.card == card && f.action == action with
+    match offered.find? fun f => Spell.fold f.card == Spell.fold card && f.action == action with
     | some form => some (fitted form fields)
     | none => some (.error [s!"{card} {action} is not one of the offered actions"])
   | .notASpell _ fielded => do

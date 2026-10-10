@@ -94,9 +94,18 @@ def trimEnd (v : T) : T := (v.reverse.dropWhile (blanks.contains ·)).reverse
 def str (v : T) : String := String.mk v
 def lit (s : String) : T := s.toList
 
+/-- ASCII letters folded to lower case: actions and field names are read in any case
+    (docs/FLEX.md §4 host 2); a card's name is kept as written and folded where it is compared. -/
+def foldT (v : T) : T := v.map Char.toLower
+def fold (s : String) : String := str (foldT s.toList)
+
+/-- A word with one trailing `.` or `:` trimmed (`delvetalk garden plant.`). -/
+def unmarked (v : T) : T :=
+  if v.length > 1 && (v.getLast? == some '.' || v.getLast? == some ':') then v.dropLast else v
+
 def looksLikeField (v : T) : Bool :=
   let colon := brk v [':']
-  decide (colon > 0) && v.take colon != v && isIdentifier (v.take colon)
+  decide (colon > 0) && v.take colon != v && isIdentifier (foldT (v.take colon))
 
 /-! ## Parse -/
 
@@ -118,7 +127,8 @@ def fieldHead (text : T) (indent stop : Nat) : Bool :=
     looksLikeField ((text.drop indent).take (if stop - indent < 17 then stop - indent else 17))
 
 def isSpellAt (text : T) (indent : Nat) : Bool :=
-  (text.drop indent).take 10 == lit "delvetalk " || (text.drop indent).take 10 == lit "delvetalk\t"
+  let head := foldT ((text.drop indent).take 10)
+  head == lit "delvetalk " || head == lit "delvetalk\t"
 
 def isQuote (text : T) : Bool := span (text.take 4) [' '] == 4 || text.take 1 == ['\t']
 
@@ -138,9 +148,14 @@ def heading (line rest : T) : Candidate :=
   let card := afterBlanks.take cardEnd
   let afterCard := trimStart (afterBlanks.drop cardEnd)
   let actionEnd := brk afterCard [' ', '\t']
-  let action := afterCard.take actionEnd
-  if !isCardName card || !isAction action then .none
-  else .stands (str card) (str action) (trimStart (afterCard.drop actionEnd)) rest
+  let written := afterCard.take actionEnd
+  let action := unmarked (foldT written)
+  let tail := trimStart (afterCard.drop actionEnd)
+  -- An action written with capitals is one only when what follows is a spell's (nothing, or inline
+  -- fields): `Delvetalk Garden Plant` is a spell, "delvetalk Is The word" a sentence.
+  let spellTail := tail.isEmpty || tail.take 1 == ['/'] || looksLikeField tail
+  if !isCardName card || !isAction action || (foldT written != written && !spellTail) then .none
+  else .stands (str card) (str action) tail rest
 
 def headingAt (text : T) (indent stop : Nat) : Candidate :=
   heading (trimEnd ((text.take stop).drop (indent + 9))) (text.drop (stop + 1))
@@ -163,7 +178,7 @@ def both (first second : Fields2) : Fields2 :=
 mutual
 partial def startField (value rest : T) : Fields2 :=
   let colon := brk value [':']
-  if looksLikeField value then continued (str (value.take colon)) (trimStart (value.drop (colon + 1))) rest
+  if looksLikeField value then continued (str (foldT (value.take colon))) (trimStart (value.drop (colon + 1))) rest
   else .bad s!"Not a field: {str (value.take 40)}"
 
 partial def continued (name : String) (value rest : T) : Fields2 :=
@@ -236,8 +251,8 @@ partial def binding (line rest : T) : Fields2 :=
   -- A line is a field only when it looks like one (`name: value`, the name an identifier), as
   -- `bareT` reads them: prose with a colon after the fields ends them (docs/FLEX.md §4 host 1).
   if colon == 0 || name == line || !looksLikeField line then .stray [] rest
-  else if opens ((line.drop (colon + 1)).take 3) then valued (str name) (trimStart (line.drop (colon + 1))) rest
-  else consed ⟨str name, str (trimStart (line.drop (colon + 1)))⟩ (fieldLines rest)
+  else if opens ((line.drop (colon + 1)).take 3) then valued (str (foldT name)) (trimStart (line.drop (colon + 1))) rest
+  else consed ⟨str (foldT name), str (trimStart (line.drop (colon + 1)))⟩ (fieldLines rest)
 
 partial def valued (name : String) (value rest : T) : Fields2 :=
   if value.take 2 == lit "<<" && isDelimiter (trimEnd (value.drop 2)) then
@@ -305,9 +320,42 @@ partial def bareT (text : T) : List Binding :=
     let line := trimEnd ((text.take stop).drop indent)
     let rest := text.drop (stop + 1)
     if line.take 1 == ['>'] || line.take 3 == lit "```" || !looksLikeField line then bareT rest
-    else ⟨str (line.take (brk line [':'])), str (trimStart (line.drop (brk line [':'] + 1)))⟩ :: bareT rest
+    else ⟨str (foldT (line.take (brk line [':']))), str (trimStart (line.drop (brk line [':'] + 1)))⟩ :: bareT rest
 
 def bare (text : String) : List Binding := bareT text.toList
+
+/-- On a reply addressed to `card` (docs/FLEX.md §4 host 2), the text with its first line written as a
+    spell line when that line names one of `actions` (or `?`), alone or after the card's name, with
+    nothing after it but inline fields (`/ name: value`); a field line, a `>` quotation or a sentence is
+    not one. -/
+def addressedText (text card : String) (actions : List String) : Option String := do
+  let lines := text.splitOn "\n"
+  let i ← lines.findIdx? fun l => !(trimStart l.toList).isEmpty
+  let line := trimEnd (trimStart (lines[i]!).toList)
+  guard (line.take 1 != ['>'] && !looksLikeField line)
+  let words := (str line).splitOn " " |>.filter (· != "")
+  let named := fun (w : String) => let a := str (unmarked (foldT w.toList)); if a == "?" || actions.contains a then some a else none
+  let (action, used) ← match words with
+    | w :: rest => match named w with
+      | some a => some (a, 1)
+      | none => match rest with
+        | w2 :: _ => if fold w == fold card then (named w2).map (·, 2) else none
+        | [] => none
+    | [] => none
+  let tail := " ".intercalate (words.drop used)
+  guard (tail.isEmpty || tail.startsWith "/")
+  return "\n".intercalate (lines.take i ++ [s!"delvetalk {card} {action} {tail}"] ++ lines.drop (i + 1))
+
+/-- `parse`, and on a reply addressed to a card, the spell its first line names without `delvetalk`. -/
+def parseFor (text : String) (addressee : Option (String × List String)) : Parsed :=
+  match parse text, addressee with
+  | p@(.spell ..), _ => p
+  | p@(.notASpell reason _), some (card, actions) =>
+    if reason.startsWith "The block <<" then p else
+    match addressedText text card actions with
+    | some t => parse t
+    | none => p
+  | p, none => p
 
 /-! ## Fit -/
 
@@ -374,7 +422,7 @@ def fit (parsed : Parsed) (form : Form) : Fit :=
   match parsed with
   | .notASpell reason _ => .refused (clauseOfReason reason) reason
   | .spell card action fields =>
-      if card != form.card || action != form.action then
+      if fold card != fold form.card || action != form.action then
         .refused .otherCard s!"This card answers {form.card} {form.action}."
       else
         let bindings := rebound fields form
@@ -473,7 +521,12 @@ def fitJson : Fit → Json
 /-- The stateless op `spell-parse {text, form?}`. -/
 def op (request : Json) : Except String Json := do
   let text ← request.getObjValAs? String "text"
-  let parsed := parse text
+  let addressee ← match request.getObjVal? "addressee" with
+    | .ok a => do
+      let actions ← (← a.getObjVal? "actions").getArr?
+      pure (some (← a.getObjValAs? String "card", ← actions.toList.mapM (·.getStr?)))
+    | .error _ => pure none
+  let parsed := parseFor text addressee
   let fitPart ← match request.getObjVal? "form" with
     | .ok f =>
         if f.isNull then pure [] else do

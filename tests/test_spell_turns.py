@@ -80,6 +80,23 @@ class SpellTurns(Reflection):
         self.assertEqual(self.say("colour: violet\nseed: rue")["result"], nat(1))
         self.assertEqual(self.field("planted"), label("violet:rue"))
 
+    def test_a_spell_in_any_case_and_a_direct_reply_without_delvetalk(self):
+        # docs/FLEX.md §4 host 2: the card's name folded to the object it names; on a direct reply
+        # (reach `direct` or `reply`) a first line naming one of the card's actions is the spell.
+        r = self.say("Delvetalk GARDEN Plant\nColour: silver\nSeed: fern")
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
+        r = self.turn("garden", "receive", record(text=label("plant.\ncolour: amber\nseed: moss"), post=label("")),
+                      principal="glm", reach="direct")
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
+        self.assertEqual(self.field("planted"), label("amber:moss"))
+        r = self.turn("garden", "receive", record(text=label("Plant / colour: violet / seed: rue"), post=label("")),
+                      principal="glm", reach="direct")
+        self.assertEqual(self.field("planted"), label("violet:rue"), r)
+        # Unaddressed (a mention), the same words are not a spell.
+        r = self.turn("garden", "receive", record(text=label("plant / colour: amber / seed: rye"), post=label("")),
+                      principal="glm", reach="mention")
+        self.assertEqual((r["result"], self.field("planted")), (nat(2), label("violet:rue")), r)
+
     def test_misfits_are_refused_by_clause_with_reason_and_hint(self):
         cases = [("delvetalk garden plant\ncolour: gold\nseed: fern", "badValue", "colour is one of: amber, violet, silver"),
                  ("delvetalk garden plant\nsize: big", "unknownField", "No field size in this spell; it takes colour, seed."),

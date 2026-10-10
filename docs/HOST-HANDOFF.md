@@ -1007,6 +1007,24 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_reach.py`; prose tests in test_policy, test_hub, test_fork state `mention` (or
    `direct` for the play page's).
 
+119. **Names in any case, and no `delvetalk` on a direct reply (host13; docs/FLEX.md §4 host 2).**
+   `delvetalk` is read in any case; actions and field names fold to lower case (`Spell.foldT`;
+   `looksLikeField`, `binding`, `bareT`, `startField`); an action written with capitals is one only when
+   nothing but inline fields follows it (`heading`), so "delvetalk Is The word" stays a sentence. A
+   card's name is kept as written: `fit` compares it folded, `spellVerdict` too, and `castSpell` reads
+   `Me`/`ENV` as `me`/`env` and a name no object has as written as the one object whose id folds to it
+   (`foldedId`; none when several do). One trailing `.` or `:` on the action is trimmed (`unmarked`).
+   On a direct turn whose reach is `direct` or `reply`, `routeSpell` parses with the addressee
+   (`Spell.parseFor`, `addressedText`): when the text has no spell line, a first non-blank line naming
+   one of the card's actions or `?`, alone or after the card's name, with nothing after it but inline
+   `/ name: value` fields, is the spell line (`plant.`, `Garden plant / seed: x`); a field line, a `>`
+   quotation or a sentence ("Plant something pretty") is not. `spell-parse` takes `addressee {card,
+   actions}`. One fit fixture re-recorded (`Seed: fern` is the field now). `world/lib/Spell.obend`'s
+   inline reader is not folded (objects lane). Tests: `tests/test_spell.py`
+   `test_card_action_and_field_names_are_read_in_any_case`, `test_a_trailing_full_stop_or_colon_on_the_spell_line_is_trimmed`,
+   `test_a_reply_to_the_card_needs_no_delvetalk`; `tests/test_spell_turns.py`
+   `test_a_spell_in_any_case_and_a_direct_reply_without_delvetalk`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
