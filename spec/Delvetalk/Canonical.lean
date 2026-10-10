@@ -104,7 +104,11 @@ partial def writeJson (out : ByteArray) (j : Json) : Except String ByteArray :=
         | k + 1 => if m % 10 == 0 then scale (m / 10) k else throw "a fraction has no canonical form here"
       do
         let m ← scale n.mantissa n.exponent
-        if m ≥ 0 then pure (natural out m.toNat) else pure (head out 1 (m.natAbs - 1))
+        if m ≥ 0 then pure (natural out m.toNat)
+        else if m.natAbs - 1 < twoTo64 then pure (head out 1 (m.natAbs - 1))
+        -- DAG-CBOR has no negative bignum (tag 3 is refused), and the eight-byte head would
+        -- keep only the low 64 bits, giving two integers one encoding.
+        else throw "a negative integer below -2^64 has no canonical form"
   | .arr items => items.foldlM writeJson (head out 4 items.size)
   | .obj fields =>
       let sorted := (fields.toArray.qsort fun a b => keyLess a.1 b.1).toList

@@ -160,6 +160,20 @@ class Canonical(unittest.TestCase):
         r = self.host.send(op="canonical-decode", hex=deep)
         self.assertIn("nesting", r["message"])
 
+    def test_a_negative_integer_past_the_cbor_range_is_refused_not_truncated(self):
+        # Refuted if -2^64-1 and -2^65-1 share bytes: the eight-byte head kept only the low
+        # 64 bits of the argument, so both encoded as 3b0000000000000000 (review kernel 7).
+        least = -(2 ** 64)
+        self.assertEqual(self.encode(json=least)["hex"], "3bffffffffffffffff")
+        self.assertEqual(self.encode(json=-1)["hex"], "20")
+        for n in (least - 1, -(2 ** 65) - 1, -(10 ** 40)):
+            with self.subTest(n=n):
+                r = self.encode(json=n)
+                self.assertEqual(r["status"], "error", r)
+                self.assertIn("negative integer", r["message"])
+                r = self.encode(json={"n": [n]})
+                self.assertEqual(r["status"], "error", r)
+
     def test_lists_cross_the_wire_as_arrays_and_a_nil_cons_chain_is_refused_by_name(self):
         b = self.encode(data=list_wire([nat(i) for i in range(5)]))
         back = self.host.send(op="canonical-decode", hex=b["hex"])["data"]
