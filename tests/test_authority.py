@@ -21,7 +21,7 @@ LEDGER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record Out:
   text: String
   n: Nat
@@ -37,65 +37,55 @@ record Edits:
   lastBy: Plans.Edit<String, {}>
   entries: Plans.Entries<String, String>
   planting: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Out>
 def initial() -> State:
   {count: 0n, lastBy: "", entries: Lists.List::<String>.nil(), planting: ""}
 def keep() -> Edits:
   {count: Plans.Edit::<Nat, Nat>.keep({}), lastBy: Plans.Edit::<String, {}>.keep({}), entries: Plans.Entries::<String, String>.keep({}), planting: Plans.Edit::<String, {}>.keep({})}
 def out(text: String, n: Nat) -> Out:
   {text: text, n: n}
-def commit(context: Abi.Context, edits: Edits, text: String) -> Activity<Plan, Response, Out>:
-  match perform(Plan.write({object: Plans.self(context), edits: edits})):
+def commit(context: Abi.Context, edits: Edits, text: String) -> Activity<Out>:
+  match world.write(edits):
     case written(_): out(text, 1n)
     case refused(r): out(r.clause, 0n)
     case _: out("unanswered", 0n)
 def bumped() -> Edits:
   extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Out>:
+def bump(state: State, context: Abi.Context) -> Activity<Out>:
   commit(context, bumped(), "bumped")
-def stamp(state: State, input: {who: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
+def stamp(state: State, input: {who: String}, context: Abi.Context) -> Activity<Out>:
   commit(context, extend(keep(), {lastBy: Plans.Edit::<String, {}>.set({value: input.who})}), "stamped")
-def append(state: State, input: {item: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
+def append(state: State, input: {item: String}, context: Abi.Context) -> Activity<Out>:
   commit(context, extend(keep(), {entries: Plans.Entries::<String, String>.append({item: input.item})}), "appended")
-def amendOne(state: State, input: {old: String, item: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
+def amendOne(state: State, input: {old: String, item: String}, context: Abi.Context) -> Activity<Out>:
   commit(context, extend(keep(), {entries: Plans.Entries::<String, String>.amendItem({item: input.old, change: input.item})}), "amended")
-def removeOne(state: State, input: {item: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
+def removeOne(state: State, input: {item: String}, context: Abi.Context) -> Activity<Out>:
   commit(context, extend(keep(), {entries: Plans.Entries::<String, String>.removeItem({item: input.item})}), "removed")
-def plant(state: State, input: {value: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
+def plant(state: State, input: {value: String}, context: Abi.Context) -> Activity<Out>:
   commit(context, extend(keep(), {planting: Plans.Edit::<String, {}>.set({value: input.value})}), "planted")
-def who(state: State, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.view({object: Plans.self(context)})):
+def who(state: State, context: Abi.Context) -> Activity<Out>:
+  match world.view::<State>({object: Plans.self(context)}):
     case _: out(context.caller, 0n)
-def facts(state: State, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.view({object: Plans.self(context)})):
+def facts(state: State, context: Abi.Context) -> Activity<Out>:
+  match world.view::<State>({object: Plans.self(context)}):
     case _: out(context.intent, context.height)
-def meddle(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.write({object: {world: "", object: input.target}, edits: bumped()})):
-    case refused(r): commit(context, bumped(), r.clause)
-    case _: commit(context, bumped(), "meddled")
-def tamper(state: State, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.write({object: {world: "", object: context.caller}, edits: bumped()})):
-    case refused(r): out(r.clause, 0n)
-    case _: out("rewrote its caller", 1n)
-def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: Data.of::<Arg>({n: 0n})})):
+def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Out>:
+  match world.call::<Out>({object: {world: "", object: input.target}, method: input.method, argument: Data.of::<Arg>({n: 0n})}):
     case returned(r): commit(context, bumped(), r.result.text)
     case _: out("unanswered", 0n)
-def dive(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.write({object: Plans.self(context), edits: bumped()})):
+def dive(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Out>:
+  match world.write(bumped()):
     case _: deeper(input.n, context)
-def deeper(n: Nat, context: Abi.Context) -> Activity<Plan, Response, Out>:
+def deeper(n: Nat, context: Abi.Context) -> Activity<Out>:
   if n == 0n then out("bottom", 0n) else down(n, context)
-def down(n: Nat, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.call({object: Plans.self(context), method: "dive", argument: Data.of::<Arg>({n: n - 1n})})):
+def down(n: Nat, context: Abi.Context) -> Activity<Out>:
+  match world.call::<Out>({object: Plans.self(context), method: "dive", argument: Data.of::<Arg>({n: n - 1n})}):
     case returned(r): out(r.result.text, 1n)
     case _: out("unanswered", 0n)
-def grow(state: State, input: {n: Nat, source: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: input.n})})})):
+def grow(state: State, input: {n: Nat, source: String}, context: Abi.Context) -> Activity<Out>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: input.n})})):
     case _: swap(context, input.source)
-def swap(context: Abi.Context, source: String) -> Activity<Plan, Response, Out>:
-  match perform(Plan.reprogram({object: Plans.self(context), package: source, migration: ""})):
+def swap(context: Abi.Context, source: String) -> Activity<Out>:
+  match world.reprogram({object: Plans.self(context), package: source, migration: ""}):
     case reprogrammed(_): out("reprogrammed", 1n)
     case refused(r): out(r.clause, 0n)
     case _: out("unanswered", 0n)
@@ -108,7 +98,7 @@ def ledger(law="", comment=""):
 
 
 def modules(law="", comment=""):
-    return closure("Variant") + [{"name": "Ledger", "source": ledger(law, comment)}]
+    return closure("World") + [{"name": "Ledger", "source": ledger(law, comment)}]
 
 
 def seed(count=0, last_by="ember", entries=None, planting=""):
@@ -154,21 +144,6 @@ class WriteIsSelfOnly(Authority):
         super().setUp()
         self.ledger("a")
         self.ledger("b")
-
-    def test_a_method_that_writes_another_object_gets_notSelf_and_the_turn_still_commits_its_own_write(self):
-        r = self.turn("a", "meddle", record(target=label("b")))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(text_of(r["result"]), "notSelf")
-        self.assertEqual((self.count("a"), self.version("a")), ("1", 1))
-        self.assertEqual((self.count("b"), self.version("b")), ("0", 0))
-
-    def test_a_callee_cannot_rewrite_its_caller(self):
-        r = self.turn("a", "relay", record(target=label("b"), method=label("tamper")))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(text_of(r["result"]), "notSelf")
-        # Only the caller's own write landed; the callee wrote nothing at all.
-        self.assertEqual((self.count("a"), self.version("a")), ("1", 1))
-        self.assertEqual(self.version("b"), 0)
 
     def test_a_callee_writes_itself_and_the_journal_names_who_called(self):
         r = self.turn("a", "relay", record(target=label("b"), method=label("bump")))

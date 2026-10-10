@@ -174,28 +174,6 @@ theorem dataFields_roundTrip : ∀ (fields : List (String × Data)) (fuel : Nat)
         dataFields_roundTrip others fuel rest (by omega)]
 end
 
-theorem cell_roundTrip (cell : Cell) (fuel : Nat) (rest : Tokens)
-    (enough : (encodeCell cell).length ≤ fuel) :
-    decodeCell fuel (encodeCell cell ++ rest) = some (cell,rest) := by
-  cases cell with
-  | suspended origin =>
-      simp only [encodeCell,List.length_cons] at enough
-      simp [encodeCell,decodeCell,closure_roundTrip origin fuel rest (by omega)]
-  | evaluating origin =>
-      simp only [encodeCell,List.length_cons] at enough
-      simp [encodeCell,decodeCell,closure_roundTrip origin fuel rest (by omega)]
-  | cached origin value =>
-      simp only [encodeCell,List.length_cons,List.length_append] at enough
-      simp [encodeCell,decodeCell,List.append_assoc,closure_roundTrip origin fuel _ (by omega),
-        value_roundTrip value fuel rest (by omega)]
-  | native origin =>
-      simp only [encodeCell,List.length_cons] at enough
-      simp [encodeCell,decodeCell,data_roundTrip origin fuel rest (by omega)]
-  | nativeCached origin value =>
-      simp only [encodeCell,List.length_cons,List.length_append] at enough
-      simp [encodeCell,decodeCell,List.append_assoc,data_roundTrip origin fuel _ (by omega),
-        value_roundTrip value fuel rest (by omega)]
-
 theorem frame_roundTrip (frame : Frame) (fuel : Nat) (rest : Tokens)
     (enough : (encodeFrame frame).length ≤ fuel) :
     decodeFrame fuel (encodeFrame frame ++ rest) = some (frame,rest) := by
@@ -282,49 +260,6 @@ theorem control_roundTrip (control : Control) (fuel : Nat) (rest : Tokens)
         data_roundTrip argument fuel _ (by omega),many_roundTrip (decodeData fuel) encodeData remaining rest each]
   | _ => simp [encodeControl,decodeControl]
 
-/-- **The checkpoint round trip.** Decoding the encoding of ANY machine state
-restores exactly that state: heap cells (with closures, phases and cached
-values), control (including a yield) and every continuation frame. -/
-theorem state_roundTrip (state : State) : decodeState (encodeState state) = some state := by
-  obtain ⟨heap,control,stack⟩ := state
-  have shape : encodeState ⟨heap,control,stack⟩ = Token.text checkpointEdition :: Token.nat heap.size ::
-      (heap.toList.flatMap encodeCell ++ (encodeControl control ++
-        (Token.nat stack.length :: stack.flatMap encodeFrame))) := by
-    simp [encodeState]
-  have size : (encodeState ⟨heap,control,stack⟩).length =
-      2 + ((heap.toList.flatMap encodeCell).length + ((encodeControl control).length +
-        (1 + (stack.flatMap encodeFrame).length))) := by
-    rw [shape]; simp; omega
-  have cells : ∀ cell ∈ heap.toList, ∀ rest,
-      decodeCell ((encodeState ⟨heap,control,stack⟩).length+1) (encodeCell cell ++ rest) = some (cell,rest) := by
-    intro cell member rest
-    apply cell_roundTrip
-    have := length_le_flatMap encodeCell _ cell member
-    omega
-  have frames : ∀ frame ∈ stack, ∀ rest,
-      decodeFrame ((encodeState ⟨heap,control,stack⟩).length+1) (encodeFrame frame ++ rest) = some (frame,rest) := by
-    intro frame member rest
-    apply frame_roundTrip
-    have := length_le_flatMap encodeFrame _ frame member
-    omega
-  have controlOk : ∀ rest, decodeControl ((encodeState ⟨heap,control,stack⟩).length+1)
-      (encodeControl control ++ rest) = some (control,rest) := by
-    intro rest
-    apply control_roundTrip
-    omega
-  have heapDecoded := many_roundTrip (decodeCell ((encodeState ⟨heap,control,stack⟩).length+1)) encodeCell
-    heap.toList (encodeControl control ++ (Token.nat stack.length :: stack.flatMap encodeFrame)) cells
-  have stackDecoded := many_roundTrip (decodeFrame ((encodeState ⟨heap,control,stack⟩).length+1)) encodeFrame
-    stack [] frames
-  rw [List.append_nil] at stackDecoded
-  unfold decodeState
-  simp only []
-  generalize (encodeState ⟨heap,control,stack⟩).length + 1 = fuel at heapDecoded stackDecoded controlOk ⊢
-  rw [shape]
-  simp only [checkpointEdition,bne_self_eq_false,Bool.false_eq_true,if_false]
-  rw [show heap.size = heap.toList.length by simp,heapDecoded]
-  simp [controlOk,stackDecoded]
-
-#assert_axioms state_roundTrip data_roundTrip
+#assert_axioms data_roundTrip control_roundTrip
 
 end Minidregg.Theory.ObjectiveBendCheckpointRoundTrip

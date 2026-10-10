@@ -153,6 +153,27 @@ theorem agree_shareable {assumptions : Assumptions} {actual expected : Ty}
   have second := (Bool.and_eq_true_iff.mp agreement).2
   simpa [expectedShareable] using second
 
+/-- `agree` as compiled: equal types agree at once (`sameType_refl`, and the shareability
+premise holds of a type against itself), so only types that differ as trees pay for
+`sameType`'s canonical forms and both shareability walks. Without it, checking a list
+literal at `Data` (each injection's payload type is the rest of the list's shape) was
+quadratic in the list. -/
+def agreeFast (assumptions : Assumptions) (actual expected : Ty) : Bool :=
+  Ty.eqShared actual expected ||
+    (sameTypeShared assumptions actual expected &&
+      (!expected.shareableUnder assumptions.shareableVariables ||
+        actual.shareableUnder assumptions.shareableVariables))
+
+@[csimp] theorem agree_eq_agreeFast : @agree = @agreeFast := by
+  funext assumptions actual expected
+  unfold agreeFast
+  cases h : Ty.eqShared actual expected
+  · simp [agree]
+  · cases Ty.eqShared_iff.mp h
+    simp [agree, sameType_refl]
+
+#assert_axioms agree_eq_agreeFast
+
 /-- Source positions address the annotation of each actual lambda. Missing
 annotations are refused, not guessed or silently replaced by Data types. An
 injection's position carries the type of its constructor function: domain is
@@ -322,15 +343,15 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       PartialTyping assumptions context whenTrue result tu →
       PartialTyping assumptions context whenFalse result fu →
       PartialTyping assumptions context (.ifBool condition whenTrue whenFalse) result (addUses cu (addUses tu fu))
-  /-- Yield a Plan (a sum of first-order actions, or a message record); the response is
-  data. A sum Plan's activity is resumed at `response` itself; a message's at `Data`, the
-  site's `response` being this perform's own (`Ty.performResponse`). -/
+  /-- Yield a Plan (a message record of first-order data). The site's `response` is this
+  perform's own; the activity is resumed at `Data`, so performs answered at different
+  types sequence in one activity. -/
   | perform {context : Context} {plan : Term} {planType response : Ty} {uses : Uses} :
       PartialTyping assumptions context plan planType uses →
       planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
       PartialTyping assumptions context (.perform plan)
-        (.computation planType (planType.performResponse response) response) uses
+        (.computation planType .data response) uses
   /-- Hosted extension: first-order data injected into the universal `Data`
   type. The only rule that produces `Data`; there is no elimination. The
   declarative rule takes any walk fuel (`isDataUnder` is a greatest fixed point
@@ -351,7 +372,7 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       PartialTyping assumptions context value result uses → result.isComputation = false →
       PartialTyping assumptions context (.done value) (.computation planType response result) uses
   /-- Hosted extension: refuse the turn, naming why. Only an activity refuses, at any
-  activity type over a Plan sum and a data response; it uses nothing. -/
+  activity type over a message Plan and a data response; it uses nothing. -/
   | refuse {context : Context} {reason : String} {planType response result : Ty} :
       planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
@@ -411,8 +432,8 @@ mutual
 /-- Fuel bounds only the checker, never the runtime or meaning of Fix. Failure
 means outside this annotated fragment/budget; it is not a proof of ill-typing in
 any stronger language. The result carries a runtime-syntax derivation. -/
-def infer (assumptions : Assumptions) (annotations : Annotations) (context : Context)
-    (position : List Nat) : Nat → (term : Term) → Option (Inferred assumptions context term)
+def inferAt {α : Type} (assumptions : Assumptions) (here : α → Option LambdaAnnotation)
+    (child : α → Nat → α) (context : Context) (position : α) : Nat → (term : Term) → Option (Inferred assumptions context term)
   | 0, _ => none
   | fuel + 1, .bound index => do
       let binding ← context[index]?
@@ -422,8 +443,8 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
   | _ + 1, .boolean value => some ⟨.boolean, zeroUses context, .boolean context value⟩
   | _ + 1, .label value => some ⟨literalType value, zeroUses context, .label context value⟩
   | fuel + 1, .lam body => do
-      let annotation ← annotations position
-      let result ← infer assumptions annotations (⟨annotation.domain, annotation.parameter⟩ :: context) (position ++ [0]) fuel body
+      let annotation ← here position
+      let result ← inferAt assumptions here child (⟨annotation.domain, annotation.parameter⟩ :: context) (child position 0) fuel body
       if ht : agree assumptions result.type annotation.codomain = true then
         if hs : safeUses (⟨annotation.domain, annotation.parameter⟩ :: context) result.uses = true then
           if hv : validContext assumptions.shareableVariables (⟨annotation.domain, annotation.parameter⟩ :: context) = true then
@@ -435,8 +456,8 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         else none
       else none
   | fuel + 1, .app function argument => do
-      let fn ← infer assumptions annotations context (position ++ [0]) fuel function
-      let arg ← infer assumptions annotations context (position ++ [1]) fuel argument
+      let fn ← inferAt assumptions here child context (child position 0) fuel function
+      let arg ← inferAt assumptions here child context (child position 1) fuel argument
       match hft : callable fn.type with
       | .arrow reuse quantity domain codomain =>
           if hat : agree assumptions arg.type domain = true then
@@ -446,22 +467,22 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
           else none
       | _ => none
   | fuel + 1, .record fields => do
-      let result ← inferFields assumptions annotations context position 0 fuel fields
+      let result ← inferFieldsAt assumptions here child context position 0 fuel fields
       some ⟨result.type, result.uses, .record result.derivation⟩
   | fuel + 1, .get target name => do
-      let result ← infer assumptions annotations context (position ++ [0]) fuel target
+      let result ← inferAt assumptions here child context (child position 0) fuel target
       let member ← result.type.lookup assumptions.bounds (fuel + 1) name
       if hm : result.type.lookup assumptions.bounds (fuel + 1) name = some member then
         some ⟨member, result.uses, .get result.derivation hm⟩ else none
   | fuel + 1, .extend target fields => do
-      let prior ← infer assumptions annotations context (position ++ [0]) fuel target
-      let members ← inferFields assumptions annotations context (position ++ [1]) 0 fuel fields
+      let prior ← inferAt assumptions here child context (child position 0) fuel target
+      let members ← inferFieldsAt assumptions here child context (child position 1) 0 fuel fields
       if hr : prior.type.isRow assumptions.bounds (fuel + 64) = true then
         some ⟨overlay members.type prior.type, addUses prior.uses members.uses,
           .extend prior.derivation members.derivation hr⟩ else none
   | fuel + 1, .specification metadata extension => do
-      let descriptor ← infer assumptions annotations context (position ++ [0]) fuel metadata
-      let body ← infer assumptions annotations context (position ++ [1]) fuel extension
+      let descriptor ← inferAt assumptions here child context (child position 0) fuel metadata
+      let body ← inferAt assumptions here child context (child position 1) fuel extension
       if hm : descriptor.type.isComputation = false then
         if he : body.type.isComputation = false then
           some ⟨.specification descriptor.type body.type, addUses descriptor.uses body.uses,
@@ -469,8 +490,8 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         else none
       else none
   | fuel + 1, .prototype spec target => do
-      let code ← infer assumptions annotations context (position ++ [0]) fuel spec
-      let value ← infer assumptions annotations context (position ++ [1]) fuel target
+      let code ← inferAt assumptions here child context (child position 0) fuel spec
+      let value ← inferAt assumptions here child context (child position 1) fuel target
       if hs : code.type.isComputation = false then
         if ht : value.type.isComputation = false then
           some ⟨.prototype code.type value.type, addUses code.uses value.uses,
@@ -478,26 +499,26 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         else none
       else none
   | fuel + 1, .reflect target => do
-      let result ← infer assumptions annotations context (position ++ [0]) fuel target
+      let result ← inferAt assumptions here child context (child position 0) fuel target
       match ht : result.type with
       | .prototype specType targetType =>
           some ⟨specType, result.uses, .reflect (ht ▸ result.derivation)⟩
       | _ => none
   | fuel + 1, .metadata target => do
-      let result ← infer assumptions annotations context (position ++ [0]) fuel target
+      let result ← inferAt assumptions here child context (child position 0) fuel target
       match ht : result.type with
       | .specification metadataType extensionType =>
           some ⟨metadataType, result.uses, .metadata (ht ▸ result.derivation)⟩
       | _ => none
   | fuel + 1, .project target => do
-      let result ← infer assumptions annotations context (position ++ [0]) fuel target
+      let result ← inferAt assumptions here child context (child position 0) fuel target
       match ht : result.type with
       | .prototype specType targetType =>
           some ⟨targetType, result.uses, .project (ht ▸ result.derivation)⟩
       | _ => none
   | fuel + 1, .mix lower upper => do
-      let first ← infer assumptions annotations context (position ++ [0]) fuel lower
-      let second ← infer assumptions annotations context (position ++ [1]) fuel upper
+      let first ← inferAt assumptions here child context (child position 0) fuel lower
+      let second ← inferAt assumptions here child context (child position 1) fuel upper
       match ht : callable first.type, hs : callable second.type with
       | .arrow .reusable .unrestricted self (.arrow .reusable .unrestricted inherited middle),
         .arrow .reusable .unrestricted self' (.arrow .reusable .unrestricted middle' provided) =>
@@ -520,8 +541,8 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
           else none
       | _, _ => none
   | fuel + 1, .fix spec inheritedTerm => do
-      let code ← infer assumptions annotations context (position ++ [0]) fuel spec
-      let base ← infer assumptions annotations context (position ++ [1]) fuel inheritedTerm
+      let code ← inferAt assumptions here child context (child position 0) fuel spec
+      let base ← inferAt assumptions here child context (child position 1) fuel inheritedTerm
       match ht : callable code.type with
       | .arrow .reusable .unrestricted target (.arrow .reusable .unrestricted inherited output) =>
           let expected := recastCallable code.type
@@ -542,8 +563,8 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
           else none
       | _ => none
   | fuel + 1, .binary primitive left right => do
-      let l ← infer assumptions annotations context (position ++ [0]) fuel left
-      let r ← infer assumptions annotations context (position ++ [1]) fuel right
+      let l ← inferAt assumptions here child context (child position 0) fuel left
+      let r ← inferAt assumptions here child context (child position 1) fuel right
       if hl : l.type = (primitiveTypes primitive).1 then
         if hr : r.type = (primitiveTypes primitive).2.1 then
           some ⟨(primitiveTypes primitive).2.2, addUses l.uses r.uses,
@@ -551,14 +572,14 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         else none
       else none
   | fuel + 1, .unary primitive argument => do
-      let a ← infer assumptions annotations context (position ++ [0]) fuel argument
+      let a ← inferAt assumptions here child context (child position 0) fuel argument
       if ha : a.type = (unaryTypes primitive).1 then
         some ⟨(unaryTypes primitive).2, a.uses, .unary (Prod.eta _) (ha ▸ a.derivation)⟩
       else none
   | fuel + 1, .ifZero value zero successor => do
-      let condition ← infer assumptions annotations context (position ++ [0]) fuel value
-      let z ← infer assumptions annotations context (position ++ [1]) fuel zero
-      let s ← infer assumptions annotations (⟨.natural,.unrestricted⟩ :: context) (position ++ [2]) fuel successor
+      let condition ← inferAt assumptions here child context (child position 0) fuel value
+      let z ← inferAt assumptions here child context (child position 1) fuel zero
+      let s ← inferAt assumptions here child (⟨.natural,.unrestricted⟩ :: context) (child position 2) fuel successor
       if ht : condition.type = .natural then
         if hb : agree assumptions s.type z.type = true then
           if hu : safeUses (⟨.natural,.unrestricted⟩ :: context) s.uses = true then
@@ -568,8 +589,8 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         else none
       else none
   | fuel + 1, .inject tag payload => do
-      let annotation ← annotations position
-      let value ← infer assumptions annotations context (position ++ [0]) fuel payload
+      let annotation ← here position
+      let value ← inferAt assumptions here child context (child position 0) fuel payload
       if hk : annotation.parameter = .unrestricted ∧ annotation.reuse = .reusable then
         match annotation.codomain with
         | .variant row =>
@@ -600,11 +621,11 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         | _ => none
       else none
   | fuel + 1, .case scrutinee arms => do
-      let value ← infer assumptions annotations context (position ++ [0]) fuel scrutinee
+      let value ← inferAt assumptions here child context (child position 0) fuel scrutinee
       match value.type with
       | .computation _ _ produced =>
         let row ← variantRow assumptions produced
-        let typed ← inferArms assumptions annotations context (position ++ [1]) 0 row none fuel arms
+        let typed ← inferArmsAt assumptions here child context (child position 1) 0 row none fuel arms
         match hr : typed.result with
         | .computation planType response result =>
           if hc : agree assumptions value.type (.computation planType response (.variant typed.row)) = true then
@@ -616,14 +637,14 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         | _ => none
       | _ =>
       let row ← variantRow assumptions value.type
-      let typed ← inferArms assumptions annotations context (position ++ [1]) 0 row none fuel arms
+      let typed ← inferArmsAt assumptions here child context (child position 1) 0 row none fuel arms
       if hc : agree assumptions value.type (.variant typed.row) = true then
         some ⟨typed.result, addUses value.uses typed.uses, .case (.conversion value.derivation (agree_sameType hc)) typed.derivation⟩
       else none
   | fuel + 1, .ifBool condition whenTrue whenFalse => do
-      let c ← infer assumptions annotations context (position ++ [0]) fuel condition
-      let t ← infer assumptions annotations context (position ++ [1]) fuel whenTrue
-      let f ← infer assumptions annotations context (position ++ [2]) fuel whenFalse
+      let c ← inferAt assumptions here child context (child position 0) fuel condition
+      let t ← inferAt assumptions here child context (child position 1) fuel whenTrue
+      let f ← inferAt assumptions here child context (child position 2) fuel whenFalse
       if hc : c.type = .boolean then
         if hb : agree assumptions f.type t.type = true then
           some ⟨t.type, addUses c.uses (addUses t.uses f.uses),
@@ -632,28 +653,27 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       else none
   | fuel + 1, .perform plan => do
       -- The annotation at a perform's position is its effect signature:
-      -- domain = the Plan (a sum or a message), codomain = this site's response type.
-      let annotation ← annotations position
-      let value ← infer assumptions annotations context (position ++ [0]) fuel plan
+      -- domain = the Plan (a message), codomain = this site's response type.
+      let annotation ← here position
+      let value ← inferAt assumptions here child context (child position 0) fuel plan
       if hs : agree assumptions value.type annotation.domain = true then
         if hp : annotation.domain.isPlanUnder assumptions.bounds assumptions.rigid = true then
           if hr : annotation.codomain.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
-            some ⟨.computation annotation.domain (annotation.domain.performResponse annotation.codomain)
-                annotation.codomain, value.uses,
+            some ⟨.computation annotation.domain .data annotation.codomain, value.uses,
               .perform (.conversion value.derivation (agree_sameType hs)) hp hr⟩
           else none
         else none
       else none
   | fuel + 1, .textJoin list separator => do
-      let l ← infer assumptions annotations context (position ++ [0]) fuel list
-      let s ← infer assumptions annotations context (position ++ [1]) fuel separator
+      let l ← inferAt assumptions here child context (child position 0) fuel list
+      let s ← inferAt assumptions here child context (child position 1) fuel separator
       if hl : l.type.isTextList assumptions.bounds = true then
         if hs : s.type = .label then
           some ⟨.label, addUses l.uses s.uses, .textJoin hl l.derivation (hs ▸ s.derivation)⟩
         else none
       else none
   | fuel + 1, .toData inner => do
-      let value ← infer assumptions annotations context (position ++ [0]) fuel inner
+      let value ← inferAt assumptions here child context (child position 0) fuel inner
       if hd : value.type.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
         some ⟨.data, value.uses, .toData value.derivation hd⟩
       -- Only a type deeper than the fixed fuel pays for measuring itself and its bounds.
@@ -663,8 +683,8 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       else none
   | fuel + 1, .done inner => do
       -- The annotation at `done` names the activity's Plan and response types.
-      let annotation ← annotations position
-      let value ← infer assumptions annotations context (position ++ [0]) fuel inner
+      let annotation ← here position
+      let value ← inferAt assumptions here child context (child position 0) fuel inner
       if hn : value.type.isComputation = false then
         some ⟨.computation annotation.domain annotation.codomain value.type, value.uses,
           .done value.derivation hn⟩
@@ -672,7 +692,7 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
   | _ + 1, .refuse _ => do
       -- The annotation at `refuse` names the activity type it stands in for, as its
       -- codomain.
-      let annotation ← annotations position
+      let annotation ← here position
       match annotation.codomain with
       | .computation planType response result =>
         if hp : planType.isPlanUnder assumptions.bounds assumptions.rigid = true then
@@ -684,13 +704,13 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
         else none
       | _ => none
 
-def inferFields (assumptions : Assumptions) (annotations : Annotations) (context : Context)
-    (position : List Nat) (index : Nat) : Nat → (fields : List (String × Term)) → Option (InferredFields assumptions context fields)
+def inferFieldsAt {α : Type} (assumptions : Assumptions) (here : α → Option LambdaAnnotation)
+    (child : α → Nat → α) (context : Context) (position : α) (index : Nat) : Nat → (fields : List (String × Term)) → Option (InferredFields assumptions context fields)
   | 0, _ => none
   | _ + 1, [] => some ⟨.emptyRow, zeroUses context, .nil context⟩
   | fuel + 1, (name,body) :: rest => do
-      let first ← infer assumptions annotations context (position ++ [index]) fuel body
-      let later ← inferFields assumptions annotations context position (index + 1) fuel rest
+      let first ← inferAt assumptions here child context (child position index) fuel body
+      let later ← inferFieldsAt assumptions here child context position (index + 1) fuel rest
       if hc : first.type.isComputation = false then
         some ⟨.field name first.type later.type, addUses first.uses later.uses, .cons first.derivation later.derivation hc⟩
       else none
@@ -699,8 +719,8 @@ def inferFields (assumptions : Assumptions) (annotations : Annotations) (context
 row; the first arm chooses the result type and later arms use checked conversion
 at that same type. Empty arm lists have no result type to infer and are refused
 here (the relation itself permits them). -/
-def inferArms (assumptions : Assumptions) (annotations : Annotations) (context : Context)
-    (position : List Nat) (index : Nat) (scrutineeRow : Ty) (expected : Option Ty) :
+def inferArmsAt {α : Type} (assumptions : Assumptions) (here : α → Option LambdaAnnotation)
+    (child : α → Nat → α) (context : Context) (position : α) (index : Nat) (scrutineeRow : Ty) (expected : Option Ty) :
     Nat → (arms : List (String × Term)) → Option (InferredArms assumptions context arms)
   | 0, _ => none
   | _ + 1, [] => match expected with
@@ -709,11 +729,11 @@ def inferArms (assumptions : Assumptions) (annotations : Annotations) (context :
   | fuel + 1, (name,body) :: rest => do
       let payload ← scrutineeRow.lookup assumptions.bounds (fuel + 1) name
       if hs : payload.shareableUnder assumptions.shareableVariables = true then
-        let first ← infer assumptions annotations (⟨payload,.unrestricted⟩ :: context) (position ++ [index]) fuel body
+        let first ← inferAt assumptions here child (⟨payload,.unrestricted⟩ :: context) (child position index) fuel body
         let result := expected.getD first.type
         if hc : agree assumptions first.type result = true then
           if hu : safeUses (⟨payload,.unrestricted⟩ :: context) first.uses = true then
-            let later ← inferArms assumptions annotations context position (index + 1) scrutineeRow (some result) fuel rest
+            let later ← inferArmsAt assumptions here child context position (index + 1) scrutineeRow (some result) fuel rest
             if hl : later.result = result then
               some ⟨.field name payload later.row, result, addUses first.uses.tail later.uses,
                 .cons (.conversion first.derivation (agree_sameType hc)) hu hs (hl ▸ later.derivation)⟩
@@ -722,6 +742,21 @@ def inferArms (assumptions : Assumptions) (annotations : Annotations) (context :
         else none
       else none
 end
+
+/-- The checker at source positions: the cursor is the position, a child appends its index,
+and the annotation is looked up by the whole path. The reference every other cursor
+(`AnnotationTree`) is proved equal to. -/
+def infer (assumptions : Assumptions) (annotations : Annotations) (context : Context)
+    (position : List Nat) : Nat → (term : Term) → Option (Inferred assumptions context term) :=
+  inferAt assumptions annotations (fun p i => p ++ [i]) context position
+def inferFields (assumptions : Assumptions) (annotations : Annotations) (context : Context)
+    (position : List Nat) (index : Nat) : Nat → (fields : List (String × Term)) → Option (InferredFields assumptions context fields) :=
+  inferFieldsAt assumptions annotations (fun p i => p ++ [i]) context position index
+def inferArms (assumptions : Assumptions) (annotations : Annotations) (context : Context)
+    (position : List Nat) (index : Nat) (scrutineeRow : Ty) (expected : Option Ty) :
+    Nat → (arms : List (String × Term)) → Option (InferredArms assumptions context arms) :=
+  inferArmsAt assumptions annotations (fun p i => p ++ [i]) context position index scrutineeRow expected
+
 
 structure Checked (source : AnnotatedTerm) (context : Context) where
   type : Ty
@@ -775,6 +810,90 @@ def Checked.apply {function argument : AnnotatedTerm} (fn : Checked function [])
         else none
       else none
   | _ => none
+
+/-! ### The checker over an annotation tree
+
+`check` looks every annotation up by its whole source path, which it builds by appending at
+every node: checking a term of depth `d` costs `d` per node. A tree shaped like the term (child
+`i` of a node is the annotation subtree of the term's child `i`) gives each child in O(1);
+`checkAt` is `inferAt` with that cursor, and `checkAt_eq` proves it is `check` of the tree's
+lookup function, so the function-annotated `check` stays the reference (and the decided
+examples stay functions). -/
+
+/-- Two cursors related by `view` (the same annotation here, children to children) infer
+alike, so a checker is determined by the annotations it can reach, not by how it walks. -/
+theorem inferAt_view {α β : Type} (assumptions : Assumptions)
+    (here₁ : α → Option LambdaAnnotation) (child₁ : α → Nat → α)
+    (here₂ : β → Option LambdaAnnotation) (child₂ : β → Nat → β) (view : α → β)
+    (hHere : ∀ a, here₁ a = here₂ (view a)) (hChild : ∀ a i, view (child₁ a i) = child₂ (view a) i) :
+    ∀ fuel,
+      (∀ context position term, inferAt assumptions here₁ child₁ context position fuel term =
+        inferAt assumptions here₂ child₂ context (view position) fuel term) ∧
+      (∀ context position index fields, inferFieldsAt assumptions here₁ child₁ context position index fuel fields =
+        inferFieldsAt assumptions here₂ child₂ context (view position) index fuel fields) ∧
+      (∀ context position index row expected arms,
+        inferArmsAt assumptions here₁ child₁ context position index row expected fuel arms =
+        inferArmsAt assumptions here₂ child₂ context (view position) index row expected fuel arms)
+  | 0 => ⟨fun _ _ _ => by simp [inferAt], fun _ _ _ _ => by simp [inferFieldsAt],
+      fun _ _ _ _ _ _ => by simp [inferArmsAt]⟩
+  | fuel + 1 => by
+    obtain ⟨ih, ihFields, ihArms⟩ := inferAt_view assumptions here₁ child₁ here₂ child₂ view hHere hChild fuel
+    refine ⟨fun context position term => ?_, fun context position index fields => ?_,
+      fun context position index row expected arms => ?_⟩
+    · cases term <;> simp only [inferAt, ih, ihFields, ihArms, hHere, hChild]
+    · rcases fields with _ | ⟨⟨name, body⟩, rest⟩ <;> simp only [inferFieldsAt, ih, ihFields, hChild]
+    · rcases arms with _ | ⟨⟨name, body⟩, rest⟩ <;> simp only [inferArmsAt, ih, ihArms, hChild]
+
+/-- An argument's injection annotations as a tree shaped like its term: child `i` of a node
+is the annotation subtree of the term's child `i` (the checker's positions). A literal's
+annotations are built with it in one pass, so no annotation holds a path of its own: a list
+of `n` cells has `n` annotations at depths up to `2n`. -/
+inductive AnnotationTree where
+  | node (here : Option LambdaAnnotation) (children : Array AnnotationTree)
+
+instance : Inhabited AnnotationTree := ⟨.node none #[]⟩
+
+namespace AnnotationTree
+def empty : AnnotationTree := .node none #[]
+def here : AnnotationTree → Option LambdaAnnotation
+  | .node here _ => here
+/-- Child `i`, or the empty tree past the children. -/
+def child : AnnotationTree → Nat → AnnotationTree
+  | .node _ children, i => children[i]?.getD .empty
+def subtree (tree : AnnotationTree) : List Nat → AnnotationTree
+  | [] => tree
+  | i :: rest => (tree.child i).subtree rest
+/-- The annotation at a source path: the tree as `Annotations`. -/
+def lookup (tree : AnnotationTree) (path : List Nat) : Option LambdaAnnotation := (tree.subtree path).here
+
+theorem subtree_append (tree : AnnotationTree) (path : List Nat) (i : Nat) :
+    tree.subtree (path ++ [i]) = (tree.subtree path).child i := by
+  induction path generalizing tree with
+  | nil => rfl
+  | cons j rest ih => exact ih (tree.child j)
+end AnnotationTree
+
+/-- `check` with the annotations as a tree: each child in O(1). -/
+def checkAt (term : Term) (tree : AnnotationTree) (assumptions : Assumptions) (context : Context)
+    (fuel : Nat) : Option (Checked ⟨term, tree.lookup, assumptions⟩ context) := do
+  let result ← inferAt assumptions AnnotationTree.here AnnotationTree.child context tree fuel term
+  if hs : safeUses context result.uses = true then
+    if hv : validContext assumptions.shareableVariables context = true then
+      if ha : assumptions.valid = true then
+        some ⟨result.type, result.uses, result.derivation, hs, hv, ha⟩ else none
+    else none
+  else none
+
+theorem checkAt_eq (term : Term) (tree : AnnotationTree) (assumptions : Assumptions)
+    (context : Context) (fuel : Nat) :
+    checkAt term tree assumptions context fuel = check ⟨term, tree.lookup, assumptions⟩ context fuel := by
+  have same := (inferAt_view assumptions tree.lookup (fun p i => p ++ [i]) AnnotationTree.here
+    AnnotationTree.child tree.subtree (fun _ => rfl) tree.subtree_append fuel).1 context [] term
+  simp only [checkAt, check, infer]
+  rw [same]
+  rfl
+
+#assert_axioms inferAt_view AnnotationTree.subtree_append checkAt_eq
 
 /-- Successful checking constructs a derivation for exactly the consumed runtime
 term, together with capture/usage premises. This is not preservation/adequacy. -/
@@ -895,7 +1014,7 @@ theorem future_row_instantiation_accepted (self super : Ty)
     (selfShareable : self.shareable = true) (superShareable : super.shareable = true)
     (superRow : super.isRow [] 64 = true) :
     (check (futureRowInstantiation self super) [] 16).isSome = true := by
-  simp [check, infer, inferFields, futureRowInstantiation, futureRowSource, agree,
+  simp [check, infer, inferAt, inferFieldsAt, futureRowInstantiation, futureRowSource, agree,
     sameType, Assumptions.alias, Assumptions.valid, overlay, zeroUses, variableUses, addUses, safeUses, safeQuantity,
     validContext, reusableAllowed, reusableCaptures,
     List.range_succ, List.zipWith, selfShareable, superShareable, (Ty.isRow_mono superRow (by omega) : super.isRow [] 77 = true),
@@ -926,7 +1045,7 @@ def futureRowInstanceChecked (self super : Ty)
 theorem future_row_typed : FutureRowTyped futureRowInstantiation := by
   intro self super hs ht hr
   refine ⟨futureRowInstanceChecked self super hs ht hr, ?_⟩
-  simp [futureRowInstanceChecked, check, infer, inferFields, futureRowInstantiation,
+  simp [futureRowInstanceChecked, check, infer, inferAt, inferFieldsAt, futureRowInstantiation,
     futureRowSource, Assumptions.alias, Assumptions.valid, overlay, zeroUses, variableUses, addUses, safeUses, safeQuantity,
     validContext, reusableAllowed, reusableCaptures,
     List.range_succ, List.zipWith, hs, ht, (Ty.isRow_mono hr (by omega) : super.isRow [] 77 = true), Ty.isComputation]
@@ -948,7 +1067,7 @@ theorem future_binary_instantiation_accepted (self super : Ty)
     (selfShareable : self.shareable = true) (superShareable : super.shareable = true)
     (superRow : super.isRow [] 64 = true) :
     (check (futureBinaryInstantiation self super) [] 20).isSome = true := by
-  simp [check, infer, inferFields, futureBinaryInstantiation, agree, sameType, Assumptions.alias, Assumptions.valid, overlay,
+  simp [check, infer, inferAt, inferFieldsAt, futureBinaryInstantiation, agree, sameType, Assumptions.alias, Assumptions.valid, overlay,
     zeroUses, variableUses, addUses, safeUses, safeQuantity,
     validContext, reusableAllowed, reusableCaptures,
     List.range_succ, List.zipWith, selfShareable, superShareable,
@@ -1543,25 +1662,26 @@ def checkPacketFile (path : String) : IO UInt32 := do
 
 /-! ## Activities: effects as a type, never in a shared position -/
 
-def planRow : Ty := .field "write" (.field "after" .natural .emptyRow) .emptyRow
-def planType : Ty := .variant planRow
+/-- A message Plan (a record of data), a site's result, the perform's signature (the Plan
+and this site's result) and `done`'s (the Plan and the activity's response, `Data`). -/
+def messageRow : Ty := .field "method" .label .emptyRow
+def planType : Ty := messageRow
 def responseType : Ty := .variant (.field "written" .emptyRow (.field "refused" .emptyRow .emptyRow))
-def writeAction : LambdaAnnotation := ⟨.field "after" .natural .emptyRow,planType,.unrestricted,.reusable⟩
 def effectSignature : LambdaAnnotation := ⟨planType,responseType,.unrestricted,.reusable⟩
-def writePlan : Term := .inject "write" (.record [("after",.nat 1)])
-/-- Annotations for a perform at `site` (its plan injection one level down). -/
+def doneSignature : LambdaAnnotation := ⟨planType,.data,.unrestricted,.reusable⟩
+def writePlan : Term := .record [("method",.label "write")]
+/-- Annotations for a perform at `site`. -/
 def performAt (site : List Nat) (rest : Annotations) : Annotations := fun position =>
-  if position = site then some effectSignature else if position = site ++ [0] then some writeAction
-  else rest position
+  if position = site then some effectSignature else rest position
 def writeActivity (written refused : Term) : Term :=
   .case (.perform writePlan) [("written",written),("refused",refused)]
 def armsDone : Annotations := fun position =>
-  if position = [1,0] ∨ position = [1,1] then some effectSignature else none
+  if position = [1,0] ∨ position = [1,1] then some doneSignature else none
 
 /-- Perform a write, resume with its outcome, select the arm: an activity. -/
 theorem effect_case_accepted :
     (check ⟨writeActivity (.done (.nat 1)) (.done (.nat 0)),performAt [0] armsDone,{}⟩ [] 32).map
-      (fun checked => checked.type) = some (.computation planType responseType .natural) := by decide
+      (fun checked => checked.type) = some (.computation planType .data .natural) := by decide
 /-- Every arm of an effect case is an activity; a pure arm needs `done`. -/
 theorem pure_arm_without_done_refused :
     (check ⟨writeActivity (.nat 1) (.nat 0),performAt [0] armsDone,{}⟩ [] 32).isNone = true := by decide
@@ -1570,7 +1690,7 @@ refused there even for an affine (non-shareable) parameter... -/
 theorem effect_as_argument_refused :
     (check ⟨.app (.lam (.nat 0)) (.perform writePlan),
       performAt [1] (fun position => if position = [0] then
-        some ⟨.computation planType responseType responseType,.natural,.affine,.reusable⟩ else none),{}⟩ [] 32).isNone = true := by decide
+        some ⟨.computation planType .data responseType,.natural,.affine,.reusable⟩ else none),{}⟩ [] 32).isNone = true := by decide
 /-- ...while the same affine parameter accepts a pure argument. -/
 theorem pure_affine_argument_accepted :
     (check ⟨.app (.lam (.nat 0)) (.nat 3),
@@ -1583,21 +1703,27 @@ theorem effect_in_record_field_refused :
 theorem effect_in_payload_refused :
     (check ⟨.inject "later" (.perform writePlan),
       performAt [0] (fun position => if position = [] then
-        some ⟨.computation planType responseType responseType,
-          .variant (.field "later" (.computation planType responseType responseType) .emptyRow),
+        some ⟨.computation planType .data responseType,
+          .variant (.field "later" (.computation planType .data responseType) .emptyRow),
           .unrestricted,.reusable⟩ else none),{}⟩ [] 32).isNone = true := by decide
 /-- Rule effect-in-specification: specification components are shared cells. -/
 theorem effect_in_specification_refused :
     (check ⟨.specification (.perform writePlan) (.nat 0),performAt [0] (fun _ => none),{}⟩ [] 32).isNone = true := by decide
-/-- Rule plan-is-a-sum: a perform's plan is a sum of first-order actions. -/
+/-- Rule plan-is-a-message: a perform's plan is a record of first-order data... -/
 theorem scalar_plan_refused :
     (check ⟨.perform (.nat 1),fun position => if position = [] then
       some ⟨.natural,responseType,.unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
+/-- ...never a sum (the withdrawn dialect's Plan)... -/
+theorem sum_plan_refused :
+    (check ⟨.perform (.inject "write" (.record [])),fun position =>
+      if position = [] then some ⟨.variant (.field "write" .emptyRow .emptyRow),responseType,.unrestricted,.reusable⟩
+      else if position = [0] then some ⟨.emptyRow,.variant (.field "write" .emptyRow .emptyRow),.unrestricted,.reusable⟩
+      else none,{}⟩ [] 32).isNone = true := by decide
 /-- Rule response-is-data: a closure cannot be a response. -/
 theorem closure_response_refused :
     (check ⟨.perform writePlan,fun position =>
       if position = [] then some ⟨planType,.arrow .reusable .unrestricted .natural .natural,.unrestricted,.reusable⟩
-      else if position = [0] then some writeAction else none,{}⟩ [] 32).isNone = true := by decide
+      else none,{}⟩ [] 32).isNone = true := by decide
 /-- An activity is never shareable, so it is never a fix target, mix operand or
 unrestricted binder either. -/
 theorem computation_not_shareable (plan response result : Ty) (variables : List Nat) :
@@ -1621,10 +1747,10 @@ theorem data_not_eliminated :
 an arm that continues, so `let written(_) = perform(p)` types as its match... -/
 theorem refusal_arm_accepted :
     (check ⟨writeActivity (.done (.nat 1)) (.refuse "unexpected response refused"),
-      performAt [0] (fun position => if position = [1,0] then some effectSignature
-        else if position = [1,1] then some ⟨.computation planType responseType .natural,
-          .computation planType responseType .natural,.unrestricted,.reusable⟩ else none),{}⟩ [] 32).map
-      (fun checked => checked.type) = some (.computation planType responseType .natural) := by decide
+      performAt [0] (fun position => if position = [1,0] then some doneSignature
+        else if position = [1,1] then some ⟨.computation planType .data .natural,
+          .computation planType .data .natural,.unrestricted,.reusable⟩ else none),{}⟩ [] 32).map
+      (fun checked => checked.type) = some (.computation planType .data .natural) := by decide
 /-- ...a refusal is never a pure value... -/
 theorem pure_refusal_refused :
     (check ⟨.refuse "no",fun position => if position = [] then
@@ -1632,12 +1758,11 @@ theorem pure_refusal_refused :
 /-- ...and never sits in a shared position (here a record field). -/
 theorem refusal_in_field_refused :
     (check ⟨.record [("next",.refuse "no")],fun position => if position = [0] then
-      some ⟨.computation planType responseType .natural,.computation planType responseType .natural,
+      some ⟨.computation planType .data .natural,.computation planType .data .natural,
         .unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
 
 /-! Messages: a record Plan, answered at each site's own result type. -/
 
-def messageRow : Ty := .field "method" .label .emptyRow
 def viewedType : Ty := .variant (.field "viewed" .natural .emptyRow)
 def writtenType : Ty := .variant (.field "written" .emptyRow .emptyRow)
 def message (method : String) : Term := .record [("method",.label method)]
@@ -1661,22 +1786,7 @@ theorem message_closure_result_refused :
     (check ⟨viewThenWrite (.done (.bound 1)),
       viewThenWriteAt ⟨messageRow,.arrow .reusable .unrestricted .natural .natural,.unrestricted,.reusable⟩,{}⟩
       [] 32).isNone = true := by decide
-/-- ...and a sum-Plan perform does not continue a message activity (its activity is
-resumed at its one response type, not at `Data`). -/
-theorem message_then_sum_plan_refused :
-    (check ⟨.case (.perform (message "view")) [("viewed", writeActivity (.done (.nat 1)) (.done (.nat 0)))],
-      fun position =>
-        if position = [0] then some ⟨messageRow,viewedType,.unrestricted,.reusable⟩
-        else if position = [1,0,0] then some effectSignature
-        else if position = [1,0,0,0] then some writeAction
-        else if position = [1,0,1,0] ∨ position = [1,0,1,1] then some effectSignature
-        else none,{}⟩ [] 32).isNone = true := by decide
-/-- The old dialect is unchanged: a sum Plan's perform concludes at its response. -/
-theorem sum_plan_response_unchanged (row response : Ty) :
-    (Ty.variant row).performResponse response = response := rfl
-
-#assert_axioms message_sites_accepted message_closure_result_refused message_then_sum_plan_refused
-  sum_plan_response_unchanged
+#assert_axioms message_sites_accepted message_closure_result_refused
 #assert_axioms record_to_data_accepted closure_to_data_refused data_not_eliminated
 #assert_axioms refusal_arm_accepted pure_refusal_refused refusal_in_field_refused
 #assert_axioms exhaustive_case_accepted reordered_arms_accepted missing_arm_refused
@@ -1686,7 +1796,7 @@ theorem sum_plan_response_unchanged (row response : Ty) :
   nat_primitive_label_operand_refused affine_in_two_arms_refused affine_in_one_arm_accepted
   effect_case_accepted pure_arm_without_done_refused effect_as_argument_refused
   pure_affine_argument_accepted effect_in_record_field_refused effect_in_payload_refused
-  effect_in_specification_refused scalar_plan_refused closure_response_refused
+  effect_in_specification_refused scalar_plan_refused sum_plan_refused closure_response_refused
 #assert_axioms recursive_sum_list_accepted recursive_sum_ill_typed_tail_refused
 #assert_axioms canonical_agreement_loses_shareability shadowed_custody_laundering_refused
   shadowed_once_closure_laundering_refused shadowed_shareable_member_accepted

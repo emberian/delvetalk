@@ -16,18 +16,21 @@ with every edit of the library.
 
 | workload                                   | before  | after   |
 | ------------------------------------------ | ------- | ------- |
-| one `bump` turn (start 56 + resume 10)     | 66      | 66      |
+| one `bump` turn (start 73 + resume 10)     | 66      | 83      |
 | `Document.plain`, 1,025 leaves (with build)| 336,659 | 129,272 |
 | the same document's `Document.size` walk   | 120,037 | 120,037 |
 
 Before: `Document.plain` joined adjacent pairs in rounds (every byte copied about
 log2(leaves) times); `textTake`/`textDrop` were charged 2 x min(B, 4n) bytes.
+The `bump` row moved from 66 to 83 when the turn became a world call: the start now builds a
+`Message` record (object reference, method label) and injects the edit record as `Data`,
+where the old form injected one sum variant; the resume (10) is unchanged.
 After: `plain` is one `textJoin` (charged by the bytes it appends), and take/drop
 are charged by the exact bytes of the prefix they traverse.
 """
 import unittest
 
-from tests.test_turn import Host, PLANS, BINDING, nat, variant
+from tests.test_turn import Host, PLANS, PLANS_WORLD, BINDING, nat, variant
 from tests.test_objects import run_pure
 
 BIG = {"ticks": "1000000"}
@@ -58,14 +61,14 @@ def size(n: Nat) -> Nat:
 
 
 class TariffTests(unittest.TestCase):
-    def test_a_bump_turn_costs_56_ticks_to_start_and_10_to_resume(self):
+    def test_a_bump_turn_costs_73_ticks_to_start_and_10_to_resume(self):
         h = Host()
         self.addCleanup(h.close)
-        art = h.compile(PLANS, "bump")
+        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         started = h.start(art, [nat(41)])
         resumed = h.resume(art, started["checkpoint"], variant("written"))
         print("\n  bump: start %d + resume %d ticks" % (started["ticksUsed"], resumed["ticksUsed"]))
-        self.assertEqual((started["ticksUsed"], resumed["ticksUsed"]), (56, 10))
+        self.assertEqual((started["ticksUsed"], resumed["ticksUsed"]), (73, 10))
 
     def test_document_plain_over_1025_leaves_costs_its_pinned_ticks(self):
         flat = run_pure("Document", "flat", nat(1025), probe=DOCUMENT, limits=BIG)

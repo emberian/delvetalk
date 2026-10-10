@@ -763,11 +763,20 @@ def variantRowOf (s : St) : Option PTy → Option PTy
   | some (.variant row) => some row
   | _ => none
 
-def isPerform (c : Ctx) (e : Expr) (env : List Binding) (m : Module) : Bool :=
+/-- A yield: the only one is a world call. -/
+def isPerform (_c : Ctx) (e : Expr) (_env : List Binding) (_m : Module) : Bool :=
   match e with
-  | .call (.var "perform") _ => !env.any (·.name == "perform") && (lookupGlobal c "perform" m).isNone
   | .worldCall .. => true
   | _ => false
+
+/-- `perform(...)` naming no local or global: the withdrawn surface yield. -/
+def isSurfacePerform (c : Ctx) (e : Expr) (env : List Binding) (m : Module) : Bool :=
+  match e with
+  | .call (.var "perform") _ => !env.any (·.name == "perform") && (lookupGlobal c "perform" m).isNone
+  | _ => false
+
+def withdrawnPerform : String :=
+  "refused (perform): surface perform is withdrawn; an Activity<Result> yields by world calls, world.METHOD(argument)"
 
 
 /-! ## Types: source annotations, declaration types, synthesis -/
@@ -942,13 +951,10 @@ def sourceTypeUncached (c : Ctx) : Nat → String → String → List String →
     if name.startsWith "Activity<" && name.endsWith ">" then
       let parts := splitTop (dropEndStr (dropStr name "Activity<".length) 1) ","
       match parts with
-      | [planText, responseText, resultText] =>
-        let plan ← sourceType c fuel planText moduleName seen
-        let response ← sourceType c fuel responseText moduleName seen
-        let result ← sourceType c fuel resultText moduleName seen
-        return match plan, response, result with
-          | some p, some r, some a => some (.computation p r a)
-          | _, _, _ => none
+      | [_, _, resultText] => do
+        typeError ("refused (old-dialect): Activity<Plan, Response, Result> is withdrawn; write Activity<" ++
+          trimStr resultText ++ "> and yield by world calls (docs/WHOLENESS.md section 1)")
+        return none
       | [resultText] =>
         -- `Activity<Result>`: yields `World.Message`s, each world call resumed at its own result.
         if (moduleNamed c "World").isNone then
@@ -959,7 +965,7 @@ def sourceTypeUncached (c : Ctx) : Nat → String → String → List String →
         return match message, result with
           | some p, some a => if isRowTy p then some (.computation p .data a) else none
           | _, _ => none
-      | _ => do typeError "Activity<Result> or Activity<Plan, Response, Result> takes one or three types"; return none
+      | _ => do typeError "Activity<Result> takes one type"; return none
     if name.startsWith "Prototype<" && name.endsWith ">" then
       let parts := splitTop (dropEndStr (dropStr name "Prototype<".length) 1) ","
       match parts with
@@ -1235,8 +1241,6 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
       let some (p, r) := (← get).effect | return none
       return (← sourceType c fuel resultText m.name []).map fun t => .computation p r t
     | .call callee args =>
-      if isPerform c e env m then
-        return (← get).effect.map fun (p, r) => .computation p r r
       if let some sc := sumCase c callee env m then return ← sourceType c fuel sc.2.2 sc.2.1 []
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
@@ -1992,11 +1996,8 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
       return .toData declared (← expression c fuel value env m)
     | .worldCall method inputText resultText argument =>
       let shown := "world." ++ method
-      let some (p, r) := (← get).effect
+      let some (p, _) := (← get).effect
         | fail ("refused (world-call-outside-activity): " ++ shown ++ " needs an enclosing definition whose result type is Activity<Result>")
-      unless isMessageEffect (some (p, r)) do
-        fail ("refused (world-call): " ++ shown ++ " yields a World.Message, so it stands only in an Activity<Result>; " ++
-          "this definition's Plans are a sum (Activity<Plan, Response, Result>)")
       noActivity c fuel argument env m "effect-in-plan" "a world call's argument is data"
       let some input ← sourceType c fuel inputText m.name [] | fail (shown ++ ": unknown input type " ++ inputText)
       let some result ← sourceType c fuel resultText m.name [] | fail (shown ++ ": unknown result type " ++ resultText)
@@ -2015,16 +2016,7 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
       let world := ATerm.record [("world", .label ""), ("object", .label "world")]
       return .perform p result (.record [("object", world), ("method", .label method), ("argument", .toData input term)])
     | .call callee args =>
-      if isPerform c e env m then
-        let some (p, r) := (← get).effect
-          | fail "refused (perform-outside-activity): perform needs an enclosing definition whose result type is Activity<Plan, Response, Result>"
-        if isMessageEffect (some (p, r)) then
-          fail "refused (perform-in-message-activity): an Activity<Result> yields only world calls; write world.METHOD(...)"
-        match args with
-        | [a] =>
-          noActivity c fuel a env m "effect-in-plan" "a Plan is data"
-          return .perform p r (← expression c fuel a env m)
-        | _ => fail "perform takes exactly one Plan"
+      if isSurfacePerform c e env m then fail withdrawnPerform
       if let some (caseLabel, moduleName, sumName) := sumCase c callee env m then
         let key := moduleName ++ "." ++ sumName
         let hasCase := match c.sum? key with
@@ -2341,10 +2333,9 @@ def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
         fail "a sum match takes label(binder) cases and an optional final wildcard"
       let labels := branches.filterMap (fun b => match b.1 with | .ctor l _ => some l | _ => none)
       if duplicate labels then fail "duplicate sum case"
-      if isMessageEffect (← get).effect && !(scrutinee matches .worldCall ..) && isPerform c scrutinee env m then
-        fail "refused (perform-in-message-activity): an Activity<Result> yields only world calls; write world.METHOD(...)"
+      if isSurfacePerform c scrutinee env m then fail withdrawnPerform
       if branches.any (·.1 == .unexpected) && !isPerform c scrutinee env m then
-        fail "refused (let-response): `let label(x) = ...` takes a perform(...): it continues with one response and refuses the turn on any other"
+        fail "refused (let-response): `let label(x) = ...` takes a world call: it continues with one result and refuses the turn on any other"
       let defaults := branches.filter (fun b => b.1 == .wildcard || b.1 == .unexpected)
       if defaults.length > 1 then fail "duplicate sum wildcard"
       if !defaults.isEmpty && !(branches.getLast?.map (fun b => b.1 == .wildcard || b.1 == .unexpected)).getD false then
@@ -2522,48 +2513,12 @@ def specification (c : Ctx) (fuel : Nat) (s : Spec) (m : Module) : M ATerm := do
   finishSpecification c fuel s m key list extension
 
 
-/-! ## The package knot, entry selection, arguments -/
+/-! ## The package knot and entry selection -/
 
 def resultOf : Option PTy → Nat → Option PTy
   | t, 0 => t
   | some (.arrow _ _ _ cod), n + 1 => resultOf (some cod) n
   | _, _ + 1 => none
-
-def exactKeys (j : Json) (expected : List String) : Bool :=
-  match j with
-  | .obj kvs => (kvs.toList.map (·.1)).mergeSort (· ≤ ·) == expected.mergeSort (· ≤ ·)
-  | _ => false
-
-def isCanonicalNat (s : String) : Bool :=
-  s == "0" || (match s.toList with | d :: rest => d != '0' && d.isDigit && rest.all Char.isDigit | [] => false)
-
-def legacyArgument : Nat → Json → Except String ATerm
-  | 0, _ => .error "argument nesting capacity"
-  | fuel + 1, a =>
-    match a with
-    | .str s => if isCanonicalNat s then .ok (.nat s) else .error "runtime arguments are canonical decimal Nat strings, Bool or records"
-    | .bool b => .ok (.boolean b)
-    | .obj kvs => do return .record (← kvs.toList.mapM fun (k, v) => do return (k, ← legacyArgument fuel v))
-    | _ => .error "runtime arguments are canonical decimal Nat strings, Bool or records"
-
-def typedArgument : Nat → Json → Except String ATerm
-  | 0, _ => .error "argument nesting capacity"
-  | fuel + 1, a => do
-    let tag := (a.getObjValAs? String "tag").toOption.getD ""
-    if tag == "natural" && exactKeys a ["tag", "value"] then
-      if let .ok v := a.getObjValAs? String "value" then if isCanonicalNat v then return .nat v
-    if tag == "boolean" && exactKeys a ["tag", "value"] then
-      if let .ok v := a.getObjValAs? Bool "value" then return .boolean v
-    if tag == "label" && exactKeys a ["tag", "value"] then
-      if let .ok v := a.getObjValAs? String "value" then return .label v
-    if tag == "record" && exactKeys a ["tag", "fields"] then
-      let fields ← (← a.getObjVal? "fields").getArr?
-      let names ← fields.toList.mapM fun f => do
-        if !exactKeys f ["name", "value"] then throw "typed record arguments require exact distinct named fields"
-        f.getObjValAs? String "name"
-      if duplicate names then throw "typed record arguments require exact distinct named fields"
-      return .record (← fields.toList.mapM fun f => do return (← f.getObjValAs? String "name", ← typedArgument fuel (← f.getObjVal? "value")))
-    throw "malformed typed argument value; no implicit Nat/String coercion"
 
 structure Output where
   term : ATerm
@@ -2582,6 +2537,12 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
   | .record .. | .sum .. => return fields
   | _ => pure ()
   let key := m.name ++ "." ++ d.name
+  if let .function _ _ resultType _ := d then
+    let r := trimStr resultType
+    if r.startsWith "Activity<" && r.endsWith ">" &&
+        (splitTop (dropEndStr (dropStr r "Activity<".length) 1) ",").length == 3 then
+      fail ("refused (old-dialect): Activity<Plan, Response, Result> is withdrawn; write Activity<Result> " ++
+        "and yield by world calls (docs/WHOLENESS.md section 1)")
   if let .function _ [] resultType _ := d then
     if (trimStr resultType).startsWith "Activity<" then
       fail ("refused (nullary-activity): " ++ key ++ " has no parameters, so it is a shared lazy value; an Activity needs a parameter, e.g. (start: {})")
@@ -2816,8 +2777,7 @@ def Elaborated.whole (e : Elaborated) : Output :=
     typeErrors := e.state.typeErrors, templates := e.state.templates }
 
 /-- Select an entry of an elaborated closure: its reached knot, applied to `args`. -/
-def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : String) (args : Json)
-    (mode : String) : Except String Output := do
+def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : String) : Except String Output := do
   let some entry := e.ctx.modules[entryModule]? | throw "missing selected entry"
   let entryKey := entry.name ++ "." ++ entryDefinition
   -- A layer's entry it does not define is the topmost definition below it.
@@ -2829,19 +2789,7 @@ def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : St
   let kept : Std.HashSet String := knot.foldl (fun set (k, _) => set.insert k) {}
   let globalRow := e.globalRow
   let knotRow := globalRow.map fun _ => PTy.row (e.rowFields.filter fun (k, _) => kept.contains k)
-  let mut selected := ATerm.get (e.root knot) entryKey
-  if mode == "definition" then
-    match args with
-    | .arr a => if !a.isEmpty then throw "definition mode forbids invocation arguments"
-    | _ => throw "definition mode forbids invocation arguments"
-  else match args with
-    | .arr a => for x in a do selected := .app selected (← legacyArgument 256 x)
-    | envelope =>
-      if exactKeys envelope ["schema", "values"] && (envelope.getObjValAs? String "schema").toOption == some "dregg.objective-bend.argument-values.v1" then
-        match (envelope.getObjVal? "values").bind Json.getArr? with
-        | .ok values => for x in values do selected := .app selected (← typedArgument 256 x)
-        | .error _ => throw "arguments must select a supported complete value envelope"
-      else throw "arguments must select a supported complete value envelope"
+  let selected := ATerm.get (e.root knot) entryKey
   return { term := selected, globalRow, knotRow, sumBounds := e.state.sumBounds, typeErrors := e.state.typeErrors,
            templates := e.state.templates.filter fun (key, _, _) => kept.contains key }
 
@@ -2931,9 +2879,9 @@ def elaboratePackageLocated (modules : List Module) : Except Refusal Elaborated 
 def elaboratePackage (modules : List Module) : Except String Elaborated :=
   (elaboratePackageLocated modules).mapError (·.message)
 
-def elaborate (modules : List Module) (entryModule : Nat) (entryDefinition : String) (args : Json) (mode : String) :
+def elaborate (modules : List Module) (entryModule : Nat) (entryDefinition : String) :
     Except String Output := do
-  (← elaboratePackage modules).select entryModule entryDefinition args mode
+  (← elaboratePackage modules).select entryModule entryDefinition
 
 /-! ## The typing proposal (literalAnnotations) -/
 

@@ -25,34 +25,34 @@ BELL = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
   rains: Lists.List<String>
 record Edits:
   count: Plans.Edit<Nat, Nat>
   rains: Plans.Entries<String, String>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({}), rains: Plans.Entries.keep({})}
 law cap: new.count <= 3
 def initial() -> State:
   {count: 0n, rains: Lists.List::<String>.nil({})}
 def keepRains() -> Plans.Entries<String, String>:
   Plans.Entries::<String, String>.keep({})
-def write(context: Abi.Context, edits: Edits) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: edits})):
+def write(context: Abi.Context, edits: Edits) -> Activity<Nat>:
+  match world.write(edits):
     case _: 0n
-def rain(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def rain(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
   write(context, {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), rains: Plans.Entries::<String, String>.append({item: input.text})})
-def strike(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.await({slot: {principal: "ann", intent: "go"}, patience: 50n})):
+def strike(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.await({slot: {principal: "ann", intent: "go"}, patience: 50n}):
     case _: write(context, {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), rains: Plans.Entries::<String, String>.append({item: "struck"})})
-def strikeSet(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.await({slot: {principal: "ann", intent: "go"}, patience: 50n})):
+def strikeSet(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.await({slot: {principal: "ann", intent: "go"}, patience: 50n}):
     case _: write(context, {count: Plans.Edit::<Nat, Nat>.set({value: state.count + 1n}), rains: keepRains()})
-def drop(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def drop(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
   write(context, {count: Plans.Edit::<Nat, Nat>.keep({}), rains: Plans.Entries::<String, String>.removeItem({item: input.text})})
-def fix(state: State, input: {text: String, to: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def fix(state: State, input: {text: String, to: String}, context: Abi.Context) -> Activity<Nat>:
   write(context, {count: Plans.Edit::<Nat, Nat>.keep({}), rains: Plans.Entries::<String, String>.amendItem({item: input.text, change: input.to})})
 """)
 

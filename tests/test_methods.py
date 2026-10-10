@@ -22,6 +22,7 @@ def field_names(row):
 
 
 LAW_HEAD = """edition ObjectiveBend 1
+import ./World.obend as World
 record State:
   count: Nat
 record Request:
@@ -30,10 +31,6 @@ record Request:
 sum Verdict:
   admitted: {}
   refused: {clause: String}
-sum Plan:
-  noop: {}
-sum Reply:
-  ok: {}
 def bump(state: State, input: {}, context: {}) -> Nat:
   state.count + 1n
 """
@@ -63,7 +60,7 @@ class MethodTableTests(unittest.TestCase):
 
 class LawShapeTests(unittest.TestCase):
     def compile(self, extra):
-        return compile_job([{"name": "Package", "source": LAW_HEAD + extra}], "bump")
+        return compile_job(closure("World") + [{"name": "Package", "source": LAW_HEAD + extra}], "bump")
 
     def test_a_pure_law_with_reads_is_recorded(self):
         reply = self.compile("""def law(old: State, new: State, request: Request) -> Verdict:
@@ -75,9 +72,8 @@ def lawReads() -> Nat:
         self.assertEqual(reply["artifact"]["law"], {"present": True, "reads": True})
 
     def test_a_law_that_is_an_activity_is_refused_by_name(self):
-        reply = self.compile("""def law(old: State, new: State, request: Request) -> Activity<Plan, Reply, Verdict>:
-  match perform(Plan.noop({})):
-    case ok(_): Verdict.admitted({})
+        reply = self.compile("""def law(old: State, new: State, request: Request) -> Activity<Verdict>:
+  Verdict.admitted({})
 """)
         self.assertEqual(reply["status"], "error", reply)
         self.assertIn("law must not be an activity", reply["message"])

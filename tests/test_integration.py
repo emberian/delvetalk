@@ -23,29 +23,27 @@ CALLER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 import ./Form.obend as Form
 record State:
   seen: String
 record Edits:
   seen: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 sum Colour:
   silver: {}
   gold: {}
 def initial() -> State:
   {seen: ""}
-def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {seen: Plans.Edit::<String, {}>.set({value: text})}})):
+def said(context: Abi.Context, text: String) -> Activity<String>:
+  match world.write({seen: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
-def poke(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.call({object: {world: "", object: input.target}, method: "bump2", argument: Data.of::<{m: Nat}>({m: 1n})})):
+def poke(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
+  match world.call::<String>({object: {world: "", object: input.target}, method: "bump2", argument: Data.of::<{m: Nat}>({m: 1n})}):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def look(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.inspect({object: {world: "", object: input.target}})):
+def look(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
+  match world.inspect({object: {world: "", object: input.target}}):
     case inspected(i): said(context, actions(i.methods))
     case _: said(context, "other")
 def actions(forms: Lists.List<Form.Form>) -> String:
@@ -62,17 +60,17 @@ def kind(k: Form.Kind) -> String:
     case natural(_): "natural"
     case choice(_): "choice"
     case source(_): "source"
-def paint(state: State, input: {colour: Colour, note: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+def paint(state: State, input: {colour: Colour, note: String}, context: Abi.Context) -> Activity<String>:
   said(context, input.note)
-def checkAll(state: State, input: {package: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.check({package: input.package})):
+def checkAll(state: State, input: {package: String}, context: Abi.Context) -> Activity<String>:
+  match world.check({package: input.package}):
     case checked(c): said(context, lines(c.diagnostics))
     case _: said(context, "other")
 def lines(items: Lists.List<String>) -> String:
   match items:
     case nil(_): ""
     case cons(c): textConcat(c.head, textConcat("|", lines(c.tail)))
-def tally(state: State, input: {items: Lists.List<String>}, context: Abi.Context) -> Activity<Plan, Response, String>:
+def tally(state: State, input: {items: Lists.List<String>}, context: Abi.Context) -> Activity<String>:
   said(context, "tally")
 """)
 

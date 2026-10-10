@@ -1,12 +1,9 @@
 /- Driving an activity against the store. A turn reads committed state, collects
    the roots it viewed and the writes it performed, and ends in exactly one
-   `commit`. The wire shapes are those of `world/lib/Plan.obend`; `answer` handles
-   every constructor of its Plan (view, viewData, viewDataField, write, call/callVia, send/sendVia, create,
-   await/awaitUntil, interpret, offer, publish, reprogram, amend, inspect, check,
-   grant, revoke, objects, card). A label of some other sum refuses the turn:
-   `plan not supported: <label>`. `docs/HOST-HANDOFF.md` section 5 says what each does.
-   A method is `(state, [input,] context) -> Activity<Plan, Response, A>` or the
-   same with a pure data result (the new state). -/
+   `commit`. An activity yields `World.Message {object, method, argument}` (`world/lib/World.obend`);
+   `messagePlan` re-heads it as the arm of `answer` named by `method` (`worldMethods`).
+   `docs/HOST-HANDOFF.md` section 5 says what each does. A method is
+   `(state, [input,] context) -> Activity<A>` or the same with a pure data result (the new state). -/
 import Delvetalk.Host.Ops
 import Delvetalk.Turn
 import Delvetalk.Document
@@ -671,23 +668,21 @@ def worldMethods : List String :=
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
     answer (`write`'s argument is the edits of the running object, `judge`'s the edits to judge).
-    `none` for a sum Plan (the older dialect, answered by constructor); `.error clause` for a
-    message to another object (`notWorld`: a message to an object is a `call`) or a method the
-    world has not (`noMethod`). -/
-def messagePlan (self : String) : Data → Option (Except String Data)
+    `.error clause` for a message to another object (`notWorld`: a message to an object is a
+    `call`), a method the world has not, or anything else (`noMethod`). -/
+def messagePlan (self : String) : Data → Except String Data
   | .record fs =>
     match fs.lookup "object", (fs.lookup "method").bind labelOf, fs.lookup "argument" with
     | some target, some method, some argument =>
-      if fs.length != 3 then none else
-      if referenceId target != some worldId then
-        some (.error "notWorld")
-      else if !worldMethods.contains method then some (.error "noMethod")
-      else some (.ok (match method with
+      if fs.length != 3 then .error "noMethod" else
+      if referenceId target != some worldId then .error "notWorld"
+      else if !worldMethods.contains method then .error "noMethod"
+      else .ok (match method with
         | "write" => .variant "write" (.record [("object", .record [("world", .label ""), ("object", .label self)]), ("edits", argument)])
         | "judge" => .variant "judge" (.record [("edits", argument)])
-        | _ => .variant method argument))
-    | _, _, _ => none
-  | _ => none
+        | _ => .variant method argument)
+    | _, _, _ => .error "noMethod"
+  | _ => .error "noMethod"
 
 /-- A turn state for compiling outside a turn. -/
 def scratchState (w : World) : TurnState :=
@@ -703,24 +698,7 @@ argument (`inputOrigin.kind = "spell"`, `command` the spell line). A spell that 
 refused turn of class `badSpell` with `clause`, `reason` and `hint` (the spell with its blanks). A
 spell missing fields, or a reply with no spell, runs `receive` with the bare `name: value` lines in
 `Heard.fields` (completion is the object's policy, WHOLENESS's root decision). `?` is answered by
-the host with the card's usage and journals nothing. An object of the sum-Plan dialect reads its
-own replies, as before. -/
-
-/-- Does a compiled method yield `World.Message`s (the message dialect)? -/
-def isMessageDialect (c : Compiled) : Bool :=
-  let rec peel : Ty → Option Ty
-    | .arrow _ _ _ r => peel r
-    | .computation p _ _ => some p
-    | _ => none
-  match peel c.type with
-  | some plan =>
-    let plan := match plan with
-      | .variable i => (c.bounds.lookup i).getD plan
-      | p => p
-    match plan with
-    | .field .. | .emptyRow => true
-    | _ => false
-  | none => false
+the host with the card's usage and journals nothing. -/
 
 /-- A form's field as the spell a reader copies (`Card.hint`). -/
 def spellHint : Spell.Kind → String
@@ -820,12 +798,6 @@ def lensValue : Spell.Value → Data
   | .natural n => .variant "natural" (.record [("value", .natural n)])
   | .choice c => .variant "choice" (.record [("value", .label c)])
 
-/-- Does an object read its replies in the message dialect (the host then parses its spells)? -/
-def speaksMessages (w : World) (o : Object) : Bool :=
-  match ((compiledMethod o "receive").run.run (scratchState w)).1 with
-  | .ok c => isMessageDialect c
-  | .error _ => false
-
 /-- What the host makes of a `receive {text, …}` asked of a card of the message dialect (`routeSpell`). -/
 inductive SpellRoute where
   /-- Not a spell the host reads: run `receive` as asked. -/
@@ -891,8 +863,6 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let some target := w.objects[id]? | return .refuse self "otherCard" s!"There is no card {card}." usageHere
   unless target.read.permits principal && (retarget || id == self) do
     return .refuse self "otherCard" s!"There is no card {card}." usageHere
-  -- A card of the sum-Plan dialect reads its own replies.
-  unless speaksMessages w target do return .run id "receive" argument ""
   let forms := spellForms w id target
   let lenses := declaredLenses w target
   if action == "?" then return .usage id (spellUsage id forms lenses)
@@ -917,7 +887,7 @@ def routeSpell (w : World) (principal id method : String) (argument : Data) (ret
   let .record args := argument | return .asIs
   let some (.label text) := args.lookup "text" | return .asIs
   let some o := w.objects[id]? | return .asIs
-  unless speaksMessages w o && heardFits w o argument do return .asIs
+  unless heardFits w o argument do return .asIs
   match Spell.parse text with
   | .spell card action fields => return castSpell w principal id argument o card action fields retarget
   | .notASpell reason fielded =>
@@ -933,15 +903,6 @@ def routeSpell (w : World) (principal id method : String) (argument : Data) (ret
       let given := bare.filter fun b => b.name == f.action || f.fields.any (·.name == b.name)
       return castSpell w principal id argument o id f.action given retarget
     | none => return receiveHeard w id o argument bare
-
-/-- Does the call site's `Interpreted` carry `proposal {object, …}` (the World protocol's line since
-    host10), so a proposal may name another card than the asking one? -/
-def proposalNamesObject (bounds : DataBounds) (responseType : Ty) : Bool :=
-  match variantCases bounds (bounds.length + 1) responseType with
-  | some cases => match cases.lookup "proposal" with
-    | some payload => ((recordFieldTypes bounds (bounds.length + 1) payload).map fun fs => (fs.lookup "object").isSome).getD false
-    | none => false
-  | none => false
 
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
@@ -1015,11 +976,10 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
   | .yielded message _ responseType suspension used =>
     spend used
     countPlan
-    -- A message activity calls the world by method name; a sum Plan names its constructor.
+    -- A message activity calls the world by method name.
     let plan ← match messagePlan self message with
-      | none => pure message
-      | some (.ok p) => pure p
-      | some (.error clause) => pure (.variant "refusedMessage" (.record [("clause", .label clause)]))
+      | .ok p => pure p
+      | .error clause => pure (.variant "refusedMessage" (.record [("clause", .label clause)]))
     let response ← match plan with
       | .variant "refusedMessage" (.record f) =>
         refusedWith compiled.bounds responseType (((f.lookup "clause").bind labelOf).getD "noMethod")
@@ -1157,9 +1117,7 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
       throw (.suspend interpretationPrincipal id Limits.interpretationPatience checkpoint
         (some (Json.mkObj ([("id", toJson id), ("object", toJson self), ("policy", toJson policy),
           ("utterance", toJson utterance), ("offers", dataJson offers)] ++
-          (if model.isEmpty then [] else [("model", toJson model)]) ++
-          -- The call site's `Interpreted` carries `proposal {object, …}`: a proposal may name another card.
-          (if proposalNamesObject bounds responseType then [("named", toJson true)] else [])))))
+          (if model.isEmpty then [] else [("model", toJson model)])))))
 
 partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
@@ -1173,22 +1131,6 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         if !o.read.permits (← get).subject then respond bounds responseType "denied" [emptyRecord] else
         recordRoot id o.version
         respond bounds responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
-  | .variant "viewData" (.record f) | .variant "viewDataField" (.record f) =>
-    -- Another object's state (or one field of it) as `Data`, which the reader may pass along or hand
-    -- to a Plan but not take apart; read authority and the root as for `view`.
-    let s ← get
-    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
-    | none => respond bounds responseType "denied" [emptyRecord]
-    | some (id, o) =>
-      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
-      recordRoot id o.version
-      match (f.lookup "field").bind labelOf, o.state with
-      | none, _ => respond bounds responseType "viewedData" [.record [("version", .natural o.version), ("state", o.state)]]
-      | some name, .record fields =>
-        match fields.lookup name with
-        | some value => respond bounds responseType "viewedField" [.record [("version", .natural o.version), ("value", value)]]
-        | none => refusedWith bounds responseType "field"
-      | some _, _ => refusedWith bounds responseType "field"
   | .variant "write" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed write plan"
     let some step := (f.lookup "edits").bind parseStep | evaluation "malformed write plan"
@@ -1936,11 +1878,8 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
     let raw ← liftEval (verdict.getObjVal? "argument")
     let argument ← liftEval (decodeData Limits.dataDepth raw)
     let method ← liftEval (verdict.getObjValAs? String "method")
-    let plain := Data.record [("method", .label method), ("argument", argument)]
-    let payloads : List Data := match (verdict.getObjValAs? String "object").toOption with
-      | some target => [.record [("object", .label target), ("method", .label method), ("argument", argument)]]
-      | none => [plain]
-    respond bounds responseType "proposal" payloads
+    let target ← liftEval (verdict.getObjValAs? String "object")
+    respond bounds responseType "proposal" [.record [("object", .label target), ("method", .label method), ("argument", argument)]]
   | "replied" =>
     respond bounds responseType "replied" [.record [("text", .label (← liftEval (verdict.getObjValAs? String "text")))]]
   | _ =>
@@ -2459,7 +2398,7 @@ def unclearVerdict (needs : List String) : Json :=
     method must be a method of the object, the argument (its text words read as cases) must conform
     to its input, and the suspended activity's response type must carry the proposal. -/
 def proposalVerdict (w : World) (target self : String) (obj : Object) (bounds : DataBounds) (responseType : Ty)
-    (method : String) (argument : Data) (named : Bool := false) : World × Json := Id.run do
+    (method : String) (argument : Data) : World × Json := Id.run do
   -- Another object will be called with it: only a method it offers.
   if target != self && !obj.offers method then return (w, unclearVerdict [s!"{method} is not a method {target} offers"])
   let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
@@ -2477,16 +2416,12 @@ def proposalVerdict (w : World) (target self : String) (obj : Object) (bounds : 
     | some dom => argument.conformsUnder compiledM.bounds dom
     | none => match argument with | .record [] => true | _ => false
   if !fits then return (w, unclearVerdict [s!"the argument does not fit the input of {method}"])
-  -- A proposal names the object whose form it fitted (`Interpreted.proposal {object, method, argument}`);
-  -- a Response without `object` carries only a proposal for the asking object itself.
-  let plain := Data.variant "proposal" (.record [("method", .label method), ("argument", argument)])
-  let verdict := [("tag", toJson "proposal"), ("method", toJson method), ("argument", dataJson argument)]
-  -- `named`: the call site's `Interpreted` names the object (journaled with the interpretation, where
-  -- the kernel reported the call site's type); a call site without it hears only its own object's.
-  if named then
-    return (w, Json.mkObj (verdict ++ [("object", toJson target)]))
-  if target == self && plain.conformsUnder bounds responseType then return (w, Json.mkObj verdict)
-  return (w, unclearVerdict [s!"the object cannot carry a proposal of {target} {method}"])
+  -- A proposal names the object whose form it fitted (`Interpreted.proposal {object, method, argument}`).
+  let carried := Data.variant "proposal" (.record [("object", .label target), ("method", .label method), ("argument", argument)])
+  unless carried.conformsUnder bounds responseType do
+    return (w, unclearVerdict [s!"the object cannot carry a proposal of {target} {method}"])
+  return (w, Json.mkObj [("tag", toJson "proposal"), ("object", toJson target), ("method", toJson method),
+    ("argument", dataJson argument)])
 
 /-- What a model's text says to a suspended activity of the message dialect, fitted against the
     offered forms as a reply's spell is (WHOLENESS §2, "Interpretation"): a spell naming an offered
@@ -2514,9 +2449,8 @@ def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (L
 /-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
     (`proposalVerdict`: a method of the object, one of the offered actions, with an argument that
     conforms to the method's input type and fits the object's response type) or `unclear` with the
-    reason. Any other reply is the model's text: for an activity of the message dialect it is fitted
-    as a spell against the offered forms (`spellVerdict`), and prose is `replied {text}`; an activity
-    of the sum-Plan dialect reads every text itself as `replied {text}`. An object whose Response
+    reason. Any other reply is the model's text: it is fitted as a spell against the offered forms
+    (`spellVerdict`), and prose is `replied {text}`. An object whose Response
     cannot carry it hears `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
   let some i := interpretationOf w s | throw "not an interpretation"
@@ -2538,22 +2472,20 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   let some (_, responseType, _) := computationParts suspended.type | throw "the suspended method is not an activity"
   let w := w.withCachesOf st2.world
   let offers ← decodeData Limits.dataDepth (← i.getObjVal? "offers")
-  let named := (i.getObjValAs? Bool "named").toOption.getD false
   let forms := (listHeads [] offers).getD []
   let some method := (json.getObjValAs? String "method").toOption
     | match raw with
       | some text =>
-        if isMessageDialect suspended then
-          match spellVerdict (forms.filterMap Spell.Form.ofData) text with
-          | some (.ok (card, action, argument)) =>
-            -- The form names its card: the proposal is checked against that object, which may be
-            -- another than the asking one (a directory offers its doors' forms).
-            let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
-            let target := if w.objects.contains card then card else resolveCard principal card
-            let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
-            return proposalVerdict w target object targetObj suspended.bounds responseType action argument named
-          | some (.error needs) => return (w, unclearVerdict needs)
-          | none => pure ()
+        match spellVerdict (forms.filterMap Spell.Form.ofData) text with
+        | some (.ok (card, action, argument)) =>
+          -- The form names its card: the proposal is checked against that object, which may be
+          -- another than the asking one (a directory offers its doors' forms).
+          let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+          let target := if w.objects.contains card then card else resolveCard principal card
+          let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
+          return proposalVerdict w target object targetObj suspended.bounds responseType action argument
+        | some (.error needs) => return (w, unclearVerdict needs)
+        | none => pure ()
         if (Data.variant "replied" (.record [("text", .label text)])).conformsUnder suspended.bounds responseType then
           return (w, Json.mkObj [("tag", toJson "replied"), ("text", toJson text)])
         return (w, unclearVerdict ["the reply names no method"])
@@ -2569,7 +2501,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     | other => other
   match Package.jsonData Limits.plainDepth wanted with
   | .error e => return (w, unclearVerdict [s!"the argument is not plain data: {e}"])
-  | .ok (argument, _) => return proposalVerdict w object object obj suspended.bounds responseType method argument named
+  | .ok (argument, _) => return proposalVerdict w object object obj suspended.bounds responseType method argument
 
 /-- `world-interpretation {id, reply}`: settle a pending interpretation with the model's
     reply, verbatim. The verdict is journaled; the suspended turn resumes with it. -/

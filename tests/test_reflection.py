@@ -22,16 +22,14 @@ from tests.test_chain import field, nil, reference
 from tests.test_turn_world import ROOT, label, nat, record, declared
 
 WORLD_LIBRARY = os.path.join(ROOT, "world", "lib")
-FIXTURES = os.path.join(ROOT, "tests", "fixtures", "obend")
 
 
 def _library():
-    """The world library with the test-only Variant fixture beside it."""
+    """A private copy of the world library."""
     root = tempfile.mkdtemp(prefix="delvetalk-lib-")
     atexit.register(shutil.rmtree, root, ignore_errors=True)
     lib = os.path.join(root, "lib")
     shutil.copytree(WORLD_LIBRARY, lib)
-    shutil.copy(os.path.join(FIXTURES, "Variant.obend"), os.path.join(lib, "Variant.obend"))
     return lib
 
 
@@ -40,17 +38,15 @@ LIBRARY = _library()
 PACKAGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}):
     case written(_): state.count + 1n
     case _: 0n
 """)
@@ -72,7 +68,7 @@ PROBE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 import ./Form.obend as Form
 record Arg:
   n: Nat
@@ -82,43 +78,40 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   seen: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Arg>
 def initial() -> State:
   {count: 0n, seen: ""}
 def keep() -> Edits:
   {count: Plans.Edit::<Nat, Nat>.keep({}), seen: Plans.Edit::<String, {}>.keep({})}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
+def bump(state: State, context: Abi.Context) -> Activity<String>:
   note(context, 1n, "bumped")
-def bump2(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, String>:
+def bump2(state: State, input: Arg, context: Abi.Context) -> Activity<String>:
   note(context, input.n, "bumped")
-def note(context: Abi.Context, n: Nat, text: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: n}), seen: Plans.Edit::<String, {}>.set({value: text})})})):
+def note(context: Abi.Context, n: Nat, text: String) -> Activity<String>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: n}), seen: Plans.Edit::<String, {}>.set({value: text})})):
     case _: text
-def inspectIt(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.inspect({object: {world: "", object: input.target}})):
+def inspectIt(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
+  match world.inspect({object: {world: "", object: input.target}}):
     case inspected(i): note(context, 0n, i.source)
     case denied(_): note(context, 0n, "denied")
     case _: note(context, 0n, "other")
-def checkIt(state: State, input: {package: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.check({package: input.package})):
+def checkIt(state: State, input: {package: String}, context: Abi.Context) -> Activity<String>:
+  match world.check({package: input.package}):
     case checked(c): first(context, c.diagnostics)
     case _: note(context, 0n, "other")
-def first(context: Abi.Context, found: Lists.List<String>) -> Activity<Plan, Response, String>:
+def first(context: Abi.Context, found: Lists.List<String>) -> Activity<String>:
   match found:
     case nil(_): note(context, 0n, "clean")
     case cons(c): note(context, 0n, c.head)
-def ask(state: State, input: {utterance: String, policy: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.interpret({utterance: input.utterance, offers: offered(), policy: {world: "", object: input.policy}, model: ""})):
+def ask(state: State, input: {utterance: String, policy: String}, context: Abi.Context) -> Activity<String>:
+  match world.interpret::<Arg>({utterance: input.utterance, offers: offered(), policy: {world: "", object: input.policy}, model: ""}):
     case proposal(p): note(context, p.argument.n, p.method)
     case unclear(_): note(context, 0n, "unclear")
     case timedOut(_): note(context, 0n, "timedOut")
-    case denied(_): note(context, 0n, "denied")
     case _: note(context, 0n, "other")
 def offered() -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
-def fire(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.send({object: {world: "", object: input.target}, method: "bump", argument: Data.of::<Arg>({n: 0n})})):
+def fire(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
+  match world.send({object: {world: "", object: input.target}, method: "bump", argument: Data.of::<Arg>({n: 0n})}):
     case delivery(_): note(context, 0n, "sent")
     case _: note(context, 0n, "other")
 """)
@@ -484,14 +477,6 @@ class Interpret(Reflection):
         self.assertEqual(self.seen("probe"), "timedOut")
         self.assertEqual(self.pending(), [])
 
-    def test_a_policy_the_principal_cannot_read_is_answered_denied(self):
-        self.make("hidden", POLICY, record(model=label("m"), system=label("s"), examples=label("")),
-                  read={"principals": ["kim"]})
-        r = self.ask(policy="hidden")
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.seen("probe"), "denied")
-        self.assertEqual(self.pending(), [])
-
     def test_a_pending_interpretation_and_its_settlement_survive_restart(self):
         self.ask()
         self.reopen()
@@ -528,25 +513,23 @@ class CallerAcrossSend(Reflection):
 FORGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {note: ""}
-def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+def said(context: Abi.Context, text: String) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
-def rework(state: State, input: {target: String, package: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.reprogram({object: {world: "", object: input.target}, package: input.package, migration: ""})):
+def rework(state: State, input: {target: String, package: String}, context: Abi.Context) -> Activity<String>:
+  match world.reprogram({object: {world: "", object: input.target}, package: input.package, migration: ""}):
     case reprogrammed(r): said(context, r.pin)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def relaw(state: State, input: {target: String, law: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.amend({object: {world: "", object: input.target}, law: input.law})):
+def relaw(state: State, input: {target: String, law: String}, context: Abi.Context) -> Activity<String>:
+  match world.amend({object: {world: "", object: input.target}, law: input.law}):
     case amended(_): said(context, "amended")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")

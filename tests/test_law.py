@@ -20,22 +20,22 @@ GUARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 law small: new.count <= 100
 def initial() -> State:
   {count: 0n}
-def add(context: Abi.Context, n: Nat) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: n})}})):
+def add(context: Abi.Context, n: Nat) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: n})})):
     case _: n
-def bump(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def bump(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Nat>:
   add(context, input.n)
-def poke(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def poke(state: State, context: Abi.Context) -> Activity<Nat>:
   add(context, 1n)
 def opened(reads: Lists.List<Abi.Read>) -> Bool:
   match reads:
@@ -50,17 +50,17 @@ def lawReads() -> Lists.List<String>:
 GATE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   open: Nat
 record Edits:
   open: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {open: Plans.Edit.keep({})}
 def initial() -> State:
   {open: 0n}
-def open(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {open: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def open(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {open: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case _: 1n
 """)
 
@@ -144,21 +144,21 @@ class TwoTier(Reflection):
 READ = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   owner: String
   count: Nat
 record Edits:
   owner: Plans.Edit<String, {}>
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {owner: Plans.Edit.keep({}), count: Plans.Edit.keep({})}
 law owner "only the owner may count": not (request.kind == 0) or request.subject == new.owner
 law small: new.count <= 100
 def initial() -> State:
   {owner: "", count: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {owner: Plans.Edit::<String, {}>.keep({}), count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {owner: Plans.Edit::<String, {}>.keep({}), count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case _: 1n
 """)
 

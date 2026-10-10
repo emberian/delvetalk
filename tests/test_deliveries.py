@@ -22,7 +22,7 @@ SENDS_PER_TURN = 32      # Limits.sendsPerTurn
 SOURCE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
   lit: Bool
@@ -32,58 +32,56 @@ record Arg:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   lit: Plans.Edit<Bool, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
 %(law)sdef initial() -> State:
   {count: 0n, lit: false}
 def keep() -> Edits:
   {count: Plans.Edit::<Nat, Nat>.keep({}), lit: Plans.Edit::<Bool, {}>.keep({})}
-def sendTo(target: String, method: String, argument: Arg) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.send({object: {world: "", object: target}, method: method, argument: Data.of::<Arg>(argument)})):
+def sendTo(target: String, method: String, argument: Arg) -> Activity<Nat>:
+  match world.send({object: {world: "", object: target}, method: method, argument: Data.of::<Arg>(argument)}):
     case delivery(_): 1n
     case _: 0n
-def tally(context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})})):
+def tally(context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case written(_): 1n
     case _: 0n
-def ring(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})})):
+def ring(state: State, input: Arg, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case written(_): sendTo(input.target, "open", {target: "lantern", left: 0n})
     case _: 0n
-def open(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})})):
+def open(state: State, input: Arg, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case written(_): sendTo(input.target, "light", {target: "", left: 0n})
     case _: 0n
-def light(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {lit: Plans.Edit::<Bool, {}>.set({value: true})})})):
+def light(state: State, input: Arg, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {lit: Plans.Edit::<Bool, {}>.set({value: true})})):
     case written(_): 1n
     case _: 0n
-def spin(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})})):
+def spin(state: State, input: Arg, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case written(_): sendTo(input.target, "spin", {target: context.object, left: 0n})
     case _: 0n
-def hop(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})})):
+def hop(state: State, input: Arg, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case written(_): hopOn(input.left, context)
     case _: 0n
-def hopOn(left: Nat, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def hopOn(left: Nat, context: Abi.Context) -> Activity<Nat>:
   match left:
     case 0: 1n
     case 1+previous: sendTo(context.object, "hop", {target: "", left: previous})
-def fan(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def fan(state: State, input: Arg, context: Abi.Context) -> Activity<Nat>:
   fanOut(input.target, input.left)
-def fanOut(target: String, left: Nat) -> Activity<Plan, Response, Nat>:
+def fanOut(target: String, left: Nat) -> Activity<Nat>:
   match left:
     case 0: 1n
     case 1+previous:
-      match perform(Plan.send({object: {world: "", object: target}, method: "light", argument: Data.of::<Arg>({target: "", left: 0n})})):
+      match world.send({object: {world: "", object: target}, method: "light", argument: Data.of::<Arg>({target: "", left: 0n})}):
         case delivery(_): fanOut(target, previous)
         case _: 0n
 """)
 
 
 def package(law=""):
-    return closure("Variant") + [{"name": "Relay", "source": SOURCE % {"law": law}}]
+    return closure("World") + [{"name": "Relay", "source": SOURCE % {"law": law}}]
 
 
 def arg(target="", left=0):

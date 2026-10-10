@@ -53,20 +53,20 @@ def seed(paths=None, presence=()):
 DOOR = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   crossings: Nat
 record Edits:
   crossings: Plans.Edit<Nat, Nat>
+def keep() -> Edits:
+  {crossings: Plans.Edit.keep({})}
 sum Done:
   moved: {from: String, to: String}
   refused: {clause: String, reading: String}
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Done>
 def initial() -> State:
   {crossings: 0n}
-def cross(state: State, input: {to: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.call({object: {world: "", object: "commons"}, method: "move", argument: Data.of::<{to: String}>({to: input.to})})):
+def cross(state: State, input: {to: String}, context: Abi.Context) -> Activity<String>:
+  match world.call::<Done>({object: {world: "", object: "commons"}, method: "move", argument: Data.of::<{to: String}>({to: input.to})}):
     case returned(r): told(r.result)
     case refused(r): r.clause
     case _: "no answer"
@@ -96,7 +96,7 @@ class Commons(TurnWorld):
 
     def door(self, name):
         r = self.host.send(op="world-create", principal=OWNER, identity="mk-" + name, object=name,
-                           modules=closure("Variant") + [{"name": "Door", "source": DOOR}], entry="initial",
+                           modules=closure("World") + [{"name": "Door", "source": DOOR}], entry="initial",
                            seed=record(crossings={"tag": "natural", "value": "0"}))
         self.assertEqual(r["status"], "created", r)
 

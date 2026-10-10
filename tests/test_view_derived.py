@@ -5,9 +5,6 @@ in `views()` is refused by name; `world-inspect` lists the declared views.
 Evidence for HOST-HANDOFF 5.46 (layer: host). Refuted by a value other than the view's, a view read
 without the root, a private object answered, or an undeclared definition run as a view.
 
-The reader declares its own Plan and Response sums: the host reads Plan labels, not library types,
-so this needs no Plan.obend constructor.
-
     python3 -W error -m unittest tests.test_view_derived -v
 """
 import unittest
@@ -18,18 +15,13 @@ from tests.test_turn_world import label, nat, record, declared
 READER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./World.obend as World
 record State:
   note: String
-sum Plan:
-  viewDerived: {object: Plans.Reference, view: String}
-sum Response:
-  derived: {version: Nat, value: Data}
-  denied: {}
-  refused: {clause: String}
 def initial() -> State:
   {note: ""}
-def peek(state: State, input: {target: String, view: String}, context: Abi.Context) -> Activity<Plan, Response, Data>:
-  match perform(Plan.viewDerived({object: {world: "", object: input.target}, view: input.view})):
+def peek(state: State, input: {target: String, view: String}, context: Abi.Context) -> Activity<Data>:
+  match world.viewDerived::<Data>({object: {world: "", object: input.target}, view: input.view}):
     case derived(d): d.value
     case refused(r): Data.of::<String>(r.clause)
     case denied(_): Data.of::<String>("denied")

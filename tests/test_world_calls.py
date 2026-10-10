@@ -17,7 +17,6 @@ from tests.test_turn import Host, library_modules
 # A stand-in for world/lib/World.obend (the objects lane's file): the shapes WHOLENESS fixes.
 WORLD = """edition ObjectiveBend 1
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
 record Message:
   object: Plans.Reference
   method: String
@@ -45,7 +44,6 @@ protocol world:
 THING = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
 import ./World.obend as World
 record State:
   count: Nat
@@ -72,7 +70,7 @@ def tell(state: State, input: {other: Plans.Reference}, context: Abi.Context) ->
 
 
 def world_modules(thing=THING, world=WORLD):
-    return library_modules("Abi", "Variant") + [{"name": "World", "source": world}, {"name": "Thing", "source": thing}]
+    return library_modules("Abi", "Plan") + [{"name": "World", "source": world}, {"name": "Thing", "source": thing}]
 
 
 class WorldCalls(unittest.TestCase):
@@ -140,7 +138,7 @@ class WorldCalls(unittest.TestCase):
 
     def test_refusals_name_the_world_call(self):
         cases = {
-            "perform-in-message-activity": ("bump", THING.replace(
+            "refused (perform): surface perform is withdrawn": ("bump", THING.replace(
                 "let written(_) = write {count: add 1n}",
                 'let written(_) = perform({object: {world: "", object: "world"}, method: "x", argument: Data.of::<Nat>(1n)})')),
             "the world has no method mail": ("tell", THING.replace("world.send(", "world.mail(")),
@@ -148,8 +146,8 @@ class WorldCalls(unittest.TestCase):
                 "world.view::<State>({object: input.other}):", "world.view({object: input.other}):")),
             "takes 1 type argument, not 2": ("peek", THING.replace(
                 "world.view::<State>({object: input.other}):", "world.view::<State, Nat>({object: input.other}):")),
-            "stands only in an Activity<Result>": ("peek", THING.replace(
-                "-> Activity<Nat>:\n  match world.view", "-> Activity<Variant.Plan<Edits>, Variant.Response<State, {}>, Nat>:\n  match world.view")),
+            "refused (old-dialect): Activity<Plan, Response, Result> is withdrawn": ("peek", THING.replace(
+                "-> Activity<Nat>:\n  match world.view", "-> Activity<World.Message, Data, Nat>:\n  match world.view")),
         }
         for needle, (entry, source) in cases.items():
             with self.subTest(needle=needle):
@@ -165,7 +163,7 @@ class WorldCalls(unittest.TestCase):
         self.assertEqual(THING.count("\n", 0, d["span"]["start"]) + 1, d["span"]["line"])
 
     def test_without_a_world_module_the_dialect_is_refused_by_name(self):
-        reply = self.h.send({"op": "check-package", "entry": "peek", "modules": library_modules("Abi", "Variant") +
+        reply = self.h.send({"op": "check-package", "entry": "peek", "modules": library_modules("Abi", "Plan") +
                              [{"name": "Thing", "source": THING.replace("import ./World.obend as World\n", "")}]})
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("no module named World", reply["diagnostic"]["message"])

@@ -61,17 +61,17 @@ def counter_modules():
 FIXTURE_HEAD = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 5n}
-def addSelf(context: Abi.Context, n: Nat) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: n})}})):
+def addSelf(context: Abi.Context, n: Nat) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit.add({delta: n})})):
     case written(_): 1n
     case _: 0n
 """
@@ -97,53 +97,36 @@ def declared(source, *names):
 
 def fixture(body, law=""):
     head = FIXTURE_HEAD.replace("def initial", law + "def initial", 1) if law else FIXTURE_HEAD
-    return closure("Variant") + [{"name": "Fixture", "source": declared(head + body)}]
+    return closure("World") + [{"name": "Fixture", "source": declared(head + body)}]
 
 
-MONOTONE = fixture("""def dec(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.set({value: 0n})}})):
+MONOTONE = fixture("""def dec(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit.set({value: 0n})})):
     case written(_): 0n
     case _: state.count
-def inc(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def inc(state: State, context: Abi.Context) -> Activity<Nat>:
   addSelf(context, 1n)
 """, law="law counter: monotone(count)\n")
 
-PROBES = fixture("""def sneak(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: {world: "", object: input.target}, edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
-    case refused(_): addSelf(context, 1n)
-    case _: 99n
-def peek(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.view({object: {world: "", object: input.target}})):
+PROBES = fixture("""def peek(state: State, input: {target: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.view::<State>({object: {world: "", object: input.target}}):
     case viewed(v): v.state.count
     case _: 999n
-def peekThenWrite(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.view({object: {world: "", object: input.target}})):
-    case viewed(v): other(input.target, v.state.count)
-    case _: 999n
-def other(target: String, seen: Nat) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: {world: "", object: target}, edits: {count: Plans.Edit::<Nat, Nat>.add({delta: seen})}})):
-    case written(_): seen
-    case _: 998n
-def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.call({object: {world: "", object: input.target}, method: input.method, argument: Plans.nothing()})):
+def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.call::<Nat>({object: {world: "", object: input.target}, method: input.method, argument: {}}):
     case returned(r): finish(context, r.result)
     case _: 997n
-def finish(context: Abi.Context, result: Nat) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 10n})}})):
+def finish(context: Abi.Context, result: Nat) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit.add({delta: 10n})})):
     case written(_): result
     case _: 996n
-sum Odd:
-  shout: {text: String}
-def shout(state: State, input: {target: String}, context: Abi.Context) -> Activity<Odd, Response, Nat>:
-  match perform(Odd.shout({text: "b"})):
-    case _: 0n
 def grow(state: State, input: {by: Nat}, context: Abi.Context) -> State:
   {count: state.count + input.by}
 """)
 
 
-PRIVATE_PROBES = fixture("""def probe(state: State, input: {target: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.view({object: {world: "", object: input.target}})):
+PRIVATE_PROBES = fixture("""def probe(state: State, input: {target: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.view::<State>({object: {world: "", object: input.target}}):
     case viewed(v): addSelf(context, v.state.count)
     case _: addSelf(context, 100n)
 """)
@@ -296,17 +279,6 @@ class Plans(TurnWorld):
         r = self.turn("a", "peek", self.target("ghost"))
         self.assertEqual(r["result"], nat(999))
 
-    def test_a_write_without_a_view_is_answered_refused_in_turn_and_the_turn_still_commits(self):
-        r = self.turn("a", "sneak", self.target("b"))
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)))
-        self.assertEqual(self.count("b"), (0, "7"))
-        self.assertEqual(self.count("a"), (1, "2"))
-
-    def test_a_viewed_object_still_cannot_be_written_by_another(self):
-        r = self.turn("a", "peekThenWrite", self.target("b"))
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(998)))
-        self.assertEqual(self.count("b"), (0, "7"))
-
     def test_call_commits_the_callee_and_the_caller_atomically_in_one_entry(self):
         h = self.height()
         r = self.turn("a", "relay", record(target=label("b"), method=label("bump")))
@@ -322,13 +294,6 @@ class Plans(TurnWorld):
         self.assertEqual(r["receipt"]["outcome"]["clause"], "counter")
         self.assertEqual((self.count("a"), self.count("m")), ((0, "1"), (0, "5")))
 
-    def test_an_unsupported_plan_refuses_the_turn_by_name_and_admits_nothing(self):
-        r = self.turn("a", "shout", self.target("b"))
-        out = r["receipt"]["outcome"]
-        self.assertEqual((r["status"], out["class"], out["reason"]),
-                         ("refused", "evaluation", "plan not supported: shout"))
-        self.assertEqual((self.count("a"), self.count("b")), ((0, "1"), (0, "7")))
-
     def test_a_pure_method_commits_its_result_as_a_set_of_every_field(self):
         r = self.turn("a", "grow", record(by=nat(4)))
         self.assertEqual(r["status"], "admitted", r)
@@ -339,32 +304,32 @@ NAMES_SOURCE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   names: Lists.List<String>
 record Edits:
   names: Plans.Entries<String, String>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {names: Plans.Entries.keep({})}
 def initial() -> State:
   {names: Lists.List::<String>.nil()}
-def add(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.append({item: input.text})}})):
+def add(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {names: Plans.Entries::<String, String>.append({item: input.text})})):
     case written(_): 1n
     case _: 0n
-def drop(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.removeItem({item: input.text})}})):
+def drop(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {names: Plans.Entries::<String, String>.removeItem({item: input.text})})):
     case written(_): 1n
     case _: 0n
-def fix(state: State, input: {item: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.amendItem({item: input.item, change: input.text})}})):
+def fix(state: State, input: {item: String, text: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {names: Plans.Entries::<String, String>.amendItem({item: input.item, change: input.text})})):
     case written(_): 1n
     case _: 0n
 """)
 
 
 def names_modules():
-    modules = closure("List") + [m for m in closure("Variant") if m["name"] != "List"]
+    modules = closure("List") + [m for m in closure("World") if m["name"] != "List"]
     seen, out = set(), []
     for m in modules:
         if m["name"] not in seen:
