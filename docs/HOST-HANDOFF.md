@@ -885,6 +885,15 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    per cell". Test: `tests/test_relation.py` `test_state_bytes_are_the_canonical_encodings` (2,048 rows
    that were 600 KB of wire JSON, created).
 
+109. **Paging by (height, item) (host12; codex transport 12).** `pageByHeight` (`world-sources`,
+   `world-grants`, `world-entries`, `world-publications`) numbers the items of each height and takes
+   `cursor: "<height>.<n>"`, continuing after (or, with `reverse`, before) exactly that item; a page
+   with `more` answers the `cursor` of its last item (`pageFields`). `after`/`before` keep paging by
+   whole heights. `transport/repo.py` should pass the reply's `cursor` through as the XRPC cursor
+   instead of the last item's height (transport lane). Test: `tests/test_reads.py`
+   `test_pages_by_height_and_item_skip_nothing` (the library entry's many sources one at a time, both
+   orders).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
