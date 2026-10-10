@@ -151,13 +151,7 @@ class Observing(ZulipCase):
         self.assertNotIn('wrong', err.getvalue())
 
 
-# Until the host takes zulip:// uris, world-posted refuses with "uri must be an at:// URI", so nothing posted is recorded
-# and replies cannot route to it.
-NOT_YET = unittest.expectedFailure
-
-
 class Bridging(ZulipCase):
-    @NOT_YET
     def test_two_topics_are_two_routed_turns_and_two_posted_drafts(self):
         self.zulip.say('alice garden', 'Alice', SPELL)
         self.zulip.say('bob garden', 'Bob', SPELL)
@@ -175,7 +169,6 @@ class Bridging(ZulipCase):
             self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': uri})['object'], 'garden-1')
         self.assertEqual(self.bridge()['posted'], [], 'nothing is posted twice')
 
-    @NOT_YET
     def test_replies_in_a_topic_route_to_the_object_the_first_message_addressed(self):
         self.zulip.say('t', 'Alice', SPELL)
         self.bridge()
@@ -205,7 +198,6 @@ class Bridging(ZulipCase):
         self.assertEqual((len(later['posted']), 'held' in later), (1, False), later)
         self.assertEqual(len(self.zulip.mine()), 17)
 
-    @NOT_YET
     def test_the_welcome_is_posted_and_recorded_so_replies_to_it_reach_the_directory(self):
         welcome = Path(__file__).resolve().parent.parent / 'docs' / 'previews' / 'zulip-welcome.txt'
         out = io.StringIO()
