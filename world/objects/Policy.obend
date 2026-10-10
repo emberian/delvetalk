@@ -36,9 +36,9 @@ type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", escalate: "", escalateTo: "", confirmFor: asking()}
 # What waits for a yes by default: changing an object's program or law, and giving
-# custody away. Planting, raining, subscribing and submitting run at once.
+# offering custody away. Planting, raining, subscribing and submitting run at once.
 def asking() -> Lists.List<String>:
-  Lists.List.cons({head: "reprogram", tail: Lists.List.cons({head: "amend", tail: Lists.List.cons({head: "give", tail: Lists.List.cons({head: "offer", tail: Lists.List.nil({})})})})})
+  Lists.List.cons({head: "reprogram", tail: Lists.List.cons({head: "amend", tail: Lists.List.cons({head: "offer", tail: Lists.List.nil({})})})})
 def seeded(seed: Seed) -> State:
   {owner: seed.owner, model: seed.model, system: seed.system, lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: seed.escalate, escalateTo: seed.escalateTo, macros: Lists.List.nil({}), confirmFor: seed.confirmFor}
 def initial() -> State:
