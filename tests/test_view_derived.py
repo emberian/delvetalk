@@ -13,9 +13,9 @@ so this needs no Plan.obend constructor.
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
-READER = """edition ObjectiveBend 1
+READER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -33,8 +33,8 @@ def peek(state: State, input: {target: String, view: String}, context: Abi.Conte
     case derived(d): d.value
     case refused(r): Data.of::<String>(r.clause)
     case denied(_): Data.of::<String>("denied")
-"""
-TARGET = """edition ObjectiveBend 1
+""")
+TARGET = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 record State:
@@ -50,7 +50,7 @@ def greeting(state: State, context: Abi.Context) -> String:
   textConcat("hello ", context.principal)
 def secret(state: State) -> String:
   state.words
-"""
+""")
 
 
 class ViewDerived(Reflection):

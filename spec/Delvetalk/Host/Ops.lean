@@ -389,7 +389,7 @@ def Proposal.digest (p : Proposal) : String :=
 def refusalClasses : List String :=
   ["staleRoot", "typeMismatch", "capacity", "absentItem", "lawRefused", "unknownObject",
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
-   "keyTaken", "duplicateKey", "badSpell", "quota"]
+   "keyTaken", "duplicateKey", "badSpell", "quota", "noMethod"]
 
 structure Refusal where
   cls : String
@@ -931,6 +931,110 @@ def declsOfEntry (entry : Delvetalk.CheckedEntry) : Except String (List RelDecl)
   | .ok (.finished value _ _ _) => parseDecls value
   | _ => throw "relations() did not evaluate"
 
+/-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
+    machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/
+def runPure (entry : Delvetalk.CheckedEntry) (arguments : List Data) (ticks : Nat) :
+    Except String Data × Nat :=
+  match Package.executeDataEntry entry arguments.toArray (Json.mkObj [("ticks", toJson (toString ticks))]) with
+  | .ok (.finished value _ _ usage) => (.ok value, usage.ticksUsed + usage.conversionNodes)
+  | .ok (.refused failure usage) =>
+    (.error (if (failure.splitOn "tick").length > 1 then "budget" else failure), usage.ticksUsed + usage.conversionNodes)
+  | .error e => (.error e, 0)
+
+/-- The names a package exposes without declaring them: the protocol every card and law speaks
+    (HOST-HANDOFF 5.62). Every other definition whose first parameter is the State is a helper unless
+    `forms()`, `methods()` or `views()` names it. -/
+def conventionalMethods : List String :=
+  ["receive", "render", "blurb", "forms", "lenses", "set", "publishPage", "page", "relations", "methods",
+   "law", "lawReads", "views", "initial"]
+
+/-- Does a package's entry module (the last of its modules, or its one `source`) declare
+    `def name(`? Only the entry module's declarations count, as for `relations()`. -/
+def packageDeclares (inputs : Json) (name : String) : Bool :=
+  let src := match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => (ms.back?.bind fun m => (m.getObjValAs? String "source").toOption).getD ""
+    | _ => (inputs.getObjValAs? String "source").toOption.getD ""
+  (src.splitOn "\n").any (·.startsWith s!"def {name}(")
+
+/-- The labels of a `List<String>` value. -/
+partial def labels (acc : List String) : Data → Option (List String)
+  | .variant "nil" _ => some acc.reverse
+  | .variant "cons" (.record f) => match f.lookup "head", f.lookup "tail" with
+    | some (.label s), some tail => labels (s :: acc) tail
+    | _, _ => none
+  | _ => none
+
+/-- The actions of the forms a `forms()` value lists (`Lists.List<Form.Form>`). -/
+def formActions (value : Data) : List String :=
+  ((listOf value).getD []).filterMap fun
+    | .record fs => match fs.lookup "action" with
+      | some (.label a) => some a
+      | _ => none
+    | _ => none
+
+/-- The methods a package declares public (HOST-HANDOFF 5.62), beside the conventional names: the
+    actions of its `forms()`, the names its `methods()` returns and those its `views()` returns, each
+    read only when its entry module declares it. A `forms()` or `views()` that does not evaluate names nothing; a
+    `methods()` that is not a `List<String>` refuses the package (clause `methods`). `compile` gives
+    a zero-argument definition's held entry. -/
+def publicMethods (inputs : Json) (compile : String → Except String Delvetalk.CheckedEntry) :
+    Except String (List String) := do
+  let read := fun (name : String) =>
+    if !packageDeclares inputs name then none else
+    match compile name with
+    | .ok entry => some (runPure entry [] Delvetalk.Bounds.lawTicks).1
+    | .error e => some (.error e)
+  let forms := match read "forms" with
+    | some (.ok v) => formActions v
+    | _ => []
+  let views := match read "views" with
+    | some (.ok v) => (labels [] v).getD []
+    | _ => []
+  let declared ← match read "methods" with
+    | none => pure []
+    | some (.ok v) => match labels [] v with
+      | some names => pure names
+      | none => throw "methods: methods() must return a List<String> of method names"
+    | some (.error e) => throw s!"methods: methods() did not evaluate: {e}"
+  return (forms ++ declared ++ views).eraseDups
+
+/-- A method table with its rows marked: a row `exposed` (the declared names) does not name is
+    `protocol: true` when its name is conventional (public, but no action a card offers), else
+    `helper: true` (not public). -/
+def markHelpers (methods : Json) (exposed : List String) : Json :=
+  Json.arr (((methods.getArr?.toOption).getD #[]).map fun m =>
+    match (m.getObjValAs? String "name").toOption with
+    | some name =>
+      if exposed.contains name then m
+      else if conventionalMethods.contains name then m.setObjVal! "protocol" (toJson true)
+      else m.setObjVal! "helper" (toJson true)
+    | none => m)
+
+/-- The names a marked method table declares public (rows neither helper nor protocol). -/
+def declaredRows (methods : Json) : List String :=
+  ((methods.getArr?.toOption).getD #[]).toList.filterMap fun m =>
+    if (m.getObjValAs? Bool "helper").toOption == some true || (m.getObjValAs? Bool "protocol").toOption == some true then none
+    else (m.getObjValAs? String "name").toOption
+
+/-- Is a method table row a helper (not callable from outside the object)? -/
+def isHelperRow (m : Json) : Bool := (m.getObjValAs? Bool "helper").toOption == some true
+
+/-- Is a method table row an action a card offers as a form: declared public, or `receive`? -/
+def isActionRow (m : Json) : Bool :=
+  !isHelperRow m && ((m.getObjValAs? Bool "protocol").toOption != some true ||
+    (m.getObjValAs? String "name").toOption == some "receive")
+
+/-- The rows of a method table a turn, a call, a send or a delivery may name. -/
+def publicRows (methods : Json) : Json :=
+  Json.arr (((methods.getArr?.toOption).getD #[]).filter (!isHelperRow ·))
+
+/-- Does `o` offer `method` to a turn, a call, a send or a delivery: a row of its method table not
+    marked a helper? A definition that is no method (the State not first, or more than one input)
+    is offered to nobody either. -/
+def Object.offers (o : Object) (method : String) : Bool :=
+  ((o.methods.getArr?.toOption).getD #[]).any fun m =>
+    (m.getObjValAs? String "name").toOption == some method && !isHelperRow m
+
 /-- The cases of a sum type (through the bounds): its labels and payload types. -/
 partial def variantCases (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
   | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (variantCases bounds (fuel - 1))
@@ -1035,6 +1139,11 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
   -- is the stack's when a layer declares a law, else the code's below.
   let (methods, predicate, predicateReads) := artifactShape artifact
+  let exposed ← (publicMethods inputs fun name => do
+    let c ← (Package.compileEntry (← (resolved name).mapError (·.2))).mapError (·.render)
+    pure c.entry).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
+  -- A layer keeps what the code below it declared public and may declare more.
+  let methods := markHelpers methods (if extend then exposed ++ declaredRows o.methods else exposed)
   let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
     else (o.predicate, o.predicateReads)
   -- A layer that declares no relations keeps the relations of the code below it, as it keeps its law.
@@ -1317,16 +1426,6 @@ def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
     c.entry.source.assumptions.rigid, some c.entry,
     some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
 
-/-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
-    machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/
-def runPure (entry : Delvetalk.CheckedEntry) (arguments : List Data) (ticks : Nat) :
-    Except String Data × Nat :=
-  match Package.executeDataEntry entry arguments.toArray (Json.mkObj [("ticks", toJson (toString ticks))]) with
-  | .ok (.finished value _ _ usage) => (.ok value, usage.ticksUsed + usage.conversionNodes)
-  | .ok (.refused failure usage) =>
-    (.error (if (failure.splitOn "tick").length > 1 then "budget" else failure), usage.ticksUsed + usage.conversionNodes)
-  | .error e => (.error e, 0)
-
 /-- The cache key of an object's compiled definition (`compiledMethod` uses the same). -/
 def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 
@@ -1350,14 +1449,6 @@ def warmLaws (w : World) (ids : List String) : World :=
           { w with compiled := cache.insert (defKey o name) c }
         | .error _ => w) w
     | none => w) w
-
-/-- The labels of a `List<String>` value. -/
-partial def labels (acc : List String) : Data → Option (List String)
-  | .variant "nil" _ => some acc.reverse
-  | .variant "cons" (.record f) => match f.lookup "head", f.lookup "tail" with
-    | some (.label s), some tail => labels (s :: acc) tail
-    | _, _ => none
-  | _ => none
 
 /-- The objects an object's `lawReads()` names. -/
 def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
@@ -1972,8 +2063,8 @@ def compileInputs (j : Json) : Except String Json := do
 
 def parseRead (j : Option Json) : Except String ReadPolicy :=
   match j with
-  | none => pure .«public»
-  | some (.str "public") => pure .«public»
+  | none => pure .exposed
+  | some (.str "public") => pure .exposed
   | some obj => do
     let raw ← (← obj.getObjVal? "principals").getArr?
     if raw.size > Limits.maxReaders then throw "too many readers"
@@ -2022,7 +2113,9 @@ def compileObject (w : World) (inputs : Json) : Except String Built := do
   let relations ← if !entryDeclaresRelations resolved then pure [] else do
     let r ← (Package.compileEntryCore request "relations").mapError fun d => s!"key: relations(): {d.render}"
     declsOfEntry r.entry
-  return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations }
+  let exposed ← publicMethods inputs fun name =>
+    ((Package.compileEntryCore request name).mapError Package.Diagnostic.render).map (·.entry)
+  return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations, exposed }
 
 /-- Give a compiled package its first state and law. `lawText`, when given, is the law
     exactly as journaled; otherwise the package's laws, or the default owner law. -/
@@ -2041,6 +2134,7 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     | none => if b.laws.isEmpty then defaultLaw creator else pure b.laws
   if let some message := amendable laws creator "" height 0 pin state then throw message
   let (methods, predicate, predicateReads) := artifactShape b.artifact
+  let methods := markHelpers methods b.exposed
   -- Readings belong to the package's clauses; a law given at creation keeps those it left alone.
   let given := (lawText.bind fun t => (parseLawTextReadings t).toOption.map (·.2)).getD []
   let readings := given ++ (artifactReadings b.artifact).filter fun (n, _) =>
@@ -2727,7 +2821,7 @@ def objectsOp (w : World) (j : Json) : Except String Json := do
   let listed := [("status", toJson "listed"), ("ids", toJson ids), ("more", toJson more)]
   if !withMethods then return Json.mkObj listed
   -- The turnable method names (those that take a context) of each listed object.
-  let names := fun (o : Object) => ((o.methods.getArr?.toOption).getD #[]).toList.filterMap fun m =>
+  let names := fun (o : Object) => (((publicRows o.methods).getArr?.toOption).getD #[]).toList.filterMap fun m =>
     if (m.getObjValAs? Bool "context").toOption == some true then (m.getObjValAs? String "name").toOption else none
   return Json.mkObj (listed ++ [("methods", Json.mkObj (ids.filterMap fun id =>
     (w.objects[id]?).map fun o => (id, toJson (names o))))])

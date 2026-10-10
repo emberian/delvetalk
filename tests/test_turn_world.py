@@ -76,9 +76,27 @@ def addSelf(context: Abi.Context, n: Nat) -> Activity<Plan, Response, Nat>:
 """
 
 
+METHOD = re.compile(r"^def (\w+)\(state: ", re.M)
+
+
+def declared(source, *names):
+    """`source` with a `def methods()` naming `names`, or every definition whose first parameter is
+    the State: the host runs only the methods a package declares (HOST-HANDOFF 5.62)."""
+    names = names or tuple(n for n in METHOD.findall(source) if n not in ("receive", "render", "set", "law"))
+    if not names or "\ndef methods(" in source:
+        return source
+    if "List.obend as Lists" not in source:
+        first, rest = source.split("\n", 1)
+        source = first + "\nimport ./List.obend as Lists\n" + rest
+    body = "Lists.List::<String>.nil({})"
+    for n in reversed(names):
+        body = 'Lists.List::<String>.cons({head: "%s", tail: %s})' % (n, body)
+    return source.rstrip("\n") + "\ndef methods() -> Lists.List<String>:\n  " + body + "\n"
+
+
 def fixture(body, law=""):
     head = FIXTURE_HEAD.replace("def initial", law + "def initial", 1) if law else FIXTURE_HEAD
-    return closure("Plan") + [{"name": "Fixture", "source": head + body}]
+    return closure("Plan") + [{"name": "Fixture", "source": declared(head + body)}]
 
 
 MONOTONE = fixture("""def dec(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -208,14 +226,14 @@ class CounterTurns(TurnWorld):
         self.assertEqual((r["status"], r["class"]), ("refused", "duplicateIdentity"))
         self.assertEqual(self.height(), h)
 
-    def test_unknown_object_is_refused_by_class_and_unknown_method_is_a_request_error(self):
+    def test_unknown_object_is_refused_by_class_and_unknown_method_is_refused_noMethod(self):
         self.create("c1", counter_modules(), 0)
         r = self.turn("ghost", "bump")
         self.assertEqual(r["receipt"]["outcome"]["class"], "unknownObject")
         h = self.height()
         r = self.turn("c1", "nosuchmethod")
-        self.assertEqual(r["status"], "error")
-        self.assertEqual(self.height(), h)
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "noMethod"))
+        self.assertEqual(self.height(), h + 1)
 
     def test_restart_replays_to_the_same_view_and_receipts(self):
         self.create("c1", counter_modules(), 0)
@@ -316,7 +334,7 @@ class Plans(TurnWorld):
         self.assertEqual(self.count("a"), (1, "5"))
 
 
-NAMES_SOURCE = """edition ObjectiveBend 1
+NAMES_SOURCE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -340,7 +358,7 @@ def fix(state: State, input: {item: String, text: String}, context: Abi.Context)
   match perform(Plan.write({object: Plans.self(context), edits: {names: Plans.Entries::<String, String>.amendItem({item: input.item, change: input.text})}})):
     case written(_): 1n
     case _: 0n
-"""
+""")
 
 
 def names_modules():

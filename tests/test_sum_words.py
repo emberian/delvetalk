@@ -14,13 +14,13 @@ reaches the object as text.
 import unittest
 
 from tests.test_reflection import Reflection, POLICY
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
 
 def variant(name, payload):
     return {"tag": "variant", "label": name, "payload": payload}
 
-GARDEN = """edition ObjectiveBend 1
+GARDEN = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -66,7 +66,7 @@ def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activ
     case proposal(p): put(textConcat(colourText(p.argument.colour), textConcat(":", p.argument.seed)))
     case unclear(_): put("unclear")
     case _: put("other")
-"""
+""")
 
 
 class SumWords(Reflection):

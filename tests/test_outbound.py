@@ -16,7 +16,7 @@ import unittest
 
 from tests.test_chain import field
 from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 from tests.wire import cid_of
 
 URI = "at://did:plc:world/town.delve.feed.post/3abc"
@@ -83,7 +83,7 @@ BOTH = CARDED + """def renderFor(state: State, context: Abi.Context) -> Document
   Document.text(textConcat("Count for ", textConcat(context.principal, textConcat(": ", natText(state.count)))))
 """
 
-DIRECTORY = """edition ObjectiveBend 1
+DIRECTORY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -113,7 +113,7 @@ def show(state: State, input: {target: String}, context: Abi.Context) -> Activit
     case denied(_): said(context, "denied")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-"""
+""")
 
 
 class Catalogue(Reflection):
@@ -184,7 +184,7 @@ class Cards(Catalogue):
         self.assertEqual(self.host.send(op="world-card", principal="kim", object="both")["text"], "Count for kim: 0")
 
 
-WAITER = """edition ObjectiveBend 1
+WAITER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -202,7 +202,7 @@ def wait(state: State, input: {until: Nat}, context: Abi.Context) -> Activity<Pl
   match perform(Plan.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: input.until})):
     case timedOut(_): said(context, "timedOut")
     case _: said(context, "other")
-"""
+""")
 
 
 class Time(Reflection):
@@ -226,7 +226,7 @@ class Time(Reflection):
         self.assertEqual((r["status"], r["result"]), ("admitted", label("timedOut")), r)
 
 
-TELLER = """edition ObjectiveBend 1
+TELLER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./Document.obend as Document
@@ -270,7 +270,7 @@ def poked(target: String) -> Activity<Plan, Response, String>:
   match perform(Plan.call({object: {world: "", object: target}, method: "stamp", argument: Data.of::<Said>({text: "stamped"})})):
     case returned(r): r.result
     case _: "other"
-"""
+""")
 
 
 class TellerWorld(Reflection):
@@ -522,7 +522,7 @@ class Projection(Reflection):
             self.assertIn("reserved", taken["message"])
 
 
-HANDLED = """edition ObjectiveBend 1
+HANDLED = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./Document.obend as Document
@@ -542,7 +542,7 @@ def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>
     case _: natText(context.clock)
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text(textConcat("seen by ", context.handle))
-"""
+""")
 GLM = "did:plc:nmjdxe6fex23zslnnbwgruj3"
 
 
@@ -592,7 +592,7 @@ class Handles(Reflection):  # and the clock
         self.assertLess(self.host.send(op="world-status")["height"], 1000)
 
 
-POST_WAITER = """edition ObjectiveBend 1
+POST_WAITER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -613,7 +613,7 @@ def waitFor(state: State, input: {post: String}, context: Abi.Context) -> Activi
     case _: noted("other", context)
 def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
   noted(input.text, context)
-"""
+""")
 OLD_RECEIVE = POST_WAITER.replace("input: {text: String, post: String}", "input: {text: String, post: String, slot: String}").replace(
     "noted(input.text, context)\n", "noted(input.slot, context)\n")
 
@@ -681,7 +681,7 @@ class ReplyIsAddress(PostWaiterWorld):
         self.assertEqual(json.loads(self.note("old")), SLOT)
 
 
-MINTER = """edition ObjectiveBend 1
+MINTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./Child.obend as Child
@@ -709,7 +709,7 @@ def spawnThenWait(state: State, input: {}, context: Abi.Context) -> Activity<Pla
 def waited(id: String) -> Activity<Plan, Response, String>:
   match perform(Plan.awaitUntil({slot: {principal: "nobody", intent: "never"}, until: 5n})):
     case _: id
-"""
+""")
 
 
 class MintedIds(Reflection):
@@ -744,7 +744,7 @@ class MintedIds(Reflection):
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="m/child/8")["status"], "viewed")
 
 
-WHO = """edition ObjectiveBend 1
+WHO = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -761,7 +761,7 @@ def who(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
 def when(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: natText(context.clock)})}})):
     case _: natText(context.clock)
-"""
+""")
 
 
 class SourcePins(Reflection):
@@ -824,7 +824,7 @@ class SourcePins(Reflection):
             with open(abi, "w") as f:
                 f.write(current.replace("  clock: Nat\n", "", 1))
             self.open_library(lib, clock="transport")
-            self.make("old", WHO.replace("def when", "def unused").split("def unused")[0], record(note=label("")))
+            self.make("old", declared(WHO.replace("def when", "def unused").split("def unused")[0], "who"), record(note=label("")))
             with open(abi, "w") as f:
                 f.write(current)
             self.assertEqual(self.host.send(op="world-library", principal="ember", identity="lib-2")["status"], "library")
@@ -883,13 +883,13 @@ def nested(depth, leaf):
     return "Lists.List<" * depth + leaf + ">" * depth
 
 
-DEEP = """edition ObjectiveBend 1
+DEEP = declared("""edition ObjectiveBend 1
 import ./List.obend as Lists
 record State:
   deep: %s
 def initial() -> State:
   {deep: %s.nil({})}
-"""
+""")
 
 
 class Malformed(Reflection):

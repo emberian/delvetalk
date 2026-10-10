@@ -16,8 +16,9 @@ import unittest
 from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import declared
 
-SCHEDULER = """edition ObjectiveBend 1
+SCHEDULER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record Arg:
@@ -72,9 +73,9 @@ def relay(state: State, input: {other: String, target: String}, context: Abi.Con
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-"""
+""")
 
-BELL = """edition ObjectiveBend 1
+BELL = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record Arg:
@@ -95,10 +96,10 @@ def initial() -> State:
 def ring(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: input.n}), by: Plans.Edit::<String, {}>.set({value: context.principal}), from: Plans.Edit::<String, {}>.set({value: context.caller})}})):
     case _: "rung"
-"""
+""")
 
 
-ROSTER = """edition ObjectiveBend 1
+ROSTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -123,7 +124,7 @@ def toll(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 def admit(state: State, input: {who: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.keep({}), members: Plans.Entries::<String, String>.append({item: input.who})}})):
     case _: 0n
-"""
+""")
 
 
 class LawFacts(Reflection):
@@ -280,7 +281,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-LAMP = """edition ObjectiveBend 1
+LAMP = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -299,9 +300,9 @@ def initial() -> State:
 def light(state: State, input: {colour: String, level: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.write({object: Plans.self(context), edits: {colour: Plans.Edit::<String, {}>.set({value: input.colour}), level: Plans.Edit::<Nat, Nat>.set({value: input.level}), by: Plans.Edit::<String, {}>.set({value: context.principal})}})):
     case _: input.colour
-"""
+""")
 
-HOLDER = """edition ObjectiveBend 1
+HOLDER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -342,7 +343,7 @@ def post(state: State, input: {via: String, level: Nat}, context: Abi.Context) -
     case delivery(_): said(context, "sent")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-"""
+""")
 
 
 class Attenuation(Reflection):

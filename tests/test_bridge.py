@@ -18,9 +18,10 @@ from tests.test_transport import DID, Script, mk
 from tests.test_turn_world import closure, label, nat, record
 from transport import bridge, delve, observe
 from tests.host import start_hostd, stop_hostd
+from tests.test_turn_world import declared
 from transport.hostproc import HostClient
 
-CARD = """edition ObjectiveBend 1
+CARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Plan.obend as Plans
@@ -35,7 +36,7 @@ def initial() -> State:
   {seen: 5n}
 def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 %s
-"""
+""")
 OFFERING = """  match perform(Plan.offer({to: "", document: Document.text(textConcat("hello ", context.principal))})):
     case offered(_): 1n
     case _: 0n"""

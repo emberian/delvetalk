@@ -14,9 +14,9 @@ import unittest
 
 from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
-GUARD = """edition ObjectiveBend 1
+GUARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -44,9 +44,9 @@ def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if request.method == "poke" then Abi.Verdict.refused({clause: "method"}) else if request.context.principal == "mallory" then Abi.Verdict.refused({clause: "principal"}) else if new.count > old.count + 2n then Abi.Verdict.refused({clause: "tooMuch"}) else if opened(request.reads) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "closed"})
 def lawReads() -> Lists.List<String>:
   Lists.List::<String>.cons({head: "gate", tail: Lists.List::<String>.nil({})})
-"""
+""")
 
-GATE = """edition ObjectiveBend 1
+GATE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -60,7 +60,7 @@ def initial() -> State:
 def open(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {open: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
     case _: 1n
-"""
+""")
 
 SPIN = GUARD.replace("""def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if request.method""", """def spin(n: Nat) -> Bool:
@@ -68,7 +68,7 @@ SPIN = GUARD.replace("""def law(old: State, new: State, request: Abi.Request) ->
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if spin(0n) then Abi.Verdict.admitted({}) else if request.method""")
 
-PLAIN = GUARD[:GUARD.index("def opened")]
+PLAIN = declared(GUARD[:GUARD.index("def opened")], "bump", "poke")
 
 
 class TwoTier(Reflection):
@@ -123,7 +123,7 @@ class TwoTier(Reflection):
         self.assertNotIn("lawReads", {m["name"] for m in inspected["methods"]})
 
 
-READ = """edition ObjectiveBend 1
+READ = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -141,7 +141,7 @@ def initial() -> State:
 def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {owner: Plans.Edit::<String, {}>.keep({}), count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
     case _: 1n
-"""
+""")
 
 SAID = "refused owner: only the owner may count"
 

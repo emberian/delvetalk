@@ -168,15 +168,15 @@ def Ledger.exhausted (l : Ledger) : Option String :=
 
 /-- Who may `view` an object; fixed at creation and journaled with it. -/
 inductive ReadPolicy where
-  | «public»
+  | exposed
   | principals (allowed : List String)
 
 def ReadPolicy.permits : ReadPolicy → String → Bool
-  | .«public», _ => true
+  | .exposed, _ => true
   | .principals allowed, who => allowed.contains who
 
 def ReadPolicy.json : ReadPolicy → Json
-  | .«public» => toJson "public"
+  | .exposed => toJson "public"
   | .principals allowed => Json.mkObj [("principals", toJson allowed)]
 
 /-- A compiled replacement package for an object, ready to judge. The state
@@ -208,14 +208,15 @@ structure Object where
   /-- The entry definition's type: a closed record of first-order data. -/
   stateType : Ty
   bounds : DataBounds := []
-  read : ReadPolicy := .«public»
+  read : ReadPolicy := .exposed
   /-- Ledger of turns started on this object (creation may only lower it). -/
   chain : Ledger := Ledger.start
   /-- The journaled compile inputs (modules, limits); a method is one more `entry`. -/
   inputs : Json := Json.null
   /-- Digest of `inputs`, the key of this object's compiled methods. -/
   inputsKey : String := ""
-  /-- The compiler's method table of the pinned artifact (`[{name, input, result, activity, context}]`). -/
+  /-- The compiler's method table of the pinned artifact (`[{name, input, result, activity, context}]`),
+      each row the package does not make public marked `helper: true` (`markHelpers`). -/
   methods : Json := Json.arr #[]
   /-- The artifact's `law: {present, reads}`: the package declares `def law(old, new, request)`,
       and `def lawReads()` beside it. -/
@@ -302,6 +303,8 @@ structure Built where
   assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
   /-- The relations its entry module's `relations()` declares, unchecked against the state type. -/
   relations : List RelDecl := []
+  /-- The methods it declares public (`publicMethods`); its table's other rows are protocol or helpers. -/
+  exposed : List String
 
 /-- A standing subscription (WHOLENESS §3): after every admitted write that touches `field` of
     `object`, `subscriber`'s receiver `method` (`changed` unless the subscription named another) is

@@ -13,7 +13,7 @@ public projection hides the clause or hint.
 import unittest
 
 from tests.test_reflection import POLICY, Reflection
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
 GARDEN = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -61,7 +61,7 @@ class SpellTurns(Reflection):
         self.open_library()
         for name in ("garden", "plot"):
             r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
-                               modules=[{"name": "Garden", "source": GARDEN}],
+                               modules=[{"name": "Garden", "source": declared(GARDEN)}],
                                entry="initial", seed=record())
             self.assertEqual(r["status"], "created", r)
 
@@ -123,7 +123,7 @@ class SpellTurns(Reflection):
         self.assertEqual((self.field("planted", "plot"), self.field("planted", "garden")), (label("amber:oak"), label("")))
 
 
-LENSED = """edition ObjectiveBend 1
+LENSED = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -162,7 +162,7 @@ def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Co
   1n
 def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:
   2n
-"""
+""")
 
 
 class Lenses(Reflection):
@@ -246,7 +246,7 @@ class Interpreted(Reflection):
         self.open_library()
         self.make("policy", POLICY, record(model=label("m"), system=label(""), examples=label("")))
         r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden",
-                           modules=[{"name": "Garden", "source": INTERPRETING}], entry="initial", seed=record())
+                           modules=[{"name": "Garden", "source": declared(INTERPRETING)}], entry="initial", seed=record())
         self.assertEqual(r["status"], "created", r)
 
     def interpret(self, raw):

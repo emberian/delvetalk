@@ -110,6 +110,9 @@ structure TurnState where
   argument : Data := .record []
   /-- A turn a principal asked for directly (not a delivery): only such a turn may grant. -/
   direct : Bool := true
+  /-- A delivery the host owes the object's own choice of receiver (a change to its subscription's
+      method, an activity's end to its supervisor): it may name a helper. -/
+  receiver : Bool := false
   /-- The top frame's `inputOrigin` kind and command (`TurnRequest.origin`, `command`). -/
   origin : String := "request"
   command : String := ""
@@ -431,10 +434,11 @@ def formKind (member : Json) : Option Data :=
   | _ => none
 
 /-- The actions of an object as forms, from its artifact's method table: every method a turn can
-    run (it takes a context) whose input is a record of form-expressible fields. -/
+    run (it takes a context) whose input is a record of form-expressible fields, among those the package
+    declares public (and `receive`): helpers and the other conventional names (`render`, `set`) have none. -/
 def methodForms (id : String) (methods : Json) : List Data :=
   ((methods.getArr?.toOption).getD #[]).toList.filterMap fun m => do
-    guard ((m.getObjValAs? Bool "context").toOption == some true)
+    guard ((m.getObjValAs? Bool "context").toOption == some true && isActionRow m)
     let name ← (m.getObjValAs? String "name").toOption
     let fields ← rowFields ((m.getObjVal? "input").toOption.getD Json.null)
     let kinds ← fields.mapM fun (n, member) => (formKind member).map fun k => Data.record [("name", .label n), ("kind", k)]
@@ -588,6 +592,15 @@ def dryChange (w : World) (s : TurnState) (self id : String) (version : Nat) (pr
   | .ok _ => none
   | .error r => some (r.clause.getD r.cls)
 
+/-- Why a turn naming a helper is refused (class `noMethod`). -/
+def noMethodReason (id method : String) : String :=
+  s!"{method} is not a method {id} offers; its package names its methods in forms() or methods()"
+
+/-- Is `method` refused to `self` calling object `id`: not a method `id` offers? An object may call
+    its own helpers. -/
+def helperOf (w : World) (self id method : String) : Bool :=
+  id != self && ((w.objects[id]?).map (!·.offers method)).getD false
+
 /-- The world's methods (WHOLENESS §1, `protocol world`), which a message activity calls. `spell` is
     not one: the host's spell path runs a card's methods directly (WHOLENESS, second root decisions, 5). -/
 def worldMethods : List String :=
@@ -631,6 +644,8 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) (call
 partial def runFrame (depth : Nat) (id method : String) (argument : Data) (caller : String) : M Data := do
   let s ← get
   let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
+  -- Only a method the package makes public is asked from outside (a call or a run checked it).
+  if depth == 0 && !s.receiver && !obj.offers method then throw (.refused "noMethod" (noMethodReason id method))
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
   let expected := expectedInput obj id method compiled
@@ -876,6 +891,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | none => refusedWith bounds responseType "unknownObject"
     | some id =>
       if !(← get).world.objects.contains id then refusedWith bounds responseType "unknownObject"
+      else if helperOf (← get).world self id method then refusedWith bounds responseType "noMethod"
       else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
       else match ← grantFor via self id method argument with
         | .error clause => refusedWith bounds responseType clause
@@ -899,6 +915,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | none => refusedWith bounds responseType "handler"
       | some h =>
         if !h.read.permits s.subject then refusedWith bounds responseType "handler"
+        else if helperOf s.world self id method then refusedWith bounds responseType "noMethod"
         else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
         else
           let callee ← compiledMethod calleeObj method
@@ -1143,6 +1160,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     match referenceId target with
     | none => refusedWith bounds responseType "foreignWorld"
     | some id =>
+      if helperOf (← get).world self id method then refusedWith bounds responseType "noMethod" else
       match ← grantFor via self id method argument with
       | .error clause => refusedWith bounds responseType clause
       | .ok (subject, argument) =>
@@ -1274,6 +1292,8 @@ structure TurnMeta where
   delivery : Option (String × Json) := none
   /-- This turn re-runs one whose resumption was refused `staleRoot` (`resumeOne`). -/
   rerun : Bool := false
+  /-- A delivery to a receiver the object chose itself (`TurnState.receiver`). -/
+  receiver : Bool := false
 
 def ledgerJson (l : Ledger) : Json := l.json
 
@@ -1465,7 +1485,7 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
     | .ok b => pure b.ticks
     | .error e => throw e
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
-                            direct := how.delivery.isNone, ticks, limits := req.limits, profiling := req.profile,
+                            direct := how.delivery.isNone, receiver := how.receiver, ticks, limits := req.limits, profiling := req.profile,
                             origin := req.origin, command := req.command }
   -- A reply to a post recorded for this very object answers it (reply-is-address).
   let post := if req.replyTo.isEmpty then none else w.posts[req.replyTo]?
@@ -1919,13 +1939,19 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   let sender ← d.getObjVal? "from"
   let ledger ← ledgerOf (← d.getObjVal? "ledger")
   let via := (d.getObjValAs? String "via").toOption.getD ""
-  let how : TurnMeta :=
-    { caller := (d.getObjValAs? String "sender").toOption.getD ""
-      via
-      ledger := some ledger
-      delivery := some (id, sender) }
   let to ← d.getObjValAs? String "to"
   let method ← d.getObjValAs? String "method"
+  let senderId := (d.getObjValAs? String "sender").toOption.getD ""
+  -- A change goes to the receiver its subscriber named; an activity's end to the supervisor its
+  -- object was created under. Either may be a helper: the receiving object chose it.
+  let receiver := (d.getObjVal? "field").toOption.isSome ||
+    (method == "ended" && ((w.objects[senderId]?).map (·.supervisor)) == some to)
+  let how : TurnMeta :=
+    { caller := senderId
+      via
+      ledger := some ledger
+      delivery := some (id, sender)
+      receiver }
   let deliveryFields := [("ledger", ledger.json), ("delivery", Json.mkObj ([("id", toJson id), ("from", sender)] ++
     (if via.isEmpty then [] else [("via", toJson via)])))]
   -- A send under a grant that no longer stands (revoked, or the clock past it) is consumed, refused.
@@ -2073,7 +2099,7 @@ def methodAdmits (w : World) (o : Object) (principal method : String) : Json :=
 /-- The method table as `principal` reads it: each method a turn can run (it takes a context) with
     `admits` (`methodAdmits`). -/
 def methodsFor (w : World) (o : Object) (principal : String) : Json :=
-  Json.arr (((o.methods.getArr?.toOption).getD #[]).map fun m =>
+  Json.arr ((((publicRows o.methods).getArr?.toOption).getD #[]).map fun m =>
     match (m.getObjValAs? Bool "context").toOption, (m.getObjValAs? String "name").toOption with
     | some true, some name => m.setObjVal! "admits" (methodAdmits w o principal name)
     | _, _ => m)

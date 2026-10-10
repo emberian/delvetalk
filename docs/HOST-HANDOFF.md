@@ -412,6 +412,28 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `tests/test_outbound.py`'s and `tests/test_receive.py`'s slot tests into typeMismatch cases. The
    host's own tests no longer send `slot: ""`.
 
+62. **Declared methods (host10; WORLD-REVIEW finding 1).** A State-first definition is public only when
+   the package declares it: the `action` of a form its `forms()` lists, a name its `def methods() ->
+   Lists.List<String>` returns, a `views()` entry, or a conventional name (`conventionalMethods`: receive,
+   render, blurb, forms, lenses, set, publishPage, page, relations, methods, law, lawReads, views,
+   initial). Only the entry module's declarations count (as for `relations()`); each is compiled and run
+   once per build (`publicMethods`, in `compileObject` and `prepareProgram`; a layer keeps what the code
+   below declared and may add). A `methods()` that is not a `List<String>` refuses the package (`methods:`,
+   clause `methods` on reprogram); a `forms()` or `views()` that does not evaluate names nothing. The
+   method table marks every other row `helper: true` and the conventional-only rows `protocol: true`
+   (`markHelpers`; snapshots keep the marks, edition `delvetalk.snapshot.v2`, so an older snapshot is
+   refused and the journal replayed). `Object.offers`: a row not marked helper. A direct turn or a
+   delivery naming a method the object does not offer (a helper, or a definition that is no method) is
+   refused class `noMethod` (in `refusalClasses`, binding), reason "<m> is not a method <id> offers; …";
+   a `call`, `run`, `send` or `sendVia` naming one is answered `refused {clause: noMethod}` (an object
+   may call its own helpers). Two deliveries may name a helper, because the receiving object chose the
+   receiver: a change to its subscription's method (the delivery has `field`), and `ended` to the
+   supervisor its sender was created under (`TurnMeta.receiver`). `world-inspect` `methods` and
+   `world-objects {methods}` list only offered rows; `methodForms` (inspect `forms`, `?` usage, spells)
+   lists declared rows and `receive`, not helpers or `render`/`set`/`publishPage`. Tests:
+   `tests/test_public_methods.py` (the review's reproductions, a bare package, calls and sends, a helper
+   receiver); fixtures declare their methods with `tests.test_turn_world.declared`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
