@@ -1,0 +1,125 @@
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Text.obend as Text
+# The stacks (docs/LIBRARY.md): pages on how the town works and walks of spells in order, each
+# under the clip, read with `read`; a card's law with its readings, with `law`. hob, the
+# librarian, speaks the first line of each.
+sum Kind:
+  page: {}
+  walk: {}
+# A page, keyed {name}; `place` is the order it was first shelved in, which the index keeps.
+record Page:
+  name: String
+  kind: Kind
+  title: String
+  body: String
+  place: Nat
+record State:
+  owner: String
+  ownerHandle: String
+  pages: Relations.Relation<Page>
+law owner "only the owner shelves a page; anyone reads": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(pages))
+def initial() -> State:
+  {owner: "", ownerHandle: "", pages: Relations.empty()}
+# 32 pages of at most 1,400 characters: about 48 KB.
+def relations() -> Relations.Decls:
+  Lists.append(Relations.Decls.nil(), {field: "pages", key: Text.words("name"), limit: 32n})
+def pageKey(page: Page) -> {name: String}:
+  {name: page.name}
+form read:
+  page: text 1..120
+form laws:
+  card: text 1..160
+form shelve:
+  name: text 1..32
+  kind: Kind
+  title: text 1..80
+  body: text 1..1400
+def blurb() -> Card.Door:
+  {word: "library", blurb: "The stacks: pages and walks."}
+def ordered(state: State) -> Lists.List<Page>:
+  Relations.order(state.pages, fn(p: Page) -> Nat: p.place)
+def isWalk(page: Page) -> Bool:
+  match page.kind:
+    case walk(_): true
+    case page(_): false
+# The page named, else the first whose name is a whole word of what was given ("how do i read
+# laws" finds laws), a mark at either end aside.
+def found(state: State, said: String) -> Lists.Maybe<Page>:
+  match Relations.lookup(state.pages, {name: Text.trim(said)}, pageKey):
+    case some(p): Lists.Maybe.some({value: p.value})
+    case none(_): Lists.find(ordered(state), fn(p: Page) -> Bool: Lists.any(Text.words(said), fn(w: String) -> Bool: textLength(w) > 0n && Card.stripped(w, textLength(w)) == p.name))
+# Reading writes nothing and asks no model.
+def read(state: State, input: {page: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match found(state, input.page):
+    case some(p): Card.tell(Card.Replied.done({action: "read"}), Document.text(p.value.body))
+    case none(_): Card.tell(Card.Replied.refused({clause: "noPage", reading: "No page called {input.page}"}), Document.concat(Document.text(missLine(state, input.page)), render(state, context)))
+def names(pages: Lists.List<Page>) -> String:
+  textJoin(Lists.map(pages, fn(p: Page) -> String: p.name), " ")
+def missLine(state: State, said: String) -> String:
+  "hob: no page called {said}. Pages: {names(Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false))}; walks: {names(Lists.filter(ordered(state), isWalk))}.\n\n"
+# A card's law as the host has it (`laws`: a definition named law is a card's Bend predicate): each clause with its reading, then its expression.
+def laws(state: State, input: {card: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.inspect({object: {world: context.world, object: input.card}}):
+    case inspected(i): Card.tell(Card.Replied.done({action: "laws"}), Document.text("LAW of {input.card}\n{lawLines(i.source, i.law)}{predicate(i.source)}"))
+    case _: Card.tell(Card.Replied.refused({clause: "noCard", reading: "No card {input.card} that you may see"}), Document.text("Not done: No card {input.card} that you may see; the directory lists the doors.\n"))
+# The source's law lines carry their readings; a law given at creation has only the host's
+# normal form (`law NAME: EXPR`).
+def lawLines(source: String, law: String) -> String:
+  let written = lawsIn(source)
+  let lines = if Lists.length(written) == 0n then lawsIn(law) else written
+  if Lists.length(lines) == 0n then "  no law text: anyone's write by its spells, the creator's anything\n" else textJoin(Lists.map(lines, clause), "")
+def lawsIn(text: String) -> Lists.List<String>:
+  Lists.filter(splitLines(text), fn(l: String) -> Bool: Text.starts(l, "law "))
+def splitLines(text: String) -> Lists.List<String>:
+  if text == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(text, textBreak(text, "\n")), tail: splitLines(textDrop(text, textBreak(text, "\n") + 1n))})
+# `law NAME "reading": EXPR` as `  NAME: reading` and the expression under it.
+def clause(line: String) -> String:
+  let rest = textDrop(line, 4n)
+  let name = textTake(rest, textBreak(rest, " :"))
+  let after = Text.trim(textDrop(rest, textLength(name)))
+  if Text.starts(after, "\"") then readClause(name, textDrop(after, 1n)) else "  {name}\n    {Text.trim(textDrop(after, 1n))}\n"
+def readClause(name: String, quoted: String) -> String:
+  let reading = textTake(quoted, textBreak(quoted, "\""))
+  let expr = Text.trim(textDrop(quoted, textBreak(quoted, "\"") + 2n))
+  "  {name}: {reading}\n    {expr}\n"
+def predicate(source: String) -> String:
+  if Text.contains(source, "\ndef law(") then "  and a predicate in Bend (def law), after the text admits\n" else ""
+# Only the owner shelves: a page keeps its place when shelved again.
+def shelve(state: State, input: {name: String, kind: Kind, title: String, body: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  if context.principal != state.owner then Card.tell(Card.Replied.refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page"}), Document.text("Not done: Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page\n")) else shelved(extend(input, {place: placeOf(input.name, state)}))
+def placeOf(name: String, state: State) -> Nat:
+  match Relations.lookup(state.pages, {name: name}, pageKey):
+    case some(p): p.value.place
+    case none(_): Lists.fold(Relations.rows(state.pages), 0n, fn(p: Page) -> Nat -> Nat: fn(most: Nat) -> Nat: if p.place + 1n > most then p.place + 1n else most)
+def shelved(page: Page) -> Activity<Card.Replied>:
+  let written(_) = write {pages: upsert page}
+  Card.tell(Card.Replied.done({action: "shelve"}), Document.text("Shelved {page.name}.\n"))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
+def countWord(n: Nat) -> String:
+  match Lists.at(Text.words("no one two three four five six seven eight nine ten eleven twelve"), n):
+    case some(w): w.value
+    case none(_): natText(n)
+def plural(n: Nat, word: String) -> String:
+  if n == 1n then "one {word}" else "{countWord(n)} {word}s"
+def entryLine(page: Page) -> String:
+  let padded = textTake(textConcat(page.name, "           "), 11n)
+  "  {padded}{page.title}\n"
+# The index: hob's line, the pages, the walks, the law spell.
+def render(state: State, context: Abi.Context) -> Document.Document:
+  let pages = Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false)
+  let walks = Lists.filter(ordered(state), isWalk)
+  let id = Card.called(context, "library")
+  let counted = plural(Lists.length(pages), "page")
+  let pageLines = textJoin(Lists.map(pages, entryLine), "")
+  let walkLines = textJoin(Lists.map(walks, entryLine), "")
+  let walked = plural(Lists.length(walks), "walk")
+  Document.text("hob: {counted}, {walked}; say which and I fetch it.\n\nPages: delvetalk {id} read / page: <name>\n{pageLines}Walks, spells in order; each ends with something changed:\n{walkLines}A card's law as the host has it: delvetalk {id} laws / card: garden\n")

@@ -1,0 +1,12 @@
+hob: rows in a card's state, kept in key order by the host; the host, not I.
+TYPE  Relation<T>, T a closed record: Relations.empty(); rows {items}. A principal is a row {principal}.
+DECL  def relations() -> Relations.Decls: [{field, key: Text.words("a b"), limit}]. Past the limit the host drops the first rows in key order; the limit times the widest row fits 256 KiB.
+INSERT  write {f: insert row}: a new key adds; the same row is no change; another row under the key is keyTaken.
+UPSERT  write {f: upsert row}: adds or replaces.
+RETRACT  write {f: retract key}, the key as a record: removes; absent is no change; no tombstone.
+COMMUTE  insert re-applies to the rows now; upsert and retract only if nothing touched their key since you read, else staleRoot.
+ORDER  by canonical bytes of the key: shorter column names first, so {author, at, n} sorts by n; text by length, then bytes. Keep a place column when order shows.
+ORDINAL  a row one author adds twice keys n = Relations.count at the read: key order is arrival order.
+QUERIES  rows count exists where project lookup order group joinOn fromList; insert upsert retract mirror the host.
+READ  world.viewField::<Relations.Relation<Row>>({object, field}).
+Next: delvetalk library read / page: protocol

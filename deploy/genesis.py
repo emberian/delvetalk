@@ -82,6 +82,20 @@ EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\n
             ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber')]
 
 
+# The library's stacks (docs/LIBRARY.md): (name, kind, title); each body is capsules/pages/<name>.txt, so the page in
+# the world and the file in the tree are one text.
+PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a badSpell hint'),
+         ('laws', 'page', 'one line a clause, its reading; who may; transient and binding refusals'),
+         ('object', 'page', 'a card in Bend, one whole example'),
+         ('relations', 'page', "rows in a card's state: keys, insert, upsert, retract, order"),
+         ('protocol', 'page', 'what a card asks the world: view, call, send, create, subscribe'),
+         ('world', 'page', "the doors, every card's spells, the classes of refusal")]
+
+
+def page_body(name):
+    return (ROOT / 'capsules' / 'pages' / (name + '.txt')).read_text()
+
+
 def cistern_law(opener):
     """Cistern.lawText(opener) (world/objects/Cistern.obend): a law cannot sit in a package its creator imports."""
     return (f'law owner "its own methods write it, or its creator": request.kind == 0 or request.subject == "{opener}"\n'
@@ -98,6 +112,7 @@ def seeds(opener):
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
             ('anthology', 'Anthology', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
+            ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
             ('cistern', 'Cistern', rec(level=nat(0))),  # created with cistern_law(opener)
             ('commons', 'Commons', rec(owner=lab(opener))),
             ('rooms', 'Scene', moss_gate(opener)),
@@ -144,6 +159,10 @@ def run(host, opener=OPENER):
                                'identity': 'genesis-' + method}).get('status')
                     for method, argument in (('arrived', rec()),
                                              ('schedule', rec(at=nat(0), every=nat(60), action={'tag': 'variant', 'label': 'call', 'payload': rec(card=lab('tide'), method=lab('tick'))})))]
+    library = next(m for m in made if m['object'] == 'library')
+    library['pages'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'shelve', 'identity': 'genesis-shelve-' + name,
+                                   'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
+                                                   body=lab(page_body(name)))}).get('status') for name, kind, title in PAGES]
     # One card per door: each door's object publishes its page(), which the bridge drafts as `wiki: <Door>` for the hand to post.
     for label, _, to, _, _ in DOORS:
         if to and any(m['object'] == to for m in made):
