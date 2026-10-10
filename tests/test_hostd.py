@@ -141,6 +141,12 @@ class Hostd(unittest.TestCase):
                 sock = Path(d2) / 'host.sock'
                 pin = HostClient(sock).send({'op': 'hostd-info'}).get('library')
                 self.assertTrue(pin)
+                loads, exchange = [], dd.stateless._exchange
+                dd.stateless._exchange = lambda req: (loads.append(req['op']), exchange(req))[1]
+                for _ in range(3):
+                    self.assertEqual(HostClient(sock).send({'op': 'hostd-info'}).get('library'), pin)
+                self.assertEqual(loads, [])  # answered from the cached pin
+                dd.stateless._exchange = exchange
                 repl = HostClient(sock, stateless=True)
                 checked = repl.send({'op': 'check-package', 'library': pin, 'entry': 'initial', 'modules': [{'name': 'Tally', 'source': TALLY}]})
                 self.assertEqual(checked['status'], 'checked', checked)
