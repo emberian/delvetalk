@@ -20,23 +20,24 @@ def initial() -> State:
   seeded(defaultSeed())
 # Counts and sends tick to itself: the cycle the host's causal ledger must stop.
 def ticked<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
-    case _: again::<T>(state, context, then)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit.add({delta: 1n})}}))
+  again(state, context, then)
 def again<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
   match perform(Plan.send({object: Plans.self(context), method: "tick", argument: Plans.nothing()})):
     case _: then(state.count + 1n)
 def tick(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  ticked::<Nat>(state, context, fn(count: Nat) -> Nat: count)
+  ticked(state, context, fn(count: Nat) -> Nat: count)
+form tick:
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "tick", fields: Form.Fields.nil()}, tail: Card.Forms.nil()})
+  Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})
 def door() -> Card.Door:
   {word: "loop", blurb: "Ticks itself until the causal budget runs out."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   heard(state, Card.route(input.text, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): ticked::<Card.Reply>(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
+    case act(a): ticked(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
+    case _: Card.answer(routed, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("Ticks: ", textConcat(natText(state.count), "\n")))
+  Document.text("Ticks: {natText(state.count)}\n")
