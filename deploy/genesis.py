@@ -65,6 +65,12 @@ EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\n
             ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber')]
 
 
+def cistern_law(opener):
+    """Cistern.lawText(opener) (world/objects/Cistern.obend): a law cannot sit in a package its creator imports."""
+    return (f'law owner "its own methods write it, or its creator": request.kind == 0 or request.subject == "{opener}"\n'
+            'law level "the level only rises": monotone(level)')
+
+
 def seeds(opener):
     """(object, package, partial seed), in the order GENESIS.md creates them."""
     return [('policy', 'Policy', rec(owner=lab(opener), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
@@ -77,7 +83,7 @@ def seeds(opener):
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
             ('anthology', 'Anthology', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
-            ('cistern', 'Cistern', rec()),
+            ('cistern', 'Cistern', rec(level=nat(0))),  # then amended to cistern_law(opener)
             ('commons', 'Commons', rec(owner=lab(opener))),
             ('rooms', 'Scene', moss_gate(opener)),
             ('play', 'Table', rec())]  # the Automatafl opening is the package's default; seats join when players sit
@@ -107,6 +113,11 @@ def run(host, opener=OPENER):
     made = []
     for name, package, seed in seeds(opener):
         reply = create(host, opener, name, package, 'genesis-' + name, seed)
+        if name == 'cistern' and reply.get('status') == 'created':  # world-create takes no law; its creator amends it in
+            amended = host.send({'op': 'world-amend', 'principal': opener, 'identity': 'genesis-cistern-law', 'object': 'cistern',
+                                 'version': 0, 'law': cistern_law(opener)})
+            if amended.get('status') != 'admitted':
+                reply = {**reply, 'status': 'lawRefused', 'amend': amended}
         made.append({'object': name, 'module': package, 'status': reply.get('status'),
                      'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal'), 'reply': reply})
         if reply.get('status') != 'created':

@@ -78,7 +78,7 @@ def plant(state: State, input: Planting, context: Abi.Context) -> Activity<Reply
 # One cistern per garden: the second create finds garden/cistern occupied. Its name is what
 # the digger calls it (`cistern: a stone cistern for refused proposals`).
 def cistern(state: State, input: {name: String}, context: Abi.Context) -> Activity<Reply>:
-  match world.create({package: "Cistern", seed: Plans.nothing(), law: "", requireAbsent: chosen(context, "cistern")}):
+  match world.create({package: "Cistern", seed: Plans.nothing(), law: Cistern.lawText(context.principal), requireAbsent: chosen(context, "cistern")}):
     case created(c): told(Reply.dug({object: c.object}), Document.text("✾ THE NIGHT GARDEN\n\nThe cistern is dug at {c.object.object}. It keeps refusals.\n"), heldBy(context.principal, state))
     case refused(r): refused(Why.world({clause: r.clause}), heldBy(context.principal, state))
 # The form the garden offers for planting, as data: its card is the object a reply answers.

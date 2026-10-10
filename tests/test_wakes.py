@@ -284,6 +284,35 @@ class Wakes(Chain):
         ninth = self.turn(wake, "schedule", record(at=nat(0), every=nat(60), action=variant("notify")), principal=OWNER)
         self.assertEqual(get(ninth["result"]["payload"], "clause"), label("schedulesFull"))
 
+    def test_the_flood_a_wake_hears_the_cistern_pass_forty(self):
+        """SEEDING §4, the flood: the town pours, the level only rises (its law), and a wake
+        watching `level` passing 40 acts once."""
+        from deploy import genesis
+        from tests.test_objects import run_pure
+        law = run_pure("Cistern", "lawText", label("ember"))["value"]["value"]
+        self.assertEqual(law, genesis.cistern_law("ember"))   # genesis passes the package's own law
+        self.create("cistern", "Cistern", record(level=nat(0)))
+        amended = self.host.send(op="world-amend", principal="ember", identity="cistern-law", object="cistern", version=0, law=law)
+        self.assertEqual(amended["status"], "admitted", amended)
+        wake = self.wake()
+        self.avatar(OWNER)
+        w = self.turn(wake, "watch", record(event=variant("writes", object=label("cistern"), field=label("level"), above=nat(40)), action=variant("notify")), principal=OWNER)
+        self.assertEqual(self.label_of(w), "watching", w)
+        for n, amount in enumerate((20, 20, 1, 5)):
+            poured = self.turn("cistern", "pour", record(amount=nat(amount)), principal="did:plc:zero", identity="pour%d" % n)
+            self.assertEqual(poured["status"], "admitted", poured)
+            self.deliver_all()
+        self.assertEqual((poured["result"]["label"], get(poured["result"]["payload"], "level")), ("poured", nat(46)))
+        self.assertTrue(poured["offers"][0]["text"].startswith("Cistern, level 46. Pour: delvetalk cistern pour / amount: <1 to 20>.\n"), poured["offers"])
+        self.assertEqual(self.inbox(OWNER), [(OWNER, "cistern.level is 41")])
+        big = self.turn("cistern", "pour", record(amount=nat(21)), principal="did:plc:zero", identity="big")
+        self.assertEqual((big["result"]["label"], get(big["result"]["payload"], "clause")), ("refused", label("badAmount")))
+        version = self.host.send(op="world-view", principal="ember", object="cistern")["version"]
+        drained = self.host.send(op="world-propose", principal="ember", identity="drain", roots=[{"object": "cistern", "version": version}],
+                                 writes=[{"object": "cistern", "edits": [record(entries={"tag": "variant", "label": "keep", "payload": record()},
+                                                                                level={"tag": "variant", "label": "set", "payload": record(value=nat(0))})]}])
+        self.assertEqual((drained["status"], drained["receipt"]["outcome"].get("clause")), ("refused", "level"), drained)
+
     # --- Tide ------------------------------------------------------------------------
 
     def tide(self, gap=3):

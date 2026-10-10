@@ -78,6 +78,10 @@ class Genesis(unittest.TestCase):
             self.host.send({'op': 'world-deliver', 'principal': 'transport', 'limit': 64})
         self.assertEqual(ticks(), '2')
 
+    def test_the_cistern_carries_its_level_law(self):
+        law = self.host.send({'op': 'world-inspect', 'principal': genesis.OPENER, 'object': 'cistern', 'source': False})['law']
+        self.assertIn('monotone(level)', law)
+
     def test_six_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
         self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'rooms', 'tide', 'workshop'], pages)
