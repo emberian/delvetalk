@@ -207,9 +207,9 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
   match s.world.compiled[key]? with
   | some c => return c
   | none =>
-    -- An extended object's method is compiled from the highest layer that defines it, from
+    -- A method (of a layer stack too: the kernel resolves it with late binding) is compiled from
     -- its package's closure prepared once, and held decoded and checked.
-    match compileEntryIn s.world (delegate obj.inputs method) method >>= fun (ec, w) => do return (← compiledOf ec, w) with
+    match compileEntryIn s.world obj.inputs method >>= fun (ec, w) => do return (← compiledOf ec, w) with
     | .error e => throw (.request s!"method {method} does not compile: {e}")
     | .ok (c, w) =>
       -- A full cache is emptied and refilled, never left full (which would compile every turn).

@@ -414,13 +414,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    (Plan.obend; `reprogram` with a `mode: "extend"` field is honoured too) add the source as a module `Layer<n>`
    over the object's modules (`extendInputs`; `inputs.layers` counts them). Bend's `extension X(self, super)`
    composes records under `fix`; an object's package is a module of top-level methods, so the host realizes the
-   extension at module level: the layer sees the code below as `Super` (the host adds
-   `import ./<module below>.obend as Super` after the `edition` line unless present, so the layer's diagnostics
-   are one line later than its author's), and `delegate` compiles each method from the highest layer that
-   defines it, everything else from below (no late binding: a method below that calls another sees its own
-   module's). A layer that declares `type State = Super.State` gets its methods in the method table (the
-   compiler lists only `state: State` methods); the object's table is the layer's rows plus the rows below it
-   does not override. The new pin is the CID of `["extend", old pin, source CID]`; the state type must be the
+   extension at module level: it writes `layer over ./<module below>.obend` as the layer's first line (unless the
+   author did; diagnostics are one line later than the author's), which imports the code below as `Super` and
+   makes the modules a kernel layer stack (kernel5): every method resolves with late binding (Bell's own `rain`
+   reply calls `render`, and a Louder layer's `render` is the one it reaches), and the artifact's method table lists
+   the whole stack, top first (host7; `delegate` is gone). A layer built before held `import ./<below>.obend as
+   Super` instead; replay re-derives the new form from the journaled source, and a snapshot holding the old form
+   gets the line on load (`stackForm`). State types compare canonically (`canonicalTy`), since the stack's packet
+   numbers its variables anew. Tests: `test_extend` (LateBinding: Louder through the `extend` Plan, and replay;
+   an older-form snapshot). The new pin is the CID of `["extend", old pin, source CID]`; the state type must be the
    same or a migration named, as for replace; the target's law judges kind 1 as for any reprogram; the
    recorded reprogram carries `mode: "extend"` and `Proposal.layered` replays it. Snapshots keep whole any
    source no entry carries by CID (`knownByCid`; reprogrammed and extended objects' modules), which also fixed
@@ -646,10 +648,10 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
   present but malformed value by name (turn `limits` and `limits.ticks`, `world-deliver.limit` 1..16,
   `world-history` `after`/`limit` 1..100, `world-offers.after`, `world-objects` `prefix`/`after`,
   `world-reprogram.migration`, the clock principal of `world-advance`).
-- **relevantBounds** (Ops): closes the variables a type reaches to a fixpoint (at most `bounds.length + 1`
-  rounds; "type too deep to compare" if not reached; it used to stop after eight rounds and answer "same"). a package's `bounds` table includes entries for its own method row, so
-  comparing whole tables says two identical state types differ as soon as any def is added. Compare
-  `ty` plus only the bounds that `ty` transitively uses (`relevantBounds`). Reprogram depends on it.
+- **canonicalTy** (Ops): two state types are the same when their canonical forms agree: variables renamed in order of
+  first use, a bound one's body written where first met (at most 4096 steps, else "type too deep to compare"). A
+  package's `bounds` table has entries for its own method rows, and a layer stack's packet numbers variables anew, so
+  neither whole tables nor raw `Ty` equality decide it. Reprogram and extend depend on it.
 - **conformsUnder bounds**: every conformance and `isDataUnder` call needs the packet's bounds
   (`Object.bounds`, `Compiled.bounds`); the bare `conforms` is only for closed non-recursive types.
 - **Plan.obend wire shapes** (`world/lib/Plan.obend` is the contract): `write.edits` is a RECORD with one
