@@ -317,6 +317,29 @@ class HttpFront(unittest.TestCase):
         got = self.host.send({'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'})
         self.assertEqual(got.get('status'), 'checked', got)
 
+    def test_offers_wait_re_asks_until_an_offer_appears_or_time_runs_out(self):
+        tok = self.login()
+        asks, naps, real = [], [], self.host.send
+        offer = {'height': 9, 'identity': {'principal': DID, 'intent': 'i'}, 'text': 'hello'}
+        def send(req, *a, **k):
+            if req['op'] != 'world-offers':
+                return real(req, *a, **k)
+            asks.append(req)
+            return {'status': 'offers', 'offers': [offer] if len(asks) == 3 else [], 'more': False}
+        self.host.send, self.front.sleep = send, naps.append
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=30&compact=1', token=tok)
+        self.assertEqual((s, r, len(asks), naps), (200, {'status': 'offers', 'offers': ['hello'], 'height': 9}, 3, [1, 1]))
+        asks.clear(), naps.clear()
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)  # bounded; the host never answers
+        self.assertEqual((s, r['offers'], len(asks)), (200, [offer], 3))
+        asks.clear(), naps.clear()
+        self.host.send = lambda req, *a, **k: (asks.append(req), {'status': 'offers', 'offers': []})[1] if req['op'] == 'world-offers' else real(req, *a, **k)
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)
+        self.assertEqual((len(asks), len(naps)), (31, 30))
+        asks.clear()
+        self.call('GET', '/AGENTS.md/offers', token=tok)
+        self.assertEqual(len(asks), 1)
+
     def test_list_card_source_offers_and_ids_with_slashes(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
