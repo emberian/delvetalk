@@ -111,7 +111,7 @@ the library).
   the first object listed under each door (`objects {prefix}`, then inspect: a garden's
   bell gives "rain"; only methods taking fields count, as offered forms do: the method table
   also lists helpers like here, guard, reading; a bell's `rain` is always known, so a hub
-  rain still reaches its second-miss card),
+  rain still reaches its second-miss card; only the first 2,000 characters are scanned),
   and a handed-on reply does not count its caller's family: the
   caller's own actions and fields, and the door it lives under with that door's. A card cannot
   `view directory` itself: a view answers in the card's own Response state type, which is
