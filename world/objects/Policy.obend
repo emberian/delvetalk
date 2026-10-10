@@ -144,8 +144,8 @@ def taughtReply(taught: Taught) -> Card.Reply:
     case refused(r): Card.Reply.refused(r)
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match Spell.parse(input.text):
-    case spell(s): if s.action == "macro" && Card.names(s.card, context) then macroTaught(state, s.fields, context) else heard(state, Card.route(input.text, context, forms()), context)
-    case notASpell(_): heard(state, Card.route(input.text, context, forms()), context)
+    case spell(s): if s.action == "macro" && Card.names(s.card, context) then macroTaught(state, s.fields, context) else heard(state, Card.routeHeard(input, context, forms()), context)
+    case notASpell(_): heard(state, Card.routeHeard(input, context, forms()), context)
 # Teach a macro: `delvetalk policy macro / name: moth-bell / pattern: moth for {who} /
 # expansion: garden plant / colour: violet / seed: a bell for {who}`. Every field after the
 # expansion line joins it as ` / field: value`. A macro of the same name is replaced; the

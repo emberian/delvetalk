@@ -135,6 +135,6 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answerLensed(Card.route(input.text, context, forms()), context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the room's owner changes it; that is {Card.name(state.owner, context)}", render(state, context))
+  Card.answerLensed(Card.routeHeard(input, context, forms()), context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the room's owner changes it; that is {Card.name(state.owner, context)}", render(state, context))
 def lenses() -> Lists.List<Form.Lens<Edits>>:
   Lists.List.cons({head: Form.Lens.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})

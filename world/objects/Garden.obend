@@ -298,7 +298,14 @@ def bared(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.P
 # policy, prose naming none of the garden's forms gets no card. The garden reads its policy
 # first (Card's interpretation default: a miss is asked once more, a second miss escalates).
 def understand(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
-  if Plans.isNobody(state.policy) then silent(found, context) else consulted(state, input, context, found)
+  if Plans.isNobody(state.policy) then unplaced(input, context, found) else consulted(state, input, context, found)
+# With no policy, prose the garden cannot place goes to the directory's reading (Card's
+# default), and the garden offers nothing.
+def unplaced(input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
+  if context.caller != "" then silent(found, context) else forwarding(input, context, found)
+def forwarding(input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
+  match perform(Card.forwarding(input.text, input.post, context)):
+    case _: silent(found, context)
 def consulted(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match perform(Plan.view({object: state.policy})):
     case viewed(v): macroOr(state, input, context, found, v.state, Card.expanded(input.text, v.state))

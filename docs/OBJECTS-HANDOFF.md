@@ -91,6 +91,14 @@ the library).
   that lets the rest match; a hit is dispatched as a typed spell (Garden: no confirm) with no
   interpret. Garden's `?` with a policy appends `Card.macroUsage`; the policy's card lists
   them. A literal brace in Bend source is `{{`/`}}` (interpolation).
+* **Handed to the directory** (objects5). Quiet prose (Routed.quiet now carries {text,
+  post}; objects route with `Card.routeHeard(input, …)`) is sent by Card's default
+  (`Card.forwarded`; Garden without a policy too) to `directory` (`Card.directory`, the
+  genesis id) as `receive {text, post}` under the speaker; the card still offers nothing.
+  A turn some object started forwards nothing. The directory reads a handed-on reply with
+  no menu, its field lines as usual, and with a policy the model; the owner's handed-on
+  replies are read too. A send, not a call: a call's result must fit the caller's Response
+  R, which the directory's Heard does not.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

@@ -198,7 +198,7 @@ def doneReply(done: Done) -> Card.Reply:
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match Spween.block(input.text):
     case some(b): authored(state, Spween.parse(b.value), context)
-    case none(_): heard(state, Card.route(input.text, context, forms()), context)
+    case none(_): heard(state, Card.routeHeard(input, context, forms()), context)
 def authored(state: State, parsed: Spween.Parsed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match parsed:
     case refused(r): Card.answer(Card.Routed.refused({clause: "spween", reading: r.reason}), context, forms(), render(state, context))

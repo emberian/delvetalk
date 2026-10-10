@@ -159,7 +159,7 @@ def replied(action: String, done: Done) -> Card.Reply:
     case refused(r): Card.Reply.refused(r)
     case moved(_): Card.Reply.done({action: action})
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "enter" then entered(state, Card.text(a.fields, "place"), context, doneReply("enter")) else if a.action == "move" then walked(state, Card.text(a.fields, "to"), context, doneReply("move")) else departed(state, context, doneReply("leave"))

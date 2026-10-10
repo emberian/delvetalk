@@ -80,7 +80,7 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "seat", blurb: "Your seat at a commit-reveal table."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer(Card.route(input.text, context, forms()), context, forms(), render(state, context))
+  Card.answer(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let where = if state.opened then "opened {natText(state.source)} to {natText(state.target)}" else if state.digest != "" then "sealed" else "choosing"

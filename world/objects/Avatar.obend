@@ -255,7 +255,7 @@ def movedReply(moved: Moved) -> Card.Reply:
     case moved(_): Card.Reply.done({action: "move"})
     case refused(r): Card.Reply.refused({clause: "notMoved", reading: r.reason})
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "move" then walk(state, Card.text(a.fields, "exit"), context, movedReply) else acted(state, a.action, a.fields, context)

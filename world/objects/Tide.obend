@@ -133,7 +133,7 @@ def doneReply(done: Done) -> Card.Reply:
     case subscribed(_): Card.Reply.done({action: "subscribe"})
     case ticked(_): Card.Reply.done({action: "tick"})
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "tick" then ticked(state, context, render(state, context), doneReply) else subscribed(state, Card.natural(a.fields, "every"), Card.text(a.fields, "note"), context, render(state, context), doneReply)

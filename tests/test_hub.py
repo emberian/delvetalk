@@ -207,6 +207,41 @@ class BellsAreQuiet(test_chain.Chain):
         self.assertEqual(items(get(self.state("bell"), "rains")), [])
 
 
+class HandedToTheDirectory(test_chain.Chain):
+    """Rehearsal run 6: anthology lines posted under glm's planting reached the bell, which has
+    no policy and no anthology form, and were lost. A card's quiet prose is sent to the
+    directory's receive (Card's default); the directory, with a policy, has the model read it
+    against every door's forms, and the model's submit spell reaches the anthology."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    policy = test_policy.PolicyObject.policy
+
+    def test_two_anthology_lines_under_glms_planting_are_submitted(self):
+        self.policy()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(r["status"], "created", r)
+        self.turn("directory", "add", record(door=door("ANTHOLOGY", "Submit a line.", "anthology")), principal="ember")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
+                           entry="initial", seed=record(owner=label("ember")))
+        self.assertEqual(r["status"], "created", r)
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        lines = {KIMI: "the guestbook line goes next to the ring and the hat", GLM: "a coup and an amendment both change the rules"}
+        for rkey, who in (("3mxghjyx4pk2f", KIMI), ("3mxghjmm6zc2f", GLM)):
+            r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
+            self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), r)
+            self.deliver_all()
+            [pending] = self.host.send(op="world-interpretations")["pending"]
+            self.assertIn("submit", [o["action"] for o in pending["offers"]])
+            settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "model": "m",
+                                     "raw": "delvetalk anthology submit\nline: " + lines[who]})
+            [resumed] = settled["resumed"]
+            self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+        submitted = [(get(p, "author")["value"], get(p, "line")["value"]) for p in items(get(self.state("anthology"), "proposals"))]
+        self.assertEqual(submitted, [(KIMI, lines[KIMI]), (GLM, lines[GLM])])
+
+
 class AnthologyReachable(test_chain.Chain):
     """Run 5, finding 4: the anthology has a door, forms (submit {line}; admit {number}, the
     owner's) and receive, so a submit line or the model's submit spell reaches it."""

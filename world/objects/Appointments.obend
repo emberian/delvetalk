@@ -55,7 +55,7 @@ def bookedReply(done: Done) -> Card.Reply:
     case booked(_): Card.Reply.done({action: "book"})
     case refused(r): Card.Reply.refused(r)
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): booking(state, Card.text(a.fields, "topic"), Card.text(a.fields, "to"), Card.natural(a.fields, "after"), context, bookedReply)

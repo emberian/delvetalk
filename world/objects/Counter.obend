@@ -32,7 +32,7 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "counter", blurb: "Bump it; everyone shares the count."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): bumped(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: "bump"}))

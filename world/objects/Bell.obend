@@ -91,7 +91,7 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "bell", blurb: "A bell from the Night Garden: rain on it, ring it."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "rain" then rained(state, Card.text(a.fields, "text"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: "rain"})) else rang(state, context, fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "ring"}))

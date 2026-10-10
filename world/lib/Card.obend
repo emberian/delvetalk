@@ -42,7 +42,7 @@ sum Routed:
   refused: Refusal
   set: {field: String, value: String}
   help: {}
-  quiet: {}
+  quiet: {text: String, post: String}
 # What receive answers when no method was acted on.
 sum Reply:
   done: {action: String}
@@ -53,13 +53,16 @@ sum Reply:
 def named(form: Form.Form, card: String) -> Form.Form:
   {card: card, action: form.action, fields: form.fields}
 # Prose that names none of the card's forms, fields or actions is not addressed to it:
-# `quiet`, answered with no offer at all (the bridge drafts nothing). An empty reply
-# still asks for the card.
+# `quiet`, answered with no offer at all (the bridge drafts nothing) and handed to the
+# directory's reading (`forwarded`). An empty reply still asks for the card. routeHeard
+# keeps the post the reply is in, for that hand-off.
 def route(text: String, context: Abi.Context, forms: Forms) -> Routed:
-  heardAs(withBare(Spell.parse(text), text, context, forms), text, context, forms)
-def heardAs(parsed: Spell.Parsed, text: String, context: Abi.Context, forms: Forms) -> Routed:
+  routeHeard({text: text, post: ""}, context, forms)
+def routeHeard(input: Heard, context: Abi.Context, forms: Forms) -> Routed:
+  heardAs(withBare(Spell.parse(input.text), input.text, context, forms), input, context, forms)
+def heardAs(parsed: Spell.Parsed, input: Heard, context: Abi.Context, forms: Forms) -> Routed:
   match parsed:
-    case notASpell(_): if textSpan(text, " \n\t\r") == textLength(text) then Routed.usage({}) else Routed.quiet({})
+    case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then Routed.usage({}) else Routed.quiet({text: input.text, post: input.post})
     case spell(_): routeParsed(parsed, context, forms)
 # A reply with no delvetalk line whose first `name: value` line names an action or a
 # field of one of this card's forms is that form's spell (a bell reads a fenced `rain:
@@ -166,8 +169,21 @@ def answeredOrHelp(routed: Routed, context: Abi.Context, forms: Forms, card: Doc
 # type: `result` is what a non-acting reply finishes with.
 def answerAs<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match routed:
-    case quiet(_): result
+    case quiet(q): forwarded(q.text, q.post, context, result)
     case _: offering(routed, context, forms, card, result)
+# The directory reads prose a card without a policy could not place: the card sends it
+# the reply (`receive {text, post}`, under the speaker) and offers nothing itself, so an
+# anthology line posted under a bell still reaches the anthology. A turn some object
+# started (context.caller) forwards nothing: the directory itself passes replies on.
+def directory(context: Abi.Context) -> Plans.Reference:
+  {world: context.world, object: "directory"}
+def forwarding<E>(text: String, post: String, context: Abi.Context) -> Plans.Plan<E>:
+  Plans.Plan.send({object: directory(context), method: "receive", argument: {text: text, post: post}})
+def forwarded<E, S, R, T>(text: String, post: String, context: Abi.Context, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  if context.caller != "" || context.object == directory(context).object then result else sending(text, post, context, result)
+def sending<E, S, R, T>(text: String, post: String, context: Abi.Context, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
+  match perform(forwarding(text, post, context)):
+    case _: result
 def offering<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match perform(Plans.Plan.offer({to: "", document: answeredOrHelp(routed, context, forms, card)})):
     case _: result

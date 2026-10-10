@@ -107,7 +107,7 @@ def doneReply(done: Done) -> Card.Reply:
     case _: Card.Reply.done({action: "countersign"})
 # A countersign by post cites that post: the reply is the signature.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, input.post, Card.route(input.text, context, forms()), context)
+  heard(state, input.post, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, post: String, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "withdraw" then withdrew(state, context, doneReply) else countersigned(state, post, context, doneReply)

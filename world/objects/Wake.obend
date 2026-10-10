@@ -165,7 +165,7 @@ def doneReply(done: Done) -> Card.Reply:
     case _: Card.Reply.done({action: "watch"})
 # From a post: watch a mention or a keyword (the action is a note to you), or unwatch.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "unwatch" then unwatched(state, Card.natural(a.fields, "id"), context, doneReply) else watched(state, spelled(a.action, a.fields), Action.notify({}), context, doneReply)

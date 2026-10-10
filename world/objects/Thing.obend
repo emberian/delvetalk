@@ -207,7 +207,7 @@ def door() -> Card.Door:
   {word: "thing", blurb: "Pick it up, put it down, offer it to someone who accepts."}
 # A spell's `to` names the recipient's avatar, which is the recipient's DID.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  heard(state, Card.route(input.text, context, forms()), context)
+  heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match routed:
     case act(a): if a.action == "acquire" then acquire(state, context) else if a.action == "withdraw" then withdraw(state, context) else if a.action == "offer" then offered(state, {world: context.world, object: Card.text(a.fields, "to")}, Card.natural(a.fields, "until"), context) else give(state, {to: {world: context.world, object: Card.text(a.fields, "to")}}, context)

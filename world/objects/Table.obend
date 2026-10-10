@@ -64,7 +64,7 @@ def forms() -> Card.Forms:
 def door() -> Card.Door:
   {word: "play", blurb: "The original two-player, 11x11 Automatafl: seal, open, resolve."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer(Card.route(input.text, context, forms()), context, forms(), render(state, context))
+  Card.answer(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
 def glyph(cell: Nat) -> String:
   if cell == 1n then "+" else if cell == 2n then "-" else if cell == 3n then "@" else "."
 def row(board: Nat, at: Nat, left: Nat) -> String:
