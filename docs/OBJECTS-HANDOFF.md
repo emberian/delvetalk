@@ -107,6 +107,10 @@ the library).
 * **Link doors** (objects5): a Directory door whose `to` is nobody (genesis's STUDIO) answers
   its word with `<label>\n<description>` (the URL is in the description) and is skipped
   when field lines and the model look for forms.
+* **Env fills** (objects5). `Env.receive {text, post}` from anyone but the owner, naming
+  no Env form, is taken in as `mention` (`Event` gained `handle`, the author's as the host
+  knew it); the law admits that receive (kind 0, method receive, owner/handle/seen/
+  subscribers unchanged). Arrival seeds `handle`, and the card reads "ENV of <handle>".
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for
