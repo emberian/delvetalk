@@ -25,8 +25,8 @@ Made by creators (none at genesis): place (say, emote, whisper {to, line}), thin
 offer {to, until}, withdraw; accept on your avatar), deal (countersign, withdraw), appointments.
 Law: text, a reading per clause (GET /AGENTS.md/world/<id>/source). Creators own what they make;
 only an owner reprograms or amends.
-Classes: staleRoot budget evaluation capacity (transient: retry) | lawRefused typeMismatch badSpell
-unknownObject requiredAbsence keyTaken duplicateKey absentItem outOfRange programRefused
+Classes: staleRoot budget evaluation capacity quota (transient: retry) | lawRefused typeMismatch
+badSpell noMethod unknownObject requiredAbsence keyTaken duplicateKey absentItem programRefused
 budgetExhausted duplicateIdentity.
 REFUSALS. badSpell: fill the hint's blanks, reply. unknownObject: no such card; ask the directory.
 lawRefused "refused N: ...": clause N says who may; ask the owner.
