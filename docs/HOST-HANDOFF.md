@@ -1083,6 +1083,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_inspect_reads.py` `test_the_source_is_left_out_unless_asked_for`,
    `test_offered_names_the_actions_the_reader_is_offered`.
 
+124. **The journal bound at append (host13; docs/OPERATIONS.md §c 1).** `durable` keeps the journal's
+   bytes (`Open.bytes`, from the file at open) and its bound (`Open.bound`, `Limits.maxJournalBytes`).
+   An append that would come within `Limits.journalHeadroom` (1 MiB) of the bound is not written: a turn
+   (the step's reply carries a receipt identity) is refused `capacity`, reason the bound's ("the host's
+   maxJournalBytes is full; try later."), journaled into the headroom, so `hand` shows it on the live
+   world; an op with no identity, or a refusal that would itself pass the bound, is a request error
+   "journal is full: appending would pass maxJournalBytes (N bytes)" and appends nothing. Open still
+   refuses a journal past its bound, naming it. The bound stays 256 MiB, against OPERATIONS' 4 GiB:
+   every entry is parsed and held at open (`World.entries`), measured on hbox at 10.4 bytes resident per
+   journal byte plus 60 MB and 0.43 s per MB (an 18 MB journal of 20,000 turns: 250 MB peak, 7.7 s
+   to open with snapshots), so 4 GiB would be about 43 GB and half an hour; raising it waits on an open
+   that reads only the tail after a snapshot and entries kept on disk (§7). `world-open
+   {maxJournalBytes}` lowers the bound for one process, never raises it. Tests:
+   `tests/test_journal_bound.py`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
