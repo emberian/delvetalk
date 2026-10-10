@@ -23,7 +23,7 @@ from pathlib import Path
 from transport.bridge import unposted, write_atomic
 from transport.delve import Failure, canonical, http_transport
 from transport.observe import MAX_TEXT, TAG, Observer, classify
-from transport.post import draft_object, ledger, quota_limit, record_posted, slot_record, take_slot, wiki_target
+from transport.post import draft_object, ledger, record_posted, slot_record, wiki_target
 
 STREAM = 'delvetalk'
 BATCH = 100
@@ -186,13 +186,13 @@ class ZulipObserver(Observer):
 
 
 def deliver(state, host, client, stream, topic, text, obj=None, slot=None, now=None, intent=None):
-    """Post `text` to stream>topic once per intent within the host's hourly budget, then tell the host the post exists for
+    """Post `text` to stream>topic once per intent, then tell the host the post exists for
     `obj` (world-posted), so replies in the topic route to it. The stream's newest id is persisted before the send; a retry
-    adopts our message with this text after it rather than sending again. -> {uri, cid, recorded}. Raises Failure."""
+    adopts our message with this text after it rather than sending again. The host's `postQuota` is delve.town etiquette and does
+    not apply to the owner's own Zulip: nothing is held here for rate. -> {uri, cid, recorded}. Raises Failure."""
     path, got = ledger(state, intent or f'zulip:{stream}/{topic}/' + hashlib.sha256(text.encode()).hexdigest()[:16])
     if got is None:
         got = {'after': client.newest(stream)}
-        take_slot(Path(state), time.time() if now is None else now, quota_limit(host)[0])
         write_atomic(path, got)
     if not got.get('result'):
         mid = client.sent_after(stream, topic, text, got['after']) or client.send(stream, topic, text)['id']
@@ -202,7 +202,7 @@ def deliver(state, host, client, stream, topic, text, obj=None, slot=None, now=N
 
 
 def post_drafts(state, host, client, stream, now=None, topic=None):
-    """Post every unposted draft with text, oldest first, until the hourly quota refuses; record each with the host.
+    """Post every unposted draft with text, oldest first, with no hourly cap; record each with the host.
     A reply draft goes to its post's topic, addressed to its author; a page publication to a topic named for the page
     (a section edit waits until its page is recorded and the bridge has given it the page post to reply to).
     With `topic` the playtest lives in that one topic: a page publication goes there too, and nothing is posted elsewhere."""
@@ -227,8 +227,6 @@ def post_drafts(state, host, client, stream, now=None, topic=None):
                           intent=f'zulip-{path.stem}')
         except Failure as f:
             held.append({'file': path.name, 'reason': f.code})
-            if f.code == 'rate_limited':
-                break
             continue
         recorded = got.pop('recorded')
         write_atomic(path, dict(d, posted=True, sent=got, **({'recorded': recorded} if recorded else {})))

@@ -242,16 +242,12 @@ class Bridging(ZulipCase):
         self.assertEqual(len(got['posted']), 1, got)
         self.assertIn('directory says', self.zulip.mine()[0]['content'])
 
-    def test_the_seventeenth_post_in_an_hour_is_refused_then_goes_when_the_hour_turns(self):
-        quota = self.host.send({'op': 'world-status'})['postQuota']
-        self.assertEqual(quota, 16)
+    def test_a_zulip_run_has_no_hourly_cap_so_the_seventeenth_draft_posts(self):
+        self.assertEqual(self.host.send({'op': 'world-status'})['postQuota'], 16)  # the host has one; Zulip ignores it
         for n in range(17):
             self.zulip.say(f'topic {n}', f'P{n:02d}', SPELL)
         got = self.bridge()
-        self.assertEqual((len(got['turns']), len(got['posted'])), (17, 16), got)
-        self.assertEqual([h['reason'] for h in got['held']], ['rate_limited'])
-        later = zulip.post_drafts(self.state, self.host, self.client(), 'delvetalk', now=time.time() + 3601)
-        self.assertEqual((len(later['posted']), 'held' in later), (1, False), later)
+        self.assertEqual((len(got['turns']), len(got['posted']), 'held' in got), (17, 17, False), got)
         self.assertEqual(len(self.zulip.mine()), 17)
 
     def test_a_send_whose_reply_was_lost_is_found_in_its_topic_not_sent_again(self):
