@@ -1062,13 +1062,126 @@ def moduleNames (m : ObjectiveBendSurface.Module) (names : Std.TreeSet String) :
   let names := m.imports.foldl (fun acc i => addNames (addNames acc i.path) i.importAlias) names
   m.decls.foldl (fun acc d => (declStrings d).foldl addNames acc) names
 
+/-! ## Edits and `keep()` derived from the State (KERNEL-HANDOFF §16 item 8a)
+
+A module that declares `State` (a record, or a type naming one) and imports Plan.obend (alias
+`P`), and declares neither `Edits` nor `keep`, gets both, at the end of the module, as the source
+
+    record Edits:
+      f: P.Entries<X, X>     -- f's type is List.List<X> or Relation.Relation<X>
+      g: P.Edit<Nat, Nat>    -- g is a Nat
+      h: P.Edit<T, {}>       -- anything else, T its type
+    def keep() -> Edits:
+      {f: P.Entries::<X, X>.keep({}), g: P.Edit::<Nat, Nat>.keep({}), h: P.Edit::<T, {}>.keep({})}
+
+parsed by the ordinary parser and specialized with the module, so a module that spells this
+pair by hand compiles to the same packet. Types are resolved here (through aliases and other
+modules), and the types the module did not write itself are spelled through its own imports. -/
+
+/-- The file an import path names (`./lib/List.obend` names `List.obend`). -/
+def fileOf (path : String) : String := ((path.splitOn "/").getLast?).getD path
+
+/-- Whether module `origin` is the library `file`: some import edge of the package names it by that file. -/
+def isLibrary (origin : Nat) (file : String) : M Bool := do
+  return (← get).sources.any fun s => s.module.imports.any fun e => e.target == origin && fileOf e.path == file
+
+/-- A declaration of module `home` as module `origin` writes its name. -/
+def spellName (origin home : Nat) (name : String) : M (Option String) := do
+  if origin == home then return some name
+  let some source := (← get).sources[origin]? | return none
+  return (source.module.imports.find? (·.target == home)).map (·.importAlias ++ "." ++ name)
+
+/-- A type as module `origin` writes it; `none` when a declaration it names is in a module
+`origin` does not import. -/
+partial def spell (origin : Nat) (g : GType) : M (Option String) := do
+  let all := fun (gs : List GType) => do return (← gs.mapM (spell origin)).mapM id
+  match g with
+  | .atom n => return some n
+  | .named m n _ =>
+    let s ← get
+    if m == s.generatedModule then
+      let some index := s.instanceByName[n]? | return none
+      let some i := s.instances[index]? | return none
+      let some base ← spellName origin i.origin i.declarationName | return none
+      let some args ← all i.arguments | return none
+      return some (base ++ "<" ++ ", ".intercalate args ++ ">")
+    let some home := s.sources.findIdx? (·.module.name == m) | return none
+    spellName origin home n
+  | .applied n args => return (← all args).map fun a => n ++ "<" ++ ", ".intercalate a ++ ">"
+  | .arrow a b =>
+    let (some a, some b) := (← spell origin a, ← spell origin b) | return none
+    return some ("(" ++ a ++ ") -> " ++ b)
+  | .row fields =>
+    let some types ← all (fields.map (·.2)) | return none
+    return some ("{" ++ ", ".intercalate ((fields.zip types).map fun ((n, _), t) => n ++ ": " ++ t) ++ "}")
+  | .overlay a b =>
+    let (some a, some b) := (← spell origin a, ← spell origin b) | return none
+    return some (a ++ " with " ++ b)
+
+/-- The item type of a `List.List<X>` or `Relation.Relation<X>` (the library sums, by module and name). -/
+def entriesItem (g : GType) : M (Option GType) := do
+  let .named m n _ := g | return none
+  let s ← get
+  if m != s.generatedModule then return none
+  let some i := (s.instanceByName[n]?).bind (s.instances[·]?) | return none
+  let [x] := i.arguments | return none
+  if (i.declarationName == "List" && (← isLibrary i.origin "List.obend")) ||
+     (i.declarationName == "Relation" && (← isLibrary i.origin "Relation.obend")) then return some x
+  return none
+
+def derivedRefusal (module message : String) : String :=
+  "refused (derived-edits): " ++ message ++ " (module " ++ module ++ ")"
+
+/-- The State record's fields and the module they are written in. -/
+def stateFields (index : Nat) (ast : ObjectiveBendSurface.Module) :
+    M (Option (List ObjectiveBendSurface.Field × Nat × Span)) := do
+  for d in ast.decls do
+    match d with
+    | .record "State" _ fields span => return some (fields, index, span)
+    | .typeAlias "State" _ span =>
+      let .named m n _ ← typeOf maxNesting index [] "State" | return none
+      let some home := (← get).sources.findIdx? (·.module.name == m) | return none
+      let some declaration := (← get).byName[(m, n)]? | return none
+      let .record _ _ fields _ := declaration.ast | return none
+      return some (fields, home, span)
+    | _ => pure ()
+  return none
+
+/-- The derived `Edits` and `keep()` of module `index`, when it gets them. -/
+def deriveEdits (index : Nat) : M (Option (List Decl)) := do
+  let some source := (← get).sources[index]? | return none
+  let ast := source.ast
+  let some plans := (ast.imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias) | return none
+  if ast.decls.any (fun d => d.name == "Edits" || d.name == "keep") then return none
+  let some (fields, home, span) ← tryCatch (stateFields index ast) (fun _ => pure none) | return none
+  let module := source.module.name
+  let mut lines : Array String := #[]
+  let mut keeps : Array String := #[]
+  for f in fields do
+    let some g ← tryCatch (some <$> typeOf maxNesting home [] f.type) (fun _ => pure none) | return none
+    let (sum, args) ← if g == .atom "Nat" then pure ("Edit", "Nat, Nat") else
+      match ← entriesItem g with
+      | some x =>
+        let some x ← spell index x
+          | throw (derivedRefusal module ("State." ++ f.name ++ " holds items of a type from a module " ++ module ++ " does not import; import it"))
+        pure ("Entries", x ++ ", " ++ x)
+      | none =>
+        let some t ← (if home == index then pure (some f.type) else spell index g)
+          | throw (derivedRefusal module ("State." ++ f.name ++ " has a type from a module " ++ module ++ " does not import; import it"))
+        pure ("Edit", t ++ ", {}")
+    let name := if ObjectiveBendParse.isIdent f.name.toList then f.name else (toJson f.name).compress
+    lines := lines.push ("  " ++ name ++ ": " ++ plans ++ "." ++ sum ++ "<" ++ args ++ ">\n")
+    keeps := keeps.push (name ++ ": " ++ plans ++ "." ++ sum ++ "::<" ++ args ++ ">.keep({})")
+  let text := "record Edits:\n" ++ String.join lines.toList ++ "def keep() -> Edits:\n  {" ++
+    ", ".intercalate keeps.toList ++ "}\n"
+  match ObjectiveBendParse.parseObjective text with
+  | .ok parsed => return some (parsed.decls.map (·.mapSpans fun _ => span))
+  | .error d => throw (derivedRefusal module ("State does not derive its Edits: " ++ d.message))
+
 /-! ## The pass -/
 
-def run (sources : Array Source) : Except String Output := do
-  if !sources.any (fun s => s.ast.decls.any declGenerics) then
-    let modules ← sources.toList.mapM fun source =>
-      ObjectiveBendElaborate.ofSurface source.module.name source.module.aliases source.ast
-    return ⟨modules, Json.arr #[]⟩
+/-- The pass's state over `sources`, before any module is rewritten. -/
+def initialState (sources : Array Source) : Except String State := do
   let mut declarations : Array Declaration := #[]
   let mut names : Std.TreeSet String := {}
   for source in sources do
@@ -1088,22 +1201,58 @@ def run (sources : Array Source) : Except String Output := do
     match sources[d.origin]? with
     | some source => if map.contains (source.module.name, d.name) then map else map.insert (source.module.name, d.name) d
     | none => map) {}
-  let initial : State := { sources, sealedIdentities, generatedModule := "", generatedAlias := "", aliases := [], names, byName }
+  return { sources, sealedIdentities, generatedModule := "", generatedAlias := "", aliases := [], names, byName }
+
+/-- The generated module's name and alias and every module's alias, drawn first. -/
+def preamble : M Unit := do
+  let moduleName ← fresh
+  let moduleAlias ← fresh
+  let mut aliases := []
+  for source in (← get).sources do aliases := aliases ++ [(← fresh, source.module.name)]
+  modify fun s => { s with generatedModule := moduleName, generatedAlias := moduleAlias, aliases }
+
+/-- Each module's derived `Edits` and `keep()` (empty where it gets none). Types are resolved in
+a pass of their own whose state is dropped. -/
+def derivedEdits (sources : Array Source) : Except String (Array (List Decl)) := do
+  let probe : M (Array (List Decl)) := do
+    preamble
+    let mut out : Array (List Decl) := #[]
+    for index in [:sources.size] do
+      out := out.push ((← deriveEdits index).getD [])
+    return out
+  return (← probe.run (← initialState sources)).1
+
+def run (sources : Array Source) : Except String Output := do
+  if !sources.any (fun s => s.ast.decls.any declGenerics) then
+    let modules ← sources.toList.mapM fun source =>
+      ObjectiveBendElaborate.ofSurface source.module.name source.module.aliases source.ast
+    return ⟨modules, Json.arr #[]⟩
+  -- Derived declarations end their module and are specialized after every module's own, so
+  -- they number no instance before one the package spells (no other entry's packet moves).
+  let derived ← derivedEdits sources
+  let sources := sources.mapIdx fun i source =>
+    { source with ast := { source.ast with decls := source.ast.decls ++ derived[i]! } }
+  let initial ← initialState sources
   let action : M Output := do
-    let moduleName ← fresh
-    let moduleAlias ← fresh
-    let mut aliases := []
-    for source in sources do aliases := aliases ++ [(← fresh, source.module.name)]
-    modify fun s => { s with generatedModule := moduleName, generatedAlias := moduleAlias, aliases }
+    preamble
+    let s ← get
+    let (moduleName, moduleAlias, aliases) := (s.generatedModule, s.generatedAlias, s.aliases)
     let mut rewritten : List (String × ObjectiveBendSurface.Module) := []
     for index in [:sources.size] do
       let source := sources[index]!
       let site : Site := { origin := index, target := source.module.name, bindings := [], lifted := false }
       let mut ordinary : Array Decl := #[]
-      for d in source.ast.decls do
+      for d in source.ast.decls.take (source.ast.decls.length - derived[index]!.length) do
         if (d matches .typeAlias ..) || !d.typeParameters.isEmpty then continue
         ordinary := ordinary.push (← rewriteDecl maxNesting site [] d)
       rewritten := rewritten ++ [(source.module.name, { source.ast with decls := ordinary.toList })]
+    for index in [:sources.size] do
+      if derived[index]!.isEmpty then continue
+      let source := sources[index]!
+      let site : Site := { origin := index, target := source.module.name, bindings := [], lifted := false }
+      let own ← derived[index]!.mapM (rewriteDecl maxNesting site [])
+      rewritten := rewritten.set index (source.module.name, { source.ast with
+        decls := (rewritten[index]!.2.decls) ++ own })
     let state ← get
     let generated : ObjectiveBendSurface.Module := { imports := [], decls := state.instances.toList.filterMap (·.ast) }
     rewritten := rewritten ++ [(moduleName, generated)]

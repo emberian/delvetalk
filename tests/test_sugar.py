@@ -653,3 +653,117 @@ class LawReading(TurnWorld):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# KERNEL-HANDOFF §16 item 8a: a module with a State and the Plan library and neither `Edits` nor
+# `keep` gets both, at the end of the module: lists and relations `Entries<X, X>`, a Nat `Edit<Nat, Nat>`,
+# anything else `Edit<T, {}>`; `keep()` keeps every field.
+DERIVED_HEAD = HEAD + """import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as P
+import ./Relation.obend as Relations
+import ./World.obend as World
+record Row:
+  at: Nat
+  text: String
+type Names = Lists.List<String>
+record State:
+  planted: Nat
+  children: Lists.List<P.Reference>
+  names: Names
+  rows: Relations.Relation<Row>
+  note: String
+  open: Bool
+  owner: P.Reference
+"""
+DERIVED_PAIR = """record Edits:
+  planted: P.Edit<Nat, Nat>
+  children: P.Entries<P.Reference, P.Reference>
+  names: P.Entries<String, String>
+  rows: P.Entries<Row, Row>
+  note: P.Edit<String, {}>
+  open: P.Edit<Bool, {}>
+  owner: P.Edit<P.Reference, {}>
+def keep() -> Edits:
+  {planted: P.Edit.keep({}), children: P.Entries.keep({}), names: P.Entries.keep({}), rows: P.Entries.keep({}), note: P.Edit.keep({}), open: P.Edit.keep({}), owner: P.Edit.keep({})}
+"""
+DERIVED_REST = """def initial() -> State:
+  {planted: 0n, children: Lists.List.nil({}), names: Lists.List.nil({}), rows: Relations.empty(), note: "", open: false, owner: P.nobody()}
+def plant(state: State, input: {child: P.Reference, at: Nat, name: String}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {planted: add 1n, children: append input.child, names: amend input.name with "{input.name}!", rows: upsert {at: input.at, text: input.name}, open: set true}
+  state.planted + 1n
+"""
+DERIVED_LIBRARY = ("Abi", "List", "World", "Relation")
+
+
+class DerivedEdits(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.close()
+
+    def send(self, op, source, entry, extra=()):
+        return self.h.send({"op": op, "entry": entry, "modules": library_modules(*DERIVED_LIBRARY) + list(extra) +
+                            [{"name": "Package", "source": source}]})
+
+    def compiled(self, source, entry, extra=()):
+        reply = self.send("compile", source, entry, extra)
+        self.assertEqual(reply["status"], "compiled", reply)
+        return reply["artifact"]
+
+    def test_derived_edits_are_the_pair_written_at_the_end(self):
+        derived = DERIVED_HEAD + DERIVED_REST
+        written = DERIVED_HEAD + DERIVED_REST + DERIVED_PAIR
+        for entry in ("plant", "keep", "initial"):
+            with self.subTest(entry=entry):
+                self.assertEqual(core(self.compiled(derived, entry)), core(self.compiled(written, entry)))
+
+    def test_keep_keeps_every_field_in_state_order(self):
+        artifact = self.compiled(DERIVED_HEAD + DERIVED_REST, "keep")
+        reply = self.h.send({"op": "run", "artifact": artifact, "arguments": []})
+        self.assertEqual(reply["status"], "finished", reply)
+        fields = reply["value"]["fields"]
+        self.assertEqual([f["name"] for f in fields], ["planted", "children", "names", "rows", "note", "open", "owner"])
+        self.assertTrue(all(f["value"] == {"tag": "variant", "label": "keep", "payload": {"tag": "record", "fields": []}}
+                            for f in fields), fields)
+
+    def test_a_hand_written_pair_is_still_accepted(self):
+        partial = DERIVED_HEAD + "record Edits:\n  planted: P.Edit<Nat, Nat>\ndef keep() -> Edits:\n  {planted: P.Edit.keep({})}\n" + \
+            "def bump(state: State, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {planted: add 1n}\n  0n\n"
+        self.assertEqual(self.send("check-package", partial, "bump")["status"], "checked")
+
+    def test_a_state_named_from_another_module_derives_in_its_own_terms(self):
+        # `type State = Lib.State`: the items of Lib's fields are spelled through the import of Lib.
+        lib = HEAD + "import ./List.obend as Lists\nimport ./Plan.obend as P\nrecord Exit:\n  label: String\n" \
+            "record State:\n  exits: Lists.List<Exit>\n  count: Nat\n  name: String\n"
+        package = HEAD + "import ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Plan.obend as P\n" \
+            "import ./World.obend as World\nimport ./Lib.obend as Lib\ntype State = Lib.State\n" \
+            "def go(state: State, input: {label: String}, context: Abi.Context) -> Activity<Nat>:\n" \
+            "  let written(_) = write {exits: append {label: input.label}, count: add 1n, name: set input.label}\n  0n\n"
+        written = package + ("record Edits:\n  exits: P.Entries<Lib.Exit, Lib.Exit>\n  count: P.Edit<Nat, Nat>\n"
+                             "  name: P.Edit<String, {}>\ndef keep() -> Edits:\n"
+                             "  {exits: P.Entries.keep({}), count: P.Edit.keep({}), name: P.Edit.keep({})}\n")
+        extra = [{"name": "Lib", "source": lib}]
+        self.assertEqual(core(self.compiled(package, "go", extra)), core(self.compiled(written, "go", extra)))
+
+    def test_an_item_type_the_module_cannot_name_is_refused_by_name(self):
+        inner = HEAD + "record Item:\n  n: Nat\n"
+        outer = HEAD + "import ./List.obend as Lists\nimport ./Inner.obend as Inner\ntype Items = Lists.List<Inner.Item>\n"
+        package = HEAD + "import ./List.obend as Lists\nimport ./Plan.obend as P\nimport ./Outer.obend as Outer\n" \
+            "record State:\n  items: Outer.Items\n"
+        reply = self.send("check-package", package, "keep", [{"name": "Inner", "source": inner}, {"name": "Outer", "source": outer}])
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (derived-edits): State.items holds items of a type from a module Package does not import",
+                      reply["diagnostic"]["message"])
+
+    def test_write_without_the_plan_library_is_refused_by_name(self):
+        source = HEAD + "import ./Abi.obend as Abi\nrecord State:\n  count: Nat\n" \
+            "def bump(state: State, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {count: add 1n}\n  0n\n"
+        reply = self.h.send({"op": "check-package", "entry": "bump",
+                             "modules": library_modules("Abi") + [{"name": "Package", "source": source}]})
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("refused (derived-edits): write {...} and keep() derive Edits from State through the Plan library",
+                      reply["diagnostic"]["message"])

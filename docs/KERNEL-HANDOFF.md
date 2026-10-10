@@ -573,3 +573,28 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   (`remove {index: …}`, `amend {index: …} with …`) is refused by name ("names a position, and
   edits name items: write `f: remove ITEM` …"). Tests: `test_sugar.Writes`.
 
+
+## 23. The State is the schema (lane/kernel9, §16 item 8)
+
+- 8a, derivation. `Generics.derivedEdits` (a probe pass over the package whose state is dropped)
+  resolves each State field's type with `typeOf` and writes, for a module declaring `State` (a
+  record, or `type State = M.S` naming one) that imports Plan.obend and declares neither `Edits`
+  nor `keep`, the source of §16's pair, parsed by `parseObjective` at the State's span. A list or
+  relation is recognised by its instance (`entriesItem`: declaration `List`/`Relation` in a
+  module some import edge names `List.obend`/`Relation.obend`); a type the module did not write
+  is spelled through its own imports (`spell`), refused by name when a module it needs is not
+  imported ("refused (derived-edits): State.f holds items of a type from a module M does not
+  import"). The pair ends its module and is specialized after every module's own declarations,
+  so it numbers no instance before one the package spells: no packet of any other entry moves
+  (pins: 0 recompiled, including Places and Seats, which gain an unused pair). A module with a
+  State, no Plan import and a `keep()` call (every `write {…}`) is refused by the parser
+  ("refused (derived-edits): write {...} and keep() derive Edits from State through the Plan
+  library"). A hand-written pair is still accepted. Tests: `test_sugar.DerivedEdits` (derived
+  = the pair written at the end of the module, for a write, `keep` and `initial`; `keep()` runs
+  to a keep per field in State order; `type State = Lib.State`; the two refusals).
+- With every hand-written `record Edits` and `def keep() -> Edits` deleted from world/objects (a
+  scratch copy), every module checks except: Appointment (its `keep` is a method, so nothing is
+  derived and `Edits` is unknown; Appointments imports it), Bell/Garden (`doorWritten` and
+  Card's `DoorEdit` type `Entries<Doorway, {}>`, now `Entries<Doorway, Doorway>`), Policy
+  (`asked` returns `Entries<String, {}>`), Wake (`world.write::<Edits>({…})` names two fields
+  of a record that now has all of them). Those are the review lane's edits.
