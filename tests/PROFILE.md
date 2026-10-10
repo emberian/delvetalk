@@ -33,3 +33,24 @@ The thirteen module re-runs cost 313 class-seconds; `Chain`'s two tests ran in 2
 classes that inherit it, `test_outbound.Offers` and `ReplyIsAddress` again inside
 test_bridge. Classes named `Maximum` (wall-clock bounds) ran after everything else,
 three at a time, which serialised the tail of the run.
+
+## After the collapse (lane/tests 5f8b005, foundation 613639d)
+
+902 tests (foundation added 29 since the first profile; this lane deleted 37 and
+moved 2) in 222 classes and 325 jobs. On hbox: 37.9 s and 39.1 s wall with the
+load average at 15 to 25, 45.8 s as it fell from 36 to 19, 88 s at 30 and
+rising. Other lanes share the box; the wall time follows them.
+
+| | before | after |
+| --- | ---: | ---: |
+| host processes | 579 | 464 |
+| hostd daemons | 94 | 28 |
+| class-seconds | 1,431 | 1,078 |
+| slowest job | 95 s (HttpFront) | 20 s (a pin shard) |
+
+What is left is work, not waiting: test_artifact_pins compiles every top-level
+def of every world module (about 1,150 full package checks, twelve shards);
+each fresh test world recompiles the packages it creates, because the host's
+packet cache is per world, not per process; conformance runs 400 terms through
+four evaluators; test_data_type's long-list case pays the host's superlinear
+admission of a long list argument (2,500 items take 2.1 s, 5,000 take 5.8 s).
