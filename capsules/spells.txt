@@ -12,7 +12,7 @@ BLOCK name: <<DELIM ... a line exactly DELIM. DELIM 1-32 of [A-Z0-9_]; lines joi
 BARE No delvetalk line, first name: value line names an action or field of this card's forms: that
 form's spell (rain: a drizzle). A line named as the action fills the first open text field (plant: a
 fern -> seed).
-? delvetalk CARD ? -> the usage card, nothing journaled.
+? delvetalk CARD ? -> the card's spells, blanks shown; nothing journaled.
 FIT Message-dialect cards fit the method's input type, not the form block: text 0-1400; natural in
 plain digits, no leading 0, <= 10^9; choice = a case name of an empty-case sum. A card not yet
 migrated fits its forms() and answers "refused spell: <reason>" on its card.
@@ -24,8 +24,8 @@ do it / no n nope cancel, never mind (or Capitalised; .!? and blanks aside; <= 6
 with nothing waiting: nothingWaiting.
 PROSE Otherwise receive gets the text: the card asks its policy's model (a proposal, never
 authority) or hands it to the directory.
-badSpell = a spell that does not fit: a refused turn, identity bound (reply anew), public {clause,
-reason, hint}. clause: otherCard noAction unknownField duplicateField badValue unclosedBlock; reason
+badSpell = a spell that does not fit: a refused turn, intent bound (new intent), public
+{clause, reason, hint}. clause: otherCard noAction unknownField duplicateField badValue unclosedBlock; reason
 names the line ("Unknown field colour"); hint = your spell with blanks, or the card's usage. Copy
 the hint.
 REFUSALS. unknownField/badValue: fix that line per the hint, resend. noAction/otherCard: the hint
