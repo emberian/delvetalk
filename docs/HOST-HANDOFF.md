@@ -683,7 +683,10 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    version, pin, pinSlug, law, readings, laws [{object, version, pin, name, clause, reading?}], stateCid, library?}}` as of
    the version: `pinAndLawAt` undoes later reprograms (`oldPin`) and amendments (`old`) from the entries that made later
    versions; clauses as written (`lawClauses`); a reading from the law text, else the package's while the clause is
-   unchanged. Test: `tests/test_reads.py`.
+   unchanged. `world-source {principal, cid}` / `world-sources {principal, after?, before?, reverse?, limit?}`
+   (`sourceRecords`: each source an entry's `sources` or a library entry carried, named as compile inputs name it, at the
+   height that first carried it) answer `{cid, name, text, height}` records the reader may read (`readableSources`: the
+   modules of objects it may view, and the libraries'); `denied` / `unknown` otherwise. Test: `tests/test_reads.py`.
 
 ## 6. Gotchas
 

@@ -78,6 +78,20 @@ class Reads(Reflection):
         self.assertEqual(self.host.send(op="world-object", principal="anonymous", object="vault")["status"], "denied")
         self.assertEqual(self.host.send(op="world-object", principal="anonymous", object="c", version=9)["status"], "unknown")
 
+    def test_sources_by_cid_and_by_page_under_read_authority(self):
+        from tests.wire import cid_of
+        page = self.host.send(op="world-sources", principal="anonymous")
+        self.assertEqual(page["status"], "sources", page)
+        mine = [s for s in page["sources"] if s["text"] == PACKAGE]
+        # The vault carries the same source; the counter makes it readable to the public.
+        self.assertEqual(len(mine), 1, [s["name"] for s in page["sources"]])
+        one = self.host.send(op="world-source", principal="anonymous", cid=mine[0]["cid"])
+        self.assertEqual((one["status"], one["record"]["name"], one["record"]["height"]), ("source", "Main", mine[0]["height"]), one)
+        self.assertEqual(one["record"]["cid"], cid_of(PACKAGE))
+        heights = [s["height"] for s in page["sources"]]
+        self.assertEqual(heights, sorted(heights))
+        self.assertEqual(self.host.send(op="world-source", principal="anonymous", cid="bafy-none")["status"], "unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

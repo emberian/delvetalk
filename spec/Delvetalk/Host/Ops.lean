@@ -2498,6 +2498,67 @@ def pageByHeight (j : Json) (items : Array (Nat × Json)) : Except String (Array
       pure (items.filter fun (h, _) => h > after)
   return ((chosen.extract 0 limit).map (·.2), decide (chosen.size > limit))
 
+/-- Every source the journal carries, as `(height, record {cid, name, text, height})`: an entry's `sources`
+    (named as the compile inputs that introduced it name it) and a library entry's modules, each once,
+    at the first entry that carried it. -/
+def sourceRecords (w : World) : Array (Nat × String × Json) := Id.run do
+  let mut names : Std.HashMap String String := {}
+  for entry in w.entries do
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let compiles := ((outcome.getObjVal? "compile").toOption.toList ++
+      (((outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun c => (c.getObjVal? "compile").toOption)
+    for c in compiles do
+      for m in ((c.getObjVal? "modules").toOption.bind (·.getArr?.toOption)).getD #[] do
+        if let (.ok n, .ok cid) := (m.getObjValAs? String "name", m.getObjValAs? String "cid") then
+          unless names.contains cid do names := names.insert cid n
+  let mut out : Array (Nat × String × Json) := #[]
+  let mut seen : Std.HashSet String := {}
+  for (entry, i) in w.entries.zipIdx do
+    let height := i + 1
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let carried := (((entry.getObjVal? "sources").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun x =>
+      match x.getObjValAs? String "cid", x.getObjValAs? String "source" with
+      | .ok c, .ok t => some (c, (names.get? c).getD "", t)
+      | _, _ => none
+    let library := if tagOf entry != "library" then [] else
+      (((outcome.getObjVal? "modules").toOption.bind (parseModules · |>.toOption)).getD []).map fun (n, t) => (sourceCid t, n, t)
+    for (cid, name, text) in carried ++ library do
+      if seen.contains cid then continue
+      seen := seen.insert cid
+      out := out.push (height, cid, Json.mkObj [("cid", toJson cid), ("name", toJson name), ("text", toJson text),
+        ("height", toJson height)])
+  return out
+
+/-- The source CIDs `reader` may read: the modules of every object it may view, and the libraries'. -/
+def readableSources (w : World) (reader : String) : Std.HashSet String := Id.run do
+  let mut out : Std.HashSet String := {}
+  for (_, l) in w.libraries.toList do
+    for (_, src) in l.modules do out := out.insert (sourceCid src)
+  for (_, o) in w.objects.toList do
+    if o.read.permits reader then
+      for src in inputSources o.inputs do out := out.insert (sourceCid src)
+  return out
+
+/-- `world-source {principal, cid}`: `{status: "source", record: {cid, name, text, height}}`, `denied` unless
+    an object the reader may view has it in its closure (or a library has it), `unknown` when the journal
+    carries no such source. -/
+def sourceOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let cid ← j.getObjValAs? String "cid"
+  match (sourceRecords w).find? (·.2.1 == cid) with
+  | none => return Json.mkObj [("status", toJson "unknown"), ("message", toJson s!"unknown: no source here is {cid}")]
+  | some (_, _, record) =>
+    if !(readableSources w reader).contains cid then return Json.mkObj [("status", toJson "denied"), ("cid", toJson cid)]
+    return Json.mkObj [("status", toJson "source"), ("record", record)]
+
+/-- `world-sources {principal, after?, before?, reverse?, limit?}`: the sources the reader may read, paged by
+    the height of the entry that carried each. -/
+def sourcesOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let readable := readableSources w reader
+  let (shown, more) ← pageByHeight j ((sourceRecords w).filterMap fun (h, cid, r) => if readable.contains cid then some (h, r) else none)
+  return Json.mkObj [("status", toJson "sources"), ("sources", Json.arr shown), ("more", toJson more)]
+
 /-- `world-entry {principal, hash, bytes?}`: the entry whose hash it is, as the reader may see it
     (`projectEntry`), and with `bytes: true` the lowercase hex of its canonical DAG-CBOR without `hash`
     when the reader sees it whole (the identity's own principal); `unknown` otherwise. -/
