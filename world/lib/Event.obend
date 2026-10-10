@@ -13,4 +13,4 @@ record Event:
 # The id of a principal's Env: env/<did>. A spell names it as it is
 # (`delvetalk env/did:plc:… seen`): a card name is [a-z0-9:/.-]+.
 def envOf(did: String) -> String:
-  textConcat("env/", did)
+  "env/{did}"

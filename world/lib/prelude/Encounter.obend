@@ -7,12 +7,12 @@ record Child:
   panel: String
 type Children = Lists.List<Child>
 def childrenLength(xs: Children) -> Nat:
-  Lists.length::<Child>(xs)
+  Lists.length(xs)
 def childrenContains(xs: Children, key: String) -> Bool:
-  Lists.any::<Child>(xs, fn(child: Child) -> Bool: child.key == key)
+  Lists.any(xs, fn(child: Child) -> Bool: child.key == key)
 def childrenAppend(xs: Children, child: Child) -> Children:
-  Lists.append::<Child>(xs, child)
+  Lists.append(xs, child)
 def childrenRemove(xs: Children, key: String) -> Children:
-  Lists.filter::<Child>(xs, fn(child: Child) -> Bool: child.key != key)
+  Lists.filter(xs, fn(child: Child) -> Bool: child.key != key)
 def childrenOffer(xs: Children, child: Child, capacity: Nat) -> Children:
   if childrenContains(xs, child.key) || childrenLength(xs) >= capacity then xs else childrenAppend(xs, child)

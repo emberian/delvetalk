@@ -65,31 +65,31 @@ def withBare(parsed: Spell.Parsed, text: String, context: Abi.Context, forms: Fo
 def bareSpell(bindings: Spell.Bindings, card: String, forms: Forms, otherwise: Spell.Parsed) -> Spell.Parsed:
   match bindings:
     case nil(_): otherwise
-    case cons(c): bareFor(Lists.find::<Form.Form>(forms, fn(f: Form.Form) -> Bool: f.action == c.head.name || hasField(f, c.head.name)), bindings, card, otherwise)
+    case cons(c): bareFor(Lists.find(forms, fn(f: Form.Form) -> Bool: f.action == c.head.name || hasField(f, c.head.name)), bindings, card, otherwise)
 def hasField(form: Form.Form, name: String) -> Bool:
-  Lists.any::<Form.Field>(form.fields, fn(f: Form.Field) -> Bool: f.name == name)
+  Lists.any(form.fields, fn(f: Form.Field) -> Bool: f.name == name)
 def bareFor(found: Lists.Maybe<Form.Form>, bindings: Spell.Bindings, card: String, otherwise: Spell.Parsed) -> Spell.Parsed:
   match found:
     case none(_): otherwise
-    case some(f): Spell.Parsed.spell({card: card, action: f.value.action, fields: Lists.filter::<Spell.Binding>(bindings, fn(b: Spell.Binding) -> Bool: b.name == f.value.action || hasField(f.value, b.name))})
+    case some(f): Spell.Parsed.spell({card: card, action: f.value.action, fields: Lists.filter(bindings, fn(b: Spell.Binding) -> Bool: b.name == f.value.action || hasField(f.value, b.name))})
 def routeParsed(parsed: Spell.Parsed, context: Abi.Context, forms: Forms) -> Routed:
   match parsed:
     case notASpell(_): Routed.usage({})
-    case spell(s): if names(s.card, context) == false then Routed.refused({reason: textConcat("This card is ", context.object)}) else chosen(parsed, s.card, s.action, s.fields, Lists.find::<Form.Form>(forms, fn(form: Form.Form) -> Bool: form.action == s.action), context)
+    case spell(s): if names(s.card, context) == false then Routed.refused({reason: "This card is {context.object}"}) else chosen(parsed, s.card, s.action, s.fields, Lists.find(forms, fn(form: Form.Form) -> Bool: form.action == s.action), context)
 # A spell names this card by its id, or, for the speaker's own env/<did> and wake/<did>,
 # by the bare word the town writes (`delvetalk env subscribe`).
 def names(card: String, context: Abi.Context) -> Bool:
   card == context.object || (card == "env" || card == "wake") && context.object == own(card, context)
 def own(card: String, context: Abi.Context) -> String:
-  textConcat(card, textConcat("/", context.principal))
+  "{card}/{context.principal}"
 # An object's own form wins; otherwise `set` and `?` are the protocol's.
 def chosen(parsed: Spell.Parsed, card: String, action: String, bindings: Spell.Bindings, found: Lists.Maybe<Form.Form>, context: Abi.Context) -> Routed:
   match found:
-    case none(_): if action == "set" then setting(bindings) else if action == "?" then Routed.help({}) else Routed.refused({reason: textConcat("No action called ", action)})
+    case none(_): if action == "set" then setting(bindings) else if action == "?" then Routed.help({}) else Routed.refused({reason: "No action called {action}"})
     case some(f): fitted(action, Spell.fit(parsed, named(f.value, card)))
 def setting(bindings: Spell.Bindings) -> Routed:
   match bindings:
-    case cons(c): if Lists.length::<Spell.Binding>(c.tail) == 0n then Routed.set({field: c.head.name, value: c.head.value}) else Routed.refused({reason: "set takes one field: value line."})
+    case cons(c): if Lists.length(c.tail) == 0n then Routed.set({field: c.head.name, value: c.head.value}) else Routed.refused({reason: "set takes one field: value line."})
     case nil(_): Routed.refused({reason: "set takes one field: value line."})
 def fitted(action: String, fit: Spell.Fit) -> Routed:
   match fit:
@@ -98,7 +98,7 @@ def fitted(action: String, fit: Spell.Fit) -> Routed:
     case refused(r): Routed.refused({reason: r.reason})
 # Typed field values of an acted spell; a field the form does not have is "" or 0.
 def text(fields: Spell.Entries, name: String) -> String:
-  match Lists.find::<Spell.Entry>(fields, fn(entry: Spell.Entry) -> Bool: entry.name == name):
+  match Lists.find(fields, fn(entry: Spell.Entry) -> Bool: entry.name == name):
     case none(_): ""
     case some(s):
       match s.value.value:
@@ -106,7 +106,7 @@ def text(fields: Spell.Entries, name: String) -> String:
         case choice(c): c.value
         case natural(n): natText(n.value)
 def natural(fields: Spell.Entries, name: String) -> Nat:
-  match Lists.find::<Spell.Entry>(fields, fn(entry: Spell.Entry) -> Bool: entry.name == name):
+  match Lists.find(fields, fn(entry: Spell.Entry) -> Bool: entry.name == name):
     case none(_): 0n
     case some(s):
       match s.value.value:
@@ -114,29 +114,29 @@ def natural(fields: Spell.Entries, name: String) -> Nat:
         case _: 0n
 def hint(kind: Form.Kind) -> String:
   match kind:
-    case text(t): textConcat("<text, ", textConcat(natText(t.min), textConcat(" to ", textConcat(natText(t.max), " characters>"))))
-    case natural(n): textConcat("<a number from ", textConcat(natText(n.min), textConcat(" to ", textConcat(natText(n.max), ">"))))
-    case choice(c): textConcat("<", textConcat(Spell.joined(c.options), ">"))
+    case text(t): "<text, {natText(t.min)} to {natText(t.max)} characters>"
+    case natural(n): "<a number from {natText(n.min)} to {natText(n.max)}>"
+    case choice(c): "<{Spell.joined(c.options)}>"
 # One form as the spell a reader copies.
 def template(card: String, form: Form.Form) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("\n    delvetalk ", textConcat(card, textConcat(" ", textConcat(form.action, "\n"))))), tail: Lists.map::<Form.Field, Document.Document>(form.fields, fn(field: Form.Field) -> Document.Document: Document.text(textConcat("    ", textConcat(field.name, textConcat(": ", textConcat(hint(field.kind), "\n"))))))})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\n    delvetalk {card} {form.action}\n"), tail: Lists.map(form.fields, fn(field: Form.Field) -> Document.Document: Document.text("    {field.name}: {hint(field.kind)}\n"))})})
 def usage(card: String, forms: Forms) -> Document.Document:
-  if Lists.length::<Form.Form>(forms) == 0n then Document.text("") else Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\nReply with a spell:\n"), tail: Lists.map::<Form.Form, Document.Document>(forms, fn(form: Form.Form) -> Document.Document: template(card, form))})})
+  if Lists.length(forms) == 0n then Document.text("") else Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\nReply with a spell:\n"), tail: Lists.map(forms, fn(form: Form.Form) -> Document.Document: template(card, form))})})
 # One lens as the set spell a reader copies.
 def lensTemplate<E>(card: String, lens: Form.Lens<E>) -> Document.Document:
   match lens:
-    case lens(l): Document.text(textConcat("\n    delvetalk ", textConcat(card, textConcat(" set\n    ", textConcat(l.field, textConcat(": ", textConcat(hint(l.form), "\n")))))))
+    case lens(l): Document.text("\n    delvetalk {card} set\n    {l.field}: {hint(l.form)}\n")
 def lensUsage<E>(card: String, lenses: Lists.List<Form.Lens<E>>) -> Document.Document:
-  if Lists.length::<Form.Lens<E>>(lenses) == 0n then Document.text("") else Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\nTo change a field, reply (one field a spell):\n"), tail: Lists.map::<Form.Lens<E>, Document.Document>(lenses, fn(lens: Form.Lens<E>) -> Document.Document: lensTemplate::<E>(card, lens))})})
+  if Lists.length(lenses) == 0n then Document.text("") else Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\nTo change a field, reply (one field a spell):\n"), tail: Lists.map(lenses, fn(lens: Form.Lens<E>) -> Document.Document: lensTemplate(card, lens))})})
 # The usage card `?` answers: every form, then every lens.
 def help<E>(card: String, forms: Forms, lenses: Lists.List<Form.Lens<E>>) -> Document.Document:
-  Document.concat(usage(card, forms), lensUsage::<E>(card, lenses))
+  Document.concat(usage(card, forms), lensUsage(card, lenses))
 # The card a non-acting reply gets: the object's card, then why, then its forms.
 def why(routed: Routed) -> String:
   match routed:
     case act(a): ""
     case usage(_): ""
-    case _: textConcat("\nNot done: ", textConcat(reason(routed), "\n"))
+    case _: "\nNot done: {reason(routed)}\n"
 def replyOf(routed: Routed) -> Reply:
   match routed:
     case act(a): Reply.done({action: a.action})
@@ -149,7 +149,7 @@ def replyOf(routed: Routed) -> Reply:
 def answered(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why(routed)), tail: Document.Documents.cons({head: usage(context.object, forms), tail: Document.Documents.nil()})})})})
 def answer<E, S, R>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
-  answerAs::<E, S, R, Reply>(routed, context, forms, card, replyOf(routed))
+  answerAs(routed, context, forms, card, replyOf(routed))
 # `?` gets the usage card alone; anything else the card, why, and the forms.
 def answeredOrHelp(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document) -> Document.Document:
   match routed:
@@ -160,15 +160,15 @@ def answeredOrHelp(routed: Routed, context: Abi.Context, forms: Forms, card: Doc
 def answerAs<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match routed:
     case quiet(_): result
-    case _: offering::<E, S, R, T>(routed, context, forms, card, result)
+    case _: offering(routed, context, forms, card, result)
 def offering<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E>.offer({to: "", document: answeredOrHelp(routed, context, forms, card)})):
+  match perform(Plans.Plan.offer({to: "", document: answeredOrHelp(routed, context, forms, card)})):
     case _: result
 def reason(routed: Routed) -> String:
   match routed:
     case act(a): ""
     case usage(_): "Reply with a spell."
-    case unclear(u): textConcat("Almost. I still need: ", textConcat(Spell.joined(u.needs), "."))
+    case unclear(u): "Almost. I still need: {Spell.joined(u.needs)}."
     case refused(r): r.reason
     case help(_): ""
     case set(_): "Nothing here can be set."
@@ -177,35 +177,35 @@ def reason(routed: Routed) -> String:
 # the lens's kind and written through its put (the object's law judges the write; a
 # non-empty guard refuses first, by name), `?` offers the usage card with the lenses.
 def lensNamed<E>(lenses: Lists.List<Form.Lens<E>>, field: String) -> Lists.Maybe<Form.Lens<E>>:
-  Lists.find::<Form.Lens<E>>(lenses, fn(lens: Form.Lens<E>) -> Bool: lensField::<E>(lens) == field)
+  Lists.find(lenses, fn(lens: Form.Lens<E>) -> Bool: lensField(lens) == field)
 def lensField<E>(lens: Form.Lens<E>) -> String:
   match lens:
     case lens(l): l.field
 def answerLensed<E, S, R>(routed: Routed, context: Abi.Context, forms: Forms, lenses: Lists.List<Form.Lens<E>>, guard: String, card: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, Reply>:
-  answerLensedAs::<E, S, R, Reply>(routed, context, forms, lenses, guard, card, fn(reply: Reply) -> Reply: reply)
+  answerLensedAs(routed, context, forms, lenses, guard, card, fn(reply: Reply) -> Reply: reply)
 # The same for an object whose receive finishes with its own result type: `as` maps the
 # protocol's Reply to it.
 def answerLensedAs<E, S, R, T>(routed: Routed, context: Abi.Context, forms: Forms, lenses: Lists.List<Form.Lens<E>>, guard: String, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match routed:
-    case set(s): putting::<E, S, R, T>(s.field, s.value, lensNamed::<E>(lenses, s.field), guard, context, forms, card, as)
-    case help(_): tell::<E, S, R, T>(as(Reply.usage({})), help::<E>(context.object, forms, lenses))
-    case _: answerAs::<E, S, R, T>(routed, context, forms, card, as(replyOf(routed)))
+    case set(s): putting(s.field, s.value, lensNamed(lenses, s.field), guard, context, forms, card, as)
+    case help(_): tell(as(Reply.usage({})), help(context.object, forms, lenses))
+    case _: answerAs(routed, context, forms, card, as(replyOf(routed)))
 def refusing<E, S, R, T>(reason: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  answerAs::<E, S, R, T>(Routed.refused({reason: reason}), context, forms, card, as(Reply.refused({reason: reason})))
+  answerAs(Routed.refused({reason: reason}), context, forms, card, as(Reply.refused({reason: reason})))
 def putting<E, S, R, T>(field: String, value: String, found: Lists.Maybe<Form.Lens<E>>, guard: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match found:
-    case none(_): refusing::<E, S, R, T>(textConcat("No field called ", textConcat(field, " can be set here.")), context, forms, card, as)
-    case some(f): if guard != "" then refusing::<E, S, R, T>(guard, context, forms, card, as) else judgedPut::<E, S, R, T>(f.value, value, context, forms, card, as)
+    case none(_): refusing("No field called {field} can be set here.", context, forms, card, as)
+    case some(f): if guard != "" then refusing(guard, context, forms, card, as) else judgedPut(f.value, value, context, forms, card, as)
 def judgedPut<E, S, R, T>(lens: Form.Lens<E>, value: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match lens:
-    case lens(l): verdictPut::<E, S, R, T>(Spell.judge({name: l.field, kind: l.form}, value), l.put(Spell.typed(l.form, value)), l.field, value, context, forms, card, as)
+    case lens(l): verdictPut(Spell.judge({name: l.field, kind: l.form}, value), l.put(Spell.typed(l.form, value)), l.field, value, context, forms, card, as)
 def verdictPut<E, S, R, T>(verdict: Spell.Verdict, edits: E, field: String, value: String, context: Abi.Context, forms: Forms, card: Document.Document, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match verdict:
-    case wrong(w): refusing::<E, S, R, T>(w.reason, context, forms, card, as)
-    case fine(_): put::<E, S, R, T>(edits, field, value, context, as)
+    case wrong(w): refusing(w.reason, context, forms, card, as)
+    case fine(_): put(edits, field, value, context, as)
 def put<E, S, R, T>(edits: E, field: String, value: String, context: Abi.Context, as: Reply -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E>.write({object: Plans.self(context), edits: edits})):
-    case _: tell::<E, S, R, T>(as(Reply.done({action: "set"})), Document.text(textConcat("Set ", textConcat(field, textConcat(" to ", textConcat(value, ".\n"))))))
+  let written(_) = perform(Plans.Plan.write({object: Plans.self(context), edits: edits}))
+  tell(as(Reply.done({action: "set"})), Document.text("Set {field} to {value}.\n"))
 # A lens's value as text or as a natural (0 when the kind is not a number).
 def valueText(value: Form.Value) -> String:
   match value:
@@ -226,11 +226,11 @@ def mine(principal: String, context: Abi.Context) -> String:
   if reads(principal, context) then " (yours)" else ""
 # Offers a document addressed to one principal and finishes with the given result.
 def tellTo<E, S, R, T>(result: T, to: String, document: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E>.offer({to: to, document: document})):
+  match perform(Plans.Plan.offer({to: to, document: document})):
     case _: result
 # Offers a document and finishes with the given result.
 def tell<E, S, R, T>(result: T, document: Document.Document) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E>.offer({to: "", document: document})):
+  match perform(Plans.Plan.offer({to: "", document: document})):
     case _: result
 # Observers: the objects told when something happens here, each by the method it
 # names. An object keeps `observers: Observers` in state and exposes observe and
@@ -254,23 +254,23 @@ def observing(observers: Observers, input: Observer) -> Change:
 # The same with the object's own bound (an Avatar's mailing list holds as many as one
 # turn may send).
 def observingUpTo(observers: Observers, input: Observer, cap: Nat) -> Change:
-  if Lists.any::<Observer>(observers, fn(o: Observer) -> Bool: sameObserver(o, input)) then Change.unchanged({count: Lists.length::<Observer>(observers)}) else adding(Lists.length::<Observer>(observers), input, cap)
+  if Lists.any(observers, fn(o: Observer) -> Bool: sameObserver(o, input)) then Change.unchanged({count: Lists.length(observers)}) else adding(Lists.length(observers), input, cap)
 def adding(count: Nat, input: Observer, cap: Nat) -> Change:
-  if count < cap then Change.edit({entries: Plans.Entries::<Observer, {}>.append({item: input}), count: count + 1n}) else Change.refused({reason: "Too many observers."})
+  if count < cap then Change.edit({entries: Plans.Entries.append({item: input}), count: count + 1n}) else Change.refused({reason: "Too many observers."})
 def unobserving(observers: Observers, input: Observer) -> Change:
-  match Lists.find::<Observer>(observers, fn(o: Observer) -> Bool: sameObserver(o, input)):
+  match Lists.find(observers, fn(o: Observer) -> Bool: sameObserver(o, input)):
     case none(_): Change.refused({reason: "Not observing."})
-    case some(s): Change.edit({entries: Plans.Entries::<Observer, {}>.removeItem({item: s.value}), count: Lists.length::<Observer>(observers) - 1n})
+    case some(s): Change.edit({entries: Plans.Entries.removeItem({item: s.value}), count: Lists.length(observers) - 1n})
 # broadcast sends the argument to every observer by its method, then finishes with `then` of
 # how many sends the host accepted (an activity composes only in tail position).
 def broadcast<E, S, R, T>(observers: Observers, argument: Data, sent: Nat, then: Nat -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match observers:
     case nil(_): then(sent)
-    case cons(c): notified::<E, S, R, T>(c.head, c.tail, argument, sent, then)
+    case cons(c): notified(c.head, c.tail, argument, sent, then)
 def notified<E, S, R, T>(head: Observer, tail: Observers, argument: Data, sent: Nat, then: Nat -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E>.send({object: head.object, method: head.method, argument: argument})):
-    case delivery(_): broadcast::<E, S, R, T>(tail, argument, sent + 1n, then)
-    case _: broadcast::<E, S, R, T>(tail, argument, sent, then)
+  match perform(Plans.Plan.send({object: head.object, method: head.method, argument: argument})):
+    case delivery(_): broadcast(tail, argument, sent + 1n, then)
+    case _: broadcast(tail, argument, sent, then)
 # A principal's name on a card: the reader's own observed handle (context.handle, which
 # the host fills from its registry) when the principal is the reader, else handle(did).
 def name(did: String, context: Abi.Context) -> String:
@@ -288,11 +288,11 @@ def segment(did: String) -> String:
   let at = textBreak(did, ":")
   if at == textLength(did) then did else segment(textDrop(did, at + 1n))
 def shortened(fragment: String) -> String:
-  if textLength(fragment) > 8n then textConcat("…", textDrop(fragment, textLength(fragment) - 8n)) else fragment
+  if textLength(fragment) > 8n then "…{textDrop(fragment, textLength(fragment) - 8n)}" else fragment
 # The first `shown` lines, then "… and N more".
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
-  let total = Lists.length::<Document.Document>(lines)
-  if total > shown then Lists.concat::<Document.Document>(Lists.take::<Document.Document>(lines, shown), Document.Documents.cons({head: Document.text(textConcat("… and ", textConcat(natText(total - shown), " more\n"))), tail: Document.Documents.nil()})) else lines
+  let total = Lists.length(lines)
+  if total > shown then Lists.concat(Lists.take(lines, shown), Document.Documents.cons({head: Document.text("… and {natText(total - shown)} more\n"), tail: Document.Documents.nil()})) else lines
 # The page's merge (FOUNDATION section 4): its human owner replies `merge` to the
 # posted page or an edit, and the object records that post as its page checkpoint. An
 # object with a page keeps `owner` and `pageCheckpoint` in state and, before routing,
@@ -301,15 +301,15 @@ def isMerge(text: String) -> Bool:
   let rest = textDrop(text, textSpan(text, " \n\t\r"))
   textTake(rest, 5n) == "merge" && textSpan(textDrop(rest, 5n), " \n\t\r") == textLength(rest) - 5n
 def merge<E, S, R, T>(post: String, owner: String, context: Abi.Context, put: String -> E, done: T, refused: String -> T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  if owner == "" || context.principal != owner then tell::<E, S, R, T>(refused(notOwner(owner)), Document.text(textConcat("Not merged: ", textConcat(notOwner(owner), "\n")))) else if post == "" then tell::<E, S, R, T>(refused("A merge names the post it answers."), Document.text("Not merged: a merge names the post it answers.\n")) else checkpointed::<E, S, R, T>(post, put(post), context, done)
+  if owner == "" || context.principal != owner then tell(refused(notOwner(owner)), Document.text("Not merged: {notOwner(owner)}\n")) else if post == "" then tell(refused("A merge names the post it answers."), Document.text("Not merged: a merge names the post it answers.\n")) else checkpointed(post, put(post), context, done)
 def notOwner(owner: String) -> String:
-  if owner == "" then "This page has no owner to merge it." else textConcat("Only the page's owner, ", textConcat(handle(owner), ", merges it."))
+  if owner == "" then "This page has no owner to merge it." else "Only the page's owner, {handle(owner)}, merges it."
 def checkpointed<E, S, R, T>(post: String, edits: E, context: Abi.Context, done: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
-  match perform(Plans.Plan::<E>.write({object: Plans.self(context), edits: edits})):
-    case _: tell::<E, S, R, T>(done, Document.text(textConcat("Page checkpointed at ", textConcat(post, ".\n"))))
+  let written(_) = perform(Plans.Plan.write({object: Plans.self(context), edits: edits}))
+  tell(done, Document.text("Page checkpointed at {post}.\n"))
 # The card's line for it: "" before the first merge.
 def checkpointLine(post: String) -> String:
-  if post == "" then "" else textConcat("page checkpointed at ", textConcat(post, "\n"))
+  if post == "" then "" else "page checkpointed at {post}\n"
 # The object-owned wiki page (FOUNDATION section 4): a list of sections, each a title
 # and a Document. The default is the card, then how to reply; an object overrides
 # page(state, context) to add its own sections. pageText renders the agentwiki body:
@@ -321,7 +321,7 @@ type Page = Lists.List<Section>
 def defaultPage(card: Document.Document, context: Abi.Context, forms: Forms) -> Page:
   Page.cons({head: {title: "Card", body: card}, tail: Page.cons({head: {title: "How to reply", body: usage(context.object, forms)}, tail: Page.nil()})})
 def pageText(page: Page) -> String:
-  textJoin(Lists.map::<Section, String>(page, fn(section: Section) -> String: textConcat("## ", textConcat(section.title, textConcat("\n\n", Document.plain(section.body))))), "\n")
+  textJoin(Lists.map(page, fn(section: Section) -> String: "## {section.title}\n\n{Document.plain(section.body)}"), "\n")
 # Interpretation, the card default (FOUNDATION section 5). A card with a policy views it
 # (its Response's state type is Policies.State) and asks the model with `asking`, offering
 # its forms. It reads the model's words (`replied {text}`) with `fitting`: a spell that fits
@@ -360,7 +360,7 @@ def notAddressed(needs: Form.Names) -> Bool:
 # The interpret Plan of attempt 0 (the utterance, the policy's model) or 1 (the utterance
 # with what the first answer missed, the policy's escalate model).
 def asking<E>(utterance: String, forms: Forms, reference: Plans.Reference, policy: Policies.State, attempt: Nat, needs: Form.Names) -> Plans.Plan<E>:
-  if attempt == 0n then Plans.Plan::<E>.interpret({utterance: utterance, offers: forms, policy: reference, model: ""}) else Plans.Plan::<E>.interpret({utterance: retried(utterance, needs), offers: forms, policy: reference, model: policy.escalate})
+  if attempt == 0n then Plans.Plan.interpret({utterance: utterance, offers: forms, policy: reference, model: ""}) else Plans.Plan.interpret({utterance: retried(utterance, needs), offers: forms, policy: reference, model: policy.escalate})
 def retried(utterance: String, needs: Form.Names) -> String:
   "{utterance}\n\nmissing: {missing(needs)}"
 def missing(needs: Form.Names) -> String:
@@ -369,18 +369,18 @@ def missing(needs: Form.Names) -> String:
     case cons(_): Spell.joined(needs)
 # The short copy for the policy's escalateTo principal.
 def escalation<E>(policy: Policies.State, utterance: String, context: Abi.Context) -> Plans.Plan<E>:
-  Plans.Plan::<E>.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; I could not fit it ({context.object}).\n")})
+  Plans.Plan.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; I could not fit it ({context.object}).\n")})
 # The second miss of a card with no writes of its own to make: the copy to escalateTo (when
 # the policy names one), then the needs card to the speaker (when a need is named).
 def unfit<E, R, T>(policy: Policies.State, utterance: String, needs: Form.Names, context: Abi.Context, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<Policies.State, R>, T>:
-  if policy.escalateTo == "" then needed::<E, Policies.State, R, T>(needs, card, result) else escalating::<E, R, T>(policy, utterance, needs, context, card, result)
+  if policy.escalateTo == "" then needed(needs, card, result) else escalating(policy, utterance, needs, context, card, result)
 def escalating<E, R, T>(policy: Policies.State, utterance: String, needs: Form.Names, context: Abi.Context, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<Policies.State, R>, T>:
-  match perform(escalation::<E>(policy, utterance, context)):
-    case _: needed::<E, Policies.State, R, T>(needs, card, result)
+  match perform(escalation(policy, utterance, context)):
+    case _: needed(needs, card, result)
 def needed<E, S, R, T>(needs: Form.Names, card: Document.Document, result: T) -> Activity<Plans.Plan<E>, Plans.Response<S, R>, T>:
   match needs:
     case nil(_): result
-    case cons(_): tell::<E, S, R, T>(result, card)
+    case cons(_): tell(result, card)
 # Macros (the policy's, checked before the model): `expanded` is the spell text of the first
 # macro whose pattern the utterance matches (blanks and a trailing . ! or ? aside), none when
 # none does. Patterns and utterances are compared word by word; a hole takes the shortest run

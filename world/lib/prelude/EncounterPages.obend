@@ -11,9 +11,9 @@ def length(pages: Pages) -> Nat:
     case nil(_): 0n
     case cons(p): Encounter.childrenLength(p.head) + length(p.tail)
 def pageCount(pages: Pages) -> Nat:
-  Lists.length::<Encounter.Children>(pages)
+  Lists.length(pages)
 def contains(pages: Pages, key: String) -> Bool:
-  Lists.any::<Encounter.Children>(pages, fn(items: Encounter.Children) -> Bool: Encounter.childrenContains(items, key))
+  Lists.any(pages, fn(items: Encounter.Children) -> Bool: Encounter.childrenContains(items, key))
 def append(pages: Pages, child: Encounter.Child) -> Pages:
   match pages:
     case nil(_): Pages.cons({head: Encounter.Children.cons({head: child, tail: Encounter.Children.nil()}), tail: Pages.nil()})

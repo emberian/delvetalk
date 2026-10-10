@@ -5,66 +5,66 @@ sum List<T>:
 def length<T>(items: List<T>) -> Nat:
   match items:
     case nil(_): 0n
-    case cons(c): 1n + length::<T>(c.tail)
+    case cons(c): 1n + length(c.tail)
 def append<T>(items: List<T>, value: T) -> List<T>:
   match items:
-    case nil(_): List::<T>.cons({head: value, tail: List::<T>.nil()})
-    case cons(c): List::<T>.cons({head: c.head, tail: append::<T>(c.tail, value)})
+    case nil(_): List.cons({head: value, tail: List.nil()})
+    case cons(c): List.cons({head: c.head, tail: append(c.tail, value)})
 def concat<T>(left: List<T>, right: List<T>) -> List<T>:
   match left:
     case nil(_): right
-    case cons(c): List::<T>.cons({head: c.head, tail: concat::<T>(c.tail, right)})
+    case cons(c): List.cons({head: c.head, tail: concat(c.tail, right)})
 def any<T>(items: List<T>, predicate: T -> Bool) -> Bool:
   match items:
     case nil(_): false
-    case cons(c): predicate(c.head) || any::<T>(c.tail, predicate)
+    case cons(c): predicate(c.head) || any(c.tail, predicate)
 def filter<T>(items: List<T>, predicate: T -> Bool) -> List<T>:
   match items:
-    case nil(_): List::<T>.nil()
-    case cons(c): if predicate(c.head) then List::<T>.cons({head: c.head, tail: filter::<T>(c.tail, predicate)}) else filter::<T>(c.tail, predicate)
+    case nil(_): List.nil()
+    case cons(c): if predicate(c.head) then List.cons({head: c.head, tail: filter(c.tail, predicate)}) else filter(c.tail, predicate)
 def map<T, U>(items: List<T>, transform: T -> U) -> List<U>:
   match items:
-    case nil(_): List::<U>.nil()
-    case cons(c): List::<U>.cons({head: transform(c.head), tail: map::<T, U>(c.tail, transform)})
+    case nil(_): List.nil()
+    case cons(c): List.cons({head: transform(c.head), tail: map(c.tail, transform)})
 def fold<T, U>(items: List<T>, initial: U, combine: T -> U -> U) -> U:
   match items:
     case nil(_): initial
-    case cons(c): combine(c.head)(fold::<T, U>(c.tail, initial, combine))
+    case cons(c): combine(c.head)(fold(c.tail, initial, combine))
 # An optional value: what a search finds, or nothing.
 sum Maybe<T>:
   none: {}
   some: {value: T}
 def find<T>(items: List<T>, predicate: T -> Bool) -> Maybe<T>:
   match items:
-    case nil(_): Maybe::<T>.none({})
-    case cons(c): if predicate(c.head) then Maybe::<T>.some({value: c.head}) else find::<T>(c.tail, predicate)
+    case nil(_): Maybe.none({})
+    case cons(c): if predicate(c.head) then Maybe.some({value: c.head}) else find(c.tail, predicate)
 def filterMap<T, U>(items: List<T>, transform: T -> Maybe<U>) -> List<U>:
   match items:
-    case nil(_): List::<U>.nil()
-    case cons(c): kept::<T, U>(transform(c.head), filterMap::<T, U>(c.tail, transform))
-def kept<T, U>(found: Maybe<U>, rest: List<U>) -> List<U>:
+    case nil(_): List.nil()
+    case cons(c): kept(transform(c.head), filterMap(c.tail, transform))
+def kept<U>(found: Maybe<U>, rest: List<U>) -> List<U>:
   match found:
     case none(_): rest
-    case some(s): List::<U>.cons({head: s.value, tail: rest})
+    case some(s): List.cons({head: s.value, tail: rest})
 # The index of the first item the predicate holds for: what an Entries edit names.
 def indexWhere<T>(items: List<T>, predicate: T -> Bool) -> Maybe<Nat>:
-  indexFrom::<T>(items, predicate, 0n)
+  indexFrom(items, predicate, 0n)
 def indexFrom<T>(items: List<T>, predicate: T -> Bool, index: Nat) -> Maybe<Nat>:
   match items:
-    case nil(_): Maybe::<Nat>.none({})
-    case cons(c): if predicate(c.head) then Maybe::<Nat>.some({value: index}) else indexFrom::<T>(c.tail, predicate, index + 1n)
+    case nil(_): Maybe.none({})
+    case cons(c): if predicate(c.head) then Maybe.some({value: index}) else indexFrom(c.tail, predicate, index + 1n)
 # The list without every item the predicate holds for.
 def removeWhere<T>(items: List<T>, predicate: T -> Bool) -> List<T>:
   match items:
-    case nil(_): List::<T>.nil()
-    case cons(c): if predicate(c.head) then removeWhere::<T>(c.tail, predicate) else List::<T>.cons({head: c.head, tail: removeWhere::<T>(c.tail, predicate)})
+    case nil(_): List.nil()
+    case cons(c): if predicate(c.head) then removeWhere(c.tail, predicate) else List.cons({head: c.head, tail: removeWhere(c.tail, predicate)})
 def take<T>(items: List<T>, count: Nat) -> List<T>:
   match items:
-    case nil(_): List::<T>.nil()
-    case cons(c): if count == 0n then List::<T>.nil() else List::<T>.cons({head: c.head, tail: take::<T>(c.tail, count - 1n)})
+    case nil(_): List.nil()
+    case cons(c): if count == 0n then List.nil() else List.cons({head: c.head, tail: take(c.tail, count - 1n)})
 def reverse<T>(items: List<T>) -> List<T>:
-  reverseOnto::<T>(items, List::<T>.nil())
+  reverseOnto(items, List.nil())
 def reverseOnto<T>(items: List<T>, onto: List<T>) -> List<T>:
   match items:
     case nil(_): onto
-    case cons(c): reverseOnto::<T>(c.tail, List::<T>.cons({head: c.head, tail: onto}))
+    case cons(c): reverseOnto(c.tail, List.cons({head: c.head, tail: onto}))
