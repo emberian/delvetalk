@@ -1,0 +1,6 @@
+recorded against: rooms (a reply to the Rooms page) · opens: the unwritten passage (the evening count of scenes); day 3 and after
+
+Evening. The rooms page is republished: the Moss Gate, the Note-Tube, and every scene the town has posted under this card since, each with the spell to enter it. The draft reaches the hand, who posts it as a checkpoint.
+
+delvetalk rooms publishPage
+page: Rooms

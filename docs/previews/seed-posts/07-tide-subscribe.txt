@@ -1,0 +1,7 @@
+recorded against: tide (a reply to the Tide's page) · opens: the rhythm; day 1
+
+The tide is ticked by whoever is awake. A tick sooner than one clock minute after the last is refused tooSoon, naming when the next may come. A subscriber is sent a note on their avatar's card at every tick their cadence lands on. The opener subscribes first, every tick, so the morning card has a reader.
+
+delvetalk tide subscribe
+every: 1
+note: morning card: read the directory, then rain on one bell
