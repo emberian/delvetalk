@@ -23,13 +23,6 @@ record State:
   title: String
   held: Relations.Relation<Held>
   next: Nat
-# A creator supplies a Seed; seeded makes the child's State from it.
-record Seed:
-  title: String
-record Edits:
-  title: Plans.Edit<String, {}>
-  held: Plans.Entries<Held, {}>
-  next: Plans.Edit<Nat, Nat>
 # What the workshop did, as data: nothing is a silent default (`silent` is prose handed on
 # to the directory). `held` names the clause the target's law refused.
 sum Verdict:
@@ -41,14 +34,8 @@ sum Verdict:
   usage: {}
   refused: Card.Refusal
   silent: {}
-def defaultSeed() -> Seed:
-  {title: "Workshop"}
-def seeded(seed: Seed) -> State:
-  {title: seed.title, held: Relations.empty(), next: 1n}
-def keep() -> Edits:
-  {title: Plans.Edit.keep({}), held: Plans.Entries.keep({}), next: Plans.Edit.keep({})}
 def initial() -> State:
-  seeded(defaultSeed())
+  {title: "Workshop", held: Relations.empty(), next: 1n}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "held", key: Text.words("n"), limit: 16n})
 def heldKey(held: Held) -> {n: Nat}:
@@ -192,7 +179,6 @@ def methods() -> Lists.List<String>:
   Text.words("adopt withdraw create")
 def blurb() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: usage(), tail: heldLines(context, state)})})
 def heldLines(context: Abi.Context, state: State) -> Document.Documents:

@@ -22,24 +22,10 @@ record State:
   openedHandle: String
   knocks: Relations.Relation<Knock>
   watching: Plans.Reference
-# What a creator may supply; the host lays it over initial().
-type Seed = {}
-record Edits:
-  open: Plans.Edit<Bool, {}>
-  openedBy: Plans.Edit<String, {}>
-  openedHandle: Plans.Edit<String, {}>
-  knocks: Plans.Entries<Knock, {}>
-  watching: Plans.Edit<Plans.Reference, {}>
-def defaultSeed() -> Seed:
-  {}
-def seeded(seed: Seed) -> State:
-  {open: false, openedBy: "", openedHandle: "", knocks: Relations.empty(), watching: Plans.nobody()}
 def initial() -> State:
-  seeded(defaultSeed())
+  {open: false, openedBy: "", openedHandle: "", knocks: Relations.empty(), watching: Plans.nobody()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "knocks", key: Text.words("at who"), limit: 64n})
-def keep() -> Edits:
-  {open: Plans.Edit.keep({}), openedBy: Plans.Edit.keep({}), openedHandle: Plans.Edit.keep({}), knocks: Plans.Entries.keep({}), watching: Plans.Edit.keep({})}
 # Who opened it: the knocker, or the object whose change opened it (its id, no handle).
 def unlatched(who: String, handle: String) -> Edits:
   extend(keep(), {open: Plans.Edit.set({value: true}), openedBy: Plans.Edit.set({value: who}), openedHandle: Plans.Edit.set({value: handle})})
@@ -78,6 +64,5 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
   Card.answer(input, context, forms(), render(state, context))
 def knockLine(knock: Knock) -> Document.Document:
   Document.text("knock: {Card.shown(knock.who, knock.handle, Card.stranger())}\n")
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(if state.open then "The door is open, opened by {Card.shown(state.openedBy, state.openedHandle, context)}.\n" else "The door is shut.\n"), tail: Card.clipped(Lists.map(Relations.rows(state.knocks), knockLine), 8n)})})

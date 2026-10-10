@@ -38,7 +38,7 @@ class Sources(Reflection):
         for entry in (first, second):
             [module] = entry["outcome"]["compile"]["modules"]
             self.assertEqual(module, {"name": "Main", "cid": carried["cid"]})
-        self.assertEqual(sum(line.count("def seeded(") for line in self.lines()), 1)
+        self.assertEqual(sum(line.count("def initial(") for line in self.lines()), 1)
 
     def test_objects_rebuilt_from_cids_replay_to_the_same_state(self):
         self.open_library()

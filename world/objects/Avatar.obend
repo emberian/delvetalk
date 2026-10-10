@@ -37,27 +37,10 @@ record State:
   inbox: Relations.Relation<Note>
   outbox: Relations.Relation<Letter>
   following: Lists.List<Followed>
-record Seed:
-  handle: String
-  at: Plans.Reference
-  holding: Lists.List<Plans.Reference>
-record Edits:
-  handle: Plans.Edit<String, {}>
-  at: Plans.Edit<Plans.Reference, {}>
-  holding: Plans.Entries<Plans.Reference, {}>
-  inbox: Plans.Entries<Note, {}>
-  outbox: Plans.Entries<Letter, {}>
-  following: Plans.Entries<Followed, {}>
-def defaultSeed() -> Seed:
-  {handle: "", at: Plans.nobody(), holding: Lists.List.nil()}
-def seeded(seed: Seed) -> State:
-  {handle: seed.handle, at: seed.at, holding: seed.holding, inbox: Relations.empty(), outbox: Relations.empty(), following: Lists.List.nil()}
 def initial() -> State:
-  seeded(defaultSeed())
+  {handle: "", at: Plans.nobody(), holding: Lists.List.nil(), inbox: Relations.empty(), outbox: Relations.empty(), following: Lists.List.nil()}
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "inbox", key: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "from", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})}), limit: 64n}, tail: Relations.Decls.cons({head: {field: "outbox", key: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})}), limit: 64n}, tail: Relations.Decls.nil({})})})
-def keep() -> Edits:
-  {handle: Plans.Edit.keep({}), at: Plans.Edit.keep({}), holding: Plans.Entries.keep({}), inbox: Plans.Entries.keep({}), outbox: Plans.Entries.keep({}), following: Plans.Entries.keep({})}
+  Lists.append(Lists.append(Relations.Decls.nil(), {field: "inbox", key: Text.words("at from n"), limit: 64n}), {field: "outbox", key: Text.words("at n"), limit: 64n})
 # An avatar answers only to its own principal: its id is the principal's DID.
 def mine(context: Abi.Context) -> Bool:
   context.principal == context.object
@@ -255,7 +238,7 @@ form unsubscribe:
 def methods() -> Lists.List<String>:
   Text.words("hold release")
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: moveForm(), tail: Card.Forms.cons({head: noteForm(), tail: Card.Forms.cons({head: acceptForm(), tail: Card.Forms.cons({head: sendForm(), tail: Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: watchForm(), tail: Card.Forms.cons({head: unsubscribeForm(), tail: Card.Forms.nil()})})})})})})})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Card.Forms.nil(), moveForm()), noteForm()), acceptForm()), sendForm()), subscribeForm()), watchForm()), unsubscribeForm())
 def blurb() -> Card.Door:
   {word: "avatar", blurb: "You in the world: move through exits, leave notes, follow others and send to your followers."}
 # The handle the card shows is a lens, its principal's: `delvetalk <did> set` and `handle: ...`.

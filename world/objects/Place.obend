@@ -18,30 +18,13 @@ type Done = Places.Done
 # the count of traces then. Key order (n first) is the order they happened; the place keeps
 # 64 (the host drops the oldest past them).
 type Trace = Rows.Trace
-record Seed:
-  owner: String
-  name: String
-  description: String
-  exits: Lists.List<Exit>
-  present: Relations.Relation<Plans.Reference>
-  things: Relations.Relation<Plans.Reference>
-record Edits:
-  name: Plans.Edit<String, {}>
-  description: Plans.Edit<String, {}>
-  present: Plans.Entries<Plans.Reference, {}>
-  things: Plans.Entries<Plans.Reference, {}>
-  traces: Plans.Entries<Trace, {}>
-def defaultSeed() -> Seed:
-  {owner: "", name: "", description: "", exits: Lists.List.nil(), present: Relations.empty(), things: Relations.empty()}
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, name: seed.name, description: seed.description, exits: seed.exits, present: seed.present, things: seed.things, traces: Relations.empty()}
 def initial() -> State:
-  seeded(defaultSeed())
+  {owner: "", name: "", description: "", exits: Lists.List.nil(), present: Relations.empty(), things: Relations.empty(), traces: Relations.empty()}
 # Anyone comes and goes, takes and puts (the methods check who); only the owner renames or
 # redescribes the room, reprograms it or amends its law.
 law owner "only the owner renames, redescribes or reprograms it; anyone comes and goes": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description) and unchanged(exits))
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "present", key: Lists.List.cons({head: "object", tail: Lists.List.nil({})}), limit: 256n}, tail: Relations.Decls.cons({head: {field: "things", key: Lists.List.cons({head: "object", tail: Lists.List.nil({})}), limit: 256n}, tail: Relations.Decls.cons({head: {field: "traces", key: Lists.List.cons({head: "at", tail: Lists.List.cons({head: "who", tail: Lists.List.cons({head: "action", tail: Lists.List.cons({head: "n", tail: Lists.List.nil({})})})})}), limit: 64n}, tail: Relations.Decls.nil({})})})})
+  Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "present", key: Text.words("object"), limit: 256n}), {field: "things", key: Text.words("object"), limit: 256n}), {field: "traces", key: Text.words("at who action n"), limit: 64n})
 sum Why:
   alreadyHere: {}
   notHere: {}
@@ -66,8 +49,6 @@ def refused(w: Why) -> Done:
 # A refusal the speaker reads: its line, offered, and nothing written.
 def told(w: Why) -> Activity<Done>:
   Card.tell(refused(w), Document.text("Not done: {refusal(w).reading}\n"))
-def keep() -> Edits:
-  {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), present: Plans.Entries.keep({}), things: Plans.Entries.keep({}), traces: Plans.Entries.keep({})}
 # Every enter, leave, take, put and talk leaves a trace, admitted or refused (the card shows
 # the newest eight; the host keeps 64).
 def trace(action: String, clause: String, context: Abi.Context, state: State) -> Trace:
@@ -131,7 +112,7 @@ def offeredOne(to: Plans.Reference, rest: Lists.List<Plans.Reference>, line: Str
 # The room's name and description are lenses: `delvetalk <room> set` and `name: ...`, the
 # owner's (the law refuses the same write from anyone else).
 def lenses() -> Lists.List<Form.Field>:
-  Lists.List.cons({head: {name: "name", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.cons({head: {name: "description", kind: Form.Kind.text({min: 0n, max: 280n})}, tail: Lists.List.nil()})})
+  Lists.append(Lists.append(Lists.List.nil(), {name: "name", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "description", kind: Form.Kind.text({min: 0n, max: 280n})})
 # The host judged the value against the lens's kind; an unlensed field never reaches here.
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Done>:
   if context.principal != state.owner then told(Why.notOwner({owner: Card.name(state.owner, context)})) else setting(input.field, Card.valueText(input.value))
@@ -142,7 +123,7 @@ def setting(field: String, value: String) -> Activity<Done>:
 def methods() -> Lists.List<String>:
   Text.words("enter leave take put")
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: sayForm(), tail: Card.Forms.cons({head: emoteForm(), tail: Card.Forms.cons({head: whisperForm(), tail: Card.Forms.nil()})})})
+  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), sayForm()), emoteForm()), whisperForm())
 def placeWord() -> String:
   "<place>"
 def line(prefix: String, suffix: String) -> Document.Document:
@@ -160,7 +141,7 @@ def hereLine(state: State, context: Abi.Context) -> Document.Documents:
   if here(context, state) then Document.Documents.cons({head: line("You are here.", ""), tail: Document.Documents.nil()}) else Document.Documents.nil()
 # Derived views (FOUNDATION §9, `viewDerived {object, view}`).
 def views() -> Lists.List<String>:
-  Lists.List.cons({head: "affordances", tail: Lists.List.nil({})})
+  Text.words("affordances")
 # What can be done here, as spells: this room's own forms, then for each thing lying here
 # taking it (a thing acquires itself into the taker's hands), then each exit as the reader's
 # avatar's move (an avatar's id is its principal's DID).

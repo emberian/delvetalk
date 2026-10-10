@@ -32,23 +32,13 @@ record State:
   planter: String
   planterHandle: String
   doors: Card.Doorways
-# What a creator may supply; the host lays it over initial().
-record Seed:
-  colour: Colour
-  seed: String
-  planting: String
-  planter: String
-  planterHandle: String
+# Its own Edits, without the fields nothing may change (it has no law to say so).
 record Edits:
   rains: Plans.Entries<Rain, {}>
   rung: Plans.Edit<Bool, {}>
   doors: Plans.Entries<Card.Doorway, {}>
-def defaultSeed() -> Seed:
-  {colour: Colour.amber({}), seed: "", planting: "", planter: "", planterHandle: ""}
-def seeded(seed: Seed) -> State:
-  {colour: seed.colour, seed: seed.seed, rains: Relations.empty(), rung: false, planting: seed.planting, planter: seed.planter, planterHandle: seed.planterHandle, doors: Lists.List.nil()}
 def initial() -> State:
-  seeded(defaultSeed())
+  {colour: Colour.amber({}), seed: "", rains: Relations.empty(), rung: false, planting: "", planter: "", planterHandle: "", doors: Lists.List.nil()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "rains", key: Text.words("author at n"), limit: 2048n})
 def rainKey(rain: Rain) -> {author: String, at: Nat, n: Nat}:
@@ -116,7 +106,6 @@ def colourName(colour: Colour) -> String:
 def line(rain: Rain) -> Document.Document:
   Document.text("{Card.shown(rain.author, rain.handle, Card.stranger())}: {rain.text}\n")
 # Newest rains are last; the card shows the first eight and counts the rest.
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let article = if colourName(state.colour) == "amber" then "An" else "A"
   let sound = if state.rung then "rung" else "silent"

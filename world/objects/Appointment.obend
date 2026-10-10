@@ -25,16 +25,13 @@ record Seed:
   topic: String
   to: Plans.Reference
   after: Nat
+# Its own Edits, without the fields nothing may change (it has no law to say so).
 record Edits:
   status: Plans.Edit<Status, {}>
 def keep() -> Edits:
   {status: Plans.Edit.keep({})}
-def defaultSeed() -> Seed:
-  {owner: "", topic: "", to: Plans.nobody(), after: 1n}
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, topic: seed.topic, to: seed.to, after: seed.after, status: Status.booked({})}
 def initial() -> State:
-  seeded(defaultSeed())
+  {owner: "", topic: "", to: Plans.nobody(), after: 1n, status: Status.booked({})}
 sum Done:
   kept: {}
   cancelled: {}
@@ -75,6 +72,5 @@ def statusName(status: Status) -> String:
     case booked(_): "booked"
     case kept(_): "kept"
     case cancelled(_): "cancelled"
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("Appointment: {state.topic} for {Card.name(state.to.object, context)}, after {natText(state.after)} ({statusName(state.status)}){Card.mine(state.owner, context)}\n")

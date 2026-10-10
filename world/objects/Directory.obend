@@ -32,14 +32,6 @@ record State:
   doors: Relations.Relation<Listed>
   greeted: Relations.Relation<Greeting>
   policy: Plans.Reference
-# A creator supplies a Seed; seeded makes the child's State from it. The owner is the
-# DID (or principal) who curates the doors.
-record Seed:
-  owner: String
-  policy: Plans.Reference
-record Edits:
-  doors: Plans.Entries<Listed, {}>
-  greeted: Plans.Entries<Greeting, {}>
 sum Answer:
   done: {}
   refused: Card.Refusal
@@ -50,14 +42,8 @@ sum Answer:
 # kept.
 law owner "only the owner changes the doors, the owner or the policy": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(doors) and unchanged(policy))
 law greeted "anyone's summons only adds to who was greeted": request.subject == new.owner or insertOnly(greeted)
-def defaultSeed() -> Seed:
-  {owner: "", policy: Plans.nobody()}
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, doors: Relations.empty(), greeted: Relations.empty(), policy: seed.policy}
-def keep() -> Edits:
-  {doors: Plans.Entries.keep({}), greeted: Plans.Entries.keep({})}
 def initial() -> State:
-  seeded(defaultSeed())
+  {owner: "", doors: Relations.empty(), greeted: Relations.empty(), policy: Plans.nobody()}
 def relations() -> Relations.Decls:
   Lists.append(Lists.append(Relations.Decls.nil(), {field: "doors", key: Text.words("label"), limit: 64n}), {field: "greeted", key: Text.words("principal"), limit: 4096n})
 def listedKey(listed: Listed) -> {label: String}:
@@ -103,7 +89,6 @@ def removed(label: String) -> Activity<Answer>:
 def doorLine(door: Door) -> Document.Document:
   Document.text("{door.label}\n{door.description}\n\n")
 # Affordances first, since readers clip near 1,400 characters; then the doors.
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\n{natText(Relations.count(state.doors))} doors. Reply with a door word to open one, a spell to act, or words: the interpreter reads them. Quote the card you are answering.\n\n"), tail: Lists.concat(Lists.map(menu(state), doorLine), Document.Documents.cons({head: Document.text("Every card prints the exact spell to copy. Reply delvetalk <card> ? for all of a card's spells. A missing field becomes a question; answer it alone.\n"), tail: Document.Documents.nil()}))})})
 def methods() -> Lists.List<String>:

@@ -23,29 +23,8 @@ record State:
   location: Plans.Reference
   offer: Offer
   copyable: Bool
-# A creator supplies a Seed; seeded makes the child's State from it.
-record Seed:
-  owner: String
-  name: String
-  description: String
-  holder: Plans.Reference
-  location: Plans.Reference
-record Edits:
-  name: Plans.Edit<String, {}>
-  description: Plans.Edit<String, {}>
-  holder: Plans.Edit<Plans.Reference, {}>
-  holderHandle: Plans.Edit<String, {}>
-  location: Plans.Edit<Plans.Reference, {}>
-  offer: Plans.Edit<Offer, {}>
-  copyable: Plans.Edit<Bool, {}>
-def defaultSeed() -> Seed:
-  {owner: "", name: "", description: "", holder: Plans.nobody(), location: Plans.nobody()}
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, name: seed.name, description: seed.description, holder: seed.holder, holderHandle: "", location: seed.location, offer: Offer.none({}), copyable: true}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), holder: Plans.Edit.keep({}), holderHandle: Plans.Edit.keep({}), location: Plans.Edit.keep({}), offer: Plans.Edit.keep({}), copyable: Plans.Edit.keep({})}
+  {owner: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true}
 # Anyone moves a thing (its own code checks who holds it); only its owner renames it.
 law owner "only the owner renames, redescribes or makes it uncopyable; anyone moves it": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description) and unchanged(copyable))
 # The second tier: custody moves from one holder to another only by an accepted offer:
@@ -179,7 +158,7 @@ def copying(context: Abi.Context, state: State) -> Activity<Done>:
 # Its name, description and whether it may be copied are lenses, the owner's: `delvetalk
 # <thing> set` and `name: ...` (the law refuses the same write from anyone else).
 def lenses() -> Lists.List<Form.Field>:
-  Lists.List.cons({head: {name: "copyable", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})}, tail: Lists.List.cons({head: {name: "name", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.cons({head: {name: "description", kind: Form.Kind.text({min: 0n, max: 280n})}, tail: Lists.List.nil()})})})
+  Lists.append(Lists.append(Lists.append(Lists.List.nil(), {name: "copyable", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})}), {name: "name", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "description", kind: Form.Kind.text({min: 0n, max: 280n})})
 # The host judged the value against the lens's kind; an unlensed field never reaches here.
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Done>:
   if context.principal != state.owner then told(Why.notOwner({owner: Card.name(state.owner, context)})) else setting(input.field, Card.valueText(input.value))
@@ -208,7 +187,7 @@ form withdraw:
 def methods() -> Lists.List<String>:
   Text.words("transfer copy drop")
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: acquireForm(), tail: Card.Forms.cons({head: offerForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.nil()})})})
+  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), acquireForm()), offerForm()), withdrawForm())
 def blurb() -> Card.Door:
   {word: "thing", blurb: "Pick it up, put it down, offer it to someone who accepts."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

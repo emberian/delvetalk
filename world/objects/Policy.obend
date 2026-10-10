@@ -15,35 +15,12 @@ type Macro = Policies.Macro
 # the configured model and returns the answer as a proposal, never as authority. Its
 # State is Policies.State, so a card may import the type and view it.
 type State = Policies.State
-# A creator supplies a Seed; seeded makes the child's State from it.
-record Seed:
-  owner: String
-  model: String
-  system: String
-  escalate: String
-  escalateTo: String
-  confirmFor: Lists.List<String>
-record Edits:
-  model: Plans.Edit<String, {}>
-  escalate: Plans.Edit<String, {}>
-  escalateTo: Plans.Edit<String, {}>
-  system: Plans.Edit<String, {}>
-  lexicon: Plans.Entries<Term, {}>
-  examples: Plans.Entries<Example, {}>
-  macros: Plans.Entries<Macro, Macro>
-  confirmFor: Plans.Entries<String, {}>
-def defaultSeed() -> Seed:
-  {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", escalate: "", escalateTo: "", confirmFor: asking()}
 # What waits for a yes by default: changing an object's program or law, and giving
 # offering custody away. Planting, raining, subscribing and submitting run at once.
 def asking() -> Lists.List<String>:
   Text.words("reprogram amend offer")
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, model: seed.model, system: seed.system, lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: seed.escalate, escalateTo: seed.escalateTo, macros: Lists.List.nil({}), confirmFor: seed.confirmFor}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {model: Plans.Edit.keep({}), escalate: Plans.Edit.keep({}), escalateTo: Plans.Edit.keep({}), system: Plans.Edit.keep({}), lexicon: Plans.Entries.keep({}), examples: Plans.Entries.keep({}), macros: Plans.Entries.keep({}), confirmFor: Plans.Entries.keep({})}
+  {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: "", escalateTo: "", macros: Lists.List.nil({}), confirmFor: asking()}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
 # stranger by name before writing.
 law owner "only the owner teaches it": request.subject == new.owner
@@ -95,7 +72,7 @@ def asks(ask: Ask) -> Bool:
   match ask:
     case yes(_): true
     case no(_): false
-def asked(action: String, ask: Bool, state: State) -> Plans.Entries<String, {}>:
+def asked(action: String, ask: Bool, state: State) -> Plans.Entries<String, String>:
   if ask == Lists.any(state.confirmFor, fn(a: String) -> Bool: a == action) then Plans.Entries.keep({}) else if ask then Plans.Entries.append({item: action}) else Plans.Entries.removeItem({item: action})
 # Teach a macro: its name, a pattern of words and `{holes}`, and the spell it expands to, one
 # field line (`expansion: garden plant / colour: violet / seed: a bell for {who}`: a field line
@@ -126,7 +103,7 @@ def forms() -> Card.Forms:
 # tells what it could not fit after two attempts (`escalate-to`, a DID, "" for nobody) and the
 # system instruction are set through lenses: `delvetalk <policy> set` and `model: ...`.
 def lenses() -> Lists.List<Form.Field>:
-  Lists.List.cons({head: {name: "model", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.cons({head: {name: "escalate", kind: Form.Kind.text({min: 0n, max: 64n})}, tail: Lists.List.cons({head: {name: "escalate-to", kind: Form.Kind.text({min: 0n, max: 160n})}, tail: Lists.List.cons({head: {name: "system", kind: Form.Kind.text({min: 1n, max: 1000n})}, tail: Lists.List.nil()})})})})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.List.nil(), {name: "model", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "escalate", kind: Form.Kind.text({min: 0n, max: 64n})}), {name: "escalate-to", kind: Form.Kind.text({min: 0n, max: 160n})}), {name: "system", kind: Form.Kind.text({min: 1n, max: 1000n})})
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Card.Replied>:
   if context.principal != state.owner then Card.answerRefused(refusal(Why.notOwner({owner: Card.name(state.owner, context)})), context, forms(), render(state, context), fn(r: Card.Replied) -> Card.Replied: r) else setting(input.field, Card.valueText(input.value))
 # The host judged the value against the lens's kind; an unlensed field never reaches here.

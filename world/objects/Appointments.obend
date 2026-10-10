@@ -13,18 +13,8 @@ import ./Appointment.obend as Appointment
 record State:
   booked: Nat
   children: Lists.List<Plans.Reference>
-type Seed = {}
-record Edits:
-  booked: Plans.Edit<Nat, Nat>
-  children: Plans.Entries<Plans.Reference, {}>
-def defaultSeed() -> Seed:
-  {}
-def seeded(seed: Seed) -> State:
-  {booked: 0n, children: Lists.List.nil()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {booked: Plans.Edit.keep({}), children: Plans.Entries.keep({})}
+  {booked: 0n, children: Lists.List.nil()}
 sum Done:
   booked: {object: Plans.Reference}
   refused: Card.Refusal
@@ -52,6 +42,5 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
   Card.answer(input, context, forms(), render(state, context))
 def childLine(reference: Plans.Reference) -> Document.Document:
   Document.text("- {reference.object}\n")
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("APPOINTMENTS: {natText(state.booked)} booked, newest first\n"), tail: Card.clipped(Lists.map(Lists.reverse(state.children), childLine), 8n)})})

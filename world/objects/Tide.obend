@@ -22,16 +22,11 @@ record State:
   last: Nat
   gap: Nat
   subs: Relations.Relation<Sub>
-record Seed:
-  gap: Nat
-record Edits:
-  ticks: Plans.Edit<Nat, Nat>
-  last: Plans.Edit<Nat, {}>
-  subs: Plans.Entries<Sub, Sub>
 # What the law text cannot say: "a changed subscription is its principal's own" ranges over
 # the rows, and "tooSoon" compares old and new; the Bend predicate says both.
 law clock "ticks only count up": monotone(ticks)
 law last "the last tick only moves forward": monotone(last)
+law gap "the gap never changes": unchanged(gap)
 # The two-tier law, in Bend: a tick sooner than gap after the last is tooSoon; every key
 # the write changed (a row added, replaced or retracted) is the requesting principal's.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
@@ -60,14 +55,8 @@ def relations() -> Relations.Decls:
 # by name (the host's limit would drop someone else's row).
 def subsMax() -> Nat:
   64n
-def defaultSeed() -> Seed:
-  {gap: 1n}
-def seeded(seed: Seed) -> State:
-  {ticks: 0n, last: 0n, gap: seed.gap, subs: Relations.empty()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {ticks: Plans.Edit.keep({}), last: Plans.Edit.keep({}), subs: Plans.Entries.keep({})}
+  {ticks: 0n, last: 0n, gap: 1n, subs: Relations.empty()}
 sum Done:
   subscribed: {since: Nat}
   ticked: {tick: Nat, sent: Nat}
@@ -130,7 +119,6 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
   Card.answer(input, context, forms(), render(state, context))
 def line(context: Abi.Context) -> Sub -> Document.Document:
   fn(sub: Sub) -> Document.Document: Document.text("{Card.shown(sub.who, sub.handle, context)}{Card.mine(sub.who, context)} every {natText(sub.every)} from tick {natText(sub.since)}: {sub.note}\n")
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let id = Card.called(context, "tide")
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("THE TIDE, tick {natText(state.ticks)}. Last at clock {natText(state.last)}; the next may come at clock {natText(state.last + state.gap)}. Subscribe yourself: delvetalk {id} subscribe / every: <1 to 1000> / note: <1 to 140 characters>. Anyone may tick: delvetalk {id} tick.\n"), tail: Card.clipped(Lists.map(Relations.rows(state.subs), line(context)), 8n)})})

@@ -45,24 +45,14 @@ record State:
   cooldown: Nat
   requires: Scenes.Guard
   left: Relations.Relation<Left>
-type Seed = Scenes.Seed
-record Edits:
-  presence: Plans.Entries<Presence, {}>
-  vars: Plans.Entries<Var, Var>
-  left: Plans.Entries<Left, {}>
-def defaultSeed() -> Seed:
-  {title: "", start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil()}
-def seeded(seed: Seed) -> State:
-  {owner: "", title: seed.title, start: seed.start, passages: seed.passages, presence: Relations.empty(), vars: Lists.List.nil(), cooldown: seed.cooldown, requires: seed.requires, left: Relations.empty()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {presence: Plans.Entries.keep({}), vars: Plans.Entries.keep({}), left: Plans.Entries.keep({})}
+  {owner: "", title: "", start: "", passages: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), left: Relations.empty()}
 def leftKey(l: Left) -> {at: Nat, who: String}:
   {at: l.at, who: l.who}
 def relations() -> Relations.Decls:
   Lists.append(Lists.append(Relations.Decls.nil(), {field: "presence", key: Text.words("who"), limit: 16n}), {field: "left", key: Text.words("at who"), limit: 64n})
 law owner "only the owner reprograms or amends it; anyone enters, chooses and leaves": request.kind == 0 or request.subject == new.owner
+law fixed "the owner, title, passages, start, cooldown and requirements never change": unchanged(owner) and unchanged(title) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)
 # The cooldown, as the second tier of the law: a reader who appears in presence must have
 # left at least `cooldown` clock units before the turn's clock.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
@@ -194,7 +184,7 @@ form choose:
   choice: text 1..64
 form leave:
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: enterForm(), tail: Card.Forms.cons({head: chooseForm(), tail: Card.Forms.cons({head: leaveForm(), tail: Card.Forms.nil()})})})
+  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), enterForm()), chooseForm()), leaveForm())
 def blurb() -> Card.Door:
   {word: "scene", blurb: "A passage-and-choice scene: enter, choose, leave; post a ```spween block to make one."}
 # A ```spween block makes a new scene beside this one; anything else is the card's default.
@@ -206,7 +196,7 @@ def authored(parsed: Spween.Parsed, context: Abi.Context, state: State) -> Activ
   match parsed:
     case refused(r): Card.answerRefused({clause: "spween", reading: r.reason}, context, forms(), render(state, context), fn(x: Card.Replied) -> Card.Replied: x)
     case parsed(p): creating(p.seed, "{context.object}/{p.id}")
-def creating(seed: Seed, id: String) -> Activity<Card.Replied>:
+def creating(seed: Scenes.Seed, id: String) -> Activity<Card.Replied>:
   match world.create({package: "Scene", seed: seed, law: "", requireAbsent: {world: "", object: id}}):
     case created(c): Card.tell(Card.Replied.done({action: "create"}), Document.text("SCENE {seed.title} is at {c.object.object}: {natText(Lists.length(seed.passages))} passages. Reply delvetalk {c.object.object} enter to begin.\n"))
     case refused(r): Card.tell(Card.Replied.refused({clause: r.clause, reading: "The world refused it ({r.clause})."}), Document.text("Not made, refused {r.clause}: {id}\n"))

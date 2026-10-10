@@ -32,16 +32,6 @@ record State:
   withdrawn: String
   withdrawnHandle: String
   closed: Nat
-record Seed:
-  amendment: Amendment
-  parties: Lists.List<String>
-  terms: String
-  piece: String
-record Edits:
-  signatures: Plans.Entries<Signature, {}>
-  withdrawn: Plans.Edit<String, {}>
-  withdrawnHandle: Plans.Edit<String, {}>
-  closed: Plans.Edit<Nat, {}>
 # The law: only a party changes the deal; the parties, terms and piece never change; a
 # signature is only ever inserted; a withdrawal is final (closed goes 0 to 1 once). Bend
 # refuses a stranger by name first.
@@ -49,18 +39,12 @@ law members "a write is a party's": request.kind == 0 implies request.subject in
 law fixed "the parties, the terms and the piece never change": unchanged(parties) and unchanged(terms) and unchanged(piece) and unchanged(amendment)
 law once "a deal closes once": writeOnce(closed)
 law signed "signatures are only added": insertOnly(signatures)
-def defaultSeed() -> Seed:
-  {amendment: {object: "", law: ""}, parties: Lists.List.nil(), terms: "", piece: ""}
-def seeded(seed: Seed) -> State:
-  {amendment: seed.amendment, parties: seed.parties, terms: seed.terms, piece: seed.piece, signatures: Relations.empty(), withdrawn: "", withdrawnHandle: "", closed: 0n}
 def initial() -> State:
-  seeded(defaultSeed())
+  {amendment: {object: "", law: ""}, parties: Lists.List.nil(), terms: "", piece: "", signatures: Relations.empty(), withdrawn: "", withdrawnHandle: "", closed: 0n}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "signatures", key: Text.words("principal"), limit: 64n})
 def signedBy(signature: Signature) -> {principal: String}:
   {principal: signature.principal}
-def keep() -> Edits:
-  {signatures: Plans.Entries.keep({}), withdrawn: Plans.Edit.keep({}), withdrawnHandle: Plans.Edit.keep({}), closed: Plans.Edit.keep({})}
 sum Done:
   signed: {remaining: Nat}
   atRest: {}
@@ -116,7 +100,7 @@ def withdrawing(context: Abi.Context) -> Activity<Done>:
 form countersign:
 form withdraw:
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: countersignForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.nil()})})
+  Lists.append(Lists.append(Card.Forms.nil(), countersignForm()), withdrawForm())
 def blurb() -> Card.Door:
   {word: "deal", blurb: "Terms every party countersigns; at rest when all have."}
 def doneReply(done: Done) -> Card.Replied:
@@ -130,7 +114,6 @@ def signatureLine(signature: Signature) -> Document.Document:
   Document.text("signed: {Card.shown(signature.principal, signature.handle, Card.stranger())} at {signature.post}\n")
 def waitingLine(state: State) -> Document.Document:
   Document.text(if state.withdrawn != "" then "Withdrawn by {Card.shown(state.withdrawn, state.withdrawnHandle, Card.stranger())}.\n" else if atRest(state) then "At rest: every party has countersigned.\n" else "Waiting for {natText(unsigned(state))} of the parties.\n")
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let piece = if state.piece == "" then "" else " for {state.piece}"
   let amends = if state.amendment.object == "" then "" else "At rest it amends {state.amendment.object} to:\n    {state.amendment.law}\n\n"

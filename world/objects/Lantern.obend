@@ -13,21 +13,8 @@ record State:
   litBy: String
   litHandle: String
   watching: Plans.Reference
-# What a creator may supply; the host lays it over initial().
-type Seed = {}
-record Edits:
-  lit: Plans.Edit<Bool, {}>
-  litBy: Plans.Edit<String, {}>
-  litHandle: Plans.Edit<String, {}>
-  watching: Plans.Edit<Plans.Reference, {}>
-def defaultSeed() -> Seed:
-  {}
-def seeded(seed: Seed) -> State:
-  {lit: false, litBy: "", litHandle: "", watching: Plans.nobody()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {lit: Plans.Edit.keep({}), litBy: Plans.Edit.keep({}), litHandle: Plans.Edit.keep({}), watching: Plans.Edit.keep({})}
+  {lit: false, litBy: "", litHandle: "", watching: Plans.nobody()}
 # Light the lantern and remember who did: the turn's principal, or the object whose change
 # lit it (its id, no handle).
 def light(state: State, context: Abi.Context) -> Activity<Bool>:
@@ -59,6 +46,5 @@ def blurb() -> Card.Door:
   {word: "lantern", blurb: "Light it, or let a door light it."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text(if state.lit then "The lantern is lit by {Card.shown(state.litBy, state.litHandle, context)}{Card.mine(state.litBy, context)}.\n" else "The lantern is dark.\n")

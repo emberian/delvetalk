@@ -12,24 +12,15 @@ import ./Text.obend as Text
 # await exactly that slot: the reveal opens the move only once the opponent's
 # commitment is admitted, and suspends until it is.
 type State = Seats.State
-record Seed:
-  table: Plans.Reference
-  seat: Nat
-  owner: String
-  opponent: String
-  rival: Plans.Reference
+# Its own Edits, without the fields nothing may change (it has no law to say so).
 record Edits:
   round: Plans.Edit<Nat, Nat>
   digest: Plans.Edit<String, {}>
   opened: Plans.Edit<Bool, {}>
   source: Plans.Edit<Nat, {}>
   target: Plans.Edit<Nat, {}>
-def defaultSeed() -> Seed:
-  {table: Plans.nobody(), seat: 0n, owner: "", opponent: "", rival: Plans.nobody()}
-def seeded(seed: Seed) -> State:
-  {table: seed.table, seat: seed.seat, owner: seed.owner, opponent: seed.opponent, rival: seed.rival, round: 0n, digest: "", opened: false, source: 0n, target: 0n}
 def initial() -> State:
-  seeded(defaultSeed())
+  {table: Plans.nobody(), seat: 0n, owner: "", opponent: "", rival: Plans.nobody(), round: 0n, digest: "", opened: false, source: 0n, target: 0n}
 def keep() -> Edits:
   {round: Plans.Edit.keep({}), digest: Plans.Edit.keep({}), opened: Plans.Edit.keep({}), source: Plans.Edit.keep({}), target: Plans.Edit.keep({})}
 type Done = Seats.Done
@@ -85,7 +76,6 @@ def blurb() -> Card.Door:
   {word: "seat", blurb: "Your seat at a commit-reveal table."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let where = if state.opened then "opened {natText(state.source)} to {natText(state.target)}" else if state.digest != "" then "sealed" else "choosing"
   Document.text("{Card.name(state.owner, context)}{Card.mine(state.owner, context)}'s seat, round {natText(state.round)}: {where}\n")

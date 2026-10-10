@@ -43,19 +43,6 @@ record State:
   pending: Relations.Relation<Pending>
   children: Relations.Relation<Child>
   pageCheckpoint: String
-record Edits:
-  planted: Plans.Edit<Nat, Nat>
-  confirmFor: Plans.Entries<String, {}>
-  pending: Plans.Entries<Pending, Pending>
-  children: Plans.Entries<Child, {}>
-  pageCheckpoint: Plans.Edit<String, {}>
-# A creator supplies a Seed; the host lays it over initial(). The garden's own creates
-# carry Data: a Bell.Seed, and nothing for a cistern.
-record Seed:
-  owner: String
-  policy: Plans.Reference
-  confirmFor: Lists.List<String>
-  pending: Relations.Relation<Pending>
 # What plant takes, and so what an interpretation proposes: the host reads a colour's word
 # as its case (in a spell, a proposal or a direct turn).
 record Planting:
@@ -65,20 +52,14 @@ record Planting:
 # policy or its page checkpoint (a set or a merge from anyone else is refused in Bend
 # first, by name; this law refuses the same write proposed any other way).
 law owner "only the owner changes the owner, what asks first, the policy or the page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
-def defaultSeed() -> Seed:
-  {owner: "", policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty()}
-def seeded(seed: Seed) -> State:
-  {owner: seed.owner, planted: 0n, policy: seed.policy, confirmFor: seed.confirmFor, pending: seed.pending, children: Relations.empty(), pageCheckpoint: ""}
 def initial() -> State:
-  seeded(defaultSeed())
+  {owner: "", planted: 0n, policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty(), children: Relations.empty(), pageCheckpoint: ""}
 def relations() -> Relations.Decls:
   Lists.append(Lists.append(Relations.Decls.nil(), {field: "pending", key: Text.words("principal"), limit: pendingMax()}), {field: "children", key: Text.words("object"), limit: 4096n})
 # Principals with a planting held at once: the Bend check refuses one more by name, since past
 # the limit the host would drop someone else's.
 def pendingMax() -> Nat:
   64n
-def keep() -> Edits:
-  {planted: Plans.Edit.keep({}), confirmFor: Plans.Entries.keep({}), pageCheckpoint: Plans.Edit.keep({}), pending: Plans.Entries.keep({}), children: Plans.Entries.keep({})}
 # Bells are minted: an empty requireAbsent lets the host choose <garden>/bell/<n>, and the
 # garden records the reference created {object} answers. The cistern has a chosen name,
 # <garden>/cistern, so a second is refused requiredAbsence.
@@ -107,7 +88,7 @@ form plant as planting:
 form cistern as digging:
   name: text 0..120
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: planting(), tail: Card.Forms.cons({head: digging(), tail: Card.Forms.nil()})})
+  Lists.append(Lists.append(Card.Forms.nil(), planting()), digging())
 # A reader with a proposal waiting is reminded of it, first.
 def waiting(context: Abi.Context, state: State) -> String:
   match heldBy(context.principal, state):
@@ -118,7 +99,7 @@ def childLine(child: Child) -> Document.Document:
 # Derived views (FOUNDATION §9, `viewDerived {object, view}`): pure definitions of the state
 # and the reader's context that another object may ask for by name.
 def views() -> Lists.List<String>:
-  Lists.List.cons({head: "byColour", tail: Lists.List.nil({})})
+  Text.words("byColour")
 # How many bells of each colour grow here, one row a colour that has any, keyed {colour}.
 record Tally:
   colour: Bell.Colour
@@ -130,7 +111,6 @@ def inWords(state: State) -> String:
   if Plans.isNobody(state.policy) then "" else if asks(state.confirmFor, "plant") then "Or say it in words; I show you the spell before it grows.\n\n" else "Or say it in words; the interpreter plants what it understands.\n\n"
 # The garden card: how to plant first (readers clip near 1,400 characters), then the
 # bells, newest first, eight of them and a count of the rest.
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let card = Card.called(context, "garden")
   let head = Document.text("✾ THE NIGHT GARDEN\n\n{waiting(context, state)}To plant, reply:\n\n    delvetalk {card} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n{inWords(state)}{Card.checkpointLine(state.pageCheckpoint)}{natText(state.planted)} planted, newest first:\n")

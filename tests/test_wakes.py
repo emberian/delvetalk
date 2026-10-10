@@ -104,13 +104,6 @@ class Wakes(Chain):
         self.assertEqual(fields, {"clause": label("misplaced"), "reading": label("An env lives at env/did:plc:inkling")})
         self.assertEqual(self.version("env/elsewhere"), 0)
 
-    def test_a_wake_seeded_without_an_env_watches_env_slash_its_owner(self):
-        from tests.test_objects import PROBE_HEAD, run_pure
-        probe = PROBE_HEAD % "Wake" + "def home(owner: String, env: String) -> String:\n  O.seeded({owner: owner, handle: \"\", env: {world: \"\", object: env}}).env.object\n"
-        out = run_pure("Wake", "home", label(OWNER), label(""), probe=probe)
-        self.assertEqual(out["value"], label("env/" + OWNER), out)
-        self.assertEqual(run_pure("Wake", "home", label(OWNER), label("env/other"), probe=probe)["value"], label("env/other"))
-
     def test_the_opener_creates_an_env_for_its_owner_who_alone_may_amend_it(self):
         """Rehearsal finding 10: genesis seeds each principal's Env as the world's opener."""
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="ember")["status"], "opened")

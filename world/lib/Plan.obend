@@ -7,9 +7,11 @@ import ./List.obend as Lists
 #
 # A write is a record of per-field edits, never a whole state: the host judges each field
 # against the law. An object's `Edits` has one field per state field, each an Edit<T, D>
-# (scalars) or Entries<D, U> (lists and relations); `write {field: op value, ...}` builds a
-# self-write from them, and the type arguments of keep and append are inferred from the
-# field's declared type (`Plans.Edit.keep({})` in a keep() record).
+# (scalars) or Entries<D, U> (lists and relations), and `keep()` keeps them all; the kernel
+# derives both from the State (a field nothing may change is kept by `unchanged` in the law).
+# A lawless object some creator imports (Bell, Appointment) or one with no law to say it
+# (Seat) still writes its own pair, leaving out the fields that never change.
+# `write {field: op value, ...}` builds a self-write from them.
 #
 # Payloads are Data. What a call, send or create carries (an argument, a message, a child's
 # seed) is the value itself where Data is expected (the compiler injects it): first-order

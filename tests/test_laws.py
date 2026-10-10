@@ -120,6 +120,24 @@ def wake_variant():
     return closure("Wake", override={"Wake": source})
 
 
+class FixedFields(LawWorld):
+    """With Edits derived from the State, every field is writable by a write record; the fields
+    nothing may change are kept by the law (unchanged), so a forged write of one is refused."""
+
+    def forged(self, obj, fields, change):
+        keep = {"tag": "variant", "label": "keep", "payload": record()}
+        version = self.host.send(op="world-view", principal=OWNER, object=obj)["version"]
+        edits = {name: keep for name in fields}
+        edits.update(change)
+        return self.host.send(op="world-propose", principal=OTHER, identity="forged-" + obj,
+                              roots=[{"object": obj, "version": version}], writes=[{"object": obj, "edits": [record(**edits)]}])
+
+    def test_a_forged_gap_is_refused_by_the_tides_law(self):
+        self.create("tide", closure("Tide"), TIDE_SEED)
+        r = self.forged("tide", ("ticks", "last", "gap", "subs"), {"gap": {"tag": "variant", "label": "set", "payload": record(value=nat(0))}})
+        self.assertEqual(self.clause(r), "lawRefused/gap", r)
+
+
 class Predicates(LawWorld):
 
     def test_tides_predicate_refuses_someone_elses_subscription(self):

@@ -36,6 +36,7 @@ def modules_on_disk():
 
 
 MODULES = modules_on_disk()
+OBJECT_NAMES = sorted(n for n, path in MODULES.items() if '/world/objects/' in path)
 
 
 def closure(name, seen=None, out=None):
@@ -282,18 +283,15 @@ class Objects(unittest.TestCase):
                 if name == "Anthology":
                     self.assertIn("[proposed] glm: moths", reply["value"]["value"])
 
-    def test_every_object_exports_initial_and_a_seeded_constructor(self):
-        """The Seed rule: a creator supplies a Seed; the child's seeded makes its State."""
-        objects = ("Counter", "Garden", "Bell", "Cistern", "Anthology", "Door", "Lantern", "Loop", "Place", "Thing",
-                   "Directory", "Avatar")
-        for name in objects:
+    def test_every_object_is_made_from_initial_alone(self):
+        """A creator's seed is laid over `initial()`; no object keeps a Seed ritual beside it
+        (WORLD-REVIEW 4), and only the Appointment types the Seed its book creates it with."""
+        for name in OBJECT_NAMES:
             with self.subTest(object=name):
                 entries = [d[0] for d in definitions(name)]
-                for required in ("defaultSeed", "seeded", "initial"):  # test_artifact_pins compiles each
-                    self.assertIn(required, entries)
-                with open(MODULES[name]) as handle:
-                    source = handle.read()
-                self.assertIn("seeded(defaultSeed())", source)
+                self.assertIn("initial", entries)
+                self.assertNotIn("seeded", entries)
+                self.assertNotIn("defaultSeed", entries)
 
     def test_document_plain_is_linear_not_quadratic_over_256_leaves(self):
         """Document.plain flattens the leaves once and joins them in rounds of

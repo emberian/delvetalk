@@ -22,24 +22,13 @@ record State:
   width: Nat
   height: Nat
   game: Game.Result
-record Seed:
-  north: Plans.Reference
-  south: Plans.Reference
-record Edits:
-  round: Plans.Edit<Nat, Nat>
-  game: Plans.Edit<Game.Result, {}>
 law rounds "rounds only go forward": monotone(round)
 law owner "only the owner reprograms or amends it; anyone plays": request.kind == 0 or request.subject == new.owner
-def defaultSeed() -> Seed:
-  {north: Plans.nobody(), south: Plans.nobody()}
+law fixed "the owner, the seats and the board's size never change": unchanged(owner) and unchanged(north) and unchanged(south) and unchanged(width) and unchanged(height)
 def opening() -> Game.Result:
   {board: 3544482323287199997214430076569557050131592232587036428018782212697626882n, automaton: 60n, marks: 0n, status: 0n, winner: 0n}
-def seeded(seed: Seed) -> State:
-  {owner: "", north: seed.north, south: seed.south, round: 0n, width: 11n, height: 11n, game: opening()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {round: Plans.Edit.keep({}), game: Plans.Edit.keep({})}
+  {owner: "", north: Plans.nobody(), south: Plans.nobody(), round: 0n, width: 11n, height: 11n, game: opening()}
 sum Done:
   resolved: {round: Nat, status: Nat, winner: Nat}
   refused: Card.Refusal
@@ -84,6 +73,5 @@ def rows(state: State, y: Nat) -> Document.Documents:
   if y == state.height then Document.Documents.nil() else Document.Documents.cons({head: Document.text(row(state.game.board, y * state.width, state.width)), tail: rows(state, y + 1n)})
 def outcome(game: Game.Result) -> String:
   if game.winner == 1n then "North wins." else if game.winner == 2n then "South wins." else if game.status == 1n then "The last pair conflicted; the board stayed." else if game.status == 2n then "The last pair was invalid; the board stayed." else "Seal, open, resolve."
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("AUTOMATAFL, round {natText(state.round)}: {outcome(state.game)}\n\n"), tail: rows(state, 0n)})})

@@ -15,18 +15,8 @@ record Kept:
   outcome: Plans.Outcome
 record State:
   entries: Relations.Relation<Kept>
-# What a creator may supply; the host lays it over initial().
-type Seed = {}
-record Edits:
-  entries: Plans.Entries<Kept, {}>
-def defaultSeed() -> Seed:
-  {}
-def seeded(seed: Seed) -> State:
-  {entries: Relations.empty()}
 def initial() -> State:
-  seeded(defaultSeed())
-def keep() -> Edits:
-  {entries: Plans.Entries.keep({})}
+  {entries: Relations.empty()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "entries", key: Text.words("at slot"), limit: 256n})
 # Retains a refusal (or any) receipt; the answer is how many it keeps.
@@ -50,6 +40,5 @@ def outcomeName(outcome: Plans.Outcome) -> String:
     case refused(r): "refused {r.class}"
 def line(kept: Kept) -> Document.Document:
   Document.text("#{natText(kept.at)} {Card.handle(kept.slot.principal)}: {outcomeName(kept.outcome)}\n")
-# The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Cistern\n"), tail: Card.clipped(Lists.map(Lists.reverse(Relations.rows(state.entries)), line), 8n)})})
