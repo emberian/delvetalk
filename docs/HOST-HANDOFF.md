@@ -593,6 +593,42 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    actions. Forms are method inputs and are not filtered. Test: `tests/test_spell_turns.py`
    `FixedFields`.
 
+77. **A refused call says why (host11; rehearsal run 11 finding 3).** A `call`/`callVia` refused by the
+   host answers `refused {clause, reading}` where the call site's result has `reading` (World's
+   `Returned`, the objects lane's line), else `refused {clause}` as before (`refusedReading`). The
+   reading is the refusal's voiced reason (`callReading` over `Refusal.voiced`): a spell's badSpell
+   reason, `noMethodReason`, unknownObject's and typeMismatch's sentences; a grant clause says "no
+   grant lets this call run <m> on <id> (<clause>).". Test: `tests/test_call_reading.py`.
+
+78. **Declarations from the artifact (host11).** Whether an entry module declares `forms`, `views`,
+   `lenses`, `blurb` (and, for `publicMethods`, `methods`) is read from the artifact's `declares:
+   [names]` when the kernel lists it, derived definitions included (`packageDeclares`,
+   `Object.declaresDef`; `Object.declares`, in snapshots); an artifact without the list falls back to
+   scanning the entry module's source for `def <name>(`. The scan goes when the kernel's list is in
+   foundation (coordinator's word). `#guard`s in `Ops.lean`.
+
+79. **No write or migration moves a fixed field (host11).** `judge` refuses an admitted-to-be write
+   (a `world-propose`'s edits, which the kernel never sees) that changes a field of `Object.fixed`:
+   class `lawRefused`, clause `fixed`, reason "refused fixed: <f> is fixed; it is set when <id> is
+   made and never after." (`movedFixed`, by canonical bytes). A reprogram whose migration changes a
+   field the new code fixes is refused `programRefused`, clause `fixed`. Tests:
+   `tests/test_spell_turns.py` `FixedFields`, `tests/test_appointments.py` (its marker gone).
+
+80. **Usage and hints as the speaker reads them (host11; rehearsal run 11 finding 5).** `castSpell`
+   speaks the card as the speaker wrote it (`env`, never `env/<did>`, though the turn runs on the
+   resolved id) in usage, templates and reasons, and `lensSpell` likewise. A misfit's hint is the
+   spell with a blank where the value did not fit (`blankedTemplate`; what fitted stays). An
+   unknown card's hint is the answering card's usage, or, when it has no spells, "no card named
+   <card>; reply to the directory for the doors". Usage lists only the forms whose method the
+   speaker's law admits (`usageForms` over `methodAdmits`); a spell for another is still fitted and
+   the commit refuses it. Env's `mention` still shows: its law admits anyone and its `methods()`
+   lists it (the objects lane's to drop). Test: `tests/test_usage_voice.py`.
+
+81. **Views are no spells (host11; rehearsal run 11 finding 6).** `spellFormsData` leaves out the
+   package's `views()` entries, so `?` usage, spell fitting and `world-inspect`'s `forms` never offer
+   one (`garden byColour`); `viewDerived` still answers it, and the method table still lists it.
+   Test: `tests/test_usage_voice.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

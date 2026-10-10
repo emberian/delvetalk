@@ -199,6 +199,8 @@ structure Program where
   relations : List RelDecl := []
   /-- The State fields the new code declares `fixed`. -/
   fixed : List String := []
+  /-- The conventional definitions its entry module declares (the artifact's `declares`). -/
+  declares : Option (List String) := none
 
 structure Object where
   /-- The object's pin: the CID of its sealed source closure (the artifact's `sourcesSha256`, the
@@ -243,6 +245,9 @@ structure Object where
   /-- Its State's `fixed` fields (the artifact's `fixed`): set by `initial()` or the creating seed,
       never by an edit; no lens or `set` names them. -/
   fixed : List String := []
+  /-- The conventional definitions its entry module declares, derived ones included (the artifact's
+      `declares`); `none` for an artifact without the list, whose source is scanned instead. -/
+  declares : Option (List String) := none
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

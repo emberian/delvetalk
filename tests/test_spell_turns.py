@@ -97,7 +97,9 @@ class SpellTurns(Reflection):
             out = r["receipt"]["outcome"]
             self.assertEqual((r["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", clause, reason), r)
             self.assertIn("delvetalk", out["hint"])
-        self.assertIn("colour: gold", self.say("delvetalk garden plant\ncolour: gold\nseed: fern", identity="again")["receipt"]["outcome"]["hint"])
+        # The hint is the spell with a blank where the value did not fit; what fitted stays.
+        hint = self.say("delvetalk garden plant\ncolour: gold\nseed: fern", identity="again")["receipt"]["outcome"]["hint"]
+        self.assertIn("colour: <amber, violet, silver>\nseed: fern", hint)
         # Another principal sees the public projection, with the clause and the hint.
         public = self.host.send(op="world-receipt", principal="kim", identity="bad0", of="glm")
         self.assertEqual((public.get("class"), public.get("clause")), ("badSpell", "badValue"), public)
@@ -253,6 +255,24 @@ class FixedFields(Reflection):
         self.assertEqual(self.say("delvetalk lamp set\nname: Moth")["status"], "admitted")
         self.reopen()
         self.assertEqual(self.host.send(op="world-inspect", principal="glm", object="lamp", source=False).get("fixed"), ["mood"])
+
+    def test_no_proposed_write_or_migration_moves_a_fixed_field(self):
+        keep = {"tag": "variant", "label": "keep", "payload": record()}
+        edits = record(name=keep, size=keep, origin=keep, mood={"tag": "variant", "label": "set", "payload": record(value=label("wild"))})
+        r = self.host.send(op="world-propose", principal="ember", identity="p1", roots=[{"object": "lamp", "version": 0}],
+                           writes=[{"object": "lamp", "edits": [edits]}])
+        out = r["receipt"]["outcome"]
+        self.assertEqual((out["class"], out["clause"]), ("lawRefused", "fixed"), r)
+        self.assertEqual(out["reason"], "refused fixed: mood is fixed; it is set when lamp is made and never after.")
+        moved = FIXED + "def migrate(old: State) -> State:\n  {name: old.name, size: old.size, mood: \"wild\", origin: old.origin}\n"
+        r = self.host.send(op="world-reprogram", principal="ember", identity="rp", object="lamp", version=0, package=moved, migration="migrate")
+        out = r["receipt"]["outcome"]
+        self.assertEqual((out["class"], out["clause"]), ("programRefused", "fixed"), r)
+        self.assertIn("the migration sets mood, which is fixed", out["reason"])
+        kept = FIXED + "def migrate(old: State) -> State:\n  {name: \"Moth\", size: old.size, mood: old.mood, origin: old.origin}\n"
+        r = self.host.send(op="world-reprogram", principal="ember", identity="rp2", object="lamp", version=0, package=kept, migration="migrate")
+        self.assertEqual(r["receipt"]["outcome"]["tag"], "admitted", r)
+        self.assertEqual((self.field("mood"), self.field("name")), (label("calm"), label("Moth")))
 
 
 INTERPRETING = (GARDEN + """record Planting:

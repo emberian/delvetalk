@@ -931,6 +931,10 @@ partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theo
   | .emptyRow => some []
   | _ => none
 
+/-- The first of `fixed` whose value in `after` is not its value in `before` (by canonical bytes). -/
+def movedFixed (fixed : List String) (before after : Data) : Option String :=
+  fixed.find? fun f => ((Law.rawField f before).map Law.canon) != ((Law.rawField f after).map Law.canon)
+
 /-- The State fields an artifact lists as `fixed` (none when absent). -/
 def fixedOf (artifact : Json) : List String :=
   ((artifact.getObjValAs? (List String) "fixed").toOption).getD []
@@ -968,13 +972,29 @@ def conventionalMethods : List String :=
   ["receive", "render", "blurb", "forms", "lenses", "set", "publishPage", "page", "relations", "methods",
    "law", "lawReads", "views", "initial"]
 
-/-- Does a package's entry module (the last of its modules, or its one `source`) declare
-    `def name(`? Only the entry module's declarations count, as for `relations()`. -/
-def packageDeclares (inputs : Json) (name : String) : Bool :=
-  let src := match inputs.getObjVal? "modules" with
-    | .ok (.arr ms) => (ms.back?.bind fun m => (m.getObjValAs? String "source").toOption).getD ""
-    | _ => (inputs.getObjValAs? String "source").toOption.getD ""
-  (src.splitOn "\n").any (·.startsWith s!"def {name}(")
+/-- The conventional definitions an artifact says its entry module declares, derived ones included
+    (`declares: [names]`); `none` when the artifact has no such list. -/
+def declaresOf (artifact : Json) : Option (List String) :=
+  (artifact.getObjValAs? (List String) "declares").toOption
+
+/-- Does a package's entry module (the last of its modules, or its one `source`) declare `name`?
+    The artifact's `declares` when it lists them (a derived `forms()` counts); else a scan of the
+    entry module's source for `def name(`. Only the entry module's declarations count. -/
+def packageDeclares (inputs : Json) (name : String) (declares : Option (List String) := none) : Bool :=
+  match declares with
+  | some names => names.contains name
+  | none =>
+    let src := match inputs.getObjVal? "modules" with
+      | .ok (.arr ms) => (ms.back?.bind fun m => (m.getObjValAs? String "source").toOption).getD ""
+      | _ => (inputs.getObjValAs? String "source").toOption.getD ""
+    (src.splitOn "\n").any (·.startsWith s!"def {name}(")
+
+#guard packageDeclares (Json.mkObj [("source", toJson "edition ObjectiveBend 1\n")]) "forms" (some ["forms", "views"])
+#guard !packageDeclares (Json.mkObj [("source", toJson "def forms() -> X:\n")]) "forms" (some ["views"])
+#guard packageDeclares (Json.mkObj [("source", toJson "edition ObjectiveBend 1\ndef forms() -> X:\n")]) "forms"
+
+/-- Does an object's entry module declare `name` (`packageDeclares` over its artifact's list)? -/
+def Object.declaresDef (o : Object) (name : String) : Bool := packageDeclares o.inputs name o.declares
 
 /-- The labels of a `List<String>` value. -/
 partial def labels (acc : List String) : Data → Option (List String)
@@ -997,10 +1017,10 @@ def formActions (value : Data) : List String :=
     read only when its entry module declares it. A `forms()` or `views()` that does not evaluate names nothing; a
     `methods()` that is not a `List<String>` refuses the package (clause `methods`). `compile` gives
     a zero-argument definition's held entry. -/
-def publicMethods (inputs : Json) (compile : String → Except String Delvetalk.CheckedEntry) :
-    Except String (List String) := do
+def publicMethods (inputs : Json) (compile : String → Except String Delvetalk.CheckedEntry)
+    (declares : Option (List String) := none) : Except String (List String) := do
   let read := fun (name : String) =>
-    if !packageDeclares inputs name then none else
+    if !packageDeclares inputs name declares then none else
     match compile name with
     | .ok entry => some (runPure entry [] Delvetalk.Bounds.lawTicks).1
     | .error e => some (.error e)
@@ -1163,8 +1183,8 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
   -- is the stack's when a layer declares a law, else the code's below.
   let (methods, predicate, predicateReads) := artifactShape artifact
-  let exposed ← (publicMethods inputs fun name =>
-    ((Package.compileEntryCore request name).mapError (·.render)).map (·.entry)).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
+  let exposed ← (publicMethods inputs (fun name =>
+    ((Package.compileEntryCore request name).mapError (·.render)).map (·.entry)) (declaresOf artifact)).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
   -- A layer keeps what the code below it declared public and may declare more.
   let methods := markHelpers methods (if extend then exposed ++ declaredRows o.methods else exposed)
   let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
@@ -1175,7 +1195,8 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
     | none => pure (if extend then o.relations else [])
   (checkRelations relations assumptions.bounds ty).mapError (("key", ·))
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
-           methods, predicate, predicateReads, packet, relations, fixed := fixedOf artifact }
+           methods, predicate, predicateReads, packet, relations, fixed := fixedOf artifact,
+           declares := declaresOf artifact }
 
 def programKey (o : Object) (source migration : String) (extend : Bool := false) : String :=
   o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "")
@@ -1870,6 +1891,11 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       | .ok d => pure d
       | .error clause => throw { cls := clause, object := id }
     unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
+    -- A fixed field is set when the object is made and never after: no write changes it (a
+    -- proposal's edits are not the kernel's, which refuses such a write at compile).
+    if let some f := movedFixed o.fixed o.state written then
+      throw { cls := "lawRefused", clause := some "fixed", object := some id,
+              reason := some s!"refused fixed: {f} is fixed; it is set when {id} is made and never after." }
     unless stateBytes written ≤ Limits.maxStateBytes do
       throw { cls := "capacity", object := id, reason := some "maxStateBytes" }
     -- A reprogram replaces code and, through its migration, the state's type.
@@ -1891,6 +1917,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType && stateBytes state ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
+      -- A migration may not set a fixed field: one the new code fixes keeps the value it had.
+      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
+        throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
       -- A migration's result is put in canonical form under the new code's relations.
       state ← match canonicalState prog.relations state with
         | .ok s => pure s
@@ -1898,7 +1927,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,
-                       fixed := prog.fixed }
+                       fixed := prog.fixed, declares := prog.declares }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),
@@ -2295,8 +2324,8 @@ def compileObject (w : World) (inputs : Json) : Except String Built := do
   unless stateTypeOk decoded.source.assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
   let relations := ((← (declsOfArtifact artifact).mapError (s!"key: " ++ ·))).getD []
-  let exposed ← publicMethods inputs fun name =>
-    ((Package.compileEntryCore request name).mapError Package.Diagnostic.render).map (·.entry)
+  let exposed ← publicMethods inputs (fun name =>
+    ((Package.compileEntryCore request name).mapError Package.Diagnostic.render).map (·.entry)) (declaresOf artifact)
   return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations, exposed }
 
 /-- Give a compiled package its first state and law. `lawText`, when given, is the law
@@ -2324,7 +2353,7 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
   return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty, readings,
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet,
-            fixed := fixedOf b.artifact }, sources)
+            fixed := fixedOf b.artifact, declares := declaresOf b.artifact }, sources)
 
 def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
   if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
