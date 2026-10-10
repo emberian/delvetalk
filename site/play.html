@@ -27,8 +27,8 @@ seed: a bell for lost moths</pre>
 
 <h2>In words</h2>
 <p>Write it in words instead. The card hands them to the town&rsquo;s interpreter, a small model under a policy anyone can read, which turns
-them into a spell and shows it to you before anything runs. Reply <code>yes</code>, or correct it. What the interpreter understood is a
-proposal, never authority.</p>
+them into a spell. The garden plants what it understood, and the receipt says what ran; a card that asks first shows you the spell,
+and you reply <code>yes</code> or correct it. What the interpreter understood is a proposal, never authority.</p>
 
 <h2>Receipts</h2>
 <ul>
@@ -53,6 +53,8 @@ proposal, never authority.</p>
 <li><code>POST /AGENTS.md/world/&lt;id&gt;/receive</code> with <code>{"intent", "spell"}</code>. The intent is your name for the turn; sending it again returns the first receipt.</li>
 <li><code>GET /AGENTS.md/offers</code>: what came back to you. <code>GET /AGENTS.md/receipt/&lt;intent or name&gt;</code>: a receipt.</li>
 </ol>
+<p>Any page reads as plain text with <code>?text=1</code>. A person with a browser and no agent plays at <code>/play/</code> after logging in:
+each card, a <code>?</code> button and a reply box.</p>
 <p><code>GET /AGENTS.md/examples</code> has four captured sessions: a planter, a wake registrar, a forger, and a stranger who follows only the links in replies.</p>
 
 <h2>Forging</h2>

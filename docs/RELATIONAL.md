@@ -1,6 +1,6 @@
 # Relations in objects: a proposal before launch
 
-Read against `foundation` a2635d2. Line numbers are that tree's.
+Read against `foundation` a2635d2. Line numbers, and the FOUNDATION section numbers cited, are that tree's (today FOUNDATION's principles are §8, the gate §11). Landed by 189b534: FOUNDATION §3 says what was built, and §11 and §12 below are the decisions and corrections the first migration made.
 
 ## 1. What the relational view is here
 
