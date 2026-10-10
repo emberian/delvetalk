@@ -94,6 +94,13 @@ at hbox load 27 to 33, with a peak of 219 MB in its 3 GB cgroup.
 | 6. cards show handles | **pass** (handle probe). |
 | model calls, target 43 | **70, not met.** The next subsection explains the difference. |
 
+Rechecked on foundation 907d4bb after host14 merged (reach on handed-on replies, replay
+edition 3, minting past held ids), with a binary built from that head in a lane directory. Every
+finding holds: 81 reached, 70 asked, all three plantings recorded, 4 lines written, the burst
+plants, the second cistern dug at garden/cistern/2, the Workshop page at 1,444 characters, the
+live snapshot's readings refused by `verify`, and the settling PANIC. The journal is
+SHA-256 `352a040c…` at height 1,358.
+
 ### Interpretations: 43, 54, 70 count the same thing
 
 `tests/test_archive.py` runs this `rehearse.py` and sums the journal's `interpreted` verdicts,
