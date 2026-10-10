@@ -20,13 +20,25 @@ structure Facts where
   turn : Nat
   /-- Pin of the package the object runs after this write. -/
   pin : String := ""
-  /-- 0 write, 1 reprogram, 2 amend. -/
+  /-- 0 write (the object's own method), 1 reprogram, 2 amend, 3 proposed (`kindNames`). -/
   kind : Nat := 0
   /-- The method whose run made the change; "" for an op. -/
   method : String := ""
   /-- The relations the object's code declares: `insertOnly` does not count a row its declared
       retention dropped. -/
   relations : List RelDecl := []
+
+/-- The kinds of change a law tells apart by `request.kind`, by name. `proposed` is a state write
+    that does not come from the object's own method: a `world-propose`, or the state a reprogram's
+    migration makes. So a law admitting `request.kind == 0` admits only the object's own method's
+    writes, and one that wants proposals says `request.kind == 3` (or `proposed`, once the law
+    grammar reads the name). -/
+def kindNames : List (String × Nat) := [("write", 0), ("reprogram", 1), ("amend", 2), ("proposed", 3)]
+
+def proposedKind : Nat := 3
+
+/-- A kind whose change is edits of state: the object's own write, or a proposed one. -/
+def editKind (k : Nat) : Bool := k == 0 || k == proposedKind
 
 inductive Reading where
   | num (n : Int)
@@ -260,6 +272,8 @@ private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", []⟩
 #guard denote facts none (rec1 3) (parsed "request.height == 3")
 #guard denote ⟨"a", "a", 1, 0, "", 2, "", []⟩ none (rec1 3) (parsed "request.kind == 2")
 #guard !denote facts none (rec1 3) (parsed "request.kind == 1")
+#guard !denote ⟨"a", "a", 1, 0, "", proposedKind, "", []⟩ none (rec1 3) (parsed "request.kind == 0 or request.subject == \"b\"")
+#guard denote ⟨"a", "a", 1, 0, "", proposedKind, "", []⟩ none (rec1 3) (parsed "request.kind == 3")
 #guard denote facts none (rec1 3) (parsed "request.subject == \"7\"")
 #guard denote ⟨"ember", "ember", 1, 0, "abc", 0, "", []⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
 #guard !denote ⟨"kim", "kim", 1, 0, "abc", 0, "", []⟩ none (rec1 3) (parsed "request.subject == \"ember\"")

@@ -706,6 +706,21 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    migration; the migration check (5.79) runs after canonicalization, on the state as it will be held.
    Test: `tests/test_spell_turns.py` `test_a_reprogram_cannot_unfix_a_fixed_field`.
 
+93. **`proposed`, request kind 3 (host12; root decision on codex objects 1-8).** A state write no
+   method of the object made is judged with `request.kind == 3` instead of 0: a `world-propose`'s
+   writes (`parseWrites`, journaled `kinds: [3]`), and the state a reprogram's migration makes (judged
+   once more, as kind 3, beside the reprogram's kind 1, by the text law; the old code's Bend law does
+   not read the new type). So every law that admits `request.kind == 0` (the default law, the town's
+   `owner` clauses) admits only the object's own method writes; a law that wants proposals says
+   `request.kind == 3`. The Bend law runs for kinds 0 and 3, its `request.kind` saying which. The
+   conflict index, commuting and subscription changes treat a kind-3 write as edits, as a kind-0 one
+   (`Law.editKind`). `Law.kindNames` (`write` 0, `reprogram` 1, `amend` 2, `proposed` 3) is
+   `world-inspect`'s `requestKinds`. The law grammar reads the number now; the name `proposed` (and the
+   other three) waits on the kernel's line in `Compiler/ObjectiveBendLaw.lean`. Caution: a clause
+   written `request.kind == 0 implies X` no longer constrains proposals (Deal's `members`; the
+   objects lane's, `tests/test_deal.py` marker). Tests: `tests/test_law.py` `Proposed`; `test_world`,
+   `test_authority`, `test_places` updated (a stranger's proposal is the owner clause's to refuse).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -724,8 +739,6 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
 
 - Foreign worlds: `Reference.world != ""` is refused `foreignWorld`.
 - `world-reprogram`/`amend` are gated only by the object's law.
-- A `world-propose` naming a fixed field is not refused yet (`tests/test_appointments.py`
-  `test_a_proposed_write_naming_a_fixed_field_is_refused`, an expected failure).
 - `world.call`'s `refused` carries only `clause`; run 11 wants the voiced reading beside it, so the
   Directory can pass a door's refusal on (rehearsal/REPORT.md, run 11 "What remains" 3; World.obend
   is the objects lane's).
