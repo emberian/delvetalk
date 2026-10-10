@@ -952,6 +952,17 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    already has), `law syntax`, or the law's. `?` lists it where the law would admit the speaker's
    amendment. Test: `tests/test_extend.py` `test_adopt_appends_a_kinds_clauses_under_the_amend_metarule`.
 
+115. **`lend` (host12; docs/CATALOGUE.md §2).** `delvetalk <card> lend / to: <handle or me> / method:
+   <m> / until: +<n>` is the speaker's grant: grantor the speaker, holder and object the card, `to` the
+   principal the handle names in the registry (`me` the speaker; else as written), until clock now + n,
+   with `reading` "lent by <handle>: <m>, until clock N" (`Grant.reading`, journaled with the grant, for
+   the holder's card). Only a method the card offers and its law admits the speaker to run
+   (`methodAdmits`): else `notYours` ("The law of <card> does not let you run <m>, so you cannot lend
+   it."). The borrower's direct turn or spell of `m` on the card runs under the standing grant
+   (`lentVia`, `TurnMeta.via`), judged with the lender as subject, until the clock passes it or it is
+   revoked. `?` lists `lend` where the speaker may run some offered method. Test: `tests/test_extend.py`
+   `test_lend_grants_a_method_until_a_clock_and_the_borrower_runs_it_as_the_lender`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

@@ -254,6 +254,28 @@ class HostSpells(Reflection):
         self.reopen()
         self.assertEqual(self.turn("c", "bump", principal="eve")["receipt"]["outcome"].get("clause"), "circle")
 
+    def test_lend_grants_a_method_until_a_clock_and_the_borrower_runs_it_as_the_lender(self):
+        version = self.host.send(op="world-view", principal="ember", object="c")["version"]
+        a = self.host.send(op="world-amend", principal="ember", identity="own", object="c", version=version,
+                           law='law owner "only ember counts": not (request.kind == 0) or request.subject == "ember"')
+        self.assertEqual(a["status"], "admitted", a)
+        self.assertEqual(self.turn("c", "bump", principal="kim")["receipt"]["outcome"].get("clause"), "owner")
+        self.assertNotIn("lend", self.say("delvetalk c ?", who="kim")["text"])
+        self.assertIn("delvetalk c lend\nto:", self.say("delvetalk c ?")["text"])
+        theirs = self.say("delvetalk c lend\nto: me\nmethod: bump\nuntil: +5", who="kim", identity="l0")["receipt"]["outcome"]
+        self.assertEqual((theirs["class"], theirs["clause"]), ("badSpell", "notYours"), theirs)
+        r = self.say("delvetalk c lend\nto: kim\nmethod: bump\nuntil: +5", identity="l1")
+        self.assertEqual(r["status"], "admitted", r)
+        [g] = r["receipt"]["outcome"]["grants"]
+        self.assertEqual((g["to"], g["method"], g["until"], g["holder"]), ("kim", "bump", 5, "c"))
+        self.assertEqual(g["reading"], "lent by ember: bump, until clock 5")
+        lent = self.turn("c", "bump", principal="kim")
+        self.assertEqual(lent["status"], "admitted", lent)
+        self.reopen()
+        self.assertEqual(self.turn("c", "bump", principal="kim")["status"], "admitted")
+        self.host.send(op="world-advance", height=6)
+        self.assertEqual(self.turn("c", "bump", principal="kim")["receipt"]["outcome"].get("clause"), "owner")
+
 
 class ExtensionPins(Reflection):
     """An extension's pin is its compiled closure's (docs 2): the same layer over the same base under two

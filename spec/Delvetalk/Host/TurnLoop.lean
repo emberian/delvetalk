@@ -950,7 +950,7 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   | _, _ => fields
 
 /-- The host's own spells on every card (docs/CATALOGUE.md §2, higher-order cards). -/
-def hostSpells : List String := ["become", "adopt"]
+def hostSpells : List String := ["become", "adopt", "lend"]
 
 /-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
     it stands? As `methodAdmits` judges a method. -/
@@ -961,7 +961,10 @@ def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) : Bool
 /-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
 def hostUsage (w : World) (o : Object) (principal card : String) : String :=
   let lines := (if kindAdmits w o principal 1 then [s!"delvetalk {card} become\nkind: <a kind's id>\n"] else []) ++
-    (if kindAdmits w o principal 2 then [s!"delvetalk {card} adopt\nlaw: <a kind's or a page's id>\n"] else [])
+    (if kindAdmits w o principal 2 then [s!"delvetalk {card} adopt\nlaw: <a kind's or a page's id>\n"] else []) ++
+    (if ((offeredRows o.methods).getArr?.toOption.getD #[]).any (fun m => match (m.getObjValAs? String "name").toOption with
+        | some n => isActionRow m && methodAdmits w o principal n == Json.bool true | none => false)
+      then [s!"delvetalk {card} lend\nto: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n"] else [])
   if lines.isEmpty then "" else "\nThe host's spells for any card:\n" ++ String.join (lines.map ("\n" ++ ·))
 
 /-- Why `me` names nothing yet. -/
@@ -2040,7 +2043,10 @@ def versionReceipt (w : World) (id : String) : String :=
       receipt}` naming the kind, the pin it runs and the entry that made its current version.
     - `adopt / law: <id>` appends the named clause set (the text `law` of a kind, or of a library page
       kept as an object) to the card's law: an amendment by the speaker under the metarule, the
-      clauses' readings with them; a clause name the card's law already has is refused `lawClash`. -/
+      clauses' readings with them; a clause name the card's law already has is refused `lawClash`.
+    - `lend / to: <handle or me> / method: <m> / until: +<n>` grants `to` the running of `m` on the
+      card as the speaker until clock now + n (a grant held by the card, with a reading); only a
+      method the card offers and its law admits the speaker to run (else `notYours`). -/
 def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : List Spell.Binding) : Except String (World × Json) := do
   let value := fun (n : String) => ((fields.find? (·.name == n)).map (·.value)).filter (!·.isEmpty)
   let some o := w.objects[id]? | refuseSpell w req id "otherCard" s!"There is no card {id}." ""
@@ -2082,7 +2088,34 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
       | .error message => commit w p base (some { cls := "programRefused", clause := some "law syntax", object := some id, reason := some message })
       | .ok _ => commit w p base
     return (w', turnReply w' r)
+  | "lend" =>
+    let some toName := value "to" | refuseSpell w req id "missingField" "lend takes to: a handle, or me." template
+    let some m := value "method" | refuseSpell w req id "missingField" "lend takes method: one of the card's methods." template
+    let some untilText := value "until" | refuseSpell w req id "missingField" "lend takes until: +<clock units>." template
+    let some n := (if untilText.startsWith "+" then untilText.drop 1 else untilText).toNat?
+      | refuseSpell w req id "badValue" "until takes +<clock units>, plain digits." template
+    -- `me`, a handle the registry knows, or a principal as written.
+    let to := if toName == meCard then req.principal else
+      (w.handles.fold (fun acc did h => if acc.isNone && h == toName then some did else acc) none).getD toName
+    unless o.offers m do
+      return ← refuseSpell w req id "noAction" s!"{id} has no method {m} to lend." template
+    unless methodAdmits w o req.principal m == Json.bool true do
+      return ← refuseSpell w req id "notYours" s!"The law of {id} does not let you run {m}, so you cannot lend it." template
+    let expires := w.clock + n
+    let speaker := ((w.handles[req.principal]?).filter (!·.isEmpty)).getD req.principal
+    let g : Grant := { id := grantId req.principal req.intent 0, grantor := req.principal, holder := id, to,
+                       object := id, method := m, expires, reading := s!"lent by {speaker}: {m}, until clock {expires}" }
+    let p : Proposal := { principal := req.principal, intent := req.intent, roots := [(id, o.version)],
+                          writes := [], grants := [g], turn := w.height + 1 }
+    let (w', r) := commit w p base
+    return (w', turnReply w' r)
   | _ => refuseSpell w req id "noAction" s!"{id} has no spell {action}." template
+
+/-- A grant lent to `principal` for `method` of `object` that stands now (`lend`): the borrower's direct
+    turn runs under it, judged with the grantor as subject. "" for none. -/
+def lentVia (w : World) (principal object method : String) : String :=
+  (w.grants.fold (fun acc gid g => if acc.isNone && g.to == principal && g.holder == object &&
+      (grantStands w gid object method).isSome then some gid else acc) none).getD ""
 
 /-- A direct turn's `receive` read as a spell (`routeSpell`); `none` when the host leaves the turn as asked. -/
 def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) :=
@@ -2093,7 +2126,7 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
                             post := (heardPost req.method req.argument).getD "",
                             origin := (if command.isEmpty then req.origin else "spell"),
                             command := (if command.isEmpty then req.command else command) }
-    some (runTurnWith w asked {})
+    some (runTurnWith w asked { via := lentVia w req.principal object method })
   | .usage object text =>
     some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object),
       ("text", toJson (hobTail w req.principal text hobUsageLine))]))
@@ -2114,7 +2147,7 @@ def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   if let some r := retainedTurn w req then .ok (w, r) else
   match spellTurn w req with
   | some r => r
-  | none => runTurnWith w req {}
+  | none => runTurnWith w req { via := lentVia w req.principal req.object req.method }
 
 /-- `world-arrive` (`arriveOp`), then, when this arrival made the newcomer's Wake and its package
     declares `arrived` (in `methods()` or as a form), the Wake's `arrived {}` as an ordinary turn of the
