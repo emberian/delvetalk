@@ -208,6 +208,11 @@ class Workshop(Chain):
         self.assertEqual(self.card(wrong), "Not done: Its State is not bell-1's; name a migration from the old one.\n")
         self.assertEqual(self.refusal(wrong)[0], "stateType")
         self.assertNotIn("Held for", self.say("")["offers"][0]["text"])
+        # A migration the package lacks is named with the host's reading, not the bare clause.
+        missing = self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\nmigration: nope\n```obend\n%s```\n" % wide),
+                                                          post=label("at://x/m1")), principal="kimik3", identity="m1")
+        self.assertEqual(self.refusal(missing)[0], "migration")
+        self.assertTrue(self.card(missing).startswith("Not done: ") and "nope" in self.card(missing), self.card(missing))
         # Held while it fit; the owner then changes the target's State, so adopting meets stateType.
         held = propose(BLOCK, "kimik3", "w2")
         self.assertIn("held as #1", self.card(held))

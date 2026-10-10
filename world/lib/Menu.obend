@@ -102,3 +102,8 @@ def newsLine(door: Door, found: Lists.Maybe<News>, context: Abi.Context) -> Stri
     case some(n): " · {counted(door.watch, n.value.count)}{fresh(n.value, context)}"
 def fresh(news: News, context: Abi.Context) -> String:
   if news.newest != "" && context.clock < news.at + 1440n then ", newest {news.newest}" else ""
+# Several spells' card: each spell said, with what came of it.
+def ran(lines: Examples) -> Document.Document:
+  Document.text("✾ DELVETALK · ROOT\n\n{countWord(Lists.length(lines))} spells, in the order said:\n{spellLines(lines)}")
+def refusedLine(clause: String, reading: String, object: String) -> String:
+  if reading == "" then "refused {clause}: Not done at {object}." else "refused {clause}: {reading}"

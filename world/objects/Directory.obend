@@ -169,6 +169,7 @@ sum Heard:
   refused: Card.Refusal
   unclear: {needs: Form.Names}
   asked: {card: String}
+  several: {count: Nat}
 def refusing(clause: String, reading: String, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
   toldThen(Document.text("✾ DELVETALK · ROOT\n\nrefused {clause}: {reading}\n"), Heard.refused({clause: clause, reading: reading}), greet, context, state)
 # The hub's reply. A spell naming another card never reaches here: the host runs it on that
@@ -300,6 +301,7 @@ def byMacro(card: String, text: String, input: Card.Reply, greet: Bool, context:
 def interpreting(input: Card.Reply, learned: Learning, policy: Policies.State, attempt: Nat, needs: Form.Names, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
   match world.interpret::<Data>(Card.interpretation(input.text, Mentions.doorForms(learned), state.policy, policy, attempt, needs)):
     case proposal(p): proposed(p.object, p.method, p.argument, Mentions.doorForms(learned), policy, greet, context, state)
+    case proposals(p): folding(p.items, Lists.List.nil(), "", policy, greet, context, state)
     case unclear(u): if Card.silentNeeds(u.needs) then welcomed(greet, "", Heard.silent({}), context, state) else missed(input, learned, policy, attempt, u.needs, greet, context, state)
     case replied(r): readBack(input, learned, policy, attempt, Card.prose(r.text), greet, context, state)
     case denied(_): refusing("policy", "The policy is not visible to you.", greet, context, state)
@@ -308,12 +310,32 @@ def interpreting(input: Card.Reply, learned: Learning, policy: Policies.State, a
 # the policy confirms that action first: then the speaker is shown the door's spell to send,
 # and sending it is the yes.
 def proposed(object: String, method: String, argument: Data, forms: Lists.List<Form.Form>, policy: Policies.State, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
-  if Card.confirms(policy, method) then toldThen(askedFirst(object, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == object && f.action == method)), Heard.asked({card: object}), greet, context, state) else calling(object, method, argument, greet, context, state)
+  if Card.confirms(policy, method) then toldThen(Mentions.askedFirst(object, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == object && f.action == method)), Heard.asked({card: object}), greet, context, state) else calling(object, method, argument, greet, context, state)
 def calling(object: String, method: String, argument: Data, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
   match world.call::<Data>({object: {world: context.world, object: object}, method: method, argument: argument}):
     case returned(_): visited(object, Heard.passed({card: object}), greet, context, state)
     case denied(_): refusing("notVisible", "The card {object} is not visible to you.", greet, context, state)
     case refused(r): refusing(r.clause, if r.reading == "" then "Not done at {object}." else r.reading, greet, context, state)
+# Several spells (docs/MENU.md §2.2): each item in order, as this turn, its call admitted or
+# refused on its own (one the policy confirms is not run); the card lists each spell with what
+# came of it, and the reader's door is the first admitted one's.
+def folding(items: Lists.List<World.Proposed<Data>>, ran: Examples, first: String, policy: Policies.State, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
+  match items:
+    case nil(_): folded(ran, first, greet, context, state)
+    case cons(c): foldOne(c.head, c.tail, ran, first, policy, greet, context, state)
+def foldOne(item: World.Proposed<Data>, rest: Lists.List<World.Proposed<Data>>, ran: Examples, first: String, policy: Policies.State, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
+  match item:
+    case proposal(p): if Card.confirms(policy, p.method) then folding(rest, Lists.append(ran, {example: "delvetalk {p.object} {p.method}", comes: "asks first: reply with it filled in"}), first, policy, greet, context, state) else foldCall(p.object, p.method, p.argument, rest, ran, first, policy, greet, context, state)
+    case unclear(u): folding(rest, Lists.append(ran, {example: "(spell {natText(Lists.length(ran) + 1n)})", comes: "unclear: {Text.joined(u.reasons)}"}), first, policy, greet, context, state)
+def foldCall(object: String, method: String, argument: Data, rest: Lists.List<World.Proposed<Data>>, ran: Examples, first: String, policy: Policies.State, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
+  let spell = "delvetalk {object} {method}"
+  match world.call::<Data>({object: {world: context.world, object: object}, method: method, argument: argument}):
+    case returned(_): folding(rest, Lists.append(ran, {example: spell, comes: "admitted"}), if first == "" then object else first, policy, greet, context, state)
+    case denied(_): folding(rest, Lists.append(ran, {example: spell, comes: "refused notVisible: The card {object} is not visible to you."}), first, policy, greet, context, state)
+    case refused(r): folding(rest, Lists.append(ran, {example: spell, comes: Menu.refusedLine(r.clause, r.reading, object)}), first, policy, greet, context, state)
+def folded(ran: Examples, first: String, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
+  match world.offer({to: "", document: Menu.ran(ran)}):
+    case _: visited(first, Heard.several({count: Lists.length(ran)}), greet, context, state)
 def readBack(input: Card.Reply, learned: Learning, policy: Policies.State, attempt: Nat, fitted: Card.Fitted, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
   match fitted:
     case miss(m): missed(input, learned, policy, attempt, m.needs, greet, context, state)
@@ -322,31 +344,11 @@ def readBack(input: Card.Reply, learned: Learning, policy: Policies.State, attem
 # and the second is answered with the menu pruned to the doors the reply named (their words,
 # actions or fields), what is still needed above it.
 def missed(input: Card.Reply, learned: Learning, policy: Policies.State, attempt: Nat, needs: Form.Names, greet: Bool, context: Abi.Context, state: State) -> Activity<Heard>:
-  if Mentions.unoffered(needs) then toldThen(nearestFor(Mentions.missedAction(needs), learned, needs), Heard.unclear({needs: needs}), greet, context, state) else if attempt == 0n then interpreting(input, learned, policy, 1n, needs, greet, context, state) else Card.unfitted(policy, input.text, needs, context, missCard(input, learned, needs, context, state), Heard.unclear({needs: needs}))
+  if Mentions.unoffered(needs) then toldThen(Mentions.nearestFor(Mentions.missedAction(needs), learned, needs), Heard.unclear({needs: needs}), greet, context, state) else if attempt == 0n then interpreting(input, learned, policy, 1n, needs, greet, context, state) else Card.unfitted(policy, input.text, needs, context, missCard(input, learned, needs, context, state), Heard.unclear({needs: needs}))
 def missCard(input: Card.Reply, learned: Learning, needs: Form.Names, context: Abi.Context, state: State) -> Document.Document:
   let all = menu(state)
   let touched = Lists.filter(all, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false && Menu.isArc(all, d) == false && Mentions.touches(input, d, learned))
-  if Lists.length(touched) == 0n then Document.text(needsHead(needs)) else Menu.pruned(needsHead(needs), touched, all, state.news, context)
-def needsHead(needs: Form.Names) -> String:
-  "✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: {Text.joined(needs)}.\n"
-# The nearest door is one whose forms have an action resembling the miss; else a kind of card
-# under a door that takes it (a garden's bell takes rain); else none is named.
-def nearestFor(missed: String, learned: Learning, needs: Form.Names) -> Document.Document:
-  match Lists.find(Mentions.doorForms(learned), fn(f: Form.Form) -> Bool: Mentions.resembles(f.action, missed)):
-    case some(f): usageOf(f.value.card, Mentions.doorForms(learned), needs)
-    case none(_): kindTaking(Lists.find(learned, fn(l: Learned) -> Bool: l.child && missed != "" && l.form.action == missed), missed, needs)
-def kindTaking(found: Lists.Maybe<Learned>, missed: String, needs: Form.Names) -> Document.Document:
-  match found:
-    case some(l): noDoor(needs, Mentions.kindLine(l.value.card, missed))
-    case none(_): noDoor(needs, "")
-def noDoor(needs: Form.Names, kind: String) -> Document.Document:
-  Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Text.joined(needs)}).{kind}\n")
-def usageOf(card: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Document.Document:
-  Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Text.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card)))
-# An action the policy confirms (a give, an offer, a reprogram) is not run from prose: the
-# speaker is shown the door's spell, and sending it is the yes.
-def askedFirst(card: String, forms: Lists.List<Form.Form>) -> Document.Document:
-  Document.concat(Document.text("✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it filled in:\n"), Card.usage(card, forms))
+  if Lists.length(touched) == 0n then Document.text(Mentions.needsHead(needs)) else Menu.pruned(Mentions.needsHead(needs), touched, all, state.news, context)
 # A link door (no object; genesis's STUDIO) answers with its description, which carries the
 # URL; it has no card to ask for and no forms to read.
 def linkDoor(door: Door) -> Activity<Heard>:

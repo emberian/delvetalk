@@ -70,6 +70,10 @@ form undoor:
   label: text 1..32
 def methods() -> Lists.List<String>:
   Text.words("strike")
+# What the host offers a reader (HOST-HANDOFF 103): doors are the planter's, so no one else is
+# shown `door` or `undoor` (nor reads them as a word the directory interprets).
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  if context.principal == state.planter then Text.words("rain ring strike door undoor") else Text.words("rain ring strike")
 # Doors on the bell's card are its planter's (the garden gives it one home on planting).
 def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
   doored(Card.doorAdd(state.doors, state.planter, {label: input.label, to: {world: context.world, object: input.to}}, context), "door")

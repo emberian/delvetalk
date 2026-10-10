@@ -271,13 +271,13 @@ class PolicyObject(Chain):
             "  colour: one of amber, violet, silver\n"
             "  seed: text of 1 to 80 characters\n"
             "\n"
-            "Answer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.\n"
+            "Answer with the spells it contains, at most three, each a delvetalk line with its field lines, in the order said; or with unclear: <what is missing>, and nothing else.\n"
             "\n"
             "Participant: plant me a moth"))
         for needle in ("You turn words into one spell.\n", "Lexicon:\n- moth: a seed\n",
                        "Participant: a silver fern\nSpell:\ndelvetalk garden-1 plant seed: a fern, colour: silver\n",
                        "delvetalk garden-1 plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n",
-                       "Answer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.",
+                       "Answer with the spells it contains, at most three, each a delvetalk line with its field lines, in the order said; or with unclear: <what is missing>, and nothing else.",
                        "Participant: plant me a moth"):
             self.assertIn(needle, prompt)
 
@@ -421,13 +421,13 @@ class PolicyObject(Chain):
             "  colour: one of amber, violet, silver\n"
             "  seed: text of 1 to 80 characters\n"
             "\n"
-            "Answer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.\n"
+            "Answer with the spells it contains, at most three, each a delvetalk line with its field lines, in the order said; or with unclear: <what is missing>, and nothing else.\n"
             "\n"
             "Participant: Could we plant a silver fern that remembers?"))
         self.assertTrue(system.startswith("S\n\nLexicon:\n"), system)
         for needle in ("Offered forms (a spell is the delvetalk line, then one field: value line per field):",
                        "delvetalk garden plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n",
-                       "Answer with one spell in exactly that grammar",
+                       "Answer with the spells it contains, at most three",
                        "Participant: Could we plant a silver fern that remembers?"):
             self.assertIn(needle, system)
 

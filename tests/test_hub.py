@@ -275,6 +275,45 @@ class Hub(test_chain.Chain):
         two = [o["text"] for o in self.interpret("unclear: which")["receipt"]["offers"]][0]
         self.assertEqual([l for l in two.split("\n") if l and not l.startswith(" ")][2:], ["GARDEN · 0 planted", "ANTHOLOGY"])
 
+    def test_several_spells_in_one_reply_each_run_in_order_with_its_result(self):
+        """docs/MENU.md §2.2: the model answers each spell a reply holds, one per line starting
+        delvetalk; the host answers `proposals {items}` and the directory runs each as this turn,
+        listing what came of each (a misfit is named, never run)."""
+        self.policy()
+        self.directory("policy")
+        made = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
+                              entry="initial", seed=record(owner=label("ember")))
+        self.assertEqual(made["status"], "created", made)
+        self.greet(KIMI)
+        self.assertEqual(self.say("plant me a silver fern, then put a line in the anthology, and plant one more", KIMI)["status"], "suspended")
+        r = self.interpret("delvetalk garden plant\nseed: a fern\ncolour: silver\n"
+                           "delvetalk anthology submit\nline: the bell kept both of us\n"
+                           "delvetalk garden plant\nseed: another")
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "several"), r)
+        texts = [o["text"] for o in r["receipt"]["offers"]]
+        self.assertEqual(texts[-1], (
+            "✾ DELVETALK · ROOT\n"
+            "\n"
+            "Three spells, in the order said:\n"
+            "  delvetalk garden plant\n"
+            "  » admitted\n"
+            "  delvetalk anthology submit\n"
+            "  » admitted\n"
+            "  (spell 3)\n"
+            "  » unclear: colour\n"))
+        self.assertEqual(len(self.children()), 1)
+        self.assertEqual([get(p, "line")["value"] for p in rows(get(self.state("anthology"), "proposals"))], ["the bell kept both of us"])
+        self.assertEqual(get(rows(get(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
+
+    def test_the_garden_hears_the_first_of_several_spells(self):
+        self.policy()
+        self.make("garden", closure("Garden"), garden_seed("policy", confirm=False))
+        asked = self.turn("garden", "receive", record(text=label("plant a fern and a moss"), post=label("at://x/p")), principal=KIMI)
+        self.assertEqual(asked["status"], "suspended", asked)
+        r = self.interpret("delvetalk garden plant\nseed: a fern\ncolour: silver\ndelvetalk garden plant\nseed: a moss\ncolour: amber")
+        self.assertEqual(r["result"]["label"], "planted", r)
+        self.assertEqual([self.seed_of(b) for b in self.children()], [("a fern", "silver")])
+
     def test_an_action_the_policy_confirms_is_shown_back_and_not_passed_on(self):
         """The policy's confirmFor (here plant, taught by its owner) holds an interpreted spell
         at the hub: the speaker is shown the door's spell to fill in and send, never run from prose."""
@@ -366,6 +405,12 @@ class BellDoors(test_chain.Chain):
             "    delvetalk garden/bell/1 undoor\n"
             "    label: <text, 1 to 32 characters>\n"))
         self.assertIn("Doors: garden\n", card)
+        # The host offers door and undoor to the planter alone (Bell.actions, HOST-HANDOFF 103), so the
+        # directory never learns them as a stranger's words.
+        offered = lambda who: [get(f, "action")["value"] for f in items(self.host.send(op="world-inspect", principal=who, object=bell)["forms"])]
+        self.assertNotIn("door", offered(KIMI))
+        self.assertIn("rain", offered(KIMI))
+        self.assertIn("door", offered(GLM))
         self.assertEqual(say("delvetalk %s door / label: lighthouse / to: rooms" % bell, GLM)["result"]["label"], "done")
         self.assertIn("Doors: garden · lighthouse\n", say("", KIMI)["offers"][0]["text"])
         theirs = say("delvetalk %s undoor / label: garden" % bell, KIMI)

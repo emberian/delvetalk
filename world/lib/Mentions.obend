@@ -1,5 +1,6 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
+import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Spell.obend as Spell
 import ./Card.obend as Card
@@ -100,11 +101,11 @@ record Learned:
   child: Bool
   form: Form.Form
 type Learning = Lists.List<Learned>
-# Only what a card offers a reader counts: inspect lists the forms of its public methods and
-# `receive`, which no reader names as an action, and the owner's door actions (`door` is a word
-# the town uses for the directory's doors; prose naming it asks nothing of a bell).
+# Only what a card offers a reader counts: inspect lists the forms the host offers this reader
+# (the law and the card's `actions` leave them: a bell's `door` is its planter's alone) and
+# `receive`, which no reader names as an action.
 def learnedOf(card: String, door: String, child: Bool, forms: Lists.List<Form.Form>) -> Learning:
-  Lists.map(Lists.filter(forms, fn(f: Form.Form) -> Bool: f.action != "receive" && Lists.any(Card.ownerActions(), fn(a: String) -> Bool: a == f.action) == false), fn(f: Form.Form) -> Learned: {card: card, door: door, child: child, form: f})
+  Lists.map(Lists.filter(forms, fn(f: Form.Form) -> Bool: f.action != "receive"), fn(f: Form.Form) -> Learned: {card: card, door: door, child: child, form: f})
 # The spell the field lines mean for a form: the action line as it was written (the
 # door's own fit gives its value to the form's first open text field) and every
 # line naming one of the form's fields.
@@ -137,3 +138,24 @@ def doorForms(learned: Learning) -> Lists.List<Form.Form>:
 def touches(input: Card.Reply, door: Door, learned: Learning) -> Bool:
   let forms = formsOf(Lists.filter(learned, fn(l: Learned) -> Bool: l.door == door.to.object))
   mentions(textTake(input.text, 2000n), input.fields, Lists.concat(doorWords(door), formWords(forms)), formFields(forms))
+# The directory's cards for a miss and for an action asked first.
+def needsHead(needs: Form.Names) -> String:
+  "✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: {Text.joined(needs)}.\n"
+# The nearest door is one whose forms have an action resembling the miss; else a kind of card
+# under a door that takes it (a garden's bell takes rain); else none is named.
+def nearestFor(missed: String, learned: Learning, needs: Form.Names) -> Document.Document:
+  match Lists.find(doorForms(learned), fn(f: Form.Form) -> Bool: resembles(f.action, missed)):
+    case some(f): usageOf(f.value.card, doorForms(learned), needs)
+    case none(_): kindTaking(Lists.find(learned, fn(l: Learned) -> Bool: l.child && missed != "" && l.form.action == missed), missed, needs)
+def kindTaking(found: Lists.Maybe<Learned>, missed: String, needs: Form.Names) -> Document.Document:
+  match found:
+    case some(l): noDoor(needs, kindLine(l.value.card, missed))
+    case none(_): noDoor(needs, "")
+def noDoor(needs: Form.Names, kind: String) -> Document.Document:
+  Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Text.joined(needs)}).{kind}\n")
+def usageOf(card: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Document.Document:
+  Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Text.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card)))
+# An action the policy confirms (a give, an offer, a reprogram) is not run from prose: the
+# speaker is shown the door's spell, and sending it is the yes.
+def askedFirst(card: String, forms: Lists.List<Form.Form>) -> Document.Document:
+  Document.concat(Document.text("✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it filled in:\n"), Card.usage(card, forms))
