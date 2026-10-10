@@ -776,6 +776,59 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    them again and its stale re-run (`resumeOne`) runs with `inputOrigin.kind = "spell"`. Test:
    `tests/test_input_post.py` `test_a_second_suspension_keeps_the_spells_origin`.
 
+102. **An extension's pin is its closure's (host12; codex docs 2).** `prepareProgram` pins an extension
+   by the compiled closure's `sourcesSha256`, as every other package: the extended code's modules, the
+   layer and the library it compiled against now. (It hashed the old pin and the layer text, so the
+   same layer over the same base under two libraries had one pin for two closures.) Replay re-derives
+   `newPin` through the same function. The prepared-program cache (`programKey`) now names the
+   world's current library too: it served the first library's compile to a later reprogram under
+   another (the test found it). Test: `tests/test_extend.py` `ExtensionPins`.
+
+103. **One per-reader action filter (host12; codex agent 11).** `offeredTo w id o reader` decides
+   which actions usage (`?`, the noAction hint), `world-inspect`'s `forms` and the `inspect` Plan's
+   `methods` show a reader: the law admits them on the state as it stands (`methodAdmits` now judges
+   clauses that read the state too, on old = new = the current state: the Anthology's `request.subject
+   == new.owner or (… "submit")` hides `admit` from strangers), and the card's own `def actions(state,
+   context) -> List<String>`, when it has one, lists it (for guards a method keeps in Bend: the Bell's
+   planter-only `door`; the objects lane adds them). `receive` always stands; lenses show only when
+   `set` is offered. A spell for another action is still fitted and the commit judges it.
+   `readerActions` compiles `actions` through `compileDef` (the world's or the disk cache; not warmed
+   yet, a follow-up if it shows in timing). Tests: `tests/test_usage_voice.py` `ReaderActions`;
+   `test_lenses` (a stranger sees none of the owner's policy), `test_inspect_reads` (`cap` on count 3).
+
+104. **A refused reprogram or amendment says what to correct (host12; codex agent 12).** The
+   `reprogram`/`extend`/`amend` Plans answer `refused {clause, reading}` (`refusedReading`) where
+   the call site's result has `reading`, else `refused {clause}` as before. The reading is the
+   refusal's voiced reason, the compiler's or migration's diagnostic included (`dryChange` returns it
+   beside the clause); a migration the package does not define is named ("the package defines no
+   <m>; a migration is def <m>(old: OldState) -> State"). World.obend's `Programmed` and `Amended`
+   carry `refused: {clause, reading}` (host12's two-line shape change; `tests/fixtures/pins`
+   re-recorded); the Workshop shows `r.reading` (objects lane). Test: `tests/test_extend.py`
+   `ReprogramReading`.
+
+105. **One name rule for objects and spells (host12; codex agent 14, docs 5).** `Limits.nameAlphabet`
+   (ASCII letters, digits and `- : / . _`) and `maxObjectIdBytes` (128) are both `validObjectId`'s
+   rule and the spell grammar's card name (`Spell.isCardName`, which imports it), and
+   `world/lib/Spell.obend`'s `cardAlphabet()` is the same string: every id a creation takes can be
+   spelled (`delvetalk Coin_box drop`, `delvetalk My_card ?`). A card name is at most 128 bytes (it
+   was 160, longer than any id). Spell fixtures re-recorded where the answer moved (four rows: a
+   capital, an underscore, the old length bound); `tests/fixtures/pins` re-recorded. Tests:
+   `tests/test_usage_voice.py` `test_a_card_named_as_any_object_may_be_is_spelled_by_that_name`,
+   `tests/test_spell.py` `test_the_longest_card_name_is_128_bytes`.
+
+106. **Several spells in one interpretation (host12; docs/MENU.md §2.2).** `interpretVerdict` splits the
+   model's text at each line beginning `delvetalk` at the margin (`spellSegments`; prose before the
+   first is dropped). With more than one, each of the first `Limits.spellsPerReply` (3) is fitted and
+   checked as a single spell is (`spellVerdict`, `proposalVerdict`) and the verdict is `proposals
+   {items}`, in order, each `{tag: proposal, object, method, argument}` or `{tag: unclear, reasons}`;
+   the Plan hears `proposals {items: List<Proposed<R>>}` (`proposedData`). One spell keeps the single
+   `proposal`/`unclear`; an object whose Response has no `proposals` arm hears the first item. Replay
+   accepts the tag. World.obend's `sum Proposed<R>` and the `proposals` arm of `Interpreted<R>` are the
+   objects lane's lines (lane/objects12): `sum Proposed<R>: proposal: {object: String, method: String,
+   argument: R}; unclear: {reasons: Document.Names}` and `proposals: {items: Lists.List<Proposed<R>>}`.
+   Zero extra model calls. Test: `tests/test_interpret_object.py` `SeveralSpells` (a World copy with the
+   lines; two spells and a misfit, the second garden planting, a replay).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

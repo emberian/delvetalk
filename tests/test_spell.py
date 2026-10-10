@@ -84,7 +84,7 @@ class Parse(unittest.TestCase):
         self.assertTrue(parse("delvetalk garden-1 plant now").startswith("not a spell: Not a field"))
 
     def test_malformed_lines_are_not_a_spell(self):
-        for bad in ("delvetalk garden-1\nseed: fern", "delvetalk Garden-1 plant", "delvetalk garden-1 plant now"):
+        for bad in ("delvetalk garden-1\nseed: fern", "delvetalk garden+1 plant", "delvetalk garden-1 plant now"):
             with self.subTest(bad=bad):
                 self.assertTrue(parse(bad).startswith("not a spell"), parse(bad))
         # A line that is not a field ends the fields; the spell stands with what came before
@@ -103,8 +103,11 @@ class Parse(unittest.TestCase):
                          "proposal env/did:plc:abc plant colour=silver;seed=fern;")
         self.assertEqual(parse("delvetalk garden-1 ?"), "spell garden-1 ? ")
 
-    def test_the_longest_card_name_is_160_bytes(self):
-        name = "env/did:plc:" + "a" * 148
+    def test_the_longest_card_name_is_128_bytes(self):
+        # The object-name rule (codex agent 14): a card name is any id an object may take, 1..128
+        # bytes of letters, digits and . _ : / - .
+        self.assertEqual(parse("delvetalk Coin_box drop"), "spell Coin_box drop ")
+        name = "env/did:plc:" + "a" * 116
         self.assertEqual(parse("delvetalk %s seen" % name), "spell %s seen " % name)
         self.assertTrue(parse("delvetalk %sa seen" % name).startswith("not a spell"))
 

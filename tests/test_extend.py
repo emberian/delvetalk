@@ -147,6 +147,68 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 """)
 
 
+PROPOSER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  note: String
+def initial() -> State:
+  {note: ""}
+def propose(state: State, input: {target: String, package: String, migration: String}, context: Abi.Context) -> Activity<String>:
+  match world.reprogram({object: {world: "", object: input.target}, package: input.package, migration: input.migration}):
+    case reprogrammed(_): "reprogrammed"
+    case refused(r): textConcat(r.clause, textConcat(" | ", r.reading))
+    case _: "other"
+""")
+
+
+class ReprogramReading(Reflection):
+    """codex agent 12: a refused reprogram tells its proposer what to correct (the migration's or the
+    compiler's diagnostic), not the clause alone."""
+
+    def test_a_missing_migration_is_named_in_the_refusal(self):
+        self.open_library()
+        self.make("c", BASE, record(count=nat(0)))
+        self.make("p", PROPOSER, record(note=label("")))
+        wider = BASE.replace("  count: Nat\n", "  count: Nat\n  extra: Nat\n", 1).replace("{count: 0n}", "{count: 0n, extra: 0n}").replace(
+            "{count: state.count}", "{count: state.count, extra: 0n}")
+        self.assertNotEqual(wider, BASE)
+        r = self.turn("p", "propose", record(target=label("c"), package=label(wider), migration=label("nope")))
+        self.assertEqual(r["status"], "admitted", r)
+        said = r["result"]["value"]
+        self.assertTrue(said.startswith("migration | "), said)
+        self.assertIn("nope", said)
+
+
+class ExtensionPins(Reflection):
+    """An extension's pin is its compiled closure's (docs 2): the same layer over the same base under two
+    libraries is two closures and two pins."""
+
+    def test_the_same_layer_under_another_library_is_another_pin(self):
+        import os, shutil, tempfile
+        from tests.test_reflection import LIBRARY
+        with tempfile.TemporaryDirectory() as scratch:
+            lib = os.path.join(scratch, "lib")
+            shutil.copytree(LIBRARY, lib)
+            self.open_library(lib)
+            self.make("c", BASE, record(count=nat(0)))
+            self.make("d", BASE, record(count=nat(0)))
+            first = self.host.send(op="world-reprogram", principal="ember", identity="x1", object="c", version=0,
+                                   package=LAYER, mode="extend")
+            self.assertEqual(first["status"], "admitted", first)
+            with open(os.path.join(lib, "World.obend"), "a", encoding="utf-8") as f:
+                f.write("# another library\n")
+            self.assertEqual(self.host.send(op="world-library", principal="ember", identity="lib-2")["status"], "library")
+            second = self.host.send(op="world-reprogram", principal="ember", identity="x2", object="d", version=0,
+                                    package=LAYER, mode="extend")
+            self.assertEqual(second["status"], "admitted", second)
+            pins = [r["receipt"]["outcome"]["reprograms"][0]["newPin"] for r in (first, second)]
+            self.assertNotEqual(pins[0], pins[1])
+            self.reopen()
+            self.assertEqual([self.host.send(op="world-inspect", principal="ember", object=o)["pin"] for o in "cd"], pins)
+
+
 class LateBinding(Reflection):
     """The host writes `layer over` as the layer's first line, so the kernel binds the whole stack late:
     Bell's own rain reply calls render, which a Louder layer grafted by the extend Plan overrides.

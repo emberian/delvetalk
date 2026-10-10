@@ -51,7 +51,7 @@
  },
  {
   "text": "delvetalk Garden-1 plant",
-  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
+  "expected": "spell Garden-1 plant ",
   "bare": ""
  },
  {
@@ -81,7 +81,7 @@
  },
  {
   "text": "delvetalk env/did:plc:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa seen",
-  "expected": "spell env/did:plc:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa seen ",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": ""
  },
  {

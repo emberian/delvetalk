@@ -49,12 +49,13 @@ def boundedText (what : String) (cap : Nat) (s : String) : Except String String 
     activity calls. No object may take it. -/
 def worldId : String := "world"
 
-/-- An object id a creation may take: 1..128 bytes of letters, digits and `. _ : / -`, so every object has an
-    AT record key (`~` stands for `/` there). Journals with other ids still replay; only new creations
-    are held to it. -/
+/-- An object id a creation may take: 1..128 bytes of `Limits.nameAlphabet` (ASCII letters, digits and
+    `. _ : / -`), the rule the spell grammar reads a card name by, so every object can be spelled and
+    has an AT record key (`~` stands for `/` there). Journals with other ids still replay; only new
+    creations are held to it. -/
 def validObjectId (id : String) : Bool :=
   !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId &&
-    id.toList.all fun (c : Char) => c.isAlphanum || ".:_/-".toList.contains c
+    id.toList.all fun (c : Char) => Limits.nameAlphabet.toList.contains c
 
 def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world"
 
@@ -1172,17 +1173,21 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
     throw ("compile", "initial() must return a closed record of first-order data")
   let packet ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
   let sourcePin ← (artifact.getObjValAs? String "sourcesSha256").mapError (("compile", ·))
-  -- The pin is the sources' CID. An extension's is its layer over the sources it extends,
-  -- whatever `initial` it reaches.
-  let pin := if extend then Journal.bodyHash (Json.arr #[toJson "extend", toJson o.pin, toJson (Journal.bodyHash (toJson source))])
-    else sourcePin
+  -- The pin is the sealed source closure's CID, an extension's too: its modules are the code it
+  -- extends, the layer and the library it compiled against now (docs 2: the same layer under two
+  -- libraries is two closures).
+  let pin := sourcePin
   let same := (← (canonicalTy assumptions.bounds ty).mapError (("stateType", ·))) ==
     (← (canonicalTy o.bounds o.stateType).mapError (("stateType", ·)))
   let migrated : Option Compiled ← if migration.isEmpty then
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
     else do
       unless Minidregg.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
-      let (art, mty, _) ← (Package.compileKeepingLaws (← resolved migration)).mapError (("migration", ·))
+      -- A migration the package does not define is said by name, not by the compiler's entry search.
+      let (art, mty, _) ← (Package.compileKeepingLaws (← resolved migration)).mapError fun e =>
+        if (e.splitOn "missing selected entry").length > 1 then
+          ("migration", s!"the package defines no {migration}; a migration is def {migration}(old: OldState) -> State")
+        else ("migration", e)
       let packet ← (art.getObjVal? "packet").mapError (("migration", ·))
       let md ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
       match mty with
@@ -1210,17 +1215,20 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
            methods, predicate, predicateReads, packet, relations, fixed := fixedOf artifact,
            declares := declaresOf artifact }
 
-def programKey (o : Object) (source migration : String) (extend : Bool := false) : String :=
-  o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "")
+/-- A prepared reprogram's key: the object's inputs, the source, the migration, the mode, and the
+    library it compiles against now (a reprogram takes the world's current library). -/
+def programKey (w : World) (o : Object) (source migration : String) (extend : Bool := false) : String :=
+  o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "") ++
+    "/" ++ ((w.library.map (·.pin)).getD "")
 
 def programFor (w : World) (o : Object) (source migration : String) (extend : Bool := false) : Except (String × String) Program :=
-  match w.programs[programKey o source migration extend]? with
+  match w.programs[programKey w o source migration extend]? with
   | some p => pure p
   | none => prepareProgram w o source migration extend
 
 def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) (extend : Bool := false) : World :=
   if w.programs.size < Limits.maxPreparedPrograms then
-    { w with programs := w.programs.insert (programKey o source migration extend) p }
+    { w with programs := w.programs.insert (programKey w o source migration extend) p }
   else w
 
 /-! ## Sources by CID
@@ -2956,7 +2964,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       throw "interpretation of an unknown or already settled request"
     discard <| outcome.getObjVal? "reply"
     let verdict ← outcome.getObjVal? "verdict"
-    unless ["proposal", "unclear", "replied"].contains (← verdict.getObjValAs? String "tag") do throw "unknown verdict"
+    unless ["proposal", "proposals", "unclear", "replied"].contains (← verdict.getObjValAs? String "tag") do throw "unknown verdict"
     return record w entry key []
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
