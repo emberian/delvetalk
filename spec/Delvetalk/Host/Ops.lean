@@ -1808,10 +1808,11 @@ def subscriptionsAfter (w : World) (entry : Json) : Std.HashMap String (Array Su
   else if (outcome.getObjValAs? String "clause").toOption == some "denied" then
     let id := (entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption
     if let some d := w.pending.find? fun p => (p.getObjValAs? String "id").toOption == id then
-      if (d.getObjValAs? String "method").toOption == some "changed" then
+      if (d.getObjVal? "field").toOption.isSome then
         if let (.ok to, .ok principal, .ok object, .ok field) :=
             (d.getObjValAs? String "to", d.getObjValAs? String "principal", d.getObjValAs? String "object", d.getObjValAs? String "field") then
-          subs := subs.insert object ((subs.getD object #[]).filter (· != ⟨to, principal, object, field⟩))
+          let x : Subscription := { subscriber := to, principal, object, field }
+          subs := subs.insert object ((subs.getD object #[]).filter fun y => !(y.sameAs x && y.principal == principal))
   return subs
 
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
@@ -1833,8 +1834,8 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
   let changed := if tagOf entry != "admitted" then #[] else
     (((entry.getObjVal? "changes").toOption.bind (·.getArr?.toOption)).getD #[]).map fun c =>
       let fields := c.getObj?.toOption.map (·.toList) |>.getD []
-      Json.mkObj ([("from", identity), ("method", toJson "changed"),
-        ("sender", (c.getObjVal? "object").toOption.getD Json.null)] ++ fields)
+      Json.mkObj ([("from", identity), ("method", toJson ((c.getObjValAs? String "method").toOption.getD "changed")),
+        ("sender", (c.getObjVal? "object").toOption.getD Json.null)] ++ fields.filter (·.1 != "method"))
   let sources := (entrySources entry).toOption.getD []
   -- Offers of an admitted entry are retained for their addressees.
   let offered := if tagOf entry != "admitted" then #[] else
@@ -2465,9 +2466,10 @@ def changesJson (w : World) (principal intent : String) (ledger : Ledger) (used 
       let (inserted, retracted) := fieldChange o.relations x.field (field before.state) (field o.state)
       let argument := Data.record [("object", .record [("world", .label ""), ("object", .label id)]),
         ("field", .label x.field), ("version", .natural o.version), ("inserted", inserted), ("retracted", retracted)]
-      changes := changes.push (Json.mkObj [("id", toJson (deliveryId principal intent (sent + changes.size))),
+      changes := changes.push (Json.mkObj ([("id", toJson (deliveryId principal intent (sent + changes.size))),
         ("to", toJson x.subscriber), ("object", toJson id), ("field", toJson x.field), ("version", toJson o.version),
-        ("principal", toJson x.principal), ("ledger", child), ("argument", dataJson argument)])
+        ("principal", toJson x.principal), ("ledger", child), ("argument", dataJson argument)] ++
+        (if x.method == "changed" then [] else [("method", toJson x.method)])))
   return (if changes.isEmpty then [] else [("changes", Json.arr changes)]) ++
     (if unserved.isEmpty then [] else [("unserved", Json.arr unserved)])
 

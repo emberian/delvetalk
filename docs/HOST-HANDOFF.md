@@ -316,6 +316,20 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    law's `request.argument`) is the read one; the request digest is of the argument as sent. Deliveries,
    `call` and `send` arguments are typed values and are not read so. Test: `tests/test_sum_words.py`.
 
+53. **Typed receivers (host9; WHOLENESS second root decisions, 3 and 5).** `subscribe {object, field,
+   method}` names the subscriber's receiver; "" or absent is `changed`. The receiver must be a method of
+   the subscriber (`refused {clause: method}`). One subscription per (subscriber, object, field): a
+   subscribe naming another receiver replaces the standing one (journaled as an unsubscribe of the old
+   and a subscribe of the new). `Subscription.method` is journaled in `subscribes`/`unsubscribes` and in
+   each `changes` item only when it is not `changed`; `record` queues the delivery to that method.
+   `inserted`/`retracted` are checked against the receiver's declared input at delivery as any
+   delivered argument is (`argumentFits`): rows that do not conform refuse the delivery `typeMismatch`
+   with `expected {method, type}`; the subscription stands. A change delivery is told apart from a send
+   by its `field` (the read-authority recheck and the `denied` drop use it). `spell` is not a world
+   method (`noMethod`): the host's spell path runs a card's methods directly. World.obend's
+   `subscribe` line gains `method: String` in the objects lane (tests replace the line in a library
+   copy until then). Test: `tests/test_changes.py` `Receivers`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

@@ -585,9 +585,10 @@ def dryChange (w : World) (s : TurnState) (self id : String) (version : Nat) (pr
   | .ok _ => none
   | .error r => some (r.clause.getD r.cls)
 
-/-- The world's methods (WHOLENESS §1, `protocol world`), which a message activity calls. -/
+/-- The world's methods (WHOLENESS §1, `protocol world`), which a message activity calls. `spell` is
+    not one: the host's spell path runs a card's methods directly (WHOLENESS, second root decisions, 5). -/
 def worldMethods : List String :=
-  ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "spell", "send",
+  ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
    "objects", "card", "subscribe", "unsubscribe"]
@@ -1016,6 +1017,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     -- object, the principal the frame's subject, who must be permitted to view the object.
     let s ← get
     let some name := (f.lookup "field").bind labelOf | evaluation "malformed subscribe plan"
+    -- The receiver: a method of the subscriber that the change is delivered to (`changed` by default).
+    let receiver := ((f.lookup "method").bind labelOf).getD ""
+    let receiver := if receiver.isEmpty then "changed" else receiver
     let ending := match plan with
       | .variant "unsubscribe" _ => true
       | _ => false
@@ -1027,18 +1031,23 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         | .record fields => fields.any (·.1 == name)
         | _ => false
       if !has then refusedWith bounds responseType "field" else
-      let x : Subscription := ⟨self, s.subject, id, name⟩
-      let standing := (s.world.subscriptions.getD id #[]).toList
+      let x : Subscription := { subscriber := self, principal := s.subject, object := id, field := name, method := receiver }
+      let standing := ((s.world.subscriptions.getD id #[]).toList.filter (!s.unsubscribes.contains ·))
+      let mine := (standing ++ s.subscribes).filter x.sameAs
       if ending then
-        let mine := (standing ++ s.subscribes).filter fun y => y.subscriber == self && y.object == id && y.field == name
         set { s with subscribes := s.subscribes.filter (!mine.contains ·),
                      unsubscribes := s.unsubscribes ++ (mine.filter (standing.contains ·)) }
         respond bounds responseType "subscribed" [emptyRecord]
-      else if standing.contains x || s.subscribes.contains x then respond bounds responseType "subscribed" [emptyRecord]
-      else if (standing ++ s.subscribes).filter (·.object == id) |>.length |> (· ≥ Limits.subscribersPerObject) then
+      else if mine.contains x then respond bounds responseType "subscribed" [emptyRecord]
+      else if !(Minidregg.Compiler.ObjectiveBendParse.isIdent receiver.toList) ||
+          !(((s.world.objects[self]?).map (hasMethod · receiver)).getD false) then
+        refusedWith bounds responseType "method"
+      else if mine.isEmpty && ((standing ++ s.subscribes).filter (·.object == id) |>.length |> (· ≥ Limits.subscribersPerObject)) then
         refusedWith bounds responseType "subscribers"
       else
-        set { s with subscribes := s.subscribes ++ [x] }
+        -- Another receiver for the same field replaces the standing one.
+        set { s with subscribes := s.subscribes.filter (!mine.contains ·) ++ [x],
+                     unsubscribes := s.unsubscribes ++ (mine.filter (standing.contains ·)) }
         respond bounds responseType "subscribed" [emptyRecord]
   | .variant "viewAt" (.record f) =>
     -- A past version of an object's state, rebuilt from the journal (`stateAt`), answered as `view`
@@ -1847,7 +1856,7 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
     return commit w p deliveryFields (some { cls := "lawRefused", clause := some "noGrant", object := some to })
   -- A change is delivered only while its subscription's principal may still view the object; else it
   -- is consumed, refused, and the subscription drops (`subscriptionsAfter`).
-  if method == "changed" then
+  if (d.getObjVal? "field").toOption.isSome then
     if let .ok object := d.getObjValAs? String "object" then
       unless ((w.objects[object]?).map (·.read.permits principal)).getD false do
         let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }

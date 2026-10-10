@@ -12,6 +12,7 @@ subscriber, a write of another field that does, a subscription that does not sur
     python3 -W error -m unittest tests.test_changes -v
 """
 import json
+import os
 import tempfile
 import unittest
 
@@ -192,6 +193,111 @@ class Changes(Reflection):
         self.assertEqual(stale["result"], nat(1), stale)
         self.reopen()
         self.assertEqual((self.get("r", "got"), self.get("r2", "got")), (nat(100), nat(101)))
+
+
+RECEIVER_PROTOCOL = ("  subscribe({object: Plans.Reference, field: String}) -> Subscribed",
+                     "  subscribe({object: Plans.Reference, field: String, method: String}) -> Subscribed")
+
+RECEIVER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  heard: Nat
+  wrong: Nat
+  plain: Nat
+record Edits:
+  heard: Plans.Edit<Nat, Nat>
+  wrong: Plans.Edit<Nat, Nat>
+  plain: Plans.Edit<Nat, Nat>
+def initial() -> State:
+  {heard: 0n, wrong: 0n, plain: 0n}
+def watch(state: State, input: {target: String, field: String, method: String}, context: Abi.Context) -> Activity<String>:
+  match world.subscribe({object: {world: "", object: input.target}, field: input.field, method: input.method}):
+    case subscribed(_): "subscribed"
+    case denied(_): "denied"
+    case refused(r): r.clause
+def rung(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Nat>, retracted: Lists.List<Nat>}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = world.write::<Edits>({heard: Plans.Edit.add({delta: input.version}), wrong: Plans.Edit.keep({}), plain: Plans.Edit.keep({})})
+  0n
+def asText(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<String>, retracted: Lists.List<String>}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = world.write::<Edits>({heard: Plans.Edit.keep({}), wrong: Plans.Edit.add({delta: 1n}), plain: Plans.Edit.keep({})})
+  0n
+def changed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Data, retracted: Data}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = world.write::<Edits>({heard: Plans.Edit.keep({}), wrong: Plans.Edit.keep({}), plain: Plans.Edit.add({delta: 1n})})
+  0n
+"""
+
+
+class Receivers(Reflection):
+    """WHOLENESS's second root decisions, 3: `subscribe {object, field, method}` names the subscriber's
+    receiver; the change is delivered to it and its `inserted`/`retracted` are checked against the
+    method's declared types (a delivery that does not conform is refused `typeMismatch`); "" is
+    `changed`; another receiver for the same field replaces the standing one; a receiver the
+    subscriber lacks is refused `method`."""
+
+    def setUp(self):
+        Reflection.setUp(self)
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        library = extended_library(scratch.name, "")
+        path = os.path.join(library, "World.obend")
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn(RECEIVER_PROTOCOL[0], text)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text.replace(RECEIVER_PROTOCOL[0], RECEIVER_PROTOCOL[1]))
+        self.open_library(library=library)
+        self.make2("bell", BELL)
+        self.make2("r", RECEIVER)
+
+    make2 = Changes.make2
+    get = Changes.get
+    entries = Changes.entries
+
+    def watch_with(self, method, field="rung"):
+        return self.turn("r", "watch", record(target=label("bell"), field=label(field), method=label(method)),
+                         principal="ann")["result"]
+
+    def counts(self):
+        return tuple(int(self.get("r", k)["value"]) for k in ("heard", "wrong", "plain"))
+
+    def test_the_change_goes_to_the_named_receiver_typed(self):
+        self.assertEqual(self.watch_with("rung"), label("subscribed"))
+        rung = self.turn("bell", "ring", record())
+        self.assertEqual([d["status"] for d in rung["delivered"]], ["admitted"], rung)
+        self.assertEqual(self.counts(), (1, 0, 0))
+        entry = [e for e in self.entries() if e["identity"]["intent"] == rung["receipt"]["identity"]["intent"]][0]
+        self.assertEqual(entry["changes"][0]["method"], "rung")
+        self.reopen()
+        self.turn("bell", "ring", record())
+        self.assertEqual(self.counts(), (3, 0, 0))
+
+    def test_rows_that_do_not_conform_are_refused_type_mismatch(self):
+        self.assertEqual(self.watch_with("asText"), label("subscribed"))
+        rung = self.turn("bell", "ring", record())
+        [d] = rung["delivered"]
+        self.assertEqual((d["status"], d["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), d)
+        self.assertEqual(d["receipt"]["outcome"]["expected"]["method"], "asText")
+        self.assertEqual(self.counts(), (0, 0, 0))
+
+    def test_empty_is_changed_and_another_receiver_replaces(self):
+        self.assertEqual(self.watch_with(""), label("subscribed"))
+        self.turn("bell", "ring", record())
+        self.assertEqual(self.counts(), (0, 0, 1))
+        self.assertEqual(self.watch_with("rung"), label("subscribed"))
+        self.turn("bell", "ring", record())
+        self.assertEqual(self.counts(), (2, 0, 1))
+        self.reopen()
+        self.turn("bell", "ring", record())
+        self.assertEqual(self.counts(), (5, 0, 1))
+
+    def test_a_receiver_the_subscriber_lacks_is_refused(self):
+        self.assertEqual(self.watch_with("ghost"), label("method"))
+        self.assertEqual(self.watch_with("not a name"), label("method"))
+        self.turn("bell", "ring", record())
+        self.assertEqual(self.counts(), (0, 0, 0))
 
 
 if __name__ == "__main__":
