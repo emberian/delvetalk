@@ -134,7 +134,8 @@ class Run:
         recorded = []
         for uri, obj in ((hub, 'directory') for hub in HUBS):
             p = posts[uri]
-            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': p['cid']}, obj)
+            post_py.reserve(self.host, 'hub:' + uri, 'delve')  # a post settles its reservation (HOST-HANDOFF 107)
+            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': p['cid']}, obj, intent='hub:' + uri)
             recorded.append({'uri': uri, 'object': obj, 'status': reply.get('status'), 'message': reply.get('message')})
             if reply.get('status') != 'posted':
                 self.errors.append({'kind': 'posted', 'uri': uri, 'reply': reply})
@@ -181,7 +182,8 @@ class Run:
             if uri not in posts:
                 self.plantings.append({'object': bell, 'uri': uri, 'status': 'planting post is not an archived post'})
                 continue
-            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': posts[uri]['cid']}, bell)
+            post_py.reserve(self.host, 'bell:' + uri, 'delve')
+            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': posts[uri]['cid']}, bell, intent='bell:' + uri)
             self.plantings.append({'object': bell, 'uri': uri, 'status': reply.get('status'), 'message': reply.get('message')})
 
     def window(self, window, now, texts, posts):

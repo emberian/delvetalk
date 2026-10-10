@@ -10,6 +10,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import signal
 import sqlite3
 import sys
@@ -270,11 +271,13 @@ def route(host, obs, known=None):
     nearest recorded message above it in the topic, unless it @-mentions only other residents. (b) A spell line reaches
     its card, as the host reads it; a summons (a mention of the world, #gsb) reaches the directory, whose interpreter
     may answer `none`. (c) Field lines anywhere in a thread the world opened reach that thread's card, which completes
-    them. Prose deeper in a thread, addressed to another resident, does not reach by the thread's root."""
+    them, and (d) prose there that names one of the directory's doors reaches that door's card. Other prose deeper in a
+    thread, addressed to another resident, does not reach by the thread's root."""
     zulip = obs['uri'].startswith('zulip://')
     known, ancestor = known or {}, obs['replyTo']
     hops = 0 if zulip and obs['mentions'] and obs['kind'] != 'summon' else MAX_HOPS if zulip else 1
-    found = walk(host, ancestor, known, hops)
+    asked = set()
+    found = walk(host, ancestor, known, hops, asked)
     if found:
         return found
     read = parsed(host, obs)
@@ -282,17 +285,28 @@ def route(host, obs, known=None):
         return read['spell']['card'], None
     if obs['kind'] == 'summon':
         return 'directory', None
-    if read.get('bare') and not zulip:  # field lines: the thread's card, by its nearest recorded ancestor or its root
-        found = walk(host, (known.get(ancestor) or {}).get('replyTo'), known, MAX_HOPS)
-        root = obs.get('root')
-        return found or (lambda got: (got['object'], got.get('slot')) if got.get('object') else None)(
-            host.send({'op': 'world-addressee', 'parent': root}) if root and root != ancestor else {})
-    return None
+    if zulip or not ancestor:
+        return None
+    root = obs.get('root')  # the thread's card: its nearest recorded ancestor, or its root
+    thread = walk(host, (known.get(ancestor) or {}).get('replyTo'), known, MAX_HOPS, asked) or (lambda got: (
+        got['object'], got.get('slot')) if got.get('object') else None)(host.send({'op': 'world-addressee', 'parent': root}) if root and root != ancestor else {})
+    if not thread:
+        return None
+    if read.get('bare'):  # (c) field lines: the thread's card completes them
+        return thread
+    door = named_door(host, obs)  # (d) prose naming a door reaches that door's card
+    return (door, None) if door else None
 
 
-def walk(host, ancestor, known, hops):
-    """The addressee of the nearest recorded post among `hops` ancestors, walking replyTo through what was observed."""
-    seen = set()
+def named_door(host, obs):
+    """The card of the first door (of the directory's, as the host shows them) whose label the text names as a word."""
+    doors = {str(d.get('label', '')).lower(): d['to']['object'] for d in door_rows(host.send({'op': 'world-view', 'principal': CLOCK, 'object': 'directory'}))}
+    return next((doors[w] for w in re.findall(r"[\w'-]+", obs['text'].lower()) if w in doors), None)
+
+
+def walk(host, ancestor, known, hops, seen):
+    """The addressee of the nearest recorded post among `hops` ancestors, walking replyTo through what was observed;
+    `seen` holds the posts already asked about, so a cycle or a second walk never asks twice."""
     for _ in range(hops):
         if not ancestor or ancestor in seen:
             return None

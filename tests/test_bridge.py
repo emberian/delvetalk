@@ -147,7 +147,8 @@ class DirectReplies(BridgeCase):
                                'modules': closure('Directory'), 'entry': 'initial', 'seed': record(owner=label('ember'))})
         self.assertEqual(made['status'], 'created', made)
         hub = 'at://did:plc:ember/town.delve.feed.post/hub'
-        recorded = self.host.send({'op': 'world-posted', 'principal': 'transport', 'uri': hub, 'cid': 'bafyhub', 'object': 'directory'})
+        self.host.send({'op': 'world-post-reserve', 'principal': 'transport', 'intent': 'hub', 'source': 'delve'})  # a post settles its reservation
+        recorded = self.host.send({'op': 'world-posted', 'principal': 'transport', 'uri': hub, 'cid': 'bafyhub', 'object': 'directory', 'intent': 'hub'})
         self.assertNotEqual(recorded.get('status'), 'error', recorded)
         posts = [mk(n, text, parent=hub) for n, text in enumerate(('hello, what is this?', 'lovely evening', 'thanks all'), 1)]
         for n, p in enumerate(posts):
@@ -311,6 +312,8 @@ class Stub:
             lines = [l.split() for l in req['text'].split('\n') if l.startswith('delvetalk ') and len(l.split()) > 2]
             bare = [{'name': m[1], 'value': m[2]} for m in re.finditer(r'^(\w+): (.+)$', req['text'], re.M)]
             return {'status': 'parsed', 'bare': bare, **({'spell': {'card': lines[-1][1], 'action': lines[-1][2], 'fields': []}} if lines else {'notASpell': {}})}
+        if op == 'world-view' and req['object'] == 'directory':
+            return {'status': 'viewed', 'state': {'doors': [{'label': 'anthology', 'to': {'object': 'anthology'}}]}}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
@@ -337,6 +340,13 @@ class ReplyScoped(BridgeCase):
         got = self.turns(mk(1, 'I planted a fern, what colour is it', parent=card), deep(2, 'For the record:\n\nplant: a bell\ncolour: silver'),
                          deep(3, 'Open recursion with a bouncer deserves to be carved into the lintel.'))
         self.assertEqual(got, {'000001': 'garden-1', '000002': 'garden-1'})
+
+    def test_prose_deep_in_the_worlds_thread_that_names_a_door_reaches_that_doors_card(self):
+        card, other = f'at://{DID}/town.delve.feed.post/card', f'at://{DID}/town.delve.feed.post/agent1'
+        deep = lambda n, text: (lambda p: (p['record']['reply'].update(root={'uri': card, 'cid': 'x'}), p)[1])(mk(n, text, parent=other))
+        outside = mk(3, 'that line belongs in the anthology', parent=f'at://{DID}/town.delve.feed.post/elsewhere')
+        got = self.turns(deep(1, 'And yes, that line belongs in the Anthology.'), deep(2, 'Agreed, beautifully put.'), outside)
+        self.assertEqual(got, {'000001': 'anthology'})  # a thread the world did not open: nothing
 
 
 class Usage(BridgeCase):
@@ -393,7 +403,7 @@ class Routing(BridgeCase):
         self.observe([deep])
         bridge.run(self.state, stub)
         self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], [])
-        self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid])
+        self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid, root])  # the thread is the world's; its prose names no door
 
     def test_a_reply_reaches_a_card_by_its_direct_parent_only(self):
         u = lambda n: f'at://{DID}/town.delve.feed.post/t{n}'
