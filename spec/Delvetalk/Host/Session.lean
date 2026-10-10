@@ -238,8 +238,18 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
             | .ok _, some o' => pure o'
             | .error e, _ => return (session, .error e)
             | _, none => return (session, .error "world-open failed")
+        -- The world's name, journaled once (`named`); another name than the journal holds is refused.
+        let o ← match request.getObjValAs? String "name" with
+          | .error _ => pure o
+          | .ok name =>
+            let (s', r) ← durable o reader (fun w => nameOp w name)
+            match r, s' with
+            | .ok _, some o' => pure o'
+            | .error e, _ => return (session, .error e)
+            | _, none => return (session, .error "world-open failed")
         let opened := fun (o : Open) (extra : List (String × Json)) => Json.mkObj ([("status", toJson "opened"),
-          ("height", toJson o.world.height), ("head", toJson o.world.head),
+          ("height", toJson o.world.height), ("head", toJson o.world.head)] ++
+          (if o.world.name.isEmpty then [] else [("name", toJson o.world.name)]) ++ [
           ("objects", toJson o.world.objects.size), ("snapshot", o.report.json)] ++ extra ++
           (o.world.library.map fun l => [("library", toJson l.pin)]).getD [])
         match request.getObjValAs? String "library" with

@@ -440,6 +440,9 @@ structure World where
   /-- The principal that opened the world (`world-open {opener}`, in the settings entry; ""
       when none was named): it alone may create an object for a named owner. -/
   opener : String := ""
+  /-- The world's name among those one host serves (docs/FEDERATION.md §1), journaled once by a
+      `named` entry; "" before one is. -/
+  name : String := ""
   settled : Bool := false
   /-- Interpretations one principal may start per clock hour (`world-open {interpretQuota}`, journaled
       in `settings` when named; 48 otherwise). The opener and the clock principal are exempt. -/
