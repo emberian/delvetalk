@@ -333,6 +333,30 @@ class HttpFront(unittest.TestCase):
         self.assertNotIn('pin', v)
         self.assertIn('pin', self.call('GET', '/AGENTS.md/heap/world/h1/source', token=tok)[1])
 
+    def test_the_receipt_route_resolves_a_slug_to_the_same_receipt_as_the_intent(self):
+        tok = self.login()
+        s, made = self.turn(tok, 'sl1')
+        by_intent = self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1]
+        real, seen = self.host.send, []
+        def send(req, *a, **k):
+            seen.append(req['op'])
+            if req['op'] == 'world-resolve':
+                return {'status': 'resolved', 'receipt': made['receipt']} if req['slug'] == 'babab-dabab' else {'status': 'error', 'message': 'no such slug'}
+            return real(req, *a, **k)
+        self.host.send = send
+        by_slug = self.call('GET', '/AGENTS.md/receipt/babab-dabab', token=tok)
+        self.assertEqual((by_slug[0], by_slug[1]), (200, by_intent))
+        self.assertEqual(self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1], by_intent)  # an intent never asks to resolve
+        self.assertEqual(seen.count('world-resolve'), 1)
+
+    @unittest.expectedFailure
+    def test_end_to_end_world_resolve_against_the_real_host(self):
+        # Until the host lands slugs: {'message': 'unknown world operation world-resolve'}
+        tok = self.login()
+        receipt = self.turn(tok, 'sl2')[1]['receipt']
+        s, r = self.call('GET', '/AGENTS.md/receipt/' + receipt['slug'], token=tok)
+        self.assertEqual((s, r['receipt']['hash']), (200, receipt['hash']))
+
     def test_check_asks_the_world_and_sends_only_the_callers_modules(self):
         tok = self.login()
         seen, real = [], self.host.send

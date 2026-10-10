@@ -10,6 +10,7 @@ import collections
 import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -31,6 +32,7 @@ STATIC = Path(__file__).resolve().parent / 'static'
 MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
 WAIT_MAX, WAIT_STEP = 30, 1  # seconds an offers long poll may hold a request, and how often it re-asks the host
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
+SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz])(?:-[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz])+')
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
@@ -298,6 +300,14 @@ class Handler(BaseHTTPRequestHandler):
                 r = {k: plain(v) if k == 'forms' else v for k, v in r.items() if k not in ('document', 'methods')}
             return self.answer(r, keep=('pin',))  # the program's name there
         if kind == 'receipt':
+            if SLUG.fullmatch(obj):  # a proquint slug names a receipt; any other text is the intent
+                found = host.send({'op': 'world-resolve', 'principal': principal, 'slug': obj})
+                if 'receipt' in found:
+                    return self.answer({'status': 'receipt', 'receipt': found['receipt']})
+                if found.get('identity'):
+                    return send({'op': 'world-receipt', 'principal': principal, 'identity': found['identity']})
+                if 'unknown' not in str(found.get('message')):
+                    return self.answer(found)
             return send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
         if kind == 'offers':
             wait = min(int(q['wait']), WAIT_MAX) if q.get('wait', '').isdigit() else 0
