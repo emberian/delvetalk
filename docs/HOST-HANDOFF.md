@@ -222,6 +222,17 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    labels, not type names, so a package may declare its own `Relation<T>` and row-edit sum until `Relation.obend` and
    Plan.obend's constructors land. Tests: `tests/test_relation.py`.
 
+46. **Derived views (host8).** Plan `viewDerived {object, view}` answers `derived {version, value: Data}`: the
+   target package's pure definition `view`, which its `def views() -> List<String>` must name (read once
+   per compile, as `lawReads()` is: `declaredViews`), runs on the committed state, with the reader's Context
+   (`inputOrigin.kind = "view"`, `command` the view) when it takes one, under the turn's remaining ticks,
+   as a card renders (`derivedView`). Read authority and the root are `view`'s. Refusals: `noView` (not
+   declared, or no such definition), `view` (fails, runs out, or its result type is not first-order data);
+   `denied` without read authority. `world-inspect` lists `views` when the package declares any. The host
+   reads the Plan label, so a package may declare its own Plan/Response arms; Plan.obend's constructors
+   (`viewDerived` at the end of `Plan`, `derived` at the end of `Response`) and World.obend's protocol line
+   are the objects lane's, added with their pin re-record. Test: `tests/test_view_derived.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

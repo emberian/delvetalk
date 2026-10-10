@@ -443,6 +443,36 @@ def renderCard (o : Object) (context : String → Data) : M (Except String Data)
   | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "render"
   | .error _ => return .error "render"
 
+/-- The views a package declares: the labels its pure `views()` returns (`def views() ->
+    List<String>`), read as `lawReads()` is; none when it has no such definition. -/
+def declaredViews (o : Object) : M (List String) := do
+  if !((entrySource o).splitOn "\n").any (·.startsWith "def views(") then return []
+  let some c ← tryCatch (some <$> compiledMethod o "views") (fun _ => pure none) | return []
+  let some entry := c.entry | return []
+  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+  | .ok d => return (labels [] d).getD []
+  | .error _ => return []
+
+/-- A derived view of an object (`viewDerived {object, view}`): the package's pure definition
+    `view`, which `views()` must name, run on the committed state (with the reader's Context when
+    it takes one) under this turn's remaining ticks, as a card is rendered. Its value must be
+    first-order data. `noView` when the package does not declare `view`, `view` when it fails, runs
+    out, or answers something other than data. -/
+def derivedView (o : Object) (view : String) (context : Data) : M (Except String Data) := do
+  unless (← declaredViews o).contains view do return .error "noView"
+  let some c ← tryCatch (some <$> compiledMethod o view) (fun _ => pure none) | return .error "noView"
+  let (arguments, result) := match c.type with
+    | .arrow _ _ _ (.arrow _ _ ct r) => (#[o.state, fitRecord c.bounds ct context], r)
+    | .arrow _ _ _ r => (#[o.state], r)
+    | r => (#[], r)
+  unless result.isDataUnder c.bounds [] Ty.dataFuel [] do return .error "view"
+  let entry ← entryOf c
+  let st ← get
+  match Package.executeDataEntry entry arguments (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
+  | .ok (.finished value _ _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .ok value
+  | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "view"
+  | .error _ => return .error "view"
+
 /-- The kernel's refusal of an argument that does not conform to the entry's input type. -/
 def argumentRefusal : String := "turn refused: argument does not conform to its type"
 
@@ -885,6 +915,20 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       let reader := cardContext s.world id s.subject self s.intent s.world.height
       match ← renderCard o reader with
       | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
+      | .error clause => refusedWith bounds responseType clause
+  | .variant "viewDerived" (.record f) =>
+    -- A view the target's package derives from its state, as first-order Data, under read
+    -- authority; the root is recorded as for `view`.
+    let s ← get
+    let some view := (f.lookup "view").bind labelOf | evaluation "malformed viewDerived plan"
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      recordRoot id o.version
+      let context := contextData id s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "view" view
+      match ← derivedView o view context with
+      | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
   | .variant "check" (.record f) =>
     let some (.label source) := f.lookup "package" | evaluation "malformed check plan"
@@ -1639,7 +1683,12 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")),
       ("law", toJson o.lawText), ("source", toJson (entrySource o)), ("methods", o.methods),
       ("supervisor", toJson o.supervisor),
-      ("forms", dataJson (listData (methodForms id o.methods)))]
+      ("forms", dataJson (listData (methodForms id o.methods)))] |> fun r =>
+      -- The views its package declares (`views()`), which `viewDerived` answers.
+      let init : TurnState := { world := w, principal, intent := "", subject := principal,
+                                ticks := Delvetalk.Bounds.lawTicks, limits := Json.mkObj [] }
+      let views := (((declaredViews o).run.run init).1.toOption).getD []
+      if views.isEmpty then r else r.setObjVal! "views" (toJson views)
 
 /-- `world-card {principal, object}`: the object's rendered card, as text and as Document data. -/
 def cardOp (w : World) (j : Json) : Except String (World × Json) := do
