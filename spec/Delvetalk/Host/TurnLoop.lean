@@ -2018,6 +2018,16 @@ def computationParts : Ty → Option (Ty × Ty × Ty)
 def strings (j : Option Json) : List String :=
   ((j.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun a => a.getStr?.toOption
 
+/-- One item of a `proposals` verdict as the Plan hears it (`World.Proposed<R>`): `proposal {object,
+    method, argument}` or `unclear {reasons}`. -/
+def proposedData (item : Json) : Except String Data := do
+  match ← item.getObjValAs? String "tag" with
+  | "proposal" =>
+    return .variant "proposal" (.record [("object", .label (← item.getObjValAs? String "object")),
+      ("method", .label (← item.getObjValAs? String "method")),
+      ("argument", ← decodeData Limits.dataDepth (← item.getObjVal? "argument"))])
+  | _ => return .variant "unclear" (.record [("reasons", listData ((strings (item.getObjVal? "reasons").toOption).map Data.label))])
+
 /-- The response an `interpreted` entry resumes its `interpret` Plan with. -/
 def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M Data := do
   let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
@@ -2031,6 +2041,10 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
     respond bounds responseType "proposal" [.record [("object", .label target), ("method", .label method), ("argument", argument)]]
   | "replied" =>
     respond bounds responseType "replied" [.record [("text", .label (← liftEval (verdict.getObjValAs? String "text")))]]
+  | "proposals" =>
+    let items ← liftEval ((← liftEval (verdict.getObjVal? "items")).getArr?)
+    let items ← liftEval (items.toList.mapM proposedData)
+    respond bounds responseType "proposals" [.record [("items", listData items)]]
   | _ =>
     let needs := strings (verdict.getObjVal? "needs").toOption
     respond bounds responseType "unclear" [.record [("needs", listData (needs.map Data.label))]]
@@ -2605,6 +2619,22 @@ def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (L
     let form ← offered.find? fun f => f.action == first.name || f.fields.any (·.name == first.name)
     some (fitted form ((Spell.bare text).filter fun b => b.name == form.action || form.fields.any (·.name == b.name)))
 
+/-- The spells of a model's text, one per line that starts `delvetalk` (at the margin, so a quoted or
+    indented line is none), each with the field lines after it up to the next; prose before the first
+    is dropped. -/
+def spellSegments (text : String) : List String :=
+  let lines := text.splitOn "\n"
+  let (segments, current) := lines.foldl (fun (acc : List String × Option (List String)) line =>
+    let (done, open_) := acc
+    if line.startsWith "delvetalk " || line.startsWith "delvetalk\t" || line == "delvetalk" then
+      (match open_ with | some ls => done ++ ["\n".intercalate ls] | none => done, some [line])
+    else match open_ with
+      | some ls => (done, some (ls ++ [line]))
+      | none => (done, none)) ([], none)
+  match current with
+  | some ls => segments ++ ["\n".intercalate ls]
+  | none => segments
+
 /-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
     (`proposalVerdict`: a method of the object, one of the offered actions, with an argument that
     conforms to the method's input type and fits the object's response type) or `unclear` with the
@@ -2635,11 +2665,41 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   let some method := (json.getObjValAs? String "method").toOption
     | match raw with
       | some text =>
+        let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+        -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
+        -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
+        let segments := spellSegments text
+        if segments.length > 1 then
+          let offered := forms.filterMap Spell.Form.ofData
+          let mut w := w
+          let mut items : Array Json := #[]
+          for segment in segments.take Limits.spellsPerReply do
+            let item ← match spellVerdict offered segment with
+              | some (.ok (card, action, argument)) =>
+                let target := if w.objects.contains card then card else resolveCard principal card
+                match w.objects[target]? with
+                | none => pure (unclearVerdict [s!"there is no card {card}"])
+                | some targetObj =>
+                  let (w', v) := proposalVerdict w target object targetObj suspended.bounds responseType action argument
+                  w := w'
+                  pure v
+              | some (.error needs) => pure (unclearVerdict needs)
+              | none => pure (unclearVerdict ["not a spell"])
+            items := items.push (if (item.getObjValAs? String "tag").toOption == some "proposal" then item
+              else Json.mkObj [("tag", toJson "unclear"), ("reasons", (item.getObjVal? "needs").toOption.getD (Json.arr #[]))])
+          let verdict := Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)]
+          -- An object whose Response has no `proposals` arm hears the first item, as before.
+          let carried := (items.toList.mapM proposedData).map fun ds =>
+            (Data.variant "proposals" (.record [("items", listData ds)])).conformsUnder suspended.bounds responseType
+          if carried.toOption == some true then return (w, verdict)
+          match items[0]? with
+          | some first => return (w, if (first.getObjValAs? String "tag").toOption == some "proposal" then first
+              else unclearVerdict (strings (first.getObjVal? "reasons").toOption))
+          | none => return (w, unclearVerdict ["the reply names no method"])
         match spellVerdict (forms.filterMap Spell.Form.ofData) text with
         | some (.ok (card, action, argument)) =>
           -- The form names its card: the proposal is checked against that object, which may be
           -- another than the asking one (a directory offers its doors' forms).
-          let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
           let target := if w.objects.contains card then card else resolveCard principal card
           let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
           return proposalVerdict w target object targetObj suspended.bounds responseType action argument

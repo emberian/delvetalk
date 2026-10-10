@@ -816,6 +816,19 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    `tests/test_usage_voice.py` `test_a_card_named_as_any_object_may_be_is_spelled_by_that_name`,
    `tests/test_spell.py` `test_the_longest_card_name_is_128_bytes`.
 
+106. **Several spells in one interpretation (host12; docs/MENU.md §2.2).** `interpretVerdict` splits the
+   model's text at each line beginning `delvetalk` at the margin (`spellSegments`; prose before the
+   first is dropped). With more than one, each of the first `Limits.spellsPerReply` (3) is fitted and
+   checked as a single spell is (`spellVerdict`, `proposalVerdict`) and the verdict is `proposals
+   {items}`, in order, each `{tag: proposal, object, method, argument}` or `{tag: unclear, reasons}`;
+   the Plan hears `proposals {items: List<Proposed<R>>}` (`proposedData`). One spell keeps the single
+   `proposal`/`unclear`; an object whose Response has no `proposals` arm hears the first item. Replay
+   accepts the tag. World.obend's `sum Proposed<R>` and the `proposals` arm of `Interpreted<R>` are the
+   objects lane's lines (lane/objects12): `sum Proposed<R>: proposal: {object: String, method: String,
+   argument: R}; unclear: {reasons: Document.Names}` and `proposals: {items: Lists.List<Proposed<R>>}`.
+   Zero extra model calls. Test: `tests/test_interpret_object.py` `SeveralSpells` (a World copy with the
+   lines; two spells and a misfit, the second garden planting, a replay).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
