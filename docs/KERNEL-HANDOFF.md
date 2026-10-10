@@ -549,3 +549,9 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   package and every later entry's artifact reads it. Measured on hbox (load ~12, interleaved,
   best of 8 rounds of every Cistern entry in one session): 126-130 ms -> 101-102 ms for 13
   entries.
+- The artifact's `relations` entries are `{field, key, limit, retain?}`: `limit` the Decl's
+  Nat (0, the host's default, when the Decl has none), `retain` the Decl's retention as text
+  (a String field or a case label) only when it declares one; a non-Nat limit is refused
+  "relations(): a limit is a Nat". The host's own `parseDecls` (Ops.lean) reads the same fields
+  from the evaluated value; it could read the artifact instead (host lane). Test:
+  `test_sugar.Relations`.

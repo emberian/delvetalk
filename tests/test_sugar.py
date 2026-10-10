@@ -551,9 +551,22 @@ class Relations(unittest.TestCase):
         h = Host()
         self.addCleanup(h.close)
         art = h.compile(RELATIONS, "initial", ("List",))
-        self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"]}])
+        self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"], "limit": 0}])
         plain = h.compile(RELATIONS.replace("def relations()", "def declared()"), "initial", ("List",))
         self.assertNotIn("relations", plain)
+
+    def test_a_declaration_carries_its_limit_and_retention(self):
+        # RELATIONAL section 11: a limit (0 is the host's default) and the retention past it.
+        h = Host()
+        self.addCleanup(h.close)
+        bounded = (RELATIONS.replace("  key: Lists.List<String>\n", "  key: Lists.List<String>\n  limit: Nat\n  retain: String\n")
+                   .replace("tail: Lists.List.nil({})})})}, tail", "tail: Lists.List.nil({})})}), limit: 64n, retain: \"dropOldest\"}, tail"))
+        art = h.compile(bounded, "initial", ("List",))
+        self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"], "limit": 64, "retain": "dropOldest"}])
+        bad = h.send({"op": "compile", "entry": "initial", "modules": library_modules("List") + [
+            {"name": "Package", "source": bounded.replace("  limit: Nat\n", "  limit: String\n").replace("limit: 64n", "limit: \"many\"")}]})
+        self.assertEqual(bad["status"], "error", bad)
+        self.assertIn("relations(): a limit is a Nat", bad["message"])
 
 
 class LawReading(TurnWorld):

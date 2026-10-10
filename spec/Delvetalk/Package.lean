@@ -621,8 +621,8 @@ def executeDataEntry (entry : Delvetalk.CheckedEntry) (arguments : Array Data) (
   executePreparedNative (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel arguments)
     argumentBytes limits
 
-/-- A package's declared relations (RELATIONAL §2): the value of its nullary `relations()`
-(a list of `{field, key: List<String>}`), evaluated once at compile so the host reads it from
+/-- A package's declared relations (RELATIONAL §2, §11): the value of its nullary `relations()`
+(a list of `{field, key: List<String>, limit?: Nat, retain?}`, listed as `{field, key, limit, retain?}`), evaluated once at compile so the host reads it from
 the artifact without compiling a def per object. `none` when the entry module declares none. -/
 def relationsOf (request : PreparedRequest) : Except Diagnostic (Option Json) := do
   let ast := request.prepared.asts.getLastD default
@@ -646,7 +646,17 @@ def relationsOf (request : PreparedRequest) : Except Diagnostic (Option Json) :=
       let columns ← keys.toList.mapM fun k => match k with
         | .label c => pure c
         | _ => throw (refusal "a key column is a String")
-      return Json.mkObj [("field", toJson field), ("key", toJson columns)]
+      -- `limit` rows (0: the host's default) and the retention past it, as the Decl says.
+      let limit ← match fields.lookup "limit" with
+        | none => pure 0
+        | some (.natural n) => pure n
+        | some _ => throw (refusal "a limit is a Nat")
+      let retain ← match fields.lookup "retain" with
+        | none => pure []
+        | some (.label r) => pure [("retain", toJson r)]
+        | some (.variant r _) => pure [("retain", toJson r)]
+        | some _ => throw (refusal "a retention is a String or a case")
+      return Json.mkObj ([("field", toJson field), ("key", toJson columns), ("limit", toJson limit)] ++ retain)
     return some (Json.arr decls.toArray)
 
 /-- Prepare a request's closure, its relations evaluated on first use and kept with it. -/
