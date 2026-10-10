@@ -348,6 +348,52 @@ def Decl.mapSpans (f : Span → Span) : Decl → Decl
   | .law n source reading s => .law n source reading (f s)
   | .function sig ps b s => .function (sig.mapSpans f) ps (b.mapSpans f) (f s)
 
+/-! ## Variable renaming (the parser's placeholders for import aliases) -/
+
+mutual
+def Expr.mapVars (f : String → String) : Expr → Expr
+  | .var n s => .var (f n) s
+  | .record fs s => .record (mapFieldVars f fs) s
+  | .extend i fs s => .extend (i.mapVars f) (mapFieldVars f fs) s
+  | .member t n s => .member (t.mapVars f) n s
+  | .call c args s => .call (c.mapVars f) (mapListVars f args) s
+  | .compose specs s => .compose (mapListVars f specs) s
+  | .fix spec inherited s => .fix (spec.mapVars f) (inherited.mapVars f) s
+  | .lambda ps r b s => .lambda ps r (b.mapVars f) s
+  | .extensionValue ps t b s => .extensionValue ps t (b.mapVars f) s
+  | .binary op l r s => .binary op (l.mapVars f) (r.mapVars f) s
+  | .ite c t e s => .ite (c.mapVars f) (t.mapVars f) (e.mapVars f) s
+  | .letE n t v b s => .letE n t (v.mapVars f) (b.mapVars f) s
+  | .specialize t types s => .specialize (t.mapVars f) types s
+  | .dataOf t v s => .dataOf t (v.mapVars f) s
+  | e => e
+def mapFieldVars (f : String → String) : List (String × Expr) → List (String × Expr)
+  | [] => []
+  | (n, v) :: rest => (n, v.mapVars f) :: mapFieldVars f rest
+def mapListVars (f : String → String) : List Expr → List Expr
+  | [] => []
+  | e :: rest => e.mapVars f :: mapListVars f rest
+end
+
+mutual
+def Body.mapVars (f : String → String) : Body → Body
+  | .expr e s => .expr (e.mapVars f) s
+  | .cases sc branches s => .cases (sc.mapVars f) (mapBranchVars f branches) s
+  | .letB n t v b s => .letB n t (v.mapVars f) (b.mapVars f) s
+def mapBranchVars (f : String → String) : List (Pattern × Body × Span) → List (Pattern × Body × Span)
+  | [] => []
+  | (p, b, s) :: rest => (p, b.mapVars f, s) :: mapBranchVars f rest
+end
+
+def Decl.mapVars (f : String → String) : Decl → Decl
+  | .spec sp =>
+    let methods := sp.methods.map fun m => { m with body := m.body.mapVars f }
+    let claims := sp.claims.map fun c => { c with body := c.body.mapVars f }
+    .spec { sp with methods, claims }
+  | .extension n ps t b binders s => .extension n ps t (b.mapVars f) binders s
+  | .function sig ps b s => .function sig ps (b.mapVars f) s
+  | d => d
+
 def Module.mapSpans (f : Span → Span) (m : Module) : Module :=
   { imports := m.imports.map fun i => { i with span := f i.span }, decls := m.decls.map (fun x => x.mapSpans f) }
 

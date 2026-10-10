@@ -453,6 +453,10 @@ def joinPieces (pieces : List Expr) (span : Span) : Expr :=
       (.call (ctor "nil") [.record [] span] span)
     .call (.var "textJoin" span) [list, .str "" span] span
 
+/-- The placeholder a `write {...}` names the Plan library by, until the module's alias of
+`Plan.obend` replaces it (`parseObjective`). Not an identifier a source can spell. -/
+def writePlansAlias : String := "$plans"
+
 /-- `parse(minimum)`: an atom, its postfix member/call chain, then binary operators of at
 least `minimum` precedence (left-associative). -/
 def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
@@ -514,6 +518,41 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
           (.lambda parameters (String.ofList resultType) closureBody span, span)
         else
           (.extensionValue parameters (String.ofList resultType) closureBody span, span)
+    -- `write {field: op value, ...}`: the Plan that writes the running object's edits,
+    -- every other field kept. Lowers to
+    -- `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: E, ...})})`
+    -- with `E` = `Plans.Edit.add({delta: v})` (add), `Plans.Edit.set({value: v})` (set),
+    -- `Plans.Entries.append({item: v})` (append), `Plans.Entries.remove({index: v})`
+    -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem); `Plans` is the module's
+    -- alias of Plan.obend (`writePlansAlias`, resolved after parsing) and the type
+    -- arguments are inferred from the object's Edits.
+    else if firstText == "write" && (← peek env) == some "{" then
+      let open_ ← take env (some "{")
+      let span := env.location first.start open_.stop
+      let plans := Expr.var writePlansAlias span
+      let lib := fun (type name : String) => Expr.member (.member plans type span) name span
+      let mut edits : Array (String × Expr) := #[]
+      for _ in [0:env.tokens.size + 1] do
+        let name ← take env
+        if !isIdent name.text then throw "Error: write {field: op value, ...} expects a field name"
+        discard <| take env (some ":")
+        let op ← take env
+        let (value, _) ← parseExpr env fuel 0
+        let (type, ctor, payload) ← match tokenText op with
+          | "add" => pure ("Edit", "add", "delta")
+          | "set" => pure ("Edit", "set", "value")
+          | "append" => pure ("Entries", "append", "item")
+          | "remove" => pure ("Entries", "remove", "index")
+          | "removeItem" => pure ("Entries", "removeItem", "item")
+          | other => throw ("Error: write {field: op value} takes add, set, append, remove or removeItem, not " ++ other)
+        edits := edits.push (tokenText name, .call (lib type ctor) [.record [(payload, value)] span] span)
+        let next ← take env
+        if tokenText next == "}" then break
+        if tokenText next != "," then throw "Error: expected , or } in write {...}"
+      let object := Expr.call (.member plans "self" span) [.var "context" span] span
+      let changes := Expr.extend (.call (.var "keep" span) [] span) edits.toList span
+      result := (.call (.member (.var "Plan" span) "write" span)
+        [.record [("object", object), ("edits", changes)] span] span, span)
     else if firstText == "{" then
       let mut fields : Array (String × Expr) := #[]
       if (← peek env) != some "}" then
@@ -1043,6 +1082,9 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
 def parseObjective (source : String) : Except Diagnostic Module := do
   let lines ← sourceLines source
   let ((imports, decls), _) ← (declarations lines).run 0
+  -- `write {...}` names the Plan library by placeholder; it becomes the module's alias.
+  let plans := ((imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias)).getD "Plans"
+  let decls := decls.map (·.mapVars fun n => if n == writePlansAlias then plans else n)
   return ⟨imports.toList, decls.toList⟩
 
 /-- Strict UTF-8 decoding as `new TextDecoder("utf-8",{fatal:true})`: invalid bytes refuse and a

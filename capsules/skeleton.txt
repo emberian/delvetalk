@@ -1,10 +1,10 @@
 DelveTalk object: pinned Bend + versioned State + law; methods are activities; effects are Plans.
 object: record State, Seed; seeded(Seed) -> State; initial() -> State; render(State, Context) -> Document
   def m(state: State, input: I, context: Context) -> Activity<Plan, Response, T>:
-    let written(_) = perform(Plan.write({object: Plans.self(context), edits: e}))  # else refused
-    ..rest; match perform(p) to branch; refuse("why") ends an activity
-  Edits: Edit<T,D>|Entries<D,U> per State field; type Plan = Plan<Edits>; Response = Response<State, R>
-  calls infer ::<T> (Lists.map(xs, f)); data is Data where Data is expected
+    let written(_) = perform(write {count: add 1n, items: append x})  # else refused
+    ..rest; match perform(p) to branch; refuse("why") ends it
+  Edits: Edit<T,D>|Entries<D,U> per State field, keep() all kept; type Plan = Plan<Edits>; Response = Response<State, R>
+  calls infer ::<T> (Lists.map(xs, f)); Data.of is implicit; "n={natText(n)}"
 record Context: world, object, principal, caller, intent, height; record Reference: world, object
 record Slot: principal, intent; record Receipt: slot, height, outcome: admitted|refused{class, root}
 sum Edit<T,D>: keep|set{value: T}|add{delta: D};  sum Entries<D,U>: keep|append{item: D}|amend{index, change: U}|remove{index}
@@ -21,5 +21,5 @@ law NAME: EXPR;  EXPR ::= EXPR implies|or|and EXPR | not EXPR | (EXPR) | ATOM
     | monotone|writeOnce|appendOnly|unchanged(F) | request.subject|caller in new.F
   REF ::= new.F | request.subject|caller|height|turn|pin|kind|method (kind 0 write,1 reprogram,2 amend; method "" = op)
 turn: write only self, others by call; commits iff every root read is current and the law admits every write;
-  a refusal names its clause; silences: reply|refused|unknown|timedOut|broken; retry = same receipt
+  a refusal names its clause; silences reply|refused|unknown|timedOut|broken; retry = same receipt
 spell: "delvetalk CARD ACTION" then "field: value" lines; fit(parse(text), form) -> proposal|unclear|refused

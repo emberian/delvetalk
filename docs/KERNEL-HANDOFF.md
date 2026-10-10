@@ -572,3 +572,14 @@ fixture recorded by the foundation binary).
   with an unknown kind. Garden's `planting()` (World ~85) is the motivating case; its
   explicit spelling builds options with `Lists.append`, so converting it moves its
   packet (not its behaviour).
+- `write {field: op value, ...}` (parser atom): the Plan
+  `Plan.write({object: P.self(context), edits: extend(keep(), {field: E, ...})})` with
+  `E` = `P.Edit.add({delta: v})` | `P.Edit.set({value: v})` | `P.Entries.append({item: v})`
+  | `P.Entries.remove({index: v})` | `P.Entries.removeItem({item: v})`, type arguments
+  inferred from the object's Edits. It relies on the object conventions: a local
+  `type Plan`, a nullary `keep()`, a parameter named `context`; `P` is the module's
+  alias of Plan.obend, written as the placeholder `$plans` and replaced after parsing
+  (`Surface.Decl.mapVars`; "Plans" when no import names Plan.obend, so the elaborator
+  refuses an unbound alias). Tested against the explicit spelling and through
+  world-create/world-turn. A `state.x = ...` line hints it.
+- Correction: the form-block note above means Garden.obend ~85 (`planting()`).

@@ -10,7 +10,7 @@ import json
 import unittest
 
 from tests.test_turn import BINDING, Host, library_modules, nat, variant
-from tests.test_turn_world import TurnWorld, record
+from tests.test_turn_world import TurnWorld, label, record
 
 HEAD = "edition ObjectiveBend 1\n"
 
@@ -341,6 +341,31 @@ FORM_SUGARED = FORM_HEAD + """form plant as planting:
 """
 
 
+GARDEN = HEAD + """import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as P
+record State:
+  planted: Nat
+  children: Lists.List<P.Reference>
+  note: String
+record Edits:
+  planted: P.Edit<Nat, Nat>
+  children: P.Entries<P.Reference, {}>
+  note: P.Edit<String, {}>
+type Plan = P.Plan<Edits>
+type Response = P.Response<State, {}>
+def keep() -> Edits:
+  {planted: P.Edit::<Nat, Nat>.keep({}), children: P.Entries::<P.Reference, {}>.keep({}), note: P.Edit::<String, {}>.keep({})}
+def plant(state: State, input: {child: P.Reference, note: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+"""
+WRITE_EXPLICIT = GARDEN + """  let written(_) = perform(Plan.write({object: P.self(context), edits: extend(keep(), {planted: P.Edit::<Nat, Nat>.add({delta: 1n}), children: P.Entries::<P.Reference, {}>.append({item: input.child}), note: P.Edit::<String, {}>.set({value: input.note})})}))
+  state.planted + 1n
+"""
+WRITE_SUGARED = GARDEN + """  let written(_) = perform(write {planted: add 1n, children: append input.child, note: set input.note})
+  state.planted + 1n
+"""
+
+
 COUNTER = HEAD + """import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -425,6 +450,28 @@ class Forms(unittest.TestCase):
         self.assertIn("a form field is `name: text MIN..MAX`", reply["diagnostic"]["message"])
 
 
+class Writes(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.close()
+
+    def test_write_is_its_plan(self):
+        a = self.h.compile(WRITE_EXPLICIT, "plant", ("Abi", "List", "Plan"))
+        b = self.h.compile(WRITE_SUGARED, "plant", ("Abi", "List", "Plan"))
+        self.assertEqual(core(a), core(b))
+
+    def test_write_names_its_operations(self):
+        source = WRITE_SUGARED.replace("add 1n", "bump 1n")
+        reply = self.h.send({"op": "check-package", "entry": "plant",
+                             "modules": library_modules("Abi", "List", "Plan") + [{"name": "Package", "source": source}]})
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("takes add, set, append, remove or removeItem, not bump", reply["diagnostic"]["message"])
+
+
 class LawReading(TurnWorld):
     """A law's reading is carried beside it; the law enforces exactly as without one, and
     the statement form runs on the real host (a staged write is answered `written`)."""
@@ -436,6 +483,21 @@ class LawReading(TurnWorld):
         refused = self.turn("c", "bump", record(n=nat(150)))
         self.assertEqual(refused["status"], "refused", refused)
         self.assertEqual(refused["receipt"]["outcome"].get("clause"), "small", refused)
+
+    def test_write_runs_on_the_host(self):
+        source = WRITE_SUGARED + "def initial() -> State:\n  {planted: 0n, children: Lists.List.nil({}), note: \"\"}\n"
+        r = self.host.send(op="world-create", principal="ember", identity="create-g", object="g",
+                           modules=library_modules("Abi", "List", "Plan") + [{"name": "Package", "source": source}],
+                           entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+        child = record(world=label(""), object=label("bell-1"))
+        done = self.turn("g", "plant", record(child=child, note=label("hello")))
+        self.assertEqual(done["status"], "admitted", done)
+        state = self.host.send(op="world-view", principal="ember", object="g")["state"]
+        fields = {f["name"]: f["value"] for f in state["fields"]}
+        self.assertEqual(fields["planted"], nat(1))
+        self.assertEqual(fields["note"], label("hello"))
+        self.assertEqual(fields["children"], {"tag": "list", "items": [child]})
 
     def test_a_reading_is_a_string_literal(self):
         h = Host()
