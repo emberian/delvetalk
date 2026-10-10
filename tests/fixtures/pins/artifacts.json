@@ -1255,88 +1255,96 @@
  },
  "Deal": {
   "entries": {
+   "amended": {
+    "packet": "bafyreiga3zjifwp2nyu4jcyhm36rsp7jxhlrryu4w3jggyesz6ek4riz3m",
+    "status": "compiled"
+   },
+   "amending": {
+    "packet": "bafyreihhccfufomrt2wvpdcxqkkvzih2nstmjwytcwiwmtggyeau7x4kry",
+    "status": "compiled"
+   },
    "atRest": {
-    "packet": "bafyreigxgeurnl6hdbdzxuvcvenfnfagrgwihswgy6k7oyjbb6bpjjwjsi",
+    "packet": "bafyreifuno42f7cvttyg3rj3zhe6npxpfaxjqylmgvaz5ztpk3u4x2zoai",
     "status": "compiled"
    },
    "blurb": {
-    "packet": "bafyreiepufn74gdpiqva4w6tvji5heew4yr55htzo4y7wpyrhxd33co45a",
+    "packet": "bafyreihn47oohw4j27uj2wz7v4are73xuzvhkmbzjvg5y6q6orl7gaed6m",
     "status": "compiled"
    },
    "countersign": {
-    "packet": "bafyreidxnmokdtkk6yqm6vlvrfhdeuellai5gwztydxfct6wppjjgo4tm4",
-    "status": "compiled"
-   },
-   "doneReply": {
-    "packet": "bafyreibvtojpcyqwusi3l52d6wg4dunzrjcge3vn5egaohtlomqe7b7fhm",
+    "packet": "bafyreifc5jcveeeg4q7qeltg4o5uqz3h6v3wfcuubufc5m6ni4ra65glza",
     "status": "compiled"
    },
    "forms": {
-    "packet": "bafyreie5b2tydk2g2aufyipl4iuypjctie5khvibafmdxpck2s3tk6s6ga",
+    "packet": "bafyreigfj3d5h3kvcpd7upuwe3wi653v7tqloeg7joyy3agwx2wedxhruq",
     "status": "compiled"
    },
    "hasSigned": {
-    "packet": "bafyreiawpxjte7tosmrbqhi5emj7bcproh6nl4hq3mi3wqzxminqbvj7qa",
+    "packet": "bafyreieug7g5sgcsdtcazgdvm2fkshjisvhrlqrwoed3o2xseqpy3enkgq",
     "status": "compiled"
    },
    "initial": {
-    "packet": "bafyreibkkps3twi3u3swr4ootkruavrlou3aokrihrw43wlwnvp3ix2wmq",
+    "packet": "bafyreie6xzk2wdtiztd2zqfbs2e2ipbmgckaq2pcwedaremjmrlkzdb5v4",
     "status": "compiled"
    },
    "party": {
-    "packet": "bafyreid3osqef3ocylcerk5323jt34jh5lqmz226j4wkrrcuoampxyl54u",
+    "packet": "bafyreigp3ewg2raihpt2jdbybssv2dcvs7w2kmsogtuhogrbfsifv7svsq",
     "status": "compiled"
    },
    "partyLine": {
-    "packet": "bafyreihdyelyzgpuxfxb7hs3gslwj4mb6ynrncgywxj3ebhg5ygwprgkba",
+    "packet": "bafyreicenwxbjng4jqcpo66u3ph52wtput5bw3y55sygcfhr5ioh6vb74i",
     "status": "compiled"
    },
    "receive": {
-    "packet": "bafyreihbnxfuzafneqa4tep4vwhnp2qxdobrt43coycdqxg663j45723vm",
+    "packet": "bafyreicstmafhv4qntmjg5tg22txlbaxphtzjy2etgag2gcijmwsrkhirm",
     "status": "compiled"
    },
    "refusal": {
-    "packet": "bafyreia6upzjucqngmanzudeil2a5pj5zqkcwnucs4kmapavbrew7s6awq",
+    "packet": "bafyreicher2cgqjpry5bgmhsuzhnqhrzwaqgsedouqgzsxegi2jhgbbeny",
     "status": "compiled"
    },
    "refused": {
-    "packet": "bafyreidz23n3dcdtikjmhvwq7qgr3fvvgviscc2ldcaymffewx6evxhid4",
+    "packet": "bafyreibz2owiicsauyaml7pe2gssmjigskwjgashok6bgyuld3b7w5li5u",
     "status": "compiled"
    },
    "relations": {
-    "packet": "bafyreiegd444gl4vykbowsqb3vs7rk7gco73s4cyxygnorvilfoiu7f5im",
+    "packet": "bafyreibqyphp57c3isqtohy46wmaafaqudthfykmfvj5esyouh375jk2iy",
     "status": "compiled"
    },
    "render": {
-    "packet": "bafyreia3xjz3xtbnqwxvnftwlrmsjvvkl4ysdwvukeh6su35tl2zi5nwg4",
+    "packet": "bafyreiamyqxf23f4bghr2npgji6dwd5grh3h4rwhjuhdb67ugci2kutc7q",
     "status": "compiled"
    },
    "signatureLine": {
-    "packet": "bafyreibjcnyfsjmihgcscgtyzd3vv7eqtimy7wsnjs2ldppituayzv3v3y",
+    "packet": "bafyreibc757e3kkvilarbxz2ag3rshfzw7nijroguehkzk2dmu5uvxy5ji",
     "status": "compiled"
    },
    "signedBy": {
-    "packet": "bafyreigjzgzbq3rkupucu2q3wvmr4smxzwcuuuhmr5lzceyqqntctblp2i",
+    "packet": "bafyreifhnp6g72f5pphyxufsqo27ks5is7k3w2rnbrbfv6nyvpagzmyox4",
+    "status": "compiled"
+   },
+   "signing": {
+    "packet": "bafyreigc3hfttfkm75bnmdrwkl55bnpny5hlezmy3vocl6p5nboarzjn3y",
     "status": "compiled"
    },
    "unsigned": {
-    "packet": "bafyreiffgg4nvu324ripf26bbhyggw72veimau3afsyyvsknsalritx3jm",
+    "packet": "bafyreihbrqjqbh7iw7ooolw4k2ppvvcxawrdcpdbtsecr4xf7totwazhze",
     "status": "compiled"
    },
    "waitingLine": {
-    "packet": "bafyreidz6ti2vlxoxrsgriu2tod6d6xr7uwlvhb73sofua5o4v4vivr6ma",
+    "packet": "bafyreicdmwvrgcoaacj5aebvfax4b36pxtbg5rhrp5btyzx7ljfqaze3wm",
     "status": "compiled"
    },
    "withdraw": {
-    "packet": "bafyreiebnv6nhu32cmxw3flz52br6voivosfbj2k3mnqnctglznjtglplq",
+    "packet": "bafyreicl5v3oroypzzgv7fysloaudhdns2qoa3pdn36as4blc77wzkprza",
     "status": "compiled"
    },
    "withdrawing": {
-    "packet": "bafyreif63lrvmfgjy7pitydxveitz5rtoo7y57gi2un4wtbxflb4vtxkhe",
+    "packet": "bafyreig67lj4w47csobwxhz2vkxcjpfqk56sprs444raqbjtv3fbso7rnm",
     "status": "compiled"
    }
   },
-  "pin": "bafyreibj462ymxaqato7kw6wgmynjwkxasj3lphfur3hcktbrshlcwho2u"
+  "pin": "bafyreiesfjnoaobzn4dfp34al4gb5gl7aihboo3vmaibvw2exsi7wmbfgu"
  },
  "Directory": {
   "entries": {
