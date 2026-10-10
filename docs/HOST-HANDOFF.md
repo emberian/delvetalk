@@ -1227,6 +1227,19 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      directory within the turn, nothing pending, `hour.interpretations` 0
      (`test_prose_that_reached_no_one_handed_on_is_not_addressed_at_the_directory`).
 
+129. **`changed`, and `delvetalk objects ?` (host15; docs/METAPHYSICS.md §5).**
+   - *`changed({since, prefix, after}) -> Since`:* `Since = changed {items: List<Change>, more} | denied`, `Change
+     {object, version, height, by}`. `World.changes` (Store) is the height index, the inverse of `touches`: an
+     admitted entry's creations (version 0) then its writes, a `created` entry's object, a root `set state`
+     (`changesOf`, `recordActs`). `changedSince` walks it from the newest back to `since` (exclusive), the
+     newest row per object, those under the prefix the asker may read, 64 a page, `after` the last object of
+     the page before; `by` is the principal's handle when the world knows one. A derived read: no root. The
+     index derives the same from any journal (no journaled field or judging changes), so no edition bump.
+   - *`objects`:* `delvetalk objects ?` (fields `prefix`, `after`) is a host listing (`objectsListing`, 20 a
+     reply; ids holding a DID only to a prefix naming one); every card's `?` ends with `objectsLine`;
+     `objects` is no object's id (`validObjectId`). `me ?` already answered the avatar's usage
+     (`test_arrive`). Tests: `tests/test_changed.py`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

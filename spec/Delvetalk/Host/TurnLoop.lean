@@ -777,7 +777,7 @@ def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
-   "objects", "card", "subscribe", "unsubscribe"]
+   "objects", "changed", "card", "subscribe", "unsubscribe"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
@@ -1061,6 +1061,22 @@ def hostUsage (w : World) (o : Object) (principal card : String) : String :=
       then [s!"delvetalk {card} lend\nto: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n"] else [])
   if lines.isEmpty then "" else "\nThe host's spells for any card:\n" ++ String.join (lines.map ("\n" ++ ·))
 
+/-- `delvetalk objects ?` (docs/METAPHYSICS.md §5): the cards `principal` may read under `prefix:`, in
+    id order, twenty a reply, `after:` the last of the reply before. A principal's own cards (ids
+    holding a DID) are listed only to a prefix that names one. -/
+def objectsListing (w : World) (principal pfx after : String) : String :=
+  let own := fun (id : String) => (id.splitOn "did:").length > 1 && (pfx.splitOn "did:").length == 1
+  let ids := (w.objects.toList.filterMap fun (id, o) =>
+    if id.startsWith pfx && decide (after < id) && !own id && o.read.permits principal then some id else none).toArray.qsort (· < ·)
+  let page := (ids.extract 0 20).toList
+  let under := if pfx.isEmpty then "" else s!" under {pfx}"
+  if page.isEmpty then s!"No card{under} that you may read{if after.isEmpty then "" else s!" after {after}"}." else
+  s!"The cards{under} you may read:\n" ++ String.join (page.map (s!"\n{·}")) ++
+    (if ids.size > page.length then s!"\n\nMore: delvetalk objects ?\nprefix: {pfx}\nafter: {page.getLast!}\n" else "")
+
+/-- The line every card's usage ends with: where the other cards are listed. -/
+def objectsLine : String := "\nTo list the cards you may read: delvetalk objects ?\n"
+
 /-- Why `me` names nothing yet. -/
 def noAvatarReason : String := "You have no avatar here yet; your first arrival in the town makes one, and then me is it."
 
@@ -1091,6 +1107,10 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   -- The opener's powers on `world`, the id the host answers for.
   if id == worldId && !w.objects.contains worldId && worldPowers.contains action && retarget then
     return .host worldId action (fields.filter (·.name != ""))
+  -- `delvetalk objects ?`, the listing no object answers.
+  if Spell.fold card == objectsCard && !w.objects.contains objectsCard && action == "?" && retarget then
+    let given := fun (n : String) => ((fields.find? (·.name == n)).map (·.value)).getD ""
+    return .usage objectsCard (objectsListing w principal (given "prefix") (given "after"))
   let some target := w.objects[id]?
     | if card == meCard then
         return .refuse self "noAvatar" noAvatarReason unknown
@@ -1102,7 +1122,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let lenses := declaredLenses w target
   -- Lenses are `set`'s: shown only when `set` is offered to the speaker.
   let shownLenses := if offeredTo w id target principal "set" then lenses else []
-  if action == "?" then return .usage id (spellUsage shown shownForms shownLenses ++ hostUsage w target principal shown)
+  if action == "?" then return .usage id (spellUsage shown shownForms shownLenses ++ hostUsage w target principal shown ++ objectsLine)
   -- The host's own spells, on any card that does not define the action itself (`hostSpell`).
   if hostSpells.contains action && !forms.any (·.action == action) then
     if !retarget then
@@ -1581,6 +1601,17 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let s ← get
     let (ids, more) := listIds s.world s.subject pfx after
     respond bounds responseType "listed" [.record [("ids", listData (ids.map Data.label)), ("more", .boolean more)]]
+  | .variant "changed" (.record f) =>
+    let some (.natural since) := f.lookup "since" | evaluation "malformed changed plan"
+    let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed changed plan"
+    let some after := (f.lookup "after").bind labelOf | evaluation "malformed changed plan"
+    let s ← get
+    let (items, more) := changedSince s.world s.subject since pfx after
+    let item := fun (c : Change) =>
+      let handle := handleOf s.world c.principal
+      Data.record [("object", .record [("world", .label ""), ("object", .label c.object)]), ("version", .natural c.version), ("height", .natural c.height),
+        ("by", .label (if handle.isEmpty then c.principal else handle))]
+    respond bounds responseType "changed" [.record [("items", listData (items.map item)), ("more", .boolean more)]]
   | .variant "card" (.record f) =>
     let s ← get
     match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with

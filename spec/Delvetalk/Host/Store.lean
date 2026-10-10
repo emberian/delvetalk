@@ -407,6 +407,15 @@ structure Touch where
   edits : Option (List (String × Data))
   deriving Inhabited
 
+/-- One object's change at a height (`World.changes`): the version it reached and the principal whose
+    entry made it. What `changed {since, prefix, after}` reads, newest back (docs/METAPHYSICS.md §5). -/
+structure Change where
+  height : Nat
+  object : String
+  version : Nat
+  principal : String
+  deriving Inhabited
+
 /-- The clock hour's counts (`world-status.hour`, docs/ROOT.md §2.3): turns journaled (admitted,
     refused, suspended), refusals by class, interpretations started and model attempts. Derived by
     `record`; a new hour starts them again. -/
@@ -441,6 +450,9 @@ structure World where
   /-- Per object, its admitted writes in version order (`Touch`): what changed since a version is
       read from the newest back, never by scanning the journal. -/
   touches : Std.HashMap String (Array Touch) := {}
+  /-- Every object change in height order, the inverse of `touches` (height to objects): an admitted
+      entry's creations and writes, a `created` entry's object, a root write of state. Derived by `record`. -/
+  changes : Array Change := #[]
   /-- Standing subscriptions by the object they watch, in the order they were made; derived by
       `record` from entries' `subscribes`/`unsubscribes`. -/
   subscriptions : Std.HashMap String (Array Subscription) := {}
