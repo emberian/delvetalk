@@ -5,7 +5,7 @@ Evidence for FOUNDATION §5 (layer: objects).
 
 Compile and exercise the Bend standard library and the first objects.
 
-Every module under world/lib and world/objects goes through the real checker
+Every module under world/lib and world/objects (and the fixtures in tests/fixtures/objects and examples/automatafl) goes through the real checker
 binary (read-only, built elsewhere). Run from the repository root:
 
     python3 -m unittest tests.test_objects -v
@@ -26,7 +26,7 @@ DEF = re.compile(r"^def (\w+)(<[^>]*>)?\(.*\) -> (.*):$", re.M)
 
 def modules_on_disk():
     found = {}
-    for root in (os.path.join(WORLD, "lib"), os.path.join(WORLD, "objects")):
+    for root in (os.path.join(WORLD, "lib"), os.path.join(WORLD, "objects"), os.path.join(ROOT, "tests", "fixtures", "objects"), os.path.join(ROOT, "examples", "automatafl")):
         for directory, _, files in os.walk(root):
             for name in files:
                 if name.endswith(".obend"):
@@ -118,11 +118,11 @@ BIG = {"ticks": "1000000"}
 PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Garden.obend as O\n"
 GARDEN_PROBE = PROBE_HEAD_G + """import ./Document.obend as Document
 import ./Relation.obend as Relations
-import ./Bell.obend as Bell
+import ./Rows.obend as Rows
 def bells(n: Nat) -> Lists.List<O.Child>:
   match n:
     case 0: Lists.List::<O.Child>.nil()
-    case 1+p: Lists.append::<O.Child>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n)), colour: Bell.Colour.amber({})})
+    case 1+p: Lists.append::<O.Child>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n)), colour: Rows.Colour.amber({})})
 def shown(n: Nat) -> String:
   Document.plain(O.render({owner: "ember", ownerHandle: "", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Relations.empty(), children: Relations.Relation.rows({items: bells(n)}), pageCheckpoint: ""}, Card.stranger()))
 """
@@ -202,10 +202,10 @@ def one(n: Nat) -> String:
   Document.plain(O.render({entries: Relations.Relation.rows({items: Lists.List::<O.Kept>.cons({head: {at: 7n, slot: {principal: "glm", intent: "plant"}, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<O.Kept>.nil()})}), level: 3n}, Card.stranger()))
 """
 
-ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """import ./Relation.obend as Relations
+ANTHOLOGY_PROBE = PROBE_HEAD % "Record" + """import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 def one(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Relations.Relation.rows({items: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: Rows.Status.proposed({}), at: 1n, n: 1n}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: Rows.Status.admitted({}), at: 2n, n: 2n}, tail: Lists.List::<O.Proposal>.nil()})})}), next: 3n}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", keeper: "ember", keeperHandle: "", head: "THE ANTHOLOGY", kind: "", fields: Lists.List::<Rows.Field>.nil(), maker: "", makerHandle: "", post: "", lines: Relations.Relation.rows({items: Lists.List::<O.Line>.cons({head: {author: "glm", handle: "", text: "moths", at: 1n, n: 1n}, tail: Lists.List::<O.Line>.cons({head: {author: "kimik3", handle: "", text: "lamps", at: 2n, n: 2n}, tail: Lists.List::<O.Line>.nil()})})}), admitted: Relations.Relation.rows({items: Lists.List::<Rows.Admission>.cons({head: {n: 2n, at: 3n}, tail: Lists.List::<Rows.Admission>.nil()})}), marks: Relations.empty(), next: 3n, doors: Lists.List::<Card.Doorway>.nil()}, Card.stranger()))
 """
 
 
@@ -227,9 +227,9 @@ class Library(unittest.TestCase):
 
 class Objects(unittest.TestCase):
     def test_methods_perform_the_plans_they_claim(self):
-        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
+        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "call", ("Garden", "counted"): "write", ("Garden", "cistern"): "call",
                     ("Bell", "rain"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
-                    ("Cistern", "retain"): "write", ("Cistern", "poured"): "write", ("Anthology", "submit"): "write", ("Anthology", "admitted"): "write",
+                    ("Cistern", "retain"): "write", ("Cistern", "poured"): "write", ("Record", "write"): "write", ("Record", "admitted"): "write",
                     ("Door", "opened"): "write", ("Door", "knock"): "write",
                     ("Lantern", "lit"): "write", ("Door", "watch"): "subscribe", ("Loop", "tick"): "write", ("Loop", "again"): "send"}
         for (name, entry), plan in expected.items():
@@ -238,7 +238,7 @@ class Objects(unittest.TestCase):
             found = re.search(r"\ndef %s(<[^>]*>)?\(" % entry, source)
             self.assertIsNotNone(found, (name, entry))
             body = source[found.start() + 1:].split("\ndef ")[0]
-            self.assertTrue(any(form % plan in body for form in ("world.%s(", "= %s {")), (name, entry))
+            self.assertTrue(any(form % plan in body for form in ("world.%s(", "world.%s::", "= %s {")), (name, entry))
 
     def test_garden_bell_cistern_and_anthology_cards_render_their_text(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))
@@ -270,7 +270,7 @@ class Objects(unittest.TestCase):
         self.assertNotIn("garden/bell/12\n", text)
         self.assertTrue(text.endswith("… and 12 more\n"), text)
         self.assertLess(len(text), 1400)
-        for name, probe, entry in (("Bell", BELL_PROBE, "two"), ("Cistern", CISTERN_PROBE, "one"), ("Anthology", ANTHOLOGY_PROBE, "one")):
+        for name, probe, entry in (("Bell", BELL_PROBE, "two"), ("Cistern", CISTERN_PROBE, "one"), ("Record", ANTHOLOGY_PROBE, "one")):
             with self.subTest(object=name):
                 reply = run_pure(name, entry, nat(0), probe=probe)
                 self.assertEqual(reply["status"], "finished", reply)
@@ -281,12 +281,12 @@ class Objects(unittest.TestCase):
                 if name == "Cistern":
                     self.assertIn("refused required-absence", reply["value"]["value"])
                     self.assertTrue(reply["value"]["value"].startswith("Cistern, level 3. Pour: delvetalk cistern pour / amount: <1 to 20>.\n"), reply)
-                if name == "Anthology":
-                    self.assertIn("[proposed] glm: moths", reply["value"]["value"])
+                if name == "Record":
+                    self.assertTrue(reply["value"]["value"].startswith("THE ANTHOLOGY; keeper ember. Write: delvetalk record write / text: <1 to 280 characters>; numbered, [pending] until admitted.\n#1 [pending] glm: moths\n#2 [admitted] kimik3: lamps\n"), reply)
 
     def test_every_object_is_made_from_initial_alone(self):
         """A creator's seed is laid over `initial()`; no object keeps a Seed ritual beside it
-        (WORLD-REVIEW 4), and only the Appointment types the Seed its book creates it with."""
+        (WORLD-REVIEW 4)."""
         for name in OBJECT_NAMES:
             with self.subTest(object=name):
                 entries = [d[0] for d in definitions(name)]

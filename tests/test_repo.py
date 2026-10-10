@@ -21,7 +21,7 @@ import urllib.parse
 from pathlib import Path
 
 from tests.host import serve, start_hostd, stop_hostd
-from tests.test_chain import garden_state
+from tests.test_chain import garden_state, town_kinds
 from tests.test_http import DID, PEOPLE, Provider
 from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
 from transport import delve, identity
@@ -103,6 +103,7 @@ class Repository(unittest.TestCase):
         cls.port = cls.front.server_address[1]
         serve(cls.front)
         send = cls.host.send
+        town_kinds(lambda **q: send(q))
         seeded = [
             send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
                   'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)}),

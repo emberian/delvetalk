@@ -15,7 +15,7 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.test_chain import garden_state
+from tests.test_chain import garden_state, town_kinds
 from tests.test_turn_world import BINARY, closure, counter_modules, declared, label, nat, record
 
 PLANS = """edition ObjectiveBend 1
@@ -683,6 +683,7 @@ class Pages(FrontCase):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)
+        town_kinds(lambda **q: self.host.send(q))
         s, listed = self.call('GET', '/AGENTS.md/world', token=tok)
         self.assertEqual((s, listed['ids']), (200, sorted(listed['ids'])), listed)
         self.assertLessEqual({self.c, DID, 'env/' + DID, 'garden', 'wake/' + DID}, set(listed['ids']))  # verify made the caller's avatar, env and wake
@@ -882,7 +883,7 @@ class Play(FrontCase):
         self.assertEqual(s, 200, page)
         line = re.search(rb'admitted garden v(\d+), entry (\d+), receipt ([a-z-]+)', page)
         self.assertIsNotNone(line, page)
-        self.assertIn(b'It lives at garden/bell/', page)
+        self.assertIn(b', at garden/bell/', page)
         tok = self.cookie.split('=', 1)[1]  # the session is the credential: the agent API reads the same receipt
         s, r = self.call('GET', '/AGENTS.md/receipt/' + line[3].decode(), token=tok)
         self.assertEqual((s, r['receipt']['height']), (200, int(line[2])), r)

@@ -1,6 +1,111 @@
 # Objects handoff
 
-State on 2026-10-10 (lane/objects11 over foundation dc87067: the codex objects review, and the agent facet's items 1, 2, 4, 5, 7; docs/review/codex-2026-10-10).
+## The cut in progress (lane/rewrite, 2026-10-10 evening; docs/CATALOGUE.md §5)
+
+Done, each green on hbox (1261 tests, 0 failed) with pins re-recorded:
+
+1. **Deletion** (3cec2d6): Counter, Loop, Door, Lantern in `tests/fixtures/objects/`; Seat, Table and the
+   game library in `examples/automatafl/`; Commons, Appointment, Appointments gone; genesis without
+   `commons` and `play`.
+2. **RECORD** (7b53d7a, f38ed9c): `world/objects/Record.obend` (lines {author, n} 128, `admitted` {n},
+   `marks` {name}, and the made header: head, kind, fields, maker, makerHandle, post, all fixed);
+   lawless, its law is `Record.lawText()` = genesis `RECORD_LAW`. The anthology is a Record seed. Env's
+   `mention` is `write`; watches and the menu read `lines` (`changedLines`).
+3. **KIND, first half** (97b522c): `world/objects/Kind.obend`, `world/bodies/{bell,cistern}.obend`,
+   genesis `kinds` + kind/record, kind/bell, kind/cistern; `tests/test_kinds.py`.
+
+Findings the successor builds on:
+
+- **A turn cannot reach what it created.** `extend` and `call` on an object created earlier in the
+  same turn answer `unknownObject`. So KIND grafts a body (and shapes a made kind) by a message it sends
+  itself, delivered in the same settling (`grafting`, `graft`, `shape`). Not atomic. Host line that
+  fixes it: `create` accepting a layer source over the named package (`creationInputs` takes only
+  `edition` sources), or the turn's creations visible to `extend`. With it, `making` is one create.
+- **A kind's make is a generated layer.** `Kind.layerSource(state)` writes `form make:` from the form's
+  field lines plus a `make` that calls `Super.making(state, <rows>, "", context)`, and a
+  `make<Field>Text` match per choice field (`a | b | c` -> sum `Make<Field>`). Field names must be Bend
+  identifiers; a choice option named like a keyword (`record`) does not compile, so `kinds`' `of` is
+  text. A layer may not retype what it overrides, which is why Kind itself has no `make`.
+- **Layers late-bind.** The bell body overrides only `headLine`, `entry`, `relations`, `write` (refuses
+  over 200 characters) and adds `rain`, `ring`, `strike`; Record's `write` then renders the bell's head.
+  A layer's form blocks replace the forms below, so a body re-declares the base forms it keeps
+  (`lines`, `door`, `undoor`) with one-line delegations.
+- **Library.laws on a long card runs out of ticks**: the inspect Plan hands Bend the whole source,
+  about 70 ticks a character (anthology 11,605, garden 31,879: refused budget; tide 9,019: 507,781
+  ticks). `tests/test_library.py` `test_a_long_cards_law_is_shown` is an expectedFailure. Host: the
+  Plan's `inspected` should carry `laws` with readings (5.110's) beside or instead of `source`.
+- **Usage cards are unfiltered**: `Card.answer` prints every form, not `actions()`'s; a stranger's blank
+  reply to the anthology lists admit, door, undoor (the host's `?` and hints are filtered).
+- Reader-specific: Record's `actions` shows admit to the keeper, door/undoor to the owner.
+
+Step 3b, done on lane/rewrite2 (d3bd6aa, 82136a0; 1288 tests, 0 failed): the garden plants through kind/bell
+and digs through kind/cistern (`makeUnder`, quiet, a door home); Bell.obend and Cistern.obend are test
+fixtures in tests/fixtures/objects (the host's view, subscription, layer, await and limit tests keep them);
+a wake watches a bell's `rung` as a `marks` row; the KINDS door ("KINDS · 3 made"); the WORKSHOP door
+teaches `workshop make / name / description` (hob drafts a `draft`, checked, held as #n for the describer,
+whose `adopt` `make`s it with `madeFrom`); the root menu's head and tail in v4's words; Spell.obend folds
+case as the host does; the library's laws page reads inspect's `laws`; kind/cistern adds `monotone(next)`.
+Tests use `tests.test_chain.town_kinds(send)` wherever a garden plants.
+
+Open from 3b, for the next lane:
+
+- **Atomic make** (host13's same-turn extend): world/objects/Kind.obend with `bodied` (create, then
+  `world.extend` on the new id, `refuse` when refused) in place of `grafting`/`graft` is the target, but
+  a method the creation's layer adds is refused typeMismatch (`kind/key make / seed: x`, direct or by
+  spell; a later extend over it the same), so a made kind's make never runs. Host repro: tests/test_kinds
+  with that Kind. Until it is fixed Kind keeps the self-sent graft.
+- **A taken id stops a kind**: the kind names `<under>/<name>/<count+1>` and a create on a held id is the
+  whole turn's requiredAbsence, so one squatted `garden/bell/N` stops every planting
+  (tests/test_await.py expectedFailure). Host: `create` minting `<under>/<kind>/<n>` past held ids.
+- **The workshop's lineage needs a receipt hash**: `adopt` of a draft passes `madeFrom.receipt: ""`
+  (refused `madeFrom`) because no Plan answers Bend a hash; host: the await's `Plans.Receipt` gains
+  `hash` (receiptData), then `adopt` awaits the holding turn's slot (`Held.intent`) and cites it.
+- **The root menu is at its budget**: seven doors and one arc fill 1,400 characters; the WORKSHOP door
+  now has one spell (`make`), and v4's library lines under STUDIO do not fit yet. Step 4's directory body
+  decides (MENU §1.1 rule 4).
+- The receipt line names the turn's own object's write (transport `turn_line`, bridge `receipt_line`):
+  a planting writes kind/bell before the garden.
+- Docs not in this lane: SEEDING's T1 and the flood (now `garden/cistern/<n>` by `cistern`, the level is
+  `next` less one, a watch on `next`), LIBRARY's plant walk (`field: marks`).
+
+Remaining, in order (each a commit, suite green, pins re-recorded):
+
+3b. (done, above) **Garden plants through kind/bell**: `Garden.grow` calls `kind/bell` `makeUnder {under: "garden",
+   fields: [colour, seed]}` instead of `world.create({package: "Bell"})`; `cistern` the same through
+   kind/cistern; then delete `world/objects/Bell.obend` and `Cistern.obend` (keep Cistern's `retain`
+   as a fixture in tests/fixtures/objects for test_await, test_outbound, test_replay, test_wakes),
+   `type Rain = Line` and `Rows.Colour` where unused. The planted card keeps VOICE's
+   `Planted, {handle}: an amber bell, “{seed}”, at {id}; {n} planted.` Watches name `field: marks`
+   (a bell's `rung` is a mark), so SEEDING's T1 and LIBRARY's plant walk say `marks`.
+   **The KINDS door** (seventh; `DOORS`: `('KINDS', 'Make a kind; anyone makes one of it.', 'kinds',
+   'count', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp,
+   a kind anyone makes')])`, Menu's `counted` gains `count`). **GROUND's `workshop make`**: `make {name,
+   description}` asks `world.interpret` for Bend from the prose (Policy's prompt for a draft), `check`s
+   it, holds it as `#n` for the describer (`held` row with `package`), and `adopt / n` calls
+   `world.make({package, seed: {}, law: "", requireAbsent, madeFrom: {object: workshop, receipt}})`.
+4. **PLACE** (with host13's misfit: `Card.Reply` gains `misfit {clause, reason}`, passed to `interpret`
+   with `held` per FLEX §2; Card's blank-reply usage lists inspect's `offered` only): make Place.obend lawless (its law to genesis as `PLACE_LAW`), add `makes:
+   List<Reference>`, `make` = the kind's `makeUnder` with `under` = the place, `traces` keep as a seed
+   field (0 for the Reading Room), exits as `Card.Doorways`; Places.obend and Policies.obend fold in;
+   the garden is a PLACE seed (`makes: [kind/bell]`) with `plant` as the alias of make (a generated
+   form like Kind's, from the makes' forms). Directory as a body over PLACE: the trie, the second miss,
+   hob's greeting (VOICE's surfaces table), FLEX §2/§4: `Policy.prompt` text, `world.interpret` gains
+   `held` and `misfit` (World.obend's line), the model's `none` (hob's silence), `card` (the card) and
+   `ask: q` (`hob: {q}` over the primary spell) handled in `Card.prose`; `Directory.learnedOf`,
+   `mentions`, `vocabulary`, `scanned`, `judged`, `ownFamily`, `knownFields` go. Scene as a body over
+   PLACE; rooms revisable (`passages` out of `fixed`, owner propose shows v+1). kind/place.
+5. **WATCH** from Wake (forms for `rows`/`writes`/`grows`/`turns`, `where` as one `column op value`
+   line, `do: say`); tide as a body over WATCH; **THING** from Thing with the avatar body (`me`, `go`,
+   `lend`, the `circle` lens); **BOND** from Deal with `deals` by spell. Arrival still names Avatar,
+   Env, Wake modules (`Ops.lean` `arrivals`, `transport/hostproc.py` ARRIVAL): ask the host lane for
+   Record/Watch/Thing with seeds before Env and Wake files go. kind/watch, kind/thing, kind/bond.
+6. Genesis to §5's table; the library's walks (`capsules/pages/<walk>.txt`, kind `walk`) and the four
+   "how do I" macros (`find {words}`); `Policy.prompt` per FLEX §2; every card in VOICE's register;
+   this file rewritten as the surface as it stands.
+
+Folkways and arcs so far: folkway 1 and the seventh rain's `ring`/`strike` (bell body); folkway 3
+(Record's `kept`, `admit`); the flood's level (cistern body's `next`); the rest are still in their
+old objects (Place 4, 5; Thing 6; Deal 7; Directory 9; Scene 10; Tide 2) and must move with them.
 
 ## Summary
 

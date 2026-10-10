@@ -12,7 +12,7 @@ import unittest
 
 from deploy.genesis import DOORS
 from tests.test_replay import get, relation, rows
-from tests.test_chain import Chain, boolean, field, garden_seed, nil, reference
+from tests.test_chain import Chain, boolean, field, garden_seed, nil, reference, town_kinds
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
@@ -30,6 +30,7 @@ def door(label_, description, to, watch="", examples=()):
 class Cards(Chain):
     def garden(self):
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
 
     def say(self, text, who="glm", post="at://glm/post/1", obj="garden", method="receive"):
         return self.turn(obj, method, record(text=label(text), post=label(post)), principal=who)
@@ -63,7 +64,7 @@ class Cards(Chain):
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("a silver bell, “a fern that remembers yesterday”", self.card(planted))
         # The bell awaits a reply to the post that completed it (codex objects 12).
-        self.assertEqual(field(self.state("garden/bell/1"), "planting"), label("at://glm/post/2"))
+        self.assertEqual(field(self.state("garden/bell/1"), "post"), label("at://glm/post/2"))
 
     def test_a_completed_seed_keeps_the_forms_eighty_characters(self):
         """Field lines that reach receive (the first names no form) are held to the plant form's
@@ -106,22 +107,22 @@ class Cards(Chain):
         reply = self.say("delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver")
         self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
         self.assertEqual(reply["result"]["label"], "planted")
-        self.assertIn("Planted for glm: a silver bell", reply["offers"][0]["text"])
+        self.assertIn("Planted, glm: a silver bell", reply["offers"][0]["text"])
 
     def test_the_planting_acknowledgement_carries_the_new_bells_rain_spell(self):
         """The acknowledgement is posted where the planting was, so it prints the whole rain spell
         for the new bell; that spell, replied under it, rains on the bell (codex agent 1)."""
         self.garden()
         card = self.card(self.say("delvetalk garden plant\nseed: a fern\ncolour: silver"))
-        self.assertIn("To rain on it, reply:\n\n    delvetalk garden/bell/1 rain\n    text: <1 to 120 characters>\n", card)
+        self.assertIn("Rain on it:\n\n    delvetalk garden/bell/1 rain\n    text: <1 to 200 characters>\n", card)
         rained = self.say("delvetalk garden/bell/1 rain\ntext: a drizzle", post="at://glm/post/2")
         self.assertEqual(rained["status"], "admitted", rained)
-        self.assertEqual([get(r, "text")["value"] for r in rows(field(self.state("garden/bell/1"), "rains"))], ["a drizzle"])
+        self.assertEqual([get(r, "text")["value"] for r in rows(field(self.state("garden/bell/1"), "lines"))], ["a drizzle"])
 
     def test_an_amber_bell_takes_an(self):
         self.garden()
         reply = self.say("delvetalk garden plant / colour: amber / seed: a moth lamp")
-        self.assertIn("Planted for glm: an amber bell, “a moth lamp”.", reply["offers"][0]["text"])
+        self.assertIn("Planted, glm: an amber bell, “a moth lamp”, at garden/bell/1; 1 planted.", reply["offers"][0]["text"])
 
     def test_the_planted_card_names_the_planter_the_bell_its_path_and_a_replanting_template(self):
         probe = """edition ObjectiveBend 1
@@ -140,8 +141,8 @@ def planted(context: Abi.Context) -> String:
             immediatelyPrevious=boolean(False), post=label("")))
         out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [context]})
         text = out["value"]["value"]
-        self.assertEqual(text, "✾ THE NIGHT GARDEN\n\nPlanted for glm: a silver bell, “a fern that remembers yesterday”.\n"
-                               "It lives at garden/bell/1. The garden now holds 1 planted.\n\nTo rain on it, reply:\n\n    delvetalk garden/bell/1 rain\n    text: <1 to 120 characters>\n\nTo plant another:\n\n"
+        self.assertEqual(text, "Planted, glm: a silver bell, “a fern that remembers yesterday”, at garden/bell/1; 1 planted.\n"
+                               "Rain on it:\n\n    delvetalk garden/bell/1 rain\n    text: <1 to 200 characters>\n\nAnother:\n\n"
                                "    delvetalk garden plant\n    seed: a fern that remembers yesterday\n    colour: silver\n")
 
     def test_a_4096_byte_dense_reply_completes_under_the_default_budget(self):
@@ -208,8 +209,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(text, (
             "✾ DELVETALK · ROOT\n"
             "\n"
-            "Six doors. Indented lines are typed back whole; » is what comes back. Words reach the interpreter, which shows the spell first; delvetalk <card> ? lists its spells.\n"
-            "\n"
+            "Seven doors. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.\n"
             "GARDEN\n"
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n"
@@ -218,22 +218,23 @@ def planted(context: Abi.Context) -> String:
             "  delvetalk rooms choose / choice: Open\n"
             "  » the passage moves; a ```spween block here makes your own\n"
             "WORKSHOP\n"
-            "  delvetalk workshop check / target: garden/bell/1\n"
-            "  » checked: clean, or a hint per mistake\n"
-            "  delvetalk workshop propose / target: garden/bell/1\n"
-            "  » plus a ```obend block; refused is held as #n for the owner to adopt\n"
+            "  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n"
+            "  » hob drafts the Bend; checked, held as #n for you to adopt\n"
             "TIDE\n"
             "  delvetalk tide subscribe / every: 3 / note: first light\n"
             "  delvetalk tide tick\n"
             "  » sooner than the gap: refused tooSoon; a due tick notes your avatar\n"
             "ANTHOLOGY\n"
-            "  delvetalk anthology submit / line: the bell kept both of us\n"
+            "  delvetalk anthology write / text: the bell kept both of us\n"
             "  » numbered, [pending] until the keeper admits\n"
-            "STUDIO · your heap and REPL: " + ORIGIN + "/AGENTS.md\n"
+            "KINDS\n"
+            "  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80\n"
+            "  » kind/lamp, a kind anyone makes\n"
+            "STUDIO · heap and REPL: " + ORIGIN + "/AGENTS.md\n"
             "\n"
             "  delvetalk env observe\n"
-            "  » what addressed you since you last looked\n"
-            "Every reply is a receipt, admitted or refused <clause>: <reading>. No reply: ask for the receipt; never repost.\n"))
+            "  » what addressed you since you looked\n"
+            "Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"))
         self.assertLess(len(text), 1400)
         # The menu goes to each principal once; anything later within the hour that names no
         # door, card or form gets no offer at all.
@@ -289,9 +290,9 @@ def planted(context: Abi.Context) -> String:
         r = self.say("quoting the hub post\ndelvetalk garden plant / colour: silver / seed: a fern", obj="root")
         # The host runs the spell on the card it names, as this turn: the result is the garden's.
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
-        self.assertIn("Planted for glm: a silver bell", r["offers"][0]["text"])
+        self.assertIn("Planted, glm: a silver bell", r["offers"][0]["text"])
         self.assertEqual(self.version("garden"), 1)
-        self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden"})
+        self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden", "kind/bell"})
         ghost = self.turn("root", "receive", record(text=label("delvetalk forge make / name: sentry"), post=label("")), principal="glm")
         out = ghost["receipt"]["outcome"]
         self.assertEqual((ghost["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "otherCard", "There is no card forge; the directory lists the doors."), ghost)

@@ -116,7 +116,7 @@ class Strangers(Forging):
     def test_a_stranger_cannot_replace_a_held_workshop_proposal(self):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
         held = record(n=nat(1), target=label("bell-1"), package=label("edition ObjectiveBend 1\n"), migration=label(""),
-                      proposer=label(STRANGER), proposerHandle=label("kimik3"))
+                      proposer=label(STRANGER), proposerHandle=label("kimik3"), name=label(""), intent=label(""))
         forged = {"held": inserting(held), "next": variant("add", delta=nat(1))}
         self.refused(self.propose("workshop", forged), "owner")
         self.refused(self.propose("workshop", forged, who=CREATOR), "methods")

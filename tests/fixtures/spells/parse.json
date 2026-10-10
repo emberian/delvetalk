@@ -56,7 +56,7 @@
  },
  {
   "text": "delvetalk garden-1 plant\nseed fern",
-  "expected": "spell garden-1 plant ",
+  "expected": "spell garden-1 plant =seed fern;",
   "bare": ""
  },
  {
@@ -191,7 +191,7 @@
  },
  {
   "text": "delvetalk w c\nsource: <<TOOLONGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nx\n",
-  "expected": "spell w c source=<<TOOLONGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;",
+  "expected": "spell w c source=<<TOOLONGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;=x;",
   "bare": "source=<<TOOLONGXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;"
  },
  {
@@ -241,7 +241,7 @@
  },
  {
   "text": "delvetalk a b\nx: 1\nprose here\n    delvetalk c d\ny: 2",
-  "expected": "spell a b x=1;",
+  "expected": "spell a b x=1;=prose here;",
   "bare": "x=1;y=2;"
  },
  {

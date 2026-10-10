@@ -94,7 +94,7 @@ record State:
 def initial() -> State:
   {got: 0n}
 def later(state: State, input: {other: String, slot: String}, context: Abi.Context) -> Activity<Nat>:
-  match world.inspect({object: {world: "", object: input.other}}):
+  match world.inspect({object: {world: "", object: input.other}, source: true}):
     case inspected(_):
       match world.await({slot: {principal: "ann", intent: input.slot}, patience: 50n}):
         case reply(_):

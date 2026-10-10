@@ -6,8 +6,6 @@ import ./Spell.obend as Spell
 import ./Form.obend as Form
 import ./List.obend as Lists
 import ./World.obend as World
-import ./Bell.obend as Bell
-import ./Cistern.obend as Cistern
 import ./Card.obend as Card
 import ./Policies.obend as Policies
 import ./Relation.obend as Relations
@@ -46,7 +44,7 @@ record State:
 # What plant takes, and so what an interpretation proposes: the host reads a colour's word
 # as its case (in a spell, a proposal or a direct turn).
 record Planting:
-  colour: Bell.Colour
+  colour: Rows.Colour
   seed: String
 # Anyone plants, rains and replies; only the owner changes who owns it, its stance, its
 # policy or its page checkpoint (a set or a merge from anyone else is refused in Bend
@@ -60,24 +58,31 @@ def relations() -> Relations.Decls:
 # the limit the host would drop someone else's.
 def pendingMax() -> Nat:
   64n
-# Bells are minted: an empty requireAbsent lets the host choose <garden>/bell/<n>, and the
-# garden records the reference created {object} answers. The cistern has a chosen name,
-# <garden>/cistern, so a second is refused requiredAbsence.
-def minted() -> Plans.Reference:
-  {world: "", object: ""}
-def chosen(context: Abi.Context, name: String) -> Plans.Reference:
-  {world: "", object: "{context.object}/{name}"}
 # The post that plants is what the bell's strike later awaits (awaitPost): the reply a spell
 # came in (`inputOrigin.post`); planting directly leaves the bell nothing to await. The planter
 # is the turn's principal, never anything the caller wrote. A typed planting plants (it
 # settles whatever the speaker had waiting).
 def plant(state: State, input: Planting, context: Abi.Context) -> Activity<Reply>:
   settled(input.colour, input.seed, context.inputOrigin.post, false, heldBy(context.principal, state), context, state)
-# One cistern per garden: the second create finds garden/cistern occupied. Its name is what
-# the digger calls it (`cistern: a stone cistern for refused proposals`).
+# The kinds the garden makes under itself (docs/CATALOGUE.md §3): a bell is kind/bell's, a
+# cistern kind/cistern's, each <garden>/<kind>/<n> with a door home. The kind answers `made`.
+sum Made:
+  made: {object: String}
+  refused: Card.Refusal
+def kind(context: Abi.Context, name: String) -> Plans.Reference:
+  {world: context.world, object: "kind/{name}"}
+def field(name: String, value: String) -> Rows.Field:
+  {name: name, value: value}
+# A cistern is dug by kind/cistern under the garden; its name is what the digger calls it
+# (`cistern: a stone cistern for refused proposals`), which the kind's form does not take.
 def cistern(state: State, input: {name: String}, context: Abi.Context) -> Activity<Reply>:
-  match world.create({package: "Cistern", seed: Plans.nothing(), law: Cistern.lawText(context.principal), requireAbsent: chosen(context, "cistern")}):
-    case created(c): told(Reply.dug({object: c.object}), Document.text("✾ THE NIGHT GARDEN\n\nThe cistern is dug at {c.object.object}. It keeps refusals.\n"), heldBy(context.principal, state))
+  match world.call::<Made>({object: kind(context, "cistern"), method: "makeUnder", argument: {under: context.object, fields: Lists.List::<Rows.Field>.nil()}}):
+    case returned(r): dug(r.result, context, state)
+    case refused(r): refused(Why.world({clause: r.clause}), heldBy(context.principal, state))
+    case denied(_): refused(Why.world({clause: "denied"}), heldBy(context.principal, state))
+def dug(made: Made, context: Abi.Context, state: State) -> Activity<Reply>:
+  match made:
+    case made(m): told(Reply.dug({object: {world: context.world, object: m.object}}), Document.text("The cistern is dug at {m.object}; it takes refusals.\n"), heldBy(context.principal, state))
     case refused(r): refused(Why.world({clause: r.clause}), heldBy(context.principal, state))
 # The form the garden offers for planting, as data: its card is the object a reply answers.
 def plantForm(context: Abi.Context) -> Form.Form:
@@ -100,10 +105,10 @@ def views() -> Lists.List<String>:
   Text.words("byColour")
 # How many bells of each colour grow here, one row a colour that has any, keyed {colour}.
 record Tally:
-  colour: Bell.Colour
+  colour: Rows.Colour
   count: Nat
 def byColour(state: State, context: Abi.Context) -> Relations.Relation<Tally>:
-  Relations.Relation.rows({items: Lists.map(Relations.group(state.children, fn(c: Child) -> Bell.Colour: c.colour), fn(g: Relations.Group<Child, Bell.Colour>) -> Tally: {colour: Relations.groupKey(g), count: Lists.length(Relations.groupRows(g))})})
+  Relations.Relation.rows({items: Lists.map(Relations.group(state.children, fn(c: Child) -> Rows.Colour: c.colour), fn(g: Relations.Group<Child, Rows.Colour>) -> Tally: {colour: Relations.groupKey(g), count: Lists.length(Relations.groupRows(g))})})
 # Words are read only with a policy, and shown back first only when planting asks first.
 def inWords(state: State) -> String:
   if Plans.isNobody(state.policy) then "" else if asks(state.confirmFor, "plant") then "Or say it in words; I show you the spell before it grows.\n\n" else "Or say it in words; the interpreter plants what it understands.\n\n"
@@ -136,20 +141,23 @@ sum Reply:
   dug: {object: Plans.Reference}
   changed: {}
   silent: {}
+def colourName(c: Rows.Colour) -> String:
+  match c:
+    case amber(_): "amber"
+    case violet(_): "violet"
+    case silver(_): "silver"
 # A colour by name (a held or macro planting keeps the text it was given), or none: a name
 # outside the three is refused, never defaulted.
-def colourNamed(name: String) -> Lists.Maybe<Bell.Colour>:
-  if name == "amber" then Lists.Maybe.some({value: Bell.Colour.amber({})}) else if name == "violet" then Lists.Maybe.some({value: Bell.Colour.violet({})}) else if name == "silver" then Lists.Maybe.some({value: Bell.Colour.silver({})}) else Lists.Maybe.none({})
+def colourNamed(name: String) -> Lists.Maybe<Rows.Colour>:
+  if name == "amber" then Lists.Maybe.some({value: Rows.Colour.amber({})}) else if name == "violet" then Lists.Maybe.some({value: Rows.Colour.violet({})}) else if name == "silver" then Lists.Maybe.some({value: Rows.Colour.silver({})}) else Lists.Maybe.none({})
 def spell(card: String, seed: String, colour: String) -> String:
   "    delvetalk {card} plant\n    seed: {seed}\n    colour: {colour}\n"
 # The acknowledgement is posted where the planting was, so it prints the new bell's whole rain
 # spell (a reply naming the bell reaches it from here).
 def plantedCard(context: Abi.Context, reference: Plans.Reference, colour: String, seed: String, count: Nat) -> Document.Document:
   let article = if colour == "amber" then "an" else "a"
-  let what = "Planted for {Card.name(context.principal, context)}: {article} {colour} bell, “{seed}”."
-  let where = "It lives at {reference.object}. The garden now holds {natText(count)} planted."
   let another = spell(context.object, "a fern that remembers yesterday", "silver")
-  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply:\n\n    delvetalk {reference.object} rain\n    text: <1 to 120 characters>\n\nTo plant another:\n\n{another}")
+  Document.text("Planted, {Card.name(context.principal, context)}: {article} {colour} bell, “{seed}”, at {reference.object}; {natText(count)} planted.\nRain on it:\n\n    delvetalk {reference.object} rain\n    text: <1 to 200 characters>\n\nAnother:\n\n{another}")
 def unclearCard(context: Abi.Context, needs: Form.Names, colour: String, seed: String) -> Document.Document:
   let again = spell(context.object, if seed == "" then "<what might grow here, 1 to 80 characters>" else seed, if colour == "" then "<amber, violet or silver>" else colour)
   Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Text.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
@@ -367,8 +375,8 @@ def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.
   Document.text("✾ THE NIGHT GARDEN\n\n{Card.name(context.principal, context)}, I understood this:\n\n{spell(context.object, seed, colour)}\nReply yes or correct it.\n")
 # A planting either waits for the speaker's yes (an understood one the garden or the policy
 # confirms first) or grows.
-def settled(colour: Bell.Colour, seed: String, post: String, confirm: Bool, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
-  if confirm then held({principal: context.principal, colour: Bell.colourName(colour), seed: seed, needs: Lists.List.nil()}, confirmCard(context, Bell.colourName(colour), seed), found, state) else grow(colour, seed, post, found, context, state)
+def settled(colour: Rows.Colour, seed: String, post: String, confirm: Bool, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+  if confirm then held({principal: context.principal, colour: colourName(colour), seed: seed, needs: Lists.List.nil()}, confirmCard(context, colourName(colour), seed), found, state) else grow(colour, seed, post, found, context, state)
 # What the garden holds, one per principal: a new one replaces the old; `pendingMax`
 # principals at most. A held planting waiting for yes answers `confirming`, one missing
 # fields `unclear`.
@@ -379,24 +387,28 @@ def held(entry: Pending, card: Document.Document, found: Held, state: State) -> 
 def holding(entry: Pending, card: Document.Document) -> Activity<Reply>:
   let written(_) = write {pending: upsert entry}
   Card.tellTo(if Lists.length(entry.needs) == 0n then Reply.confirming({spell: spell("", entry.seed, entry.colour)}) else Reply.unclear({needs: entry.needs}), entry.principal, card)
-def grow(colour: Bell.Colour, seed: String, post: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
-  match world.create({package: "Bell", seed: bellSeed(context, post, colour, seed), law: "", requireAbsent: minted()}):
-    case created(c): watching(c.object, colour, seed, found, context, state)
+# kind/bell makes the bell under the garden, with the turn's post (the one its strike awaits),
+# the planter as its maker and owner, and a door home.
+def grow(colour: Rows.Colour, seed: String, post: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+  match world.call::<Made>({object: kind(context, "bell"), method: "makeUnder", argument: {under: context.object, fields: Lists.List.cons({head: field("colour", colourName(colour)), tail: Lists.List.cons({head: field("seed", seed), tail: Lists.List::<Rows.Field>.nil()})})}}):
+    case returned(r): grown(r.result, colour, seed, found, context, state)
     case refused(r): refused(Why.world({clause: r.clause}), found)
-# A bell is planted with a door home to its garden.
-def bellSeed(context: Abi.Context, post: String, colour: Bell.Colour, seed: String) -> {colour: Bell.Colour, seed: String, planting: String, planter: String, planterHandle: String, doors: Card.Doorways}:
-  {colour: colour, seed: seed, planting: post, planter: context.principal, planterHandle: context.handle, doors: Card.Doorways.cons({head: {label: "garden", to: Plans.self(context)}, tail: Card.Doorways.nil()})}
+    case denied(_): refused(Why.world({clause: "denied"}), found)
+def grown(made: Made, colour: Rows.Colour, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+  match made:
+    case made(m): watching({world: context.world, object: m.object}, colour, seed, found, context, state)
+    case refused(r): refused(Why.world({clause: r.clause}), found)
 # The planter's wake is told when the new bell rings: the garden sends its `watchBell`, which
 # runs as the planter's after this turn commits, once the bell exists (whatever it answers,
 # the planting stands).
-def watching(reference: Plans.Reference, hue: Bell.Colour, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+def watching(reference: Plans.Reference, hue: Rows.Colour, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   match world.send({object: {world: context.world, object: "wake/{context.principal}"}, method: "watchBell", argument: {bell: reference.object}}):
     case _: counted(reference, hue, seed, found, context, state)
 # Planting counts, keeps the bell among the children, and settles whatever this principal
 # had waiting; the planter gets the card (a Wake subscribed to `planted` hears of it).
-def counted(reference: Plans.Reference, hue: Bell.Colour, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+def counted(reference: Plans.Reference, hue: Rows.Colour, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   let written(_) = world.write(extend(keep(), {planted: Plans.Edit.add({delta: 1n}), pending: forget(found), children: Plans.Entries.insert({row: {world: reference.world, object: reference.object, colour: hue}})}))
-  Card.tell(Reply.planted({object: reference, colour: Bell.colourName(hue), seed: seed}), plantedCard(context, reference, Bell.colourName(hue), seed, state.planted + 1n))
+  Card.tell(Reply.planted({object: reference, colour: colourName(hue), seed: seed}), plantedCard(context, reference, colourName(hue), seed, state.planted + 1n))
 def forget(found: Held) -> Plans.Entries<Pending, Pending>:
   match found:
     case none(_): Plans.Entries.keep({})

@@ -59,6 +59,7 @@ class Client:
         except KeyError:
             raise Failure('zuliprc_malformed', 'needs [api] email, key and site') from None
         self.transport = transport
+        self.realm = urllib.parse.urlsplit(self.site).hostname or self.site  # the realm a principal names: zulip:<realm>:<user id>
 
     def call(self, method, path, params=None):
         import base64
@@ -93,6 +94,13 @@ class Client:
     def send(self, stream, topic, content):
         return self.call('POST', 'messages', {'type': 'stream', 'to': stream, 'topic': topic, 'content': content})
 
+    def delete(self, mid):
+        """Delete a message this bot sent; anyone else's is refused before the call."""
+        got = self.call('GET', f'messages/{int(mid)}', {'apply_markdown': 'false'})
+        if (got.get('message') or {}).get('sender_email') != self.email:
+            raise Failure('not_ours', f'message {mid}')
+        return self.call('DELETE', f'messages/{int(mid)}')
+
     def newest(self, stream):
         """The id of the stream's newest message (0 for none): the anchor a delivery is persisted with before it is sent."""
         got = self.call('GET', 'messages', {'anchor': 'newest', 'num_before': 1, 'num_after': 0, 'apply_markdown': 'false',
@@ -105,6 +113,12 @@ class Client:
         got = self.call('GET', 'messages', {'anchor': after, 'include_anchor': 'false', 'num_before': 0, 'num_after': BATCH,
                                             'narrow': json.dumps(narrow), 'apply_markdown': 'false'})
         return next((m['id'] for m in got.get('messages') or [] if m['content'].strip() == content.strip()), None)
+
+
+def principal(realm, user_id):
+    """A Zulip user as a principal: `zulip:<realm host>:<user id>`, so two realms' users never share a name
+    (docs/FEDERATION.md section 1)."""
+    return f'zulip:{realm}:{user_id}'
 
 
 def created_at(message):
@@ -132,7 +146,7 @@ class ZulipObserver(Observer):
         text = text.strip()
         tags = list(dict.fromkeys(TAG.findall(text)))
         kind, wiki = classify(text, parent, mentions, tags, summon=bot)
-        return {'uri': uri, 'cid': str(m['id']), 'author': {'did': 'zulip:' + str(m['sender_id']), 'handle': m['sender_full_name']},
+        return {'uri': uri, 'cid': str(m['id']), 'author': {'did': principal(self.client.realm, m['sender_id']), 'handle': m['sender_full_name']},
                 'createdAt': created_at(m), 'text': text, 'replyTo': parent, 'root': row[0] if row and parent else None,
                 'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki}
 

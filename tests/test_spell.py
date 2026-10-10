@@ -102,9 +102,12 @@ class Parse(unittest.TestCase):
                 self.assertTrue(parse(bad).startswith("not a spell"), parse(bad))
         # A line that is not a field ends the fields; the spell stands with what came before
         # (prose may follow a spell), and fit names what is missing.
-        for prose in ("delvetalk garden-1 plant\nseed fern", "delvetalk garden-1 plant\n: fern"):
+        # A line with no colon is a value without a name (FLEX host 3), but one that starts with a field's
+        # name is that field with its colon missing, and binds nothing.
+        for prose, parsed in (("delvetalk garden-1 plant\nseed fern", "spell garden-1 plant =seed fern;"),
+                              ("delvetalk garden-1 plant\n: fern", "spell garden-1 plant ")):
             with self.subTest(prose=prose):
-                self.assertEqual(parse(prose), "spell garden-1 plant ")
+                self.assertEqual(parse(prose), parsed)
                 self.assertEqual(propose(prose), "unclear colour|seed|")
         self.assertEqual(propose("delvetalk garden-1 plant / seed: fern / colour: amber\nthanks, all!\nmore: prose"),
                          "proposal garden-1 plant colour=amber;seed=fern;")
@@ -223,9 +226,61 @@ class Fit(unittest.TestCase):
 
     def test_a_name_outside_the_identifier_alphabet_is_no_field_and_ends_the_fields(self):
         # docs/FLEX.md §4 host 1: a line that does not look like a field is prose; the spell stands with
-        # the fields before it, and fit names what is missing (case-folded names are FLEX host 2).
-        self.assertEqual(propose("delvetalk garden-1 plant\nSeed: fern\ncolour: silver"), "unclear colour|seed|")
+        # the fields before it, and fit names what is missing.
         self.assertEqual(propose("delvetalk garden-1 plant\ncolour: silver\nsee d: fern"), "unclear seed|")
+
+    def test_card_action_and_field_names_are_read_in_any_case(self):
+        # docs/FLEX.md §4 host 2: `Delvetalk Garden Plant`; the card as written, the action and the
+        # field names folded; fit compares the card folded.
+        self.assertEqual(parse("Delvetalk Garden-1 Plant\nSeed: fern\nCOLOUR: silver"), "spell Garden-1 plant seed=fern;colour=silver;")
+        self.assertEqual(propose("DELVETALK Garden-1 PLANT\nSeed: fern\nColour: silver"), "proposal garden-1 plant colour=silver;seed=fern;")
+        self.assertEqual(propose("delvetalk garden-1 plant\nSeed: fern\ncolour: silver"), "proposal garden-1 plant colour=silver;seed=fern;")
+
+    def test_a_trailing_full_stop_or_colon_on_the_spell_line_is_trimmed(self):
+        for mark in (".", ":"):
+            self.assertEqual(parse("delvetalk garden-1 plant%s\nseed: fern\ncolour: amber" % mark), "spell garden-1 plant seed=fern;colour=amber;")
+        self.assertEqual(parse("delvetalk garden-1 ?."), "spell garden-1 ? ")
+
+    def test_a_reply_to_the_card_needs_no_delvetalk(self):
+        # docs/FLEX.md §4 host 2: with the addressee and its actions, a first line naming one of them
+        # (alone, or after the card's name, with nothing after it but inline fields) is the spell line.
+        to = {"card": "garden-1", "actions": ["plant", "cistern"]}
+        addressed = lambda text: show_parsed(host({"text": text, "addressee": to}))
+        self.assertEqual(addressed("plant\nseed: fern\ncolour: silver"), "spell garden-1 plant seed=fern;colour=silver;")
+        self.assertEqual(addressed("Garden-1 Plant / seed: fern / colour: silver"), "spell garden-1 plant seed=fern;colour=silver;")
+        self.assertEqual(addressed("\n  plant.\nseed: fern"), "spell garden-1 plant seed=fern;")
+        self.assertEqual(addressed("?"), "spell garden-1 ? ")
+        for prose in ("Plant something pretty", "plant: a fern", "prune\nseed: x", "other plant\nseed: x",
+                      "I would plant\nseed: x", "> plant\nseed: x"):
+            self.assertTrue(addressed(prose).startswith("not a spell"), prose)
+        self.assertTrue(parse("plant\nseed: fern").startswith("not a spell"))
+        # A delvetalk line still wins.
+        self.assertEqual(addressed("plant\nseed: x\ndelvetalk tide tick"), "spell tide tick ")
+
+    def test_a_value_without_a_name_binds_by_type(self):
+        # docs/FLEX.md §4 host 3: a line under the spell line with no colon is a value without a name; it
+        # binds to the open choice whose option it is (in any case), else digits to the one open natural,
+        # else to the one open text field; one that binds nothing is dropped, so fit asks for what is missing.
+        self.assertEqual(parse("delvetalk garden-1 plant\nsilver\na fern that remembers"), "spell garden-1 plant =silver;=a fern that remembers;")
+        self.assertEqual(propose("delvetalk garden-1 plant\nsilver\na fern that remembers"), "proposal garden-1 plant colour=silver;seed=a fern that remembers;")
+        self.assertEqual(propose("delvetalk garden-1 plant / Silver / a fern"), "proposal garden-1 plant colour=silver;seed=a fern;")
+        self.assertEqual(propose("delvetalk garden-1 plant / silver / seed: a fern"), "proposal garden-1 plant colour=silver;seed=a fern;")
+        self.assertEqual(propose("delvetalk garden-1 plant\nseed: a fern\nVIOLET"), "proposal garden-1 plant colour=violet;seed=a fern;")
+        self.assertEqual(propose("delvetalk garden-1 plant\ncolour: amber\nseed: moss\nwhat a night"), "proposal garden-1 plant colour=amber;seed=moss;")
+        self.assertEqual(propose("delvetalk garden-1 plant\nverdigris\nseed: moss"), "unclear colour|")
+        tide = {"card": "tide", "action": "subscribe", "fields": [
+            {"name": "every", "kind": {"natural": {"min": 1, "max": 1000}}}, {"name": "note", "kind": {"text": {"min": 0, "max": 140}}}]}
+        fit = lambda text: show_fit(host({"text": text, "form": tide})["fit"])
+        self.assertEqual(fit("delvetalk tide subscribe\n60\nfirst light"), "proposal tide subscribe every=60;note=first light;")
+        self.assertEqual(fit("delvetalk tide subscribe\ndaily"), "unclear every|")
+
+    def test_prose_after_a_blank_line_or_with_a_colon_is_no_value(self):
+        self.assertEqual(propose("delvetalk garden-1 plant\ncolour: amber\n\nlovely evening, all"), "unclear seed|")
+        self.assertEqual(propose("delvetalk garden-1 plant\ncolour: amber\nnote to self: water it"), "unclear seed|")
+        self.assertEqual(propose("delvetalk garden-1 plant\ncolour: amber\n\nseed: moss"), "proposal garden-1 plant colour=amber;seed=moss;")
+        # A value in the slashed form only before the named fields: after one it is part of that value.
+        self.assertEqual(propose("delvetalk garden-1 plant / colour: amber / seed: this / that"), "proposal garden-1 plant colour=amber;seed=this / that;")
+        self.assertTrue(parse("delvetalk garden-1 plant now").startswith("not a spell: Not a field"))
 
     def test_a_duplicate_field_is_refused(self):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: a\nseed: b\ncolour: amber"), "refused seed is given twice; keep one.")
@@ -280,7 +335,10 @@ class BendReading(unittest.TestCase):
                       "Could we plant a fern?",
                       "delvetalk garden-1 plant now",
                       "> delvetalk garden-1 plant / seed: fern",
-                      "```json\ndelvetalk garden-1 plant\n```"):
+                      "```json\ndelvetalk garden-1 plant\n```",
+                      "Delvetalk Garden-1 Plant / Seed: fern / colour: silver",
+                      "delvetalk garden-1 plant. / seed: fern",
+                      "delvetalk Is The word"):
             with self.subTest(reply=reply):
                 self.assertEqual(bend_parse(reply), parse(reply))
 

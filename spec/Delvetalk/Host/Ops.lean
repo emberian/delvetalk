@@ -161,6 +161,14 @@ structure CreateRec where
   seed : Json
   /-- Its lineage, when a `make` made it: `{object, pin, receipt}` (docs/GROUND.md §6 change 6). -/
   madeFrom : Option Json := none
+  /-- What the turn asked (never journaled): the creating object, the package, the seed and law given,
+      and a layer an `extend` of the same turn laid into the making (`""` for none), so the creation
+      can be built again with it. -/
+  creator : String := ""
+  package : String := ""
+  seedArg : Data := .record []
+  lawArg : String := ""
+  layer : String := ""
 
 /-- One change to an object, by the object whose method made it. `caller` is the
     object that called the running one (empty when the running object was the turn's
@@ -2655,6 +2663,30 @@ def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener 
      ("outcome", Json.mkObj ([("tag", toJson "settings")] ++ fields))] []
   return (w', reply entry)
 
+/-- The words a world's name may not be: the first segments of the ids and references a name would
+    be read against (docs/FEDERATION.md §1). -/
+def reservedWorldNames : List String := ["did", "zulip", "at", "world", "me", "scratch"]
+
+/-- `[a-z][a-z0-9-]{0,31}`, not a reserved word. -/
+def validWorldName (n : String) : Bool :=
+  let cs := n.toList
+  !cs.isEmpty && cs.length ≤ 32 && (cs.head!.isLower) &&
+    cs.all (fun c => c.isLower || c.isDigit || c == '-') && !reservedWorldNames.contains n
+
+/-- `world-open {name}`: the world's name, journaled once (`named {name}`, identity `world/name`); a
+    world that holds another name refuses this one. -/
+def nameOp (w : World) (name : String) : Except String (World × Json) := do
+  if name.isEmpty || name == w.name then return (w, Json.null)
+  if !w.name.isEmpty then throw s!"this journal is the world {w.name}, not {name}"
+  unless validWorldName name do
+    throw s!"a world's name is a-z, digits and -, starting with a letter, at most 32, and not one of {", ".intercalate reservedWorldNames}"
+  let fields := [("name", toJson name)]
+  let (w', entry) := push { w with name } (identityKey "world" "name")
+    [("identity", identityJson "world" "name"), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson (Journal.bodyHash (Json.mkObj fields))),
+     ("outcome", Json.mkObj ([("tag", toJson "named")] ++ fields))] []
+  return (w', reply entry)
+
 def parseSlot (j : Json) : Except String Json := do
   let principal ← boundedText "slot principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let intent ← boundedText "slot intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
@@ -3044,6 +3076,11 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
                            postQuota := ← natField outcome "postQuota", settled := true,
                            interpretQuota := (outcome.getObjValAs? Nat "interpretQuota").toOption.getD 48,
                            opener := (outcome.getObjValAs? String "opener").toOption.getD "" } entry key []
+  | "named" =>
+    if !w.name.isEmpty then throw "a world named twice"
+    let name ← outcome.getObjValAs? String "name"
+    unless validWorldName name do throw "a world name outside the rule"
+    return record { w with name } entry key []
   | "principal" =>
     discard <| outcome.getObjValAs? String "did"
     discard <| outcome.getObjValAs? String "handle"
@@ -3443,6 +3480,12 @@ def lawClauses (text : String) : List (String × Option String × String) :=
       | _ => (none, after)
     let expr ← after.dropPrefix? ":"
     return (name, reading, expr.toString.trimAscii.toString)
+
+/-- The law's clauses as `(name, expression, reading)`, the reading the law text gives, else the
+    package's while its clause stands ("" for none): the `inspect` Plan's `laws`. -/
+def lawRowsOf (o : Object) : List (String × String × String) :=
+  (lawClauses o.lawText).map fun (name, reading, expr) =>
+    (name, expr, ((reading.orElse fun _ => o.readings.lookup name)).getD "")
 
 /-- An object's law as clauses with their readings, every kind of law text alike: a reading the
     text gives, else the one the package gave the clause while it stands (`Object.readings`). What

@@ -1,0 +1,70 @@
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
+# The bell's body, over RECORD (docs/CATALOGUE.md §5): a bell is a record whose lines are rains,
+# 768 of them at 1 to 200 characters (within the host's 256 KiB), and whose one mark is `rung`.
+# `kind/bell` makes a record with the fields colour and seed and grafts this on it. The seventh
+# rain (SEEDING §4) rests on a rain's number, `ring` and `strike`: a watch on `lines` whose row
+# has n 7 calls `ring`; `strike` awaits the answer to the post that planted it and rings if
+# that turn was admitted.
+type State = Super.State
+def relations() -> Relations.Decls:
+  Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: 768n}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n})
+form rain:
+  text: text 1..200
+form ring:
+form lines:
+  from: natural 1..1000000000
+form door:
+  label: text 1..32
+  to: text 1..128
+form undoor:
+  label: text 1..32
+# A rain is a line on the bell; a write longer than a rain is refused by name.
+def write(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  if textLength(input.text) > 200n then refuse("A rain is 1 to 200 characters.") else Super.write(state, input, context)
+def rain(state: State, input: RainInput, context: Abi.Context) -> Activity<Nat>:
+  write(state, {text: input.text}, context)
+def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.lines(state, {from: input.from}, context)
+def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.door(state, {label: input.label, to: input.to}, context)
+def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.undoor(state, {label: input.label}, context)
+def ring(state: State, context: Abi.Context) -> Activity<Bool>:
+  Super.mark(state, "rung", context)
+# The strike waits for the reply that answers the planting post and rings if that turn was
+# admitted; a bell planted with no post stays as it is.
+def strike(state: State, context: Abi.Context) -> Activity<Bool>:
+  if state.post == "" then Super.marked(state, "rung") else awaiting(state, context)
+def awaiting(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.awaitPost({post: state.post, patience: 8n}):
+    case reply(r): ringOn(r.receipt.outcome, state, context)
+    case _: Super.marked(state, "rung")
+def ringOn(outcome: Plans.Outcome, state: State, context: Abi.Context) -> Activity<Bool>:
+  match outcome:
+    case admitted(_): Super.mark(state, "rung", context)
+    case refused(_): Super.marked(state, "rung")
+def methods() -> Lists.List<String>:
+  Text.words("strike write")
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  if context.principal == state.owner then Text.words("rain ring strike lines door undoor") else Text.words("rain ring strike lines")
+def blurb() -> Card.Door:
+  {word: "bell", blurb: "A bell: rain on it; the seventh rain rings it."}
+# A rain on the card: who, and what (the record's number is the order, not shown).
+def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Document:
+  Document.text("{Card.shown(line.author, line.handle, context)}{Card.mine(line.author, context)}: {line.text}\n")
+def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
+  let colour = Super.field(state, "colour")
+  let article = if colour == "amber" then "An" else "A"
+  let sound = if Super.marked(state, "rung") then "rung" else "silent"
+  let seed = Super.field(state, "seed")
+  Document.text("{article} {colour} bell, planted by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: “{seed}” — {sound}. Rain on it:\n  delvetalk {id} rain / text: <1 to 200 characters>\n")

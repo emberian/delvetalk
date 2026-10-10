@@ -17,7 +17,7 @@ from tests.test_chain import boolean, empty, nil, reference
 from tests.test_reflection import ROOT, Reflection
 from tests.test_turn_world import label, record
 
-BELL = open(os.path.join(ROOT, "world", "objects", "Bell.obend")).read()
+BELL = open(os.path.join(ROOT, "tests", "fixtures", "objects", "Bell.obend")).read()
 SEED = record(colour={"tag": "variant", "label": "silver", "payload": empty()}, seed=label("s"),
               rains={"tag": "variant", "label": "rows", "payload": record(items=nil())}, rung=boolean(False), planting=label(""), planter=label("glm"), planterHandle=label(""))
 
@@ -44,9 +44,9 @@ class Sources(Reflection):
         self.open_library()
         self.bell("a")
         self.bell("b")
-        before = [self.host.send(op="world-inspect", principal="ember", object=n) for n in ("a", "b")]
+        before = [self.host.send(op="world-inspect", principal="ember", object=n, source=True) for n in ("a", "b")]
         self.reopen()
-        self.assertEqual([self.host.send(op="world-inspect", principal="ember", object=n) for n in ("a", "b")], before)
+        self.assertEqual([self.host.send(op="world-inspect", principal="ember", object=n, source=True) for n in ("a", "b")], before)
         self.assertEqual(before[0]["source"], BELL)
 
 

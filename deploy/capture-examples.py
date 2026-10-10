@@ -202,7 +202,7 @@ def forger(cap):
     cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'checkpoint': cap.whole(yielded), 'response': {'tag': 'variant', 'label': 'written', 'payload': record()}, **bind})
     cap.step('POST', '/world/garden/plant', {'intent': 'plant-mine', 'fields': {'colour': 'violet', 'seed': 'an anvil that hums'}})
     cap.step('GET', '/world/garden/bell/4/source')
-    bell = (ROOT / 'world' / 'objects' / 'Bell.obend').read_text() + '# rung bells keep their rain\n'
+    bell = (ROOT / 'world' / 'objects' / 'Record.obend').read_text() + '# rung bells keep their rain\n'
     spell = lambda target: f'delvetalk workshop propose\ntarget: {target}\nmigration:\n\n```obend\n{bell}```\n'
     cap.step('POST', '/world/workshop/receive', {'intent': 'propose-1', 'spell': spell('garden/bell/4')})
     cap.step('GET', '/world/garden/bell/4/card')

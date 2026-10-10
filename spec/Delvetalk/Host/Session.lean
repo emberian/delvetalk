@@ -43,6 +43,10 @@ structure Open where
   report : Snapshot.Report := {}
   /-- How appends are made durable (`Durability`). Per process, never journaled. -/
   sync : Durability := .fsync
+  /-- The journal's bytes now, and the bound appends meet (`Limits.maxJournalBytes`, or lower for
+      this process: `world-open {maxJournalBytes}`). -/
+  bytes : Nat := 0
+  bound : Nat := Limits.maxJournalBytes
 
 abbrev Session := Option Open
 
@@ -67,8 +71,8 @@ def loadLibrary (path : String) : IO (Except String Library) := do
 /-- Open and replay a journal. The handle takes an exclusive advisory lock (`flock`, through
     `IO.FS.Handle.tryLock`) for the life of the session, so a second process cannot append to
     (or replay) a journal another holds. `held` is this process's own handle on the same path. -/
-def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Bool := false) (caches : Caches := {}) :
-    IO (Except String Open) := do
+def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Bool := false) (caches : Caches := {})
+    (bound : Nat := Limits.maxJournalBytes) : IO (Except String Open) := do
   try
     let handle ← match held with
       | some h => pure h
@@ -76,15 +80,13 @@ def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Boo
     if held.isNone then
       unless ← handle.tryLock (exclusive := true) do return .error "journal is open in another process"
     let exists_ ← System.FilePath.pathExists path
-    let content ← if exists_ then do
-        let info ← System.FilePath.metadata path
-        if info.byteSize.toNat > Limits.maxJournalBytes then
-          return .error "journal exceeds byte capacity"
-        IO.FS.readFile path
-      else pure ""
+    let bytes ← if exists_ then pure (← System.FilePath.metadata path).byteSize.toNat else pure 0
+    if bytes > bound then
+      return .error s!"journal exceeds byte capacity: {bytes} bytes, past maxJournalBytes ({bound})"
+    let content ← if exists_ then IO.FS.readFile path else pure ""
     match ← Snapshot.openContent path content verify caches with
     | .error e => return .error e
-    | .ok (world, report) => return .ok { world, path, handle, report, snapshotAt := report.resumed }
+    | .ok (world, report) => return .ok { world, path, handle, report, snapshotAt := report.resumed, bytes, bound }
   catch e => return .error s!"journal unreadable: {e}"
 
 /-- Write a snapshot of the open world now: `{height}`, or `{refused}` naming why not. -/
@@ -111,18 +113,33 @@ def durable (s : Open) (reader : String) (step : World → Except String (World 
     let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr (quiet resumed))
     let r := if delivered.isEmpty then r else r.setObjVal! "delivered" (Json.arr (quiet delivered))
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
-    let fresh := w'.entries.extract s.world.height w'.height
-    if fresh.any (·.compress.utf8ByteSize > Limits.maxEntryBytes) then
+    let fresh := (w'.entries.extract s.world.height w'.height).map (·.compress ++ "\n")
+    if fresh.any (·.utf8ByteSize > Limits.maxEntryBytes + 1) then
       return (some s, .error "journal entry exceeds capacity")
     if w'.height > Limits.maxJournalEntries then
       return (some s, .error "journal is full")
+    let full := s!"journal is full: appending would pass maxJournalBytes ({s.bound} bytes)"
+    let size := fun (lines : Array String) => lines.foldl (· + ·.utf8ByteSize) 0
+    -- Near the bound only a refusal is written (OPERATIONS §c 1): a turn is refused `capacity` naming
+    -- the bound, journaled into the headroom, so the operator sees it before any restart would.
+    let (w', r, fresh) ← if s.bytes + size fresh + Limits.journalHeadroom ≤ s.bound then pure (w', r, fresh) else
+      let identity := (r0.getObjVal? "receipt").toOption.bind (·.getObjVal? "identity" |>.toOption)
+      match identity.bind (·.getObjValAs? String "principal" |>.toOption), identity.bind (·.getObjValAs? String "intent" |>.toOption) with
+      | some principal, some intent =>
+        let p : Proposal := { principal, intent, roots := [], writes := [], turn := s.world.height + 1 }
+        let (wR, rR) := commit s.world p [] (some { cls := "capacity", reason := some "maxJournalBytes" })
+        let lines := (wR.entries.extract s.world.height wR.height).map (·.compress ++ "\n")
+        if s.bytes + size lines > s.bound then return (some s, .error full)
+        pure (wR, turnReply wR rR, lines)
+      | _, _ => return (some s, .error full)
     try
-      for entry in fresh do s.handle.putStr (entry.compress ++ "\n")
+      for line in fresh do s.handle.putStr line
       match s.sync with
       | .none => s.handle.flush
       | .fsync => syncHandle s.handle false
       | .full => syncHandle s.handle true
     catch e => return (some s, .error s!"journal write failed: {e}")
+    let s := { s with bytes := s.bytes + size fresh }
     -- The entries are durable; a snapshot is derived from them and its failure refuses nothing.
     if w'.height < s.snapshotAt + Limits.snapshotEvery then return (some { s with world := w' }, .ok r)
     let (o, note) ← snapshotNow { s with world := w' }
@@ -192,8 +209,16 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
       let sync ← match Durability.ofJson? (request.getObjVal? "sync").toOption with
         | .ok d => pure d
         | .error e => return (session, .error e)
+      -- A lower journal bound for this process (an operator's rehearsal, a test); never a higher one.
+      let bound ← match optNat request "maxJournalBytes" with
+        | .ok none => pure Limits.maxJournalBytes
+        | .ok (some b) =>
+          if b > Limits.maxJournalBytes then
+            return (session, .error s!"maxJournalBytes may lower the bound ({Limits.maxJournalBytes}), never raise it")
+          pure b
+        | .error e => return (session, .error e)
       -- What this process compiled for the world it had open stays compiled for the next.
-      match ← openWorld path held verify ((session.map (·.world.caches)).getD {}) with
+      match ← openWorld path held verify ((session.map (·.world.caches)).getD {}) bound with
       | .error e => return (session, .error e)
       | .ok o =>
         let o := { o with sync }
@@ -213,8 +238,18 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
             | .ok _, some o' => pure o'
             | .error e, _ => return (session, .error e)
             | _, none => return (session, .error "world-open failed")
+        -- The world's name, journaled once (`named`); another name than the journal holds is refused.
+        let o ← match request.getObjValAs? String "name" with
+          | .error _ => pure o
+          | .ok name =>
+            let (s', r) ← durable o reader (fun w => nameOp w name)
+            match r, s' with
+            | .ok _, some o' => pure o'
+            | .error e, _ => return (session, .error e)
+            | _, none => return (session, .error "world-open failed")
         let opened := fun (o : Open) (extra : List (String × Json)) => Json.mkObj ([("status", toJson "opened"),
-          ("height", toJson o.world.height), ("head", toJson o.world.head),
+          ("height", toJson o.world.height), ("head", toJson o.world.head)] ++
+          (if o.world.name.isEmpty then [] else [("name", toJson o.world.name)]) ++ [
           ("objects", toJson o.world.objects.size), ("snapshot", o.report.json)] ++ extra ++
           (o.world.library.map fun l => [("library", toJson l.pin)]).getD [])
         match request.getObjValAs? String "library" with

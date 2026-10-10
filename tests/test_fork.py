@@ -18,7 +18,7 @@ from tests.host import whole
 
 from tests.test_replay import rows
 from tests import test_policy
-from tests.test_chain import garden_seed
+from tests.test_chain import garden_seed, town_kinds
 from tests.test_objects import closure
 from tests.test_reflection import PACKAGE, Reflection, source_seed
 from tests.test_replay import get, items
@@ -34,6 +34,7 @@ class Fork(Reflection):
         r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden",
                            modules=closure("Garden"), entry="initial", seed=garden_seed("", confirm=False))
         self.assertEqual(r["status"], "created", r)
+        town_kinds(self.host.send)
         self.make("c", PACKAGE, source_seed())
 
     def fork(self, principal="ember", **extra):
@@ -51,7 +52,7 @@ class Fork(Reflection):
 
     def plant(self, host):
         return host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="what-if",
-                         argument=record(text=label(PLANT), post=label("at://x/p/1")))
+                         argument=record(text=label(PLANT), post=label("at://x/p/1")), reach="mention")
 
     def test_a_planting_in_the_fork_leaves_the_shared_world_unchanged(self):
         shared = self.host.send(op="world-status")
@@ -106,7 +107,7 @@ class Fork(Reflection):
                            modules=closure("Garden"), entry="initial", seed=garden_seed("policy", confirm=False))
         self.assertEqual(r["status"], "created", r)
         asked = self.host.send(op="world-turn", principal="glm", object="g2", method="receive", identity="prose",
-                               argument=record(text=label("Could we plant a silver fern that remembers?"), post=label("at://x/p/2")))
+                               argument=record(text=label("Could we plant a silver fern that remembers?"), post=label("at://x/p/2")), reach="mention")
         self.assertEqual(asked["status"], "suspended", asked)
         _, fork = self.fork()
         [pending] = fork.send(op="world-interpretations")["pending"]

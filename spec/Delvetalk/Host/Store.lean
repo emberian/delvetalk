@@ -49,7 +49,15 @@ def maxStateBytes : Nat := 262144
 /-- One compressed journal line. -/
 def maxEntryBytes : Nat := 1048576
 def maxJournalEntries : Nat := 1000000
+/-- A journal's bytes. Not raised with the snapshot's tail replay: every entry is still parsed and held
+    in memory at open (`World.entries`), measured on hbox at about 10.4 bytes of resident memory per
+    journal byte plus 60 MB, and 0.43 s per MB to open (an 18 MB journal of 20,000 turns: 250 MB peak,
+    7.7 s), so 256 MiB is about 2.7 GB and two minutes; 4 GiB would be 43 GB. It is met at append
+    (`durable`), never first at a restart. -/
 def maxJournalBytes : Nat := 268435456
+/-- The last bytes under `maxJournalBytes` that only refusals are written into: an append that would
+    reach them is refused `capacity` (`maxJournalBytes`), and that refusal fits. -/
+def journalHeadroom : Nat := 1048576
 def maxHistoryLimit : Nat := 100
 def dataDepth : Nat := 8192
 /-- Nested `call` depth inside one turn. -/
@@ -432,6 +440,9 @@ structure World where
   /-- The principal that opened the world (`world-open {opener}`, in the settings entry; ""
       when none was named): it alone may create an object for a named owner. -/
   opener : String := ""
+  /-- The world's name among those one host serves (docs/FEDERATION.md §1), journaled once by a
+      `named` entry; "" before one is. -/
+  name : String := ""
   settled : Bool := false
   /-- Interpretations one principal may start per clock hour (`world-open {interpretQuota}`, journaled
       in `settings` when named; 48 otherwise). The opener and the clock principal are exempt. -/

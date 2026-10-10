@@ -18,6 +18,13 @@ def trimEndOf(text: String, chars: String) -> String:
   if size == 0n then text else if textSpan(textDrop(text, size - 1n), chars) == 1n then trimEndOf(textTake(text, size - 1n), chars) else text
 def trim(text: String) -> String:
   trimEnd(trimStart(text))
+# ASCII letters folded to lower case (a spell's action and field names are read in any case).
+def lower(text: String) -> String:
+  let at = textBreak(text, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+  if at == textLength(text) then text else "{textTake(text, at)}{lowerChar(textTake(textDrop(text, at), 1n))}{lower(textDrop(text, at + 1n))}"
+def lowerChar(c: String) -> String:
+  let at = textBreak("ABCDEFGHIJKLMNOPQRSTUVWXYZ", c)
+  if at == 26n then c else textTake(textDrop("abcdefghijklmnopqrstuvwxyz", at), 1n)
 def starts(text: String, prefix: String) -> Bool:
   textTake(text, textLength(prefix)) == prefix
 # Where `needle` first stands in `text` (its length when nowhere, and for an empty needle).

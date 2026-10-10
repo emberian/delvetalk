@@ -12,8 +12,10 @@ Mini type checker'}); a method without one never sees it, and records the princi
 """
 import unittest
 
+from deploy import genesis
+from tests.test_laws import anthology_seed
 from tests.test_turn_world import relation
-from tests.test_chain import Chain, garden_seed, reference
+from tests.test_chain import Chain, garden_seed, reference, town_kinds
 from tests.test_objects import closure
 from tests.test_places import avatar_seed, names, place_seed
 from tests.test_replay import bell_seed, get, items, rows
@@ -50,15 +52,15 @@ class Principal(Chain):
         self.acted("bell", "rain", argument)
         self.assertEqual([get(r, "author") for r in rows(get(self.state("bell"), "rains"))], [label(ACTOR)])
 
-    def test_a_submission_is_authored_by_the_turns_principal(self):
-        # Anthology declares a law, so it is made with world-create (whole state) by its owner.
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember"), proposals=relation()))
+    def test_a_written_line_is_authored_by_the_turns_principal(self):
+        # Record's creator passes its law, so it is made with world-create (whole state) by its owner.
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
-        argument = record(line=label("lamps"))
-        self.forged("anthology", "submit", argument, "author")
-        self.acted("anthology", "submit", argument)
-        self.assertEqual([get(p, "author") for p in rows(get(self.state("anthology"), "proposals"))], [label(ACTOR)])
+        argument = record(text=label("lamps"))
+        self.forged("anthology", "write", argument, "author")
+        self.acted("anthology", "write", argument)
+        self.assertEqual([get(p, "author") for p in rows(get(self.state("anthology"), "lines"))], [label(ACTOR)])
 
     def test_a_note_is_from_the_turns_principal(self):
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
@@ -86,13 +88,14 @@ class Principal(Chain):
     # to fail until the host gives a spell's method its post (Abi.Context inputOrigin `post`).
     def test_the_planter_is_the_turns_principal_and_the_planting_its_post(self):
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         spell = "delvetalk garden plant\nseed: a fern\ncolour: amber"
         self.forged("garden", "receive", record(text=label(spell), post=label("at://p/1")), "who")
         r = self.turn("garden", "receive", record(text=label(spell), post=label("at://p/1")), principal=ACTOR, identity="plant-1")
         self.assertEqual(r["result"]["label"], "planted", r)
         bell = self.state("garden/bell/1")
-        self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label(ACTOR), label("at://p/1")))
-        self.assertIn("Planted for kimik3", r["offers"][0]["text"])
+        self.assertEqual((get(bell, "maker"), get(bell, "post")), (label(ACTOR), label("at://p/1")))
+        self.assertIn("Planted, kimik3", r["offers"][0]["text"])
 
 
 if __name__ == "__main__":

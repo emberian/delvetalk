@@ -10,6 +10,7 @@
 import atexit
 import json
 import os
+import time
 import shutil
 import subprocess
 import tempfile
@@ -186,6 +187,40 @@ def start_hostd(state, binary_path=None, opener=None, library=None):
     get = d.heaps.get
     d.heaps.get = lambda did: unsynced(get(did)) if did not in d.heaps.pool else get(did)
     return serve(d)
+
+
+class Served:
+    """`delvetalk-obend serve` over a state directory, as a child process (HOST-HANDOFF 5.125)."""
+
+    def __init__(self, state, opener=None, library=None, extra=()):
+        import subprocess
+        self.state = os.path.abspath(state)
+        argv = [binary(), "serve", "--state", self.state, "--sync", "none"] + (["--opener", opener] if opener else []) + \
+            (["--library", library] if library else []) + list(extra)
+        self.sock = os.path.join(self.state, "host.sock")
+        self.root = os.path.join(self.state, "root", "root.sock")
+        for p in (self.sock, self.root):
+            if os.path.exists(p):
+                os.unlink(p)
+        self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        deadline = time.monotonic() + 120
+        while not (os.path.exists(self.sock) and os.path.exists(self.root)):
+            if self.proc.poll() is not None:
+                raise RuntimeError("serve exited %s: %s" % (self.proc.returncode, self.proc.stderr.read()))
+            if time.monotonic() > deadline:
+                self.stop()
+                raise RuntimeError("serve did not listen within 120 s")
+            time.sleep(0.02)
+
+    def stop(self):
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=60)
+            except Exception:
+                self.proc.kill()
+                self.proc.wait()
+        self.proc.stderr.close()
 
 
 def stop_hostd(d):

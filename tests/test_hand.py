@@ -177,6 +177,57 @@ class Listener(unittest.TestCase):
         self.assertEqual(get(hand_at['127.0.0.1'], '/AGENTS.md'), 404)  # and the hand's listener nothing else
 
 
+class Unpost(HandCase):
+    """`unpost` withdraws a post we made, on Delve or Zulip, and never anyone else's."""
+    def posted(self, uri, cid='bafy9'):
+        path = self.state / 'outbox' / '7-aaaa.json'
+        write_atomic(path, dict(json.loads(path.read_text()), posted=True, sent={'uri': uri, 'cid': cid}, intent='draft-7-aaaa'))
+        return path
+
+    def pds(self, did):
+        class Pds:
+            def __init__(self): self.sent = []
+            def write(self, nsid, body, token=None):
+                self.sent.append((nsid, body))
+                return {'did': did, 'accessJwt': 't'} if 'Session' in nsid else {}
+        return Pds()
+
+    def test_a_delve_post_of_ours_is_deleted_and_the_host_told_the_draft_and_log_keep_it(self):
+        path, pds = self.posted('at://did:plc:me/town.delve.feed.post/r9'), self.pds('did:plc:me')
+        (self.state / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
+        self.hand.credentials = self.state / 'creds.json'
+        self.assertEqual(self.hand.unpost('7-aaaa', 'wrong card', client=pds), {'unposted': 'at://did:plc:me/town.delve.feed.post/r9'})
+        self.assertEqual(pds.sent[1], ('com.atproto.repo.deleteRecord', {'repo': 'did:plc:me', 'collection': 'town.delve.feed.post', 'rkey': 'r9'}))
+        told = [o for o in self.host.ops if o['op'] == 'world-posted'][-1]
+        self.assertEqual((told['unposted'], told['uri'], told['intent'], told['reason']), (True, 'at://did:plc:me/town.delve.feed.post/r9', 'draft-7-aaaa', 'wrong card'))
+        self.assertEqual(json.loads(path.read_text())['unposted']['reason'], 'wrong card')
+        self.assertEqual(self.logged()[-1]['what'], 'unpost')
+        with self.assertRaises(hand.HandError):  # once
+            self.hand.unpost('7-aaaa', 'again', client=pds)
+
+    def test_anyone_elses_post_and_an_unposted_draft_are_refused_before_any_delete(self):
+        self.posted('at://did:plc:someone/town.delve.feed.post/r9')
+        (self.state / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
+        self.hand.credentials, pds = self.state / 'creds.json', self.pds('did:plc:me')
+        with self.assertRaises(hand.HandError):
+            self.hand.unpost('7-aaaa', 'x', client=pds)
+        self.assertEqual([n for n, _ in pds.sent], ['com.atproto.server.createSession'])
+        write_atomic(self.state / 'outbox' / '7-aaaa.json', dict(json.loads((self.state / 'outbox' / '7-aaaa.json').read_text()), posted=False))
+        with self.assertRaises(hand.HandError):
+            self.hand.unpost('7-aaaa', 'x', client=pds)
+
+    def test_a_zulip_post_is_deleted_through_the_bots_client(self):
+        self.posted('zulip://delvetalk/garden/42', '42')
+        deleted = []
+        zulip = type('Z', (), {'delete': lambda s, mid: deleted.append(mid)})()
+        self.hand.unpost('7-aaaa', 'misread', zulip=zulip)
+        self.assertEqual(deleted, [42])
+        with self.assertRaises(hand.HandError):
+            self.posted('zulip://delvetalk/garden/43', '43')
+            write_atomic(self.state / 'outbox' / '7-aaaa.json', {k: v for k, v in json.loads((self.state / 'outbox' / '7-aaaa.json').read_text()).items() if k != 'unposted'})
+            self.hand.unpost('7-aaaa', 'misread')  # no --zuliprc
+
+
 class Writer:
     """The delve.town side of post.post_draft: createSession and createRecord."""
     def __init__(self): self.sent = []
@@ -205,6 +256,35 @@ class Cli(HandCase):
     def logged_who(self):
         return {l['who'] for l in self.logged()}
 
+    def test_status_json_is_the_one_monitoring_probe(self):
+        import time as t
+        now = t.time()
+        stamp = lambda ago: t.strftime('%Y-%m-%dT%H:%M:%SZ', t.gmtime(now - ago))
+        (self.state / 'access.log').write_text(f'{stamp(60)} GET / 200 10 -\n{stamp(120)} GET /o/x 500 9 -\n{stamp(1800)} GET / 503 9 -\n{stamp(7200)} GET / 500 9 -\n')
+        (self.state / 'model-spend.jsonl').write_text(''.join(json.dumps({'at': now - ago, 'inputTokens': 1000, 'outputTokens': 50}) + '\n'
+                                                              for ago in (100, 200, 7200)))
+        journal, backups = self.state / 'j' / 'world.journal', self.state / 'backups'
+        journal.parent.mkdir()
+        journal.write_text('{"genesis":1}\n' + ''.join(json.dumps({'outcome': {'tag': 'suspended'}, 'pad': 'x' * n}, separators=(',', ':')) + '\n' for n in (10, 20, 30)))
+        backups.mkdir()
+        (backups / 'delvetalk-20261011T000000Z.tar.gz').write_bytes(b'x')
+        (backups / 'last-verify').write_text('ok 20261011T000000Z\n')
+        real = self.host.send
+        self.host.send = lambda req: {'status': 'entries', 'entries': [{'outcome': {'tag': 'refused', 'class': 'quota'}}, {'outcome': {'tag': 'admitted'}}]} \
+            if req['op'] == 'world-entries' else real(req)
+        p = self.js('status', '--journal', str(journal), '--backups', str(backups))
+        self.assertEqual(p['front'], {'requests5m': 2, '5xx5m': 1, '5xxHour': 2})
+        self.assertEqual(p['hour'], {'window': '2 newest entries', 'turns': 2, 'refused': {'quota': 1}})
+        self.assertEqual((p['model']['hour']['calls'], p['model']['day']['calls']), (2, 3))
+        self.assertEqual(p['reservations'], {'source': 'delve', 'used': 3, 'quota': 16, 'next': 60})
+        self.assertEqual(p['interpretations'], {'pending': 1, 'maxAttempts': 0})
+        self.assertEqual((p['journal']['height'], p['journal']['bytes'], p['journal']['medianSuspendedBytes']),
+                         (41, journal.stat().st_size, len(journal.read_text().splitlines()[2])))
+        self.assertEqual((p['backup']['newest'], p['backup']['verify']), ('delvetalk-20261011T000000Z.tar.gz', 'ok'))
+        self.assertLess(p['backup']['ageSeconds'], 60)
+        self.assertEqual(set(p) >= {'clock', 'observed', 'freeFraction', 'at'}, True)
+        self.assertEqual(p['observed'], 2)
+
     def test_reading_verbs_print_text_and_json_that_parses(self):
         rows = self.js('inbox')
         self.assertEqual([r['kind'] for r in rows], ['post', 'post'])  # a spell is the host's reading, not a kind
@@ -219,8 +299,9 @@ class Cli(HandCase):
         self.assertIn('planted <b>a</b>', self.cmd('outbox')[1])
         shown = self.js('show', '7-aaaa')
         self.assertEqual((shown['receipt'], shown['text'], shown['original post']['handle']), ('receipt bofab-lukid: admitted', 'planted <b>a</b>', 'talkie.delve.town'))
-        st = self.js('status')
-        self.assertEqual((st['journal height'], st['posts this hour'], st['hostd pid']), (41, '3 of 16', 'none'))
+        st = self.cmd('status')[1]  # the strip as text; `status --json` is the monitoring probe
+        self.assertIn('journal height: 41', st)
+        self.assertIn('posts this hour: 3 of 16', st)
         self.assertEqual(self.js('search', 'bofab-lukid')['status'], 'resolved')
         self.assertEqual(self.cmd('log')[1].strip(), '(nothing)')
 

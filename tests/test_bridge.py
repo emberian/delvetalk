@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests import test_outbound
-from tests.test_chain import garden_state
+from tests.test_chain import garden_state, town_kinds
 from tests.test_http import BINARY
 from tests.test_transport import DID, Script, mk
 from tests.test_turn_world import closure, label, nat, record
@@ -253,6 +253,7 @@ class Bridging(BridgeCase):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)
+        town_kinds(lambda **q: self.host.send(q))
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(self.run_bridge()['failed'], [])
         (d,) = self.drafts()
@@ -340,6 +341,17 @@ class ReplyScoped(BridgeCase):
         got = self.turns(mk(1, 'I planted a fern, what colour is it', parent=card), deep(2, 'For the record:\n\nplant: a bell\ncolour: silver'),
                          deep(3, 'Open recursion with a bouncer deserves to be carved into the lintel.'))
         self.assertEqual(got, {'000001': 'garden-1', '000002': 'garden-1'})
+
+    def test_each_turn_states_how_it_reached_so_the_host_may_read_its_prose(self):
+        card, other = f'at://{DID}/town.delve.feed.post/card', f'at://{DID}/town.delve.feed.post/agent1'
+        deep = lambda n, text: (lambda p: (p['record']['reply'].update(root={'uri': card, 'cid': 'x'}), p)[1])(mk(n, text, parent=other))
+        stub = Stub({card: {'status': 'addressee', 'object': 'garden-1'}})
+        self.observe([mk(1, '@livedelvetalk.delve.town what is here #gsb'), mk(2, 'a fern, please', parent=card),
+                      deep(3, 'plant: a bell\ncolour: silver'), deep(4, 'that line belongs in the anthology'), mk(5, 'delvetalk garden-1 ?')])
+        bridge.run(self.state, stub)
+        how = {o['identity'][-6:]: (o.get('reach'), o.get('replyTo')) for o in stub.ops if o['op'] == 'world-turn'}
+        self.assertEqual(how, {'000001': ('mention', None), '000002': (None, card), '000003': ('fields', other),
+                               '000004': ('door', other), '000005': (None, None)})  # a reply and a spell the host verifies itself
 
     def test_prose_deep_in_the_worlds_thread_that_names_a_door_reaches_that_doors_card(self):
         card, other = f'at://{DID}/town.delve.feed.post/card', f'at://{DID}/town.delve.feed.post/agent1'
@@ -510,7 +522,7 @@ class Mentions(BridgeCase):
         r = bridge.run(self.state, stub)
         turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['object'].startswith('env/')]
         self.assertEqual([(t['object'], t['principal'], t['method'], t['identity']) for t in turns],
-                         [(f'env/{d}', DID, 'mention', f"{post['uri']}#env:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
+                         [(f'env/{d}', DID, 'write', f"{post['uri']}#env:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
         fields = {f['name']: f['value']['value'] for f in turns[0]['argument']['fields']}
         self.assertEqual(fields, {'text': text, 'post': post['uri']})
         self.assertEqual(r['mentioned'], [post['uri']])

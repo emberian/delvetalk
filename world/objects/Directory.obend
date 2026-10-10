@@ -82,9 +82,13 @@ def add(state: State, input: {door: Door}, context: Abi.Context) -> Activity<Ans
     case some(_): answerRefused("doorTaken", "There is already a door called {input.door.label}")
     case none(_): standing(extend(input.door, {place: nextPlace(state)}), context)
 def standing(door: Listed, context: Abi.Context) -> Activity<Answer>:
-  if Plans.isNobody(door.to) || Menu.receiverOf(door.watch) == "" then added(door) else if door.watch == "ticks" then tickCount(door, context) else rowCount(door, context)
+  if Plans.isNobody(door.to) || Menu.receiverOf(door.watch) == "" then added(door) else if door.watch == "ticks" then tickCount(door, context) else if door.watch == "count" then madeCount(door, context) else rowCount(door, context)
 def tickCount(door: Listed, context: Abi.Context) -> Activity<Answer>:
   match world.viewField::<Nat>({object: door.to, field: "ticks"}):
+    case viewed(v): watched(door, v.state, context)
+    case _: added(door)
+def madeCount(door: Listed, context: Abi.Context) -> Activity<Answer>:
+  match world.viewField::<Nat>({object: door.to, field: "count"}):
     case viewed(v): watched(door, v.state, context)
     case _: added(door)
 def rowCount(door: Listed, context: Abi.Context) -> Activity<Answer>:
@@ -104,10 +108,10 @@ def changedNat(state: State, input: {object: Plans.Reference, field: String, ver
   noted(input.object.object, input.field, Lists.fold(input.inserted, 0n, fn(n: Nat) -> Nat -> Nat: fn(_: Nat) -> Nat: n), "", context, state)
 def changedChildren(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Child>, retracted: Lists.List<Rows.Child>}, context: Abi.Context) -> Activity<Answer>:
   moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(c: Rows.Child) -> String: c.object)), context, state)
-def changedProposals(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Proposal>, retracted: Lists.List<Rows.Proposal>}, context: Abi.Context) -> Activity<Answer>:
-  moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(p: Rows.Proposal) -> String: "#{natText(p.n)}")), context, state)
+def changedLines(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Line>, retracted: Lists.List<Rows.Line>}, context: Abi.Context) -> Activity<Answer>:
+  moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(l: Rows.Line) -> String: "#{natText(l.n)}")), context, state)
 def changedHeld(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Held>, retracted: Lists.List<Rows.Held>}, context: Abi.Context) -> Activity<Answer>:
-  moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(h: Rows.Held) -> String: "#{natText(h.n)} for {h.target}")), context, state)
+  moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(h: Rows.Held) -> String: if h.target == "" then "#{natText(h.n)}, {h.name}" else "#{natText(h.n)} for {h.target}")), context, state)
 def changedPresence(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Presence>, retracted: Lists.List<Rows.Presence>}, context: Abi.Context) -> Activity<Answer>:
   moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), "", context, state)
 def moved(card: String, field: String, added: Nat, dropped: Nat, newest: String, context: Abi.Context, state: State) -> Activity<Answer>:
@@ -218,7 +222,7 @@ def learning(input: Card.Reply, next: Next, learned: Learning, doors: Lists.List
     case nil(_): learnedAll(input, next, learned, context, state)
     case cons(c): if Plans.isNobody(c.head.to) then learning(input, next, learned, c.tail, context, state) else doorLearned(input, next, learned, c.head.to.object, c.tail, context, state)
 def doorLearned(input: Card.Reply, next: Next, learned: Learning, door: String, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
-  match world.inspect({object: {world: context.world, object: door}}):
+  match world.inspect({object: {world: context.world, object: door}, source: false}):
     case inspected(i): childListed(input, next, Lists.concat(learned, Mentions.learnedOf(door, door, false, i.methods)), door, rest, context, state)
     case _: childListed(input, next, learned, door, rest, context, state)
 def childListed(input: Card.Reply, next: Next, learned: Learning, door: String, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -230,7 +234,7 @@ def childLearned(input: Card.Reply, next: Next, learned: Learning, door: String,
     case none(_): learning(input, next, learned, rest, context, state)
     case some(c): childInspected(input, next, learned, door, c.value, rest, context, state)
 def childInspected(input: Card.Reply, next: Next, learned: Learning, door: String, child: String, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Heard>:
-  match world.inspect({object: {world: context.world, object: child}}):
+  match world.inspect({object: {world: context.world, object: child}, source: false}):
     case inspected(i): learning(input, next, Lists.concat(learned, Mentions.learnedOf(child, door, true, i.methods)), rest, context, state)
     case _: learning(input, next, learned, rest, context, state)
 def learnedAll(input: Card.Reply, next: Next, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
@@ -258,7 +262,7 @@ def handedOn(input: Card.Reply, context: Abi.Context, state: State) -> Activity<
 def judgedHandOn(input: Card.Reply, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
   if context.caller == "" then judged(input, learned, Lists.List.nil(), context, state) else ownFamily(input, learned, context, state)
 def ownFamily(input: Card.Reply, learned: Learning, context: Abi.Context, state: State) -> Activity<Heard>:
-  match world.inspect({object: {world: context.world, object: context.caller}}):
+  match world.inspect({object: {world: context.world, object: context.caller}, source: false}):
     case inspected(i): judged(input, learned, Lists.concat(Lists.concat(Mentions.formWords(i.methods), Mentions.formFields(i.methods)), Mentions.family(learned, familyDoor(context.caller, state))), context, state)
     case _: judged(input, learned, Lists.List.nil(), context, state)
 def familyDoor(caller: String, state: State) -> Lists.Maybe<Door>:

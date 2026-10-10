@@ -285,7 +285,7 @@
    ]
   },
   "expected": "unclear colour|seed|",
-  "parsed": "spell garden-1 plant "
+  "parsed": "spell garden-1 plant =seed fern;"
  },
  {
   "text": "delvetalk garden-1 plant\n: fern",
@@ -349,7 +349,7 @@
    ]
   },
   "expected": "proposal garden-1 plant colour=amber;seed=fern;",
-  "parsed": "spell garden-1 plant seed=fern;colour=amber;"
+  "parsed": "spell garden-1 plant seed=fern;colour=amber;=thanks, all!;"
  },
  {
   "text": "delvetalk env/did:plc:abc plant\nseed: fern\ncolour: silver",
@@ -1116,8 +1116,8 @@
     }
    ]
   },
-  "expected": "unclear colour|seed|",
-  "parsed": "spell garden-1 plant "
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;",
+  "parsed": "spell garden-1 plant seed=fern;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nsee d: fern\ncolour: silver",

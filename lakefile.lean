@@ -16,15 +16,21 @@ lean_lib Pred where
 lean_lib Delvetalk where
   srcDir := "spec"
 
-/-- The one piece of C: fsync for the journal (`spec/native/sync.c`). -/
+/-- The C: fsync for the journal (`spec/native/sync.c`) and `serve`'s sockets (`spec/native/serve.c`). -/
 target syncObject pkg : FilePath := do
   let source ← inputTextFile (pkg.dir / "spec" / "native" / "sync.c")
   let weak := #["-I", (← getLeanIncludeDir).toString]
   buildO (pkg.buildDir / "native" / "sync.o") source weak #["-fPIC"] "cc" getLeanTrace
 
+target serveObject pkg : FilePath := do
+  let source ← inputTextFile (pkg.dir / "spec" / "native" / "serve.c")
+  let weak := #["-I", (← getLeanIncludeDir).toString]
+  buildO (pkg.buildDir / "native" / "serve.o") source weak #["-fPIC"] "cc" getLeanTrace
+
 extern_lib delvetalk_sync pkg := do
   let object ← syncObject.fetch
-  buildStaticLib (pkg.staticLibDir / nameToStaticLib "delvetalk_sync") #[object]
+  let serve ← serveObject.fetch
+  buildStaticLib (pkg.staticLibDir / nameToStaticLib "delvetalk_sync") #[object, serve]
 
 @[default_target]
 lean_exe «delvetalk-obend» where

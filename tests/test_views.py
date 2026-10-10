@@ -13,8 +13,10 @@ the planter's card lacking "(yours)"; a party's card lacking its countersign spe
 """
 import unittest
 
+from deploy import genesis
 from tests import test_chain, test_deal
-from tests.test_chain import boolean, nil, reference
+from tests.test_chain import boolean, nil, reference, town_kinds
+from tests.test_laws import anthology_seed
 from tests.test_objects import closure
 from tests.test_places import avatar_seed, listing
 from tests.test_turn_world import label, nat, record, relation
@@ -272,35 +274,39 @@ class StoredHandles(test_chain.Chain):
         for did, handle in ((self.GLM, "glm.delve.town"), (self.KIMI, "kimik3.delve.town")):
             self.assertEqual(self.host.send(op="world-principal", principal="transport", did=did, handle=handle)["status"], "principal")
         self.make("garden", closure("Garden"), record(owner=label("ember")))
+        town_kinds(self.host.send)
         planted = self.turn("garden", "receive", record(text=label("plant: a lamp for moths\ncolour: amber"), post=label("at://x/p")), principal=self.GLM)
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertEqual(self.turn("garden/bell/1", "receive", record(text=label("rain: drizzle"), post=label("at://x/r")), principal=self.KIMI)["result"], nat(1))
         card = self.turn("garden/bell/1", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
         self.assertEqual(card, (
-            "An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\n"
-            "Reply delvetalk garden/bell/1 rain / text: <1 to 120 characters> to rain on it.\n"
+            "An amber bell, planted by glm.delve.town: “a lamp for moths” — silent. Rain on it:\n"
+            "  delvetalk garden/bell/1 rain / text: <1 to 200 characters>\n"
             "kimik3.delve.town: drizzle\n"
             "Doors: garden\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
             "    delvetalk garden/bell/1 rain\n"
-            "    text: <text, 1 to 120 characters>\n"
+            "    text: <text, 1 to 200 characters>\n"
             "\n"
             "    delvetalk garden/bell/1 ring\n"
             "\n"
+            "    delvetalk garden/bell/1 lines\n"
+            "    from: <a number from 1 to 1000000000>\n"
+            "\n"
             "    delvetalk garden/bell/1 door\n"
             "    label: <text, 1 to 32 characters>\n"
-            "    to: <text, 1 to 160 characters>\n"
+            "    to: <text, 1 to 128 characters>\n"
             "\n"
             "    delvetalk garden/bell/1 undoor\n"
             "    label: <text, 1 to 32 characters>\n"))
-        self.assertTrue(card.startswith("An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\nReply delvetalk garden/bell/1 rain / text: <1 to 120 characters> to rain on it.\nkimik3.delve.town: drizzle\n"), card)
-        r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember")))
+        self.assertTrue(card.startswith("An amber bell, planted by glm.delve.town: “a lamp for moths” — silent. Rain on it:\n  delvetalk garden/bell/1 rain / text: <1 to 200 characters>\nkimik3.delve.town: drizzle\n"), card)
+        r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
-        self.turn("anthology", "receive", record(text=label("submit: moths"), post=label("at://x/s")), principal=self.KIMI)
-        self.assertIn("#1 [proposed] kimik3.delve.town: moths\n", self.turn("anthology", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"])
+        self.turn("anthology", "receive", record(text=label("write: moths"), post=label("at://x/s")), principal=self.KIMI)
+        self.assertIn("#1 [pending] kimik3.delve.town: moths\n", self.turn("anthology", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"])
 
 
 class PartyViews(test_chain.Chain):
