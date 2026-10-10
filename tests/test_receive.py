@@ -152,7 +152,7 @@ def planted(context: Abi.Context) -> String:
         made = create("d1", record(owner=label("ember"), doors=doors))
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
-        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy", "words", "fields"])
+        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy"])
         self.assertEqual(field(state, "doors"), doors)
         self.assertEqual(field(state, "greeted"), relation())
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
@@ -274,7 +274,8 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(gone["result"]["label"], "done", gone)
         self.assertNotIn("ROOMS\n", self.card(self.say("", obj="root", who="kimik3")))
         missing = self.turn("root", "remove", record(door=record(label=label("ROOMS"))), principal="ember")
-        self.assertEqual(missing["result"]["payload"]["fields"][0]["value"]["value"], "There is no door called ROOMS")
+        fields = {f["name"]: f["value"]["value"] for f in missing["result"]["payload"]["fields"]}
+        self.assertEqual(fields, {"clause": "noDoor", "reading": "There is no door called ROOMS"})
 
 
 if __name__ == "__main__":
