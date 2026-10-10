@@ -31,12 +31,12 @@ namespace Delvetalk.Turn
 /-- Re-address the original annotation table when application wraps its term.
 The argument subtree is annotation-free first-order data, never raw code. -/
 def applyArgument (source : AnnotatedTerm) (argument : Term)
-    (extras : List (List Nat × LambdaAnnotation) := []) : AnnotatedTerm :=
+    (extras : Delvetalk.AnnotationTree := .empty) : AnnotatedTerm :=
   { source with
     term := .app source.term argument
     annotations := fun position => match position with
       | 0 :: rest => source.annotations rest
-      | 1 :: rest => (extras.find? (·.1 == rest)).map (·.2)
+      | 1 :: rest => extras.lookup rest
       | _ => none }
 
 def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat := do
@@ -48,6 +48,28 @@ def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat :
 
 private instance : Inhabited Term := ⟨.nat 0⟩
 
+mutual
+/-- A value's annotations at its own shape (`shapeAnnotations` as a tree) with that shape
+(`Data.shapeType`), built bottom-up: each node's shape type is made once from its
+children's, so a long list costs linear time and space (recomputing `shapeType` per
+injection was quadratic). -/
+def shapeTree : Data → Delvetalk.AnnotationTree × Ty
+  | .variant tag payload =>
+    let (tree, payloadShape) := shapeTree payload
+    let shape := Ty.variant (.field tag payloadShape .emptyRow)
+    (.node (some ⟨payloadShape, shape, .unrestricted, .reusable⟩) #[tree], shape)
+  | .record fields => let (trees, row) := shapeFieldTrees fields; (.node none trees.toArray, row)
+  | .natural _ => (.empty, .natural)
+  | .boolean _ => (.empty, .boolean)
+  | .label _ => (.empty, .label)
+def shapeFieldTrees : List (String × Data) → List Delvetalk.AnnotationTree × Ty
+  | [] => ([], .emptyRow)
+  | (name, value) :: rest =>
+    let (tree, shape) := shapeTree value
+    let (trees, row) := shapeFieldTrees rest
+    (tree :: trees, .field name shape row)
+end
+
 /-- An argument as a term with its injection annotations, directed by its declared
 type: a variant is injected at its declared sum, never guessed from one label (the
 annotation names its payload type and its sum or recursive variable), and a value
@@ -56,9 +78,8 @@ at a universal position (`Data`) is wrapped in `toData` and checked at its own s
 the checker: an injection's payload is child 0, a record's field `i` is child `i`,
 the operand of `toData` child 0. The term itself is `Data.term` up to those `toData`
 wrappers. -/
-partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) (path : List Nat) :
-    Term × List (List Nat × LambdaAnnotation) :=
-  if expected == .data then (.toData data.term, shapeAnnotations data (path ++ [0])) else
+partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) : Term × Delvetalk.AnnotationTree :=
+  if expected == .data then (.toData data.term, .node none #[(shapeTree data).1]) else
   match data with
   | .variant tag payload =>
     let row? := match expected with
@@ -68,24 +89,24 @@ partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) (path : 
           | _ => none
       | _ => none
     match row? >>= fun row => row.lookup bounds Ty.dataFuel tag with
-    | none => (data.term, [])
+    | none => (data.term, .empty)
     | some member =>
-      let (payloadTerm, annotations) := quoteAt bounds member payload (path ++ [0])
-      (.inject tag payloadTerm, (path, ⟨member, expected, .unrestricted, .reusable⟩) :: annotations)
+      let (payloadTerm, annotations) := quoteAt bounds member payload
+      (.inject tag payloadTerm, .node (some ⟨member, expected, .unrestricted, .reusable⟩) #[annotations])
   | .record fields =>
     let rec memberOf : Ty → String → Option Ty
       | .field n m tail, name => if n == name then some m else memberOf tail name
       | _, _ => none
-    let quoted := fields.zipIdx.map fun ((name, value), i) => match memberOf expected name with
-      | some member => (name, quoteAt bounds member value (path ++ [i]))
-      | none => (name, (value.term, []))
-    (.record (quoted.map fun (name, term, _) => (name, term)), (quoted.map (·.2.2)).flatten)
-  | other => (other.term, [])
+    let quoted := fields.map fun (name, value) => match memberOf expected name with
+      | some member => (name, quoteAt bounds member value)
+      | none => (name, (value.term, .empty))
+    (.record (quoted.map fun (name, term, _) => (name, term)), .node none (quoted.map (·.2.2)).toArray)
+  | other => (other.term, .empty)
 
 def argumentAt (bounds : DataBounds) (domain : Ty) (v : Data) :
-    Except String (Term × List (List Nat × LambdaAnnotation)) :=
+    Except String (Term × Delvetalk.AnnotationTree) :=
   if domain == .data && !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
-  else .ok (quoteAt bounds domain v [])
+  else .ok (quoteAt bounds domain v)
 
 def failureName : Failure → String
   | .tickExhausted => "tick budget exhausted"
@@ -291,6 +312,7 @@ def prepareStart (packet : Json) (arguments : List Data) :
   let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
   let mut source := decoded.source
   let mut entryType := entry.type
+  let mut fuel := decoded.fuel
   for v in arguments do
     let (domain, rest) := match entryType with
       | .arrow _ _ d c => (d, c)
@@ -300,8 +322,9 @@ def prepareStart (packet : Json) (arguments : List Data) :
       throw "turn refused: argument does not conform to its type"
     let (term, extras) ← argumentAt bounds domain v
     source := applyArgument source term extras
+    fuel := Delvetalk.argumentFuel fuel term
     entryType := rest
-  let some checked := check source [] decoded.fuel | throw "applied package refused by Mini type checker"
+  let some checked := check source [] fuel | throw "applied package refused by Mini type checker"
   let (plan, response, result) ← activityShape source.assumptions checked.type
   return (source, plan, response, result)
 

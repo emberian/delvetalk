@@ -351,7 +351,7 @@ def executeEntry (entry : Delvetalk.CheckedEntry) (arguments limits : Json) (pro
   let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
   let mut applied := entry
   for value in values do
-    applied ← applied.apply (← argumentTerm value) []
+    applied ← applied.apply (← argumentTerm value) .empty
   executeTyped applied.source.term applied.type limits profile
 
 /-- World data conversion: exact naturals, booleans, strings and records only.

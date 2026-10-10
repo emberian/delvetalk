@@ -6,7 +6,7 @@ import json
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_turn import Host, nat, label, variant
+from tests.test_turn import Host, nat, label, library_modules, variant
 from tests.test_turn_world import closure
 
 CALLER = """edition ObjectiveBend 1
@@ -118,6 +118,38 @@ class DataTypeTests(unittest.TestCase):
         good = h.send({"op": "compile", "entry": "f", "modules": [{"name": "Package", "source":
             "edition ObjectiveBend 1\ndef f(n: Nat) -> Data:\n  Data.of::<Nat>(n)\n"}]})
         self.assertEqual(good["status"], "compiled", good)
+
+    def test_a_long_list_argument_starts_an_activity_at_data_and_at_its_declared_type(self):
+        # Refuted if the activity path refuses a deep value the runtime admits: the checker's
+        # walk fuel for `Data` (and its fuel for an argument literal) was fixed, so a list
+        # of a couple of thousand items was refused at `Data` and of four thousand at
+        # `List<String>`, while the pure path has no such bound. Also refuted if starting
+        # costs more than linear-ish time (annotations were looked up by scanning a list).
+        h = self.host()
+        items = {"tag": "list", "items": [label("x%d" % i) for i in range(2500)]}
+        art = h.compile(CALLER, "keep")
+        started = h.start(art, [items, nat(0)])
+        self.assertEqual(started["status"], "yielded", started.get("message"))
+        self.assertEqual(field(started["plan"]["payload"], "argument"), items)
+        typed = h.send({"op": "compile", "entry": "count", "modules": library_modules("List") + [
+            {"name": "Package", "source": LONG_TYPED}]})
+        self.assertEqual(typed["status"], "compiled", typed)
+        longer = {"tag": "list", "items": [label("y%d" % i) for i in range(6000)]}
+        reply = h.start(typed["artifact"], [longer, nat(3)])
+        self.assertEqual(reply["status"], "yielded", reply.get("message"))
+        self.assertEqual(reply["plan"], variant("say", record(n=nat(3))))
+
+
+LONG_TYPED = """edition ObjectiveBend 1
+import ./List.obend as Lists
+sum Plan:
+  say: {n: Nat}
+sum Reply:
+  ok: {}
+def count(xs: Lists.List<String>, n: Nat) -> Activity<Plan, Reply, Nat>:
+  match perform(Plan.say({n: n})):
+    case ok(_): n
+"""
 
 
 # A Counter whose state holds a universal `Data` payload (a Wake trigger's stored argument

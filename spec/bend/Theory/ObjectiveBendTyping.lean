@@ -329,7 +329,8 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
   /-- Hosted extension: first-order data injected into the universal `Data`
   type. The only rule that produces `Data`; there is no elimination. The
   declarative rule takes any walk fuel (`isDataUnder` is a greatest fixed point
-  that more fuel only confirms); the checker supplies `Ty.dataFuel`. -/
+  that more fuel only confirms); the checker supplies `Ty.dataFuelFor`, which grows with
+  the type, so a long literal list is not refused for its depth. -/
   | toData {context : Context} {value : Term} {type : Ty} {uses : Uses} {fuel : Nat} :
       PartialTyping assumptions context value type uses →
       type.isDataUnder assumptions.bounds assumptions.rigid fuel [] = true →
@@ -648,6 +649,10 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
   | fuel + 1, .toData inner => do
       let value ← infer assumptions annotations context (position ++ [0]) fuel inner
       if hd : value.type.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
+        some ⟨.data, value.uses, .toData value.derivation hd⟩
+      -- Only a type deeper than the fixed fuel pays for measuring itself and its bounds.
+      else if hd : value.type.isDataUnder assumptions.bounds assumptions.rigid
+          (Ty.dataFuelFor assumptions.bounds value.type) [] = true then
         some ⟨.data, value.uses, .toData value.derivation hd⟩
       else none
   | fuel + 1, .done inner => do

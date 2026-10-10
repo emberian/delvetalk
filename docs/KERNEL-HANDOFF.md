@@ -583,3 +583,28 @@ fixture recorded by the foundation binary).
   refuses an unbound alias). Tested against the explicit spelling and through
   world-create/world-turn. A `state.x = ...` line hints it.
 - Correction: the form-block note above means Garden.obend ~85 (`planting()`).
+
+
+## 12. Kernel lane 6 (lane/kernel5, 2026-10-09)
+
+- Deep values on the activity path (`Ty.dataFuel` item). The checker's `toData` rule
+  first tries `Ty.dataFuel`, then `Ty.dataFuelFor bounds type` = max of that and the
+  type's constructors plus its bounds' (`Ty.size`): `isDataUnder` spends a step per
+  constructor and unfolds a bound once per path, so that fuel always decides. The
+  declarative rule already took any fuel, so no proof moved (`conformsFuel_sound` is
+  untouched; runtime conformance never had a fixed bound). A turn argument is checked at
+  `Delvetalk.argumentFuel` = the entry's fuel plus twice the literal's `Term.nodes`
+  (`infer` spends one per constructor and one per earlier field). Argument annotations
+  are an `AnnotationTree` shaped like the literal (`Turn.quoteAt`, `Turn.shapeTree`
+  builds a value's shape type once per node): before, each annotation carried its own
+  path, `CheckedEntry.apply` found one by scanning the list (cubic) and
+  `shapeAnnotations` recomputed `shapeType` per injection (quadratic memory). Measured
+  on hbox, `keep(value: Data)` with a list of n labels, whole `turn-start` in a fresh
+  process: foundation refused n = 1500 ("applied package refused by Mini type
+  checker", 4.1 s); now n = 1000 / 2000 / 4000 / 8000 yield in 0.4 / 1.2 / 3.2 / 14 s.
+  What remains quadratic is the v1 checkpoint of a FORCED literal list (each cell's
+  closure carries its subterm by value) and the checker's own `position ++ [k]`;
+  `List<String>` at 2000 starts in 0.35 s. Test:
+  `tests.test_data_type ...test_a_long_list_argument_starts_an_activity_at_data_and_at_its_declared_type`
+  (2,500 items at `Data`, 6,000 at `Lists.List<String>`).
+
