@@ -296,6 +296,16 @@ Within a poll the card comes back in the topic (the journal height grows by the 
 The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
 `python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.
 
+## Opening another community
+
+    python3 -m deploy.open --state /data/state --world ring --transport zulip --realm tulip.arke.me --channel ring --zuliprc ~/.zuliprc-ring
+
+writes the world's bridge row, `<state>/bridges/ring.json` (`{world, transport, realm, channel, zuliprc, topicMode}`,
+docs/FEDERATION.md section 4), and prints the commands that start it; it starts nothing. Until the host's `serve`
+lands, a world runs on a hostd of its own under `<state>/worlds/<world>/`, with its own bridge and interpreter. A
+world name is `[a-z][a-z0-9-]{0,31}`, never `did`, `zulip`, `at`, `world`, `me` or `scratch`; a second open of the
+same name is refused. Genesis and the welcome follow as for the town.
+
 ## Rotating the Anthropic key
 
 Write the new key to a temporary file beside the old one (owner 10425, mode
