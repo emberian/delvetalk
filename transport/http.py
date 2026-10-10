@@ -118,6 +118,7 @@ def library(modules):
 
 class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, not the front
     daemon_threads = True
+    request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
     def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep):
         super().__init__(address, Handler)
