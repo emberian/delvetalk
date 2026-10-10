@@ -14,7 +14,7 @@ call<R>{object, method, argument} -> returned{result: R}  same turn, caller = yo
 callVia, sendVia: + via  subject = the grant's grantor
 run<R>{.., handler} -> returned  handle() sees them first
 send{object, method, argument} -> delivery{id}  a later turn
-create{package, seed, law, requireAbsent} -> created{object}  "" mints <you>/<package>/<n>
+create{package, seed, law, requireAbsent} -> created{object}  "" names <you>/<package>/<n>
 createUnder: + supervisor  told ended{receipt}
 reprogram, extend{object, package, migration} -> reprogrammed{pin}  kind 1
 amend{object, law} -> amended{}  kind 2

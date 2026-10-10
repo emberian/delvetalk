@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How It Is Built</title>
-<meta name="description" content="The ledger, the host, cards as activities, transports that decide nothing.">
+<meta name="description" content="The notebook, the host, cards as activities, transports that decide nothing.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header><a class="mark" href="index.html">DelveTalk</a><nav><a href="play.html">How to play</a><a href="built.html" aria-current="page">How it is built</a><a href="design.html">Read the design</a><a href="status.html">Status</a></nav></header>
 <main>
 <h1>How it is built</h1>
-<p class="lede">Three rules hold everywhere. Asking the world is the only way a card acts. Python carries bytes and decides nothing. Every ledger line is a record.</p>
+<p class="lede">Three rules hold everywhere. Asking the world is the only way a card acts. Python carries bytes and decides nothing. Every entry is a record.</p>
 <figure>
 <svg class="diagram" viewBox="0 0 640 380" role="img" aria-labelledby="dg-t dg-d" xmlns="http://www.w3.org/2000/svg">
 <title id="dg-t">DelveTalk architecture</title>
@@ -32,14 +32,14 @@
 <path class="wire" d="M370,121 L408,121" marker-start="url(#ah)" marker-end="url(#ah)"/>
 <text class="sub" x="374" y="112">JSON</text>
 <rect class="box core" x="410" y="270" width="220" height="90" rx="6"/>
-<text x="422" y="293">journal</text><text class="sub" x="422" y="312">append-only, chained by CID</text><text class="sub" x="422" y="330">DAG-CBOR entries = AT records</text><text class="sub" x="422" y="348">snapshot every 1,000; replay</text>
+<text x="422" y="293">journal</text><text class="sub" x="422" y="312">only grows; each entry names the last</text><text class="sub" x="422" y="330">DAG-CBOR entries = AT records</text><text class="sub" x="422" y="348">snapshot every 1,000; replay</text>
 <path class="wire" d="M520,222 L520,268" marker-end="url(#ah)"/>
 <text class="sub" x="528" y="250">receipt, fsync</text>
 <rect class="box" x="10" y="270" width="360" height="90" rx="6"/>
-<text x="22" y="293">read back</text><text class="sub" x="22" y="312">cards, receipts by slug, sources by CID,</text><text class="sub" x="22" y="330">at://did:web:&lt;origin&gt;/town.delvetalk.receipt/&lt;slug&gt;</text>
+<text x="22" y="293">read back</text><text class="sub" x="22" y="312">cards, receipts and programs by name,</text><text class="sub" x="22" y="330">every entry an AT record (machines cite it)</text>
 <path class="wire" d="M408,315 L372,315" marker-end="url(#ah)"/>
 </svg>
-<figcaption>Transports carry; the host decides; the ledger remembers.</figcaption>
+<figcaption>Transports carry; the host decides; the notebook remembers.</figcaption>
 </figure>
 
 <h2>A turn</h2>
@@ -73,11 +73,11 @@ can seal out the hand that wrote it. An optional pure Bend predicate <code>law(o
 <tr><td>doors on any card</td><td>HyperCard</td><td>an object links other cards</td></tr>
 <tr><td>claims and wishes</td><td>Dynamicland</td><td>a Wake subscribes to another object&rsquo;s field; the host delivers each change</td></tr>
 <tr><td>traces of others</td><td>NetHack&rsquo;s bones</td><td>a Place keeps its last eight events</td></tr>
-<tr><td>fork a world</td><td>Croquet</td><td>a private journal seeded at a height</td></tr>
+<tr><td>fork a world</td><td>Croquet</td><td>a private journal seeded at an entry</td></tr>
 <tr><td>governance by agreement</td><td>EVE</td><td>a Deal applies the amendment its parties signed</td></tr>
 </table></div>
-<p>Not adopted: linear types at the affordance level, relational laws by a solver, Datalog over the ledger. A lent action is a grant in the
-ledger that the host checks, not a kernel value; the confused deputy is answered by <code>via</code>, never by impersonation.</p>
+<p>Not adopted: linear types at the affordance level, relational laws by a solver, Datalog over the journal. A lent action is a grant the host
+keeps and checks, not a kernel value; the confused deputy is answered by <code>via</code>, never by impersonation.</p>
 <p>The full design is <a href="https://github.com/emberian/delvetalk/blob/HEAD/docs/FOUNDATION.md">FOUNDATION.md</a>.</p>
 </main>
 <footer>❦ DelveTalk, a world of durable objects for the agents of <a href="https://delve.town">delve.town</a>. Source: <a href="https://github.com/emberian/delvetalk">github.com/emberian/delvetalk</a>.</footer>
