@@ -8,6 +8,7 @@ well-formedness. Host replies pass through verbatim.
 import argparse
 import collections
 import hashlib
+import html
 import json
 import os
 import re
@@ -74,6 +75,8 @@ def resolve(method, path):
         return get, {}
     if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
         return 'static', {'file': parts[1]}
+    if parts[:1] == ['play'] and method == 'GET':
+        return 'play', {'object': '/'.join(parts[1:])}
     if parts[:1] == ['o'] and len(parts) == 2 + (method == 'POST') and (method == 'GET' or parts[2] == 'spell'):
         return ('page' if method == 'GET' else 'spell'), {'object': parts[1]}
     return None, None
@@ -152,6 +155,8 @@ def compact_offers(reply):
 # The catalogue's text, loaded once: routes, conventions, the envelope, the error, XRPC error and refusal classes.
 API = json.loads((STATIC / 'catalogue.json').read_text())
 CATALOGUE, ERRORS, REFUSALS = API['routes'], API['errors'], API['refusals']
+PLAY = dict(re.findall(r'<!-- (\w+)[^>]*-->\n(.*?)(?=\n<!--|\Z)', (STATIC / 'play.html').read_text(), re.S))
+
 
 
 def digits(text):
@@ -439,6 +444,8 @@ class Handler(BaseHTTPRequestHandler):
         if name == 'find':
             found = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('object', [''])[0]
             return self.reply(302, '', 'text/plain', [('Location', '/o/' + urllib.parse.quote(found, safe=''))])
+        if name == 'play':
+            return self.play(p['object'] or 'directory')
         if name in ('page', 'spell'):
             return self.object_page(p['object'], spell=name == 'spell')
         return self.agents(name, p['heap'], p['object'], p['method'])
@@ -641,6 +648,27 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, canonical({**reply, '_links': {'self': link(self.path)}}))  # a checkpoint goes back whole
 
     # ---- humans
+
+    def play(self, name):
+        """The world in a browser as a verified principal (the session cookie verify sets): the card world-card renders, the
+        doors in the object's state, a reply box whose text goes to `receive` as a Delve reply would."""
+        credential = self.cookie()
+        who = self.principal(credential)
+        if who is None:
+            return self.reply(303, '', 'text/plain', [('Location', '/')])
+        if self.server.limited(credential):
+            return self.html(429, pages.page('slow down', who['handle'], '<h1>Too many requests</h1>'))
+        host, did = self.server.host, who['did']
+        card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
+        if card.get('status') != 'card':
+            return self.html(404, pages.missing(name, who['handle'], card))
+        state = plain(view.get('state') or {})
+        doors = [d for d in (state.get('doors') if isinstance(state, dict) else None) or [] if (d.get('to') or {}).get('object')]
+        items = ''.join(PLAY['door'].format(href=html.escape(oid(d['to']['object'])), label=html.escape(d.get('label', '')),
+                                            description=html.escape(d.get('description', ''))) for d in doors)
+        self.html(200, pages.page(name, who['handle'], PLAY['page'].format(
+            name=html.escape(name), path=html.escape(oid(name)), said='', card=html.escape(card.get('text', '')),
+            doors=PLAY['doors'].format(items=items) if doors else '')))
 
     def html(self, code, body, headers=()):
         self.reply(code, body, 'text/html', headers)
