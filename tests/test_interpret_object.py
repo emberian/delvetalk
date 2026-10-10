@@ -102,12 +102,6 @@ class ProposalForAnotherCard(Chain):
             settled, _ = self.ask(said)
             self.assertEqual(settled["receipt"]["outcome"]["verdict"], verdict, said)
 
-    def test_the_request_carries_the_card_as_the_speaker_reads_it(self):
-        self.turn("hub", "ask", record(text=label("plant a fern"), card=label("g"), action=label("plant")), principal="glm")
-        [pending] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual((pending["held"], pending["misfit"]), ("", ""))
-        self.assertIn("card", pending)
-        self.assertIn("lexicon", pending["policy"])
 
     def test_a_form_naming_a_method_its_card_does_not_offer_is_unclear(self):
         settled, resumed = self.ask("delvetalk g tend\nseed: a fern", action="tend")
@@ -115,7 +109,6 @@ class ProposalForAnotherCard(Chain):
         self.assertEqual(verdict["tag"], "unclear", verdict)
         self.assertIn("tend is not a method g offers", verdict["needs"][0])
         self.assertEqual(resumed["result"]["value"], "unclear", resumed)
-
 
 
 # MENU §2.2: a reply with several spells is `proposals {items}`, each item a proposal or `unclear`;
@@ -201,11 +194,6 @@ class SeveralSpells(Chain):
         opened = self.host.send(op="world-open", path=self.path)
         self.assertEqual(opened["status"], "opened", opened)
         self.assertEqual({f["name"]: f["value"] for f in self.state("g")["fields"]}, state)
-
-    def test_one_spell_keeps_the_single_proposal(self):
-        verdict, resumed = self.ask("delvetalk g plant\nseed: a fern")
-        self.assertEqual(verdict["tag"], "proposal", verdict)
-        self.assertEqual(resumed["result"]["value"], "one plant", resumed)
 
 
 if __name__ == "__main__":

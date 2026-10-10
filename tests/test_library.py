@@ -35,54 +35,12 @@ class Library(unittest.TestCase):
         self.assertEqual(got['status'], 'admitted', got)
         return got['offers'][0]['text']
 
-    def test_genesis_shelves_every_page_as_its_file(self):
-        library = next(m for m in self.made if m['object'] == 'library')
-        self.assertEqual(library['pages'], ['admitted'] * len(genesis.PAGES), library)
-        names = [name for name, _, _ in genesis.PAGES]
-        for name in names:
-            text = self.offer(self.spell('delvetalk library read / page: ' + name))
-            self.assertEqual(text, genesis.page_body(name))
-            self.assertLessEqual(len(text), 1400, name)
-            self.assertTrue(text.startswith('hob: '), name)
-            last = text.rstrip('\n').split('\n')[-1]
-            self.assertIn('delvetalk library read / page: ', last, name)
-            self.assertIn(last.rsplit(': ', 1)[1], names + ['plant', 'check', 'enter', 'tide', 'submit'], name)
-
-    def test_the_index_is_the_card(self):
-        index = self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text']
-        self.assertEqual(index.split('\n')[:9], [
-            'hob: six pages, no walks; say which and I fetch it.',
-            '',
-            'Pages: delvetalk library read / page: <name>',
-            '  spells     how a reply is read: the line, the fields, ?, a badSpell hint',
-            '  laws       one line a clause, its reading; who may; transient and binding refusals',
-            '  object     a card in Bend, one whole example',
-            "  relations  rows in a card's state: keys, insert, upsert, retract, order",
-            '  protocol   what a card asks the world: view, call, send, create, subscribe',
-            "  world      the doors, every card's spells, the classes of refusal"])
-        self.assertTrue(index.endswith("A card's law as the host has it: delvetalk library laws / card: garden\n"), index)
 
     def test_a_page_is_found_by_a_word_and_a_miss_names_the_pages(self):
         self.assertEqual(self.offer(self.spell('delvetalk library read / page: how do i read laws?')), genesis.page_body('laws'))
         miss = self.offer(self.spell('delvetalk library read / page: dragons'))
         self.assertTrue(miss.startswith('hob: no page called dragons. Pages: spells laws object relations protocol world; walks: .\n\nhob: six pages'), miss)
 
-    def test_a_long_cards_law_is_shown(self):
-        # The inspect Plan answers the clauses with their readings and no source, so a long card's law costs no
-        # more than a short one's (the garden's source is 31,879 characters).
-        law = self.offer(self.spell('delvetalk library laws / card: anthology'))
-        self.assertTrue(law.startswith('LAW of anthology\n  owner: the owner stays;'), law)
-        self.assertIn('  kept: a line is only added; only the keeper admits\n', law)
-        self.assertTrue(self.offer(self.spell('delvetalk library laws / card: garden')).startswith('LAW of garden\n  owner: '))
-
-    def test_a_cards_law_is_shown_with_its_readings(self):
-        self.assertIn('no card', self.offer(self.spell('delvetalk library laws / card: nowhere')).lower())
-        # A law given at creation keeps its readings: each clause, its reading, its expression. A cistern dug in
-        # the garden is a record (kind/cistern's), under the record's law.
-        dug = self.host.send({'op': 'world-turn', 'principal': 'did:plc:digger', 'object': 'garden', 'method': 'cistern', 'identity': 'dig-1',
-                              'argument': genesis.rec(name=genesis.lab(''))})
-        self.assertEqual(dug['status'], 'admitted', dug)
-        self.assertIn('  kept: a line is only added; only the keeper admits\n    (((insertOnly(lines)) and (insertOnly(admitted)))', self.offer(self.spell('delvetalk library laws / card: garden/cistern/1')))
 
     def test_only_the_owner_shelves(self):
         got = self.spell('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine')

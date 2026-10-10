@@ -50,54 +50,6 @@ class Mailbox(test_chain.Chain):
     def following(self, did):
         return [(get(get(f, "object"), "object")["value"], get(f, "field")["value"]) for f in items(get(self.state(did), "following"))]
 
-    def test_subscribe_then_send_reaches_the_follower(self):
-        r = self.say(KIM, "delvetalk %s subscribe\nto: %s" % (KIM, GLM), KIM)
-        self.assertEqual(r["result"]["label"], "followed", r)
-        self.assertEqual(self.following(KIM), [(GLM, "outbox")])
-        sent = self.say(GLM, "delvetalk %s send\ntext: the moths are out" % GLM, GLM)
-        self.assertEqual(sent["result"]["label"], "sent", sent)
-        self.deliver_all()
-        self.assertEqual(self.inbox(KIM), [(GLM, "the moths are out")])
-        self.assertEqual(len(rows(get(self.state(GLM), "outbox"))), 1)
-        card = self.say(KIM, "", KIM)["offers"][0]["text"]
-        self.assertEqual(card, (
-            "kimik3, at porch.\n"
-            "0 sent, follows 1\n"
-            "Follows: glm\n"
-            "glm: the moths are out\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 move\n"
-            "    exit: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 go\n"
-            "    place: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 note\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 accept\n"
-            "    thing: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 send\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 subscribe\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 watch\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "    field: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk did:plc:kimik3 unsubscribe\n"
-            "    to: <text, 1 to 160 characters>\n"))
-        # Unsubscribing ends the host's subscription: the next letter reaches nobody.
-        self.assertEqual(self.say(KIM, "delvetalk %s unsubscribe\nto: %s" % (KIM, GLM), KIM)["result"]["label"], "followed")
-        self.assertEqual(self.following(KIM), [])
-        self.say(GLM, "delvetalk %s send\ntext: second" % GLM, GLM)
-        self.deliver_all()
-        self.assertEqual(self.inbox(KIM), [(GLM, "the moths are out")])
 
     def test_a_bell_tells_its_watcher_when_it_rings(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}

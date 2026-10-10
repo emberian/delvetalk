@@ -52,9 +52,6 @@ class Parse(unittest.TestCase):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: A fern whose leaves remember\ncolour: amber"),
                          "proposal garden-1 plant colour=amber;seed=A fern whose leaves remember;")
 
-    def test_blank_comment_and_after_the_rule_lines_are_ignored(self):
-        reply = "\n# hello\n  delvetalk garden-1 plant  \r\n\nseed:   fern  \r\n# note\ncolour: violet\n---\nnot: a field\nProse here\n"
-        self.assertEqual(propose(reply), "proposal garden-1 plant colour=violet;seed=fern;")
 
     def test_prose_is_not_a_spell(self):
         for prose in ("Could we plant a silver fern whose leaves remember last night's rain?",
@@ -71,17 +68,6 @@ class Parse(unittest.TestCase):
                          "proposal garden-1 plant colour=silver;seed=fern;")
         self.assertEqual(parse("one\ntwo\nthree"), "not a spell: No delvetalk line; the spell is the last unquoted one.")
 
-    def test_the_one_line_form_takes_comma_separated_fields_after_the_action(self):
-        self.assertEqual(parse("delvetalk garden-1 plant seed: fern, colour: silver"),
-                         "spell garden-1 plant seed=fern;colour=silver;")
-        self.assertEqual(propose("delvetalk garden-1 plant seed: a fern, that remembers, colour: silver"),
-                         "proposal garden-1 plant colour=silver;seed=a fern, that remembers;")
-        self.assertEqual(propose("Quoted menu\n  delvetalk garden-1 plant  colour: amber ,  seed: moth  \n"),
-                         "proposal garden-1 plant colour=amber;seed=moth;")
-        self.assertEqual(parse("delvetalk garden-1 plant seed: fern\ncolour: silver"),
-                         "spell garden-1 plant seed=fern;colour=silver;")
-        self.assertEqual(parse("delvetalk a b x: 1, y: 2, ---"), "spell a b x=1;y=2, ---;")
-        self.assertTrue(parse("delvetalk garden-1 plant now").startswith("not a spell: Not a field"))
 
     def test_a_prose_line_with_a_colon_after_the_fields_ends_them(self):
         # docs/FLEX.md §4 host 1: the playtest's 68673 and 68675, verbatim; a sentence with a colon

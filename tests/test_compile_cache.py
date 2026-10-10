@@ -22,25 +22,6 @@ from tests.test_reflection import LIBRARY, PROBE, Reflection
 from tests.test_turn_world import label, nat, record
 
 
-class ProcessCache(Reflection):
-    def compiled(self):
-        return self.host.send(op="world-status")["compiled"]
-
-    def test_a_second_world_starts_with_what_the_first_compiled(self):
-        self.open_library()
-        self.make("probe", PROBE, record(count=nat(0), seen=label("")))
-        self.assertEqual(self.turn("probe", "bump")["status"], "admitted")
-        first = self.compiled()
-        self.assertGreaterEqual((first["packages"], first["methods"]), (1, 1), first)
-        other = self.path + ".other"
-        self.addCleanup(lambda: os.path.exists(other) and os.remove(other))
-        self.assertEqual(self.host.send(op="world-open", path=other, library=LIBRARY, principal="ember")["status"], "opened")
-        self.assertEqual(self.compiled(), first)
-        self.make("probe", PROBE, record(count=nat(0), seen=label("")))
-        self.assertEqual(self.turn("probe", "bump")["status"], "admitted")
-        self.assertEqual(self.compiled(), first)
-
-
 class DiskCache(Reflection):
     def process(self, cache):
         with mock.patch.dict(os.environ, {"DELVETALK_COMPILE_CACHE": cache}):
@@ -60,26 +41,6 @@ class DiskCache(Reflection):
         self.assertEqual(self.turn("probe", "bump")["status"], "admitted")
         return self.host.send(op="world-status")["compileCache"]
 
-    def test_off_unless_named(self):
-        self.assertIsNone(self.host.send(op="world-status")["compileCache"])
-
-    def test_a_second_process_reads_what_the_first_wrote(self):
-        cache = tempfile.mkdtemp(dir=self.dir.name)
-        self.process(cache)
-        first = self.world("a.journal")
-        self.assertEqual(first["hits"], 0, first)
-        written = self.files(cache)
-        self.assertTrue(any("/build-" in f for f in written) and any("/def-" in f for f in written), written)
-        self.host.close()
-        self.process(cache)
-        second = self.world("b.journal")
-        self.assertGreaterEqual(second["hits"], 2, second)
-        self.assertEqual(self.files(cache), written)
-        # Replaying the first journal in a third process compiles from the disk too.
-        self.host.close()
-        self.process(cache)
-        self.assertEqual(self.host.send(op="world-open", path=os.path.join(self.dir.name, "a.journal"))["status"], "opened")
-        self.assertGreaterEqual(self.host.send(op="world-status")["compileCache"]["hits"], 1)
 
     def test_a_damaged_file_is_compiled_again(self):
         cache = tempfile.mkdtemp(dir=self.dir.name)

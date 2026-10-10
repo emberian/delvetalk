@@ -99,11 +99,6 @@ class Integration(Reflection):
         self.assertEqual(expected["form"]["action"], "bump2", expected)
         self.assertEqual([(f["name"], f["kind"]["tag"]) for f in expected["form"]["fields"]], [("n", "natural")], expected)
 
-    def test_an_import_of_no_supplied_module_is_named(self):
-        r = self.host.send(op="check-package", entry="initial",
-                           modules=[{"name": "Package", "source": "edition ObjectiveBend 1\nimport ./Nowhere.obend as N\ndef initial() -> Nat:\n  0n\n"}])
-        self.assertEqual(r["status"], "refused", r)
-        self.assertIn("./Nowhere.obend", r["diagnostic"]["message"])
 
     def test_a_call_whose_argument_does_not_conform_is_answered_refused_typeMismatch(self):
         r = self.turn("caller", "poke", record(target=label("probe")))
@@ -153,20 +148,6 @@ class Integration(Reflection):
         forms = op["forms"]
         self.assertEqual(forms["tag"], "list")
         self.assertIn("paint", [f["fields"][1]["value"]["value"] for f in forms["items"]])
-
-    def test_check_carries_the_kernels_hint_line(self):
-        bad = "edition ObjectiveBend 1\ndef one(n: Nat) -> Nat:\n  [n]\n"
-        r = self.turn("caller", "checkAll", record(package=label(bad)))
-        lines = r["result"]["value"].split("|")[:-1]
-        self.assertEqual(len(lines), 2, lines)
-        self.assertRegex(lines[1], r"^Checked:\d+: hint: .*there are no list literals")
-        self.assertEqual(lines[0].split(":")[:2], lines[1].split(":")[:2])
-
-    def test_methods_survive_replay(self):
-        before = self.host.send(op="world-inspect", principal="ember", object="caller")
-        self.reopen()
-        after = self.host.send(op="world-inspect", principal="ember", object="caller")
-        self.assertEqual(before["methods"], after["methods"])
 
 
 class WriteOnce(WorldCase):

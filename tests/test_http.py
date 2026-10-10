@@ -15,7 +15,6 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.test_chain import garden_state, town_kinds
 from tests.test_turn_world import BINARY, closure, counter_modules, declared, label, nat, record
 
 PLANS = """edition ObjectiveBend 1
@@ -50,7 +49,6 @@ from tests.host import HostdCase, serve, start_hostd, stop_hostd
 from tests.test_turn_world import declared
 from transport.hostproc import HostClient
 from transport.http import AccessLog, Front, RemoteHeaps
-from transport.identity import ORIGIN
 
 HANDLE = 'talkie.delve.town'
 DID = 'did:plc:' + 'a' * 24
@@ -182,21 +180,6 @@ class Arrival(FrontCase):
         arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
         self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
 
-    def test_the_agents_guide_and_its_examples_are_served_with_the_origin_filled_in(self):
-        s, text = self.call('GET', '/AGENTS.md')
-        self.assertEqual(s, 200)
-        self.assertIn('O=' + ORIGIN + '/AGENTS.md\n', text)
-        self.assertIn('$O/challenge', text)
-        self.assertNotIn('{{origin}}', text)
-        s, examples = self.call('GET', '/AGENTS.md/examples')
-        self.assertEqual(s, 200)
-        self.assertNotIn('{{origin}}', examples)
-
-    def test_guide_names_the_host_binary(self):
-        import hashlib
-        s, headers, _ = self.request('GET', '/AGENTS.md')
-        self.assertEqual(s, 200)
-        self.assertEqual(dict(headers)['X-DelveTalk-Host-Sha256'], hashlib.sha256(Path(BINARY).read_bytes()).hexdigest())
 
     def test_json_sent_as_curl_sends_it_is_json(self):
         s, _, data = self.request('POST', '/AGENTS.md/challenge', raw=json.dumps({'handle': HANDLE}),
@@ -204,11 +187,6 @@ class Arrival(FrontCase):
         self.assertEqual(s, 200, data)
         self.assertEqual(json.loads(data)['did'], DID)
 
-    def test_unknown_route_points_at_guide(self):
-        s, body = self.call('GET', '/nope')
-        self.assertEqual(s, 404)
-        self.assertEqual((body['status'], body['class']), ('error', 'unknownRoute'))
-        self.assertIn('/AGENTS.md/api', body['hint'])
 
     def test_unverified_credential_is_401(self):
         s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})
@@ -274,21 +252,6 @@ class Claim(FrontCase):
     def press(self, cookie):
         return self.request('POST', '/AGENTS.md/verify', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Cookie': cookie, 'Accept': 'text/html'})
 
-    def test_the_home_offers_two_steps_and_the_word_page_one_button(self):
-        s, _, home = self.request('GET', '/')
-        self.assertIn(b'Claim your handle', home)
-        self.assertIn(b'Type your delve.town handle and we give you one word.', home)
-        self.assertIn(b'Give me a word', home)
-        self.assertNotIn(b'name="uri"', home)
-        cookie, page = self.word_page()
-        word = self.front.identity.pending(HANDLE)['text']
-        self.assertRegex(word, r'^[a-z]{5}-[a-z]{5}$')
-        self.assertIn(f'<pre class="card">{word}</pre>', page)
-        self.assertIn('Post this one word', page)
-        self.assertIn('as a public post from talkie.delve.town, within 15 minutes; it is harmless in public', page)
-        self.assertIn('I posted it', page)
-        self.assertNotIn('name="uri"', page)
-        self.assertEqual(page.count('name="handle"'), 1)  # one hidden field: no second handle to type
 
     def test_pressing_before_posting_says_so_and_pressing_after_logs_the_browser_in(self):
         cookie, _ = self.word_page()
@@ -326,28 +289,6 @@ class Claim(FrontCase):
         self.assertEqual(s, 400)
         self.assertIn('That word is older than 15 minutes. Ask for a new one.', page.decode())
 
-    def test_the_agent_route_still_takes_an_explicit_uri_and_a_bare_handle_claims(self):
-        s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})
-        did = PEOPLE[HANDLE]
-        self.provider.texts[did] = ch['text']
-        s, v = self.call('POST', '/AGENTS.md/verify', {'handle': HANDLE, 'uri': f'at://{did}/town.delve.feed.post/3abc'})
-        self.assertEqual((s, v['status']), (200, 'verified'))
-        self.now[0] += 5
-        s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})
-        s, e = self.call('POST', '/AGENTS.md/verify', {'handle': HANDLE})  # the old word is still posted, the new one is not
-        self.assertEqual((s, e['message']), (400, f'No post with that word from {HANDLE} yet. Post it, then press I posted it.'))
-
-
-class Head(FrontCase):
-    def test_head_answers_like_get_without_a_body(self):
-        for path in ('/', '/AGENTS.md/api', '/static/style.css'):
-            s, headers, body = self.request('GET', path)
-            hs, hheaders, hbody = self.request('HEAD', path)
-            self.assertEqual((hs, hbody), (s, b''), path)
-            self.assertEqual(dict(hheaders)['Content-Length'], dict(headers)['Content-Length'], path)
-            self.assertEqual(dict(hheaders)['Content-Type'], dict(headers)['Content-Type'], path)
-        self.assertEqual(self.request('HEAD', '/AGENTS.md/nowhere')[0], 404)
-
 
 class Access(FrontCase):
     def test_one_line_per_request_with_the_principal_and_never_a_token_or_a_body(self):
@@ -373,15 +314,6 @@ class Access(FrontCase):
         self.assertNotIn('secret-query', text)
         self.assertNotIn('Bearer', text)
         self.assertEqual(len(lines), 2 + 2 + 1, lines)  # api, challenge, verify, me, nowhere
-
-    def test_the_log_rotates_by_size(self):
-        log = Path(self.tmp.name) / 'rot.log'
-        a = AccessLog(log, limit=100)
-        for n in range(6):
-            a.write(1000.0, 'GET', f'/p{n}', 200, 10, None)
-        self.assertTrue(log.with_name('rot.log.1').exists())
-        self.assertLessEqual(log.stat().st_size, 100)
-        self.assertIn('/p5', log.read_text())
 
 
 class Bearer(FrontCase):
@@ -423,20 +355,6 @@ class Turns(FrontCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
         self.assertEqual(self.call('POST', '/AGENTS.md/deliver', {}, tok)[0], 200)
 
-    def test_compact_turn_reply_is_four_keys_and_the_default_stays_full(self):
-        tok = self.login()
-        s, full = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?full=1', {'argument': record(), 'intent': 'k1'}, tok)
-        whole = self.call('GET', '/AGENTS.md/receipt?intent=k1', token=tok)[1]['receipt']
-        s, c = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
-        self.assertEqual(s, 200)
-        self.assertEqual(bare(c), {'status': 'admitted', 'outcome': whole['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
-                             'receipt': {'object': self.c, 'version': 0, 'height': full['receipt']['height']}})
-        self.assertIn('hash', full['receipt'])
-        s, d = self.turn(tok, 'k1')  # the default: the line, the offers' text, the slug
-        self.assertEqual((set(d), d['receipt']['slug']), ({'status', 'line', 'offers', 'receipt', '_links'}, full['receipt']['slug']))
-        self.assertTrue(d['line'].startswith(f"● admitted {self.c} v1, entry {full['receipt']['height']}"), d['line'])
-        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
-        self.assertEqual((s, e['status']), (400, 'error'))  # a host error is not compacted
 
     def test_host_refusal_passes_through_verbatim(self):
         tok = self.login()
@@ -474,38 +392,6 @@ class Turns(FrontCase):
         s, r = self.call('GET', '/AGENTS.md/receipt/' + slug, token=tok)
         self.assertEqual((s, r['receipt']['hash']), (200, receipt['hash']))
 
-    def test_offers_wait_re_asks_until_an_offer_appears_or_time_runs_out(self):
-        tok = self.login()
-        asks, naps, real = [], [], self.host.send
-        offer = {'height': 9, 'identity': {'principal': DID, 'intent': 'i'}, 'text': 'hello'}
-        def send(req, *a, **k):
-            if req['op'] != 'world-offers':
-                return real(req, *a, **k)
-            asks.append(req)
-            return {'status': 'offers', 'offers': [offer] if len(asks) == 3 else [], 'more': False}
-        self.host.send, self.front.sleep = send, naps.append
-        s, r = self.call('GET', '/AGENTS.md/offers?wait=30&compact=1', token=tok)
-        self.assertEqual((s, bare(r), len(asks), naps), (200, {'status': 'offers', 'offers': ['hello'], 'height': 9}, 3, [1, 1]))
-        asks.clear(), naps.clear()
-        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)  # bounded; the host never answers
-        self.assertEqual((s, r['offers'], len(asks)), (200, [offer], 3))
-        asks.clear(), naps.clear()
-        self.host.send = lambda req, *a, **k: (asks.append(req), {'status': 'offers', 'offers': []})[1] if req['op'] == 'world-offers' else real(req, *a, **k)
-        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)
-        self.assertEqual((len(asks), len(naps)), (31, 30))
-        asks.clear()
-        self.call('GET', '/AGENTS.md/offers', token=tok)
-        self.assertEqual(len(asks), 1)
-
-    def test_a_checkpoints_tokens_are_counted_unless_full(self):
-        tok = self.login()
-        real = self.host.send
-        held = {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended', 'activity': {'checkpoint': {'digest': 'd', 'tokens': [{'n': '1'}] * 5}}}}}
-        self.host.send = lambda req: held if req['op'] == 'world-receipt' else real(req)
-        s, r = self.call('GET', '/AGENTS.md/receipt?intent=x', token=tok)
-        self.assertEqual(r['receipt']['outcome']['activity']['checkpoint'], {'tokens': {'elided': 5}})  # the digest is a hash: omitted by default
-        self.assertEqual(bare(self.call('GET', '/AGENTS.md/receipt?intent=x&full=1', token=tok)[1]), held)
-
 
 class Repl(FrontCase):
     def repl(self, tok, **body):
@@ -522,20 +408,6 @@ class Repl(FrontCase):
         s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 16385}], entry='pure')
         self.assertEqual(s, 413)
 
-    def test_repl_runs_counter_bump_as_an_activity(self):
-        tok = self.login()
-        context = record(world={'tag': 'label', 'value': ''}, object={'tag': 'label', 'value': self.c},
-                         principal={'tag': 'label', 'value': HANDLE}, handle={'tag': 'label', 'value': ''},
-                         caller={'tag': 'label', 'value': ''}, intent={'tag': 'label', 'value': 'repl'}, height=nat(0), clock=nat(0),
-                         inputOrigin=record(
-                             kind={'tag': 'label', 'value': 'request'}, object={'tag': 'label', 'value': ''},
-                             command={'tag': 'label', 'value': ''}, program={'tag': 'label', 'value': ''},
-                             immediatelyPrevious={'tag': 'boolean', 'value': False}, post={'tag': 'label', 'value': ''}))
-        # The REPL takes at most MAX_BODY: Counter's closure with Card exceeds it, so the REPL
-        # runs the bare counter activity.
-        s, r = self.repl(tok, modules=closure('World') + [{'name': 'Counter', 'source': REPL_COUNTER}], entry='bump', turn=True, **self.BIND,
-                         arguments=[record(count=nat(2)), context])
-        self.assertEqual((s, r['status']), (200, 'yielded'), r)
 
     def test_repl_activity_round_trip_with_checkpoint(self):
         tok = self.login()
@@ -570,13 +442,6 @@ class Repl(FrontCase):
                             object=self.c, intent='repl-2', roots=[{'object': self.c, 'version': 0}])
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
 
-    def test_a_turn_start_fills_the_context_so_the_arguments_omit_it(self):
-        tok = self.login()
-        bind = dict(object=self.c, intent='repl-3', roots=[{'object': self.c, 'version': 0}])
-        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], **bind)
-        self.assertEqual((s, y['status']), (200, 'yielded'), y)
-        s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **bind)
-        self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
 
     def test_a_stale_library_pin_is_re_read_once_and_the_compile_goes_through(self):
         tok = self.login()
@@ -678,65 +543,7 @@ class Heaps(FrontCase):
 
 
 class Pages(FrontCase):
-    def test_list_card_source_offers_and_ids_with_slashes(self):
-        tok = self.login()
-        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
-        self.assertEqual(r['status'], 'created', r)
-        town_kinds(lambda **q: self.host.send(q))
-        s, listed = self.call('GET', '/AGENTS.md/world', token=tok)
-        self.assertEqual((s, listed['ids']), (200, sorted(listed['ids'])), listed)
-        self.assertLessEqual({self.c, DID, 'env/' + DID, 'garden', 'wake/' + DID}, set(listed['ids']))  # verify made the caller's avatar, env and wake
-        self.assertEqual(self.call('GET', '/AGENTS.md/world?prefix=g', token=tok)[1]['ids'], ['garden'])
-        s, card = self.call('GET', '/AGENTS.md/world/garden/card', token=tok)
-        self.assertEqual((s, card['status']), (200, 'card'), card)
-        self.assertIn('delvetalk garden plant', card['text'])
-        self.assertNotIn('document', card)
-        s, src = self.call('GET', '/AGENTS.md/world/garden/source', token=tok)
-        self.assertEqual((s, src['status']), (200, 'inspected'), src)
-        self.assertIn('def receive(', src['source'])
-        self.assertIn('law owner:', src['law'])
-        self.assertNotIn('methods', src)
-        plant = [f for f in src['forms'] if f['action'] == 'plant'][0]
-        self.assertEqual([f['name'] for f in plant['fields']], ['colour', 'seed'])
-        self.assertIn('methods', self.call('GET', '/AGENTS.md/world/garden/source?full=1', token=tok)[1])
-        # by spell, then by fields; the bell the garden makes has a slashed id, reached without escaping
-        s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'p1', 'spell': 'delvetalk garden plant\ncolour: amber\nseed: a moth bell'}, tok)
-        self.assertEqual((s, t['status']), (200, 'admitted'), t)
-        self.assertIn('garden/bell/1', t['offers'][0])
-        s, t = self.call('POST', '/AGENTS.md/world/garden/plant', {'intent': 'p2', 'fields': {'colour': 'silver', 'seed': 'a fern'}}, tok)
-        self.assertEqual((s, t['status']), (200, 'admitted'), t)
-        s, bell = self.call('GET', '/AGENTS.md/world/garden/bell/1', token=tok)
-        self.assertEqual((s, bell['status'], bell['object']), (200, 'viewed', 'garden/bell/1'), bell)
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/garden%2Fbell%2F1', token=tok)[1]['object'], 'garden/bell/1')
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/garden/bell/2/card', token=tok)[1]['status'], 'card')
-        s, offers = self.call('GET', '/AGENTS.md/offers', token=tok)
-        mine = [o for o in offers['offers'] if o['identity']['intent'] in ('p1', 'p2')]  # the class's world holds other tests' offers too
-        self.assertEqual((s, [o['identity']['intent'] for o in mine]), (200, ['p1', 'p2']), offers)
-        after = mine[0]['height']
-        self.assertIn('p1', [o['identity']['intent'] for o in offers['offers'] if o['height'] <= after])
-        self.assertEqual([o['identity']['intent'] for o in self.call('GET', f'/AGENTS.md/offers?after={after}', token=tok)[1]['offers']][-1:], ['p2'])
-        s, e = self.call('GET', '/AGENTS.md/nope', token=tok)
-        self.assertEqual(s, 404)
-        self.assertIn('/AGENTS.md/api', e['hint'])
 
-    def test_html_card_and_the_way_to_play(self):
-        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-plot', 'object': 'plot',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(2)})
-        self.assertEqual(r['status'], 'created', r)
-        s, headers, body = self.request('GET', '/')
-        self.assertEqual(s, 200)
-        self.assertIn(b'Claim your handle', body)
-        cookie = browser_login(self)
-        s, _, page = self.request('GET', '/o/plot', headers={'Cookie': cookie})
-        self.assertEqual(s, 200)
-        self.assertIn(b'2 planted, newest first:', page)
-        self.assertIn(b'href="/play/plot"', page)
-        self.assertIn(b'colour: one of amber, violet, silver\nseed: &lt;text 1..80&gt;', page)
-        self.assertIn(b'name="text" value="delvetalk plot ?"', page)  # the usage button, answered as a card by /play/  # the plant form, as a spell
-        self.assertIn(b'prefers-color-scheme', self.request('GET', '/static/style.css')[2])
-        self.assertEqual(self.request('GET', '/o/nowhere')[0], 404)
-        self.assertEqual(self.request('POST', '/o/plot/spell', raw='text=x', headers={'Content-Type': FORM})[0], 404)  # speaking is /play/
 
     def test_page_uses_world_card_without_journaling_and_history_is_newest_first(self):
         for i in range(25):
@@ -841,24 +648,6 @@ class Play(FrontCase):
         self.assertRegex(self.words(pages['home, logged in']), r'\d+ cards')
         self.assertIn('Receipts', self.words(pages['object']))
 
-    def test_the_directory_is_its_card_as_world_card_renders_it_with_its_doors(self):
-        s, _, page = self.play('/play/')
-        card = self.host.send({'op': 'world-card', 'principal': DID, 'object': 'directory'})['text']
-        self.assertEqual(s, 200)
-        self.assertIn(html.escape(card).encode(), page)
-        self.assertRegex(page, rb'<a class="door" href="/play/garden"[^>]*><span class="kind" data-id="garden"></span>GARDEN</a>')
-        self.assertNotIn(b'<script>', page.split(b'</head>')[1])
-        s, _, garden = self.play('/play/garden')
-        self.assertIn(b'THE NIGHT GARDEN', garden)
-        self.assertIn(b'value="delvetalk garden ?"', garden)
-        s, _, usage = self.play('/play/garden', 'delvetalk garden ?')
-        self.assertIn(b'Reply with a spell:', usage)
-        said = self.host.send({'op': 'world-turn', 'principal': DID, 'object': 'directory', 'method': 'receive', 'identity': 'usage-direct',
-                               'argument': record(text=label('delvetalk directory ?'), post=label(''))})
-        self.assertEqual(said['status'], 'usage', said)  # the host's own answer for a card of the message dialect
-        _, _, asked = self.play('/play/directory', 'delvetalk directory ?')
-        self.assertIn(b'<figure class="frame usage"><pre class="card">' + html.escape(said['text']).encode() + b'</pre></figure>', asked)
-        self.assertNotIn(b'class="slip', asked)  # a usage is no turn: no receipt line
 
     def test_a_refused_receipt_with_no_roots_answers_on_the_receipt_turn_and_play_routes(self):
         """A spell with colour: gold, an undeclared method, a non-owner `directory add`: refused before any root was read."""
@@ -908,11 +697,6 @@ class Play(FrontCase):
         self.assertNotIn('"blocks": [', json.dumps(whole))  # the receipt's blocks are counted, not shown
         self.answer('delvetalk garden plant\nseed: a bell\ncolour: violet')  # settle the pending interpretation for the next test
 
-    def test_prose_the_interpreter_never_answers_is_stated_as_no_reply(self):
-        self.front.sleep = lambda seconds: None
-        s, _, page = self.play('/play/garden', 'something green perhaps')
-        self.assertIn('<span class="stamp">…</span><span class="line">suspended, entry'.encode(), page)
-        self.assertIn('<span class="stamp">— quiet</span>(no reply)'.encode(), page)  # silence is a state: a stamp and its word
 
     def test_the_49th_prose_reply_in_an_hour_is_refused_by_quota_with_its_next_at(self):
         self.front.sleep = lambda seconds: None

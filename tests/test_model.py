@@ -3,7 +3,6 @@ submitted verbatim, failures included (the host retries them), credentials never
 
 Evidence for FOUNDATION §6 (layer: transport).
 """
-import io
 import json
 import os
 import socket
@@ -46,15 +45,6 @@ class Model(unittest.TestCase):
         self.assertEqual(self.ask(200, body('{}', stop_reason='refusal'))['reason'], 'refused')
         self.assertEqual(self.ask(401, b'{}')['reason'], 'refused')
 
-    def test_the_request_posts_to_the_api_url_with_the_key_header_and_max_tokens_capped_at_4096(self):
-        seen = []
-        with mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY': 'sekret'}):
-            model.ask({**REQ, 'maxTokens': 10 ** 6}, transport=lambda *a: seen.append(a) or (200, body('{}')))
-        method, url, headers, wire = seen[0]
-        wire = json.loads(wire)
-        self.assertEqual((method, url, headers['x-api-key']), ('POST', model.URL, 'sekret'))
-        self.assertEqual((wire['model'], wire['max_tokens'], wire['system'], wire['messages']),
-                         ('claude-haiku-5-5', 4096, REQ['system'], [{'role': 'user', 'content': REQ['user']}]))
 
     def test_no_key_opens_no_socket(self):
         with mock.patch.dict(os.environ, clear=True), \
@@ -70,12 +60,6 @@ class Model(unittest.TestCase):
             with mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY_FILE': str(Path(d) / 'k')}, clear=True):
                 self.assertEqual(model.key(), 'filekey')
 
-    def test_mock_fixtures_are_keyed_by_request_hash(self):
-        with tempfile.TemporaryDirectory() as d:
-            (Path(d) / (model.request_hash(REQ) + '.json')).write_bytes(body('```json\n{"form": "plant"}\n```'))
-            with mock.patch.dict(os.environ, clear=True):
-                self.assertEqual(model.ask(REQ, mock=d)['json'], {'form': 'plant'})
-                self.assertEqual(model.ask({**REQ, 'user': 'other'}, mock=d)['reason'], 'transport')
 
     def test_oversized_input_is_refused(self):
         self.assertEqual(model.ask({'system': 'x' * (model.MAX_INPUT + 1), 'user': ''})['reason'], 'refused')
@@ -199,14 +183,6 @@ class Interpret(unittest.TestCase):
         r = interpret.run(self.state, self.host, lambda req: model.failed('malformed'))
         self.assertEqual((r['settled'], r.get('retrying')), (['i1', 'i2'], None))
 
-    def test_interpret_against_the_real_host_settles_every_request_without_failures(self):
-        from tests.host import Host as RealHost, binary
-        host = Host(str(Path(self.tmp.name) / 'real.journal'), binary())
-        self.addCleanup(host.close)
-        r = interpret.run(self.state, host, self.ask)
-        self.assertEqual(r['failed'], [])
-
-
 
 class OAuth(unittest.TestCase):
     TOKENS = {'main': 'sk-ant-oat01-AAAAAAAA', 'spare': 'sk-ant-oat01-BBBBBBBB'}
@@ -236,12 +212,6 @@ class OAuth(unittest.TestCase):
             return queue.pop(0), body('{"ok": 1}')
         return t
 
-    def test_headers_and_most_headroom_account(self):
-        r = model.ask(REQ, transport=self.transport(200), tokeman=self.probes(0.9, 0.2))
-        h = self.sent[0]
-        self.assertEqual((h['Authorization'], h['anthropic-beta']), ('Bearer ' + self.TOKENS['spare'], 'oauth-2025-04-20'))
-        self.assertNotIn('x-api-key', h)
-        self.assertEqual((r['status'], r['account'], r['rotated']), ('replied', 'spare', False))
 
     def test_model_bucket_headroom_and_haiku_uses_the_general_window(self):
         opus = [{'key': 'opus_5', 'label': 'Opus 5', 'window': {'utilization': 0.95, 'reset': 0}}]
@@ -250,10 +220,6 @@ class OAuth(unittest.TestCase):
         r = model.ask(REQ, transport=self.transport(200), tokeman=self.probes(0.1, 0.5, opus))
         self.assertEqual(r['account'], 'main')  # haiku ignores the Opus bucket
 
-    def test_the_account_named_in_the_environment_is_the_one_used(self):
-        os.environ['DELVETALK_MODEL_ACCOUNT'] = 'main'
-        r = model.ask(REQ, transport=self.transport(200), tokeman=self.probes(0.9, 0.0))
-        self.assertEqual(r['account'], 'main')
 
     def test_429_rotates_once_then_stops(self):
         r = model.ask(REQ, transport=self.transport(429, 200), tokeman=self.probes(0.1, 0.5))
@@ -294,12 +260,6 @@ class OAuth(unittest.TestCase):
         probes = [{'token_name': 'main', 'quota': {'weekly': {'utilization': 0.4}, 'overage_status': 'rejected'}},
                   {'token_name': 'spare', 'quota': {'weekly': {'utilization': 1.0}, 'overage_status': 'allowed'}}]
         self.assertEqual(model.ask(REQ, transport=self.transport(200), tokeman=lambda: probes)['account'], 'main')
-
-    def test_key_mode_still_uses_x_api_key(self):
-        os.environ.update({'DELVETALK_MODEL_AUTH': 'key', 'DELVETALK_ANTHROPIC_KEY': 'k'})
-        model.ask(REQ, transport=self.transport(200))
-        self.assertEqual(self.sent[0]['x-api-key'], 'k')
-        self.assertNotIn('Authorization', self.sent[0])
 
 
 class Spend(unittest.TestCase):

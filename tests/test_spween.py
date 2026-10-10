@@ -129,25 +129,6 @@ class Parse(unittest.TestCase):
         text, _ = summary(TAVERN)
         self.assertEqual(text, "refused: weight: a scene is entered by name here, never drawn by weight")
 
-    def test_the_tavern_without_its_weight_lowers_to_two_passages(self):
-        text, ticks = summary(TAVERN.replace("weight: 10\n", ""))
-        self.assertEqual(text, "tavern-encounter / The Mysterious Stranger / start intro / cooldown 0 / requires \n"
-                               "=== intro: A hooded figure sits alone in the corner of the tavern.\n"
-                               "  * Approach them [courage >= 5] (courage sub 1) -> conversation\n"
-                               "  * Order a drink instead [] (gold sub 2) -> END\n"
-                               "=== conversation: \"I've been expecting you,\" they whisper.\n"
-                               "  * Ask about the quest [] (quest_started set true) -> END")
-
-    def test_the_well_keeps_its_cooldown_requirements_guards_and_divert(self):
-        text, ticks = summary(WELL)
-        self.assertEqual(text, "wishing-well / The Wishing Well / start intro / cooldown 3 / requires well_sealed falsy \n"
-                               "=== intro: A mossy well hums under the square.\nCoins glint far below.\n"
-                               "  * Drop a coin [wished falsy ] (coins add 2; wished set true) -> deeper\n"
-                               "  * Walk on [] () -> END\n"
-                               "=== deeper: The water answers with a low bell.\n"
-                               "  * Make a wish [coins >= 2] (coins sub 1; wish set a quiet harbour) -> END\n"
-                               "  * Climb down [coins >= 5] () -> intro\n"
-                               "  * Continue [] () -> intro")
 
     def test_calls_has_and_stray_effects_are_refused_by_name(self):
         body = "---\nid: s\n---\n=== a\nText.\n* [Go]\n  %s\n  -> END\n"

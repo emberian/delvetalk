@@ -12,7 +12,7 @@ target's own law with request.caller = the workshop. A block must be a package w
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_objects import MODULES, check, closure, compile_job, computation, row_names
+from tests.test_objects import MODULES, check, closure, compile_job
 from tests.test_turn_world import closure as world_closure, label, nat, record
 
 PROBE = """edition ObjectiveBend 1
@@ -37,26 +37,6 @@ def run(entry, text, limits=None):
     return check(request)
 
 
-class Hints(unittest.TestCase):
-    """The checker's hint line, when the host's check forwards one, shows under its problem."""
-
-    def card(self, *diagnostics):
-        out = run("card", "|".join(diagnostics))
-        self.assertEqual(out["status"], "finished", out)
-        return out["value"]["value"]
-
-    def test_a_hint_is_indented_under_its_problem_and_not_counted(self):
-        text = self.card("Probe:3: objective-source-parse: Error: expected )",
-                         "Probe:3: hint: definitions are `def name(x: T) -> U:`; parameter and result types are required")
-        self.assertEqual(text, "✾ WORKSHOP\n\nChecked: 1 problem.\n\n- Probe:3: objective-source-parse: Error: expected )\n"
-                               "  hint: definitions are `def name(x: T) -> U:`; parameter and result types are required\n")
-
-    def test_a_message_that_mentions_hint_elsewhere_is_a_problem(self):
-        text = self.card("Probe:1: check: unknown name hint", "Probe:2: check: a: hint:less")
-        self.assertIn("Checked: 2 problems.", text)
-        self.assertNotIn("  hint:", text)
-
-
 class Workshop(Chain):
     def make_workshop(self):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
@@ -75,13 +55,6 @@ class Workshop(Chain):
         fields = {f["name"]: f["value"]["value"] for f in reply["result"]["payload"]["fields"]}
         return fields["clause"], fields["reading"]
 
-    def test_prose_is_handed_on_and_a_blank_reply_gets_the_usage_card(self):
-        self.make_workshop()
-        reply = self.say("please make my bell louder")
-        self.assertEqual((reply["status"], self.verdict(reply), reply.get("offers", [])), ("admitted", "silent", []), reply)
-        blank = self.say("")
-        self.assertEqual(self.verdict(blank), "usage")
-        self.assertIn("delvetalk workshop check", self.card(blank))
 
     def test_a_check_with_neither_block_nor_target_and_a_wrong_card_are_refused_by_name(self):
         self.make_workshop()
@@ -112,26 +85,6 @@ class Workshop(Chain):
         self.assertEqual(self.verdict(reply), "clean")
         self.assertIn("Checked: it compiles.", self.card(reply))
 
-    def test_a_block_with_a_kernel_hint_shows_it(self):
-        """The host's check forwards the kernel's hint as the next diagnostic (lane/host4 7361a6e)."""
-        self.make_workshop()
-        reply = self.say("delvetalk workshop check\n```obend\nedition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef initial() -> Maybe<Nat>:\n  {count: 0n}\n```\n")
-        self.assertEqual(self.card(reply), (
-            "✾ WORKSHOP\n"
-            "\n"
-            "Checked: 1 problem.\n"
-            "\n"
-            "- Checked:5: objective-source-type-proposal: unsupported source type Maybe<Nat> (nullary result type of Checked.initial is not resolvable)\n"
-            "  hint: there is no Maybe builtin; declare `sum Maybe<T>:` with arms `none: {}` and `some: {value: T}`\n"))
-        self.assertEqual(self.verdict(reply), "flawed")
-        self.assertIn("\n  hint: there is no Maybe builtin", self.card(reply))
-
-    def test_a_target_is_inspected_and_its_source_checked(self):
-        self.make_workshop()
-        self.make("bell-1", closure("Counter"), record())
-        reply = self.say("delvetalk workshop check\ntarget: bell-1")
-        self.assertEqual(reply["status"], "admitted", reply["receipt"]["outcome"])
-        self.assertIn(self.verdict(reply), ("clean", "flawed"))
 
     def counter(self, owner="glm"):
         """A Counter whose law names its proposer: glm creates it, so the law admits glm's

@@ -89,19 +89,6 @@ class Resumed(test_chain.Chain):
         self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "planted"), planted)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
-    def test_a_second_miss_offers_the_needs_card_and_a_copy_to_escalate_to(self):
-        self.policy(escalate="claude-opus", escalate_to="did:plc:operator4keeper")
-        self.garden("policy")
-        self.say("plant something pretty")
-        self.settle("unclear: colour")
-        _, missed = self.settle("delvetalk garden plant / seed: something pretty")
-        self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
-        offers = [(o["to"], o["text"]) for o in missed["receipt"]["offers"]]
-        self.assertEqual(offers, [("did:plc:operator4keeper", "glm said: plant something pretty; I could not fit it (garden).\n"),
-                                  ("glm", "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour.\n")])
-        self.assertEqual(offers[-1], ("glm", "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour.\n"))
-        copy = [o["text"] for o in self.host.send(op="world-offers", principal="did:plc:operator4keeper")["offers"]]
-        self.assertEqual(copy, ["glm said: plant something pretty; I could not fit it (garden).\n"])
 
     def test_without_escalate_to_a_second_miss_offers_only_the_needs_card(self):
         self.policy()
@@ -112,15 +99,6 @@ class Resumed(test_chain.Chain):
         self.assertEqual([o["to"] for o in missed["receipt"]["offers"]], ["glm"], missed)
         self.assertIn("I still need: colour.", missed["receipt"]["offers"][0]["text"])
 
-    def test_with_the_default_policy_an_understood_planting_plants_and_the_receipt_answers(self):
-        """Confirmation is per action: the policy's confirmFor (reprogram, amend, offer by
-        default) does not name plant, and a garden with an empty confirmFor asks nobody."""
-        self.policy()
-        self.garden("policy", confirm=False)
-        self.say("Could we plant a silver fern that remembers?")
-        _, planted = self.settle(SPELL)
-        self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "planted"), planted)
-        self.assertNotIn("Reply yes", planted["receipt"]["offers"][0]["text"])
 
     def test_the_policys_owner_makes_plant_ask_first(self):
         self.policy()

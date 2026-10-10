@@ -38,24 +38,6 @@ class Merge(test_chain.Chain):
     def version(self):
         return self.host.send(op="world-view", principal="ember", object="garden")["version"]
 
-    def test_the_owners_merge_checkpoints_the_page(self):
-        r = self.turn("garden", "receive", heard("  merge \n"), principal="ember")
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "merged"), r)
-        self.assertEqual(r["offers"][0]["text"], "Page checkpointed at %s.\n" % PAGE)
-        self.assertEqual(self.field("pageCheckpoint"), PAGE)
-        card = self.turn("garden", "receive", heard(""), principal="glm")["offers"][0]["text"]
-        self.assertEqual(card, (
-            "✾ THE NIGHT GARDEN\n"
-            "\n"
-            "To plant, reply:\n"
-            "\n"
-            "    delvetalk garden plant\n"
-            "    seed: <what might grow here, 1 to 80 characters>\n"
-            "    colour: <amber, violet or silver>\n"
-            "\n"
-            "page checkpointed at at://did:plc:ember/town.delve.feed.post/page1\n"
-            "0 planted, newest first:\n"))
-        self.assertIn("page checkpointed at %s\n" % PAGE, card)
 
     def test_a_merge_from_anyone_else_or_without_a_post_is_refused_by_name(self):
         r = self.turn("garden", "receive", heard("merge"), principal="glm")

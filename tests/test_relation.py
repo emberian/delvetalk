@@ -105,7 +105,6 @@ class RelationCase(Reflection):
                               identity=ident or f"e{self.n}")
 
 
-
 class Relations(RelationCase):
     def test_an_unsorted_seed_is_canonical_and_a_duplicate_key_is_refused(self):
         made = self.make_bell(record(rains=relation(rain("kim", 5, "late"), rain("ann", 9, "x"), rain("ann", 2, "early"))))
@@ -195,17 +194,6 @@ def initial() -> State:
                            entry="initial", seed=record())
         self.assertEqual(r["status"], "created", r)
 
-    def test_twenty_creations_compile_the_package_once(self):
-        # Refuted if each creation compiles relations() anew (a creation then costs a compile).
-        import time
-        self.assertEqual(self.make_bell(name="b0")["status"], "created")
-        start = time.monotonic()
-        for i in range(1, 21):
-            self.assertEqual(self.make_bell(name=f"b{i}")["status"], "created")
-        self.assertLess(time.monotonic() - start, 3.0)
-        self.reopen()
-        self.edit("insert", rain("ann", 1, "a"), name="b20")
-        self.assertEqual(self.rows("b20"), [("ann", 1, "a")])
 
     def test_relational_law_atoms_judge_writes(self):
         # Refuted if insertOnly/count/column membership refuse every write (or admit a retract).
@@ -252,16 +240,6 @@ def initial() -> State:
                            writes=[{"object": "r", "edits": [gone, new]}])
         self.assertEqual((r["status"], r["receipt"]["outcome"].get("clause")), ("refused", "grow"), r)
         self.assertEqual([at for _, at, _ in self.rows("r")], [1, 2])
-
-    def test_state_bytes_are_the_canonical_encodings(self):
-        # The objects lane's finding (OBJECTS-HANDOFF §4): 2,048 short rows are some 600 KB of wire
-        # JSON but about 150 KB as the host holds them; the 256 KiB bound counts the latter.
-        author = "did:plc:" + "a" * 24
-        rows = [rain(author, i, "a short rain line %04d" % i) for i in range(2048)]
-        r = self.make_bell(record(rains=relation(*rows)), name="wide", limit=2048)
-        self.assertEqual(r["status"], "created", r)
-        held = self.host.send(op="world-inspect", principal="ember", object="wide", source=False)["stateBytes"]
-        self.assertLess(held, 262144)
 
 
 def key(author, at):

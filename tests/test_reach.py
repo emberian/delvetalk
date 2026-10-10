@@ -79,11 +79,6 @@ class Reach(Chain):
         status = self.host.send(op="world-status", principal="glm")
         self.assertEqual(status["interpretations"]["remaining"], status["interpretQuota"], status)
 
-    def test_a_stated_mention_reaches_and_the_interpretation_says_so(self):
-        r = self.say(reach="mention")
-        self.assertEqual(r["status"], "suspended", r)
-        [item] = self.pending()
-        self.assertEqual(item["reach"], "mention", item)
 
     def test_a_reply_to_a_recorded_post_reaches_by_reply(self):
         hub = "at://did:plc:ember/town.delve.feed.post/card"

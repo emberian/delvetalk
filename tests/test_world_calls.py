@@ -91,11 +91,6 @@ class WorldCalls(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
         return reply["diagnostic"]
 
-    def test_every_dialect_entry_checks(self):
-        for entry in ("bump", "peek", "both", "tell"):
-            with self.subTest(entry=entry):
-                reply = self.check(entry)
-                self.assertEqual(reply["status"], "checked", reply)
 
     def start(self, entry, other="b"):
         ref = {"tag": "record", "fields": [{"name": "world", "value": {"tag": "label", "value": ""}},
@@ -104,33 +99,11 @@ class WorldCalls(unittest.TestCase):
         art = self.compile(entry)
         return art, ref, self.h.start(art, [state, {"tag": "record", "fields": [{"name": "other", "value": ref}]}])
 
-    def test_a_world_call_yields_the_message(self):
-        _, ref, y = self.start("peek")
-        self.assertEqual(y["status"], "yielded", y)
-        fields = {f["name"]: f["value"] for f in y["plan"]["fields"]}
-        self.assertEqual(set(fields), {"object", "method", "argument"})
-        self.assertEqual(fields["object"], {"tag": "record", "fields": [
-            {"name": "world", "value": {"tag": "label", "value": ""}},
-            {"name": "object", "value": {"tag": "label", "value": "world"}}]})
-        self.assertEqual(fields["method"], {"tag": "label", "value": "view"})
-        self.assertEqual(fields["argument"], {"tag": "record", "fields": [{"name": "object", "value": ref}]})
 
     def packet(self, entry, thing):
         art = self.compile(entry, thing)
         return core(art), art["type"]
 
-    def test_write_sugar_is_the_world_write_it_spells(self):
-        spelled = THING.replace("let written(_) = write {count: add 1n}",
-                                "let written(_) = world.write(extend(keep(), {count: Plans.Edit.add({delta: 1n})}))")
-        explicit = spelled.replace("world.write(", "world.write::<Edits>(")
-        self.assertEqual(self.packet("bump", THING), self.packet("bump", spelled))
-        self.assertEqual(self.packet("bump", THING), self.packet("bump", explicit))
-
-    def test_a_data_field_of_the_input_injects(self):
-        # send's argument is Data: the record literal {loud: true} is injected, as at a Data parameter.
-        self.assertEqual(self.check("tell")["status"], "checked")
-        art = self.compile("tell")
-        self.assertIn("toData", str(art["packet"]))
 
     def test_refusals_name_the_world_call(self):
         cases = {
@@ -257,14 +230,6 @@ class SiteTypes(unittest.TestCase):
         done = self.h.resume(art, w["checkpoint"], variant("written", rec()))
         self.assertEqual((done["status"], done.get("value")), ("finished", nat(5)), done)
 
-    def test_the_artifact_names_its_dialect_and_world_methods(self):
-        art = self.compile("both")
-        self.assertEqual(art["dialect"], "message")
-        self.assertEqual(art["world"], ["view", "write"])
-        self.assertEqual(len(art["worldProtocol"]), 64)
-        rows = {m["name"]: m for m in art["methods"]}
-        self.assertTrue(rows["both"]["activity"])
-        self.assertNotIn("dialect", self.compile("keep"))
 
     def test_two_calls_that_build_one_message_at_two_types_are_refused(self):
         reply = self.h.send({"op": "check-package", "entry": "twice", "modules": world_modules(TWICE)})

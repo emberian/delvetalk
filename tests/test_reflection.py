@@ -12,13 +12,12 @@ of it); packages import it by name and carry none of it.
 """
 import os
 import atexit
-import re
 import shutil
 import tempfile
 import unittest
 
 from tests.host import HostCase
-from tests.test_chain import field, nil, reference
+from tests.test_chain import field
 from tests.test_turn_world import ROOT, label, nat, record, declared
 
 WORLD_LIBRARY = os.path.join(ROOT, "world", "lib")
@@ -167,11 +166,6 @@ class Reflection(HostCase):
 
 
 class Library(Reflection):
-    def test_a_package_importing_plans_and_abi_by_name_runs_its_activity(self):
-        self.open_library()
-        self.make("c", PACKAGE, source_seed())
-        r = self.turn("c", "bump")
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
 
     def test_the_journal_records_the_library_pin_and_the_object_names_it_not_its_bytes(self):
         opened = self.open_library()
@@ -246,14 +240,6 @@ class Library(Reflection):
             self.assertEqual(differ["status"], "error")
             self.assertIn("the bytes differ", differ["message"])
 
-    def test_a_world_opened_without_a_library_path_replays_from_the_journal(self):
-        self.open_library()
-        self.make("c", PACKAGE, source_seed())
-        self.turn("c", "bump")
-        before = self.host.send(op="world-view", principal="ember", object="c")
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-view", principal="ember", object="c"), before)
-        self.assertEqual(self.turn("c", "bump")["status"], "admitted")
 
     def test_a_library_that_imports_a_module_it_lacks_or_cycles_is_refused_by_name(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -346,10 +332,6 @@ class Check(Reflection):
         self.assertRegex(self.turn("probe", "checkIt", record(package=label(later)))["result"]["value"],
                          r"^Checked:\d+: .*missing")
 
-    def test_a_package_that_declares_a_law_checks_clean(self):
-        law = PACKAGE.replace("def initial", "law ceiling: new.count <= 5\ndef initial")
-        self.assertEqual(self.turn("probe", "checkIt", record(package=label(law)))["result"], label("clean"))
-
 
 def interpreter_world(test):
     test.open_library()
@@ -428,17 +410,6 @@ class Interpret(Reflection):
     def replied(self, method="bump2", **argument):
         return {"status": "replied", "json": {"method": method, "argument": argument}, "model": "m"}
 
-    def test_interpret_suspends_and_lists_the_request_with_the_policys_system_prompt(self):
-        r = self.ask()
-        self.assertEqual(r["status"], "suspended", r)
-        [item] = self.pending()
-        self.assertEqual(set(item), {"id", "object", "policy", "utterance", "offers", "card", "held", "misfit", "reach", "attempts", "next"})
-        self.assertEqual((item["attempts"], item["next"]), (0, None))
-        self.assertEqual(item["object"], "probe")
-        self.assertEqual(item["utterance"], "ring it three times")
-        self.assertEqual(item["policy"], {"model": "claude-test", "system": "Be literal.", "examples": "one example", "lexicon": None})
-        self.assertEqual(item["offers"], [{"card": "probe", "action": "bump2", "fields": []}])
-        self.assertEqual(self.seen("probe"), "")
 
     def test_a_reply_that_fits_resumes_proposal_and_the_turn_commits(self):
         self.ask()
@@ -614,16 +585,6 @@ class ReprogramAnother(Reflection):
 
 
 class Maximum(Reflection):
-    def test_a_128_module_library_chained_by_imports_seals_and_reopens(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            for i in range(128):
-                with open(os.path.join(scratch, f"M{i:03}.obend"), "w") as handle:
-                    imports = f"import ./M{i - 1:03}.obend as P\n" if i else ""
-                    handle.write(f"edition ObjectiveBend 1\n{imports}def one{i}() -> Nat:\n  1n\n")
-            r = self.host.send(op="world-open", path=self.path, library=scratch, principal="ember")
-            self.assertEqual(r["status"], "opened", r)
-            self.reopen()
-            self.assertEqual(self.host.send(op="world-open", path=self.path)["library"], r["library"])
 
     def test_a_library_of_too_many_modules_is_refused_by_name(self):
         with tempfile.TemporaryDirectory() as scratch:

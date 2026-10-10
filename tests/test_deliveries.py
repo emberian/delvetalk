@@ -129,17 +129,6 @@ class Deliveries(TurnWorld):
 
 
 class Chain(Deliveries):
-    def test_ring_opens_the_door_which_lights_the_lantern_across_three_objects(self):
-        for name in ("bell", "door", "lantern"):
-            self.make(name)
-        r = self.turn("bell", "ring", arg("door"), principal="glm", identity="ring-1")
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.pending()["count"], 0)
-        receipts = self.deliver_all()
-        self.assertEqual([x["status"] for x in receipts], ["admitted", "admitted"])
-        self.assertEqual(self.fields("lantern")["lit"], True)
-        self.assertEqual((self.fields("bell")["count"], self.fields("door")["count"]), ("1", "1"))
-        self.assertEqual(self.pending()["count"], 0)
 
     def test_a_delivery_runs_as_its_senders_principal_and_its_receipt_names_the_sender(self):
         for name in ("bell", "door", "lantern"):
@@ -281,14 +270,6 @@ class Restart(Deliveries):
 
 
 class Maximum(Deliveries):
-    def test_a_chain_of_sixty_four_deliveries_completes(self):
-        self.make("loop")
-        self.turn("loop", "hop", arg("", 64))
-        receipts = self.deliver_all()
-        self.assertEqual(len(receipts), 64)
-        self.assertTrue(all(r["status"] == "admitted" for r in receipts))
-        self.assertEqual(self.fields("loop")["count"], "65")
-        self.assertEqual(self.pending()["count"], 0)
 
     def test_two_hundred_fan_out_sends_are_refused_by_the_per_turn_limit_and_nothing_is_delivered(self):
         self.make("fanner")

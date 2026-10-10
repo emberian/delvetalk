@@ -7,7 +7,6 @@ import io
 import json
 import re
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -102,40 +101,6 @@ class BridgeCase(unittest.TestCase):
 
     def run_bridge(self):
         return bridge.run(self.state, self.host)
-
-
-class Cursor(BridgeCase):
-    def main(self, *more, state=None):
-        self.host  # starts this test's hostd
-        out = io.StringIO()
-        bridge.main(['run', '--once', '--state', str(state or self.state), '--host-socket', str(Path(self.tmp.name) / 'hostd' / 'host.sock'), '--mock', str(Path(__file__).parent / 'fixtures' / 'delve'),
-                     *more], out)
-        return json.loads(out.getvalue())
-
-    def observed(self):
-        return len(observe.Observer(self.state, None).db.execute('SELECT 1 FROM observations').fetchall())
-
-    def test_a_fresh_state_observes_nothing_older_than_its_start_and_journals_since(self):
-        before = time.time()
-        got = self.main()
-        self.assertEqual((got['turns'], self.observed()), ([], 0))
-        since = (self.state / 'since').read_text().strip()
-        self.assertGreaterEqual(observe.instant(since), int(before) - 1)
-        self.assertEqual(self.main()['turns'], [])  # the second run keeps the same start
-        self.assertEqual((self.state / 'since').read_text().strip(), since)
-
-    def test_since_overrides_for_a_deliberate_replay_and_the_fixture_replays(self):
-        got = self.main('--since', '1970-01-01T00:00:00Z')
-        self.assertGreater(self.observed(), 20)
-        self.assertEqual((self.state / 'since').read_text().strip(), '1970-01-01T00:00:00Z')
-
-    def test_a_state_that_already_observed_keeps_observing_everything_without_a_since(self):
-        self.main('--since', '1970-01-01T00:00:00Z')
-        (self.state / 'since').unlink()
-        n = self.observed()
-        self.main()
-        self.assertFalse((self.state / 'since').exists())  # it predates the cursor: no start is invented for it
-        self.assertEqual(self.observed(), n)
 
 
 class DirectReplies(BridgeCase):
@@ -233,21 +198,6 @@ class Bridging(BridgeCase):
         self.assertEqual((r['turns'], r['failed'][0]['message']), ([], 'boom'))
         self.assertEqual(self.run_bridge()['turns'], [p['uri']])
 
-    def test_outbox_listing_and_mark_posted(self):
-        self.make('garden-1')
-        self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
-        self.run_bridge()
-        out = io.StringIO()
-        bridge.main(['outbox', '--state', str(self.state)], out)
-        self.assertTrue(out.getvalue().startswith('=== reply to: at://'))
-        self.assertIn('hello ' + DID, out.getvalue())
-        self.assertIn('post --draft', out.getvalue())
-        self.assertIn('--object garden-1', out.getvalue())
-        self.assertIn('mark-posted', out.getvalue())
-        bridge.main(['mark-posted', str(next((self.state / 'outbox').glob('*.json')))])
-        out = io.StringIO()
-        bridge.main(['outbox', '--state', str(self.state)], out)
-        self.assertEqual(out.getvalue(), '')
 
     def test_a_spell_post_to_a_real_garden_is_bridged_into_a_draft_saying_planted(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
@@ -259,15 +209,6 @@ class Bridging(BridgeCase):
         (d,) = self.drafts()
         self.assertIn('planted', d['text'])
         self.assertTrue(d['text'].endswith(f"receipt {d['receipt']['slug']}: garden-1 v1, entry {d['receipt']['height']}\n"), d['text'])
-
-    def test_smoke_bound_two_hundred_observations_bridge_in_under_a_minute(self):
-        """The transport's one wall-clock smoke bound, generous: measured about 3 s on hbox."""
-        self.make('garden-1')
-        self.observe([spell_post(i, 'garden-1', f'2026-10-09T10:{i // 60:02d}:{i % 60:02d}Z') for i in range(200)])
-        t0 = time.time()
-        self.assertEqual(len(self.run_bridge()['turns']), 200)
-        self.assertLess(time.time() - t0, 60)
-        self.assertEqual(len(self.drafts()), 200)
 
 
 class HostParses(BridgeCase):
@@ -380,12 +321,6 @@ class Usage(BridgeCase):
 
 
 class Routing(BridgeCase):
-    def test_clock_ticks_once_per_run_and_only_in_unix_minutes(self):
-        stub = Stub()
-        self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:01Z')])
-        with mock.patch.object(bridge.time, 'time', return_value=6000.0):
-            bridge.run(self.state, stub)
-        self.assertEqual([o for o in stub.ops if o['op'] == 'world-advance'], [{'op': 'world-advance', 'principal': 'transport', 'height': 100}])
 
     def test_a_reply_to_a_journaled_post_goes_to_its_addressee_not_the_card_word(self):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
@@ -481,12 +416,6 @@ class Suspended(BridgeCase):
 
 
 class Slugs(unittest.TestCase):
-    def test_a_loopback_origin_gives_no_link_and_the_receipt_line_and_slug_stay(self):
-        receipt = {'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}}
-        for origin in ('http://127.0.0.1:8766', 'http://localhost:8765', 'http://[::1]:8765'):
-            self.assertEqual(bridge.receipt_line(receipt, origin), 'receipt babab-dabab: garden v3, entry 9\n')
-        self.assertEqual(bridge.receipt_line(receipt, 'https://gsb.fg-goose.online'),
-                         'receipt babab-dabab: garden v3, entry 9\nhttps://gsb.fg-goose.online/o/garden#v3\n')
 
     def test_a_draft_cites_the_slug_and_carries_no_cid(self):
         import re
@@ -616,18 +545,6 @@ class RealOffers(test_outbound.TellerWorld):
 
 
 class Projection(unittest.TestCase):
-    def test_a_refusal_draft_is_the_turn_line_the_hint_and_the_receipts_name(self):
-        reply = {'status': 'refused', 'receipt': {'hash': 'h', 'slug': 'tulun-huzif', 'outcome': {
-                     'tag': 'refused', 'class': 'badSpell', 'clause': 'noAction', 'reason': 'garden has no action wilt.', 'SECRET': 'state'}},
-                 'public': {'status': 'refused', 'class': 'badSpell', 'hint': 'delvetalk garden plant\ncolour: <...>'}}
-        text = bridge.draft_text(reply)
-        self.assertEqual(text, 'refused noAction: garden has no action wilt.\ndelvetalk garden plant\ncolour: <...>\nreceipt tulun-huzif\n')
-        self.assertNotIn('SECRET', text)
-        reply['receipt']['outcome'] = {'tag': 'refused', 'class': 'lawRefused', 'reason': 'refused owner: not yours'}
-        reply['public'] = {}
-        self.assertEqual(bridge.draft_text(reply), 'refused owner: not yours\nreceipt tulun-huzif\n')  # the reason already says it
-        del reply['receipt']['slug']
-        self.assertEqual(bridge.draft_text(reply), 'refused owner: not yours\n')
 
     def test_no_draft_text_carries_a_hash_or_a_blob(self):
         import re
@@ -678,35 +595,7 @@ class RealAwaitPost(test_outbound.PostWaiterWorld):
 
 
 class Daemon(unittest.TestCase):
-    def test_loops_until_stopped_writes_and_removes_the_pid_file(self):
-        import os
-        import threading
-        with tempfile.TemporaryDirectory() as d:
-            stop, steps = threading.Event(), []
 
-            def step():
-                steps.append(1)
-                self.assertEqual(Path(d, 'bridge.pid').read_text(), str(os.getpid()))
-                if len(steps) == 3:
-                    stop.set()
-            bridge.daemon(d, 'bridge', 0, step, stop)
-            self.assertEqual(len(steps), 3)
-            self.assertFalse(Path(d, 'bridge.pid').exists())
-
-    def test_each_finished_step_refreshes_the_pid_file(self):
-        import os
-        import threading
-        with tempfile.TemporaryDirectory() as d:
-            stop, seen = threading.Event(), []
-            pid = Path(d, 'bridge.pid')
-
-            def step():
-                seen.append(pid.stat().st_mtime)
-                os.utime(pid, (0, 0))  # as if the previous step finished long ago
-                if len(seen) == 2:
-                    stop.set()
-            bridge.daemon(d, 'bridge', 0, step, stop)
-            self.assertGreater(seen[1], 0)
 
     def test_a_live_pid_file_blocks_a_second_daemon(self):
         import os

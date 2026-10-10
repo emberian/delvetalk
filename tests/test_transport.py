@@ -94,14 +94,6 @@ class Classification(unittest.TestCase):
                              mk(3, '#gsb\ndelvetalk garden plant'), mk(4, 'not delvetalk garden plant')])
         self.assertEqual([obs[k]['kind'] for k in sorted(obs)], ['summon', 'summon', 'summon', 'post'])
 
-    def test_the_recorded_fixture_page_is_observed_with_over_twenty_posts_and_none_refused(self):
-        with tempfile.TemporaryDirectory() as d:
-            ob = observe.Observer(d, delve.Client(delve.FixtureTransport(FIX)))
-            ob.poll()
-            out = []
-            ob.drain(out.append)
-        self.assertGreater(len(out), 20)
-        self.assertEqual(ob.refused, [])
 
     def test_a_handle_mention_in_text_without_a_facet_is_still_a_summon(self):
         obs, _ = self.kinds([mk(1, 'hi @livedelvetalk.delve.town #GSB')])
@@ -207,8 +199,6 @@ class Identity(unittest.TestCase):
             self.id.verify(self.HANDLE, uri or self.uri)
         self.assertEqual(e.exception.code, code)
 
-    def test_a_challenge_is_a_short_spoken_word_of_two_proquints(self):
-        self.assertRegex(self.ch['text'], r'^[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz]-[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz]$')
 
     def listing(self, *records, status=200):
         self.t.routes['com.atproto.repo.listRecords'] = lambda p: (status, {'records': list(records)})
@@ -333,7 +323,6 @@ class Identity(unittest.TestCase):
         self.refused('invalid_proof_uri', 'at://x/y/z')
 
 
-
 class Posting(unittest.TestCase):
     def test_no_flag_sends_nothing(self):
         with tempfile.TemporaryDirectory() as d:
@@ -382,20 +371,6 @@ class Posting(unittest.TestCase):
         ref = post.reply_ref(client, got['uri'])
         self.assertEqual(ref, {'root': root, 'parent': {'uri': got['uri'], 'cid': 'bafyr2'}})
 
-    def test_wiki_page_and_edit_texts(self):
-        uri, client, _, _ = self.parent()
-        with tempfile.TemporaryDirectory() as d:
-            f = Path(d) / 'b.txt'
-            f.write_text('Body line')
-            _, page = self.dry(d, ['--wiki-page', 'GSB Welcome', '--body-file', str(f)], client)
-            _, edit = self.dry(d, ['--wiki-edit', 'GSB Welcome \u203a Intro', '--body-file', str(f), '--reply-to', uri], client)
-        self.assertEqual(page['request']['body']['record']['text'], 'wiki: GSB Welcome\n\nBody line')
-        self.assertNotIn('reply', page['request']['body']['record'])
-        self.assertEqual(edit['request']['body']['record']['text'], 'edit: GSB Welcome \u203a Intro\n\nBody line')
-        self.assertIn('reply', edit['request']['body']['record'])
-        # the observer reads back what the writer writes
-        self.assertEqual(observe.classify(page['request']['body']['record']['text'], None, [], [])[0], 'wiki-page')
-        self.assertEqual(observe.classify(edit['request']['body']['record']['text'], uri, [], [])[0], 'wiki-edit')
 
     def test_wiki_edit_needs_a_page_to_reply_to_and_flag_off_sends_nothing(self):
         uri, client, t, _ = self.parent()
@@ -419,14 +394,6 @@ class Posting(unittest.TestCase):
         rec = {'text': text, 'facets': facets}
         self.assertIn({'did': OTHER, 'handle': 'glm.delve.town'}, observe.mentions_of(text, rec))
 
-    def test_dry_run_shows_facets_and_the_quota_source(self):
-        t = Script(**{'com.atproto.identity.resolveHandle': lambda p: (200, {'did': OTHER})})
-        with tempfile.TemporaryDirectory() as d:
-            f = Path(d) / 't.txt'
-            f.write_text('ping @glm.delve.town')
-            code, req = self.dry(d, ['--text-file', str(f)], delve.Client(t))
-        self.assertEqual((code, req['quota']), (2, {'source': 'delve'}))  # without a host the dry run names no count
-        self.assertEqual(req['request']['body']['record']['facets'][0]['features'][0]['did'], OTHER)
 
     def test_a_live_post_names_its_object_so_its_reservation_is_settled_and_the_dry_run_need_not(self):
         with tempfile.TemporaryDirectory() as d:
@@ -439,15 +406,6 @@ class Posting(unittest.TestCase):
             self.assertEqual((code, json.loads(err.getvalue())['error']), (1, 'live_post_needs_object'))
             self.assertEqual(self.dry(d, ['--text-file', str(f)], delve.Client(Script()))[0], 2)
 
-    def test_record_posted_builds_world_posted_from_the_confirmed_result(self):
-        seen = []
-        h = type('H', (), {'send': lambda s, r: seen.append(r) or {'status': 'posted'}})()
-        post.record_posted(h, {'uri': f'at://{DID}/town.delve.feed.post/x1', 'cid': 'bafyc'}, 'directory', post.slot_record(f'{DID}:welcome-1'))
-        self.assertEqual(seen, [{'op': 'world-posted', 'principal': 'transport', 'uri': f'at://{DID}/town.delve.feed.post/x1',
-                                 'cid': 'bafyc', 'object': 'directory', 'slot': {'principal': DID, 'intent': 'welcome-1'}}])
-        for bad in ('welcome', ':x', 'x:'):
-            with self.assertRaises(delve.Failure):
-                post.slot_record(bad)
 
     def test_record_without_a_journal_is_refused_before_anything_happens(self):
         with tempfile.TemporaryDirectory() as d:

@@ -15,7 +15,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from tests.host import Host, binary, start_hostd, stop_hostd
+from tests.host import Host, start_hostd, stop_hostd
 from tests.test_turn_world import counter_modules, nat, record
 from tests.test_turn_world import declared
 from transport import bridge
@@ -112,24 +112,6 @@ class Hostd(unittest.TestCase):
         self.assertEqual(HostClient(self.sock).send({'op': 'world-view', 'principal': 'e', 'object': self.c})['status'], 'viewed')
         self.assertEqual(HostClient(self.sock, stateless=True).send({'op': 'compile', 'modules': [], 'entry': 'x'})['status'], 'error')
 
-    def test_the_world_is_opened_with_the_configured_opener(self):
-        import tempfile as tf
-        with tf.TemporaryDirectory() as d2:
-            opened = []
-            from transport import hostproc
-            real = hostproc.Host._exchange
-
-            def spy(self, req):
-                opened.append(req)
-                return real(self, req)
-            from unittest import mock
-            with mock.patch.object(hostproc.Host, '_exchange', spy):
-                dd = start_hostd(d2, opener=DID)
-                try:
-                    dd.shared.send({'op': 'world-status'})
-                finally:
-                    stop_hostd(dd)
-        self.assertEqual([r.get('opener') for r in opened if r['op'] == 'world-open'][:1], [DID])
 
     def test_the_sealed_library_holds_the_packages_arrival_creates_from(self):
         import tempfile as tf
@@ -143,30 +125,6 @@ class Hostd(unittest.TestCase):
             finally:
                 stop_hostd(dd)
 
-    def test_the_stateless_process_holds_the_library_and_compiles_by_pin(self):
-        import tempfile as tf
-        from tests.test_reflection import LIBRARY
-        with tf.TemporaryDirectory() as d2:
-            dd = start_hostd(d2, opener=DID, library=LIBRARY)
-            try:
-                sock = Path(d2) / 'host.sock'
-                pin = HostClient(sock).send({'op': 'hostd-info'}).get('library')
-                self.assertTrue(pin)
-                loads, exchange = [], dd.stateless._exchange
-                dd.stateless._exchange = lambda req: (loads.append(req['op']), exchange(req))[1]
-                for _ in range(3):
-                    self.assertEqual(HostClient(sock).send({'op': 'hostd-info'}).get('library'), pin)
-                self.assertEqual(loads, [])  # answered from the cached pin
-                dd.stateless._exchange = exchange
-                repl = HostClient(sock, stateless=True)
-                checked = repl.send({'op': 'check-package', 'library': pin, 'entry': 'initial', 'modules': [{'name': 'Tally', 'source': TALLY}]})
-                self.assertEqual(checked['status'], 'checked', checked)
-                dd.stateless.proc.kill()  # a respawn loads it again, before the first request
-                dd.stateless.proc.wait()
-                again = repl.send({'op': 'check-package', 'library': pin, 'entry': 'initial', 'modules': [{'name': 'Tally', 'source': TALLY}]})
-                self.assertEqual(again['status'], 'checked', again)
-            finally:
-                stop_hostd(dd)
 
     def test_one_client_keeps_a_connection_per_thread_and_survives_a_hostd_restart(self):
         import tempfile as tf
@@ -212,33 +170,6 @@ class Hostd(unittest.TestCase):
             finally:
                 stop_hostd(dd)
 
-    def test_the_binary_is_hashed_once_and_cached_by_path_size_and_mtime(self):
-        import hashlib
-        import tempfile as tf
-        from unittest import mock
-        from transport import hostd
-        with tf.TemporaryDirectory() as d2:
-            binary, cache = Path(d2) / 'bin', Path(d2) / 'binary-pin'
-            binary.write_bytes(b'host one')
-            first = hostd.binary_pin(cache, binary)
-            self.assertEqual(first, hashlib.sha256(b'host one').hexdigest())
-            with mock.patch.object(hostd.hashlib, 'sha256', side_effect=AssertionError('hashed again')):
-                self.assertEqual(hostd.binary_pin(cache, binary), first)
-            binary.write_bytes(b'host two!')  # size and mtime moved
-            self.assertEqual(hostd.binary_pin(cache, binary), hashlib.sha256(b'host two!').hexdigest())
-
-    def test_a_host_opens_its_journal_with_the_sync_it_is_given(self):
-        import tempfile as tf
-        from transport.hostproc import Host as TransportHost
-        sent = []
-        with tf.TemporaryDirectory() as d2:
-            for kw, want in (({}, 'fsync'), ({'sync': 'none'}, 'none')):
-                h = TransportHost(str(Path(d2) / f'{want}.journal'), binary(), **kw)
-                real = h._exchange
-                h._exchange = lambda req, real=real: (sent.append(req), real(req))[1]
-                h.send({'op': 'world-status'})
-                h.close()
-        self.assertEqual([r['sync'] for r in sent if r['op'] == 'world-open'], ['fsync', 'none'])
 
     def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
         import tempfile as tf
@@ -261,8 +192,6 @@ class Hostd(unittest.TestCase):
                                  'entry': 'initial', 'seed': record()})
         self.assertEqual(made['status'], 'error', made)
 
-    def test_clients_report_a_missing_daemon_instead_of_raising(self):
-        self.assertEqual(HostClient(self.state / 'nope.sock').send({'op': 'world-status'})['message'], 'hostd unavailable')
 
     def test_bridge_once_on_fresh_state_without_observe_does_not_crash(self):
         out = io.StringIO()

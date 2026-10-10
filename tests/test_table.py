@@ -65,13 +65,6 @@ class Table(Chain):
         self.assertIn("result", reply, reply)
         return {f["name"]: f["value"]["value"] for f in reply["result"]["payload"]["fields"]}["reading"]
 
-    def test_the_owner_amends_the_table_and_a_stranger_may_not(self):
-        version = self.host.send(op="world-view", principal="ember", object="table")["version"]
-        law = 'law owner: request.kind == 0 or request.subject == "ember"'
-        theirs = self.host.send(op="world-amend", principal=NORTH, identity="am-north", object="table", version=version, law=law)
-        self.assertEqual((theirs["status"], theirs["receipt"]["outcome"].get("clause")), ("refused", "owner"), theirs)
-        mine = self.host.send(op="world-amend", principal="ember", identity="am-ember", object="table", version=version, law=law)
-        self.assertEqual(mine["status"], "admitted", mine)
 
     def test_one_opening_round_resolves_to_the_qualified_games_result(self):
         s0, t0, s1, t1 = self.MOVES

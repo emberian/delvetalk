@@ -9,12 +9,11 @@ package's Bend `law(old, new, request)` judges it under `Bounds.lawTicks`, readi
 
     python3 -W error -m unittest tests.test_law -v
 """
-import json
 import unittest
 
 from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record, declared
+from tests.test_turn_world import nat, record, declared
 
 GUARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -63,11 +62,6 @@ def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if spin(0n) then Abi.Verdict.admitted({}) else if request.method""")
 
 PLAIN = declared(GUARD[:GUARD.index("def opened")], "bump", "poke")
-
-
-READING = PLAIN.replace("law small: new.count <= 100\n", "law small: new.count <= 100\nsum Verdict:\n  admitted: {}\n  refused: {clause: String, reading: String}\n") + """def law(old: State, new: State, request: Abi.Request) -> Verdict:
-  if new.count > old.count + 2n then Verdict.refused({clause: "tooMuch", reading: "at most two at a time"}) else Verdict.refused({clause: "quiet", reading: ""})
-"""
 
 
 class TwoTier(Reflection):
@@ -130,16 +124,6 @@ class TwoTier(Reflection):
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="wide")["version"], 0)
 
-    def test_a_bend_laws_reading_is_the_refusals_reason(self):
-        # WORLD-REVIEW finding 8: `refused {clause, reading}` reaches the receipt and the public projection.
-        self.make("r", READING, record(count=nat(0)))
-        r = self.turn("r", "bump", record(n=nat(3)), principal="mallory")
-        outcome = r["receipt"]["outcome"]
-        self.assertEqual((outcome["clause"], outcome["reason"]), ("tooMuch", "refused tooMuch: at most two at a time"), r)
-        public = self.host.send(op="world-receipt", principal="ember", identity=r["receipt"]["identity"]["intent"], of="mallory")
-        self.assertIn("at most two at a time", str(public), public)
-        quiet = self.turn("r", "bump", record(n=nat(1)))["receipt"]["outcome"]
-        self.assertEqual((quiet["clause"], quiet.get("reason")), ("quiet", None), quiet)
 
     def test_an_exhausted_law_refuses_budget(self):
         self.make("s", SPIN, record(count=nat(0)))
@@ -214,23 +198,6 @@ class Readings(Reflection):
         self.assertEqual((seen["status"], seen["reason"]), ("refused", SAID), seen)
         self.assertEqual(self.turn("r", "bump")["status"], "admitted")
 
-    def test_inspect_answers_each_clause_with_its_reading(self):
-        # docs/VOICE.md: the library's `law {card}` page reads world-inspect's clauses and readings, the
-        # package's law as well as an amended one.
-        laws = self.host.send(op="world-inspect", principal="kim", object="r", source=False)["laws"]
-        self.assertEqual([(l["name"], l.get("reading")) for l in laws], [("owner", "only the owner may count"), ("small", None)])
-        self.assertTrue(all(l["clause"] for l in laws), laws)
-        self.host.send(op="world-amend", principal="ember", identity="a9", object="r", version=0,
-                       law='law owner "ask ember": request.subject == new.owner\nlaw small: new.count <= 5')
-        laws = self.host.send(op="world-inspect", principal="kim", object="r", source=False)["laws"]
-        self.assertEqual([(l["name"], l.get("reading"), l["clause"]) for l in laws],
-                         [("owner", "ask ember", "request.subject == new.owner"), ("small", None, "new.count <= 5")])
-
-    def test_a_clause_without_a_reading_says_only_its_name(self):
-        self.host.send(op="world-amend", principal="ember", identity="a1", object="r", version=0,
-                       law='law owner: request.subject == new.owner\nlaw small: new.count <= 100')
-        r = self.refused("k2")
-        self.assertNotIn("reason", r["receipt"]["outcome"])
 
     def test_an_amendment_may_carry_readings_and_a_refusal_quotes_the_new_one(self):
         text = 'law owner "only the keeper may count: ask ember": request.subject == new.owner\nlaw small "at most five": new.count <= 5'

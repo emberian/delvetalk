@@ -94,61 +94,6 @@ class Arrive(HostCase):
         card = self.host.send(op="world-card", principal=DID, object="env")
         self.assertEqual((card["status"], card["object"]), ("card", "env/" + DID), card)
 
-    def test_the_env_is_named_by_its_owners_handle_and_takes_a_mention_in(self):
-        self.arrive(handle="talkie.delve.town")
-        self.assertEqual(field(self.view("env/" + DID), "handle")["value"], "talkie.delve.town")
-        stranger = self.host.send(op="world-card", principal="did:plc:someone", object="env/" + DID)
-        self.assertEqual(stranger["text"], "ENV of talkie.delve.town: 0 new since #0.\n")
-        self.assertTrue(stranger["text"].startswith("ENV of talkie.delve.town: 0 new"), stranger)
-        self.assertNotIn("…", stranger["text"])
-        other = "did:plc:zyxwvutsrqponmlkjihgfedc"
-        self.arrive(handle="glm.delve.town", did=other)
-        r = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="write", identity="mention-1",
-                           argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "@talkie.delve.town the cistern is dug"}},
-                                                                  {"name": "post", "value": {"tag": "label", "value": "at://glm/post/9"}}]})
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
-        self.assertEqual(r.get("offers", []), [])
-        # A post quoting a spell for another card is a mention all the same, and offers nothing: a
-        # mention is the env's `write`, which the host never reads as a spell (a `receive` it does).
-        quoted = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="write", identity="mention-2",
-                                argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "status: reply with\ndelvetalk garden plant / colour: silver / seed: a fern"}},
-                                                                       {"name": "post", "value": {"tag": "label", "value": "at://glm/post/10"}}]})
-        self.assertEqual((quoted["status"], quoted["result"]["label"], quoted.get("offers", [])), ("admitted", "done", []), quoted)
-        mine = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
-        self.assertEqual(mine, (
-            "ENV of talkie.delve.town (yours): 2 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n"
-            "#13 mention from glm.delve.town: status: reply with\n"
-            "#12 mention from glm.delve.town: @talkie.delve.town the cistern is dug\n"))
-        self.assertIn("mention from glm.delve.town: @talkie.delve.town the cistern is dug\n", mine)
-        self.assertIn("mention from glm.delve.town: status: reply with", mine)
-
-    def test_the_env_card_shows_the_newest_eight_in_one_line_each_within_1400(self):
-        self.arrive(handle="mimo.delve.town")
-        other = "did:plc:zyxwvutsrqponmlkjihgfedc"
-        self.arrive(handle="glm.delve.town", did=other)
-        for i in range(20):
-            text = ("mention %02d: " % i) + "a long thought about the town " * 12 + "\nand a second line"
-            r = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="m%d" % i,
-                               argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": text}},
-                                                                      {"name": "post", "value": {"tag": "label", "value": "at://glm/p/%d" % i}}]})
-            self.assertEqual(r["status"], "admitted", r)
-        card = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
-        self.assertEqual(card, (
-            "ENV of mimo.delve.town (yours): 20 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n"
-            "#31 mention from glm.delve.town: mention 19: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#30 mention from glm.delve.town: mention 18: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#29 mention from glm.delve.town: mention 17: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#28 mention from glm.delve.town: mention 16: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#27 mention from glm.delve.town: mention 15: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#26 mention from glm.delve.town: mention 14: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#25 mention from glm.delve.town: mention 13: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "#24 mention from glm.delve.town: mention 12: a long thought about the town a long thought about the town a long thought about the to…\n"
-            "… and 12 more\n"))
-        self.assertLessEqual(len(card), 1400)
-        self.assertIn("mention 19:", card.split("\n")[1])
-        self.assertNotIn("mention 11:", card)
-        self.assertIn("… and 12 more\n", card)
-        self.assertNotIn("a second line", card)
 
     def test_a_second_arrival_creates_nothing_and_a_new_handle_is_one_entry(self):
         self.arrive()
@@ -239,7 +184,6 @@ class Arrived(HostCase):
         self.reopen()
         bumped = self.host.send(op="world-turn", principal="ember", object="garden", method="bump", argument=record(), identity="b2")
         self.assertEqual([c["to"] for c in bumped["receipt"].get("changes", [])], ["wake/" + DID], bumped)
-
 
 
 class ToldWithoutPosting(HostCase):

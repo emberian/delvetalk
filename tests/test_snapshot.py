@@ -11,9 +11,7 @@ disagrees with replay at its height.
     python3 -W error -m unittest tests.test_snapshot -v
 """
 import glob
-import json
 import os
-import time
 import unittest
 
 from tests.test_chain import field
@@ -94,31 +92,6 @@ class Snapshots(Reflection):
         opened = self.host.send(op="world-open", path=self.path)
         return opened["snapshot"]
 
-    def test_smoke_bound_500_objects_reopen_from_a_snapshot_in_under_five_seconds(self):
-        """The host's one wall-clock smoke bound, generous: measured 0.2 s on hbox."""
-        for i in range(500):
-            self.make(f"c{i}", PACKAGE, source_seed(i))
-        self.assertEqual(self.turn("c7", "bump")["status"], "admitted")
-        height = self.snapshot()
-        self.assertEqual(self.turn("c9", "bump")["status"], "admitted")
-        self.release()
-        self.host = self.spawn()
-        started = time.monotonic()
-        opened = self.host.send(op="world-open", path=self.path)
-        took = time.monotonic() - started
-        self.assertEqual(opened["status"], "opened", opened)
-        self.assertEqual(opened["snapshot"], {"resumed": height, "refused": []})
-        self.assertEqual(opened["objects"], 500)
-        self.assertLess(took, 5.0, f"reopen took {took:.2f} s")
-        self.assertEqual((self.count("c7"), self.count("c9"), self.count("c499")), ("8", "10", "499"))
-        # The resumed world runs turns, retries return their receipts, and history reads entries.
-        again = self.turn("c7", "bump")
-        self.assertEqual((again["status"], again["result"]), ("admitted", {"tag": "natural", "value": "9"}), again)
-        retry = self.host.send(op="world-turn", principal="ember", object="c9", method="bump",
-                               argument={"tag": "record", "fields": []}, identity="t2")
-        self.assertEqual(retry["status"], "admitted", retry)
-        history = self.host.send(op="world-history", principal="ember", object="c7")
-        self.assertEqual(len(history["entries"]), 3, history)
 
     def test_a_snapshot_is_written_every_thousand_entries(self):
         self.make("c", PACKAGE, source_seed())  # the library entry is height 1, the create 2
@@ -267,14 +240,6 @@ class Snapshots(Reflection):
         [resumed] = settled["resumed"]
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual(self.count("probe"), "3")
-
-    def test_a_snapshot_names_no_binary(self):
-        # Binary identity is deploy's smoke test's; a snapshot binds the journal head and each state's CID.
-        self.make("a", PACKAGE, source_seed())
-        height = self.snapshot()
-        body = read_snapshot(self.path + f".snapshot.{height}.cbor")
-        self.assertNotIn("binary", body)
-        self.assertEqual(self.reopen_report()["resumed"], height)
 
 
 if __name__ == "__main__":

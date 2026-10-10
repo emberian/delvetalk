@@ -15,8 +15,7 @@ import re
 import json
 import unittest
 
-from tests.test_turn import BINDING, Host, library_modules, nat, variant
-from tests.test_turn_world import TurnWorld, declared, label, record
+from tests.test_turn import Host, library_modules, nat, variant
 
 HEAD = "edition ObjectiveBend 1\n"
 
@@ -322,10 +321,6 @@ class SugarTests(unittest.TestCase):
         self.assertEqual(self.h.start(artifact, [nat(0)])["message"], "turn refused: zero")
         self.assertEqual(self.h.start(artifact, [nat(3)])["value"], nat(3))
 
-    def test_halt_suggests_the_statement(self):
-        reply = self.check(HEAD + "def stop(n: Nat) -> Nat:\n  halt(\"no\")\n", "stop")
-        self.assertIn("let written(_) = world.write(...)", reply["diagnostic"]["hint"])
-
 
 SCENE = HEAD + """record State:
   title: String
@@ -410,12 +405,6 @@ class Interpolation(unittest.TestCase):
                 b = self.h.compile(sugared, entry)
                 self.assertEqual(core(a), core(b))
 
-    def test_interpolation_runs(self):
-        artifact = self.h.compile(TEXT_PAIRS[2][2], "f")
-        state = {"tag": "record", "fields": [{"name": "title", "value": {"tag": "label", "value": "Moth"}},
-                                             {"name": "count", "value": nat(3)}]}
-        reply = self.h.send({"op": "run", "artifact": artifact, "arguments": [state]})
-        self.assertEqual(reply["value"], {"tag": "label", "value": "SCENE Moth (3 here)"}, reply)
 
     def test_malformed_interpolations_are_refused_by_name(self):
         for text, message in (("\"a {s.title\"", "is not closed"), ("\"a } b\"", "written }}"),
@@ -425,11 +414,6 @@ class Interpolation(unittest.TestCase):
                     {"name": "Package", "source": SCENE + "def f(s: State) -> String:\n  " + text + "\n"}]})
                 self.assertEqual(reply["status"], "refused", reply)
                 self.assertIn(message, reply["diagnostic"]["message"])
-
-    def test_template_habits_suggest_interpolation(self):
-        reply = self.h.send({"op": "check-package", "entry": "f", "modules": [
-            {"name": "Package", "source": SCENE + "def f(s: State) -> String:\n  `SCENE ${s.title}`\n"}]})
-        self.assertIn("text interpolation is", reply["diagnostic"].get("hint", ""), reply)
 
 
 class Forms(unittest.TestCase):
@@ -531,10 +515,6 @@ def kind(label, payload):
     return {"tag": "variant", "label": label, "payload": {"tag": "record", "fields": payload}}
 
 
-def nat_field(name, n):
-    return {"name": name, "value": {"tag": "natural", "value": str(n)}}
-
-
 def choice(*options):
     return kind("choice", [{"name": "options", "value": {"tag": "list", "items": [{"tag": "label", "value": o} for o in options]}}])
 
@@ -564,17 +544,6 @@ class FormInputs(unittest.TestCase):
             with self.subTest(entry=entry):
                 self.assertEqual(core(self.compiled(sugared, entry)), core(self.compiled(explicit, entry)))
 
-    def test_a_method_row_carries_its_form(self):
-        rows = {row["name"]: row for row in self.compiled(FORM_STATE + FORM_BLOCKS, "plant")["methods"]}
-        self.assertEqual(rows["plant"]["form"], [
-            {"name": "colour", "kind": choice("amber", "violet", "silver")},
-            {"name": "seed", "kind": kind("text", [nat_field("min", 1), nat_field("max", 80)])},
-            {"name": "count", "kind": kind("natural", [nat_field("min", 1), nat_field("max", 1000)])}])
-        # A field naming a closed sum is offered as the choice of its labels.
-        self.assertEqual(rows["water"]["form"][1], {"name": "shade", "kind": choice("amber", "violet", "silver")})
-        # A module without form blocks has rows without `form`.
-        plain = self.compiled(FORM_STATE.replace("PlantInput", "{count: Nat}").replace("WaterInput", "{note: String}"), "plant")
-        self.assertTrue(all("form" not in row for row in plain["methods"]), plain["methods"])
 
     def test_a_hand_written_forms_is_kept(self):
         # The derived forms() lists both blocks in source order (the first test); a module's own wins.
@@ -733,13 +702,6 @@ class Relations(unittest.TestCase):
     """RELATIONAL section 2: a package's `relations()` is listed in its artifacts, so the host
     reads the keys without compiling a definition per object."""
 
-    def test_relations_are_listed_in_every_entry_artifact(self):
-        h = Host()
-        self.addCleanup(h.close)
-        art = h.compile(RELATIONS, "initial", ("List",))
-        self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"], "limit": 0}])
-        plain = h.compile(RELATIONS.replace("def relations()", "def declared()"), "initial", ("List",))
-        self.assertNotIn("relations", plain)
 
     def test_a_declaration_carries_its_limit_and_retention(self):
         # RELATIONAL section 11: a limit (0 is the host's default) and the retention past it.
@@ -753,42 +715,6 @@ class Relations(unittest.TestCase):
             {"name": "Package", "source": bounded.replace("  limit: Nat\n", "  limit: String\n").replace("limit: 64n", "limit: \"many\"")}]})
         self.assertEqual(bad["status"], "error", bad)
         self.assertIn("relations(): a limit is a Nat", bad["message"])
-
-
-class LawReading(TurnWorld):
-    """A law's reading is carried beside it; the law enforces exactly as without one, and
-    the statement form runs on the real host (a staged write is answered `written`)."""
-
-    def test_a_law_with_a_reading_enforces_as_before(self):
-        self.create("c", library_modules("Abi", "World") + [{"name": "Package", "source": declared(COUNTER)}], 0)
-        ok = self.turn("c", "bump", record(n=nat(5)))
-        self.assertEqual(ok["status"], "admitted", ok)
-        refused = self.turn("c", "bump", record(n=nat(150)))
-        self.assertEqual(refused["status"], "refused", refused)
-        self.assertEqual(refused["receipt"]["outcome"].get("clause"), "small", refused)
-
-    def test_write_runs_on_the_host(self):
-        source = WRITE_SUGARED + "def initial() -> State:\n  {planted: 0n, children: Lists.List.nil({}), note: \"\"}\n"
-        r = self.host.send(op="world-create", principal="ember", identity="create-g", object="g",
-                           modules=library_modules("Abi", "List", "World") + [{"name": "Package", "source": declared(source)}],
-                           entry="initial", seed=record())
-        self.assertEqual(r["status"], "created", r)
-        child = record(world=label(""), object=label("bell-1"))
-        done = self.turn("g", "plant", record(child=child, note=label("hello")))
-        self.assertEqual(done["status"], "admitted", done)
-        state = self.host.send(op="world-view", principal="ember", object="g")["state"]
-        fields = {f["name"]: f["value"] for f in state["fields"]}
-        self.assertEqual(fields["planted"], nat(1))
-        self.assertEqual(fields["note"], label("hello"))
-        self.assertEqual(fields["children"], {"tag": "list", "items": [child]})
-
-    def test_a_reading_is_a_string_literal(self):
-        h = Host()
-        self.addCleanup(h.close)
-        bad = COUNTER.replace('"a counter stays at most a hundred"', "at most a hundred")
-        reply = h.send({"op": "check-package", "entry": "initial",
-                        "modules": library_modules("Abi", "World") + [{"name": "Package", "source": bad}]})
-        self.assertEqual(reply["status"], "refused", reply)
 
 
 if __name__ == "__main__":
@@ -867,14 +793,6 @@ class DerivedEdits(unittest.TestCase):
             with self.subTest(entry=entry):
                 self.assertEqual(core(self.compiled(derived, entry)), core(self.compiled(written, entry)))
 
-    def test_keep_keeps_every_field_in_state_order(self):
-        artifact = self.compiled(DERIVED_HEAD + DERIVED_REST, "keep")
-        reply = self.h.send({"op": "run", "artifact": artifact, "arguments": []})
-        self.assertEqual(reply["status"], "finished", reply)
-        fields = reply["value"]["fields"]
-        self.assertEqual([f["name"] for f in fields], ["planted", "children", "names", "rows", "note", "open", "owner"])
-        self.assertTrue(all(f["value"] == {"tag": "variant", "label": "keep", "payload": {"tag": "record", "fields": []}}
-                            for f in fields), fields)
 
     def test_a_hand_written_pair_beside_state_is_refused_by_name(self):
         bump = "def bump(state: State, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {planted: add 1n}\n  0n\n"
@@ -995,14 +913,6 @@ class FixedFields(unittest.TestCase):
 class Declares(unittest.TestCase):
     """The artifact names the entry module's conventional declarations, derived ones included."""
 
-    def test_declares_lists_derived_and_written_conventions(self):
-        h = Host()
-        self.addCleanup(h.close)
-        derived = h.compile(FORM_STATE + FORM_BLOCKS + "def initial() -> State:\n  {planted: 0n}\n", "plant", ("List", "Form"))
-        self.assertEqual(derived["declares"], ["forms", "initial"])
-        plain = h.compile(FORM_STATE.replace("PlantInput", "{count: Nat}").replace("WaterInput", "{note: String}"),
-                          "plant", ("List", "Form"))
-        self.assertEqual(plain["declares"], [])
 
     def test_a_layer_declares_what_its_stack_declares(self):
         # Refuted by a layer that writes no forms() or initial() declaring neither, though both

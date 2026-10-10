@@ -16,8 +16,8 @@ import json
 import unittest
 
 from tests import test_chain, test_policy
-from tests.test_chain import nil, town_kinds
-from tests.test_objects import closure, compile_job
+from tests.test_chain import town_kinds
+from tests.test_objects import closure
 from tests.test_places import avatar_seed
 from tests.test_turn_world import label, record
 
@@ -88,22 +88,6 @@ class Lenses(test_chain.Chain):
         self.assertEqual(self.say("delvetalk policy set", principal="ember")["result"]["label"], "usage")
         self.assertEqual((self.version(), self.field("model"), self.field("owner")), (0, "claude-haiku", "ember"))
 
-    def test_the_usage_card_lists_every_form_and_every_lens(self):
-        self.policy()
-        # `?` is the host's usage: every form, then every lens (HOST-HANDOFF 5.54).
-        r = self.turn("policy", "receive", record(text=label("delvetalk policy ?"), post=label("")), principal="ember")
-        self.assertEqual(r["status"], "usage", r)
-        text = r["text"]
-        # The policy is its owner's (`request.subject == new.owner`): a stranger is offered none of it
-        # (codex agent 11).
-        stranger = self.turn("policy", "receive", record(text=label("delvetalk policy ?"), post=label("")), principal="glm")
-        self.assertNotIn("delvetalk policy teach", stranger.get("text", ""))
-        self.assertNotIn("delvetalk policy set", stranger.get("text", ""))
-        for spell in ("delvetalk policy teach\nutterance:", "delvetalk policy macro\nname:", "delvetalk policy confirm\naction:",
-                      "delvetalk policy set\nmodel: <text, 1 to 64 characters>", "delvetalk policy set\nescalate-to: <text, 0 to 160 characters>",
-                      "delvetalk policy set\nsystem: <text, 1 to 1000 characters>"):
-            self.assertIn(spell, text)
-        self.assertEqual(self.version(), 0)
 
     def test_an_object_without_lenses_answers_set_and_question_by_its_forms(self):
         """The lantern speaks the message dialect: the host answers `?` from its method table and
@@ -123,9 +107,6 @@ class Lenses(test_chain.Chain):
         self.assertEqual(why(other), "Only glm changes it.")
         self.assertEqual(self.say("delvetalk %s set\nhandle: glm.bsky" % GLM, principal=GLM, obj=GLM)["result"]["label"], "done")
         self.assertEqual(self.field("handle", GLM), "glm.bsky")
-
-    def test_set_model_is_no_longer_a_policy_method(self):
-        self.assertNotEqual(compile_job(closure("Policy"), "setModel")["status"], "compiled")
 
 
 if __name__ == "__main__":

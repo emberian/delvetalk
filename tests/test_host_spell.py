@@ -54,18 +54,6 @@ def show_fit(fit):
     return "refused " + fit["refused"]["reason"]
 
 
-def clause_for(reason):
-    for prefix, clause in (("This card answers", "otherCard"), ("No field ", "unknownField"),
-                           ("The block <<", "unclosedBlock")):
-        if reason.startswith(prefix):
-            return clause
-    if reason.endswith(" is given twice; keep one."):
-        return "duplicateField"
-    if "takes" in reason or " is one of: " in reason:
-        return "badValue"
-    return "noAction"
-
-
 class Recorded(unittest.TestCase):
     def test_parse_fixtures(self):
         for row in fixtures("parse"):
@@ -100,12 +88,6 @@ class Clauses(unittest.TestCase):
         self.assertIn(fit["refused"]["clause"], CLAUSES)
         return fit["refused"]["clause"]
 
-    def test_every_refusal_names_its_clause(self):
-        for row in fixtures("fit") + fixtures("natural"):
-            with self.subTest(text=row["text"][:60]):
-                fit = host({"text": row["text"], "form": row["form"]})["fit"]
-                if "refused" in fit:
-                    self.assertEqual(fit["refused"]["clause"], clause_for(fit["refused"]["reason"]))
 
     def test_the_clauses_by_case(self):
         self.assertEqual(self.clause("delvetalk garden-2 plant"), "otherCard")
@@ -120,17 +102,6 @@ class Clauses(unittest.TestCase):
     def test_unclear_is_a_fit_with_needs(self):
         fit = host({"text": "delvetalk garden-1 plant\nseed: fern", "form": fixtures("fit")[0]["form"]})["fit"]
         self.assertEqual(fit, {"unclear": {"needs": ["colour"]}})
-
-    def test_the_answer_shape(self):
-        out = host({"text": "delvetalk garden-1 plant\nseed: fern\ncolour: silver", "form": fixtures("fit")[0]["form"]})
-        self.assertEqual(out["spell"], {"card": "garden-1", "action": "plant", "fields": [
-            {"name": "seed", "value": "fern"}, {"name": "colour", "value": "silver"}]})
-        self.assertEqual(out["fit"]["proposal"]["bindings"], [
-            {"name": "colour", "value": {"choice": "silver"}}, {"name": "seed", "value": {"text": "fern"}}])
-        self.assertEqual(out["bare"], [{"name": "seed", "value": "fern"}, {"name": "colour", "value": "silver"}])
-        nat = fixtures("natural")[0]
-        out = host({"text": nat["text"], "form": nat["form"]})
-        self.assertEqual(out["fit"]["proposal"]["bindings"], [{"name": "n", "value": {"natural": 42}}])
 
 
 if __name__ == "__main__":

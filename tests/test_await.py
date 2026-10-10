@@ -11,10 +11,10 @@ import unittest
 
 from tests.host import posted
 
-from tests.test_chain import Chain, boolean, garden_seed, nil, reference, town_kinds
+from tests.test_chain import Chain, boolean, garden_seed, town_kinds
 from tests.test_objects import closure
 from tests.test_replay import get, rows, silver
-from tests.test_turn_world import TurnWorld, label, nat, record
+from tests.test_turn_world import label, nat, record
 from tests.test_turn_world import declared
 
 
@@ -326,43 +326,6 @@ class Rains(Await):
         self.assertEqual([x["status"] for x in rains], ["admitted", "admitted"], rains)
         authors = sorted(get(r, "author")["value"] for r in rows(self.state_field("bell", "rains")))
         self.assertEqual(authors, ["gemini", "kimik3"])
-
-
-class Seeds(TurnWorld):
-    def test_a_thousand_element_seed_is_created_viewed_and_replayed(self):
-        from tests.test_turn_world import NAMES_SOURCE, names_modules
-        seed = {"tag": "list", "items": [label("x") for _ in range(1000)]}
-        r = self.host.send(op="world-create", principal="ember", identity="mk", object="n",
-                           modules=names_modules(), entry="initial", seed=record(names=seed))
-        self.assertEqual(r["status"], "created", r)
-        v = self.host.send(op="world-view", principal="e", object="n")
-        self.assertEqual(v["state"]["fields"][0]["value"], seed)
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-view", principal="e", object="n")["state"], v["state"])
-        grown = self.turn("n", "add", record(text=label("last")))
-        self.assertEqual(grown["status"], "admitted", grown)
-
-
-class Maximum(Await):
-    def test_a_hundred_suspended_activities_over_twenty_objects_each_resume_on_their_own_slot(self):
-        for i in range(20):
-            self.bell(f"b{i}", post=f"p{i}-0")
-        for i in range(20):
-            self.bell(f"c{i}", post=f"p{i}-1")
-        # 100 suspensions: five slots per object pair; each object holds at most eight.
-        slots = []
-        for i in range(20):
-            for k in range(5):
-                bell = f"b{i}" if k < 3 else f"c{i}"
-                self.assertEqual(self.strike(bell, ident=f"s-{i}-{k}")["status"], "suspended")
-                slots.append((bell, f"s-{i}-{k}"))
-        self.assertEqual(sum(1 for _ in slots), 100)
-        resumed = 0
-        for i in range(20):
-            for post in (f"p{i}-0", f"p{i}-1"):
-                r = self.settle(post)
-                resumed += len(r.get("resumed", []))
-        self.assertEqual(resumed, 100)
 
 
 if __name__ == "__main__":

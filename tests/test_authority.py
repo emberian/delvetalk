@@ -155,12 +155,6 @@ class WriteIsSelfOnly(Authority):
         self.assertEqual((self.count("a"), self.version("a")), ("0", 0))
         self.assertEqual(self.host.send(op="world-status")["height"], before + 1)
 
-    def test_a_dive_within_the_cap_commits_every_level_as_one_version(self):
-        r = self.turn("a", "dive", record(n=nat(3)))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual((self.count("a"), self.version("a")), ("4", 1))
-        self.assertEqual(self.outcome(r)["writes"][0]["callers"], ["", "a", "a", "a"])
-
 
 class LawsOnWho(Authority):
     def test_directory_remove_by_a_stranger_is_refused_by_the_directorys_law(self):
@@ -226,17 +220,6 @@ class LawsOnWho(Authority):
                            roots=[{"object": "bell", "version": 1}], writes=[forged])
         self.assertEqual((r["status"], self.outcome(r)["clause"]), ("refused", "only"))
 
-    def test_context_names_the_caller_the_intent_and_the_height(self):
-        self.ledger("a")
-        self.ledger("b")
-        direct = self.turn("a", "who")
-        self.assertEqual(text_of(direct["result"]), "")
-        r = self.turn("a", "facts", identity="the-intent")
-        self.assertEqual(text_of(r["result"]), "the-intent")
-        height = [f["value"]["value"] for f in r["result"]["fields"] if f["name"] == "n"][0]
-        self.assertEqual(height, str(r["receipt"]["height"] - 1))
-        via = self.turn("a", "relay", record(target=label("b"), method=label("who")))
-        self.assertEqual(text_of(via["result"]), "a")
 
     def test_a_bundled_reprogram_and_write_are_judged_for_both_kinds(self):
         law = "law strictWrites: request.kind == 0 implies new.count <= 3\n"

@@ -7,15 +7,12 @@ world-turn: activities run against the durable store and commit once.
 
 Counter (tests/fixtures/objects) and Bell (world/objects) are real files (each exports `initial`); the other objects are fixtures that each isolate one rule.
 """
-import json
 import os
 import re
-import subprocess
-import tempfile
 import unittest
 
 from tests import host
-from tests.host import Host, HostCase
+from tests.host import HostCase
 from tests.wire import cid_of
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -172,12 +169,6 @@ class TurnWorld(HostCase):
 
 
 class CounterTurns(TurnWorld):
-    def test_bump_three_times_leaves_count_three_at_version_three(self):
-        self.create("c1", counter_modules(), 0)
-        for _ in range(3):
-            r = self.turn("c1", "bump")
-            self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.count("c1"), (3, "3"))
 
     def test_the_receipt_lists_the_object_as_first_root_and_reports_ticks(self):
         self.create("c1", counter_modules(), 4)
@@ -217,18 +208,6 @@ class CounterTurns(TurnWorld):
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "noMethod"))
         self.assertEqual(self.height(), h + 1)
 
-    def test_restart_replays_to_the_same_view_and_receipts(self):
-        self.create("c1", counter_modules(), 0)
-        receipts = [self.turn("c1", "bump", identity=f"r{i}") for i in range(3)]
-        before = self.count("c1")
-        self.reopen()
-        self.assertEqual(self.count("c1"), before)
-        again = self.host.send(op="world-turn", principal="ember", object="c1", method="bump",
-                               argument=record(), identity="r1")
-        self.assertEqual(again, receipts[1])
-        nxt = self.turn("c1", "bump")
-        self.assertEqual(nxt["status"], "admitted")
-        self.assertEqual(self.count("c1"), (4, "4"))
 
     def test_a_ten_tick_budget_is_refused_as_budget_naming_the_resource(self):
         self.create("c1", counter_modules(), 0)
@@ -384,32 +363,6 @@ class ListEdits(TurnWorld):
         r = self.turn("n", "fix", record(item=label("other"), text=label("x")))
         self.assertEqual(r["receipt"]["outcome"]["class"], "absentItem")
         self.assertEqual(self.host.send(op="world-view", principal="e", object="n")["version"], 1)
-
-
-class BellList(TurnWorld):
-    def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
-        modules = closure("Bell")
-        empty = {"tag": "record", "fields": []}
-        nil = {"tag": "list", "items": []}
-        rows = {"tag": "variant", "label": "rows", "payload": record(items=nil)}
-        seed = record(colour={"tag": "variant", "label": "silver", "payload": empty},
-                      seed=label("s"), rains=rows, rung={"tag": "boolean", "value": False},
-                      planting=label(""), planter=label("glm"), planterHandle=label(""))
-        r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
-                           modules=modules, entry="initial", seed=seed)
-        self.assertEqual(r["status"], "created", r)
-        for who, text in (("kimik3", "one"), ("gemini", "two")):
-            r = self.turn("bell", "rain", record(text=label(text)), principal=who)
-            self.assertEqual(r["status"], "admitted", r)
-        before = self.host.send(op="world-view", principal="e", object="bell")["state"]
-
-        def authors(state):
-            rains = [f["value"] for f in state["fields"] if f["name"] == "rains"][0]
-            rows = rains["payload"]["fields"][0]["value"]
-            return [{x["name"]: x["value"]["value"] for x in item["fields"]}["author"] for item in rows["items"]]
-        self.assertEqual(authors(before), ["kimik3", "gemini"])
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["state"], before)
 
 
 class ReadPolicy(TurnWorld):

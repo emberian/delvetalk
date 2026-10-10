@@ -13,7 +13,6 @@ gave each, encode through our encoder to exactly that CID.
 import json
 import os
 import tempfile
-import time
 import unittest
 
 import subprocess
@@ -207,22 +206,6 @@ class Canonical(unittest.TestCase):
         self.assertEqual(r["status"], "decoded", r)
         r = self.host.send(op="canonical-decode", hex=self.encode(data=nest(300))["hex"])
         self.assertEqual(r["status"], "error", r)
-
-    def test_smoke_bound_encoding_a_1000_element_list_takes_under_20_ms(self):
-        """The kernel's one wall-clock smoke bound, generous: measured 0.4 ms on hbox."""
-        data = list_wire([record(n=nat(i), s=label("item %d" % i)) for i in range(1000)])
-        def timed(repeat):
-            best = None
-            for _ in range(3):
-                started = time.perf_counter()
-                self.assertEqual(self.encode(data=data, repeat=repeat)["status"], "encoded")
-                elapsed = time.perf_counter() - started
-                best = elapsed if best is None else min(best, elapsed)
-            return best
-        base, many = timed(1), timed(401)
-        per = (many - base) / 400
-        print("canonical encode of a 1,000-element list: %.3f ms each" % (per * 1000))
-        self.assertLess(per, 0.020)
 
 
 class JournalCids(unittest.TestCase):

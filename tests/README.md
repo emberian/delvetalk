@@ -14,6 +14,13 @@ fixtures: `HostCase` (one process per class, a fresh unsynced journal per test),
 per class; test_http's `FrontCase` takes `fresh_world` for a hostd per test), `check` (the run's shared stateless process). [PROFILE.md](PROFILE.md) is the measurement
 that shaped them.
 
+## Properties and scenarios
+
+The town as `deploy/genesis.py` builds it (`tests/town.py`), driven by what it will meet. `DELVETALK_SEED=<n>` replays a property run; a failure names its seed.
+
+- `test_properties` (§8 invariants 4-7, 11, 12): `RandomHour`, two hundred moves drawn from the archive's posts and the rehearsal's model answers: every refusal classed, every retry the retained receipt, every card within the clip and without a DID or hash; reopening, and reopening from a snapshot, reproduce every state CID at every version, and the same requests make the same journal. `EveryMethod`: every public method of every object, as owner and stranger, with a well-typed value, one outside a form bound and a malformed one; undeclared names are `noMethod`.
+- `test_scenarios` (§5, §8): one scenario per arc through the spells a reply carries: a kind's bell watched, rained on and rung; a garden planting; a workshop proposal held for the owner and adopted; a scene entered and chosen.
+
 ## Kernel
 
 The compiler, the evaluator and the canonical codec, on one stateless process: what a package means before any world holds it.
@@ -145,3 +152,4 @@ The gate (FOUNDATION §11): the town's archived hour, replayed post by post. `re
 - `test_hub` (§11): The directory hears the gate's hour from the archived posts: field lines plant, rains and chatter get nothing, the model's spell reaches the door.
 - `test_replay` (§11): The hour of 2026-10-09, step by step on the host: planting, rain, the second cistern refused, the strike awaiting the planting post, the anthology.
 - `test_suspension_size` (§11, §12): A directory suspension journals only what changed: nine prose replies stay under a bounded median entry size.
+- `test_archive` (§11): `rehearsal/rehearse.py` over the whole archive: the section 10 hour and the recorded routing (43 interpretations).

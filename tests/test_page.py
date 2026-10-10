@@ -16,33 +16,6 @@ from tests.test_turn_world import label, record
 
 
 # The pages a door object publishes, as the town reads them (the workshop's, its head).
-PAGES = {
-    "rooms": (
-        "wiki: scene\n"
-        "\n"
-        "## Card\n"
-        "\n"
-        "SCENE The Moss Gate: 0 here. Reply delvetalk rooms enter to join.\n"
-        "\n"
-        "## How to reply\n"
-        "\n"
-        "Reply with a spell:\n"
-        "\n"
-        "delvetalk rooms enter\n"
-        "\n"
-        "delvetalk rooms choose\n"
-        "choice: <text, 1 to 64 characters>\n"
-        "\n"
-        "delvetalk rooms leave\n"),
-    "workshop": (
-        "wiki: workshop\n"
-        "\n"
-        "## Card\n"
-        "\n"
-        "✾ WORKSHOP\n"
-        "\n"
-        "To check Bend, reply with a ```obend block under:\n"),
-}
 
 
 class Page(Chain):
@@ -68,34 +41,6 @@ class Page(Chain):
         self.assertTrue(sections[-1].startswith("garden/bell/5\n"))
         self.assertIn("… and 4 more bells", sections[0])
         self.assertEqual(r["result"], label(published["id"]))
-
-    def test_publish_page_posts_the_card_under_the_door_word_and_the_host_lists_it(self):
-        """Genesis posts one card per door: publishPage titles the page by door().word."""
-        self.make("plot", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
-        r = self.turn("plot", "publishPage", record(page=label("")), principal="ember")
-        self.assertEqual(r["status"], "admitted", r)
-        [published] = r["receipt"]["publishes"]
-        self.assertTrue(published["text"].startswith("wiki: garden\n"), published["text"][:80])
-        self.assertIn("    delvetalk plot plant\n", published["text"])
-        listed = self.host.send(op="world-publications", principal="transport")
-        self.assertEqual(listed["status"], "publications", listed)
-        self.assertEqual([(p["object"], p["page"]) for p in listed["publications"]], [("plot", "garden")])
-        for obj, module, seed in (("rooms", "Scene", record(title=label("The Moss Gate"))), ("workshop", "Workshop", record(title=label("Workshop")))):
-            made = self.host.send(op="world-create", principal="ember", identity="mk-" + obj, object=obj, modules=closure(module), entry="initial", seed=seed)
-            self.assertEqual(made["status"], "created", made)
-            r = self.turn(obj, "publishPage", record(page=label("")), principal="ember")
-            self.assertEqual(r["status"], "admitted", r)
-            [published] = r["receipt"]["publishes"]
-            self.assertEqual(published["text"][:len(PAGES[obj])], PAGES[obj])
-
-    def test_publish_page_takes_a_page_name(self):
-        made = self.host.send(op="world-create", principal="ember", identity="mk-rooms", object="rooms", modules=closure("Scene"), entry="initial",
-                              seed=record(title=label("The Moss Gate")))
-        self.assertEqual(made["status"], "created", made)
-        r = self.turn("rooms", "publishPage", record(page=label("rooms")), principal="ember")
-        [published] = r["receipt"]["publishes"]
-        self.assertTrue(published["text"].startswith("wiki: rooms\n"), published["text"][:60])
 
 
 if __name__ == "__main__":

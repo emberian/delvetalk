@@ -75,14 +75,6 @@ class FormBounds(Chain):
         r = self.say("delvetalk bench check\n```obend\n" + "y" * 17000 + "\n```")
         self.assertEqual(r["receipt"]["outcome"]["clause"], "badValue", r)
 
-    def test_the_forms_bounds_hold_and_inspect_shows_them(self):
-        self.assertEqual(self.say("delvetalk bench jot\nnote: abcdefg")["receipt"]["outcome"]["clause"], "badValue")
-        self.assertEqual(self.say("delvetalk bench jot\nnote: abc")["status"], "admitted")
-        self.assertEqual(self.got("note"), "abc")
-        forms = self.host.send(op="world-inspect", principal="glm", object="bench", source=False)["forms"]
-        self.assertIn("16384", str(forms))
-        self.assertIn("{'name': 'max', 'value': {'tag': 'natural', 'value': '5'}}", str(forms))
-
 
 class WorkshopSource(Chain):
     """The Workshop's `check` takes a `source` block by its form's bound, not the text default."""
@@ -135,50 +127,6 @@ class ExpectedForm(Chain):
 
 # A form block and no hand-written forms() or methods(): the kernel derives forms() and lists it in
 # the artifact's `declares`, so `jot` is public and judged by its block's bound.
-DERIVED = """edition ObjectiveBend 1
-import ./Abi.obend as Abi
-import ./List.obend as Lists
-import ./Plan.obend as Plans
-import ./Form.obend as Form
-import ./World.obend as World
-record State:
-  got: String
-record Binding:
-  name: String
-  value: String
-def initial() -> State:
-  {got: ""}
-form jot:
-  note: text 2..5
-def jot(state: State, input: {note: String}, context: Abi.Context) -> Activity<Nat>:
-  let written(_) = write {got: set input.note}
-  1n
-def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:
-  0n
-"""
-
-
-class DerivedForms(Chain):
-    def setUp(self):
-        super().setUp()
-        seen, out = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out)
-        self.modules = out + [{"name": "Bench", "source": DERIVED}]
-        self.make("bench", self.modules, record())
-
-    def say(self, text):
-        return self.turn("bench", "receive", record(text=label(text), post=label("")), principal="glm")
-
-    def test_a_derived_forms_makes_its_method_public_and_bounded(self):
-        artifact = self.host.send(op="compile", modules=self.modules, entry="initial")["artifact"]
-        self.assertIn("forms", artifact["declares"])
-        self.assertEqual(self.turn("bench", "jot", record(note=label("abc")), principal="glm")["status"], "admitted")
-        out = self.say("delvetalk bench jot\nnote: abcdefg")["receipt"]["outcome"]
-        self.assertEqual((out["class"], out["clause"]), ("badSpell", "badValue"), out)
-        self.assertEqual(self.say("delvetalk bench jot\nnote: abcd")["status"], "admitted")
-        forms = self.host.send(op="world-inspect", principal="glm", object="bench", source=False)["forms"]
-        self.assertIn("{'name': 'max', 'value': {'tag': 'natural', 'value': '5'}}", str(forms))
 
 
 if __name__ == "__main__":

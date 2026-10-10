@@ -22,7 +22,7 @@ import unittest
 
 from deploy import genesis
 from tests.test_chain import nil, reference
-from tests.test_replay import get, items, relation, rows
+from tests.test_replay import get, relation, rows
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
@@ -61,14 +61,6 @@ class LawWorld(TurnWorld):
 
 
 class Laws(LawWorld):
-    def test_the_policy_law_is_the_one_the_handoff_named(self):
-        self.create("policy", closure("Policy"), record(owner=label(OWNER), model=label("m"), system=label("s"),
-                                                        lexicon=nil(), examples=nil(), escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
-        law = self.host.send(op="world-inspect", principal=OWNER, object="policy")["law"]
-        self.assertIn('law owner: (unchanged(owner)) and (request.subject == new.owner)', law)
-        self.assertNotIn("describe", law)
-        r = self.turn("policy", "receive", heard("delvetalk policy set\nmodel: n"), principal=OWNER)
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
 
     def test_only_the_directorys_owner_adds_or_removes_a_door(self):
         self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))

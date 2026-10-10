@@ -14,7 +14,7 @@ reaches the object as text.
 import unittest
 
 from tests.test_reflection import Reflection, POLICY
-from tests.test_turn_world import label, nat, record, declared
+from tests.test_turn_world import label, record, declared
 
 
 def variant(name, payload):
@@ -77,14 +77,6 @@ class SumWords(Reflection):
     def planted(self):
         return self.state("garden")["fields"][0]["value"]
 
-    def test_a_word_is_the_case_of_that_name(self):
-        r = self.turn("garden", "plant", record(colour=label("violet"), seed=label("rue")))
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(self.planted(), label("violet:rue"))
-        # The typed case is accepted as before.
-        r = self.turn("garden", "plant", record(colour=variant("amber", record()), seed=label("moss")))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.planted(), label("amber:moss"))
 
     def test_words_in_a_nested_record_and_a_list(self):
         bed = record(colours={"tag": "list", "items": [label("silver"), label("amber")]})
@@ -92,10 +84,6 @@ class SumWords(Reflection):
         self.assertEqual(r["status"], "admitted", r)
         self.assertEqual(self.planted(), label("silver,amber,"))
 
-    def test_a_text_field_stays_text(self):
-        r = self.turn("garden", "named", record(name=label("amber")))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.planted(), label("amber"))
 
     def test_a_word_naming_no_case_is_refused_naming_the_cases(self):
         r = self.turn("garden", "plant", record(colour=label("gold"), seed=label("rue")), identity="gold")

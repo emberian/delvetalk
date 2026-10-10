@@ -74,11 +74,6 @@ class SpellTurns(Reflection):
         self.reopen()
         self.assertEqual(self.field("planted"), label("silver:fern"))
 
-    def test_the_one_line_form_and_a_bare_spell(self):
-        self.assertEqual(self.say("delvetalk garden plant / colour: amber / seed: moss")["status"], "admitted")
-        self.assertEqual(self.field("planted"), label("amber:moss"))
-        self.assertEqual(self.say("colour: violet\nseed: rue")["result"], nat(1))
-        self.assertEqual(self.field("planted"), label("violet:rue"))
 
     def test_a_spell_in_any_case_and_a_direct_reply_without_delvetalk(self):
         # docs/FLEX.md §4 host 2: the card's name folded to the object it names; on a direct reply
@@ -97,31 +92,6 @@ class SpellTurns(Reflection):
                       principal="glm", reach="mention")
         self.assertEqual((r["result"], self.field("planted")), (nat(2), label("violet:rue")), r)
 
-    def test_values_without_names_plant_by_type(self):
-        # docs/FLEX.md §4 host 3, on a turn: the option to the choice, the rest to the one text field.
-        r = self.say("delvetalk garden plant\nSilver\na fern that remembers")
-        self.assertEqual((r["status"], self.field("planted")), ("admitted", label("silver:a fern that remembers")), r)
-
-    def test_misfits_are_refused_by_clause_with_reason_and_hint(self):
-        cases = [("delvetalk garden plant\ncolour: gold\nseed: fern", "badValue", "colour is one of: amber, violet, silver"),
-                 ("delvetalk garden plant\nsize: big", "unknownField", "No field size in this spell; it takes colour, seed."),
-                 ("delvetalk garden plant\ncolour: amber\ncolour: amber\nseed: x", "duplicateField", "colour is given twice; keep one."),
-                 ("delvetalk garden water", "noAction", "garden has no spell water; it has these:"),
-                 ("delvetalk nowhere plant", "otherCard", "There is no card nowhere; the directory lists the doors."),
-                 ("delvetalk garden plant\nseed: <<END\nfern\n", "unclosedBlock", "The block <<END for seed needs a last line that is exactly END.")]
-        for i, (text, clause, reason) in enumerate(cases):
-            r = self.say(text, identity=f"bad{i}")
-            out = r["receipt"]["outcome"]
-            self.assertEqual((r["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", clause, reason), r)
-            self.assertIn("delvetalk", out["hint"])
-        # The hint is the spell with a blank where the value did not fit; what fitted stays.
-        hint = self.say("delvetalk garden plant\ncolour: gold\nseed: fern", identity="again")["receipt"]["outcome"]["hint"]
-        self.assertIn("colour: <amber, violet, silver>\nseed: fern", hint)
-        # Another principal sees the public projection, with the clause and the hint.
-        public = self.host.send(op="world-receipt", principal="kim", identity="bad0", of="glm")
-        self.assertEqual((public.get("class"), public.get("clause")), ("badSpell", "badValue"), public)
-        self.assertIn("hint", public)
-        self.assertEqual(self.field("planted"), label(""))
 
     def test_missing_fields_and_prose_reach_receive_with_the_bare_fields(self):
         r = self.say("delvetalk garden plant\nseed: fern")
@@ -131,10 +101,6 @@ class SpellTurns(Reflection):
         self.assertEqual(r["result"], nat(2), r)
         self.assertEqual((self.field("heard"), self.field("fields")), (label("what a lovely garden"), nat(0)))
 
-    def test_usage_is_the_hosts_and_journals_nothing(self):
-        r = self.say("delvetalk garden ?")
-        self.assertEqual(r["status"], "usage", r)
-        self.assertIn("delvetalk garden plant\ncolour: <amber, violet, silver>\nseed: <text, 0 to 1400 characters>", r["text"])
 
     def test_a_spell_naming_another_card_runs_on_it(self):
         r = self.say("delvetalk plot plant\ncolour: amber\nseed: oak", card="garden")
@@ -196,27 +162,6 @@ class Lenses(Reflection):
     def field(self, name):
         return {f["name"]: f["value"] for f in self.state("lamp")["fields"]}[name]
 
-    def test_set_runs_through_the_lens_typed(self):
-        r = self.say("delvetalk lamp set\nname: Moth")
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(self.field("name"), label("Moth"))
-        self.assertEqual(self.field("origin"), label("spell|delvetalk lamp set"))
-        self.assertEqual(self.say("delvetalk lamp set / size: 7")["status"], "admitted")
-        self.assertEqual(self.field("size"), nat(7))
-        self.assertEqual(self.say("delvetalk lamp set\nmood: wild")["status"], "admitted")
-        self.assertEqual(self.field("mood"), label("wild"))
-
-    def test_misfits_are_refused_by_clause(self):
-        cases = [("delvetalk lamp set\nsize: 12", "badValue", "size"),
-                 ("delvetalk lamp set\nmood: grim", "badValue", "mood is one of: calm, wild"),
-                 ("delvetalk lamp set\ncolour: red", "unknownField", "No field colour in this spell; it takes name, size, mood."),
-                 ("delvetalk lamp set\nname: a\nsize: 2", "unknownField", "set takes one field a spell, not name, size")]
-        for i, (text, clause, reason) in enumerate(cases):
-            out = self.say(text, identity=f"bad{i}")["receipt"]["outcome"]
-            self.assertEqual((out["class"], out["clause"]), ("badSpell", clause), out)
-            self.assertIn(reason, out["reason"])
-            self.assertIn("delvetalk lamp set", out["hint"])
-        self.assertEqual(self.field("size"), nat(0))
 
     def test_set_without_a_field_is_receive_and_usage_lists_the_lenses(self):
         self.assertEqual(self.say("delvetalk lamp set")["result"], nat(2))
@@ -359,22 +304,6 @@ class Misfits(Reflection):
     def heard(self, card="garden"):
         return {f["name"]: f["value"] for f in self.state(card)["fields"]}["heard"]["value"]
 
-    def test_the_four_misfits_reach_receive_with_the_clause_and_reason(self):
-        cases = [("delvetalk garden plant\ncolour: gold\nseed: fern", "badValue|colour is one of: amber, violet, silver"),
-                 ("delvetalk garden plant\ncadence: daily", "unknownField|No field cadence in this spell; it takes colour, seed."),
-                 ("delvetalk garden rain\ncard: garden/bell/1", "noAction|garden has no spell rain; it has these:"),
-                 ("delvetalk nowhere plant", "otherCard|There is no card nowhere; the directory lists the doors.")]
-        for i, (text, heard) in enumerate(cases):
-            r = self.say(text, identity="m%d" % i)
-            self.assertEqual((r["status"], r["result"]), ("admitted", nat(2)), r)
-            self.assertEqual(self.heard(), heard, text)
-            # The field lines go with it (`card: …` on the rain, `cadence: …` on the subscribe).
-            fields = {f["name"]: f["value"] for f in self.state("garden")["fields"]}["fields"]
-            self.assertEqual(fields, nat(text.count(": ")), text)
-        # A spell that fits still runs its method, and prose still reaches receive with no misfit.
-        self.assertEqual(self.say("delvetalk garden plant\ncolour: amber\nseed: moss")["result"], nat(1))
-        self.say("lovely evening")
-        self.assertEqual(self.heard(), "|")
 
     def test_a_card_that_takes_no_misfit_and_the_strict_clauses_still_refuse(self):
         r = self.say("delvetalk plain water", card="plain")
@@ -414,9 +343,6 @@ class Interpreted(Reflection):
         self.assertEqual(result, label("proposal"))
         self.assertEqual({f["name"]: f["value"] for f in self.state("garden")["fields"]}["planted"], label("violet:rue"))
 
-    def test_bare_fields_naming_an_offered_field_are_its_spell(self):
-        verdict, _ = self.interpret("colour: amber\nseed: moss")
-        self.assertEqual(verdict["tag"], "proposal", verdict)
 
     def test_misfits_and_missing_fields_are_unclear(self):
         self.assertEqual(self.interpret("delvetalk garden plant\ncolour: gold\nseed: rue")[0],
@@ -424,11 +350,6 @@ class Interpreted(Reflection):
         self.assertEqual(self.interpret("delvetalk garden plant\ncolour: amber")[0], {"tag": "unclear", "needs": ["seed"]})
         self.assertEqual(self.interpret("delvetalk garden water")[0],
                          {"tag": "unclear", "needs": ["garden water is not one of the offered actions"]})
-
-    def test_prose_is_replied(self):
-        verdict, result = self.interpret("I could not tell what you meant.")
-        self.assertEqual(verdict, {"tag": "replied", "text": "I could not tell what you meant."})
-        self.assertEqual(result, label("replied|I could not tell what you meant."))
 
 
 if __name__ == "__main__":

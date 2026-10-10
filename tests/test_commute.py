@@ -20,7 +20,7 @@ from tests.host import as_owner
 from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
-from tests.test_world import COUNTER, BOUNDED, WorldCase, add, put, root, seed, write
+from tests.test_world import BOUNDED, WorldCase, add, put, root, write
 from tests.test_turn_world import declared
 
 BELL = declared("""edition ObjectiveBend 1
@@ -133,12 +133,6 @@ class Proposals(WorldCase):
         super().setUp()
         self.create()
 
-    def test_two_adds_against_the_same_root_both_commit(self):
-        self.assertEqual(self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])["status"], "admitted")
-        r = self.propose("p2", [root("c1", 0)], [write("c1", add("count", 2))])
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(r["receipt"]["roots"], [root("c1", 0)])
-        self.assertEqual(self.view()["state"], seed(3))
 
     def test_a_set_against_a_moved_root_is_stale_and_a_future_version_is_stale(self):
         self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])

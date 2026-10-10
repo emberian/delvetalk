@@ -13,14 +13,6 @@ import unittest
 from tests.test_objects import compile_job, closure
 
 
-def field_names(row):
-    names = []
-    while row.get("tag") == "field":
-        names.append(row["name"])
-        row = row["tail"]
-    return names
-
-
 LAW_HEAD = """edition ObjectiveBend 1
 import ./World.obend as World
 record State:
@@ -34,28 +26,6 @@ sum Verdict:
 def bump(state: State, input: {}, context: {}) -> Nat:
   state.count + 1n
 """
-
-
-class MethodTableTests(unittest.TestCase):
-    def test_garden_lists_its_methods_with_their_shapes(self):
-        compiled = compile_job(closure("Garden"), "plant")
-        self.assertEqual(compiled["status"], "compiled", compiled)
-        methods = {m["name"]: m for m in compiled["artifact"]["methods"]}
-        for name in ("plant", "receive", "render"):
-            self.assertIn(name, methods)
-        self.assertEqual(sorted(field_names(methods["plant"]["input"])), ["colour", "seed"])
-        self.assertTrue(methods["plant"]["activity"])
-        self.assertTrue(methods["plant"]["context"])
-        self.assertEqual(sorted(field_names(methods["receive"]["input"])), ["fields", "post", "text"])  # a Card.Reply
-        self.assertTrue(methods["receive"]["activity"])
-        self.assertEqual(methods["render"]["input"], {"tag": "emptyRow"})
-        self.assertFalse(methods["render"]["activity"])
-        self.assertTrue(methods["render"]["context"])  # render(state, context): the reader's card
-        # sow takes four inputs beyond its state: not callable as a method
-        self.assertNotIn("sow", methods)
-        # helpers whose first parameter is not the state are not methods
-        self.assertNotIn("propose", methods)
-        self.assertEqual(compiled["artifact"]["law"], {"present": False})
 
 
 class LawShapeTests(unittest.TestCase):

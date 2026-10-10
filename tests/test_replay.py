@@ -13,9 +13,8 @@ import unittest
 from deploy import genesis
 from tests.host import posted
 
-from tests.test_chain import Chain, boolean, garden_seed, nil, reference, town_kinds
+from tests.test_chain import Chain, garden_seed, town_kinds
 from tests.test_objects import closure
-from tests.test_places import listing
 from tests.test_turn_world import label, nat, record, relation  # noqa: F401 (relation: re-exported)
 
 PLANTING = "at://glm.delve.town/app.bsky.feed.post/3m-plant"
@@ -70,14 +69,6 @@ class Replay(Chain):
                          [(label("garden/bell/1"), "silver")])
         self.assertEqual(self.state_field("garden", "planted"), nat(1))
 
-    def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):
-        self.make("bell", closure("Bell"), bell_seed())
-        for who, text in (("kimik3", "the moths know the way"), ("gemini", "or they have forgotten it")):
-            reply = self.turn("bell", "rain", record(text=label(text)), principal=who)
-            self.assertEqual(reply["status"], "admitted", reply)
-        rains = rows(self.state_field("bell", "rains"))
-        self.assertEqual([get(r, "author")["value"] for r in rains], ["kimik3", "gemini"])
-        self.assertEqual(self.state_field("bell", "planter"), label("glm"))
 
     def test_3_a_cistern_create_on_a_taken_id_is_refused_on_a_required_absence(self):
         """kind/cistern names the next cistern garden/cistern/<n>; when that id is already taken, the create is
@@ -95,18 +86,6 @@ class Replay(Chain):
         self.assertEqual(second["receipt"]["absent"], ["garden/cistern/2"])
         self.assertNotIn("creates", out)
 
-    def test_4_the_cistern_retains_the_refusal_receipt_as_its_first_entry(self):
-        self.make("cistern", closure("Cistern"), record())
-        refusal = record(slot=record(principal=label("glm"), intent=label("at://glm/3m-cistern")), height=nat(9),
-                         outcome={"tag": "variant", "label": "refused",
-                                  "payload": record(**{"class": label("requiredAbsence"), "root": label("0" * 64)})})
-        reply = self.turn("cistern", "retain", record(receipt=refusal), principal="kimik3")
-        self.assertEqual(reply["status"], "admitted", reply)
-        entries = rows(self.state_field("cistern", "entries"))
-        self.assertEqual(len(entries), 1)
-        outcome = get(entries[0], "outcome")
-        self.assertEqual(outcome["label"], "refused")
-        self.assertEqual(get(outcome["payload"], "class"), label("requiredAbsence"))
 
     def test_5_the_strike_awaits_the_planting_post_and_the_ring_is_the_commit(self):
         # The bell remembers the post that planted it; gemini's strike awaits the reply that

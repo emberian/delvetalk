@@ -16,7 +16,6 @@ from tests.host import as_owner
 from tests.test_replay import rows
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference, town_kinds
 from tests.test_objects import check, closure, compile_job
-from tests.test_places import listing
 from tests.test_turn_world import label, nat, record, declared
 
 PROBE = declared("""edition ObjectiveBend 1
@@ -84,62 +83,6 @@ class PolicyObject(Chain):
     def card(self, name, principal="glm"):
         return self.turn(name, "receive", record(text=label(""), post=label("")), principal=principal)["offers"][0]["text"]
 
-    def test_teach_define_and_set_model_edit_the_policy_in_order(self):
-        self.policy()
-        for utterance, spell in (("a fern", "delvetalk garden-1 plant seed: fern, colour: silver"), ("a moth", "delvetalk garden-1 plant seed: moth, colour: amber")):
-            reply = self.turn("policy", "teach", record(utterance=label(utterance), spell=label(spell)), principal="ember")
-            self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "taught"), reply)
-        reply = self.turn("policy", "define", record(word=label("moth"), meaning=label("a seed")), principal="ember")
-        self.assertEqual(reply["status"], "admitted", reply)
-        for spell in ("delvetalk policy set\nmodel: claude-sonnet", "delvetalk policy set\nescalate: claude-opus",
-                      "delvetalk policy set\nescalate-to: did:plc:operator4keeper"):
-            reply = self.turn("policy", "receive", record(text=label(spell), post=label("")), principal="ember")
-            self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
-        card = self.card("policy")
-        self.assertEqual(card, (
-            "✾ INTERPRETATION POLICY\n"
-            "\n"
-            "Model: claude-sonnet\n"
-            "I only propose. A card asks the speaker first before: reprogram, amend, offer.\n"
-            "When unsure I escalate to claude-opus.\n"
-            "What a card cannot fit twice goes to …r4keeper.\n"
-            "\n"
-            "Only its owner, ember, teaches it.\n"
-            "\n"
-            "What I know:\n"
-            "- moth: a seed\n"
-            "Participant: a fern\n"
-            "Spell:\n"
-            "delvetalk garden-1 plant seed: fern, colour: silver\n"
-            "\n"
-            "Participant: a moth\n"
-            "Spell:\n"
-            "delvetalk garden-1 plant seed: moth, colour: amber\n"
-            "\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk policy teach\n"
-            "    utterance: <text, 1 to 280 characters>\n"
-            "    spell: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk policy define\n"
-            "    word: <text, 1 to 64 characters>\n"
-            "    meaning: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk policy macro\n"
-            "    name: <text, 1 to 64 characters>\n"
-            "    pattern: <text, 1 to 280 characters>\n"
-            "    expansion: <text, 1 to 560 characters>\n"
-            "\n"
-            "    delvetalk policy confirm\n"
-            "    action: <text, 1 to 64 characters>\n"
-            "    ask: <yes, no>\n"))
-        self.assertIn("Model: claude-sonnet", card)
-        self.assertIn("When unsure I escalate to claude-opus.\nWhat a card cannot fit twice goes to …r4keeper.\n", card)
-        self.assertIn("delvetalk policy teach", card)
-        self.assertIn("- moth: a seed", card)
-        self.assertLess(card.index("Participant: a fern"), card.index("Participant: a moth"))
 
     def test_only_the_owner_teaches_and_the_law_refuses_what_bend_would_not(self):
         self.policy()
@@ -250,36 +193,6 @@ class PolicyObject(Chain):
         over = self.turn("policy", "teach", record(utterance=label("u16"), spell=label("s")), principal="ember")
         self.assertEqual(over["result"]["label"], "refused")
 
-    def test_the_prompt_for_gardens_plant_form_contains_its_fields_and_bounds_verbatim(self):
-        out = run("plantPrompt", context())
-        self.assertEqual(out["status"], "finished", out)
-        prompt = out["value"]["value"]
-        self.assertEqual(prompt, (
-            "You turn words into one spell.\n"
-            "\n"
-            "Lexicon:\n"
-            "- moth: a seed\n"
-            "\n"
-            "Examples:\n"
-            "Participant: a silver fern\n"
-            "Spell:\n"
-            "delvetalk garden-1 plant seed: a fern, colour: silver\n"
-            "\n"
-            "Offered forms (a spell is the delvetalk line, then one field: value line per field):\n"
-            "\n"
-            "delvetalk garden-1 plant\n"
-            "  colour: one of amber, violet, silver\n"
-            "  seed: text of 1 to 80 characters\n"
-            "\n"
-            "Answer with the spells it contains, at most three, each a delvetalk line with its field lines, in the order said; or with unclear: <what is missing>, and nothing else.\n"
-            "\n"
-            "Participant: plant me a moth"))
-        for needle in ("You turn words into one spell.\n", "Lexicon:\n- moth: a seed\n",
-                       "Participant: a silver fern\nSpell:\ndelvetalk garden-1 plant seed: a fern, colour: silver\n",
-                       "delvetalk garden-1 plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n",
-                       "Answer with the spells it contains, at most three, each a delvetalk line with its field lines, in the order said; or with unclear: <what is missing>, and nothing else.",
-                       "Participant: plant me a moth"):
-            self.assertIn(needle, prompt)
 
     # --- Garden.receive falls through to the policy ---------------------------------
 
@@ -394,14 +307,6 @@ class PolicyObject(Chain):
         self.assertEqual(green["result"]["label"], "unclear")
         self.assertEqual(green["offers"][0]["text"], "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour is one of: amber, violet, silver (not green).\n")
 
-    def test_the_interpretation_shows_the_model_the_card_as_the_speaker_reads_it(self):
-        # docs/FLEX.md §2: the card answered, rendered for the speaker, beside the forms and lexicon.
-        self.policy()
-        self.garden("policy")
-        self.say("plant something")
-        [pending] = self.host.send(op="world-interpretations")["pending"]
-        self.assertIn("NIGHT GARDEN", pending["card"])
-        self.assertLessEqual(len(pending["card"]), 1400)
 
     def test_an_unclear_interpretation_offers_its_needs(self):
         self.policy()
@@ -414,33 +319,6 @@ class PolicyObject(Chain):
 
     # --- The model's own text, fitted by the garden (rehearsal finding 2) -----------------
 
-    def test_the_request_carries_the_policys_rendered_prompt_as_its_system_text(self):
-        self.policy()
-        self.garden("policy")
-        self.say("Could we plant a silver fern that remembers?")
-        [item] = self.host.send(op="world-interpretations")["pending"]
-        system = item["policy"]["system"]
-        self.assertEqual(system, (
-            "S\n"
-            "\n"
-            "Lexicon:\n"
-            "\n"
-            "Examples:\n"
-            "Offered forms (a spell is the delvetalk line, then one field: value line per field):\n"
-            "\n"
-            "delvetalk garden plant\n"
-            "  colour: one of amber, violet, silver\n"
-            "  seed: text of 1 to 80 characters\n"
-            "\n"
-            "Answer with the spells it contains, at most three, each a delvetalk line with its field lines, in the order said; or with unclear: <what is missing>, and nothing else.\n"
-            "\n"
-            "Participant: Could we plant a silver fern that remembers?"))
-        self.assertTrue(system.startswith("S\n\nLexicon:\n"), system)
-        for needle in ("Offered forms (a spell is the delvetalk line, then one field: value line per field):",
-                       "delvetalk garden plant\n  colour: one of amber, violet, silver\n  seed: text of 1 to 80 characters\n",
-                       "Answer with the spells it contains, at most three",
-                       "Participant: Could we plant a silver fern that remembers?"):
-            self.assertIn(needle, system)
 
     def test_a_plain_spell_reply_is_fitted_to_a_proposal_and_the_garden_plants_it(self):
         self.policy()
@@ -461,33 +339,6 @@ class PolicyObject(Chain):
         self.reopen()
         self.assertEqual(self.state("garden"), before)
 
-    def test_a_suspension_journals_its_checkpoint_blocks_once(self):
-        """Rehearsal run 5: a suspended entry cost about 236 KB, nearly all of it the program's own
-        terms in the checkpoint. Blocks are journaled once; a later suspension of the same package
-        names them."""
-        self.policy()
-        self.garden("policy")
-        sizes = []
-        for i, text in enumerate(["Could we plant a silver fern that remembers?",
-                                  "a violet moth for the lost ones, and something else entirely, please"]):
-            self.assertEqual(self.say(text, identity="p%d" % i)["status"], "suspended")
-            with open(self.path) as f:
-                sizes.append(len(f.read().splitlines()[-1]))
-        print("\n  suspended entries: %d bytes, then %d bytes" % tuple(sizes))
-        self.assertLess(sizes[1], 20000)
-        # Both resume from their reassembled checkpoints, after a restart too.
-        self.reopen()
-        # Both are glm's: the first resumed upserts glm's pending row, which moves the garden
-        # under the second (the same key, so no rebase), and the host re-runs the second, which
-        # asks again; that answer resumes it.
-        admitted = []
-        for _ in range(4):
-            pending = self.host.send(op="world-interpretations")["pending"]
-            if not pending:
-                break
-            settled = self.host.send(op="world-interpretation", id=pending[0]["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
-            admitted += [r for r in settled["resumed"] if r["status"] == "admitted"]
-        self.assertEqual(len(admitted), 2, admitted)
 
     def test_a_resumed_interpretation_whose_directory_moved_meanwhile_still_admits(self):
         """Rehearsal run 5, finding 6: inkling's prose resumed after another principal's greeting

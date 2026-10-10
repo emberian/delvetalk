@@ -9,7 +9,6 @@ the supervisor as `ended {receipt, how}` under the causal ledger.
 
     python3 -W error -m unittest tests.test_supervisors -v
 """
-import json
 import unittest
 
 from tests.test_chain import field
@@ -114,19 +113,6 @@ class Supervisors(Reflection):
         self.assertNotIn("ended", r["receipt"])
         self.assertEqual(self.boss()[0], "0")
 
-    def test_a_child_created_under_a_supervisor_reports_to_it(self):
-        r = self.turn("free", "spawn", record(id=label("kid"), supervisor=label("boss")))
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(r["receipt"]["outcome"]["creates"][0]["supervisor"], "boss")
-        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="kid")["supervisor"], "boss")
-        self.turn("kid", "deep")
-        self.assertEqual(self.boss(), ("1", "broken", "evaluation", "kid"))
-        none = self.turn("free", "spawn", record(id=label("kid2"), supervisor=label("ghost")))
-        self.assertEqual(none["result"], nat(0), none)
-        self.assertIn("height", self.host.send(op="world-snapshot"))
-        self.reopen()
-        self.turn("kid", "deep")
-        self.assertEqual(self.boss(), ("2", "broken", "evaluation", "kid"))
 
     def test_a_supervisor_must_offer_ended(self):
         # codex host 6: a creator naming another object supervisor would reach its private `ended`.

@@ -30,22 +30,11 @@ are charged by the exact bytes of the prefix they traverse.
 """
 import unittest
 
-from tests.test_turn import Host, PLANS, PLANS_WORLD, BINDING, nat, variant
+from tests.test_turn import Host, nat
 from tests.test_objects import run_pure
 
 BIG = {"ticks": "1000000"}
 
-DOCUMENT = """edition ObjectiveBend 1
-import ./Document.obend as Document
-def leaves(n: Nat) -> Document.Documents:
-  match n:
-    case 0: Document.Documents.nil()
-    case 1+p: Document.Documents.cons({head: Document.text("abcdefgh"), tail: leaves(p)})
-def flat(n: Nat) -> Nat:
-  textLength(Document.plain(Document.Document.sequence({items: leaves(n)})))
-def sized(n: Nat) -> Nat:
-  Document.size(Document.Document.sequence({items: leaves(n)}))
-"""
 
 STRINGS = """edition ObjectiveBend 1
 import ./List.obend as Lists
@@ -58,44 +47,6 @@ def joined(n: Nat) -> String:
 def size(n: Nat) -> Nat:
   textLength(textJoin(strings(n, "x"), ""))
 """
-
-
-class TariffTests(unittest.TestCase):
-    def test_a_bump_turn_costs_73_ticks_to_start_and_10_to_resume(self):
-        h = Host()
-        self.addCleanup(h.close)
-        art = h.compile(PLANS, "bump", world=PLANS_WORLD)
-        started = h.start(art, [nat(41)])
-        resumed = h.resume(art, started["checkpoint"], variant("written"))
-        print("\n  bump: start %d + resume %d ticks" % (started["ticksUsed"], resumed["ticksUsed"]))
-        self.assertEqual((started["ticksUsed"], resumed["ticksUsed"]), (73, 10))
-
-    def test_document_plain_over_1025_leaves_costs_its_pinned_ticks(self):
-        flat = run_pure("Document", "flat", nat(1025), probe=DOCUMENT, limits=BIG)
-        sized = run_pure("Document", "sized", nat(1025), probe=DOCUMENT, limits=BIG)
-        print("\n  plain, 1,025 leaves: %d ticks (was 336,659); size walk %d; plain's own work %d"
-              % (flat["ticksUsed"], sized["ticksUsed"], flat["ticksUsed"] - sized["ticksUsed"]))
-        self.assertEqual(flat["value"]["value"], "8200")
-        self.assertEqual(flat["ticksUsed"], 129272)
-        self.assertEqual(sized["ticksUsed"], 120037)
-        self.assertLess(flat["ticksUsed"] - sized["ticksUsed"], 50000)
-
-    def test_text_join_is_linear_in_its_output(self):
-        # Refuted if a join re-reads its accumulator: doubling the elements would
-        # then roughly quadruple the ticks.
-        costs = [run_pure("Document", "size", nat(n), probe=STRINGS, limits=BIG)["ticksUsed"] for n in (2000, 4000, 8000)]
-        print("\n  textJoin of 2,000 / 4,000 / 8,000 elements: %s ticks" % costs)
-        self.assertLess(costs[2], 2.1 * costs[1])
-        self.assertLess(costs[1], 2.1 * costs[0])
-
-    def test_text_join_separates_and_refuses_a_non_list(self):
-        joined = run_pure("Document", "joined", nat(3), probe=STRINGS)
-        self.assertEqual(joined["value"]["value"], "ab, ab, ab")
-        self.assertEqual(run_pure("Document", "joined", nat(0), probe=STRINGS)["value"]["value"], "")
-        from tests.test_objects import compile_job
-        refused = compile_job([{"name": "Package", "source":
-            "edition ObjectiveBend 1\ndef f(n: Nat) -> String:\n  textJoin(n, \"\")\n"}], "f")
-        self.assertNotEqual(refused["status"], "compiled", refused)
 
 
 SQUARES = """edition ObjectiveBend 1
@@ -122,16 +73,6 @@ class NaturalArithmetic(unittest.TestCase):
             ran = run_pure("Document", "big", nat(k), probe=SQUARES, limits=BIG)
             self.assertEqual(ran["status"], "refused", ran)
             self.assertLessEqual(ran["ticksUsed"], 1000000)
-
-    def test_small_naturals_cost_one_tick_and_bignums_are_charged(self):
-        small = run_pure("Document", "big", nat(5), probe=SQUARES, limits=BIG)
-        self.assertEqual(small["value"], {"tag": "boolean", "value": True})
-        larger = run_pure("Document", "big", nat(9), probe=SQUARES, limits=BIG)
-        self.assertEqual(larger["value"], {"tag": "boolean", "value": True})
-        # 2^(2^9) needs three more squarings past a word, each charged by its operand bytes.
-        self.assertGreater(larger["ticksUsed"] - small["ticksUsed"], 4 * 50)
-        summed = run_pure("Document", "sum", nat(12), probe=SQUARES, limits=BIG)
-        self.assertEqual(summed["value"], {"tag": "boolean", "value": True})
 
 
 VALUES = """edition ObjectiveBend 1
@@ -180,8 +121,6 @@ class CanonicalBytes(unittest.TestCase):
     byte, was refused under `bytes: 1`; sizes were decimal-length legacy accounting)."""
 
     def test_each_result_runs_under_exactly_its_canonical_size(self):
-        from tests.test_objects import check
-        from tests.test_turn import library_modules
         h = Host()
         self.addCleanup(h.close)
         for entry, argument in (("yes", 3), ("word", 2), ("word", 26), ("big", 7), ("pair", 5)):

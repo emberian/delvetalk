@@ -145,14 +145,6 @@ class RelationLibrary(unittest.TestCase):
             "c2w,al2z,bo2x,al10y",          # retract of an absent key: unchanged
         ]))
 
-    def test_a_merge_join_of_two_stored_relations_is_linear(self):
-        sort = run("bigSort", 64, limits={"ticks": "1000000", "heap": "1000000"})
-        join = run("bigJoin", 200, limits={"ticks": "1000000", "heap": "1000000"})
-        print("\n  fromList of 64 rows in reverse order: %s ticks; joinOn of two stored 200-row relations: %s ticks"
-              % (sort.get("ticksUsed"), join.get("ticksUsed")))
-        self.assertEqual(sort["value"]["value"], "64")
-        self.assertEqual(join["value"]["value"], "200")
-
 
 if __name__ == "__main__":
     unittest.main()

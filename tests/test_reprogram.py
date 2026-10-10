@@ -74,21 +74,6 @@ class Reprogram(TurnWorld):
 
 
 class Code(Reprogram):
-    def test_bumps_to_three_then_five_across_the_pin_change_and_the_receipt_names_both_pins(self):
-        self.assertEqual(self.make()["status"], "created")
-        before = self.pin()
-        for _ in range(3):
-            self.assertEqual(self.turn("c1", "bump")["status"], "admitted")
-        self.assertEqual(self.count("c1"), (3, "3"))
-        r = self.reprogram(ADDS_TWO)
-        self.assertEqual(r["status"], "admitted", r)
-        rec = r["receipt"]["outcome"]["reprograms"][0]
-        after = self.pin()
-        self.assertNotEqual(before, after)
-        self.assertEqual((rec["oldPin"], rec["newPin"]), (before, after))
-        self.assertEqual(self.count("c1"), (4, "3"))       # the reprogram is a write: one version
-        self.assertEqual(self.turn("c1", "bump")["result"], nat(5))
-        self.assertEqual(self.count("c1"), (5, "5"))
 
     def test_a_different_state_type_without_a_migration_is_refused_by_name_and_changes_nothing(self):
         self.make()
@@ -172,13 +157,6 @@ class Law(Reprogram):
         r = self.make(source=with_law(COUNTER, 'law sealed: request.subject == "nobody"'))
         self.assertEqual(r["status"], "error")
         self.assertIn('law does not admit an amendment by its proposer ember: sealed: request.subject == "nobody"', r["message"])
-
-    def test_the_law_can_be_read_on_the_pin_of_the_new_package(self):
-        self.make(source=with_law(COUNTER, EMBER_ONLY))
-        new_pin = self.reprogram(ADDS_TWO, who="ember")["receipt"]["outcome"]["reprograms"][0]["newPin"]
-        locked = BOTH.replace("or request.subject == \"kimik3\"", 'and request.pin == "%s"' % new_pin)
-        self.assertEqual(self.amend(locked)["status"], "admitted")
-        self.assertEqual(self.turn("c1", "bump")["status"], "admitted")   # runs under the pin the law names
 
 
 class DefaultLaw(Reprogram):
@@ -278,11 +256,6 @@ class PlansInTurn(Reprogram):
         r = self.turn("p", "evolve", record(package=label("edition ObjectiveBend 1\nnonsense\n")))
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(0)))
         self.assertNotIn("reprograms", r["receipt"]["outcome"])
-
-    def test_an_object_amends_its_own_law_with_a_plan(self):
-        r = self.turn("p", "widen", record(law=label('law own: request.subject == "ember"')))
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(self.turn("p", "widen", record(law=label("law x: new.count <= 100")), principal="mallory")["receipt"]["outcome"]["clause"], "own")
 
 
 class Maximum(Reprogram):

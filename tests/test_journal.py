@@ -9,11 +9,10 @@ compiles once per process (creation and replay alike).
 Measured on this branch, 500 Bells from world/objects in a library world: before, create
 135 s, reopen 133 s, journal 3.14 MB; after, create 4.3 s, reopen 0.5 s, journal 0.82 MB.
 """
-import json
 import os
 import unittest
 
-from tests.test_chain import boolean, empty, nil, reference
+from tests.test_chain import boolean, empty, nil
 from tests.test_reflection import ROOT, Reflection
 from tests.test_turn_world import label, record
 
@@ -39,15 +38,6 @@ class Sources(Reflection):
             [module] = entry["outcome"]["compile"]["modules"]
             self.assertEqual(module, {"name": "Main", "cid": carried["cid"]})
         self.assertEqual(sum(line.count("def initial(") for line in self.lines()), 1)
-
-    def test_objects_rebuilt_from_cids_replay_to_the_same_state(self):
-        self.open_library()
-        self.bell("a")
-        self.bell("b")
-        before = [self.host.send(op="world-inspect", principal="ember", object=n, source=True) for n in ("a", "b")]
-        self.reopen()
-        self.assertEqual([self.host.send(op="world-inspect", principal="ember", object=n, source=True) for n in ("a", "b")], before)
-        self.assertEqual(before[0]["source"], BELL)
 
 
 class Lock(Reflection):

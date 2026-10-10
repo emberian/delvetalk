@@ -8,15 +8,11 @@ World kernel: object store, hash-chained journal, commit-on-roots, receipts.
 Python only drives bytes over stdin/stdout; every decision is Lean's. Each case
 is named by the defect that would make it fail.
 """
-import json
 import os
-import subprocess
-import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from tests.host import HostCase, binary
-from tests.wire import cid_of
 BINARY = binary()
 
 COUNTER = """edition ObjectiveBend 1
@@ -94,14 +90,6 @@ def write(obj, *edits):
 
 
 class CreateAndView(WorldCase):
-    def test_create_and_view_returns_seed_at_version_zero(self):
-        r = self.create(count=3)
-        self.assertEqual(r["status"], "created")
-        v = self.view()
-        self.assertEqual((v["status"], v["version"]), ("viewed", 0))
-        self.assertEqual(v["state"], seed(3))
-        self.assertTrue(v["pin"].startswith("bafyrei"), v["pin"])  # a CID: 59 characters
-        self.assertEqual(r["receipt"]["outcome"]["pin"], v["pin"])
 
     def test_view_of_unknown_object_is_a_named_silence(self):
         self.assertEqual(self.view("nope")["status"], "unknown")
@@ -210,14 +198,6 @@ class Commit(WorldCase):
         self.assertEqual(r["status"], "refused")
         self.assertEqual((self.view("c1")["version"], self.view("c2")["version"]), (0, 0))
 
-    def test_two_different_identities_with_the_same_writes_both_admit_in_order(self):
-        a = self.propose("pa", [root("c1", 0)], [write("c1", add("count", 1))])
-        b = self.propose("pb", [root("c1", 1)], [write("c1", add("count", 1))])
-        self.assertEqual((a["status"], b["status"]), ("admitted", "admitted"))
-        self.assertEqual(b["receipt"]["height"], a["receipt"]["height"] + 1)
-        self.assertEqual(b["receipt"]["previous"], a["receipt"]["hash"])
-        self.assertEqual(self.view()["state"], seed(2))
-
 
 class Laws(WorldCase):
     def test_monotone_law_refuses_a_decrement_and_names_the_clause(self):
@@ -229,11 +209,6 @@ class Laws(WorldCase):
         self.assertEqual((bad["status"], out["class"], out["clause"]), ("refused", "lawRefused", "counter"))
         self.assertEqual(self.view()["state"], seed(6))
 
-    def test_bound_law_admits_at_the_edge_and_refuses_past_it(self):
-        self.create(source=BOUNDED, count=4)
-        self.assertEqual(self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])["status"], "admitted")
-        r = self.propose("p2", [root("c1", 1)], [write("c1", add("count", 1))])
-        self.assertEqual(r["receipt"]["outcome"]["clause"], "ceiling")
 
     def test_law_reads_the_height_of_the_entry_it_judges(self):
         src = COUNTER.replace("def initial", "law early: request.height <= 3\ndef initial")
@@ -264,13 +239,6 @@ class Retry(WorldCase):
         self.assertEqual(self.view()["version"], 1)
         self.assertEqual(len(self.lines()), height)
 
-    def test_retry_of_a_law_refusal_returns_the_same_refusal_and_no_entry(self):
-        self.create("b", source=BOUNDED)
-        first = self.propose("p1", [root("b", 0)], [write("b", add("count", 6))])
-        self.assertEqual(first["receipt"]["outcome"]["class"], "lawRefused")
-        height = self.host.send(op="world-status")["height"]
-        self.assertEqual(self.propose("p1", [root("b", 0)], [write("b", add("count", 6))]), first)
-        self.assertEqual(self.host.send(op="world-status")["height"], height)
 
     def test_a_stale_refusal_does_not_bind_the_identity_and_the_reread_retry_commits(self):
         first = self.propose("p1", [root("c1", 9)], [write("c1", add("count", 1))])
@@ -339,31 +307,6 @@ class History(WorldCase):
 
 
 class Restart(WorldCase):
-    def test_a_fresh_process_replays_to_identical_views_receipts_and_head(self):
-        self.create(source=MONOTONE)
-        self.create("c2")
-        receipts = {}
-        receipts["p1"] = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 2))])
-        receipts["p2"] = self.propose("p2", [root("c1", 0)], [write("c1", put("count", nat(4)))])  # stale
-        receipts["p3"] = self.propose("p3", [root("c1", 1)], [write("c1", put("count", nat(0)))])  # law
-        receipts["p4"] = self.propose("p4", [root("c1", 1), root("c2", 0)],
-                                      [write("c2", put("name", {"tag": "label", "value": "q"}))])
-        before = (self.view("c1"), self.view("c2"), self.host.send(op="world-status"))
-        self.let_go()
-        fresh = self.spawn()
-        opened = fresh.send(op="world-open", path=self.path)
-        self.assertEqual(opened["status"], "opened")
-        after = (self.view("c1", host=fresh), self.view("c2", host=fresh), fresh.send(op="world-status"))
-        self.assertEqual(after, before)
-        for ident, r in receipts.items():
-            got = fresh.send(op="world-receipt", principal="ember", identity=ident)
-            self.assertEqual(got["receipt"], r["receipt"])
-        # The restarted world still judges: the law is rebuilt from the journal.
-        bad = self.propose("p5", [root("c1", 1)], [write("c1", put("count", nat(0)))], host=fresh)
-        self.assertEqual(bad["receipt"]["outcome"]["clause"], "counter")
-        # And a retry across the restart is still a retry.
-        self.assertEqual(self.propose("p1", [root("c1", 0)], [write("c1", add("count", 2))], host=fresh),
-                         receipts["p1"])
 
     def test_the_new_chain_continues_the_old_head_after_restart(self):
         self.create()

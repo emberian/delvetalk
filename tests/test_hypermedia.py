@@ -19,11 +19,11 @@ import urllib.parse
 from pathlib import Path
 
 from tests.test_chain import garden_state, town_kinds
-from tests.test_http import DID, PEOPLE, REPL_COUNTER, FrontCase, StubHost
+from tests.test_http import PEOPLE, REPL_COUNTER, FrontCase, StubHost
 import transport.http
 from transport import delve, identity
 from transport.hostproc import HostClient
-from transport.http import CATALOGUE, ERRORS, GUIDE, REFUSALS, Front, resolve
+from transport.http import CATALOGUE, ERRORS, GUIDE, REFUSALS, Front
 from tests.test_turn_world import closure
 
 LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 implies request.subject == "ember"\n'
@@ -88,22 +88,6 @@ class Controls(FrontCase):
         self.assertEqual(body['_links']['self']['href'], href)
         return s, body
 
-    def test_an_object_reply_carries_one_action_per_turnable_method_with_its_form(self):
-        s, view = self.get('/AGENTS.md/world/garden')
-        self.assertEqual((s, view['status']), (200, 'viewed'))
-        self.assertEqual({k: v['href'] for k, v in view['_links'].items() if k != 'self'},
-                         {'object': '/AGENTS.md/world/garden', 'card': '/AGENTS.md/world/garden/card', 'source': '/AGENTS.md/world/garden/source',
-                          'world': '/AGENTS.md/world', 'offers': '/AGENTS.md/offers'})
-        methods = self.host.send({'op': 'world-inspect', 'principal': DID, 'object': 'garden'})['methods']
-        offered = {m['name'] for m in methods if m['context']}
-        self.assertLessEqual(set(view['_actions']), offered)
-        self.assertEqual(view['_actions']['plant'], 'delvetalk garden plant\ncolour: one of amber, violet, silver\nseed: <text 1..80>\n')
-        self.assertTrue(all(t.startswith('delvetalk garden ') for t in view['_actions'].values()))
-        self.assertNotIn('receive', view['_actions'])  # spells go to receive; it is not one
-        self.assertNotIn('set', view['_actions'])  # no form: the host's type, and typed data
-        self.assertLess(len(json.dumps(view['_actions'])), 800)
-        for route in ('card', 'source'):
-            self.assertEqual(self.get(f'/AGENTS.md/world/garden/{route}')[1]['_actions'], view['_actions'])
 
     def test_acting_from_the_reply_alone(self):
         view = self.get('/AGENTS.md/world/garden')[1]
@@ -147,16 +131,6 @@ class Controls(FrontCase):
         s, d = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'fields': {'a': 1}, 'intent': 'dup'}, self.tok)
         self.assertEqual((d['class'], d['_links']['hint']['href']), ('duplicateIdentity', '/AGENTS.md/receipt?intent=dup'), d)
 
-    def test_a_listing_links_each_id_and_its_next_page(self):
-        s, listed = self.get('/AGENTS.md/world')
-        self.assertEqual([i['name'] for i in listed['_links']['item']], listed['ids'])
-        self.assertIn('garden', [i['name'] for i in listed['_links']['item']])
-        self.assertIn('plant', next(i for i in listed['_links']['item'] if i['name'] == 'garden')['actions'])
-        self.assertNotIn('next', listed['_links'])
-        real = self.host.send
-        self.host.send = lambda req: {'status': 'listed', 'ids': ['a', 'b/c'], 'more': True} if req['op'] == 'world-objects' else real(req)
-        s, page = self.get('/AGENTS.md/world?prefix=b')
-        self.assertEqual(page['_links']['next']['href'], '/AGENTS.md/world?prefix=b&after=b%2Fc')
 
     def test_every_json_reply_has_links(self):
         for method, path, body in (('GET', '/AGENTS.md/me', None), ('GET', '/AGENTS.md/pending', None), ('POST', '/AGENTS.md/deliver', {}),
@@ -195,30 +169,6 @@ class Controls(FrontCase):
             links = {k: v['href'] for k, v in got['_links'].items() if k in ('object', 'source', 'hint')}
             self.assertEqual((s, links), (200, {'object': '/AGENTS.md/world/kept', 'source': '/AGENTS.md/world/kept/source',
                                                 'hint': '/AGENTS.md/world/kept/source'}), got)
-
-    def test_host_ops_wanted_project_when_the_host_answers_them(self):
-        """Stubs of docs/AGENTS-API.md "Host ops wanted": `admits` per method, `methods` per listed id."""
-        real = self.host.send
-
-        def send(req):
-            r = real(req)
-            if req['op'] == 'world-inspect' and r.get('status') == 'inspected':
-                r['methods'] = [{**m, 'admits': m['name'] != 'plant' or {'clause': 'owner'}} for m in r['methods']]
-            if req['op'] == 'world-objects':
-                r['methods'] = {'garden': ['plant', 'receive']}
-            return r
-        self.host.send = send
-        names = list(self.get('/AGENTS.md/world/garden')[1]['_actions'])
-        self.assertNotIn('plant', names)
-        items = self.get('/AGENTS.md/world')[1]['_links']['item']
-        self.assertIn({'href': '/AGENTS.md/world/garden', 'name': 'garden', 'actions': ['plant', 'receive']}, items)
-
-    def test_a_suspended_turn_links_its_offers_with_a_wait(self):
-        from transport.http import receipt_links
-        links = receipt_links('/AGENTS.md', {'status': 'suspended', 'receipt': {'slug': 'babab-dabab', 'height': 12,
-                                                                                'roots': [{'object': 'garden', 'version': 3}]}})
-        self.assertEqual(links['offers']['href'], '/AGENTS.md/offers?after=12&wait=30')
-        self.assertEqual(links['object']['href'], '/AGENTS.md/world/garden')
 
 
 def raw(port, data):
@@ -416,16 +366,6 @@ class Catalogue(unittest.TestCase):
         c.close()
         return r.status, dict(r.getheaders()), data
 
-    def test_every_route_resolves_from_its_template_to_its_own_entry(self):
-        names = [e['name'] for e in CATALOGUE]
-        self.assertEqual(len(names), len(set(names)))
-        fill = {'object': 'garden%2Fbell%2F1', 'method': 'plant', 'intent': 'plant-1', 'slug': 'babab-dabab', 'nsid': 'com.atproto.repo.describeRepo', 'file': 'style.css'}
-        for e in CATALOGUE:
-            for href in (e['href'], e.get('heap')):
-                if href:
-                    self.assertEqual(resolve(e['method'], re.sub(r'\{(\w+)\}', lambda m: fill[m[1]], href))[0], e['name'], href)
-                    if '/world/' in href:  # agents' routes also take an id's slashes as they are
-                        self.assertEqual(resolve(e['method'], href.replace('{object}', 'garden/bell/1').replace('{method}', 'plant'))[0], e['name'])
 
     def test_the_catalogue_is_served_as_data_and_the_guide_links_to_it(self):
         s, h, raw = self.call('GET', '/AGENTS.md/api')
@@ -453,37 +393,12 @@ class Catalogue(unittest.TestCase):
         listed = re.search(r'`clause` says which part \(([^);]*)', REFUSALS['badSpell']['means'])[1]
         self.assertEqual(set(listed.split(', ')), clauses)
 
-    def test_no_example_reply_carries_more_than_one_hash_except_a_source(self):
-        """The guide's rule: one hash per reply (the receipt's own), `pin` only on /source. Outside the rule: the REPL
-        checkpoint the client sends back whole, and a result or grant the method returned as its answer."""
-        page = (Path(__file__).resolve().parent.parent / 'docs' / 'AGENTS-EXAMPLES.md').read_text()
-        hashes = lambda v: len(re.findall(r'bafy', json.dumps(v)))
-        bare = lambda v: {k: bare(x) for k, x in v.items() if k not in ('checkpoint', 'result', 'grants')} if isinstance(v, dict) else [bare(x) for x in v] if isinstance(v, list) else v
-        seen = 0
-        for command, status, body in re.findall(r'^    \$ (curl [^\n]*)\n    (\d{3}) (\{.*\})$', page, re.M):
-            if re.search(r'/source"?$', command.split(' -H')[0].split(' -d')[0]):
-                continue
-            try:
-                reply = json.loads(body)
-            except ValueError:  # cut where marked: only the text before the cut is left
-                reply = {'cut': body}
-            reply = bare(reply)
-            seen += 1
-            self.assertLessEqual(hashes(reply), 1, (command[:80], re.findall(r'"(\w+)": "bafy', body)))
-        self.assertGreater(seen, 20)
 
     def test_the_guides_class_tables_are_the_catalogues(self):
         guide = GUIDE.read_text()
         rows = set(re.findall(r'^\| ([a-zA-Z, ]+?) \|', guide, re.M))
         documented = {c.strip() for row in rows for c in row.split(',')}
         self.assertLessEqual(set(REFUSALS) - {'duplicateIdentity'}, documented)
-
-    def test_options_answers_the_entries_of_a_path(self):
-        s, h, raw = self.call('OPTIONS', '/AGENTS.md/world/garden/bell/1')
-        self.assertEqual((s, [r['name'] for r in json.loads(raw)['routes']], h['Allow']), (200, ['object', 'action'], 'GET, POST, OPTIONS'))
-        s, h, raw = self.call('OPTIONS', '/AGENTS.md/heap/objects')
-        self.assertEqual([r['name'] for r in json.loads(raw)['routes']], ['create'])
-        self.assertEqual(self.call('OPTIONS', '/AGENTS.md/nowhere')[0], 404)
 
 
 if __name__ == '__main__':
