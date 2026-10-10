@@ -616,10 +616,10 @@ until foundation has lane/kernel8's `name: source` form line (a977d64) and the l
 template, Policy.obend's kind text); probed on hbox with those overlaid, it passes. Then drop the
 marker.
 
-1. **WORLD-REVIEW finding 22**, waiting on the review lane: when its commit deletes the seven unused
-   variants (`quote`, `reference`, `offer`, `fields`, `source`, `result`, `continuation`) and
-   Phrasebook from `world/lib/document/Document.obend`, delete the same cases from
-   `spec/Delvetalk/Document.lean` and the kinds from `tests/test_document.py`'s generator, one commit.
+1. Finding 22 is done (host11, after review group A): `Document.lean` renders `text` and `sequence`
+   only; any other form is "unknown document form" (malformed), and `tests/test_document.py`'s
+   generator builds only those two. `Limits.lean`'s `documentDepth` comment still names a quote's body
+   (the kernel lane's file).
 2. **Suspension size** (5.72): one speaker's median is 5.1 KB, nine speakers' 7.5 KB. The host's
    remaining share is ~0.5 KB (`slot` beside an interpretation, ~100 B, read in five places:
    `turnReply`, `settle`'s waiting lookup, `record`; the argument). The kernel's fresh checkpoint
