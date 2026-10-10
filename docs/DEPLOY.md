@@ -250,6 +250,16 @@ topic and records it against `directory`, then runs the local front (`--port`, d
 `.zuliprc` is the bot's: its user must be subscribed to the stream (a guest cannot create one; check `users/me/subscriptions` first, since a stream the bot cannot see answers `Invalid channel name`). With `--topic NAME` the playtest joins an existing conversation: the welcome goes to that topic instead of `welcome`, and the observer reads only that topic (the Zulip narrow `channel` + `topic`), so the world never sees the stream's other topics; replies land in the same topic. A fresh bridge observes nothing posted before its start. The model credentials are as under "Model
 credentials" and are read from the environment of the script; `DELVETALK_OBEND` names the host binary.
 
+The bot's own messages are never observed (`ZulipObserver.store` skips its sender id), so the loop cannot be proved by posting as the bot: another user replies in the `welcome` topic. Two posts prove it, the spell and then prose:
+
+    delvetalk garden plant
+    colour: amber
+    seed: a bell for the mobo
+
+    could I have a violet one too, for the night?
+
+Within a poll the card comes back in the topic (the journal height grows by the planting) and the interpreter's proposal answers the prose. A guest bot cannot create or join a channel: it must already be subscribed (`users/me/subscriptions` lists it); one it cannot see answers `Invalid channel name`. Port 8765 may be held by another tenant of the host; give `--port`.
+
 The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
 `python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.
 
