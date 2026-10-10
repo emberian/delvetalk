@@ -432,6 +432,23 @@ class Vectors(unittest.TestCase):
                 self.assertLessEqual(int.from_bytes(sig[32:], 'big'), sign.CURVES[curve][2] // 2)
             self.assertTrue(sign.verify(sign.public_key(key.did_key), b'7', key.sign(b'7')))
 
+    def test_the_key_is_made_once_0400_and_never_printed(self):
+        import contextlib
+        import io
+        import os
+        from deploy import repokey
+        with tempfile.TemporaryDirectory() as d:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(repokey.main(['--dir', d, '--world', 'town']), 0)
+            path = Path(d) / 'town.key'
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o400)
+            self.assertEqual(out.getvalue(), f'{path}: {sign.Key.load(path).did_key}\n')
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(repokey.main(['--dir', d, '--world', 'town']), 1)
+            self.assertEqual(Repo(ORIGIN, sign.Key.load(path)).did_document()['verificationMethod'][0]['publicKeyMultibase'],
+                             sign.Key.load(path).did_key.removeprefix('did:key:'))
+
     def test_tids_sort_as_their_time(self):
         times = [0, 1, 1023, 1 << 40, 60_000_000 * 29_000_000 + 7, (1 << 53) - 1]
         tids = [sign.tid(t) for t in times]

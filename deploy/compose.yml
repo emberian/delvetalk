@@ -89,6 +89,10 @@ services:
       - --origin
       - ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
       - --trust-proxy
+    environment:
+      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}  # the repository's did:web host
+      DELVETALK_REPO_KEY_FILE: /run/secrets/repo_key  # the town's signing key (docs/REPO.md "The key")
+    secrets: [repo_key]
     ports:
       - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:8765:8765/tcp"
     depends_on:
@@ -158,6 +162,9 @@ services:
     command: ["python3", "-c", "print('give a command')"]
 
 secrets:
+  repo_key:
+    # deploy/repokey.py made it at first start (docs/DEPLOY.md): 0400, owner 10425, in a 0700 directory.
+    file: ${DELVETALK_REPO_KEY_PATH:-/etc/delvetalk/repo/town.key}
   anthropic_key:
     # Outside the repository and outside /data, readable by uid 10425 only.
     file: ${DELVETALK_ANTHROPIC_KEY_PATH:-/etc/delvetalk/anthropic.key}
