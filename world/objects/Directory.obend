@@ -138,8 +138,12 @@ def passOn(card: String, input: Card.Heard, context: Abi.Context) -> Activity<Pl
   match perform(Plan.call({object: {world: context.world, object: if card == "env" || card == "wake" then Card.own(card, context) else card}, method: "receive", argument: input})):
     case returned(_): Heard.passed({card: card})
     case denied(_): Card.tell(Heard.refused({reason: "Not visible: {card}"}), Document.text("The card {card} is not visible to you.\n"))
-    case refused(r): Card.tell(Heard.refused({reason: r.clause}), Document.text("Not passed to {card}: {r.clause}\n"))
+    case refused(r): Card.tell(Heard.refused({reason: r.clause}), Document.text(notPassed(card, r.clause)))
     case _: Card.tell(Heard.refused({reason: "No answer from {card}"}), Document.text("No answer from {card}.\n"))
+# A card that does not exist is named, with where to look (rehearsal finding 7: "Not passed to
+# forge: unknownObject" told the speaker nothing). The host's refusal carries only its clause.
+def notPassed(card: String, clause: String) -> String:
+  if clause == "unknownObject" then "No card named {card}; reply here for the list of doors.\n" else "Not passed to {card}: {clause}\n"
 # A door word is short: only the first 65 scalars are looked at (measuring and trimming a
 # long reply would cost its bytes).
 def trimmed(text: String) -> String:

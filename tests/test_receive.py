@@ -252,8 +252,8 @@ def planted(context: Abi.Context) -> String:
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
         # A speaker without a wake: the host names what it looked for.
         missing = self.say("delvetalk wake watch / event: mention / actor: ember.delve.town", obj="root", who=did)
-        self.assertEqual(str(missing.get("offers", missing)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'Not passed to wake: unknownObject\\n'}]")
-        self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "Not passed to wake: unknownObject\n"), missing)
+        self.assertEqual(str(missing.get("offers", missing)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'No card named wake; reply here for the list of doors.\\n'}]")
+        self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "No card named wake; reply here for the list of doors.\n"), missing)
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
@@ -264,7 +264,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(self.version("garden"), 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden"})
         ghost = self.say("delvetalk forge make / name: sentry", obj="root")
-        self.assertEqual(ghost["offers"][0]["text"], "Not passed to forge: unknownObject\n")
+        self.assertEqual(ghost["offers"][0]["text"], "No card named forge; reply here for the list of doors.\n")
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()
