@@ -58,7 +58,7 @@ law owner "only the owner changes its doors, owner or policy; anyone's summons o
 # TODO(insertOnly): `and insertOnly(greeted)` in the law text once the host denotes the
 # atom; until then the predicate says it.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if request.context.principal == new.owner || Relations.insertedOnly(old.greeted, new.greeted, greetingKey) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "greeted"})
+  if request.context.principal == new.owner || Relations.insertedOnly(old.greeted, new.greeted, greetingKey) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "greeted", reading: "Anyone's summons only adds to who was greeted."})
 def defaultSeed() -> Seed:
   {owner: "", policy: Plans.nobody()}
 def seeded(seed: Seed) -> State:

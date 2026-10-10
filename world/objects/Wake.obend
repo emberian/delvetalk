@@ -63,7 +63,7 @@ law ids "trigger ids only count up": monotone(nextId)
 # The two-tier law, in Bend (stubbed against Abi.Request until the host runs it): the
 # triggers change only by the owner's request.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if new.nextId == old.nextId && Lists.length(new.triggers) == Lists.length(old.triggers) || request.context.principal == old.owner then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "owner"})
+  if new.nextId == old.nextId && Lists.length(new.triggers) == Lists.length(old.triggers) || request.context.principal == old.owner then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "owner", reading: "Only its owner changes its triggers."})
 def defaultSeed() -> Seed:
   {owner: "", handle: "", env: Plans.nobody()}
 def seeded(seed: Seed) -> State:

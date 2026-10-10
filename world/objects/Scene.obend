@@ -60,7 +60,7 @@ law owner "only the owner reprograms or amends it; anyone enters, chooses and le
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if old.cooldown == 0n then Abi.Verdict.admitted({}) else arrivals(new.presence, request.context.clock, old)
 def arrivals(presence: Lists.List<Presence>, clock: Nat, old: State) -> Abi.Verdict:
-  if Lists.any(presence, fn(p: Presence) -> Bool: Lists.any(old.presence, fn(q: Presence) -> Bool: q.who == p.who) == false && cooling(p.who, clock, old)) then Abi.Verdict.refused({clause: "cooldown"}) else Abi.Verdict.admitted({})
+  if Lists.any(presence, fn(p: Presence) -> Bool: Lists.any(old.presence, fn(q: Presence) -> Bool: q.who == p.who) == false && cooling(p.who, clock, old)) then Abi.Verdict.refused({clause: "cooldown", reading: "A reader who left enters again only after the cooldown."}) else Abi.Verdict.admitted({})
 # The helpers take the State after their own inputs: a definition whose first parameter is
 # the State is a method any turn may run.
 def cooling(who: String, clock: Nat, state: State) -> Bool:
