@@ -783,7 +783,8 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
         unless dom == o.stateType && cod == ty do
           throw ("migration", "the migration must have type OldState -> NewState")
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
-      pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid, none⟩)
+      pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid,
+        (Delvetalk.CheckedEntry.ofPacket packet).toOption⟩)
   let (methods, predicate, predicateReads) ← if !extend then pure (artifactShape artifact) else do
     -- The layer's own table (compiled with one of its definitions as the entry), then every
     -- method below it that the layer does not override; the law shape is the layer's if it
@@ -1380,7 +1381,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .ok prog => pure prog
         | .error (clause, message) => throw (refuse clause message)
       if let some m := prog.migration then
-        match Package.executeDataValues m.packet #[written] (Json.mkObj []) with
+        let run := match m.entry with
+          | some e => Package.executeDataEntry e #[written] (Json.mkObj [])
+          | none => Package.executeDataValues m.packet #[written] (Json.mkObj [])
+        match run with
         | .ok (.finished value _ _ _) => state := value
         | .ok (.refused failure _) => throw (refuse "migration" s!"the migration was refused: {failure}")
         | .error e => throw (refuse "migration" e)
@@ -1623,7 +1627,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w p.grants p.revokes p.spent
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
-        (("object", toJson id) :: ("version", toJson o.version) ::
+        (("object", toJson id) :: ("version", toJson o.version) :: ("cid", toJson (stateCid o.state)) ::
           writtenFields ((p.allWrites.lookup id).getD [])))
       let outcome := Json.mkObj ([("tag", toJson "admitted"), ("writes", writes)] ++
         (if judged.reprograms.isEmpty then [] else [("reprograms", Json.arr judged.reprograms.toArray)]) ++
@@ -2254,6 +2258,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         let id ← raw.getObjValAs? String "object"
         let some (_, o) := updates.find? (·.1 == id) | throw "write missing"
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
+        -- The state an admitted write commits to (host7; earlier entries name none).
+        if let some cid := (raw.getObjValAs? String "cid").toOption then
+          unless cid == stateCid o.state do throw s!"the state of {id} does not replay to the CID its write recorded"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w grants revokes spent
