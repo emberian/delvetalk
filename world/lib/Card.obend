@@ -381,3 +381,64 @@ def needed<E, S, R, T>(needs: Form.Names, card: Document.Document, result: T) ->
   match needs:
     case nil(_): result
     case cons(_): tell::<E, S, R, T>(result, card)
+# Macros (the policy's, checked before the model): `expanded` is the spell text of the first
+# macro whose pattern the utterance matches (blanks and a trailing . ! or ? aside), none when
+# none does. Patterns and utterances are compared word by word; a hole takes the shortest run
+# of words that lets the rest match.
+record Capture:
+  hole: String
+  text: String
+type Captures = Lists.List<Capture>
+def expanded(text: String, policy: Policies.State) -> Lists.Maybe<String>:
+  expandedBy(words(endTrimmed(text)), policy.macros)
+def expandedBy(said: Lists.List<String>, macros: Lists.List<Policies.Macro>) -> Lists.Maybe<String>:
+  match macros:
+    case nil(_): Lists.Maybe.none({})
+    case cons(c): expandedWith(c.head, matched(words(c.head.pattern), said), said, c.tail)
+def expandedWith(macro: Policies.Macro, found: Lists.Maybe<Captures>, said: Lists.List<String>, rest: Lists.List<Policies.Macro>) -> Lists.Maybe<String>:
+  match found:
+    case some(f): Lists.Maybe.some({value: "delvetalk {filled(macro.expansion, f.value)}"})
+    case none(_): expandedBy(said, rest)
+def endTrimmed(text: String) -> String:
+  let size = textLength(text)
+  if size == 0n then text else if textSpan(textDrop(text, size - 1n), " \t\r\n.!?") == 1n then endTrimmed(textTake(text, size - 1n)) else text
+def words(text: String) -> Lists.List<String>:
+  wordsFrom(textDrop(text, textSpan(text, " \t\r\n")))
+def wordsFrom(text: String) -> Lists.List<String>:
+  if text == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(text, textBreak(text, " \t\r\n")), tail: words(textDrop(text, textBreak(text, " \t\r\n")))})
+def isHole(word: String) -> Bool:
+  textLength(word) > 2n && textTake(word, 1n) == "{{" && textDrop(word, textLength(word) - 1n) == "}}"
+def holeName(word: String) -> String:
+  textTake(textDrop(word, 1n), textLength(word) - 2n)
+def matched(pattern: Lists.List<String>, said: Lists.List<String>) -> Lists.Maybe<Captures>:
+  match pattern:
+    case nil(_): if Lists.length(said) == 0n then Lists.Maybe.some({value: Captures.nil({})}) else Lists.Maybe.none({})
+    case cons(p): if isHole(p.head) then captured(holeName(p.head), "", p.tail, said) else literal(p.head, p.tail, said)
+def literal(word: String, pattern: Lists.List<String>, said: Lists.List<String>) -> Lists.Maybe<Captures>:
+  match said:
+    case nil(_): Lists.Maybe.none({})
+    case cons(s): if s.head == word then matched(pattern, s.tail) else Lists.Maybe.none({})
+def captured(hole: String, sofar: String, pattern: Lists.List<String>, said: Lists.List<String>) -> Lists.Maybe<Captures>:
+  match said:
+    case nil(_): Lists.Maybe.none({})
+    case cons(s): capturedAt(hole, if sofar == "" then s.head else "{sofar} {s.head}", pattern, s.tail)
+def capturedAt(hole: String, text: String, pattern: Lists.List<String>, rest: Lists.List<String>) -> Lists.Maybe<Captures>:
+  match matched(pattern, rest):
+    case some(m): Lists.Maybe.some({value: Captures.cons({head: {hole: hole, text: text}, tail: m.value})})
+    case none(_): captured(hole, text, pattern, rest)
+# The expansion with each `{hole}` replaced by its capture (an unknown hole stays as written).
+def filled(expansion: String, captures: Captures) -> String:
+  let open = textBreak(expansion, "{{")
+  if open == textLength(expansion) then expansion else holeAt(textTake(expansion, open), textDrop(expansion, open + 1n), captures)
+def holeAt(before: String, after: String, captures: Captures) -> String:
+  let close = textBreak(after, "}}")
+  if close == textLength(after) then "{before}{{{after}" else "{before}{captureOf(textTake(after, close), captures)}{filled(textDrop(after, close + 1n), captures)}"
+def captureOf(hole: String, captures: Captures) -> String:
+  match Lists.find(captures, fn(c: Capture) -> Bool: c.hole == hole):
+    case some(c): c.value.text
+    case none(_): "{{{hole}}}"
+# The policy's macros on a usage card.
+def macroUsage(policy: Policies.State) -> Document.Document:
+  if Lists.length(policy.macros) == 0n then Document.text("") else Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\nShortcuts (no model is asked):\n"), tail: Lists.map(policy.macros, macroLine)})})
+def macroLine(macro: Policies.Macro) -> Document.Document:
+  Document.text("    {macro.pattern}\n      means: delvetalk {macro.expansion}\n")

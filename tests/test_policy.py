@@ -17,7 +17,7 @@ import ./List.obend as Lists
 import ./Form.obend as Form
 import ./Policy.obend as Policy
 def sample() -> Policy.State:
-  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: "", escalateTo: ""}
+  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil()}
 # Garden's plant form (Garden.planting), written out: Garden and Policy together exceed
 # one closure's declaration capacity.
 def plantForm(context: Abi.Context) -> Form.Form:
@@ -31,7 +31,7 @@ def examples(n: Nat) -> Lists.List<Policy.Example>:
     case 0: Lists.List::<Policy.Example>.nil()
     case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
-  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: "", escalateTo: ""}, forms(context), "plant me a moth"))
+  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil()}, forms(context), "plant me a moth"))
 """
 
 
@@ -86,7 +86,7 @@ class PolicyObject(Chain):
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
                            modules=closure("Policy"), entry="initial",
                            seed=record(owner=label("ember"), model=label("claude-haiku"), system=label("S"),
-                                       lexicon=nil(), examples=nil(), escalate=label(escalate), escalateTo=label(escalate_to)))
+                                       lexicon=nil(), examples=nil(), escalate=label(escalate), escalateTo=label(escalate_to), macros=nil()))
         self.assertEqual(r["status"], "created", r)
 
     def card(self, name, principal="glm"):
@@ -126,11 +126,52 @@ class PolicyObject(Chain):
                                       model={"tag": "variant", "label": "set", "payload": record(value=label("evil"))},
                                       escalate={"tag": "variant", "label": "keep", "payload": record()},
                                       escalateTo={"tag": "variant", "label": "keep", "payload": record()},
+                                      macros={"tag": "variant", "label": "keep", "payload": record()},
                                       system={"tag": "variant", "label": "keep", "payload": record()},
                                       lexicon={"tag": "variant", "label": "keep", "payload": record()},
                                       examples={"tag": "variant", "label": "keep", "payload": record()})]}])
         self.assertEqual(proposed["status"], "refused", proposed)
         self.assertEqual((proposed["receipt"]["outcome"]["class"], proposed["receipt"]["outcome"].get("clause")), ("lawRefused", "owner"))
+
+    # --- Macros: the owner's shortcuts, checked before the model ----------------------
+
+    MOTH = "delvetalk policy macro / name: moth-bell / pattern: moth for {who} / expansion: garden plant / colour: violet / seed: a bell for {who}"
+
+    def test_the_owner_teaches_a_macro_and_a_stranger_is_refused_by_name(self):
+        self.policy()
+        stranger = self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="glm")
+        self.assertEqual(stranger["result"]["label"], "refused", stranger)
+        self.assertIn("Only the policy's owner may teach it", stranger["result"]["payload"]["fields"][0]["value"]["value"])
+        taught = self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="ember")
+        self.assertEqual((taught["status"], taught["result"]["label"]), ("admitted", "done"), taught)
+        [macro] = [f["value"] for f in self.state("policy")["fields"] if f["name"] == "macros"][0]["items"]
+        self.assertEqual({f["name"]: f["value"]["value"] for f in macro["fields"]},
+                         {"name": "moth-bell", "pattern": "moth for {who}", "expansion": "garden plant / colour: violet / seed: a bell for {who}"})
+        holes = self.turn("policy", "receive", record(text=label("delvetalk policy macro / name: all / pattern: {x} / expansion: garden plant"), post=label("")), principal="ember")
+        self.assertIn("starts with a word", holes["result"]["payload"]["fields"][0]["value"]["value"])
+        card = self.card("policy")
+        print("\n--- policy card with a macro ---\n" + card)
+        self.assertIn("Macro moth-bell: moth for {who}\n  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", card)
+
+    def test_a_macro_fires_without_the_model_and_a_non_match_falls_through_to_it(self):
+        self.policy()
+        self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="ember")
+        self.turn("policy", "receive", record(text=label("delvetalk policy macro\nname: two\npattern: a {colour} bell for {who} please\nexpansion: garden plant\ncolour: {colour}\nseed: a bell for {who}"), post=label("")), principal="ember")
+        self.garden("policy", confirm=False)
+        fired = self.say("moth for the lost ones.")
+        self.assertEqual((fired["status"], fired["result"]["label"]), ("admitted", "planted"), fired)
+        self.assertIn("Planted for glm: a violet bell, “a bell for the lost ones”.", fired["offers"][0]["text"])
+        two = self.say("a silver bell for the night walkers please", identity="two")
+        self.assertEqual((two["status"], two["result"]["label"]), ("admitted", "planted"), two)
+        self.assertIn("a silver bell, “a bell for the night walkers”", two["offers"][0]["text"])
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        through = self.say("moth for", identity="through")
+        self.assertEqual(through["status"], "suspended", through)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        self.assertEqual(item["utterance"], "moth for")
+        usage = self.say("delvetalk garden ?", identity="usage")["offers"][0]["text"]
+        print("\n--- garden ? with macros ---\n" + usage)
+        self.assertIn("\nShortcuts (no model is asked):\n    moth for {who}\n      means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", usage)
 
     def test_the_sixteenth_example_is_the_last(self):
         self.policy()

@@ -9,6 +9,13 @@ record Term:
 record Example:
   utterance: String
   spell: String
+# A macro the owner taught: an utterance matching `pattern` (literal words; a `{hole}`
+# captures a run of one or more words) is the spell `expansion` (`<card> <action>` and
+# ` / field: value` pieces) with each `{hole}` filled, dispatched with no model call.
+record Macro:
+  name: String
+  pattern: String
+  expansion: String
 # model: the model the host asks first. escalate: the stronger model a second attempt names
 # ("" for the same). escalateTo: the principal (a DID) a card tells, in a short copy, what it
 # could not fit after two attempts ("" for nobody).
@@ -20,3 +27,4 @@ record State:
   examples: Lists.List<Example>
   escalate: String
   escalateTo: String
+  macros: Lists.List<Macro>

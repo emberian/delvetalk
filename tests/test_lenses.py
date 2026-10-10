@@ -86,7 +86,8 @@ class Lenses(test_chain.Chain):
         self.assertEqual(r["result"]["label"], "usage")
         self.assertEqual(text, "\nReply with a spell:\n\n    delvetalk policy teach\n    utterance: <text, 1 to 280 characters>\n"
                                "    spell: <text, 1 to 280 characters>\n\n    delvetalk policy define\n    word: <text, 1 to 64 characters>\n"
-                               "    meaning: <text, 1 to 280 characters>\n\nTo change a field, reply (one field a spell):\n\n"
+                               "    meaning: <text, 1 to 280 characters>\n\n    delvetalk policy macro\n    name: <text, 1 to 64 characters>\n"
+                               "    pattern: <text, 1 to 280 characters>\n    expansion: <text, 1 to 280 characters>\n\nTo change a field, reply (one field a spell):\n\n"
                                "    delvetalk policy set\n    model: <text, 1 to 64 characters>\n\n    delvetalk policy set\n"
                                "    escalate: <text, 0 to 64 characters>\n\n    delvetalk policy set\n    escalate-to: <text, 0 to 160 characters>\n\n"
                                "    delvetalk policy set\n    system: <text, 1 to 1000 characters>\n")

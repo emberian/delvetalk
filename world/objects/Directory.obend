@@ -142,8 +142,18 @@ def unaddressed(state: State, input: Card.Heard, context: Abi.Context) -> Activi
   if Lists.any::<String>(state.greeted, fn(p: String) -> Bool: p == context.principal) == false then greeting(state, context) else if Plans.isNobody(state.policy) then Heard.silent({}) else consulted(state, input, context)
 def consulted(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Plan.view({object: state.policy})):
-    case viewed(v): gathering(state, input, state.doors, Lists.List::<Form.Form>.nil(), v.state, context)
+    case viewed(v): macroOr(state, input, v.state, Card.expanded(input.text, v.state), context)
     case _: Heard.silent({})
+# A macro of the policy's that the prose matches goes to the card its spell names, with no
+# model call.
+def macroOr(state: State, input: Card.Heard, policy: Policies.State, expanded: Lists.Maybe<String>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match expanded:
+    case some(e): byMacro(Spell.parse(e.value), e.value, input, context)
+    case none(_): gathering(state, input, state.doors, Lists.List::<Form.Form>.nil(), policy, context)
+def byMacro(parsed: Spell.Parsed, text: String, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match parsed:
+    case spell(s): if s.card != context.object then passOn(s.card, {text: text, post: input.post}, context) else Heard.silent({})
+    case notASpell(_): Heard.silent({})
 def gathering(state: State, input: Card.Heard, doors: Lists.List<Door>, forms: Lists.List<Form.Form>, policy: Policies.State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match doors:
     case nil(_): interpreting(state, input, forms, policy, 0n, Form.Names.nil(), context)

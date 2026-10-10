@@ -68,6 +68,15 @@ the library).
   Garden, `interpreting`/`readBack` in Directory) and Card gives the Plans, the pure
   reading and `Card.unfit` for a card with no writes of its own. A read-only root that moves
   while the interpretation waits does not make the resumption stale.
+* **Macros** (Policy `macros`, taught by the owner with `delvetalk policy macro / name: … /
+  pattern: moth for {who} / expansion: garden plant / colour: violet / seed: a bell for
+  {who}`; every field after the expansion joins it as ` / field: value`; a same-named macro
+  is replaced; sixteen; a pattern must start with a word). Garden and Directory, having
+  viewed the policy, check `Card.expanded(text, policy)` before the model: words compared
+  exactly (a trailing `.!?` dropped), a `{hole}` takes the shortest run of one or more words
+  that lets the rest match; a hit is dispatched as a typed spell (Garden: no confirm) with no
+  interpret. Garden's `?` with a policy appends `Card.macroUsage`; the policy's card lists
+  them. A literal brace in Bend source is `{{`/`}}` (interpolation).
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

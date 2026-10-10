@@ -210,7 +210,12 @@ def confirmed(state: State, input: Card.Heard, context: Abi.Context, found: Held
 def hear(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
     case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), render(state, context)) else bared(state, input, context, Card.withBare(parsed, input.text, context, forms()), found)
-    case spell(s): if s.action == "set" || s.action == "?" then Card.answerLensedAs::<Edits, Policies.State, Planting, Reply>(Card.routeParsed(parsed, context, forms()), context, forms(), lenses(), guard(state, context), render(state, context), fromCard) else spelled(state, context, input.post, s.action, parsed, found)
+    case spell(s): if s.action == "?" && Plans.isNobody(state.policy) == false && s.card == context.object then helped(state, context) else if s.action == "set" || s.action == "?" then Card.answerLensedAs::<Edits, Policies.State, Planting, Reply>(Card.routeParsed(parsed, context, forms()), context, forms(), lenses(), guard(state, context), render(state, context), fromCard) else spelled(state, context, input.post, s.action, parsed, found)
+# The usage card, with the shortcuts the garden's policy knows.
+def helped(state: State, context: Abi.Context) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.view({object: state.policy})):
+    case viewed(v): tell(Reply.shown({}), Document.concat(Card.help(context.object, forms(), lenses()), Card.macroUsage(v.state)))
+    case _: tell(Reply.shown({}), Card.help(context.object, forms(), lenses()))
 # Whether understood prose waits for "yes" is the owner's to set: `delvetalk garden set`
 # with `confirm: yes` or `confirm: no`.
 def lenses() -> Lists.List<Form.Lens<Edits>>:
@@ -237,8 +242,18 @@ def understand(state: State, input: Card.Heard, context: Abi.Context, found: Hel
   if Plans.isNobody(state.policy) then silent(found, context) else consulted(state, input, context, found)
 def consulted(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match perform(Plan.view({object: state.policy})):
-    case viewed(v): interpreted(state, input, context, found, v.state, 0n, Form.Names.nil())
+    case viewed(v): macroOr(state, input, context, found, v.state, Card.expanded(input.text, v.state))
     case _: told(found, context, Reply.refused({reason: "The garden's policy is not visible to you."}), refusedCard("The garden's policy is not visible to you."))
+# A macro of the policy's that the prose matches is its spell, typed by the owner: it is
+# judged as a typed spell is, and no model is asked.
+def macroOr(state: State, input: Card.Heard, context: Abi.Context, found: Held, policy: Policies.State, expanded: Lists.Maybe<String>) -> Activity<Plan, Response, Reply>:
+  match expanded:
+    case some(e): byMacro(state, input, context, found, Spell.parse(e.value))
+    case none(_): interpreted(state, input, context, found, policy, 0n, Form.Names.nil())
+def byMacro(state: State, input: Card.Heard, context: Abi.Context, found: Held, parsed: Spell.Parsed) -> Activity<Plan, Response, Reply>:
+  match parsed:
+    case spell(s): spelled(state, context, input.post, s.action, parsed, found)
+    case notASpell(n): told(found, context, Reply.refused({reason: "The macro expands to no spell: {n.reason}"}), refusedCard("The macro expands to no spell: {n.reason}"))
 def offers(context: Abi.Context) -> Card.Forms:
   Card.Forms.cons({head: plantForm(context), tail: Card.Forms.nil()})
 def interpreted(state: State, input: Card.Heard, context: Abi.Context, found: Held, policy: Policies.State, attempt: Nat, needs: Form.Names) -> Activity<Plan, Response, Reply>:
