@@ -16,6 +16,7 @@ import tempfile
 import unittest
 
 from tests.host import HostCase, ROOT
+from tests.test_turn_world import declared, nat, record
 
 DID = "did:plc:abcdefghijklmnopqrstuvwx"
 OBJECTS = os.path.join(ROOT, "world", "objects")
@@ -149,6 +150,72 @@ class Arrive(HostCase):
         self.host.send(op="world-open", path=self.path, library=self.lib)
         self.assertEqual(field(self.view(DID), "handle")["value"], "newt.delve.town")
         self.assertEqual(self.arrive()["created"], [])
+
+
+# A Wake whose `arrived` subscribes its owner's wake to the garden's `n` (the objects lane's
+# `Wake.arrived` does the same for the real garden).
+ARRIVING_WAKE = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  owner: String
+  env: Plans.Reference
+def initial() -> State:
+  {owner: "", env: {world: "", object: ""}}
+def arrived(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:
+  match world.subscribe({object: {world: "", object: "garden"}, field: "n", method: "changed"}):
+    case subscribed(_): 1n
+    case _: 0n
+def changed(state: State, input: World.Changed, context: Abi.Context) -> Activity<Nat>:
+  0n
+""", "arrived", "changed")
+
+GARDEN = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  n: Nat
+def initial() -> State:
+  {n: 0n}
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {n: add 1n}
+  state.n + 1n
+""", "bump")
+
+
+class Arrived(HostCase):
+    arrive = Arrive.arrive
+
+    def setUp(self):
+        super().setUp()
+        self.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
+        self.addCleanup(shutil.rmtree, self.lib, True)
+        shutil.copytree(os.path.join(ROOT, "world", "lib"), self.lib, dirs_exist_ok=True)
+        for name in ("Avatar", "Env"):
+            shutil.copy(os.path.join(OBJECTS, name + ".obend"), self.lib)
+        with open(os.path.join(self.lib, "Wake.obend"), "w", encoding="utf-8") as f:
+            f.write(ARRIVING_WAKE)
+        r = self.host.send(op="world-open", path=self.path, library=self.lib, principal="ember", clock="transport", opener="ember")
+        self.assertEqual(r["status"], "opened", r)
+        r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden",
+                           modules=[{"name": "Probe", "source": GARDEN}], entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+
+    def test_the_wakes_arrived_runs_once_as_the_newcomers_turn(self):
+        r = self.arrive()
+        turned = r["arrivedTurn"]
+        self.assertEqual((turned["status"], turned["result"]), ("admitted", nat(1)), turned)
+        self.assertEqual(turned["receipt"]["identity"], {"principal": DID, "intent": "arrive-" + DID})
+        bumped = self.host.send(op="world-turn", principal="ember", object="garden", method="bump", argument=record(), identity="b1")
+        self.assertEqual([c["to"] for c in bumped["receipt"].get("changes", [])], ["wake/" + DID], bumped)
+        again = self.arrive()
+        self.assertNotIn("arrivedTurn", again)
+        self.reopen()
+        bumped = self.host.send(op="world-turn", principal="ember", object="garden", method="bump", argument=record(), identity="b2")
+        self.assertEqual([c["to"] for c in bumped["receipt"].get("changes", [])], ["wake/" + DID], bumped)
 
 
 if __name__ == "__main__":
