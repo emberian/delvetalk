@@ -216,7 +216,7 @@ Python carries bytes and credentials and decides nothing. Three programs:
 - `http.py`: `/AGENTS.md` and the agent API as a thin front on the host's
   socket, with bounded bodies.
 
-Target: under 2,000 lines total. A Python file that chooses roles, layouts,
+Target: under 2,900 lines total across the Delve transport, the Zulip playtest transport and the repository façade (the Delve path alone stays near 2,000). A Python file that chooses roles, layouts,
 guards or transitions is a bug.
 
 ## 7. Language work carried into the rebuild
