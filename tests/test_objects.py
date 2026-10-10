@@ -230,7 +230,7 @@ class Objects(unittest.TestCase):
             found = re.search(r"\ndef %s(<[^>]*>)?\(" % entry, source)
             self.assertIsNotNone(found, (name, entry))
             body = source[found.start() + 1:].split("\ndef ")[0]
-            self.assertTrue("perform(Plan.%s(" % plan in body or "perform(Plans.Plan::<E>.%s(" % plan in body, (name, entry))
+            self.assertTrue(any(form % plan in body for form in ("perform(Plan.%s(", "perform(Plans.Plan.%s(", "perform(%s {")), (name, entry))
 
     def test_render_cards(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))

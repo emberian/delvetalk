@@ -26,20 +26,20 @@ type Response = Plans.Response<State, {}>
 # Anyone submits (submit, or a submit spell through receive, which only appends);
 # only the owner admits. The methods named are the package's own, so the law's trust in
 # them is the pin's.
-law owner: request.subject == new.owner or (request.kind == 0 and (request.method == "submit" or request.method == "receive"))
+law owner "only the owner changes it; anyone submits a line": request.subject == new.owner or (request.kind == 0 and (request.method == "submit" or request.method == "receive"))
 def defaultSeed() -> Seed:
   {owner: ""}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, proposals: Lists.List::<Proposal>.nil()}
+  {owner: seed.owner, proposals: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 # Submission only proposes; admission is the receiver's law, not the author's. The
 # author is the turn's principal.
 def submitted<T>(state: State, line: String, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.append({item: {author: context.principal, handle: context.handle, line: line, status: Status.proposed({})}})}})):
-    case _: then(Lists.length::<Proposal>(state.proposals) + 1n)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.append({item: {author: context.principal, handle: context.handle, line: line, status: Status.proposed({})}})}}))
+  then(Lists.length(state.proposals) + 1n)
 def submit(state: State, input: {line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  submitted::<Nat>(state, input.line, context, fn(count: Nat) -> Nat: count)
+  submitted(state, input.line, context, fn(count: Nat) -> Nat: count)
 sum Found:
   none: {}
   some: {proposal: Proposal}
@@ -54,29 +54,33 @@ def admit(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<P
     case none(_): false
     case some(s): admitted(context, input.index, s.proposal)
 def admitted(context: Abi.Context, index: Nat, proposal: Proposal) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}})}})):
-    case _: true
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}})}}))
+  true
 # submit {line} is anyone's; admit {number} (the line's number on the card, from 1) is the
 # owner's, refused by name to anyone else before the law is asked.
+form submit:
+  line: text 1..280
+form admit:
+  number: natural 1..1000
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "submit", fields: Form.Fields.cons({head: {name: "line", kind: Form.Kind.text({min: 1n, max: 280n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.cons({head: {card: "", action: "admit", fields: Form.Fields.cons({head: {name: "number", kind: Form.Kind.natural({min: 1n, max: 1000n})}, tail: Form.Fields.nil()})}, tail: Card.Forms.nil()})})
+  Card.Forms.cons({head: submitForm(), tail: Card.Forms.cons({head: admitForm(), tail: Card.Forms.nil()})})
 def door() -> Card.Door:
   {word: "anthology", blurb: "Submit a line; the anthology's law admits it."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   heard(state, Card.route(input.text, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): if a.action == "admit" then admitting(state, Card.natural(a.fields, "number"), context) else submitted::<Card.Reply>(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer::<Edits, State, {}>(routed, context, forms(), render(state, context))
+    case act(a): if a.action == "admit" then admitting(state, Card.natural(a.fields, "number"), context) else submitted(state, Card.text(a.fields, "line"), context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
+    case _: Card.answer(routed, context, forms(), render(state, context))
 def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if context.principal != state.owner then Card.Reply.refused({reason: textConcat("Only the anthology's owner admits; that is ", Card.name(state.owner, context))}) else admittingAt(at(state.proposals, number - 1n), number, context)
+  if context.principal != state.owner then Card.Reply.refused({reason: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(state.proposals, number - 1n), number, context)
 def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match found:
-    case none(_): Card.Reply.refused({reason: textConcat("No line numbered ", natText(number))})
+    case none(_): Card.Reply.refused({reason: "No line numbered {natText(number)}"})
     case some(s): admittedReply(context, s.proposal)
 def admittedReply(context: Abi.Context, proposal: Proposal) -> Activity<Plan, Response, Card.Reply>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}})}})):
-    case _: Card.tell::<Edits, State, {}, Card.Reply>(Card.Reply.done({action: "admit"}), Document.text(textConcat("Admitted: ", textConcat(proposal.line, "\n"))))
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}})}}))
+  Card.tell(Card.Reply.done({action: "admit"}), Document.text("Admitted: {proposal.line}\n"))
 def statusName(status: Status) -> String:
   match status:
     case proposed(_): "proposed"
@@ -84,9 +88,9 @@ def statusName(status: Status) -> String:
 def numbered(context: Abi.Context, proposals: Lists.List<Proposal>, n: Nat) -> Document.Documents:
   match proposals:
     case nil(_): Document.Documents.nil()
-    case cons(c): Document.Documents.cons({head: Document.concat(Document.text(textConcat("#", textConcat(natText(n), " "))), entry(context)(c.head)), tail: numbered(context, c.tail, n + 1n)})
+    case cons(c): Document.Documents.cons({head: Document.concat(Document.text("#{natText(n)} "), entry(context)(c.head)), tail: numbered(context, c.tail, n + 1n)})
 def entry(context: Abi.Context) -> Proposal -> Document.Document:
-  fn(proposal: Proposal) -> Document.Document: Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.shown(proposal.author, proposal.handle, context), textConcat(Card.mine(proposal.author, context), textConcat(": ", textConcat(proposal.line, "\n"))))))))
+  fn(proposal: Proposal) -> Document.Document: Document.text("[{statusName(proposal.status)}] {Card.shown(proposal.author, proposal.handle, context)}{Card.mine(proposal.author, context)}: {proposal.line}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("Anthology, admitted by ", textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), "\n")))), tail: Card.clipped(numbered(context, state.proposals, 1n), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology, admitted by {Card.name(state.owner, context)}{Card.mine(state.owner, context)}\n"), tail: Card.clipped(numbered(context, state.proposals, 1n), 8n)})})
