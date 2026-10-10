@@ -359,14 +359,31 @@ class PolicyObject(Chain):
         self.assertTrue(asked["offers"][0]["text"].startswith("✾ THE NIGHT GARDEN\n\nglm, I understood this:\n"), asked["offers"][0])
         self.assertEqual(asked["offers"][0]["principal"], "glm", asked["offers"][0])
         self.assertNotEqual(rows(self.pending()), [])
-        # Another principal's yes is not glm's: it is heard afresh (prose, so interpreted).
+        # Another principal's yes is not glm's: nothing of theirs waits, which they are told, and no
+        # model is asked.
         other = self.say("yes", principal="kimik3")
-        self.assertEqual(other["status"], "suspended", other)
+        self.assertEqual((other["status"], other["offers"][0]["text"]),
+                         ("admitted", "Not planted, refused nothingWaiting: Nothing of yours waits for a yes or no here.\n"), other)
+        self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 0)
         planted = self.say("  Yes \n")
         self.assertEqual(planted["status"], "admitted", planted["receipt"]["outcome"])
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", planted["offers"][0]["text"])
         self.assertEqual(rows(self.pending()), [])
+
+    def test_the_common_answers_confirm_or_drop_without_a_model(self):
+        """Play mode: a proposal shown, then the speaker's answer in any of its usual words."""
+        self.policy()
+        self.garden("policy", confirm=True)
+        for i, (answer, label_) in enumerate([("ok", "planted"), ("Go ahead.", "planted"), ("do it!", "planted"),
+                                              ("cancel", "cleared"), ("Never mind", "cleared"), ("nope", "cleared")]):
+            self.say("a violet moth please", identity="ask-%d" % i)
+            asked = self.interpret(self.planting("violet", "moth %d" % i))
+            self.assertEqual(asked["result"]["label"], "confirming", asked)
+            answered = self.say(answer, identity="answer-%d" % i)
+            self.assertEqual((answered["status"], answered["result"]["label"]), ("admitted", label_), (answer, answered))
+            self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 0, answer)
+            self.assertEqual(rows(self.pending()), [])
 
     def test_no_drops_the_waiting_proposal(self):
         self.policy()

@@ -513,6 +513,22 @@ def completed(held: String, text: String) -> String:
 # Whether an interpreted proposal of this action waits for the speaker's yes.
 def confirms(policy: Policies.State, action: String) -> Bool:
   Lists.any(policy.confirmFor, fn(a: String) -> Bool: a == action)
+# A bare answer to a card that asked first: yes, no, or anything else. Only a short reply is
+# read (64 scalars), blanks around it and a closing . or ! aside, as one of the common words
+# (there is no case folding, so each is listed as people write it). A card holding a
+# proposal for the speaker reads this before anything else, and never asks a model about it.
+sum Answer:
+  yes: {}
+  no: {}
+  other: {}
+def answerOf(text: String) -> Answer:
+  if textLength(textTake(text, 65n)) > 64n then Answer.other({}) else answerWord(endTrimmed(textDrop(text, textSpan(text, " \t\r\n"))))
+def answerWord(word: String) -> Answer:
+  if Lists.any(yesWords(), fn(w: String) -> Bool: w == word) then Answer.yes({}) else if Lists.any(noWords(), fn(w: String) -> Bool: w == word) then Answer.no({}) else Answer.other({})
+def yesWords() -> Lists.List<String>:
+  Lists.concat(wordList("yes Yes YES y Y yeah Yeah yep Yep ok Ok OK okay Okay sure Sure"), Lists.List.cons({head: "go ahead", tail: Lists.List.cons({head: "Go ahead", tail: Lists.List.cons({head: "do it", tail: Lists.List.cons({head: "Do it", tail: Lists.List.nil({})})})})}))
+def noWords() -> Lists.List<String>:
+  Lists.concat(wordList("no No NO n N nope Nope cancel Cancel"), Lists.List.cons({head: "never mind", tail: Lists.List.cons({head: "Never mind", tail: Lists.List.nil({})})}))
 # Whether a host verdict `unclear {needs}` says the prose was addressed to nobody.
 def notAddressed(needs: Form.Names) -> Bool:
   Lists.any(needs, fn(need: String) -> Bool: need == "not addressed")

@@ -209,6 +209,7 @@ sum Why:
   senseless: {}
   badColour: {}
   tooManyWaiting: {}
+  nothingWaiting: {}
 def why(w: Why) -> String:
   match w:
     case badSpell(b): b.reason
@@ -220,6 +221,7 @@ def why(w: Why) -> String:
     case senseless(_): "I could not make sense of that."
     case badColour(_): "colour is one of: amber, violet, silver"
     case tooManyWaiting(_): "Too many proposals are waiting."
+    case nothingWaiting(_): "Nothing of yours waits for a yes or no here."
 def clause(w: Why) -> String:
   match w:
     case badSpell(_): "badSpell"
@@ -231,6 +233,7 @@ def clause(w: Why) -> String:
     case senseless(_): "senseless"
     case badColour(_): "badColour"
     case tooManyWaiting(_): "tooManyWaiting"
+    case nothingWaiting(_): "nothingWaiting"
 def refusal(w: Why) -> Card.Refusal:
   {clause: clause(w), reading: why(w)}
 def refusedCard(refusal: Card.Refusal) -> Document.Document:
@@ -247,19 +250,6 @@ def heldBy(items: Lists.List<Pending>, principal: String, index: Nat) -> Held:
   match items:
     case nil(_): Held.none({})
     case cons(c): if c.head.principal == principal then Held.some({item: c.head, spell: c.head.spell, needs: c.head.needs}) else heldBy(c.tail, principal, index + 1n)
-# What a reply to a waiting proposal says: yes, no or anything else. Only a short
-# reply is examined; it is one word between blanks, in one of three spellings.
-sum Word:
-  yes: {}
-  no: {}
-  other: {}
-def wordOf(text: String) -> Word:
-  if textLength(text) > 64n then Word.other({}) else worded(textDrop(text, textSpan(text, " \n\t\r")))
-def worded(rest: String) -> Word:
-  let core = textTake(rest, textBreak(rest, " \n\t\r"))
-  if textSpan(textDrop(rest, textLength(core)), " \n\t\r") + textLength(core) == textLength(rest) then classed(core) else Word.other({})
-def classed(core: String) -> Word:
-  if core == "yes" || core == "Yes" || core == "YES" || core == "y" then Word.yes({}) else if core == "no" || core == "No" || core == "NO" || core == "n" then Word.no({}) else Word.other({})
 # Every observed spell arrives here. A principal with a proposal waiting is first
 # heard as answering it; otherwise the text parses, fits the plant form, plants on a
 # proposal and writes nothing; it always ends by offering a reply card.
@@ -267,16 +257,22 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
   if Card.isMerge(input.text) then Card.merge(input.post, state.owner, context, fn(post: String) -> Edits: extend(keep(), {pageCheckpoint: Plans.Edit.set({value: post})}), Reply.merged({post: input.post}), fn(r: Card.Refusal) -> Reply: Reply.refused(r)) else heard(state, input, context, heldBy(Relations.rows(state.pending), context.principal, 0n))
 def heard(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match found:
-    case none(_): hear(state, input, context, Spell.parse(input.text), found)
+    case none(_): unasked(state, input, context, found)
     case some(s): if Lists.length(s.needs) == 0n then replied(state, input, context, found, s.spell) else completing(state, input, context, found, s.spell)
 # A spell missing fields is completed by a reply of only field lines; anything else is
 # heard afresh (and replaces it).
 def completing(state: State, input: Card.Heard, context: Abi.Context, found: Held, stored: String) -> Activity<Plan, Response, Reply>:
   if Card.onlyFields(input.text) then judged(state, context, input.post, Spell.parse(Card.completed(stored, input.text)), false, found) else hear(state, input, context, Spell.parse(input.text), found)
+# A bare yes or no with nothing of the speaker's waiting is answered so, with no model call
+# (rehearsal play mode: "yes" after a planting that did not ask went to the interpreter).
+def unasked(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
+  match Card.answerOf(input.text):
+    case other(_): hear(state, input, context, Spell.parse(input.text), found)
+    case _: refused(found, context, Why.nothingWaiting({}))
 # Yes plants what was stored; no drops it; anything else is heard afresh and
 # replaces the stored proposal (or drops it when it proposes nothing).
 def replied(state: State, input: Card.Heard, context: Abi.Context, found: Held, stored: String) -> Activity<Plan, Response, Reply>:
-  match wordOf(input.text):
+  match Card.answerOf(input.text):
     case yes(_): confirmed(state, input, context, found, stored)
     case no(_): told(found, context, Reply.cleared({}), Document.text("✾ THE NIGHT GARDEN\n\nI dropped what I understood.\n"))
     case other(_): hear(state, input, context, Spell.parse(input.text), found)
