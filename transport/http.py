@@ -110,7 +110,7 @@ def typed(value):
 def argument(data):
     """A turn's argument: `spell` is a reply's text as a card hears it, `fields` a plain record, else `argument` typed."""
     if 'spell' in data:
-        return typed({'text': data['spell'], 'post': '', 'slot': ''})
+        return typed({'text': data['spell'], 'post': ''})
     return typed(data['fields']) if isinstance(data.get('fields'), dict) else data.get('argument', {'tag': 'record', 'fields': []})
 
 

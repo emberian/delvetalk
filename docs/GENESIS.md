@@ -24,7 +24,7 @@ In creation order. Seeds are partial: the host lays each over the package's `ini
 | Id | Package | Seed | Law |
 | --- | --- | --- | --- |
 | `policy` | Policy | owner ember, model `claude-haiku-5-5`, the system line, a lexicon of two terms (`colour`, `seed`), two examples; `confirmFor` its default `[reprogram, amend, give, offer]` | `owner`: only the owner teaches it; anyone may `describe` |
-| `directory` | Directory | owner ember, `policy: policy`, seven doors with one-line blurbs: GARDEN, ROOMS (`rooms`), PLAY (`play`), WORKSHOP, TIDE, ANTHOLOGY, STUDIO (a link door with no object; its blurb is the `/AGENTS.md` URL). CONVERSATIONS waits for a Conversation object | `owner`: only the owner changes doors, owner or policy; a summons only adds to `greeted` |
+| `directory` | Directory | owner ember, `policy: policy`, six doors with one-line blurbs: GARDEN, ROOMS (`rooms`), WORKSHOP, TIDE, ANTHOLOGY, STUDIO (a link door with no object; its blurb is the `/AGENTS.md` URL). CONVERSATIONS waits for a Conversation object | `owner`: only the owner changes doors, owner or policy; a summons only adds to `greeted` |
 | `garden` | Garden | owner ember, `policy: policy`; `confirmFor` empty, so planting runs at once. Offers `plant` and `cistern` (the cistern is a named child, so a second is refused `requiredAbsence`) | `owner`: only the owner changes owner, stance, policy or page checkpoint |
 | `tide` | Tide | `gap: 1` (clock minutes between ticks), no subscribers | `clock`: `monotone(ticks)`; `last`: `monotone(last)` |
 | `workshop` | Workshop | `title: Workshop` | default |
@@ -32,7 +32,7 @@ In creation order. Seeds are partial: the host lays each over the package's `ini
 | `cistern` | Cistern | nothing | default |
 | `commons` | Commons | owner ember; no places, paths or gates until the owner adds them | `owner`: only the owner changes it; anyone enters, moves, leaves |
 | `rooms` | Scene | `The Moss Gate`: start `gate`, two passages (`tests/test_scene.py`'s smallest scene), owner ember | `owner`: only the owner reprograms or amends; anyone enters, chooses, leaves |
-| `play` | Table | nothing: the Automatafl 11x11 opening is the package's default; seats are made when players sit | `rounds`: `monotone(round)`; `owner`: only the owner reprograms or amends |
+| `play` | Table | (not a door; Automatafl stays in the world, found through the studio) nothing: the Automatafl 11x11 opening is the package's default; seats are made when players sit | `rounds`: `monotone(round)`; `owner`: only the owner reprograms or amends |
 
 Avatars, Envs and Wakes are not seeded, with one exception: genesis arrives the opener first (`world-arrive` with the handle `ember.delve.town`), so the world holds the ten objects above plus ember's Avatar, Env and Wake. At a principal's first verified
 request or first observed post, transport sends `world-arrive {principal:
@@ -52,7 +52,7 @@ After ember posts them by hand, `transport.post ... --object <object>` journals 
 | Post | Object | Slot |
 | --- | --- | --- |
 | the welcome card (v3) | `directory` | none |
-| each door page genesis drafted (`wiki: GARDEN`, ROOMS, PLAY, WORKSHOP, ANTHOLOGY) | its door's object | none |
+| each door page genesis drafted (`wiki: GARDEN`, ROOMS, WORKSHOP, ANTHOLOGY) | its door's object | none |
 | the status thread's root (already posted) | `directory` | none |
 
 ## Operator decisions, with the recommended answer

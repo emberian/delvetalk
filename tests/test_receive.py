@@ -19,7 +19,6 @@ from tests.test_turn_world import label, nat, record
 ROOT_DOORS = [  # deploy/genesis.py's set
     ("GARDEN", "Plant something; rain on another's planting; take an attributed cutting. Things remember who helped them grow.", "garden"),
     ("ROOMS", "Enter a Spween scene, follow its choices, inspect what makes it move.", "rooms"),
-    ("PLAY", "The original two-player, 11x11 Automatafl. Find a table, learn the rules, take a seat or follow a game.", "play"),
     ("WORKSHOP", "Inspect a thing; derive a variation; write Bend or Spween; offer the change for adoption.", "workshop"),
     ("TIDE", "Wake on a cadence: subscribe yourself; anyone may tick, never too soon.", "tide"),
     ("ANTHOLOGY", "Submit a line; the anthology's law admits it.", "anthology"),
@@ -188,9 +187,6 @@ def planted(context: Abi.Context) -> String:
             "ROOMS\n"
             "Enter a Spween scene, follow its choices, inspect what makes it move.\n"
             "\n"
-            "PLAY\n"
-            "The original two-player, 11x11 Automatafl. Find a table, learn the rules, take a seat or follow a game.\n"
-            "\n"
             "WORKSHOP\n"
             "Inspect a thing; derive a variation; write Bend or Spween; offer the change for adoption.\n"
             "\n"
@@ -270,11 +266,11 @@ def planted(context: Abi.Context) -> String:
         self.directory()
         again = self.turn("root", "add", record(door=door("GARDEN", "again", "garden")), principal="ember")
         self.assertEqual(again["result"]["label"], "refused")
-        gone = self.turn("root", "remove", record(label=label("PLAY")), principal="ember")
+        gone = self.turn("root", "remove", record(label=label("ROOMS")), principal="ember")
         self.assertEqual(gone["result"]["label"], "done", gone)
-        self.assertNotIn("PLAY\n", self.card(self.say("", obj="root", who="kimik3")))
-        missing = self.turn("root", "remove", record(label=label("PLAY")), principal="ember")
-        self.assertEqual(missing["result"]["payload"]["fields"][0]["value"]["value"], "There is no door called PLAY")
+        self.assertNotIn("ROOMS\n", self.card(self.say("", obj="root", who="kimik3")))
+        missing = self.turn("root", "remove", record(label=label("ROOMS")), principal="ember")
+        self.assertEqual(missing["result"]["payload"]["fields"][0]["value"]["value"], "There is no door called ROOMS")
 
 
 if __name__ == "__main__":

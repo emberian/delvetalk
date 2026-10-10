@@ -184,7 +184,7 @@ Turn `argument`, REPL `arguments` and `response` are the host's typed data. `fie
     {"tag": "record", "fields": [{"name": "count", "value": {...}}]}   {"tag": "list", "items": [...]}
     {"tag": "variant", "label": "written", "payload": {"tag": "record", "fields": []}}
 
-A turn takes exactly one of `spell` (`{text, post: "", slot: ""}` for `receive`), `fields` or `argument` (default: the empty record).
+A turn takes exactly one of `spell` (`{text, post: ""}` for `receive`), `fields` or `argument` (default: the empty record).
 
 ## Turn replies
 

@@ -92,7 +92,7 @@ refuses to run if any of them exists (`--opener` names another opener; the defau
 same way. `deploy.seed` creates one further object by hand.
 
 Genesis then has each door's object publish its page (`publishPage`). After the bridge runs, its outbox holds one
-`wiki: <Door>` draft each for GARDEN, ROOMS, PLAY, WORKSHOP and ANTHOLOGY. Tide has no `publishPage`, so TIDE's is
+`wiki: <Door>` draft each for GARDEN, ROOMS, WORKSHOP and ANTHOLOGY. Tide has no `publishPage`, so TIDE's is
 named on stderr as not published; STUDIO is a link, with no page.
 Post each with `transport.post ... --object <object>` as `python3 -m transport.bridge outbox` prints it; that records the
 post for the object, so replies to it route there. A door whose page was not published is named on stderr.

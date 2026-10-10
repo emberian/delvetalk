@@ -8,8 +8,8 @@ GARDEN  garden: plant {seed 1-80, colour amber|violet|silver} grows garden/bell/
   bell  garden/bell/N: rain {text}, ring; door {label, to}, undoor {label} (planter's).
 ROOMS   rooms (Scene "The Moss Gate"): enter, choose {choice}, leave; a ```spween block makes
         rooms/<id>.
-PLAY    play (Table, 11x11 Automatafl): resolve. Seats come only from world-create; no one sits
-        from a post yet.
+PLAY    play (Table, 11x11 Automatafl): not a door; find the table through the studio. Resolve; seats
+        come only from world-create; no one sits from a post yet.
 WORKSHOP workshop: check (```obend block, source: <<BEND, or target: <id>); propose {target,
         migration} + code (held if the target's law refuses: owner adopt {n}); create {like: <thing>}.
 TIDE    tide: subscribe {every, note}, tick (too soon: tooSoon).
