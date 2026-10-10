@@ -301,6 +301,7 @@ def interpreting(input: Card.Reply, forms: Lists.List<Form.Form>, policy: Polici
     case proposal(p): proposed(p.object, p.method, p.argument, forms, policy, context)
     case unclear(u): if Card.silentNeeds(u.needs) then Heard.silent({}) else missed(input, forms, policy, attempt, u.needs, context, state)
     case replied(r): readBack(input, forms, policy, attempt, Card.prose(r.text), context, state)
+    case denied(_): Card.tell(Heard.refused({reason: "policy"}), Document.text("✾ DELVETALK · ROOT\n\nrefused policy: The policy is not visible to you.\n"))
     case _: Heard.silent({})
 # A proposal runs on its door as this turn (the door's own method, under the speaker), unless
 # the policy confirms that action first: then the speaker is shown the door's spell to send,

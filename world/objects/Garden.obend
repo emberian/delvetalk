@@ -347,6 +347,7 @@ def interpreted(input: Card.Reply, policy: Policies.State, attempt: Nat, needs: 
     case unclear(u): if Card.silentNeeds(u.needs) then silent(found) else if failed(u.needs) then told(Reply.unclear({needs: u.needs}), needsCard(u.needs), found) else readBack(input, policy, attempt, Card.Fitted.miss({needs: u.needs}), found, context, state)
     case replied(r): readBack(input, policy, attempt, Card.prose(r.text), found, context, state)
     case timedOut(_): refused(Why.senseless({}), found)
+    case denied(_): told(Reply.refused({clause: "policy", reading: "The policy is not visible to you."}), refusedCard({clause: "policy", reading: "The policy is not visible to you."}), found)
     case refused(_): refused(Why.senseless({}), found)
 # The model could not be asked (`model: <reason>`): answered at once, never asked again.
 def failed(needs: Form.Names) -> Bool:
