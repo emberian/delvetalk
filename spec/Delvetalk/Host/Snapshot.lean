@@ -268,7 +268,7 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
     let some (stateType, bounds, methods, predicate, predicateReads) := types[pin]?
       | throw s!"object {id} names a type no entry holds"
     let lawText ← o.getObjValAs? String "law"
-    let inputs := stackForm (← expandInputs w (← o.getObjVal? "compile"))
+    let inputs ← expandInputs w (← o.getObjVal? "compile")
     let state ← decodeData Limits.dataDepth (← o.getObjVal? "state")
     unless state.conformsUnder bounds stateType do throw s!"the state of {id} does not conform to its type"
     let some cid := (o.getObjValAs? String "stateCid").toOption | throw s!"object {id} carries no state CID"

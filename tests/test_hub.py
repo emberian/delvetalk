@@ -53,7 +53,7 @@ class Hub(test_chain.Chain):
             self.assertEqual(self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")["result"]["label"], "done")
 
     def say(self, text, who, uri="at://x/post/1"):
-        return self.turn("root", "receive", record(text=label(text), post=label(uri), slot=label("")), principal=who)
+        return self.turn("root", "receive", record(text=label(text), post=label(uri)), principal=who)
 
     def greet(self, *who):
         for principal in who:

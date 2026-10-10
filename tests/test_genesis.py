@@ -48,7 +48,7 @@ class Genesis(unittest.TestCase):
         said = {}
         for word in ('ROOMS', 'PLAY', 'STUDIO'):
             got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'directory', 'method': 'receive',
-                             'argument': genesis.rec(text=genesis.lab(word), post=genesis.lab('at://x/p/' + word), slot=genesis.lab('')),
+                             'argument': genesis.rec(text=genesis.lab(word), post=genesis.lab('at://x/p/' + word)),
                              'identity': 'door-' + word})
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']

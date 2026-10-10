@@ -43,7 +43,7 @@ def get(record_wire, name):
 
 class Replay(Chain):
     def heard(self, text, post):
-        return record(text=label(text), post=label(post), slot=label(""))
+        return record(text=label(text), post=label(post))
 
     def state_field(self, obj, name):
         return get(self.state(obj), name)

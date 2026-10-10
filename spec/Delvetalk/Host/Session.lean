@@ -20,12 +20,11 @@ inductive Durability | none | fsync | full
 def Durability.name : Durability → String
   | .none => "none" | .fsync => "fsync" | .full => "full"
 
-/-- `sync` of `world-open`: one of the three names; the boolean of the previous release is still
-    accepted for one release (false = none, true = fsync). Absent is `fsync`. -/
+/-- `sync` of `world-open`: one of the three names. Absent is `fsync`. -/
 def Durability.ofJson? : Option Lean.Json → Except String Durability
   | Option.none => .ok .fsync
-  | Option.some (.str "none") | Option.some (.bool false) => .ok .none
-  | Option.some (.str "fsync") | Option.some (.bool true) => .ok .fsync
+  | Option.some (.str "none") => .ok .none
+  | Option.some (.str "fsync") => .ok .fsync
   | Option.some (.str "full") => .ok .full
   | Option.some _ => .error "sync must be \"none\", \"fsync\" or \"full\""
 

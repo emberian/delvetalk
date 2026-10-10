@@ -4,7 +4,7 @@ Evidence for FOUNDATION §2 Durability (layer: host).
 
 `world-open {sync}`: "none" flushes, "fsync" (the default) asks the OS to write the bytes out,
 "full" adds the drive-cache barrier (F_FULLFSYNC on macOS). Each mode opens, writes and reopens
-to the same head; the boolean of the previous release still means none/fsync.
+to the same head; anything else, a boolean too, is refused by name.
 """
 import json
 import os
@@ -42,16 +42,12 @@ class Durability(HostCase):
         for mode, expect in [("none", "none"), ("fsync", "fsync"), ("full", "full"), (None, "fsync")]:
             self.assertEqual(self.run_mode(mode), expect)
 
-    def test_the_boolean_still_means_none_or_fsync_and_anything_else_is_refused(self):
+    def test_anything_but_the_three_names_is_refused(self):
         h = self.spawn()
-        for value, expect in [(False, "none"), (True, "fsync")]:
-            path = os.path.join(self.dir.name, f"{expect}-bool.journal")
-            self.assertEqual(h.send(op="world-open", path=path, sync=value)["status"], "opened")
-            self.assertEqual(h.send(op="world-status")["sync"], expect)
-        bad = h.send(op="world-open", path=os.path.join(self.dir.name, "bad.journal"), sync="barrier")
-        self.assertEqual(bad["status"], "error", bad)
-        self.assertIn("none", bad["message"])
-
+        for i, value in enumerate([False, True, "barrier"]):
+            bad = h.send(op="world-open", path=os.path.join(self.dir.name, f"bad{i}.journal"), sync=value)
+            self.assertEqual(bad["status"], "error", bad)
+            self.assertIn('"none", "fsync" or "full"', bad["message"])
 
 if __name__ == "__main__":
     unittest.main()

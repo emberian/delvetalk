@@ -868,7 +868,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some target := f.lookup "object" | evaluation "malformed call plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed call plan"
     let some argument := f.lookup "argument" | evaluation "malformed call plan"
-    let via := ((f.lookup "via").bind labelOf).getD ""
+    -- Only `callVia` names a grant; a `call` carrying `via` is a plain call.
+    let via := match plan with
+      | .variant "callVia" _ => ((f.lookup "via").bind labelOf).getD ""
+      | _ => ""
     match referenceId target with
     | none => refusedWith bounds responseType "unknownObject"
     | some id =>
@@ -1133,7 +1136,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some target := f.lookup "object" | evaluation "malformed send plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed send plan"
     let some argument := f.lookup "argument" | evaluation "malformed send plan"
-    let via := ((f.lookup "via").bind labelOf).getD ""
+    -- Only `sendVia` names a grant.
+    let via := match plan with
+      | .variant "sendVia" _ => ((f.lookup "via").bind labelOf).getD ""
+      | _ => ""
     match referenceId target with
     | none => refusedWith bounds responseType "foreignWorld"
     | some id =>
@@ -1435,8 +1441,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     return (w', turnReply w' r)
 
 /-- `receive`'s `slot` is the host's: an object that declares `receive {text, post}` gets the
-    argument without one (a client may still send it for one release), and one that still
-    declares `slot` gets it filled from the recorded post the turn replies to (its slot as
+    argument without one (`transport/http.py` still sends one), and one that still declares `slot` gets it filled from the recorded post the turn replies to (its slot as
     compressed JSON, "" for none) when the client left it out. Any other argument is as sent. -/
 def receiveArgument (init : TurnState) (req : TurnRequest) (slot : Option Json) : Data × TurnState :=
   if req.method != "receive" then (req.argument, init) else

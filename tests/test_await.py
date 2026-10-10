@@ -84,7 +84,7 @@ class Create(Await):
     GARDEN = "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver"
 
     def plant(self, who="glm", post="at://glm.delve.town/app.bsky.feed.post/3m-plant"):
-        return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post), slot=label("")),
+        return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post)),
                          principal=who, identity=post)
 
     def test_the_creation_is_journaled_in_the_admitted_entry_and_replays(self):

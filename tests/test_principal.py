@@ -84,8 +84,8 @@ class Principal(Chain):
     def test_the_planter_is_the_turns_principal_and_the_planting_its_post(self):
         self.make("garden", closure("Garden"), garden_seed())
         spell = "delvetalk garden plant\nseed: a fern\ncolour: amber"
-        self.forged("garden", "receive", record(text=label(spell), post=label("at://p/1"), slot=label("")), "who")
-        r = self.turn("garden", "receive", record(text=label(spell), post=label("at://p/1"), slot=label("")), principal=ACTOR, identity="plant-1")
+        self.forged("garden", "receive", record(text=label(spell), post=label("at://p/1")), "who")
+        r = self.turn("garden", "receive", record(text=label(spell), post=label("at://p/1")), principal=ACTOR, identity="plant-1")
         self.assertEqual(r["result"]["label"], "planted", r)
         bell = self.state("garden/bell/1")
         self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label(ACTOR), label("at://p/1")))
