@@ -29,7 +29,9 @@ class StubHost:
     def send(self, req):
         self.ops.append(req)
         if req['op'] == 'world-status':
-            return {'status': 'status', 'height': 41, 'postQuota': 16}
+            return {'status': 'status', 'height': 41, 'posts': {'hour': 0, 'sources': [{'source': 'delve', 'used': 3, 'quota': 16, 'next': 60}]}}
+        if req['op'] == 'world-post-reserve':
+            return {'status': 'reserved'}
         if req['op'] == 'world-interpretations':
             return {'status': 'interpretations', 'pending': [{'id': 'x'}]}
         if req['op'] == 'world-resolve':
@@ -61,7 +63,6 @@ class HandCase(unittest.TestCase):
         write_atomic(self.state / 'outbox' / '7-aaaa.json', {
             'replyTo': self.uri, 'replyHandle': 'talkie.delve.town', 'principal': 'p', 'object': 'garden-1', 'slot': None,
             'receipt': {'slug': 'bofab-lukid', 'height': 7, 'outcome': {'tag': 'admitted'}}, 'text': 'planted <b>a</b>', 'posted': False})
-        write_atomic(self.state / 'post-log.json', [__import__('time').time()] * 3)
         self.poster, self.host = Poster(), StubHost()
         self.hand = hand.Hand(self.state, self.host, TOKEN, '/creds.json', poster=self.poster)
         self.front = Front(('127.0.0.1', 0), self.host, identity.Identity(self.tmp.name, delve.Client(None)), hand=self.hand)

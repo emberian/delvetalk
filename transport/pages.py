@@ -49,10 +49,21 @@ def slip(x, did=None):
                             note=T['note'].format(clause=e(f"{out.get('class')}: {clause}" if clause else str(out.get('class')))) if out.get('tag') == 'refused' else '')
 
 
+def framed(text, kind='offer'):
+    """A card's text in its frame (T[kind]); the `hob:` lines at its head or tail are hob's own, beside the frame, never in it."""
+    lines = text.split('\n')
+    head = next((i for i, l in enumerate(lines) if not l.startswith('hob:')), len(lines))
+    tail = len(lines) - next((i for i, l in enumerate(reversed(lines[head:])) if l and not l.startswith('hob:')), len(lines) - head)
+    tail = tail if any(l.startswith('hob:') for l in lines[tail:]) else len(lines)  # the card keeps its own blank tail
+    hob = lambda ls: ''.join(T['hob'].format(text=e(l)) for l in ls if l)
+    card = '\n'.join(lines[head:tail])
+    return hob(lines[:head]) + (T[kind].format(text=e(card)) if card.strip() else '') + hob(lines[tail:])
+
+
 def obj(name, who, view, card, entries, did=None, doors=(), seen=None, acts=()):
     """An object: its card (sacred text), its doors, a way to play it, its actions as forms from the method table, its law and
     source as code, its receipts as slips."""
-    shown = T['card'].format(text=e(card)) if card else T['state'].format(state=dl(view.get('state')))
+    shown = framed(card, 'card') if card else T['state'].format(state=dl(view.get('state')))
     play = T['playlink'].format(href=e(quote(name, safe='/:')), id=e(name)) if who else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),
@@ -99,11 +110,12 @@ def rendered(kind, body, links, who, did=None):
         rc = body['receipt']
         roots = ''.join(T['root'].format(href=e(quote(r.get('object', ''), safe=':')), id=e(str(r.get('object'))), version=e(str(r.get('version'))))
                         for r in rc.get('roots') or [])
-        return page('receipt', who, T['receipt'].format(name=e(str(rc.get('slug', ''))), slip=slip(rc, did),
-                                                        roots=roots, projection=dl({k: v for k, v in rc.items() if k not in ('slug', 'roots')})))
+        offers = ''.join(framed(str(o['text'])) for o in rc.get('offers') or [] if isinstance(o, dict) and 'text' in o)
+        return page('receipt', who, T['receipt'].format(name=e(str(rc.get('slug', ''))), slip=slip(rc, did), offers=offers,
+                                                        roots=roots, projection=dl({k: v for k, v in rc.items() if k not in ('slug', 'roots', 'offers' if offers else '')})))
     if kind == 'offers' and isinstance(body.get('offers'), list):
         items = ''.join(T['offer_slip'].format(height=e(str(o.get('height'))), intent=e(str((o.get('identity') or {}).get('intent'))),
-                                               text=e(str(o.get('text')))) for o in body['offers'] if isinstance(o, dict)) or T['quiet']
+                                               offer=framed(str(o.get('text')))) for o in body['offers'] if isinstance(o, dict)) or T['quiet']
         return page('offers', who, T['offers'].format(items=items, more=T['more'].format(href=e(links['next']['href'])) if 'next' in links else ''))
     return page(kind, who, T['generic'].format(title=e(kind), body=dl(body), links=doors_of(links)))
 

@@ -152,6 +152,8 @@ ol.ledger { list-style: none; padding: 0; margin: .5rem 0; container: ledger / i
   .slip { grid-template-columns: auto auto 1fr minmax(0, 15rem); grid-template-areas: "stamp code name clause" "by by by clause"; }
   .slip .clause { border: 0; border-left: 2px solid var(--terracotta); padding: 0 0 0 .7rem; }
 }
+.hob { display: flex; align-items: baseline; gap: .5rem; margin: .75rem 0; font: 17px/1.65 var(--serif); color: var(--ink); }
+.hob .frog.glyph { width: 1em; height: 1em; align-self: center; }
 .quiet { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .3rem .7rem; margin: 1rem 0; padding: .6rem 1rem;
   color: var(--muted); font-style: italic; letter-spacing: .08em; border: 1px dashed var(--muted); border-radius: 2px; }
 .quiet .stamp { color: var(--muted); font-style: normal; }
