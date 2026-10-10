@@ -148,16 +148,17 @@ class Bridging(BridgeCase):
         self.observe([spell_post(1, 'stern', '2026-10-09T10:00:00Z')])
         self.run_bridge()
         (d,) = self.drafts()
-        self.assertTrue(d['text'].startswith("proposal observed, not committed\nreason: lawRefused\n"), d['text'])
+        self.assertTrue(d['text'].startswith("refused "), d['text'])
+        self.assertNotIn('proposal observed', d['text'])
         import re
         self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', d['text']), d['text'])
-        self.assertNotIn('seen', d['text'])  # no state field
+        self.assertTrue(d['text'].startswith('refused seen: stern\nreceipt '), d['text'])  # the clause names the law line; no state value
 
     def test_unknown_card_yields_unknownObject_draft(self):
         self.observe([spell_post(1, 'nowhere', '2026-10-09T10:00:00Z')])
         self.run_bridge()
         (d,) = self.drafts()
-        self.assertIn('reason: unknownObject', d['text'])
+        self.assertTrue(d['text'].startswith('refused unknownObject'), d['text'])
 
     def test_host_error_without_receipt_leaves_the_post_for_retry(self):
         self.make('garden-1')
@@ -224,6 +225,24 @@ class Stub:
         if op == 'world-publications':
             return {'status': 'publications', 'publications': [], 'more': False}
         return {'status': 'ok'}
+
+
+class Usage(BridgeCase):
+    def test_a_question_mark_is_answered_with_the_hosts_usage_and_the_post_is_done(self):
+        stub = Stub()
+        real = stub.send
+        stub.send = lambda req: ({'status': 'usage', 'object': 'garden-1', 'text': 'Reply with a spell:\n\n    delvetalk garden-1 plant\n'}
+                                 if req['op'] == 'world-turn' else real(req))
+        post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        post['text'] = 'delvetalk garden-1 ?'
+        self.observe([post])
+        r = bridge.run(self.state, stub)
+        self.assertEqual((r['failed'], r['turns']), ([], [post['uri']]))
+        (d,) = self.drafts()
+        self.assertEqual((d['text'], d['replyTo'], d['object'], d['principal']), ('Reply with a spell:\n\n    delvetalk garden-1 plant\n', post['uri'], 'garden-1', DID))
+        before = len(stub.ops)
+        self.assertEqual(bridge.run(self.state, stub)['turns'], [])  # not retried
+        self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
 
 
 class Routing(BridgeCase):
@@ -420,12 +439,12 @@ class Unaddressed(BridgeCase):
 
     def test_a_spell_refused_budget_is_drafted(self):
         (spell,) = self.run_refused(spell_post(2, 'garden-1', '2026-10-09T10:00:00Z'))
-        self.assertIn('reason: budget', spell['text'])
+        self.assertEqual(spell['text'], 'refused budget\n')
 
     def test_field_lines_in_a_reply_count_as_addressed(self):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
         (fields,) = self.run_refused(mk(3, 'plant: a fern\ncolour: silver', parent=parent))
-        self.assertIn('reason: budget', fields['text'])
+        self.assertEqual(fields['text'], 'refused budget\n')
 
 
 class Silence(BridgeCase):
@@ -462,16 +481,18 @@ class RealOffers(test_outbound.TellerWorld):
 
 
 class Projection(unittest.TestCase):
-    def test_a_refusal_draft_is_the_hosts_public_projection_verbatim_and_nothing_else(self):
-        reply = {'status': 'refused', 'receipt': {'hash': 'h', 'outcome': {'tag': 'refused', 'class': 'unknownObject', 'reason': 'SECRET state'}},
-                 'public': {'status': 'refused', 'class': 'unknownObject', 'root': {'object': 'nope'}, 'object': 'nope', 'hint': 'try garden'}}
+    def test_a_refusal_draft_is_the_turn_line_the_hint_and_the_receipts_name(self):
+        reply = {'status': 'refused', 'receipt': {'hash': 'h', 'slug': 'tulun-huzif', 'outcome': {
+                     'tag': 'refused', 'class': 'badSpell', 'clause': 'noAction', 'reason': 'garden has no action wilt.', 'SECRET': 'state'}},
+                 'public': {'status': 'refused', 'class': 'badSpell', 'hint': 'delvetalk garden plant\ncolour: <...>'}}
         text = bridge.draft_text(reply)
-        self.assertEqual(text, 'proposal observed, not committed\nreason: unknownObject\nroot: nope\nobject: nope\nhint: try garden\n')
+        self.assertEqual(text, 'refused noAction: garden has no action wilt.\ndelvetalk garden plant\ncolour: <...>\nreceipt tulun-huzif\n')
         self.assertNotIn('SECRET', text)
-        reply['public'] = {'status': 'refused', 'class': 'lawRefused', 'root': {'object': 'm', 'version': 2, 'cid': 'bafy' + 'a' * 50}}
-        self.assertEqual(bridge.draft_text(reply), 'proposal observed, not committed\nreason: lawRefused\nroot: m v2\n')
-        self.assertEqual(bridge.draft_text(reply, 'https://x.example/'),
-                         'proposal observed, not committed\nreason: lawRefused\nroot: m v2\nhttps://x.example/o/m#v2\n')
+        reply['receipt']['outcome'] = {'tag': 'refused', 'class': 'lawRefused', 'reason': 'refused owner: not yours'}
+        reply['public'] = {}
+        self.assertEqual(bridge.draft_text(reply), 'refused owner: not yours\nreceipt tulun-huzif\n')  # the reason already says it
+        del reply['receipt']['slug']
+        self.assertEqual(bridge.draft_text(reply), 'refused owner: not yours\n')
 
     def test_no_draft_text_carries_a_hash_or_a_blob(self):
         import re
