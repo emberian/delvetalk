@@ -15,7 +15,6 @@ import hashlib
 import json
 import re
 import sys
-import time
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,7 +22,7 @@ from pathlib import Path
 from transport.bridge import unposted, write_atomic
 from transport.delve import Failure, canonical, http_transport
 from transport.observe import MAX_TEXT, TAG, Observer, classify
-from transport.post import draft_object, ledger, record_posted, slot_record, wiki_target
+from transport.post import draft_object, ledger, record_posted, reserve, slot_record, wiki_target
 
 STREAM = 'delvetalk'
 BATCH = 100
@@ -190,15 +189,17 @@ def deliver(state, host, client, stream, topic, text, obj=None, slot=None, now=N
     `obj` (world-posted), so replies in the topic route to it. The stream's newest id is persisted before the send; a retry
     adopts our message with this text after it rather than sending again. The host's `postQuota` is delve.town etiquette and does
     not apply to the owner's own Zulip: nothing is held here for rate. -> {uri, cid, recorded}. Raises Failure."""
-    path, got = ledger(state, intent or f'zulip:{stream}/{topic}/' + hashlib.sha256(text.encode()).hexdigest()[:16])
+    intent = intent or f'zulip:{stream}/{topic}/' + hashlib.sha256(text.encode()).hexdigest()[:16]
+    path, got = ledger(state, intent)
     if got is None:
+        reserve(host, intent, 'zulip')  # journaled, never refused: the quota is delve.town's
         got = {'after': client.newest(stream)}
         write_atomic(path, got)
     if not got.get('result'):
         mid = client.sent_after(stream, topic, text, got['after']) or client.send(stream, topic, text)['id']
         got = dict(got, result={'uri': uri_of(stream, topic, mid), 'cid': str(mid)})
         write_atomic(path, got)
-    return {**got['result'], 'recorded': record_posted(host, got['result'], obj, slot, wiki_target(text)) if obj else None}
+    return {**got['result'], 'recorded': record_posted(host, got['result'], obj, slot, wiki_target(text), intent) if obj else None}
 
 
 def post_drafts(state, host, client, stream, now=None, topic=None):
@@ -229,7 +230,7 @@ def post_drafts(state, host, client, stream, now=None, topic=None):
             held.append({'file': path.name, 'reason': f.code})
             continue
         recorded = got.pop('recorded')
-        write_atomic(path, dict(d, posted=True, sent=got, **({'recorded': recorded} if recorded else {})))
+        write_atomic(path, dict(d, posted=True, sent=got, intent=f'zulip-{path.stem}', **({'recorded': recorded} if recorded else {})))
         sent.append(got['uri'])
     return {'posted': sent, **({'held': held} if held else {})}
 

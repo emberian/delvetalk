@@ -66,16 +66,13 @@ class Hand:
 
     def status(self):
         st = self.host.send({'op': 'world-status'})
-        try:
-            stamps = [t for t in json.loads((self.state / 'post-log.json').read_text()) if self.clock() - t < post.WINDOW]
-        except (OSError, ValueError):
-            stamps = []
+        delve = next((s for s in (st.get('posts') or {}).get('sources') or [] if s.get('source') == 'delve'), {})  # the host's count
         month = time.strftime('%Y-%m', time.gmtime(self.clock()))
         spent = spend.totals(self.state, month).get(month, {})
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
         retrying = [1 for p in (self.state / 'interpretations').glob('*.json') if json.loads(p.read_text()).get('retry')]
         pid = self.state / 'hostd.pid'
-        return {'journal height': st.get('height'), 'posts this hour': f'{len(stamps)} of {st.get("postQuota", post.LIMIT)}',
+        return {'journal height': st.get('height'), 'posts this hour': f'{delve.get("used", 0)} of {delve.get("quota", "?")}',
                 f'model spend {month}': f'${spent.get("dollars", 0):.4f} ({spent.get("calls", 0)} calls)',
                 'interpretations pending': f'{len(waiting)} ({len(retrying)} retrying)',
                 'hostd pid': pid.read_text().strip() if pid.exists() else 'none'}
