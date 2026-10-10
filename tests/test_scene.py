@@ -112,7 +112,7 @@ class Scenes(test_chain.Chain):
             "\n"
             "    delvetalk scene leave\n"))
         r = self.say("delvetalk scene enter")
-        self.assertEqual(r["result"]["label"], "done")
+        self.assertEqual(r["result"]["label"], "entered")
         reader = self.card(GLM)
         self.assertEqual(reader, (
             "SCENE The Moss Gate (1 here), you are at gate:\n"
@@ -133,7 +133,7 @@ class Scenes(test_chain.Chain):
         self.assertIn("A moss gate, ajar.", reader)
         self.assertIn("  * Open\n", reader)
         r = self.say("delvetalk scene choose\nchoice: Open")
-        self.assertEqual(r["result"]["label"], "done", r)
+        self.assertEqual(r["result"]["label"], "moved", r)
         moved = self.card(GLM)
         self.assertEqual(moved, (
             "SCENE The Moss Gate (1 here), you are at yard:\n"
@@ -288,7 +288,7 @@ class Scenes(test_chain.Chain):
                             + [choice("next", "p%d" % ((i + 1) % 16))]) for i in range(16)]
         self.scene(passages, start="p0")
         for n in range(16):
-            self.assertEqual(self.say("delvetalk scene enter", "did:plc:r%d" % n)["result"]["label"], "done")
+            self.assertEqual(self.say("delvetalk scene enter", "did:plc:r%d" % n)["result"]["label"], "entered")
         r = self.say("delvetalk scene enter", "did:plc:r16")
         self.assertTrue(why(r).startswith("sceneFull"), why(r))
         self.assertEqual(len(self.view()[1]["presence"]), 16)
@@ -296,7 +296,7 @@ class Scenes(test_chain.Chain):
         for n in range(16):
             if n and n % 7 == 0:
                 self.say("delvetalk scene choose\nchoice: next", who)
-            self.assertEqual(self.say("delvetalk scene choose\nchoice: s%d" % (n % 7), who)["result"]["label"], "done")
+            self.assertEqual(self.say("delvetalk scene choose\nchoice: s%d" % (n % 7), who)["result"]["label"], "moved")
         full = self.card(who)
         self.assertEqual(full, (
             "SCENE The Moss Gate (16 here), you are at p2:\n"
@@ -332,9 +332,9 @@ class Scenes(test_chain.Chain):
         self.assertTrue(why(r).startswith("varsFull"), why(r))
         self.assertEqual(self.view(), before)
         # An existing variable is still settable when the variables are full.
-        self.assertEqual(self.say("delvetalk scene choose\nchoice: s0", who)["result"]["label"], "done")
+        self.assertEqual(self.say("delvetalk scene choose\nchoice: s0", who)["result"]["label"], "moved")
         # The reader moves on only by an offered choice.
-        self.assertEqual(self.say("delvetalk scene choose\nchoice: next", who)["result"]["label"], "done")
+        self.assertEqual(self.say("delvetalk scene choose\nchoice: next", who)["result"]["label"], "moved")
         self.assertIn("you are at p3", self.card(who))
 
     def test_a_forged_principal_cannot_be_sent_and_a_labelled_choice_of_another_passage_does_nothing(self):
@@ -345,9 +345,10 @@ class Scenes(test_chain.Chain):
                      "delvetalk scene enter\nprincipal: " + KIM,
                      "delvetalk scene choose\nwho: " + KIM + "\nchoice: Open"):
             with self.subTest(text=text):
-                r = self.say(text, GLM)
-                self.assertEqual(r["offers"][0]["text"].split("\n", 1)[0], "SCENE The Moss Gate (1 here), you are at gate:")
-                self.assertEqual(r["result"]["label"], "refused")
+                # The host fits the spell against the method's input: a field it lacks is refused by name.
+                r = self.turn("scene", "receive", heard(text), principal=GLM)
+                out = r["receipt"]["outcome"]
+                self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "badSpell", "unknownField"), r)
         self.assertEqual(self.view(), before)
         self.assertEqual([p["who"] for p in self.view()[1]["presence"]], [GLM])
         # The method has no principal field; the host refuses one outright.

@@ -187,6 +187,9 @@ class OwnedLenses(test_chain.Chain):
 
     def test_the_workshop_has_nothing_to_set_and_says_so(self):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
-        r = self.say("workshop", "delvetalk workshop set\ntitle: Forge", "ember")
-        self.assertEqual(r["offers"][0]["text"], "Not done: Nothing here can be set: the workshop keeps no settings of its own.\n")
-        self.assertIn("delvetalk workshop check", self.say("workshop", "delvetalk workshop ?", "glm")["offers"][0]["text"])
+        r = self.turn("workshop", "receive", record(text=label("delvetalk workshop set\ntitle: Forge"), post=label("")), principal="ember")
+        out = r["receipt"]["outcome"]
+        self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "badSpell", "noAction"), r)
+        usage = self.turn("workshop", "receive", record(text=label("delvetalk workshop ?"), post=label("")), principal="glm")
+        self.assertEqual(usage["status"], "usage", usage)
+        self.assertIn("delvetalk workshop check", usage["text"])

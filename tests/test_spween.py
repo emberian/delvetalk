@@ -196,8 +196,8 @@ class Made(test_chain.Chain):
     def test_guards_effects_end_and_the_cooldown_as_a_law(self):
         self.made()
         well = self.WELL_ID
-        self.assertEqual(self.say(well, "delvetalk %s enter" % well)["result"]["label"], "done")
-        self.assertEqual(self.say(well, "delvetalk %s choose / choice: Drop a coin" % well)["result"]["label"], "done")
+        self.assertEqual(self.say(well, "delvetalk %s enter" % well)["result"]["label"], "entered")
+        self.assertEqual(self.say(well, "delvetalk %s choose / choice: Drop a coin" % well)["result"]["label"], "moved")
         deeper = self.card(well)
         self.assertEqual(deeper, (
             "SCENE The Wishing Well (1 here), you are at deeper:\n"
@@ -222,7 +222,7 @@ class Made(test_chain.Chain):
         climb = self.say(well, "delvetalk %s choose / choice: Climb down" % well)
         self.assertEqual(self.refusal(climb), ("guarded", "Climb down needs coins >= 5."))
         wish = self.say(well, "delvetalk %s choose / choice: Make a wish" % well)
-        self.assertEqual(wish["result"]["label"], "done", wish)
+        self.assertEqual(wish["result"]["label"], "left", wish)
         version, state = self.view(well)
         self.assertEqual(state["presence"], [])
         self.assertEqual(state["vars"], [{"name": "coins", "value": "1"}, {"name": "wished", "value": "true"},
@@ -241,7 +241,7 @@ class Made(test_chain.Chain):
                          ("refused", "lawRefused", "cooldown"), forged)
         self.host.send(op="world-advance", height=at + 3)
         back = self.say(well, "delvetalk %s enter" % well)
-        self.assertEqual(back["result"]["label"], "done", back)
+        self.assertEqual(back["result"]["label"], "entered", back)
         # The coin was dropped: its guard (!wished) no longer holds.
         self.assertNotIn("Drop a coin", self.card(well))
 
