@@ -10,7 +10,7 @@ principal, and the reply card is what the turn offers.
 """
 import unittest
 
-from tests.test_replay import relation
+from tests.test_replay import relation, rows
 from tests.test_chain import Chain, boolean, field, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
@@ -65,6 +65,21 @@ class Cards(Chain):
         planted = self.say("colour: silver")
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("a silver bell, “a fern that remembers yesterday”", self.card(planted))
+
+    def test_a_completed_seed_keeps_the_forms_eighty_characters(self):
+        """Field lines that reach receive (the first names no form) are held to the plant form's
+        bounds: an 81-character seed is refused by name, never planted or held (codex objects 11)."""
+        self.garden()
+        long = "x" * 81
+        reply = self.say("smell: sweet\ncolour: silver\nseed: %s" % long)
+        self.assertEqual(self.card(reply), "Not planted, refused seedLength: A seed is 1 to 80 characters; this one is 81.\n")
+        self.assertEqual(self.version("garden"), 0)
+        # Completing a held planting the same way: refused, and what was held is dropped.
+        self.assertIn("I still need: seed.", self.card(self.say("delvetalk garden plant\ncolour: silver")))
+        held = self.say("smell: sweet\nseed: %s" % long)
+        self.assertEqual(self.card(held), "Not planted, refused seedLength: A seed is 1 to 80 characters; this one is 81.\n")
+        self.assertEqual(rows(field(self.state("garden"), "pending")), [])
+        self.assertEqual(field(self.state("garden"), "planted"), nat(0))
 
     def test_nothing_known_repeats_the_whole_template(self):
         self.garden()

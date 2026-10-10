@@ -167,6 +167,7 @@ sum Why:
   notOwner: {owner: String}
   noField: {field: String}
   noPost: {}
+  seedLength: {length: Nat}
 def refusal(w: Why) -> Card.Refusal:
   match w:
     case world(r): {clause: r.clause, reading: "The world refused it ({r.clause})."}
@@ -180,6 +181,7 @@ def refusal(w: Why) -> Card.Refusal:
     case notOwner(n): {clause: "notOwner", reading: "Only the garden's owner sets it; that is {n.owner}"}
     case noField(n): {clause: "noField", reading: "No field called {n.field} can be set here."}
     case noPost(_): {clause: "noPost", reading: "A merge names the post it answers."}
+    case seedLength(l): {clause: "seedLength", reading: "A seed is 1 to {natText(seedMax())} characters; this one is {natText(l.length)}."}
 def refusedCard(refusal: Card.Refusal) -> Document.Document:
   Document.text("Not planted, refused {refusal.clause}: {refusal.reading}\n")
 # Answers a refusal with its card, first dropping the waiting proposal it superseded.
@@ -220,9 +222,14 @@ def completing(fields: Spell.Bindings, found: Held, context: Abi.Context, state:
   match found:
     case some(s): if Lists.length(s.item.needs) > 0n then fromFields(if colour == "" then s.item.colour else colour, if seed == "" then s.item.seed else seed, found, context, state) else fromFields(colour, seed, found, context, state)
     case none(_): fromFields(colour, seed, found, context, state)
-# A planting from text: what is missing is held for the speaker and asked for; the rest
-# plants (a colour's name is read here).
+# A planting from text: a seed past the form's bound is refused, what is missing is held for the
+# speaker and asked for, and the rest plants (a colour's name is read here). Lines that reach
+# receive were never fitted to the form, so its bound is checked here.
+def seedMax() -> Nat:
+  80n
 def fromFields(colour: String, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
+  if textLength(seed) > seedMax() then refused(Why.seedLength({length: textLength(seed)}), found) else fromBounded(colour, seed, found, context, state)
+def fromBounded(colour: String, seed: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   let needs = Lists.filter(Lists.append(Lists.append(Form.Names.nil(), "colour"), "seed"), fn(n: String) -> Bool: if n == "colour" then colour == "" else seed == "")
   if Lists.length(needs) > 0n then held({principal: context.principal, colour: colour, seed: seed, needs: needs}, unclearCard(context, needs, colour, seed), found, state) else named(colour, seed, false, found, context, state)
 def named(colour: String, seed: String, confirm: Bool, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
