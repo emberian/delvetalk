@@ -118,7 +118,8 @@ class Hand:
         r = d.get('receipt')
         line = f'receipt {r.get("slug")}: {outcome_of(r)}' if r else 'by hand' if d.get('hand') else 'a publication'
         state = 'posted' if d['posted'] else 'skipped' if d.get('skipped') else 'waiting'
-        return {'id': i, 'object': d.get('object'), 'receipt': line, 'text': d['text'], 'state': state,
+        return {'id': i, 'object': d.get('object'), 'receipt': line, 'slug': (r or {}).get('slug') or 'by hand', 'height': (r or {}).get('height'),
+                'outcome': outcome_of(r) if r else 'drafted', 'text': d['text'], 'state': state,
                 **({'original': d['original']} if d.get('original') else {}), **({'reason': d['reason']} if d.get('reason') else {})}
 
     def show(self, draft_id):
@@ -222,31 +223,20 @@ class Hand:
         return act and act()
 
     def page(self, query):
-        note = f'<p><strong>{e(query["note"])}</strong></p>' if query.get('note') else ''
-        status = '<dl>' + ''.join(f'<dt>{e(k)}</dt><dd>{e(str(v))}</dd>' for k, v in self.status().items()) + '</dl>'
-        found = f'<pre>{e(json.dumps(self.search(query["slug"]), indent=1, sort_keys=True)[:3000])}</pre>' if query.get('slug') else ''
-        search = ('<form method="get" action="/hand/"><label>Receipt slug <input name="slug" placeholder="bofab-lukid"></label>'
-                  f'<button>Resolve</button></form>{found}')
-        out = ''
-        for g in self.outbox():
-            o = g['original']
-            head = f'<blockquote><strong>{e(o["handle"])}</strong>: {e(o["text"])}</blockquote>' if o else f'<p>{e(g["post"])}</p>'
-            forms = ''.join(
-                f'<form method="post" action="/hand/draft/{e(d["id"])}"><p>{e(d["receipt"])}; to {e(str(d["object"]))}</p>'
-                f'<textarea name="text" rows="8" cols="72">{e(d["text"])}</textarea>'
-                '<p><button name="do" value="post">Post</button> <input name="reason" placeholder="reason to skip">'
-                ' <button name="do" value="skip">Skip</button> <button name="do" value="hold">Hold</button></p></form>' for d in g['drafts'])
-            out += f'<div class="draft">{head}{forms}</div>'
-        rows = ''.join(
-            f'<tr><td>{e(r["handle"])}</td><td>{e(r["kind"])}</td><td>{e(r["text"])}</td><td>{e(r["fate"])}'
-            + (f'<form method="post" action="/hand/retry"><input type="hidden" name="uri" value="{e(r["uri"])}"><button>Retry</button></form>' if r['skipped'] else '')
-            + f'<details><summary>reply by hand</summary><form method="post" action="/hand/reply"><input type="hidden" name="uri" value="{e(r["uri"])}">'
-            '<input name="object" placeholder="object"><textarea name="text" rows="4" cols="60"></textarea><button>Draft</button></form></details></td></tr>'
-            for r in self.inbox())
-        inbox = f'<table><tr><th>from</th><th>kind</th><th>text</th><th>fate</th></tr>{rows}</table>' if rows else '<p>nothing observed</p>'
-        return pages.page('the hand', 'owner', f'<h1>The hand</h1>{note}<section><h2>Status</h2>{status}</section>'
-                          f'<section><h2>Search</h2>{search}</section><section id="outbox"><h2>Outbox</h2>{out or "<p>no drafts waiting</p>"}</section>'
-                          f'<section><h2>Inbox</h2>{inbox}</section>')
+        T, q = pages.T, lambda t: e(str(t))
+        st = self.status()
+        codes = ''.join(T['hand_code'].format(text=q(f'ht.{v}' if k == 'journal height' else f'{k} {v}')) for k, v in st.items())
+        found = T['hand_card'].format(text=q(json.dumps(self.search(query['slug']), indent=1, sort_keys=True)[:3000])) if query.get('slug') else ''
+        outbox = ''.join(T['hand_group'].format(
+            original=T['hand_card'].format(text=q(f'{g["original"]["handle"]}\n{g["original"]["text"]}')) if g['original'] else T['hand_note'].format(text=q(g['post'])),
+            drafts=''.join(T['hand_draft'].format(fate=q(d['outcome']), height=q('-' if d['height'] is None else d['height']), name=q(d['slug']), object=q(d['object']), id=q(d['id']), text=q(d['text']))
+                           for d in g['drafts'])) for g in self.outbox()) or '<p class="quiet">— no drafts waiting —</p>'
+        inbox = ''.join(T['hand_row'].format(
+            outcome=q(r['outcome'] or ''), kind=q(r['kind']), handle=q(r['handle']), text=q(r['text']), uri=q(r['uri']),
+            fate=q('' if r['skipped'] else r['fate']), retry=T['hand_retry'].format(uri=q(r['uri'])) if r['skipped'] else '') for r in self.inbox()) \
+            or '<p class="quiet">— nothing observed —</p>'
+        note = T['hand_note'].format(text=q(query['note'])) if query.get('note') else ''
+        return pages.page('the hand', 'owner', T['hand'].format(note=note, codes=codes, found=found, outbox=outbox, inbox=inbox))
 
 
 # ---- the command-line face
