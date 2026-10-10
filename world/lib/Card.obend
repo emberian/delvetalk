@@ -119,8 +119,8 @@ def keptLine(line: Document.Document, size: Nat, rest: Document.Documents, shown
 # Doors on any card (the convention): an object keeps `doors: Doorways` in its state and
 # its Edits (`Plans.Entries<Doorway, Doorway>`), offers the `door {label, to}` and `undoor
 # {label}` forms to its owner (`doorAdd`, `doorRemove`: refused by name to anyone else, and by
-# its owner law where it has one), and lists them on its card as the directory does
-# (`doorLines`).
+# its owner law where it has one), and lists them on its card as one line of door words
+# (`doorLines`: `Doors: garden · rooms`); the card a word opens is its own description.
 record Doorway:
   label: String
   to: Plans.Reference
@@ -145,7 +145,11 @@ def removed(doors: Doorways, label: String) -> DoorEdit:
     case some(d): DoorEdit.edit({entries: Plans.Entries.removeItem({item: d.value})})
     case none(_): DoorEdit.refused({clause: "noDoor", reading: "There is no door called {label}"})
 def doorLines(doors: Doorways) -> Document.Documents:
-  Lists.map(doors, fn(d: Doorway) -> Document.Document: Document.text("{d.label}: {d.to.object}\n"))
+  match doors:
+    case nil(_): Document.Documents.nil()
+    case cons(_): Document.Documents.cons({head: Document.text("Doors: {doorWords(doors)}\n"), tail: Document.Documents.nil()})
+def doorWords(doors: Doorways) -> String:
+  textJoin(Lists.map(doors, fn(d: Doorway) -> String: d.label), " · ")
 # The page's merge (FOUNDATION section 5): its human owner replies `merge` to the posted page
 # or an edit, and the object records that post as its page checkpoint. An object with a page
 # keeps `owner` and `pageCheckpoint` in state and reads isMerge(text) in its receive.
