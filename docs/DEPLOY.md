@@ -46,6 +46,8 @@ enforce it across containers (measured), so test the stack there on a named volu
   `delvetalk-proxy.service`, `delvetalk-portal.service`; keep
   `delvetalk-tick.timer` disabled. Their data under `/var/lib/delvetalk/world`
   and `agents` stays where it is.
+- Firewall :8765 on the workhorse to Caddy's host (the anchor) only: `--trust-proxy` believes the last
+  `X-Forwarded-For` entry from whoever connects, so anything else on 10.10.1.0/24 that reaches the port can choose it.
 
 ## Build and ship
 
@@ -67,11 +69,13 @@ packages by snapshot, elan and the Lean tarball by SHA-256).
 On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` in `.env`:
 
     docker compose up -d --wait delvetalk-hostd
-    docker compose run --rm delvetalk-ops python3 -m deploy.seed --host-socket /data/state/host.sock \
-      --principal <owner DID> --object garden --module Garden --intent genesis-garden \
-      --seed '{"tag":"record","fields":[{"name":"planted","value":{"tag":"natural","value":"0"}},
-              {"name":"policy","value":{"tag":"record","fields":[{"name":"world","value":{"tag":"label","value":""}},
-              {"name":"object","value":{"tag":"label","value":""}}]}}]}'
+    docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
+
+`deploy.genesis` is docs/GENESIS.md as one command: as the opener it creates `policy`, `directory`, `garden`
+(`confirm: false`), `tide`, `workshop`, `anthology`, `cistern` and `commons`, in that order, and refuses to run a second
+time if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the same way.
+`deploy.seed` creates one further object by hand.
+
     docker compose up -d --wait --remove-orphans
     docker compose ps
 
@@ -154,6 +158,16 @@ Run it from a timer and copy the tarballs off the box. Restore:
 `restore.sh` checks the checksum and replays before touching the data, refuses
 while the lock is held, and moves the current data to `v2.before-<stamp>`.
 
+## Changing the library after launch
+
+    docker compose run --rm delvetalk-ops deploy/library-update.sh
+
+It rebuilds `<state>/library` from the image's `world/` (the library plus the arrival packages) and asks the host for
+`world-library` as the opener; the world law judges it, the new pin is journaled and printed. Ship the new `world/`
+first (a new image), since replay re-seals from the same bytes. Existing objects keep the pin they were compiled
+under; objects created or reprogrammed afterwards compile against the new library. The front's REPL keeps the pin it
+loaded at hostd's start until `docker compose restart delvetalk-hostd`.
+
 ## When the chain breaks
 
 The healthcheck goes red and every host reply is "host unavailable".
@@ -213,4 +227,4 @@ stays red and the journal is untouched: set the old tag back and `up` again.
 Both modes: only `model`, `max_tokens`, `system` and `messages` are sent (never `temperature`, `top_p` or `top_k`).
 `DELVETALK_MODEL_THINKING=off` adds `thinking: {"type": "disabled"}` for cheap deterministic JSON calls.
 With a state directory, each replied call appends `{at, model, inputTokens, outputTokens, account}` to `<state>/model-spend.jsonl`; total it against the monthly grant, since no balance endpoint exists.
-`DELVETALK_KEY_NAME` labels the key in that log. Any `anthropic-ratelimit-*` response headers appear in the result as `rateLimits`.
+`DELVETALK_KEY_NAME` labels the key in that log. Total it with `python3 -m transport.model spend --state /data/state [--month YYYY-MM] [--grant 200]`: calls and tokens by month, dollars at Haiku 5.5's published rates ($0.10 per million input tokens, $0.50 output), and the grant remaining. Any `anthropic-ratelimit-*` response headers appear in the result as `rateLimits`.

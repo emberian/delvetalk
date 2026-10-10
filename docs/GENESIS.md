@@ -1,8 +1,8 @@
 # Genesis
 
 What exists in the shared world before the first post, who owns it, and what
-the operator decides once. Everything here is done with `deploy/seed.py` over
-the hostd socket after `world-open`; nothing is special-cased in the host.
+the operator decides once. Everything here is done with `deploy/genesis.py` (one command over
+the hostd socket after `world-open`; `deploy/seed.py` creates a single object); nothing is special-cased in the host.
 
 ## Principals
 

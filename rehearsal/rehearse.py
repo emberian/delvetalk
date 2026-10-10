@@ -20,12 +20,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from deploy import genesis  # noqa: E402
 from transport import interpret, model  # noqa: E402
 from transport.delve import canonical  # noqa: E402
 from transport.hostproc import HostClient  # noqa: E402
 from transport import post as post_py  # noqa: E402
 
-OWNER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town (docs/GENESIS.md)
+OWNER = genesis.OPENER  # ember.delve.town (docs/GENESIS.md)
 WELCOME = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxeibkqxuk2j'
 STATUS = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxhfxkkcts27'
 # Every post of ember's in the archive that carries a card is a hub, recorded for the directory:
@@ -57,46 +58,7 @@ NOT_ADDRESSED = 'unclear: not addressed'
 FIX = ROOT / 'rehearsal' / 'fixtures'
 
 
-# Typed data, as the host's wire carries it.
-def lab(s): return {'tag': 'label', 'value': s}
-def nat(n): return {'tag': 'natural', 'value': str(n)}
-def boo(b): return {'tag': 'boolean', 'value': b}
-def lst(*items): return {'tag': 'list', 'items': list(items)}
-def rec(**fields): return {'tag': 'record', 'fields': [{'name': k, 'value': v} for k, v in fields.items()]}
-def ref(obj): return rec(world=lab(''), object=lab(obj))
-
-
-DOORS = [  # docs/previews/gsb-root-menu.txt, one line each
-    ('GARDEN', "Plant something; rain on another's planting. Things remember who helped them grow.", 'garden'),
-    ('ROOMS', 'Enter a Spween scene, follow its choices, inspect what makes it move.', 'commons'),
-    ('CONVERSATIONS', 'Begin something that takes several replies: choosing, lending, making together.', 'conversations'),
-    ('PLAY', 'The original two-player, 11x11 Automatafl. Find a table, take a seat or follow a game.', 'play'),
-    ('WORKSHOP', 'Inspect a thing; derive a variation; write Bend; offer the change for adoption.', 'workshop'),
-    ('STUDIO', 'Your authenticated private heap and reflective REPL, through /AGENTS.md.', 'studio'),
-    ('ANTHOLOGY', "Submit a line; the anthology's law admits it.", 'anthology'),  # docs/GENESIS.md
-]
-POLICY_SYSTEM = 'You turn what a participant says into one spell for the card they are answering. You never act; you only propose.'
-LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
-EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
-            ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber')]
-
-
-def seeds(top):
-    """(object, module, creator, owner, intent, partial seed) in the order the runbook creates them. Seeds name only
-    the fields genesis decides; world-create lays them over each package's own initial()."""
-    out = [('policy', 'Policy', OWNER, None, 'genesis-policy', rec(
-               owner=lab(OWNER), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
-               lexicon=lst(*[rec(word=lab(w), meaning=lab(m)) for w, m in LEXICON]),
-               examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
-           ('directory', 'Directory', OWNER, None, 'genesis-directory', rec(
-               owner=lab(OWNER), policy=ref('policy'), doors=lst(*[rec(label=lab(l), description=lab(d), to=ref(t)) for l, d, t in DOORS]))),
-           ('garden', 'Garden', OWNER, None, 'genesis-garden', rec(owner=lab(OWNER), policy=ref('policy'), confirm=boo(False))),
-           ('tide', 'Tide', OWNER, None, 'genesis-tide', rec(gap=nat(1))),
-           ('workshop', 'Workshop', OWNER, None, 'genesis-workshop', rec(title=lab('Workshop'))),
-           ('anthology', 'Anthology', OWNER, None, 'genesis-anthology', rec(owner=lab(OWNER))),
-           ('cistern', 'Cistern', OWNER, None, 'genesis-cistern', rec()),
-           ('commons', 'Commons', OWNER, None, 'genesis-commons', rec(owner=lab(OWNER)))]
-    return out  # docs/GENESIS.md: Avatars, Envs and Wakes are not seeded; a principal's own spells make them
+lab, nat, boo, lst, rec, ref = genesis.lab, genesis.nat, genesis.boo, genesis.lst, genesis.rec, genesis.ref
 
 
 def epoch(ts):
@@ -151,17 +113,14 @@ class Run:
         self.hostd.wait(timeout=60)
 
     def seed(self, top):
-        made = []
-        for obj, module, principal, owner, intent, seed in seeds(top):
-            got = self.program('-m', 'deploy.seed', '--host-socket', str(self.state / 'host.sock'), '--principal', principal,
-                               '--object', obj, '--module', module, '--intent', intent, '--seed', canonical(seed),
-                               *(('--owner', owner) if owner else ()), what=obj)
-            reply = got[-1] if got else {}
-            if reply.get('status') != 'created':
-                self.errors.append({'kind': 'seed', 'object': obj, 'principal': principal, 'reply': reply})
-            made.append({'object': obj, 'module': module, 'status': reply.get('status'), 'owner': owner,
-                         'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal')})
-        return made
+        """deploy/genesis.py, the production seed: the same world the operator creates."""
+        made, refusal = genesis.run(self.host, OWNER)
+        if refusal:
+            self.errors.append({'kind': 'seed', 'reply': refusal})
+        for m in made:
+            if m['status'] != 'created':
+                self.errors.append({'kind': 'seed', 'object': m['object'], 'principal': OWNER, 'reply': m['reply']})
+        return [{'object': m['object'], 'module': m['module'], 'status': m['status'], 'owner': None, 'creator': m['creator']} for m in made]
 
     def record_posts(self, posts):
         """The owner's posts as posted for their objects, through post.py's own record_posted."""
