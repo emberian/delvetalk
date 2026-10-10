@@ -1,5 +1,5 @@
 """`delvetalk-obend serve` is the one writer of a directory of worlds (HOST-HANDOFF 5.125; docs/FEDERATION.md §1,
-docs/ROOT.md §1.4): tests/test_hostd.py's cases, run against the Lean server, and its own: named worlds and the
+docs/ROOT.md §1.4): what hostd.py's tests held, now against the Lean server, and its own: named worlds and the
 root socket.
 
 Evidence for FOUNDATION §7 (layer: host). Refuted by a socket others may open, a second writer that starts, a
