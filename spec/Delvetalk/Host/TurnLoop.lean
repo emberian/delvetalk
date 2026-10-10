@@ -596,13 +596,16 @@ def wordRefusal (path word : String) (cases : List String) : String :=
     as the artifact's method table records it (resolved, so it reads alone), else the compiled
     domain (`typeJson`, whose variables need the packet's bounds); and `form`, the form a card
     would offer for it (`methodForms`, plain JSON), when it has one. -/
-def expectedInput (obj : Object) (id method : String) (compiled : Compiled) : Json :=
+def expectedInput (obj : Object) (id method : String) (compiled : Compiled)
+    (declared : List (String × List (String × Data)) := []) : Json :=
   let row := ((obj.methods.getArr?.toOption).getD #[]).find? fun m => (m.getObjValAs? String "name").toOption == some method
   let type := match (row.bind fun r => (r.getObjVal? "input").toOption), compiled.type with
     | some input, _ => input
     | none, .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) => Minidregg.Theory.ObjectiveBendTyping.typeJson domain
     | none, _ => Json.null
-  let form := row.bind fun r => (methodForms id (Json.arr #[r])).head?
+  -- The card's declared bounds (`declaredForms`), as the spell path judges by: the hint and the
+  -- front's actions agree.
+  let form := row.bind fun r => (methodForms id (Json.arr #[r]) declared).head?
   Json.mkObj ([("method", toJson method), ("type", type)] ++ (form.map fun f => [("form", plainJson f)]).getD [])
 
 /-- A kernel refusal at the start or resumption of an activity: an argument that does not
@@ -970,14 +973,15 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   if depth == 0 && !s.receiver && !obj.offers method then throw (.refused "noMethod" (noMethodReason id method))
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
-  let expected := expectedInput obj id method compiled
+  -- What the method takes, with the card's declared bounds: built only for a refusal.
+  let expectedNow : M Json := do return expectedInput obj id method compiled (← declaredForms obj).1
   -- A direct turn's argument came from outside: its text words are read as cases.
   let argument ← if depth == 0 && s.direct then
       match inputWords compiled argument with
       | .ok a => do modify (fun st => { st with argument := a }); pure a
       | .error (path, word, cases) =>
         throw (.refused "typeMismatch" (wordRefusal path word cases)
-          (some (expected.setObjVal! "cases" (Json.mkObj [("at", toJson path), ("given", toJson word), ("cases", toJson cases)]))))
+          (some ((← expectedNow).setObjVal! "cases" (Json.mkObj [("at", toJson path), ("given", toJson word), ("cases", toJson cases)]))))
     else pure argument
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
     (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post
@@ -985,13 +989,15 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
-  unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal (some expected))
+  unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal (some (← expectedNow)))
   match r with
   | .computation .. =>
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
     let entry ← entryOf compiled
-    let started ← kernelRefusal (Delvetalk.Turn.startEntryStep entry arguments binding b compiled.dictionary) (some expected)
+    let started ← match Delvetalk.Turn.startEntryStep entry arguments binding b compiled.dictionary with
+      | .ok step => pure step
+      | .error e => kernelRefusal (.error e) (some (← expectedNow))
     noteProfile fun _ => (Delvetalk.Turn.prepareStartEntry entry arguments |>.map fun (applied, _) =>
       Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial applied.source.term))
     drive depth id caller compiled binding started 0

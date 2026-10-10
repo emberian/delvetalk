@@ -146,7 +146,7 @@ def body (w : World) : Except String Json := do
       (if o.relations.isEmpty then [] else [("relations", Json.arr (o.relations.toArray.map fun d =>
         Json.mkObj [("field", toJson d.field), ("key", toJson d.key), ("limit", toJson d.limit)]))]) ++
       (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)]) ++
-      ((o.declares.map fun d => [("declares", toJson d)]).getD [])))
+      (if o.declares.isEmpty then [] else [("declares", toJson o.declares)])))
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
@@ -303,7 +303,7 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
           | .ok field, .ok key, .ok limit => some { field, key, limit }
           | _, _, _ => none
         fixed := (o.getObjValAs? (List String) "fixed").toOption.getD []
-        declares := (o.getObjValAs? (List String) "declares").toOption }
+        declares := (o.getObjValAs? (List String) "declares").toOption.getD [] }
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do

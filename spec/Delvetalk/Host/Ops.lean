@@ -973,28 +973,12 @@ def conventionalMethods : List String :=
    "law", "lawReads", "views", "initial"]
 
 /-- The conventional definitions an artifact says its entry module declares, derived ones included
-    (`declares: [names]`); `none` when the artifact has no such list. -/
-def declaresOf (artifact : Json) : Option (List String) :=
-  (artifact.getObjValAs? (List String) "declares").toOption
+    (`declares: [names]`, the kernel's `declaredNames`): a derived `forms()` counts. -/
+def declaresOf (artifact : Json) : List String :=
+  ((artifact.getObjValAs? (List String) "declares").toOption).getD []
 
-/-- Does a package's entry module (the last of its modules, or its one `source`) declare `name`?
-    The artifact's `declares` when it lists them (a derived `forms()` counts); else a scan of the
-    entry module's source for `def name(`. Only the entry module's declarations count. -/
-def packageDeclares (inputs : Json) (name : String) (declares : Option (List String) := none) : Bool :=
-  match declares with
-  | some names => names.contains name
-  | none =>
-    let src := match inputs.getObjVal? "modules" with
-      | .ok (.arr ms) => (ms.back?.bind fun m => (m.getObjValAs? String "source").toOption).getD ""
-      | _ => (inputs.getObjValAs? String "source").toOption.getD ""
-    (src.splitOn "\n").any (·.startsWith s!"def {name}(")
-
-#guard packageDeclares (Json.mkObj [("source", toJson "edition ObjectiveBend 1\n")]) "forms" (some ["forms", "views"])
-#guard !packageDeclares (Json.mkObj [("source", toJson "def forms() -> X:\n")]) "forms" (some ["views"])
-#guard packageDeclares (Json.mkObj [("source", toJson "edition ObjectiveBend 1\ndef forms() -> X:\n")]) "forms"
-
-/-- Does an object's entry module declare `name` (`packageDeclares` over its artifact's list)? -/
-def Object.declaresDef (o : Object) (name : String) : Bool := packageDeclares o.inputs name o.declares
+/-- Does an object's entry module declare `name` (its artifact's `declares`)? -/
+def Object.declaresDef (o : Object) (name : String) : Bool := o.declares.contains name
 
 /-- The labels of a `List<String>` value. -/
 partial def labels (acc : List String) : Data → Option (List String)
@@ -1017,10 +1001,10 @@ def formActions (value : Data) : List String :=
     read only when its entry module declares it. A `forms()` or `views()` that does not evaluate names nothing; a
     `methods()` that is not a `List<String>` refuses the package (clause `methods`). `compile` gives
     a zero-argument definition's held entry. -/
-def publicMethods (inputs : Json) (compile : String → Except String Delvetalk.CheckedEntry)
-    (declares : Option (List String) := none) : Except String (List String) := do
+def publicMethods (compile : String → Except String Delvetalk.CheckedEntry) (declares : List String) :
+    Except String (List String) := do
   let read := fun (name : String) =>
-    if !packageDeclares inputs name declares then none else
+    if !declares.contains name then none else
     match compile name with
     | .ok entry => some (runPure entry [] Delvetalk.Bounds.lawTicks).1
     | .error e => some (.error e)
@@ -1183,7 +1167,7 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
   -- is the stack's when a layer declares a law, else the code's below.
   let (methods, predicate, predicateReads) := artifactShape artifact
-  let exposed ← (publicMethods inputs (fun name =>
+  let exposed ← (publicMethods (fun name =>
     ((Package.compileEntryCore request name).mapError (·.render)).map (·.entry)) (declaresOf artifact)).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
   -- A layer keeps what the code below it declared public and may declare more.
   let methods := markHelpers methods (if extend then exposed ++ declaredRows o.methods else exposed)
@@ -2324,7 +2308,7 @@ def compileObject (w : World) (inputs : Json) : Except String Built := do
   unless stateTypeOk decoded.source.assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
   let relations := ((← (declsOfArtifact artifact).mapError (s!"key: " ++ ·))).getD []
-  let exposed ← publicMethods inputs (fun name =>
+  let exposed ← publicMethods (fun name =>
     ((Package.compileEntryCore request name).mapError Package.Diagnostic.render).map (·.entry)) (declaresOf artifact)
   return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations, exposed }
 
