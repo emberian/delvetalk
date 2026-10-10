@@ -742,7 +742,11 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 96. **Creations spend storage (host12; codex host 9).** `commit` hands `onAdmit` the created objects
    beside the updated ones, so `childLedger` lowers the storage a turn's sends and changes inherit by
    each created object's whole state as well as by its writes' growth; a factory chain cannot allocate
-   past its ledger. Test: `tests/test_deliveries.py` `test_a_created_child_spends_the_storage_its_sends_inherit`.
+   past its ledger. Replay re-derives the changes owed with the same updates and creations (a fix after
+   the playtest: replay passed the updates alone, so every turn that created an object and owed a
+   change, a planting watched by a Wake, refused a restart at its height). Tests:
+   `tests/test_deliveries.py` `test_a_created_child_spends_the_storage_its_sends_inherit`,
+   `tests/test_arrive.py` `test_a_world_with_an_arrival_a_subscription_and_a_change_reopens_as_written`.
 
 97. **`inspect` and `subscribe` read roots (host12; codex host 11).** The `inspect` Plan records the
    inspected object as a root at its version, so a turn that inspected, waited and commits after the
@@ -929,6 +933,16 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_make.py`.
 
 ## 6. Gotchas
+
+- **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
+  derives; `Journal.sealEntry` writes it as `replay` on every journal's first entry (a fork's genesis
+  too), `world-status` answers it, and `Snapshot.openContent` refuses a journal of another edition
+  before replaying anything: "journal replay edition 1; this host is 2; a world from another host's
+  edition does not reopen: make it again with a new genesis" (a journal without the field is
+  edition 1). **Bump it in the same commit as any change to what replay derives or checks** (a judging
+  rule, a derived index, a journaled field replay compares), and say so in the item. 2 is host12
+  (evictions and changes owed as facts, lineage, reservations, attempts). Test:
+  `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
 - `canonicalTy` (Ops): two state types are equal when their canonical forms agree (variables renamed in order of first use, at most 4096 steps, else "type too deep to compare"). Reprogram and extend depend on it.
