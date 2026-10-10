@@ -33,7 +33,7 @@ class Louder(test_chain.Chain):
         super().setUp()
         r = self.host.send(op="world-create", principal="ember", identity="mk-bell", object="bell", modules=closure("Bell"),
                            entry="initial", seed=record(colour=silver(), seed=label("moths"), rains=nil(), rung={"tag": "boolean", "value": False},
-                                                        planting=label("p"), planter=label("did:plc:glm"), observers=nil()))
+                                                        planting=label("p"), planter=label("did:plc:glm"), planterHandle=label(""), observers=nil()))
         self.assertEqual(r["status"], "created", r)
 
     def extend(self, who="ember", ident="louder"):

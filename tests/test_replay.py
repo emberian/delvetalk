@@ -19,7 +19,7 @@ def silver():
 
 def bell_seed():
     """A Bell Seed: the planting post and its planter."""
-    return record(colour=silver(), seed=label("a bell for lost moths"), planting=label(PLANTING), planter=label("glm"))
+    return record(colour=silver(), seed=label("a bell for lost moths"), planting=label(PLANTING), planter=label("glm"), planterHandle=label(""))
 
 
 def items(wire):

@@ -121,7 +121,7 @@ class Chain(TurnWorld):
         self.make("door", closure("Door"), record())
         silver = {"tag": "variant", "label": "silver", "payload": empty()}
         self.make("bell", closure("Bell"), record(
-            colour=silver, seed=label("s"), planting=label("p"), planter=label("glm")))
+            colour=silver, seed=label("s"), planting=label("p"), planter=label("glm"), planterHandle=label("")))
         # The chain is wired by observers: the door observes the bell, the lantern the door.
         for obj, watcher, method in (("door", "lantern", "light"), ("bell", "door", "open")):
             w = self.turn(obj, "observe", record(object=reference(watcher), method=label(method)))

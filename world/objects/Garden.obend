@@ -300,7 +300,7 @@ def remembered(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, colo
     case written(_): Card.tellTo::<Edits, State, Planting, Reply>(Reply.confirming({spell: spell(context.object, seed, colour)}), context.principal, confirmCard(context, colour, seed))
     case _: tell(Reply.refused({reason: "The garden could not remember it."}), refusedCard("The garden could not remember it."))
 def grow(state: State, context: Abi.Context, post: String, found: Held, colour: Bell.Colour, seed: String) -> Activity<Plan, Response, Reply>:
-  match perform(Plan.create({package: "Bell", seed: Data.of::<Bell.Seed>({colour: colour, seed: seed, planting: post, planter: context.principal}), law: "Bell", requireAbsent: minted()})):
+  match perform(Plan.create({package: "Bell", seed: Data.of::<Bell.Seed>({colour: colour, seed: seed, planting: post, planter: context.principal, planterHandle: context.handle}), law: "Bell", requireAbsent: minted()})):
     case created(c): counted(state, context, found, c.object, Bell.colourName(colour), seed)
     case refused(r): told(found, context, Reply.refused({reason: r.clause}), refusedCard(r.clause))
     case _: told(found, context, Reply.refused({reason: "The garden could not plant it."}), refusedCard("The garden could not plant it."))

@@ -10,6 +10,7 @@ sum Status:
   admitted: {}
 record Proposal:
   author: String
+  handle: String
   line: String
   status: Status
 record State:
@@ -35,7 +36,7 @@ def initial() -> State:
 # Submission only proposes; admission is the receiver's law, not the author's. The
 # author is the turn's principal.
 def submitted<T>(state: State, line: String, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.append({item: {author: context.principal, line: line, status: Status.proposed({})}})}})):
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.append({item: {author: context.principal, handle: context.handle, line: line, status: Status.proposed({})}})}})):
     case _: then(Lists.length::<Proposal>(state.proposals) + 1n)
 def submit(state: State, input: {line: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   submitted::<Nat>(state, input.line, context, fn(count: Nat) -> Nat: count)
@@ -53,7 +54,7 @@ def admit(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<P
     case none(_): false
     case some(s): admitted(context, input.index, s.proposal)
 def admitted(context: Abi.Context, index: Nat, proposal: Proposal) -> Activity<Plan, Response, Bool>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}})}})):
     case _: true
 # submit {line} is anyone's; admit {number} (the line's number on the card, from 1) is the
 # owner's, refused by name to anyone else before the law is asked.
@@ -74,7 +75,7 @@ def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Pla
     case none(_): Card.Reply.refused({reason: textConcat("No line numbered ", natText(number))})
     case some(s): admittedReply(context, s.proposal)
 def admittedReply(context: Abi.Context, proposal: Proposal) -> Activity<Plan, Response, Card.Reply>:
-  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, line: proposal.line, status: Status.admitted({})}})}})):
+  match perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries::<Proposal, Proposal>.amendItem({item: proposal, change: {author: proposal.author, handle: proposal.handle, line: proposal.line, status: Status.admitted({})}})}})):
     case _: Card.tell::<Edits, State, {}, Card.Reply>(Card.Reply.done({action: "admit"}), Document.text(textConcat("Admitted: ", textConcat(proposal.line, "\n"))))
 def statusName(status: Status) -> String:
   match status:
@@ -85,7 +86,7 @@ def numbered(context: Abi.Context, proposals: Lists.List<Proposal>, n: Nat) -> D
     case nil(_): Document.Documents.nil()
     case cons(c): Document.Documents.cons({head: Document.concat(Document.text(textConcat("#", textConcat(natText(n), " "))), entry(context)(c.head)), tail: numbered(context, c.tail, n + 1n)})
 def entry(context: Abi.Context) -> Proposal -> Document.Document:
-  fn(proposal: Proposal) -> Document.Document: Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.name(proposal.author, context), textConcat(Card.mine(proposal.author, context), textConcat(": ", textConcat(proposal.line, "\n"))))))))
+  fn(proposal: Proposal) -> Document.Document: Document.text(textConcat("[", textConcat(statusName(proposal.status), textConcat("] ", textConcat(Card.shown(proposal.author, proposal.handle, context), textConcat(Card.mine(proposal.author, context), textConcat(": ", textConcat(proposal.line, "\n"))))))))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(textConcat("Anthology, admitted by ", textConcat(Card.name(state.owner, context), textConcat(Card.mine(state.owner, context), "\n")))), tail: Card.clipped(numbered(context, state.proposals, 1n), 8n)})})

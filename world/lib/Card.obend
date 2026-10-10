@@ -274,6 +274,10 @@ def notified<E, S, R, T>(head: Observer, tail: Observers, argument: Data, sent: 
 # the host fills from its registry) when the principal is the reader, else handle(did).
 def name(did: String, context: Abi.Context) -> String:
   if did == context.principal && context.handle != "" then context.handle else handle(did)
+# A principal's name when the object stored the handle the host knew at the time
+# (planterHandle, a rain's handle): that, else name().
+def shown(did: String, handle: String, context: Abi.Context) -> String:
+  if handle != "" then handle else name(did, context)
 # What a card shows for a principal, never the raw DID: the last segment of the DID,
 # and of a long one (a real did:plc is 24 characters) only its last eight after "…".
 # The host will put the observed handle in the Context; until then this is the name.

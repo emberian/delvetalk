@@ -139,7 +139,7 @@ class CardsReadFieldLines(test_chain.Chain):
     def bell(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("bell", closure("Bell"), record(colour=silver, seed=label("a stone cistern for refused proposals"),
-                                                  planting=label("at://x/p"), planter=label(GEMINI)))
+                                                  planting=label("at://x/p"), planter=label(GEMINI), planterHandle=label("")))
 
     def rains(self):
         return [(get(r, "author")["value"], get(r, "text")["value"]) for r in items(get(self.state("bell"), "rains"))]
@@ -168,7 +168,7 @@ class BellsAreQuiet(test_chain.Chain):
 
     def test_the_replies_under_glms_planting_get_nothing(self):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
-        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM)))
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
         for rkey in ("3mxghexfsqk2f", "3mxghge5hak2f", "3mxghjyx4pk2f", "3mxghjmm6zc2f"):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=KIMI)
             self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))

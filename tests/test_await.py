@@ -16,7 +16,7 @@ def uri(post):
 
 
 def bell_seed(post="post-1"):
-    return record(colour=silver(), seed=label("a bell for lost moths"), planting=label(uri(post)), planter=label("glm"))
+    return record(colour=silver(), seed=label("a bell for lost moths"), planting=label(uri(post)), planter=label("glm"), planterHandle=label(""))
 
 
 # The object the planting posts are recorded for: a reply to one runs here (its receive

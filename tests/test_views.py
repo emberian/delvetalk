@@ -41,7 +41,7 @@ class Views(test_chain.Chain):
 
     def test_the_planter_sees_yours_and_nobody_else_does(self):
         self.make("bell", closure("Bell"), record(colour=silver(), seed=label("a bell for lost moths"),
-                                                  planting=label("p"), planter=label(GLM)))
+                                                  planting=label("p"), planter=label(GLM), planterHandle=label("")))
         mine, theirs = self.card("bell", GLM), self.card("bell", KIM)
         print("\n--- bell, planter ---\n" + mine + "--- bell, stranger ---\n" + theirs)
         self.assertTrue(mine.startswith("A silver bell planted by glm (yours): a bell for lost moths (silent)\n"), mine)
@@ -115,7 +115,7 @@ class ObservedHandles(test_chain.Chain):
         opened = self.host.send(op="world-open", path=self.path, clock="transport")
         self.assertEqual(opened["status"], "opened", opened)
         self.make("bell", closure("Bell"), record(colour=silver(), seed=label("moths"),
-                                                  planting=label("p"), planter=label(self.DID)))
+                                                  planting=label("p"), planter=label(self.DID), planterHandle=label("")))
         self.assertEqual(self.card("bell", self.DID).split("\n")[0], "A silver bell planted by …gbruj3 (yours): moths (silent)".replace("…gbruj3", "…" + self.DID[-8:]))
         r = self.host.send(op="world-principal", principal="transport", did=self.DID, handle="glm.delve.town")
         self.assertEqual(r["status"], "principal", r)
@@ -129,6 +129,33 @@ class ObservedHandles(test_chain.Chain):
         reply = self.turn(name, "receive", heard(), principal=principal)
         self.assertEqual(reply["status"], "admitted", reply)
         return reply["offers"][0]["text"]
+
+
+class StoredHandles(test_chain.Chain):
+    """Run 5, finding 7: a bell's card showed its planter as a DID fragment to everyone but the
+    planter. Objects store the handle the host knew beside each principal (planterHandle from the
+    planting turn's context.handle, a rain's and an anthology line's handle), and Card.shown
+    prefers it."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    GLM, KIMI = "did:plc:nmjdxe6fex23zslnnbwgruj3", "did:plc:j2hnfjwlnm2mau24vnmpir6d"
+
+    def test_strangers_read_the_planter_and_the_rains_by_handle(self):
+        self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
+        for did, handle in ((self.GLM, "glm.delve.town"), (self.KIMI, "kimik3.delve.town")):
+            self.assertEqual(self.host.send(op="world-principal", principal="transport", did=did, handle=handle)["status"], "principal")
+        self.make("garden", closure("Garden"), record(owner=label("ember"), confirm=boolean(False)))
+        planted = self.turn("garden", "receive", record(text=label("plant: a lamp for moths\ncolour: amber"), post=label("at://x/p")), principal=self.GLM)
+        self.assertEqual(planted["result"]["label"], "planted", planted)
+        self.assertEqual(self.turn("garden/bell/1", "receive", record(text=label("rain: drizzle"), post=label("at://x/r")), principal=self.KIMI)["result"]["label"], "done")
+        card = self.turn("garden/bell/1", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
+        print("\n--- bell, read by a stranger ---\n" + card)
+        self.assertTrue(card.startswith("An amber bell planted by glm.delve.town: a lamp for moths (silent)\nkimik3.delve.town: drizzle\n"), card)
+        r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Anthology"),
+                           entry="initial", seed=record(owner=label("ember")))
+        self.assertEqual(r["status"], "created", r)
+        self.turn("anthology", "receive", record(text=label("submit: moths"), post=label("at://x/s")), principal=self.KIMI)
+        self.assertIn("#1 [proposed] kimik3.delve.town: moths\n", self.turn("anthology", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"])
 
 
 class PartyViews(test_chain.Chain):
