@@ -87,10 +87,7 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 class LouderBell(Reflection):
     """Louder over Bell through the host's `extend` Plan: a rain reply's card is the bell as the
     layer renders it (Bell's receive calls render; with late binding across the stack,
-    KERNEL-HANDOFF section 13, that is Louder's). The host's extend still composes layers by
-    `delegate` and names the object's code `Super` without a layer line: today the graft is
-    refused programRefused/compile, "import must name an earlier supplied module:
-    ./Bell.obend". Expected to fail until the host lane drops `delegate`."""
+    KERNEL-HANDOFF section 13, that is Louder's): the host writes the layer line (HOST-HANDOFF 5.18)."""
 
     def setUp(self):
         super().setUp()
@@ -103,7 +100,6 @@ class LouderBell(Reflection):
                                        planter=label("glm"), planterHandle=label(""), observers=empty))
         self.make("forge", FORGE, record(note=label("")))
 
-    @unittest.expectedFailure
     def test_a_rain_reply_after_the_graft_shows_louders_card(self):
         graft = self.turn("forge", "graft", record(target=label("bell"), package=label(LOUDER)))
         self.assertEqual((graft["status"], graft["result"]), ("admitted", label("grafted")), graft)
