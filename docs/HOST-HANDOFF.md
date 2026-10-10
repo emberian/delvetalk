@@ -497,6 +497,22 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    stages one publication. The five pasted `publishPage` methods (Anthology, Scene, Table, Tide,
    Workshop) may go (objects lane); Garden keeps its own. Test: `tests/test_publish.py` `DefaultPage`.
 
+69. **A card's own form bounds (host10; WORLD-REVIEW finding 3).** When the entry module declares `forms()`,
+   the host runs it (`declaredForms`) and its kinds override, field by field, the defaults the method's
+   input type gives (`methodForms` with `declared`; `formsOf`, `spellForms`, `spellFormsData`): a
+   spell is judged by the card's bounds (text min and max, natural range, choice set), and
+   `world-inspect` `forms`, the `inspect` Plan and `?` usage show them. A field no form names keeps its
+   type's kind. `Form.Kind.source` (any payload) reads as text of 1 to `Limits.formSourceMax` 16,384
+   characters, for Bend source; a `source` field the spell lacks takes the reply's first ```obend
+   fenced block (`firstFence`, `withFence`), under the same bound, so a block and a fence are one
+   value. A choice is passed as a word and read against the method's input (`spellArgumentFor`,
+   `inputWords`): the case of a closed sum there, text where the field is a `String`. Form.obend's
+   `source: {}` line and Workshop's forms declaring it are the objects lane's (the kernel's `form`
+   block grammar has no `source` kind yet; a form can be built as data). Tests:
+   `tests/test_form_bounds.py` (a 6 KB block admitted, 20 KB refused `badValue` naming `source`, a
+   fence filling `source`, a declared text bound), `tests/test_hub.py`, `tests/test_hypermedia.py`
+   (the garden's declared choice and 1..80 seed).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

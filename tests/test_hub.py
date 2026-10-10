@@ -204,8 +204,6 @@ class Hub(test_chain.Chain):
         quiet = self.interpret("unclear: not addressed")
         self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
 
-    # The garden's colour shows as a choice only once the host reads the form's kinds from forms().
-    @unittest.expectedFailure
     def test_an_action_the_policy_confirms_is_shown_back_and_not_passed_on(self):
         """The policy's confirmFor (here plant, taught by its owner) holds an interpreted spell
         at the hub: the speaker is shown the door's spell to fill in and send, never run from prose."""
@@ -227,7 +225,7 @@ class Hub(test_chain.Chain):
             "\n"
             "    delvetalk garden plant\n"
             "    colour: <amber, violet, silver>\n"
-            "    seed: <text, 0 to 1400 characters>\n"))
+            "    seed: <text, 1 to 80 characters>\n"))
         self.assertEqual(self.children(), [])
 
 if __name__ == "__main__":
