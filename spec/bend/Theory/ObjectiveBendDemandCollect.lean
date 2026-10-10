@@ -304,8 +304,211 @@ def settleCell (address : Nat) : Cell → Cell
 def settle (state : State) : State :=
   {state with heap := state.heap.mapIdx settleCell}
 
-/-- What a yield stores: the settled state, collected. -/
-def checkpoint (state : State) : State := collect (settle state)
+/-! ## Trimming: a closure keeps only the environment slots its term reads
+
+A closure `⟨term, environment⟩` reads `environment[i]` only for the de Bruijn indices `i`
+free in `term` (`Term.freeIn`), and every transition copies an environment only into a
+closure over a subterm or a body under one more binder, so a slot that is not free is never
+read again. The machine still keeps whole lexical environments, so every `let` of an
+activity's body stays live through every thunk built under it: a directory `interpret` yield
+held about 2,000 live cells, half of them reachable only through such slots, and its
+consecutive checkpoints differed all over. `trim` points every unread slot of a cell's
+closures at the cell itself (an address that is live wherever the cell is); collecting again
+drops what only those slots held. Trimming changes no transition
+(`trim_resume_segment`, Theory.ObjectiveBendDemandSettleProofs). -/
+
+end Minidregg.Theory.ObjectiveBendDemandCollect
+namespace Minidregg.Theory.ObjectiveBendOpenRecursion
+mutual
+/-- Whether de Bruijn index `j` is free in a term. -/
+def Term.freeIn : Term → Nat → Bool
+  | .bound i, j => i == j
+  | .lam body, j => body.freeIn (j + 1)
+  | .app a b, j | .mix a b, j | .fix a b, j | .specification a b, j | .prototype a b, j
+  | .binary _ a b, j | .textJoin a b, j => a.freeIn j || b.freeIn j
+  | .reflect a, j | .metadata a, j | .project a, j | .unary _ a, j | .get a _, j
+  | .inject _ a, j | .perform a, j | .done a, j | .toData a, j => a.freeIn j
+  | .nat _, _ | .boolean _, _ | .label _, _ | .refuse _, _ => false
+  | .extend a fields, j => a.freeIn j || Term.fieldsFreeIn fields j
+  | .record fields, j => Term.fieldsFreeIn fields j
+  | .ifZero a zero successor, j => a.freeIn j || zero.freeIn j || successor.freeIn (j + 1)
+  | .case a arms, j => a.freeIn j || Term.fieldsFreeIn arms (j + 1)
+  | .ifBool a b c, j => a.freeIn j || b.freeIn j || c.freeIn j
+/-- Whether index `j` is free in some field's term (an arm's: at `j + 1`, under its binder). -/
+def Term.fieldsFreeIn : List (String × Term) → Nat → Bool
+  | [], _ => false
+  | (_, t) :: rest, j => t.freeIn j || Term.fieldsFreeIn rest j
+end
+end Minidregg.Theory.ObjectiveBendOpenRecursion
+namespace Minidregg.Theory.ObjectiveBendDemandCollect
+open Minidregg.Theory.ObjectiveBendOpenRecursion
+open Minidregg.Theory.ObjectiveBendDemandMachine
+
+/-- The environment with every slot `keep` does not name replaced by `dummy`. -/
+def trimEnv (keep : Nat → Bool) (dummy : Nat) : Environment → Environment
+  | [] => []
+  | a :: rest => (if keep 0 then a else dummy) :: trimEnv (fun i => keep (i + 1)) dummy rest
+
+def trimClosure (dummy : Nat) (c : Closure) : Closure :=
+  ⟨c.term, trimEnv c.term.freeIn dummy c.environment⟩
+
+/-- A closure value `λ.body` over `environment`: slot `i` is index `i + 1` in `body`. -/
+def trimValue (dummy : Nat) : RuntimeValue → RuntimeValue
+  | .closure body environment => .closure body (trimEnv (fun i => body.freeIn (i + 1)) dummy environment)
+  | value => value
+
+def trimCell (address : Nat) : Cell → Cell
+  | .suspended origin => .suspended (trimClosure address origin)
+  | .evaluating origin => .evaluating (trimClosure address origin)
+  | .cached origin value => .cached (trimClosure address origin) (trimValue address value)
+  | .native origin => .native origin
+  | .nativeCached origin value => .nativeCached origin (trimValue address value)
+
+/-! The compiled trim marks a closure's free slots in one traversal of its term
+(`Term.markFree`), instead of one traversal per slot; `trimCell_eq_fast` (`@[csimp]`). -/
+
+end Minidregg.Theory.ObjectiveBendDemandCollect
+namespace Minidregg.Theory.ObjectiveBendOpenRecursion
+mutual
+/-- Mark, in `marks`, each slot `j` with `j + depth` free in the term. -/
+def Term.markFree : Term → Nat → Array Bool → Array Bool
+  | .bound i, depth, marks => if depth ≤ i then marks.setIfInBounds (i - depth) true else marks
+  | .lam body, depth, marks => body.markFree (depth + 1) marks
+  | .app a b, depth, marks | .mix a b, depth, marks | .fix a b, depth, marks
+  | .specification a b, depth, marks | .prototype a b, depth, marks
+  | .binary _ a b, depth, marks | .textJoin a b, depth, marks => b.markFree depth (a.markFree depth marks)
+  | .reflect a, depth, marks | .metadata a, depth, marks | .project a, depth, marks
+  | .unary _ a, depth, marks | .get a _, depth, marks | .inject _ a, depth, marks
+  | .perform a, depth, marks | .done a, depth, marks | .toData a, depth, marks => a.markFree depth marks
+  | .nat _, _, marks | .boolean _, _, marks | .label _, _, marks | .refuse _, _, marks => marks
+  | .extend a fields, depth, marks => Term.fieldsMarkFree fields depth (a.markFree depth marks)
+  | .record fields, depth, marks => Term.fieldsMarkFree fields depth marks
+  | .ifZero a zero successor, depth, marks =>
+    successor.markFree (depth + 1) (zero.markFree depth (a.markFree depth marks))
+  | .case a arms, depth, marks => Term.fieldsMarkFree arms (depth + 1) (a.markFree depth marks)
+  | .ifBool a b c, depth, marks => c.markFree depth (b.markFree depth (a.markFree depth marks))
+def Term.fieldsMarkFree : List (String × Term) → Nat → Array Bool → Array Bool
+  | [], _, marks => marks
+  | (_, t) :: rest, depth, marks => Term.fieldsMarkFree rest depth (t.markFree depth marks)
+end
+
+theorem bound_mark (i depth j : Nat) (marks : Array Bool) :
+    (if depth ≤ i then marks.setIfInBounds (i - depth) true else marks)[j]? =
+      marks[j]?.map (fun b => b || (i == j + depth)) := by
+  by_cases le : depth ≤ i
+  · rw [if_pos le, Array.getElem?_setIfInBounds]
+    by_cases h : i - depth = j
+    · subst h
+      have : (i == i - depth + depth) = true := by simp; omega
+      by_cases lt : i - depth < marks.size
+      · simp [lt, Array.getElem?_eq_getElem lt, this]
+      · simp [lt, Array.getElem?_eq_none (Nat.le_of_not_lt lt)]
+    · have : (i == j + depth) = false := by simp; omega
+      simp [h, this]
+  · have : (i == j + depth) = false := by simp; omega
+    rw [if_neg le]; simp [this]
+
+mutual
+theorem markFree_spec : ∀ (t : Term) (depth : Nat) (marks : Array Bool) (j : Nat),
+    (t.markFree depth marks)[j]? = marks[j]?.map (fun b => b || t.freeIn (j + depth))
+  | .bound i, depth, marks, j => by simp only [Term.markFree, Term.freeIn]; exact bound_mark i depth j marks
+  | .lam body, depth, marks, j => by
+    simp only [Term.markFree, Term.freeIn]; rw [markFree_spec body]; simp [Nat.add_assoc]
+  | .app a b, depth, marks, j | .mix a b, depth, marks, j | .fix a b, depth, marks, j
+  | .specification a b, depth, marks, j | .prototype a b, depth, marks, j
+  | .binary _ a b, depth, marks, j | .textJoin a b, depth, marks, j => by
+    simp only [Term.markFree, Term.freeIn]; rw [markFree_spec b, markFree_spec a]
+    cases marks[j]? <;> simp [Bool.or_assoc]
+  | .reflect a, depth, marks, j | .metadata a, depth, marks, j | .project a, depth, marks, j
+  | .unary _ a, depth, marks, j | .get a _, depth, marks, j | .inject _ a, depth, marks, j
+  | .perform a, depth, marks, j | .done a, depth, marks, j | .toData a, depth, marks, j => by
+    simp only [Term.markFree, Term.freeIn]; exact markFree_spec a depth marks j
+  | .nat _, _, marks, j | .boolean _, _, marks, j | .label _, _, marks, j | .refuse _, _, marks, j => by
+    simp [Term.markFree, Term.freeIn]
+  | .extend a fields, depth, marks, j => by
+    simp only [Term.markFree, Term.freeIn]; rw [fieldsMarkFree_spec fields, markFree_spec a]
+    cases marks[j]? <;> simp [Bool.or_assoc]
+  | .record fields, depth, marks, j => by
+    simp only [Term.markFree, Term.freeIn]; exact fieldsMarkFree_spec fields depth marks j
+  | .ifZero a zero successor, depth, marks, j => by
+    simp only [Term.markFree, Term.freeIn]
+    rw [markFree_spec successor, markFree_spec zero, markFree_spec a]
+    cases marks[j]? <;> simp [Bool.or_assoc, Nat.add_assoc]
+  | .case a arms, depth, marks, j => by
+    simp only [Term.markFree, Term.freeIn]; rw [fieldsMarkFree_spec arms, markFree_spec a]
+    cases marks[j]? <;> simp [Bool.or_assoc, Nat.add_assoc]
+  | .ifBool a b c, depth, marks, j => by
+    simp only [Term.markFree, Term.freeIn]
+    rw [markFree_spec c, markFree_spec b, markFree_spec a]
+    cases marks[j]? <;> simp [Bool.or_assoc]
+theorem fieldsMarkFree_spec : ∀ (fields : List (String × Term)) (depth : Nat) (marks : Array Bool) (j : Nat),
+    (Term.fieldsMarkFree fields depth marks)[j]? = marks[j]?.map (fun b => b || Term.fieldsFreeIn fields (j + depth))
+  | [], _, marks, j => by simp [Term.fieldsMarkFree, Term.fieldsFreeIn]
+  | (_, t) :: rest, depth, marks, j => by
+    simp only [Term.fieldsMarkFree, Term.fieldsFreeIn]; rw [fieldsMarkFree_spec rest, markFree_spec t]
+    cases marks[j]? <;> simp [Bool.or_assoc]
+end
+end Minidregg.Theory.ObjectiveBendOpenRecursion
+namespace Minidregg.Theory.ObjectiveBendDemandCollect
+open Minidregg.Theory.ObjectiveBendOpenRecursion
+open Minidregg.Theory.ObjectiveBendDemandMachine
+
+/-- `trimEnv` from marks: slot `i` kept when `marks[i]` is set. -/
+def trimByMarks (marks : Array Bool) (dummy : Nat) (env : Environment) : Environment :=
+  (env.zipIdx).map fun (a, i) => if marks[i]?.getD false then a else dummy
+
+/-- `trimEnv (fun i => t.freeIn (i + depth))` in one traversal of `t`. -/
+def trimEnvFast (t : Term) (depth dummy : Nat) (env : Environment) : Environment :=
+  trimByMarks (t.markFree depth (Array.replicate env.length false)) dummy env
+
+theorem trimEnv_getElem? (keep : Nat → Bool) (dummy : Nat) :
+    ∀ (env : Environment) (i : Nat), (trimEnv keep dummy env)[i]? = env[i]?.map (fun a => if keep i then a else dummy)
+  | [], _ => rfl
+  | a :: rest, 0 => by simp [trimEnv]
+  | a :: rest, i + 1 => by simp [trimEnv, trimEnv_getElem? (fun i => keep (i + 1)) dummy rest i]
+
+theorem trimEnvFast_eq (t : Term) (depth dummy : Nat) (env : Environment) :
+    trimEnvFast t depth dummy env = trimEnv (fun i => t.freeIn (i + depth)) dummy env := by
+  apply List.ext_getElem?
+  intro i
+  rw [trimEnv_getElem?]
+  simp only [trimEnvFast, trimByMarks, List.getElem?_map, List.getElem?_zipIdx]
+  cases h : env[i]? with
+  | none => rfl
+  | some a =>
+    have bound : i < env.length := (List.getElem?_eq_some_iff.mp h).1
+    simp [markFree_spec, Array.getElem?_replicate, bound]
+
+/-- `trimCell`, compiled with one traversal per closure. -/
+def trimCellFast (address : Nat) : Cell → Cell
+  | .suspended origin => .suspended ⟨origin.term, trimEnvFast origin.term 0 address origin.environment⟩
+  | .evaluating origin => .evaluating ⟨origin.term, trimEnvFast origin.term 0 address origin.environment⟩
+  | .cached origin value => .cached ⟨origin.term, trimEnvFast origin.term 0 address origin.environment⟩
+      (match value with
+        | .closure body environment => .closure body (trimEnvFast body 1 address environment)
+        | value => value)
+  | .native origin => .native origin
+  | .nativeCached origin value => .nativeCached origin
+      (match value with
+        | .closure body environment => .closure body (trimEnvFast body 1 address environment)
+        | value => value)
+
+@[csimp] theorem trimCell_eq_fast : @trimCell = @trimCellFast := by
+  funext address cell
+  cases cell with
+  | native origin => rfl
+  | suspended origin | evaluating origin =>
+    simp [trimCell, trimCellFast, trimClosure, trimEnvFast_eq]
+  | cached origin value | nativeCached origin value =>
+    cases value <;> simp [trimCell, trimCellFast, trimClosure, trimValue, trimEnvFast_eq]
+
+/-- Point every unread environment slot of every cell at the cell itself. -/
+def trim (state : State) : State :=
+  {state with heap := state.heap.mapIdx trimCell}
+
+/-- What a yield stores: the settled state, collected, trimmed and collected again (the
+first collection bounds the work of trimming by the live cells, not the turn's whole heap). -/
+def checkpoint (state : State) : State := collect (trim (collect (settle state)))
 
 /-- Limits counted from `start`'s own heap end: `limits.heap` cells beyond the heap it
 starts with, and the same stack. A checkpoint resumes under these
