@@ -87,7 +87,7 @@ services:
       - --port
       - "8765"
       - --origin
-      - https://gsb.fg-goose.online
+      - ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
       - --trust-proxy
     ports:
       - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:8765:8765/tcp"
