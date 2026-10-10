@@ -101,11 +101,16 @@ def adopted(target: String, was: Nat, package: String, migration: String, contex
   match diagnostics:
     case cons(_): Card.tell(Verdict.flawed({diagnostics: diagnostics}), checkedCard(diagnostics))
     case nil(_): reprogramming(target, was, package, migration, context, state)
-# A refusal of the program itself is answered; a refusal by the target's law is held.
+# A refusal of the program itself (its compile, size, State or migration) is the package's
+# and answered; only a refusal by the target's law is held, for an owner whose law may admit it.
+def programFault(clause: String) -> Bool:
+  clause == "compile" || clause == "program" || clause == "packageBytes" || clause == "migration" || clause == "stateType"
+def faultReading(clause: String, target: String) -> String:
+  if clause == "stateType" then "Its State is not {target}'s; name a migration from the old one." else clause
 def reprogramming(target: String, was: Nat, package: String, migration: String, context: Abi.Context, state: State) -> Activity<Verdict>:
   match world.reprogram({object: {world: context.world, object: target}, package: package, migration: migration}):
     case reprogrammed(r): Card.tell(Verdict.reprogrammed({pin: r.pin}), reprogrammedCard(target, was))
-    case refused(r): if r.clause == "compile" || r.clause == "program" || r.clause == "packageBytes" || r.clause == "migration" then refusing(r.clause, r.clause) else holding({n: state.next, target: target, package: package, migration: migration, proposer: context.principal, proposerHandle: context.handle}, r.clause, state)
+    case refused(r): if programFault(r.clause) then refusing(r.clause, faultReading(r.clause, target)) else holding({n: state.next, target: target, package: package, migration: migration, proposer: context.principal, proposerHandle: context.handle}, r.clause, state)
 # Held: the law refused the proposer's reprogram, so it waits for the target's owner. When
 # sixteen are held, the host drops the oldest as this one comes, and the card says which.
 def holding(held: Held, clause: String, state: State) -> Activity<Verdict>:
@@ -118,7 +123,8 @@ def dropping(state: State) -> String:
 def heldNumbered(n: Nat, state: State) -> Lists.Maybe<Held>:
   Relations.lookup(state.held, {n: n}, heldKey)
 # Adopt: the reprogram runs under the adopter, so the target's law judges it as theirs; the
-# owner's adoption applies it, anyone else's is refused by name.
+# owner's adoption applies it, anyone else's is refused by name, and a fault of the package
+# met now (the target moved on) is named as that.
 def adopt(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdict>:
   match heldNumbered(input.n, state):
     case none(_): refusing("noHeld", "No held proposal #{natText(input.n)}")
@@ -126,7 +132,7 @@ def adopt(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdi
 def adoptRun(held: Held, context: Abi.Context) -> Activity<Verdict>:
   match world.reprogram({object: {world: context.world, object: held.target}, package: held.package, migration: held.migration}):
     case reprogrammed(r): adoptWritten(held, r.pin, context)
-    case refused(r): refusing("notOwner", "Only the owner of {held.target} adopts #{natText(held.n)} (refused {r.clause})")
+    case refused(r): if programFault(r.clause) then refusing(r.clause, "#{natText(held.n)} cannot be applied to {held.target}: {faultReading(r.clause, held.target)}") else refusing("notOwner", "Only the owner of {held.target} adopts #{natText(held.n)} (refused {r.clause})")
 def adoptWritten(held: Held, pin: String, context: Abi.Context) -> Activity<Verdict>:
   let written(_) = write {held: retract heldKey(held)}
   Card.tell(Verdict.reprogrammed({pin: pin}), Document.text("✾ WORKSHOP\n\nAdopted #{natText(held.n)} from {Card.shown(held.proposer, held.proposerHandle, context)}: {held.target} is reprogrammed.\n"))
