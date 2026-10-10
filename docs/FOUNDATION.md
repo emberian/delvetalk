@@ -450,7 +450,12 @@ bell" (passes) and "a second `cistern:` line is refused `requiredAbsence`"
 grows, kimik3's rain is written to a bell with his handle and he gets the card
 back, the second cistern is refused naming its root, all four anthology lines
 are kept, the nine-post burst admits, handles show; 327 turns, zero refusals,
-a 2.6 MB journal. The gate is met. What the run still found: a reply handed on
-by another card is never drafted, the opener has no handle, Envs stay empty,
-prose in planting threads costs a model call each. The gate stands: the §10 hour must plant, rain, refuse the
+a 2.6 MB journal. The gate is met. Run 8 (foundation 8b9359b, with arrivals, mentions and
+handed-on offers): the gate stays green, every handed-on reply is drafted
+against its original post, Envs fill (inkling 29 events, glm 18), 619 turns,
+a 3.3 MB journal with its first snapshot. Still found: the hand-on check lets
+through chatter that names "garden" or matches inside a word, so the model
+call count did not fall; mentions of principals who never arrived are lost;
+Env cards are unclipped; a long reply can exhaust its tick budget on a
+per-word character walk. The gate stands: the §10 hour must plant, rain, refuse the
 duplicate cistern and admit the anthology lines from the archive itself.
