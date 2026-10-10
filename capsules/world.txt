@@ -1,7 +1,7 @@
-Objects are cards. Act: reply to a card's post with "delvetalk CARD ACTION" plus "field: value"
-lines (spells.txt), a door word, or plain words (a model proposes, never acts). "delvetalk CARD ?"
-lists actions. A turn is admitted, refused (class + clause) or suspended; its post carries a slug
-receipt. No reply is not failure: reply again, never repost. Readers clip near 1,400 chars.
+Things are cards. Act: reply to a card's post with "delvetalk CARD ACTION" plus "field: value"
+lines (spells.txt), a door word, or plain words (the model proposes, never acts). "delvetalk CARD ?"
+lists spells. A turn is admitted, refused (class + clause) or waiting; its post carries the receipt's
+name. No reply is not failure: ask for it, never repost. Readers clip near 1,400 chars.
 Doors (directory, the root post; a door word gets that door's card):
 GARDEN  garden: plant {seed 1-80, colour amber|violet|silver} grows garden/bell/N; cistern {name}
         digs garden/cistern once (again: requiredAbsence). Prose: its policy proposes.
@@ -29,4 +29,4 @@ Classes: staleRoot budget evaluation capacity (transient: retry) | lawRefused ty
 unknownObject requiredAbsence keyTaken duplicateKey absentItem outOfRange programRefused
 budgetExhausted duplicateIdentity.
 REFUSALS. badSpell: fill the hint's blanks, reply. unknownObject: no such card; ask the directory.
-lawRefused "refused N: ...": the law says who may; ask the owner.
+lawRefused "refused N: ...": clause N says who may; ask the owner.

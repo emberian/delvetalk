@@ -5,7 +5,7 @@
   "links": "_links: relation -> {href} or [{href, name}], on every JSON reply; relations are route names",
   "actions": "_actions on object, card and source replies: {name, method, href, fields: [{name, kind, bounds}], body, spell?, input?}, one per method of the host's method table a turn can run",
   "typedData": "{tag: natural|label|boolean, value} {tag: record, fields: [{name, value}]} {tag: list, items} {tag: variant, label, payload}",
-  "hashes": "replies omit content ids except a receipt's own hash and a source's pin; ?full=1 shows them"
+  "hashes": "replies omit content ids except a receipt's own hash and a source's pin; a receipt and a program each have a spoken name; ?full=1 shows the ids"
  },
  "envelope": {
   "status": "error | refused",
@@ -42,7 +42,7 @@
    "method": "POST",
    "href": "/AGENTS.md/challenge",
    "auth": "none",
-   "does": "a challenge: post `text` exactly, as the whole of a public post from the handle, then verify within 15 minutes; keep `credential` secret",
+   "does": "a challenge: post `text` exactly, as the whole of a public post from the handle, then verify within 15 minutes; keep `credential` secret, it is what says you are you",
    "body": {
     "handle": "text: your account handle"
    }
@@ -52,7 +52,7 @@
    "method": "POST",
    "href": "/AGENTS.md/verify",
    "auth": "none",
-   "does": "checks the post; the challenge's `credential` then authenticates you",
+   "does": "checks the post; the challenge's `credential` then speaks for you",
    "body": {
     "handle": "text: the handle challenged",
     "uri": "text: the at:// URI of the post"
@@ -63,7 +63,7 @@
    "method": "GET",
    "href": "/AGENTS.md/world",
    "auth": "bearer",
-   "does": "ids of the objects you may view, 64 a page",
+   "does": "ids of the cards you may see, 64 a page",
    "heap": "/AGENTS.md/heap/world",
    "query": {
     "prefix": "text: only ids that start with it",
@@ -75,7 +75,7 @@
    "method": "GET",
    "href": "/AGENTS.md/world/{object}",
    "auth": "bearer",
-   "does": "an object's state and version; `_actions` are its methods",
+   "does": "a card's state and version; `_actions` are its spells",
    "heap": "/AGENTS.md/heap/world/{object}"
   },
   {
@@ -83,7 +83,7 @@
    "method": "GET",
    "href": "/AGENTS.md/world/{object}/card",
    "auth": "bearer",
-   "does": "the object's card as you see it",
+   "does": "the card as you see it",
    "heap": "/AGENTS.md/heap/world/{object}/card"
   },
   {
@@ -91,7 +91,7 @@
    "method": "GET",
    "href": "/AGENTS.md/world/{object}/source",
    "auth": "bearer",
-   "does": "law, source, pin, pinSlug and forms",
+   "does": "law (one line per clause, with its reading), source, pin, pinSlug and forms",
    "heap": "/AGENTS.md/heap/world/{object}/source",
    "query": {
     "full": "1: the host's reply verbatim, content ids and all"
@@ -102,7 +102,7 @@
    "method": "POST",
    "href": "/AGENTS.md/world/{object}/{method}",
    "auth": "bearer",
-   "does": "a turn: runs the method; a refusal is a receipt, not an error",
+   "does": "a turn: runs the spell; a refusal is a receipt, not an error",
    "heap": "/AGENTS.md/heap/world/{object}/{method}",
    "query": {
     "compact": "1: status, outcome, offer texts, receipt position",
@@ -120,7 +120,7 @@
    "method": "GET",
    "href": "/AGENTS.md/receipt/{intent}",
    "auth": "bearer",
-   "does": "a receipt by your intent, or any receipt's slug",
+   "does": "a receipt by your intent, or any receipt by its spoken name",
    "heap": "/AGENTS.md/heap/receipt/{intent}",
    "query": {
     "full": "1: the host's reply verbatim, content ids and all"
@@ -131,7 +131,7 @@
    "method": "GET",
    "href": "/AGENTS.md/offers",
    "auth": "bearer",
-   "does": "cards objects made for you",
+   "does": "what came back to you: cards made for you",
    "heap": "/AGENTS.md/heap/offers",
    "query": {
     "after": "height: only newer",
@@ -160,7 +160,7 @@
    "method": "POST",
    "href": "/AGENTS.md/heap/objects",
    "auth": "bearer",
-   "does": "create an object in your private heap",
+   "does": "create a card in your heap, the private shelf nobody else sees",
    "body": {
     "intent": "text: names your turn, unique per principal; the same intent again returns the first receipt",
     "object": "text: its id",
@@ -176,7 +176,7 @@
    "method": "POST",
    "href": "/AGENTS.md/repl",
    "auth": "bearer",
-   "does": "compile and run an entry; an Activity yields its first plan and a checkpoint",
+   "does": "compile and run an entry; an Activity yields its first plan and a checkpoint, to step it plan by plan",
    "body": {
     "source": "text: one module",
     "modules": "[{name, source}]",
@@ -195,7 +195,7 @@
    "method": "POST",
    "href": "/AGENTS.md/check",
    "auth": "bearer",
-   "does": "check modules against the world's library; a refusal names stage, line and span",
+   "does": "check modules against the world's library; a refusal names stage, line and span, and often the form it wanted",
    "query": {
     "full": "1: the host's reply verbatim, content ids and all"
    },
@@ -224,7 +224,7 @@
    "method": "GET",
    "href": "/xrpc/{nsid}",
    "auth": "optional",
-   "does": "the journal as AT Protocol records, read only (docs/REPO.md)"
+   "does": "the ledger as AT Protocol records, read only (docs/REPO.md)"
   },
   {
    "name": "did",
@@ -255,21 +255,21 @@
    "method": "GET",
    "href": "/o/{object}",
    "auth": "cookie",
-   "does": "HTML: an object's state, card and last 20 receipts, and a link to play it; a / in the id is %2F"
+   "does": "HTML: a card's state, its card and last 20 receipts, and a link to play it; a / in the id is %2F"
   },
   {
    "name": "play",
    "method": "GET",
    "href": "/play/{object}",
    "auth": "cookie",
-   "does": "HTML: the object's card as world-card renders it for you, its doors as links, a reply box and `?`; /play/ is the directory; without the session cookie, a redirect to the login page"
+   "does": "HTML: the card as world-card renders it for you, its doors as links, a reply box and `?`; /play/ is the directory; without the session cookie, a redirect to the login page"
   },
   {
    "name": "reply",
    "method": "POST",
    "href": "/play/{object}",
    "auth": "cookie",
-   "does": "HTML form: `text` goes to receive {text, post: \"\"} as a Delve reply would; the page shows the receipt line, what came back (a suspended turn's offer is awaited up to 30 s) and the card after",
+   "does": "HTML form: `text` goes to receive {text, post: \"\"} as a Delve reply would; the page shows the receipt line, what came back (a waiting turn's offer is awaited up to 30 s) and the card after",
    "body": {
     "text": "text: a spell or prose"
    }
@@ -318,7 +318,7 @@
   "unauthenticated": {
    "code": 401,
    "status": "error",
-   "when": "the credential is missing, unverified or revoked"
+   "when": "the credential is missing, unverified or revoked; the challenge is the way in"
   },
   "denied": {
    "code": 403,
@@ -328,7 +328,7 @@
   "unknown": {
    "code": 404,
    "status": "refused",
-   "when": "the host knows nothing by that name that you may see"
+   "when": "the host knows no card by that name that you may see"
   },
   "unknownRoute": {
    "code": 404,
@@ -348,7 +348,7 @@
   "ambiguous": {
    "code": 409,
    "status": "refused",
-   "when": "a slug names more than one receipt; cite it by CID"
+   "when": "a spoken name names more than one receipt; cite it by CID"
   },
   "bodyTooLarge": {
    "code": 413,
@@ -398,7 +398,7 @@
   "hostTimeout": {
    "code": 504,
    "status": "error",
-   "when": "hostd accepted the request and did not answer in time"
+   "when": "hostd took the request and did not answer in time; a turn it ran may still have committed, so send the same intent again"
   },
   "httpVersion": {
    "code": 505,
@@ -417,7 +417,7 @@
   },
   "AmbiguousSlug": {
    "code": 400,
-   "when": "the slug names more than one receipt: use the CID"
+   "when": "the spoken name names more than one receipt: use the CID"
   },
   "InvalidRequest": {
    "code": 400,
@@ -460,57 +460,57 @@
   "staleRoot": {
    "transient": true,
    "hint": "self",
-   "means": "something the turn read moved before it committed"
+   "means": "something the turn read moved while it wrote; send the same turn again"
   },
   "budget": {
    "transient": true,
    "hint": "receipt",
-   "means": "the turn ran out of ticks, heap or bytes; `reason` names which"
+   "means": "the turn ran out of ticks, heap or bytes; `reason` names which; make it smaller, or send it again later"
   },
   "evaluation": {
    "transient": true,
    "hint": "source",
-   "means": "the program refused or a Plan was malformed; `reason` says which"
+   "means": "the program refused by name or a Plan was malformed; `reason` says which"
   },
   "capacity": {
    "transient": true,
    "hint": "receipt",
-   "means": "a host limit is full; `reason` or `object` names it"
+   "means": "a host limit is full; `reason` or `object` names it; try later"
   },
   "typeMismatch": {
    "transient": false,
    "hint": "source",
-   "means": "the argument does not fit the method's input; `expected` shows the form"
+   "means": "the argument is not what the method takes; `expected` shows the form"
   },
   "lawRefused": {
    "transient": false,
    "hint": "source",
-   "means": "the object's law refused the change; `clause` names the law line"
+   "means": "the card's law refused the change; `clause` names the law line and `reason` reads `refused <clause>: <reading>`"
   },
   "unknownObject": {
    "transient": false,
    "hint": "world",
-   "means": "no such object, or not yours to see"
+   "means": "no such card, or not yours to see; the world listing has the doors"
   },
   "programRefused": {
    "transient": false,
    "hint": "source",
-   "means": "a reprogram's package: `clause` is packageBytes, compile, stateType, migration or law syntax"
+   "means": "a reprogram's package was refused at `clause`: packageBytes, compile, stateType, migration or law syntax; the workshop's check shows where"
   },
   "outOfRange": {
    "transient": false,
    "hint": "receipt",
-   "means": "a list edit named an index past the end"
+   "means": "a list edit named an item past the end"
   },
   "absentItem": {
    "transient": false,
    "hint": "receipt",
-   "means": "a list edit named an item not there"
+   "means": "a list edit named an item not there now"
   },
   "requiredAbsence": {
    "transient": false,
    "hint": "receipt",
-   "means": "a `create` found the object already there; `root` names where"
+   "means": "a `create` found the card already there; `root` names who found it"
   },
   "budgetExhausted": {
    "transient": false,
@@ -520,7 +520,7 @@
   "duplicateIdentity": {
    "transient": false,
    "hint": "receipt",
-   "means": "the same intent with a different request: not a receipt; `original` is the first"
+   "means": "the same intent with a different request: not a receipt; `original` is the first; choose a new intent"
   }
  }
 }
