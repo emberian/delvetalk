@@ -1,21 +1,22 @@
 # Host handoff
 
-State on 2026-10-10 (lane/host12 89ec3cc, after the codex review of a3e1fb2; items 5.87 to 5.110).
+State on 2026-10-10 (foundation b0f3618: lane/host12 through d06f5f9, after the codex review of a3e1fb2; items 5.87 to 5.110; the review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`).
 
 ## Summary
 
-The host is one Lean process holding a world of durable objects. Every state change is a hash-chained journal entry (CID of canonical DAG-CBOR); memory is derived from the journal by `record`, and replay re-judges admitted entries. A reply exists only after its bytes are durable.
+The host is one Lean process holding a world of durable objects. Every state change is a journal entry naming the one before it (CID of canonical DAG-CBOR); memory is derived from the journal by `record`, and replay re-judges admitted entries. A reply exists only after its bytes are durable.
 
 - Files: `spec/Delvetalk/Host/` `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots, fork genesis), `Session` (journal IO, ops dispatch). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
 - An activity yields `World.Message`s; `answer` dispatches on the method name against `worldMethods` (5.48). Write is self-only; cross-object change is `call`/`send`, judged by the callee's own law; `reprogram` and `amend` of another object are judged by the target's law.
 - Only declared methods run from outside (5.62). A direct `receive` is read as a spell by the host (5.49, 5.54, 5.63); a misfit is `badSpell` with `clause`, `reason`, `hint`.
 - Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); subscriptions deliver `changed` to typed receivers (5.50, 5.53); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
 - An object's pin is the CID of its sealed source closure, never a compiler output. A `fixed` State field is set at creation only (5.76).
-- Laws: a text law (`law NAME "reading": EXPR`) judges every change; an optional Bend `law(old, new, request)` runs after it for kind-0 writes and may give a reading (5.67).
+- Laws: a text law (`law NAME "reading": EXPR`) judges every change; `request.kind` is `write` 0, `reprogram` 1, `amend` 2 or `proposed` 3, a write no method of the object made (5.93); an optional Bend `law(old, new, request)` runs after it for kinds 0 and 3 and may give a reading (5.67).
 - Refusals are receipts with a class from `refusalClasses` (17); every `reason` is written by `Refusal.voiced` (5.75). `staleRoot`, `budget`, `evaluation`, `capacity` and `quota` are transient (a retry with the same identity runs again).
 - Ops in section 2. Limits in section 4 (`Store.lean`, namespace `Limits`).
 - Run: `make check` (parallel runner `tests/run.py`), `make smoke` (`test_turn_world test_chain`). Narrow: `DELVETALK_OBEND=<binary> python3 -W ignore -m tests.run test_x`. `tests/host.py` opens test journals with `sync: "none"`.
-- Tests: 1,077 `def test_` across 99 files at 189b534; host11's full run on hbox passed with only the pin fixture to re-record. Wall-clock bounds (`test_snapshot` reopen under 5 s, `test_relation` under 3 s, `test_hypermedia`'s long poll) are fsync- and load-bound and can miss on a loaded box.
+- Posting and model retries are host decisions (5.107): `world-post-reserve` counts delve.town posts against `postQuota`; a transient model failure is journaled `attempted` with a backoff. `make` creates from a resident's source with `madeFrom` lineage.
+- Tests: 1,241 `def test_` across 109 files at b0f3618; no expected failures stand. Wall-clock bounds (`test_snapshot` reopen under 5 s, `test_relation` under 3 s, `test_hypermedia`'s long poll) are fsync- and load-bound and can miss on a loaded box.
 - Open: section 7.
 
 ## 1. Module map
@@ -32,7 +33,7 @@ Import order: Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapsh
 - `Snapshot.lean`: snapshot bytes, `openContent`, fork genesis. It does IO (snapshot files).
 - `Session.lean`: `Open {world, path, handle, report, sync, snapshotAt}`, `openWorld`, `durable`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
 
-Durability is fsync, not a full barrier: an entry may be lost on power loss inside the OS write-back window. The chain verifies on reopen, so a torn tail is cut, never corrupted. `world-open {sync: "none" | "fsync" | "full"}` picks the mode per process (default `fsync`; `full` = F_FULLFSYNC; anything else, a boolean too, is refused). Never journaled; `world-status` reports `sync`. `openWorld` takes an exclusive flock and refuses "journal is open in another process".
+Durability is fsync, not a full barrier: an entry may be lost on power loss inside the OS write-back window. The chain verifies on reopen, and a journal whose last line is torn is refused by name (`journal broken at height N: unterminated final line`, `Snapshot.lean`, `Ops.lean`); the host never cuts its own file. Recovery is a verified copy: `deploy/backup.sh` cuts the torn line in its mirror and replays it, `deploy/restore.sh` installs the tarball (DEPLOY "Durability and backups", "A torn tail"). `world-open {sync: "none" | "fsync" | "full"}` picks the mode per process (default `fsync`; `full` = F_FULLFSYNC; anything else, a boolean too, is refused). Never journaled; `world-status` reports `sync`. `openWorld` takes an exclusive flock and refuses "journal is open in another process".
 
 Signatures a newcomer calls (pure unless noted):
 
@@ -943,28 +944,23 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host12 (each with who holds it and what closes it):
+The queue after host12 (each with who holds it and what closes it). Closed since the review and
+dropped from this list: `proposed` by name (`4f8af5c`), Deal under kind 3 (`7017d75`), World.obend's
+`proposals` arm and Bell's `actions` (`65c477f`), the Bell's limits under 5.108 (`8ddd2c4`), the
+transport on reservations, retries and cursors (`d99d691`, `e1f3359`, `e8cf553`).
 
-- **`proposed` by name** (kernel lane): `Compiler/ObjectiveBendLaw.lean` reads `request.kind ==
-  write|reprogram|amend|proposed` as 0..3 (host12's report has the lines); until then laws write
-  `request.kind == 3`. Closed by a `#guard` there and `tests/test_law.py` `Proposed` with the name.
-- **Deal under kind 3** (objects lane): `members` reads `request.kind == 0 implies …`, so a stranger's
-  proposal is no longer constrained; `tests/test_deal.py` keeps an `expectedFailure` until Deal guards
-  proposals (codex objects 2, 7). Any other clause written `kind == 0 implies` has the same shape.
-- **World.obend lines** (objects lane): `sum Proposed<R>` and `Interpreted.proposals` (5.106); the
-  Workshop shows `refused.reading` (5.104); Bell's `door`/`undoor` need `actions(state, context)` (5.103);
-  the Bell's rain limit or text bound per 5.108.
-- **Transport consumes host decisions** (transport lane): `world-post-reserve`/`-release` and
-  `world-posted {intent}` replace `take_slot` and `post-log.json`; the interpreter submits every model
-  result and reads `attempts`/`next` (5.107); `transport/repo.py` passes the host's `cursor` (5.109).
-  Then the host refuses a `world-posted` without `intent` (one line in `postedOp`).
+- **`world-posted` without `intent`** (host): the transport now reserves every post, so `postedOp`
+  can refuse a `posted` naming no intent (one line). Closed by a test in `tests/test_post_reserve.py`.
+- **A receipt by intent apart from by slug** (transport; review docs 6): `/receipt/<x>` resolves a
+  slug first, so an intent equal to an older receipt's spoken name finds that receipt. Closed by an
+  explicit intent route or query, and its test.
 - **`readerActions` compiles `actions` per read** (host): through the world's or the disk cache only;
   warm it as `warmLaws` warms `law` if it shows in `DELVETALK_TIMING`.
 - **`methodAdmits` on the state as it stands** (host, watch): a method that moves the clause's own
   field for the speaker (an owner-on-first-use claim) is hidden from them though it would be
   admitted; none in the town does. A card with one says so in `actions()`.
-- **hob's matching page** (host, with the library's pages): both tail lines name `page: spells`; a
-  hint for a lens or a law clause could name `object` or `laws` once those pages exist.
+- **hob's matching page** (host): both tail lines name `page: spells`; the library now shelves
+  `object` and `laws` (`52527bb`), so a hint for a lens or a law clause could name its page.
 - **Foreign worlds**: `Reference.world != ""` is refused `foreignWorld`.
 - **`world-reprogram`/`amend`** are gated only by the object's law (and, since host12, a reprogram
   keeps every fixed field fixed, 5.92).

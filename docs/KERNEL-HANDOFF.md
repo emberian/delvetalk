@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (foundation after lane/kernel10; the queue is §16).
+State on 2026-10-10 (foundation b0f3618, after lane/kernel10 and the codex review of a3e1fb2, whose kernel findings are §24; the queue is §16).
 
 ## Summary
 
@@ -9,12 +9,12 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV2, DemandCollect and the proofs). Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
 - Binary: `.lake/build/bin/delvetalk-obend` (`lake build`; `make build` also builds the proof-only modules in `PROOF_ONLY`). No `sorry` in `spec/`.
 - One dialect (§21): an activity is `Activity<A>` = `computation Message Data A`; its only yields are world calls `world.X(arg)` / `world.X::<T>(arg)` against `world/lib/World.obend`'s `protocol world` (§17), each resumed at its site's type. Surface `perform` and `Activity<P, R, A>` are refused by name.
-- The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`.
+- The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`; a hand-written one beside blocks is not yet refused (§9).
 - Relations (§14, §22): law atoms `insertOnly`, `count`, column membership; `insert`/`upsert`/`retract` in `write {...}`; `canonicalCompare`; the artifact's `relations: [{field, key, limit, retain?}]`, evaluated once per package.
 - Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
 - Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
-- Tests: 1,093 `def test_` across `tests/test_*.py` (lane/kernel9). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
+- Tests: 1,241 `def test_` across 109 files (foundation b0f3618). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
 - Open: section 9.
 
 ## 0. Working rules
@@ -179,6 +179,7 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
 - Parse is the largest front-end stage (13 ms for Garden at 7d90f1b): a direct scanner per line regex, checked against the `Re` values the way `tokenLength` was (`compile-profile self-check`).
 - An activity entry's packet is 200-250 KB that must be rendered, hashed, decoded and checked per entry.
 - A checkpoint-local term table was built and measured: no gain on forced literal lists, worse nine-prose dedup; not committed (the edition name v3 now means relative addresses, §14).
+- A hand-written `forms()` beside form blocks is accepted, and wins over the derived one (`Generics.lean`, the `forms` check); refusing it by name closes FOUNDATION §12's row. Closed by a diagnostic in `test_sugar`.
 - The `Not proved` list in section 1.
 - Turn performance: docs/PERF.md (lane/perf2). The machine runs 25 to 37 million ticks a second; a directory turn spends about two thirds of its drive loop encoding, digesting, re-digesting and decoding a checkpoint per segment the host answers in process. Its items 1, 2 and 4 are this lane's (`Turn.lean`, `ObjectiveBendTyping.infer`).
 
@@ -345,15 +346,12 @@ codex review of a3e1fb2 (kernel10, §24). Remaining:
    `Generics` error type with a span (the State's, the write's, the form block's) would place them.
 10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
    be `F.Forms` and drop its List.obend requirement (Counter, Loop).
-11. The host reads `declares` (TurnLoop `declaredForms`, Ops `packageDeclares`) and `fixed`
-   (actions, inspect, the Workshop's `set`): host lane. Since kernel10 both cover a layer's stack.
 12. Host lane: `Turn.resumeEntryStep entry checkpoint issued binding value b dictionary?` takes
    the journaled digest; the two TurnLoop call sites pass `checkpoint.digest` of the journaled
    checkpoint (and `suspension.checkpoint.digest` for the profile). `expandSuspended` recomputes a
    digest a compacted journal entry lacks: the journal is the trust root, so that is sound, but a
    host that ever resumes a checkpoint from outside its journal must look its digest up there.
-13. Stateless `turn-resume` resumes only checkpoints its process issued (§24): the HTTP REPL's
-   client-held checkpoints die with the repl process (transport lane, if that matters to it).
+13. Done (`52ad1b2`): a REPL checkpoint from before the host restarted is refused `replRestarted`.
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
