@@ -147,6 +147,12 @@ the library).
   BEND"). Workshop reads `source:` as its code (the root menu's `source: <<BEND`). A 4 KB
   block parses in 98,132 ticks (just under a bare run's 100,000); the 64-field parse went
   75,421 -> 79,583.
+* **Held proposals** (objects5): a Workshop `propose` the target's law refuses is held as
+  `{n, target, package, migration, proposer, proposerHandle}` (sixteen; a seventeenth drops
+  the oldest with a card line); the card lists them; `adopt / n` runs the reprogram under
+  the adopter, so the target's law admits only its owner ("Only the owner of bell-1 adopts
+  #1 (refused owner)" otherwise); `withdraw / n` is the proposer's. Compile, program,
+  packageBytes and migration refusals are not held.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

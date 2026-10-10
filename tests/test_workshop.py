@@ -199,9 +199,39 @@ class Workshop(Chain):
         before = self.counter()
         reply = self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK),
                                                          post=label("at://kim/p/1"), slot=label("")), principal="kimik3")
-        # The target's law is asked in the turn: the workshop says it was refused, never "Reprogrammed".
-        self.assertEqual(self.card(reply), "Not done: owner\n")
+        # The target's law is asked in the turn: the workshop says it was refused, never
+        # "Reprogrammed", and holds the proposal for the owner.
+        held = self.card(reply)
+        print("\n--- held ---\n" + held)
+        self.assertTrue(held.startswith("Not done: owner\nHeld as #1 for the owner of bell-1 to adopt:\n"), held)
         self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
+        listing = self.say("")["offers"][0]["text"]
+        self.assertIn("#1 for bell-1 from kimik3\n", listing)
+        say = lambda text, who: self.turn("workshop", "receive", record(text=label(text), post=label("at://x/1"), slot=label("")), principal=who)
+        # Adopting is the target's owner's: the law judges the reprogram as the adopter's.
+        stranger = say("delvetalk workshop adopt / n: 1", "zero")
+        self.assertEqual(self.verdict(stranger), "refused")
+        self.assertEqual(self.card(stranger), "Not done: Only the owner of bell-1 adopts #1 (refused owner)\n")
+        notMine = say("delvetalk workshop withdraw / n: 1", "zero")
+        self.assertEqual(self.card(notMine), "Not done: Only its proposer, kimik3, withdraws #1\n")
+        adopted = say("delvetalk workshop adopt / n: 1", "glm")
+        self.assertEqual(self.verdict(adopted), "reprogrammed", adopted)
+        self.assertEqual(self.card(adopted), "✾ WORKSHOP\n\nAdopted #1 from kimik3: bell-1 is reprogrammed.\n")
+        self.assertNotEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
+        self.assertNotIn("#1 for bell-1", self.say("")["offers"][0]["text"])
+
+    def test_a_proposer_withdraws_a_held_proposal(self):
+        self.make_workshop()
+        self.counter()
+        propose = lambda who, ident: self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % BLOCK),
+                                                                            post=label("at://x/" + ident), slot=label("")), principal=who, identity=ident)
+        propose("kimik3", "p1")
+        out = self.turn("workshop", "receive", record(text=label("delvetalk workshop withdraw / n: 1"), post=label(""), slot=label("")), principal="kimik3")
+        self.assertEqual(self.card(out), "✾ WORKSHOP\n\nWithdrew #1.\n")
+        # Sixteen are held; a seventeenth drops the oldest with a line.
+        for i in range(17):
+            last = propose("kimik3", "q%d" % i)
+        self.assertIn("The oldest held proposal, #2, was dropped.", self.card(last))
 
     def test_a_proposal_to_an_unknown_target_is_refused_by_name(self):
         self.make_workshop()
