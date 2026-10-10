@@ -51,7 +51,7 @@ def doubled(state: State, context: Abi.Context) -> Nat:
   state.count * 2n
 def shown(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:
   let offered(_) = world.offer({to: "", document: Document.text("hello\\n")})
-  match world.inspect({object: Plans.self(context)}):
+  match world.inspect({object: Plans.self(context), source: true}):
     case inspected(i): textLength(i.pin)
     case _: 0n
 """)

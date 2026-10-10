@@ -79,7 +79,7 @@ def runCheck(package: String) -> Activity<Verdict>:
     case refused(r): refusing(r.clause, "The workshop could not check it.")
 # Check what an object runs now: inspect it, then check its source.
 def checkTarget(target: String, context: Abi.Context) -> Activity<Verdict>:
-  match world.inspect({object: {world: context.world, object: target}}):
+  match world.inspect({object: {world: context.world, object: target}, source: true}):
     case inspected(i): runCheck(i.source)
     case _: refusing("noObject", "No object called {target}")
 # View the target (its state is Data here, for the version a card cites; a card never shows

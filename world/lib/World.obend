@@ -90,8 +90,15 @@ sum Programmed:
 sum Amended:
   amended: {}
   refused: {clause: String, reading: String}
+# A law clause as `inspect` answers it: its name, its expression, its reading ("" for none).
+record LawRow:
+  name: String
+  clause: String
+  reading: String
+# `source` is "" when `inspect` was asked with `source: false`; `offered` names the actions the
+# asking principal is offered (the host's `offeredTo`).
 sum Inspected:
-  inspected: {pin: String, law: String, source: String, methods: Forms}
+  inspected: {pin: String, law: String, source: String, methods: Forms, laws: Lists.List<LawRow>, offered: Document.Names}
   denied: {}
   refused: {clause: String}
 sum Checked:
@@ -135,7 +142,7 @@ protocol world:
   reprogram({object: Plans.Reference, package: String, migration: String}) -> Programmed
   extend({object: Plans.Reference, package: String, migration: String}) -> Programmed
   amend({object: Plans.Reference, law: String}) -> Amended
-  inspect({object: Plans.Reference}) -> Inspected
+  inspect({object: Plans.Reference, source: Bool}) -> Inspected
   check({package: String}) -> Checked
   grant({to: String, object: Plans.Reference, method: String, until: Nat}) -> Granted
   grantWith({to: String, object: Plans.Reference, method: String, until: Nat, fixed: Data, uses: Nat}) -> Granted

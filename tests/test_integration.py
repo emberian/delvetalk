@@ -41,7 +41,7 @@ def poke(state: State, input: {target: String}, context: Abi.Context) -> Activit
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
 def look(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
-  match world.inspect({object: {world: "", object: input.target}}):
+  match world.inspect({object: {world: "", object: input.target}, source: true}):
     case inspected(i): said(context, actions(i.methods))
     case _: said(context, "other")
 def actions(forms: Lists.List<Form.Form>) -> String:

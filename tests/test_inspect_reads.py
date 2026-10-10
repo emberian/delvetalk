@@ -49,13 +49,22 @@ class Admits(Reflection):
         self.assertEqual((refused["receipt"]["outcome"]["class"], refused["receipt"]["outcome"]["clause"]), ("lawRefused", "owner"))
 
 
-    def test_source_false_leaves_the_source_out(self):
-        whole = self.host.send(op="world-inspect", principal="kim", object="probe")
-        bare = self.host.send(op="world-inspect", principal="kim", object="probe", source=False)
+    def test_the_source_is_left_out_unless_asked_for(self):
+        whole = self.host.send(op="world-inspect", principal="kim", object="probe", source=True)
+        bare = self.host.send(op="world-inspect", principal="kim", object="probe")
+        self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="probe", source=False), bare)
         self.assertIn("def bump2", whole["source"])
         self.assertNotIn("source", bare)
         self.assertEqual({k: v for k, v in whole.items() if k != "source"}, bare)
         self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="probe", source=0)["status"], "error")
+
+    def test_offered_names_the_actions_the_reader_is_offered(self):
+        # `offeredTo`, the per-reader filter usage uses (5.103): ember is offered bump2, kim is not.
+        offered = lambda who: self.host.send(op="world-inspect", principal=who, object="probe")["offered"]
+        self.assertIn("bump2", offered("ember"))
+        self.assertNotIn("bump2", offered("kim"))
+        forms = self.host.send(op="world-inspect", principal="kim", object="probe")["forms"]
+        self.assertEqual(offered("kim"), [next(x["value"]["value"] for x in f["fields"] if x["name"] == "action") for f in forms["items"]])
 
 
 class Listed(Reflection):

@@ -1067,6 +1067,22 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    send-then-graft can become create-then-extend. No replay edition change (creations replay from
    their recorded inputs as before). Tests: `tests/test_make.py` `CreateThenExtend`.
 
+123. **`inspect` without the source, with the laws and what the reader is offered (host13; the
+   rewrite lane's 2 and 3).** The `inspect` Plan takes `source: Bool` (World.obend: `inspect({object,
+   source})`; a Plan without it answers the source, as before) and answers `inspected {pin, law,
+   source, methods, laws, offered}`: `source` "" under `source: false` (the library's laws page read
+   31,879 characters of garden at 70 ticks each), `laws` the clauses as `World.LawRow {name, clause,
+   reading}` (`lawRowsOf`: the reading the text gives, else the package's while its clause stands,
+   "" for none), `offered` the names of the actions offered to the turn's subject (`offeredTo`, 5.103),
+   so a card's usage built in Bend lists only those. A call site whose `Inspected` lacks the new fields
+   gets the older shapes. `world-inspect` leaves the source out unless asked `source: true` (the HTTP
+   source page asks) and answers `offered` beside `forms`. World.obend's callers pass `source`:
+   Avatar and Directory `false`, Workshop (which checks the source) and Library `true` (the rewrite
+   lane moves the laws page to `i.laws` and `false`); `tests/fixtures/pins` re-recorded. Tests:
+   `tests/test_reflection.py` `test_the_inspect_plan_without_the_source_answers_the_laws_and_what_the_reader_is_offered`,
+   `tests/test_inspect_reads.py` `test_the_source_is_left_out_unless_asked_for`,
+   `test_offered_names_the_actions_the_reader_is_offered`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
