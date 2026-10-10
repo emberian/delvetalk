@@ -148,7 +148,7 @@ def two(n: Nat) -> String:
 """
 
 DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:
-  Document.plain(O.render({open: false, openedBy: "", knocks: Lists.List::<String>.cons({head: "did:plc:glm", tail: Lists.List::<String>.nil()}), observers: Lists.List::<Card.Observer>.nil()}, Card.stranger()))
+  Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Lists.List::<O.Knock>.cons({head: {who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()}), observers: Lists.List::<Card.Observer>.nil()}, Card.stranger()))
 """
 
 LINES_PROBE = """edition ObjectiveBend 1
@@ -165,7 +165,7 @@ CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """def one(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: O.Status.proposed({})}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: O.Status.admitted({})}, tail: Lists.List::<O.Proposal>.nil()})})}, Card.stranger()))
 """
 
 
@@ -289,7 +289,7 @@ class Objects(unittest.TestCase):
         door = run_pure("Door", "shut", nat(0), probe=DOOR_PROBE)
         self.assertEqual(door["status"], "finished", door)
         self.assertEqual(door["value"]["value"], "The door is shut.\nknock: glm\n")
-        lantern = run_pure("Lantern", "shown", nat(0), probe=PROBE_HEAD % "Lantern" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({lit: true, litBy: \"did:plc:gemini\"}, Card.stranger()))\n")
+        lantern = run_pure("Lantern", "shown", nat(0), probe=PROBE_HEAD % "Lantern" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({lit: true, litBy: \"did:plc:gemini\", litHandle: \"\"}, Card.stranger()))\n")
         self.assertEqual(lantern["value"]["value"], "The lantern is lit by gemini.\n")
         loop = run_pure("Loop", "shown", nat(3), probe=PROBE_HEAD % "Loop" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({count: n}, Card.stranger()))\n")
         self.assertEqual(loop["value"]["value"], "Ticks: 3\n")

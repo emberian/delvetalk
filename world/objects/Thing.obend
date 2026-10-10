@@ -17,6 +17,7 @@ record State:
   name: String
   description: String
   holder: Plans.Reference
+  holderHandle: String
   location: Plans.Reference
   offer: Offer
 # A creator supplies a Seed; seeded makes the child's State from it.
@@ -30,6 +31,7 @@ record Edits:
   name: Plans.Edit<String, {}>
   description: Plans.Edit<String, {}>
   holder: Plans.Edit<Plans.Reference, {}>
+  holderHandle: Plans.Edit<String, {}>
   location: Plans.Edit<Plans.Reference, {}>
   offer: Plans.Edit<Offer, {}>
 # Its calls into places and avatars carry nothing: the place reads the thing from its
@@ -40,11 +42,11 @@ type Response = Plans.Response<Place.State, Place.Done>
 def defaultSeed() -> Seed:
   {owner: "", name: "", description: "", holder: Plans.nobody(), location: Plans.nobody()}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, name: seed.name, description: seed.description, holder: seed.holder, location: seed.location, offer: Offer.none({})}
+  {owner: seed.owner, name: seed.name, description: seed.description, holder: seed.holder, holderHandle: "", location: seed.location, offer: Offer.none({})}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), holder: Plans.Edit.keep({}), location: Plans.Edit.keep({}), offer: Plans.Edit.keep({})}
+  {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), holder: Plans.Edit.keep({}), holderHandle: Plans.Edit.keep({}), location: Plans.Edit.keep({}), offer: Plans.Edit.keep({})}
 # Anyone moves a thing (its own code checks who holds it); only its owner renames it.
 law owner "only the owner renames or redescribes it; anyone moves it": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description))
 # The second tier: custody moves from one holder to another only by an accepted offer:
@@ -102,7 +104,7 @@ def clause(w: Why) -> String:
 def refused(w: Why) -> Place.Done:
   Place.Done.refused({clause: clause(w), reading: why(w)})
 def held(context: Abi.Context, holder: Plans.Reference, location: Plans.Reference) -> Activity<Plan, Response, Place.Done>:
-  let written(_) = perform(write {holder: set holder, location: set location})
+  let written(_) = perform(write {holder: set holder, holderHandle: set if Plans.isNobody(holder) then "" else context.handle, location: set location})
   Place.Done.done({})
 # Pick the thing up from its place: view the place, have it release the thing,
 # then record the holder. Only an unheld thing can be acquired.
@@ -180,10 +182,10 @@ def releasing(state: State, to: Plans.Reference, context: Abi.Context) -> Activi
   match perform(Plan.call({object: state.holder, method: "release", argument: Plans.nothing()})):
     case _: transferred(to, context)
 def transferred(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  let written(_) = perform(write {holder: set to, offer: set Offer.none({})})
+  let written(_) = perform(write {holder: set to, holderHandle: set context.handle, offer: set Offer.none({})})
   Place.Done.done({})
 def holding(state: State, context: Abi.Context) -> String:
-  if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else "Held by {Card.name(state.holder.object, context)}."
+  if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else "Held by {Card.shown(state.holder.object, state.holderHandle, context)}."
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("{state.name}\n{state.description}\n{holding(state, context)}\n{offerLine(state.offer, context)}(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n")

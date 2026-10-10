@@ -101,7 +101,7 @@ class Wakes(Chain):
 
     def test_a_wake_seeded_without_an_env_watches_env_slash_its_owner(self):
         from tests.test_objects import PROBE_HEAD, run_pure
-        probe = PROBE_HEAD % "Wake" + "def home(owner: String, env: String) -> String:\n  O.seeded({owner: owner, env: {world: \"\", object: env}}).env.object\n"
+        probe = PROBE_HEAD % "Wake" + "def home(owner: String, env: String) -> String:\n  O.seeded({owner: owner, handle: \"\", env: {world: \"\", object: env}}).env.object\n"
         out = run_pure("Wake", "home", label(OWNER), label(""), probe=probe)
         self.assertEqual(out["value"], label("env/" + OWNER), out)
         self.assertEqual(run_pure("Wake", "home", label(OWNER), label("env/other"), probe=probe)["value"], label("env/other"))
@@ -316,7 +316,7 @@ def tickAt(height: Nat) -> String:
 def subscribeAs(principal: String) -> String:
   verdict(Tide.law(tide(0n, 0n, ""), tide(0n, 0n, "kimik3"), request(principal, 5n)))
 def wakeBy(principal: String) -> String:
-  verdict(Wake.law({owner: "inkling", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.nil(), nextId: 1n}, {owner: "inkling", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.cons({head: {id: 1n, event: Wake.On.keyword({term: "moth"}), action: Wake.Action.notify({})}, tail: Lists.List::<Wake.Trigger>.nil()}), nextId: 2n}, request(principal, 5n)))
+  verdict(Wake.law({owner: "inkling", handle: "", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.nil(), nextId: 1n}, {owner: "inkling", handle: "", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.cons({head: {id: 1n, event: Wake.On.keyword({term: "moth"}), action: Wake.Action.notify({})}, tail: Lists.List::<Wake.Trigger>.nil()}), nextId: 2n}, request(principal, 5n)))
 """
 
 

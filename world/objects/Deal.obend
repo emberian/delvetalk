@@ -11,6 +11,7 @@ import ./Card.obend as Card
 # before rest. An exhibition is a deal with a piece. The posts are the deal's roots.
 record Signature:
   principal: String
+  handle: String
   post: String
 record State:
   parties: Lists.List<String>
@@ -18,6 +19,7 @@ record State:
   piece: String
   signatures: Lists.List<Signature>
   withdrawn: String
+  withdrawnHandle: String
   closed: Nat
 record Seed:
   parties: Lists.List<String>
@@ -26,6 +28,7 @@ record Seed:
 record Edits:
   signatures: Plans.Entries<Signature, {}>
   withdrawn: Plans.Edit<String, {}>
+  withdrawnHandle: Plans.Edit<String, {}>
   closed: Plans.Edit<Nat, {}>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
@@ -40,11 +43,11 @@ law once "a deal closes once": writeOnce(closed)
 def defaultSeed() -> Seed:
   {parties: Lists.List.nil(), terms: "", piece: ""}
 def seeded(seed: Seed) -> State:
-  {parties: seed.parties, terms: seed.terms, piece: seed.piece, signatures: Lists.List.nil(), withdrawn: "", closed: 0n}
+  {parties: seed.parties, terms: seed.terms, piece: seed.piece, signatures: Lists.List.nil(), withdrawn: "", withdrawnHandle: "", closed: 0n}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {signatures: Plans.Entries.keep({}), withdrawn: Plans.Edit.keep({}), closed: Plans.Edit.keep({})}
+  {signatures: Plans.Entries.keep({}), withdrawn: Plans.Edit.keep({}), withdrawnHandle: Plans.Edit.keep({}), closed: Plans.Edit.keep({})}
 sum Done:
   signed: {remaining: Nat}
   atRest: {}
@@ -80,7 +83,7 @@ def atRest(state: State) -> Bool:
   unsigned(state) == 0n && state.withdrawn == ""
 # A party countersigns once, citing its post; the last signature puts the deal at rest.
 def countersigned<T>(state: State, post: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else if party(state, context.principal) == false then then(refused(Why.notParty({act: "countersigns"}))) else if hasSigned(state, context.principal) then then(refused(Why.alreadySigned({}))) else signing(state, {principal: context.principal, post: post}, context, then)
+  if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else if party(state, context.principal) == false then then(refused(Why.notParty({act: "countersigns"}))) else if hasSigned(state, context.principal) then then(refused(Why.alreadySigned({}))) else signing(state, {principal: context.principal, handle: context.handle, post: post}, context, then)
 def signing<T>(state: State, signature: Signature, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {signatures: append signature})
   if unsigned(state) == 1n then then(Done.atRest({})) else then(Done.signed({remaining: unsigned(state) - 1n}))
@@ -90,7 +93,7 @@ def countersign(state: State, input: {post: String}, context: Abi.Context) -> Ac
 def withdrew<T>(state: State, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   if party(state, context.principal) == false then then(refused(Why.notParty({act: "withdraws"}))) else if atRest(state) then then(refused(Why.atRest({}))) else if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else withdrawing(context, then)
 def withdrawing<T>(context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(write {withdrawn: set context.principal, closed: set 1n})
+  let written(_) = perform(write {withdrawn: set context.principal, withdrawnHandle: set context.handle, closed: set 1n})
   then(Done.withdrawn({}))
 def withdraw(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   withdrew(state, context, fn(done: Done) -> Done: done)
@@ -113,9 +116,9 @@ def heard(state: State, post: String, routed: Card.Routed, context: Abi.Context)
     case act(a): if a.action == "withdraw" then withdrew(state, context, doneReply) else countersigned(state, post, context, doneReply)
     case _: Card.answer(routed, context, forms(), render(state, context))
 def signatureLine(signature: Signature) -> Document.Document:
-  Document.text("signed: {Card.handle(signature.principal)} at {signature.post}\n")
+  Document.text("signed: {Card.shown(signature.principal, signature.handle, Card.stranger())} at {signature.post}\n")
 def waitingLine(state: State) -> Document.Document:
-  Document.text(if state.withdrawn != "" then "Withdrawn by {Card.handle(state.withdrawn)}.\n" else if atRest(state) then "At rest: every party has countersigned.\n" else "Waiting for {natText(unsigned(state))} of the parties.\n")
+  Document.text(if state.withdrawn != "" then "Withdrawn by {Card.shown(state.withdrawn, state.withdrawnHandle, Card.stranger())}.\n" else if atRest(state) then "At rest: every party has countersigned.\n" else "Waiting for {natText(unsigned(state))} of the parties.\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let piece = if state.piece == "" then "" else " for {state.piece}"

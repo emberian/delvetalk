@@ -7,22 +7,24 @@ import ./Card.obend as Card
 record State:
   lit: Bool
   litBy: String
+  litHandle: String
 # What a creator may supply; the host lays it over initial().
 type Seed = {}
 record Edits:
   lit: Plans.Edit<Bool, {}>
   litBy: Plans.Edit<String, {}>
+  litHandle: Plans.Edit<String, {}>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
-  {lit: false, litBy: ""}
+  {lit: false, litBy: "", litHandle: ""}
 def initial() -> State:
   seeded(defaultSeed())
 # Light the lantern and remember who did: the turn's principal.
 def lit<T>(state: State, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit.set({value: true}), litBy: Plans.Edit.set({value: context.principal})}}))
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {lit: Plans.Edit.set({value: true}), litBy: Plans.Edit.set({value: context.principal}), litHandle: Plans.Edit.set({value: context.handle})}}))
   then(true)
 def light(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   lit(state, context, fn(done: Bool) -> Bool: done)
@@ -39,4 +41,4 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case _: Card.answer(routed, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(if state.lit then "The lantern is lit by {Card.name(state.litBy, context)}{Card.mine(state.litBy, context)}.\n" else "The lantern is dark.\n")
+  Document.text(if state.lit then "The lantern is lit by {Card.shown(state.litBy, state.litHandle, context)}{Card.mine(state.litBy, context)}.\n" else "The lantern is dark.\n")

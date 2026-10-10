@@ -8,6 +8,7 @@ import ./Form.obend as Form
 import ./Card.obend as Card
 record Note:
   from: String
+  handle: String
   text: String
 # The object a verified principal gets; its id is the principal's DID string.
 # Its mailbox: who is told when its principal sends (observers, each by the method it
@@ -67,7 +68,7 @@ def crowded<T>(oldest: Note, from: String, text: String, context: Abi.Context, t
   let written(_) = perform(write {inbox: removeItem oldest})
   posted(from, text, context, then)
 def posted<T>(from: String, text: String, context: Abi.Context, then: Bool -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(write {inbox: append {from: from, text: text}})
+  let written(_) = perform(write {inbox: append {from: from, handle: if from == context.principal then context.handle else "", text: text}})
   then(true)
 def note(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Bool>:
   noted(state, context.principal, input.text, context, fn(done: Bool) -> Bool: done)
@@ -156,7 +157,7 @@ def held(context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {holding: Plans.Entries.append({item: thing(context)}), inbox: gift(context)})}))
   Place.Done.done({})
 def gift(context: Abi.Context) -> Plans.Entries<Note, {}>:
-  if mine(context) then Plans.Entries.keep({}) else Plans.Entries.append({item: {from: context.principal, text: "gave you {context.caller}"}})
+  if mine(context) then Plans.Entries.keep({}) else Plans.Entries.append({item: {from: context.principal, handle: context.handle, text: "gave you {context.caller}"}})
 def release(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   if context.caller == "" then Place.Done.refused({clause: "notAThing", reading: "Only a thing can be released."}) else releaseThing(state, context)
 def releaseThing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
@@ -268,7 +269,7 @@ def lenses() -> Lists.List<Form.Lens<Edits>>:
 def holdingLine(item: Plans.Reference) -> Document.Document:
   Document.text("Holding: {item.object}\n")
 def noteLine(item: Note) -> Document.Document:
-  Document.text("{Card.handle(item.from)}: {item.text}\n")
+  Document.text("{Card.shown(item.from, item.handle, Card.stranger())}: {item.text}\n")
 # Notes newest first; eight of each list, then a count.
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:

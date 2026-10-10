@@ -408,8 +408,11 @@ class AnthologyReachable(test_chain.Chain):
         self.assertEqual(lines, ["the merchant tips his hat", "a splash for every refusal"])
         refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
         self.assertEqual(refused["result"]["payload"]["fields"][1]["value"], label("Only the anthology's owner admits; that is ember"))
+        self.assertEqual(self.host.send(op="world-principal", principal="transport", did="ember", handle="ember.delve.town")["status"], "principal")
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
         self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
         card = self.say("anthology", "", GLM)["offers"][0]["text"]
         print("\n--- anthology ---\n" + card)
+        # The owner who admitted is named by the handle stored at admission, to every reader.
+        self.assertTrue(card.startswith("Anthology, admitted by ember.delve.town"), card)
         self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)

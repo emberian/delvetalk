@@ -75,18 +75,18 @@ class Deals(Chain):
         self.deal([ARTIST, GALLERY])
         self.sign(ARTIST, "at://glm/p/1")
         dropped = self.propose(ARTIST, record(signatures={"tag": "variant", "label": "remove", "payload": record(index={"tag": "natural", "value": "0"})},
-                                              withdrawn=self.keep(), closed=self.keep()), "drop")
+                                              withdrawn=self.keep(), withdrawnHandle=self.keep(), closed=self.keep()), "drop")
         self.assertEqual((dropped["status"], dropped["receipt"]["outcome"].get("clause")), ("refused", "signed"), dropped)
         self.turn("deal", "withdraw", principal=GALLERY)
         undo = self.propose(GALLERY, record(signatures=self.keep(), withdrawn={"tag": "variant", "label": "set", "payload": record(value=label(""))},
-                                            closed={"tag": "variant", "label": "set", "payload": record(value={"tag": "natural", "value": "0"})}), "undo")
+                                            withdrawnHandle=self.keep(), closed={"tag": "variant", "label": "set", "payload": record(value={"tag": "natural", "value": "0"})}), "undo")
         self.assertEqual((undo["status"], undo["receipt"]["outcome"].get("clause")), ("refused", "once"), undo)
 
     def test_a_strangers_signature_proposed_directly_is_refused_by_the_law(self):
         """The membership atom: `request.subject in new.parties`."""
         self.deal([ARTIST, GALLERY])
         forged = self.propose("did:plc:zero", record(signatures={"tag": "variant", "label": "append", "payload": record(
-            item=record(principal=label("did:plc:zero"), post=label("at://zero/p/1")))}, withdrawn=self.keep(), closed=self.keep()), "forged")
+            item=record(principal=label("did:plc:zero"), handle=label(""), post=label("at://zero/p/1")))}, withdrawn=self.keep(), withdrawnHandle=self.keep(), closed=self.keep()), "forged")
         self.assertEqual((forged["status"], forged["receipt"]["outcome"].get("clause")), ("refused", "members"), forged)
 
 

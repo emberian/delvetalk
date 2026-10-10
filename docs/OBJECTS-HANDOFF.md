@@ -29,7 +29,10 @@ the library).
 * **Handles and the clock.** `Card.name(did, context)` shows the reader's own observed
   handle (`context.handle`, from the host's registry) and anyone else as `Card.handle`:
   never a raw DID, a long fragment is `…` and its last eight. A handle stored when the
-  host knew it (a bell's planter, a rain's author, a Tide subscriber) shows by `Card.shown`. Deadlines (Thing offers,
+  host knew it shows by `Card.shown`: a bell's planter, a rain's author, a Tide subscriber,
+  the Anthology's owner (stored at each admission), a lantern's lighter, a door's opener and
+  knockers, a Deal's signers and withdrawer, a Thing's holder, an Avatar note's author, and
+  an Env's and a Wake's owner (seeded at arrival). Deadlines (Thing offers,
   the Tide's gap) compare `context.clock`, which only world-advance moves.
 * **Reader-specific cards.** `Card.reads(principal, context)`, `Card.mine(principal,
   context)` (" (yours)"), `Card.stranger()`. A member sees more: an Env's events, a Wake's
