@@ -179,6 +179,32 @@ Two host defects, for the host lane (spec/ is not this lane's):
 - Check: test_archive `test_a_reopen_inside_a_settling_prints_no_panic` (an expected failure
   until then).
 
+### The Workshop page over the clip (tests2's 1,444)
+
+The draft is genesis's page publication for the WORKSHOP door, `wiki: Workshop`, at 1,444
+characters. It is the only draft over 1,400.
+- Workshop.obend declares no `publishPage`, so the host publishes its default page
+  (`TurnLoop.lean` `defaultPublishPage`). That page is `wiki: Workshop` (16 characters), then
+  `## Card` with the card as a stranger reads it (755), then `## How to reply` with the host's
+  usage of all seven forms (663): adopt, make, draft, withdraw, check, propose and create.
+- The card already teaches check, propose, create and make with examples, so four of the seven
+  are said twice.
+- Fix for the objects lane: give `world/objects/Workshop.obend` a page that is its card alone,
+  as the garden has its own:
+
+      # The workshop page is its card, which already teaches each spell a stranger casts. The host
+      # default page adds every form's usage and runs 1,444 characters, over the clip.
+      def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
+        Card.publishPage(Card.pageName(input.page, blurb().word), Card.Page.cons({head: {title: "Card", body: render(state, Card.public(context))}, tail: Card.Page.nil()}))
+
+- Checked on a scratch copy of the tree on hbox (the dt-foundation binary): it compiles,
+  genesis runs, and the Workshop page is 780 characters. The other pages are Garden 478, Rooms
+  231, Tide 373, Anthology 551 and Kinds 646.
+- Lost from the page: the usage lines for `adopt`, `draft` and `withdraw`. The card's held line
+  names `adopt / n` and `withdraw / n` when anything is held, and hob writes `draft`.
+- Check: test_archive `test_every_page_publication_is_within_the_clip` (an expected failure
+  until then).
+
 ## Runs
 
 | | 1. First run | 2. Rerun on foundation, rehearsal unchanged | 3. Interleaved, hubs recorded | 4. Partial seeds, opener, owners | 5. Final | 6. Objects and host6 landed | 7. Restated gate | 8. Hand-on, arrival, mentions | 9. Objects5, arrival at observation | 10. Relations, offered-form words | 11. Message dialect, host-read spells, the voice |
