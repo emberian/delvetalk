@@ -67,7 +67,7 @@ def lineHint (source line : String) : Option String :=
   else if (trimmed.startsWith "record " || trimmed.startsWith "sum ") && has trimmed "|" then
     some "a sum is declared with `sum Name:` and its arms as `label: {fields}`, one per indented line; there is no `A | B` form"
   else if trimmed.startsWith "law " && (has trimmed "match" || trimmed.endsWith ":") then
-    some "laws are one line over request facts, not a match: `law name: EXPR` (for example `law owner: request.kind == 0 or request.subject == \"me\"`)"
+    some "laws are one line over request facts, not a match: `law name: EXPR`, or with the reading a refusal quotes, `law name \"what it means\": EXPR` (for example `law owner \"only the owner writes\": request.kind == 0 or request.subject == \"me\"`)"
   else if trimmed.startsWith "def " && (((parenthesized trimmed "(").map untypedParameters).getD false || !has trimmed "->") then
     some "definitions are `def name(x: T) -> U:`; parameter and result types are required"
   else if ((parenthesized trimmed "fn(").map untypedParameters).getD false then

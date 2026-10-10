@@ -192,7 +192,7 @@ def ofSurface (name : String) (imports : List (String × String)) (m : Objective
   let mut decls : List Decl := []
   let mut laws : List (String × ObjectiveBendLaw.LawExpr) := []
   for d in m.decls do
-    if let .law lawName source _ := d then
+    if let .law lawName source _ _ := d then
       laws := laws ++ [(lawName, ← ObjectiveBendLaw.parse source)]
     else decls := decls ++ [← Surface.decl d]
   ObjectiveBendLaw.checkNames laws

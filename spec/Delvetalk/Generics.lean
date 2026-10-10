@@ -967,7 +967,7 @@ def declStrings : Decl → List String
   | .typeAlias n t _ => [n, t]
   | .sum n cases ps _ => n :: ps ++ cases.flatMap (fun c => [c.name, c.type])
   | .record n methods fields _ => n :: methods.flatMap signatureStrings ++ fields.flatMap (fun f => [f.name, f.type])
-  | .law n source _ => [n, source]
+  | .law n source reading _ => [n, source, reading]
   | .function sig ps b _ => signatureStrings sig ++ ps.getD [] ++ (bodyStrings b)
 
 def moduleNames (m : ObjectiveBendSurface.Module) (names : Std.TreeSet String) : Std.TreeSet String :=

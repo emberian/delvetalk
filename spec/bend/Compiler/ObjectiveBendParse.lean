@@ -720,8 +720,10 @@ def typeAliasRe : Re := seqs [str "type", many1 space, group 1 ident, many space
 def sumCaseRe : Re := seqs [group 1 ident, many space, chr ':', many space, group 2 (many1 dot), .done]
 def recordRe : Re := seqs [str "record", many1 space, group 1 ident, chr ':', .done]
 def fieldRe : Re := seqs [group 1 (.alt ident quoted), chr ':', many space, group 2 (many1 dot), .done]
-/-- `law NAME: EXPR`, a top-level ENFORCED law of the package (`Compiler.ObjectiveBendLaw`). -/
-def lawRe : Re := seqs [str "law", many1 space, group 1 ident, many space, chr ':', many space, group 2 (many1 dot), .done]
+/-- `law NAME "reading": EXPR`, a top-level ENFORCED law of the package (`Compiler.ObjectiveBendLaw`);
+the optional reading (a string literal) is what a refusal by it quotes. -/
+def lawRe : Re := seqs [str "law", many1 space, group 1 ident, opt (seqs [many1 space, group 3 quoted]), many space,
+  chr ':', many space, group 2 (many1 dot), .done]
 
 /-- `String.prototype.split` on one character. -/
 def splitChar (s : List Char) (sep : Char) : List (List Char) :=
@@ -867,7 +869,12 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
     if let some (_, caps) ← matchAt line lawRe line.text then
       let text := cap line.text caps 2
       if let .error message := ObjectiveBendLaw.parse text then fail line message
-      decls := decls.push (.law (cap line.text caps 1) text line.span)
+      let reading ← match capture line.text caps 3 with
+        | none => pure ""
+        | some quotedText => match Lean.Json.parse (String.ofList quotedText) with
+          | .ok (.str r) => pure r
+          | _ => fail line "a law's reading is a string literal: law name \"what it means\": EXPR"
+      decls := decls.push (.law (cap line.text caps 1) text reading line.span)
       continue
     if startsWith line.text "law " || line.text == "law".toList || startsWith line.text "law:" then
       fail line (ObjectiveBendLaw.refusalPrefix ++ "expected `law NAME: EXPR` (a top-level law has a name and no parameters)")

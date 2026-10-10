@@ -131,7 +131,8 @@ inductive Decl where
   | typeAlias (name type : String) (span : Span)
   | sum (name : String) (cases : List Field) (typeParameters : List String) (span : Span)
   | record (name : String) (methods : List Signature) (fields : List Field) (span : Span)
-  | law (name source : String) (span : Span)
+  /-- `law NAME "reading": EXPR`; `reading` is "" when the source gives none. -/
+  | law (name source reading : String) (span : Span)
   /-- `typeParameters` is present (possibly empty) exactly when the source wrote `def f<...>`
   or the generics pass made the function an instance. -/
   | function (signature : Signature) (typeParameters : Option (List String)) (body : Body) (span : Span)
@@ -144,7 +145,7 @@ def Decl.name : Decl → String
 
 def Decl.span : Decl → Span
   | .reexport _ _ s | .extension _ _ _ _ _ s | .typeAlias _ _ s | .sum _ _ _ s | .record _ _ _ s
-  | .law _ _ s | .function _ _ _ s => s
+  | .law _ _ _ s | .function _ _ _ s => s
   | .spec s => s.span
 
 /-- The declaration's generic type parameters (`[]` for every non-generic declaration). -/
@@ -271,7 +272,8 @@ def Decl.json : Decl → Json
   | .record n methods fields s => Json.mkObj [("kind", toJson "record"), ("name", toJson n),
       ("methods", Json.arr (methods.map Signature.json).toArray), ("fields", Json.arr (fields.map Field.json).toArray),
       ("span", s.json)]
-  | .law n source s => Json.mkObj [("kind", toJson "law"), ("name", toJson n), ("source", toJson source), ("span", s.json)]
+  | .law n source reading s => Json.mkObj ([("kind", toJson "law"), ("name", toJson n), ("source", toJson source)] ++
+      (if reading.isEmpty then [] else [("reading", toJson reading)]) ++ [("span", s.json)])
   | .function sig ps b s => Json.mkObj ([("kind", toJson "function"), ("signature", sig.json)] ++
       (match ps with | some ps => [("typeParameters", toJson ps)] | none => []) ++
       [("body", b.json), ("span", s.json)])
@@ -343,7 +345,7 @@ def Decl.mapSpans (f : Span → Span) : Decl → Decl
   | .typeAlias n t s => .typeAlias n t (f s)
   | .sum n cases ps s => .sum n (cases.map (fun x => x.mapSpans f)) ps (f s)
   | .record n methods fields s => .record n (methods.map (fun x => x.mapSpans f)) (fields.map (fun x => x.mapSpans f)) (f s)
-  | .law n source s => .law n source (f s)
+  | .law n source reading s => .law n source reading (f s)
   | .function sig ps b s => .function (sig.mapSpans f) ps (b.mapSpans f) (f s)
 
 def Module.mapSpans (f : Span → Span) (m : Module) : Module :=

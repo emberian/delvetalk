@@ -10,6 +10,7 @@ import json
 import unittest
 
 from tests.test_turn import BINDING, Host, library_modules, nat, variant
+from tests.test_turn_world import TurnWorld, record
 
 HEAD = "edition ObjectiveBend 1\n"
 
@@ -305,6 +306,44 @@ class SugarTests(unittest.TestCase):
     def test_halt_suggests_the_statement(self):
         reply = self.check(HEAD + "def stop(n: Nat) -> Nat:\n  halt(\"no\")\n", "stop")
         self.assertIn("let written(_) = perform(Plan.write({...}))", reply["diagnostic"]["hint"])
+
+
+COUNTER = HEAD + """import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  count: Nat
+record Edits:
+  count: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, {}>
+law small "a counter stays at most a hundred": new.count <= 100
+def initial() -> State:
+  {count: 0n}
+def bump(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit.add({delta: input.n})}}))
+  input.n
+"""
+
+
+class LawReading(TurnWorld):
+    """A law's reading is carried beside it; the law enforces exactly as without one, and
+    the statement form runs on the real host (a staged write is answered `written`)."""
+
+    def test_a_law_with_a_reading_enforces_as_before(self):
+        self.create("c", library_modules("Abi", "Plan") + [{"name": "Package", "source": COUNTER}], 0)
+        ok = self.turn("c", "bump", record(n=nat(5)))
+        self.assertEqual(ok["status"], "admitted", ok)
+        refused = self.turn("c", "bump", record(n=nat(150)))
+        self.assertEqual(refused["status"], "refused", refused)
+        self.assertEqual(refused["receipt"]["outcome"].get("clause"), "small", refused)
+
+    def test_a_reading_is_a_string_literal(self):
+        h = Host()
+        self.addCleanup(h.close)
+        bad = COUNTER.replace('"a counter stays at most a hundred"', "at most a hundred")
+        reply = h.send({"op": "check-package", "entry": "initial",
+                        "modules": library_modules("Abi", "Plan") + [{"name": "Package", "source": bad}]})
+        self.assertEqual(reply["status"], "refused", reply)
 
 
 if __name__ == "__main__":

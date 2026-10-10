@@ -545,3 +545,11 @@ fixture recorded by the foundation binary).
   changes, with any binary: `DELVETALK_OBEND=... python3 -m tests.test_artifact_pins
   --record`. Recorded at foundation d547bae by that binary (40 modules, 778 defs); this
   lane's binary: 0 recompiled differently.
+- Law readings: `law NAME "reading": EXPR` (the reading a JSON string literal, optional).
+  `Surface.Decl.law name source reading`; the enforced law is unchanged. The entry
+  module's laws reach the artifact as `laws: [{name, reading}]` (source order, reading ""
+  when none; the key is absent for a module without laws, so lawless artifacts are
+  unchanged) and the host-side `Package.EntryCompiled.readings`. For the host lane: a
+  refusal by law `n` can quote `reading` ("refused owner: only the owner ..."); the pure
+  profile still refuses packages with laws, so the field is observable only through the
+  host (`compileEntry`).
