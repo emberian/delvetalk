@@ -2769,7 +2769,17 @@ def objectsOp (w : World) (j : Json) : Except String Json := do
     | .ok _ => throw s!"{k} must be text"
     | .error _ => pure ""
   let (ids, more) := listIds w principal (← text "prefix") (← text "after")
-  return Json.mkObj [("status", toJson "listed"), ("ids", toJson ids), ("more", toJson more)]
+  let withMethods ← match j.getObjVal? "methods" with
+    | .ok (.bool b) => pure b
+    | .ok _ => throw "methods must be true or false"
+    | .error _ => pure false
+  let listed := [("status", toJson "listed"), ("ids", toJson ids), ("more", toJson more)]
+  if !withMethods then return Json.mkObj listed
+  -- The turnable method names (those that take a context) of each listed object.
+  let names := fun (o : Object) => ((o.methods.getArr?.toOption).getD #[]).toList.filterMap fun m =>
+    if (m.getObjValAs? Bool "context").toOption == some true then (m.getObjValAs? String "name").toOption else none
+  return Json.mkObj (listed ++ [("methods", Json.mkObj (ids.filterMap fun id =>
+    (w.objects[id]?).map fun o => (id, toJson (names o))))])
 
 def view (w : World) (j : Json) : Except String Json := do
   let id ← j.getObjValAs? String "object"

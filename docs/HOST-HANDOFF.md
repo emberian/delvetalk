@@ -358,6 +358,11 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    actions: `tests/test_hypermedia.py`'s law-refusal reply no longer offers `bump`. Test:
    `tests/test_inspect_reads.py`.
 
+56. **Methods in a listing (host9; AGENTS-API "host ops wanted" 2).** `world-objects {principal, prefix?,
+   after?, methods?: true}` adds `methods: {<id>: [<name>]}`, the turnable method names (`context:
+   true`, table order) of each listed id; the ids are the reader's as before. `methods` other than a
+   boolean is a request error. Test: `tests/test_inspect_reads.py` `Listed`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

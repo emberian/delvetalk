@@ -1,11 +1,12 @@
 """Hypermedia reads (docs/AGENTS-API.md "Host ops wanted"): `world-inspect` lists per turnable method
 `admits: true | {clause, reading?}`, the text law's verdict on a kind-0 change by the asking principal
 through that method on the unchanged state, `true` where the refusing clause reads the state (the
-commit decides).
+commit decides); `world-objects {methods: true}` names each listed object's turnable methods.
 
-Evidence for HOST-HANDOFF 5.55 (layer: host). Refuted by a method the law refuses its caller listed
-`true` on a request-only clause, a permitted method listed refused, or a clause that reads the state
-answered as a refusal.
+Evidence for HOST-HANDOFF 5.55 and 5.56 (layer: host). Refuted by a method the law refuses its caller
+listed `true` on a request-only clause, a permitted method listed refused, a clause that reads the state
+answered as a refusal, or a listing whose methods name an object the reader may not view or a method a
+turn cannot run.
 
     python3 -W error -m unittest tests.test_inspect_reads -v
 """
@@ -46,6 +47,21 @@ class Admits(Reflection):
         # The verdict is the commit's for the request-only clauses.
         refused = self.turn("probe", "bump2", record(n=nat(1)), principal="kim")
         self.assertEqual((refused["receipt"]["outcome"]["class"], refused["receipt"]["outcome"]["clause"]), ("lawRefused", "owner"))
+
+
+class Listed(Reflection):
+    def test_methods_true_names_each_listed_objects_turnable_methods(self):
+        self.open_library()
+        self.make("probe", PROBE, record(count=nat(0), seen=label("")))
+        self.make("vault", PROBE, record(count=nat(0), seen=label("")), read={"principals": ["ember"]})
+        plain = self.host.send(op="world-objects", principal="kim")
+        self.assertNotIn("methods", plain)
+        r = self.host.send(op="world-objects", principal="kim", methods=True)
+        self.assertEqual(r["ids"], ["probe"], r)
+        table = self.host.send(op="world-inspect", principal="kim", object="probe")["methods"]
+        self.assertEqual(r["methods"], {"probe": [m["name"] for m in table if m["context"]]})
+        self.assertEqual(set(self.host.send(op="world-objects", principal="ember", methods=True)["methods"]), {"probe", "vault"})
+        self.assertEqual(self.host.send(op="world-objects", principal="kim", methods="yes")["status"], "error")
 
 
 if __name__ == "__main__":
