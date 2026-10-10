@@ -1,5 +1,6 @@
 import Delvetalk.Package
 import Delvetalk.Host.Session
+import Delvetalk.Host.Spell
 
 namespace Delvetalk.PackageSession
 open Lean (Json toJson)
@@ -170,6 +171,7 @@ def step (cache : Cache) (request : Json) (world : Option Host.World := none) : 
       | (cache, .ok (artifact, _)) => (cache, .ok (compiledReply artifact))
       | (cache, .error e) => (cache, .error e)
   | .ok "packet-cache-status" => (cache, .ok (status cache))
+  | .ok "spell-parse" => (cache, Host.Spell.op request)
   | .ok operation =>
       if ["run", "run-data-v1", "turn-start", "turn-resume"].contains operation then
         match request.getObjVal? "artifact" with
