@@ -3,8 +3,7 @@
 Mounted by the front (transport/http.py) at /xrpc/<nsid> and /.well-known/did.json. Every record is a host
 reply carried verbatim with `$type` added; the host decides what a reader sees: an unauthenticated request
 reads as PUBLIC, a bearer credential as its principal. docs/REPO.md says what is served, what is not, and
-the host ops this asks for (world-entries, world-entry, world-object, world-source, world-sources,
-world-grants, and world-publications open to every reader).
+the host ops it reads.
 """
 import base64
 import re
