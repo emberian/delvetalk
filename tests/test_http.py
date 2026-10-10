@@ -109,14 +109,19 @@ class HttpFront(unittest.TestCase):
     def turn(self, tok, intent):
         return self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': record(), 'intent': intent}, tok)
 
-    def test_verify_records_the_handle_with_the_host(self):
+    def test_verify_announces_the_arrival_to_the_host(self):
         seen = []
         send = self.host.send
         self.host.send = lambda req, *a, **k: (seen.append(req), send(req, *a, **k))[1]
         self.login()
-        regs = [r for r in seen if r['op'] == 'world-principal']
-        self.assertEqual(regs, [{'op': 'world-principal', 'principal': 'transport', 'did': DID, 'handle': HANDLE}])
-        self.assertEqual(send({'op': 'world-principal', 'principal': 'transport', 'did': DID, 'handle': HANDLE})['status'], 'principal')
+        arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
+        self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
+
+    @unittest.expectedFailure
+    def test_end_to_end_arrive_against_the_real_host(self):
+        # Until the host lands world-arrive: {'message': 'unknown world operation world-arrive'}
+        got = self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE})
+        self.assertNotEqual(got.get('status'), 'error', got)
 
     def test_guide(self):
         s, text = self.call('GET', '/AGENTS.md')

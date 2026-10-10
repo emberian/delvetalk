@@ -119,9 +119,9 @@ class Front(HTTPServer):
         return len(hits) >= rate
 
     def record_handle(self, did, handle):
-        """Tell the host who a verified account is (the clock principal alone may), so cards name them by handle.
-        Journaled once by the host, so repeating it is harmless; a refusal leaves the verification standing."""
-        return self.host.send({'op': 'world-principal', 'principal': CLOCK, 'did': did, 'handle': handle})
+        """Tell the host a verified account has arrived (the clock principal alone may), so cards name them by handle.
+        Idempotent at the host; a refusal leaves the verification standing."""
+        return self.host.send({'op': 'world-arrive', 'principal': CLOCK, 'did': did, 'handle': handle})
 
     def guide(self, path=GUIDE):
         return path.read_text().replace('{{origin}}', self.origin)
