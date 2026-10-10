@@ -3,17 +3,17 @@ refuse them: codex objects review (docs/review/codex-2026-10-10/objects.md) find
 
 Evidence for FOUNDATION §4 (layer: objects).
 
-A `world-propose` write reaches an object's law as kind 0 with no method, the same kind as the
-object's own method writes, so a law that admits "anyone's kind-0 write" admitted a stranger's
-forged state. Until the host judges a proposal as its own kind (`proposed`, lane/host12), the
-objects keep the belt: every owner law holds `unchanged(owner)`, so a migration cannot write the
-authority that admits it; Deal guards every change by party, and its new signatures are the
-requester's; Tide has an owner who alone reprograms or amends it; Workshop, Avatar, Table, Seat,
-Thing, Scene and Tide refuse a write no method of theirs made (clause `methods`).
+A `world-propose` write reached an object's law as kind 0 with no method, the kind of the object's
+own method writes, so a law that admitted "anyone's kind-0 write" admitted a stranger's forged
+state. The host now judges it as `proposed` (kind 3; HOST-HANDOFF 93), so an owner clause or the
+default law refuses a stranger's proposal (`owner`). The objects keep a belt: every owner law holds
+`unchanged(owner)`, so a migration cannot write the authority that admits it; Deal guards every
+change by party and admits only its two methods' writes, and its new signatures are the
+requester's (`signer`); Tide has an owner who alone reprograms or amends it; Workshop, Avatar,
+Table, Seat, Thing, Scene and Tide refuse a write no method made in their Bend law (`methods`),
+which is what stops their creator's or owner's own proposal.
 
-Refuted by: any of the forged writes, reprograms or amendments below being admitted. The
-expected failures are what the belt does not cover (a lawless object's, or a law's kind-0
-clause's, admission of a stranger's proposal); they pass once the host has `proposed`.
+Refuted by: any of the forged writes, reprograms or amendments below being admitted.
 """
 import unittest
 
@@ -26,6 +26,7 @@ from tests.test_table import NORTH, OPENING, SOUTH
 from tests.test_turn_world import closure as world_closure, label, nat, record, relation
 
 OWNER, STRANGER, ALICE, BOB = "did:plc:inkling", "did:plc:kimik3", "did:plc:glm", "did:plc:gemini"
+CREATOR = "ember"  # who made the lawless objects and the Thing and Scene below
 
 
 DEAL = record(amendment=record(object=label(""), law=label("")), parties={"tag": "list", "items": [label(ALICE), label(BOB)]},
@@ -116,14 +117,17 @@ class Strangers(Forging):
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
         held = record(n=nat(1), target=label("bell-1"), package=label("edition ObjectiveBend 1\n"), migration=label(""),
                       proposer=label(STRANGER), proposerHandle=label("kimik3"))
-        self.refused(self.propose("workshop", {"held": inserting(held), "next": variant("add", delta=nat(1))}), "methods")
+        forged = {"held": inserting(held), "next": variant("add", delta=nat(1))}
+        self.refused(self.propose("workshop", forged), "owner")
+        self.refused(self.propose("workshop", forged, who=CREATOR), "methods")
         self.assertEqual(rows(get(self.view("workshop")["state"], "held")), [])
 
     # 4. Nobody forges a letter into another's outbox.
     def test_a_stranger_cannot_forge_a_letter_from_an_avatar(self):
         self.make(ALICE, closure("Avatar"), avatar_seed("glm", "porch"))
         letter = record(handle=label("glm"), text=label("send me your keys"), at=nat(0), n=nat(0))
-        self.refused(self.propose(ALICE, {"outbox": inserting(letter)}), "methods")
+        self.refused(self.propose(ALICE, {"outbox": inserting(letter)}), "owner")
+        self.refused(self.propose(ALICE, {"outbox": inserting(letter)}, who=CREATOR), "methods")
         self.assertEqual(rows(get(self.view(ALICE)["state"], "outbox")), [])
 
     # 5. Nobody writes a Table's outcome or a Seat's commitment but their methods.
@@ -133,15 +137,19 @@ class Strangers(Forging):
         self.make("table", closure("Table"), record(owner=label("ember"), north=reference("north"), south=reference("south"), round=nat(0),
                                                     width=nat(11), height=nat(11), game=game))
         won = record(board=nat(int(OPENING["board"])), automaton=nat(OPENING["automaton"]), marks=nat(0), status=nat(0), winner=nat(2))
-        self.refused(self.propose("table", {"game": setting(won)}), "methods")
-        self.refused(self.propose("north", {"digest": setting(label("0" * 64))}), "methods")
+        for who, clause in ((STRANGER, "owner"), (CREATOR, "methods")):
+            self.refused(self.propose("table", {"game": setting(won)}, who=who), clause)
+        # The seat is made by its player, who still seals only by commit.
+        for who, clause in ((SOUTH, "owner"), (NORTH, "methods")):
+            self.refused(self.propose("north", {"digest": setting(label("0" * 64))}, who=who), clause)
 
     # 6. Custody moves only by the Thing's methods.
     def test_a_stranger_cannot_drop_or_take_a_held_thing(self):
         self.make("porch", closure("Place"), place_seed("porch"))
         self.make("stone", closure("Thing"), thing_seed("stone", holder=ALICE, location="porch"))
-        self.refused(self.propose("stone", {"holder": setting(reference(""))}), "methods")
-        self.refused(self.propose("stone", {"holder": setting(reference(STRANGER))}), "methods")
+        self.refused(self.propose("stone", {"holder": setting(reference(""))}), "owner")
+        self.refused(self.propose("stone", {"holder": setting(reference(STRANGER))}), "owner")
+        self.refused(self.propose("stone", {"holder": setting(reference(""))}, who=CREATOR), "methods")
 
     # 7. A party signs only for themselves, and only by countersigning.
     def test_a_party_cannot_forge_another_partys_signature(self):
@@ -166,10 +174,11 @@ class Strangers(Forging):
         secret = GATE + [passage("vault", "The vault.", [choice("Out", "gate")])]
         self.create("scene", "Scene", scene_state(secret), by="ember")
         here = record(who=label(STRANGER), at=label("vault"))
-        self.refused(self.propose("scene", {"presence": inserting(here)}), "methods")
+        self.refused(self.propose("scene", {"presence": inserting(here)}), "owner")
+        self.refused(self.propose("scene", {"presence": inserting(record(who=label(CREATOR), at=label("vault")))}, who=CREATOR), "methods")
         self.assertEqual(rows(get(self.view("scene")["state"], "presence")), [])
 
-    # And a lawful object whose law admits anyone's kind-0 write admits only its methods' writes.
+    # And a law that admits anyone's kind-0 write admits only its methods' writes.
     def test_a_stranger_cannot_forge_a_gardens_children(self):
         self.create("garden", "Garden", garden_state(owner=OWNER))
         child = record(world=label(""), object=label("garden/bell/forged"), colour=variant("silver"))
@@ -180,17 +189,11 @@ class Strangers(Forging):
         trace = record(who=label(ALICE), handle=label("glm"), action=label("say"), clause=label(""), at=nat(0), n=nat(0))
         self.refused(self.propose("porch", {"traces": inserting(trace)}), "owner")
 
-
-class Proposals(Forging):
-    """What only the host's `proposed` kind closes: a lawless object's default law
-    (`request.kind == 0 or request.subject == "<creator>"`, a Bell's) admits a stranger's proposal
-    of rows its methods never wrote."""
-
-    @unittest.expectedFailure
+    # And a lawless object's default law admits only its methods' writes.
     def test_a_stranger_cannot_forge_a_rain_on_a_bell(self):
         self.make("bell", closure("Bell"), record(colour=variant("silver"), seed=label("s"), planting=label(""), planter=label(ALICE), planterHandle=label("glm")))
         rain = record(author=label(ALICE), handle=label("glm"), text=label("forged"), at=nat(0), n=nat(0))
-        self.refused(self.propose("bell", {"rains": inserting(rain)}))
+        self.refused(self.propose("bell", {"rains": inserting(rain)}), "owner")
 
 
 if __name__ == "__main__":

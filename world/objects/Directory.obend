@@ -40,7 +40,7 @@ sum Answer:
 # law in source means a Directory is made with world-create, never by a creator that imports
 # it. Past 4,096 greeted the host drops the oldest row, and insertOnly counts a dropped row as
 # kept.
-law owner "the owner never changes; only the owner changes the doors or the policy, and anyone else only by its methods": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and not (request.method == "") and unchanged(doors) and unchanged(policy)))
+law owner "the owner never changes; only the owner changes the doors or the policy, and anyone else only by its methods": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(doors) and unchanged(policy)))
 law greeted "anyone's summons only adds to who was greeted": request.subject == new.owner or insertOnly(greeted)
 def initial() -> State:
   {owner: "", doors: Relations.empty(), greeted: Relations.empty(), policy: Plans.nobody()}

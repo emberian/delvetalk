@@ -22,7 +22,7 @@ def initial() -> State:
   {owner: "", name: "", description: "", exits: Lists.List.nil(), present: Relations.empty(), things: Relations.empty(), traces: Relations.empty()}
 # Anyone comes and goes, takes and puts (the methods check who); only the owner renames or
 # redescribes the room, reprograms it or amends its law.
-law owner "the owner never changes; only the owner renames, redescribes or reprograms it; anyone comes and goes by its methods": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and not (request.method == "") and unchanged(name) and unchanged(description) and unchanged(exits)))
+law owner "the owner never changes; only the owner renames, redescribes or reprograms it; anyone comes and goes by its methods": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(name) and unchanged(description) and unchanged(exits)))
 def relations() -> Relations.Decls:
   Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "present", key: Text.words("object"), limit: 256n}), {field: "things", key: Text.words("object"), limit: 256n}), {field: "traces", key: Text.words("at who action n"), limit: 64n})
 sum Why:
