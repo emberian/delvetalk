@@ -120,6 +120,18 @@ class Hostd(unittest.TestCase):
                     stop_hostd(dd)
         self.assertEqual([r.get('opener') for r in opened if r['op'] == 'world-open'][:1], [DID])
 
+    def test_the_sealed_library_holds_the_packages_arrival_creates_from(self):
+        import tempfile as tf
+        from transport.hostproc import LIBRARY
+        who = 'did:plc:' + 'q' * 24
+        with tf.TemporaryDirectory() as d2:
+            dd = start_hostd(d2, opener=DID, library=LIBRARY)
+            try:
+                got = HostClient(Path(d2) / 'host.sock').send({'op': 'world-arrive', 'principal': 'transport', 'did': who, 'handle': 'q.delve.town'})
+                self.assertEqual([c['object'] for c in got.get('created', [])], [who, 'env/' + who, 'wake/' + who], got)
+            finally:
+                stop_hostd(dd)
+
     def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
         import tempfile as tf
         from transport.hostproc import LIBRARY

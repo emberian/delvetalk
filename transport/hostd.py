@@ -14,12 +14,13 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 import socketserver
 import sys
 import threading
 from pathlib import Path
 
-from transport.hostproc import BINARY, DID_RE, LIBRARY, Heaps, Host
+from transport.hostproc import ARRIVAL, BINARY, DID_RE, LIBRARY, OBJECTS, Heaps, Host
 
 CLOCK = 'transport'  # the clock principal named at world-open
 EX_TEMPFAIL = 75
@@ -39,6 +40,16 @@ def take_lock(path):
     return fd
 
 
+def sealed_library(library, directory):
+    """<directory>: the library plus the packages arrival creates from (world/objects/{Avatar,Env,Wake,Place}),
+    rebuilt at each start; this is what hostd seals into the world."""
+    shutil.rmtree(directory, ignore_errors=True)
+    shutil.copytree(library, directory)
+    for name in ARRIVAL:
+        shutil.copyfile(OBJECTS / f'{name}.obend', Path(directory) / f'{name}.obend')
+    return directory
+
+
 class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
 
@@ -47,6 +58,7 @@ class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock_fd = take_lock(lock or self.state / 'journal.lock')  # before anything else is touched
         self.binary, self.order = binary, threading.Lock()
+        library = sealed_library(library, self.state / 'library') if library else None
         self.shared = Host(str(journal), binary, clock=CLOCK, opener=opener, library=library, librarian=opener)
         self.stateless = Host(None, binary)
         self.heaps = Heaps(self.state / 'heaps', binary=binary, library=library)
@@ -105,7 +117,7 @@ def main(argv=None):
     ap.add_argument('--journal', required=True)
     ap.add_argument('--lock', help='lock file (default <state>/journal.lock)')
     ap.add_argument('--opener', default=os.environ.get('DELVETALK_OPENER'), metavar='DID', help="the world's opener (ember's DID); only the opener may create objects with an owner")
-    ap.add_argument('--library', default=LIBRARY, help="the standard library sealed into each journal at its first open, as the "
+    ap.add_argument('--library', default=LIBRARY, help="the standard library sealed into each journal at its first open (with the packages arrival creates from), as the "
                     "opener's (each heap's as its owner's), so packages import it by name; '' for none")
     a = ap.parse_args(argv)
     try:
