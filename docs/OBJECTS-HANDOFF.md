@@ -117,12 +117,11 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   upserts that speaker's pending row) cost a second interpretation of the later one
   (`test_policy ...checkpoint_blocks_once`). Two host behaviours to know: (1) a package
   any of whose modules declares `relations()` has the ENTRY module's `relations()`
-  compiled, so a creator importing Bell, or a Cistern dug from Garden's chain, must declare
-  its own (Cistern declares none; `tests/test_chain.maker_source` does the same for the test
-  creator), else creation fails "missing selected entry"; (2) that compile runs at every
-  creation: 20 bells 6.7 s with `relations()` and 0.31 s without, so
-  `test_journal.Maximum` (200 bells under 10 s) is an expectedFailure until the host reads
-  `relations` from the artifact. Wire: a relation is
+  compiled, so a package importing a module that declares relations (Thing and Avatar import
+  Place) or an object made from such a chain (a Cistern dug from Garden's) must declare its
+  own (they declare none), else creation fails "missing selected entry"; (2) that compile
+  runs at every creation: 20 bells 6.7 s with `relations()` and 0.31 s without (the test
+  lane has since dropped `test_journal.Maximum`'s wall-clock bound). Wire: a relation is
   `{"tag": "variant", "label": "rows", "payload": {items: [...]}}`; `tests.test_replay.rows`
   reads one, `tests.test_turn_world.relation` builds one.
 * **Costs** (hbox, `tests/test_relation_lib.py`, with canonicalCompare): `joinOn` of two
@@ -130,3 +129,22 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   §4's "a few thousand ticks" for two hundred-row relations is two orders low); `fromList` of
   64 reversed rows 57,457. So a card joins at most a few dozen rows per turn, and sorting
   belongs to the host.
+
+## 2. Limits found
+
+- An await only proves that some turn with that identity was admitted. A turn suspended on an object resumes refused `staleRoot` if anything wrote that object meanwhile, unless its writes are all keep/add/append (they commute).
+- `run` refuses variant arguments and recursive results: build in a probe module.
+- A kernel hint can mislead: an unbalanced parenthesis is reported with "there is no Maybe builtin" or "definitions are `def name(x: T) -> U:`".
+- `transport/http.py` `MAX_BODY` (64 KiB) answers 413 for a larger body.
+
+## 3. Directory of objects
+
+Counter, Garden, Bell, Cistern, Anthology (owner admits), Directory (owner adds and removes), Door, Lantern, Loop, Place, Thing, Avatar (mailbox: subscribe, send, unsubscribe; handle lens), Policy (owner law with `request.method`; lenses), Workshop (check prints the checker's hint under its problem; inspect; propose), Env, Wake, Tide, Appointments/Appointment, Deal, Seat and Table, Scene (passages and choices as data; enter, choose, leave), Commons (places, paths, ways in, gates: open, members, object).
+
+## 4. Open
+
+- Place cannot declare a law while Thing and Avatar import it for State and Done (both still `import ./Place.obend`). Closes when those types move to a library module, as Seats did.
+- An addressee `slot` reaches receive but no object reads it (`Heard` is `{text, post}`).
+- A Scene passage is not editable once made; spween `tags`, custom fields, floats and negative numbers are skipped or compared as text; a scene near the 16 x 8 limit has not been measured.
+- A kernel word-set builtin would remove the per-word loop cost of `Card.mentions`.
+- Garden's `plant {colour}` should be `Bell.Colour` (a sum of empty cases), so the method table offers a `choice`. Tried (objects6) and held back: a model's JSON proposal and an HTTP form POST both send the colour as text, and the host does not take a label for an empty-payload case, so the JSON proposals of `test_policy` answer `unclear`. Needs the host to fit a label to the case of that name where the input type is such a sum (`interpretVerdict`'s `jsonData` path and world-turn arguments); then the Garden change is one line plus the tests' four `plant` calls.
