@@ -253,6 +253,16 @@ def initial() -> State:
         self.assertEqual((r["status"], r["receipt"]["outcome"].get("clause")), ("refused", "grow"), r)
         self.assertEqual([at for _, at, _ in self.rows("r")], [1, 2])
 
+    def test_state_bytes_are_the_canonical_encodings(self):
+        # The objects lane's finding (OBJECTS-HANDOFF §4): 2,048 short rows are some 600 KB of wire
+        # JSON but about 150 KB as the host holds them; the 256 KiB bound counts the latter.
+        author = "did:plc:" + "a" * 24
+        rows = [rain(author, i, "a short rain line %04d" % i) for i in range(2048)]
+        r = self.make_bell(record(rains=relation(*rows)), name="wide", limit=2048)
+        self.assertEqual(r["status"], "created", r)
+        held = self.host.send(op="world-inspect", principal="ember", object="wide", source=False)["stateBytes"]
+        self.assertLess(held, 262144)
+
 
 def key(author, at):
     return record(author=label(author), at=nat(at))

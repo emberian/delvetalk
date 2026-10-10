@@ -242,8 +242,10 @@ partial def compressedSize : Json → Nat
     let (n, count) := kvs.foldl (fun (n, c) k v => (n + (Json.renderString k "").utf8ByteSize + 1 + compressedSize v, c + 1)) (0, 0)
     2 + n + (count - 1)
 
-/-- The bytes of a state as the bound counts them: its wire JSON, compressed. -/
-def stateBytes (state : Data) : Nat := compressedSize (dataJson state)
+/-- The bytes of a state as the bound counts them: the canonical DAG-CBOR of the Data
+    (`Delvetalk.Canonical.encode`), not its verbose wire JSON, where a relation row cost about 150
+    bytes of tags and names (the Anthology refused its 631st short line). -/
+def stateBytes (state : Data) : Nat := (Delvetalk.Canonical.encode state).size
 
 /-- The CID of an object's state: its canonical bytes as the journal hashes them, so a root
     names exactly the card version a turn was judged against. -/
@@ -2084,6 +2086,24 @@ def subscriptionsAfter (w : World) (entry : Json) : Std.HashMap String (Array Su
           subs := subs.insert object ((subs.getD object #[]).filter fun y => !(y.sameAs x && y.principal == principal))
   return subs
 
+/-- The reservations after an entry: `reserved` adds one (a released intent reserved again counts a
+    round), `released` and a `posted` naming an `intent` settle it. -/
+def reservationsAfter (w : World) (entry : Json) : Std.HashMap String Reservation :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let intent := (outcome.getObjValAs? String "intent").toOption
+  match tagOf entry, intent with
+  | "reserved", some i =>
+    let round := ((w.reservations[i]?).map (·.round + 1)).getD 0
+    w.reservations.insert i { source := (outcome.getObjValAs? String "source").toOption.getD "",
+                              hour := (outcome.getObjValAs? Nat "hour").toOption.getD 0, round }
+  | "released", some i => match w.reservations[i]? with
+    | some r => w.reservations.insert i { r with released := true }
+    | none => w.reservations
+  | "posted", some i => match w.reservations[i]? with
+    | some r => w.reservations.insert i { r with posted := true }
+    | none => w.reservations
+  | _, _ => w.reservations
+
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
   let index := w.entries.size
@@ -2137,6 +2157,13 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
           | _, _ => w.handles
         | none => w.handles
       else w.handles
+    reservations := reservationsAfter w entry
+    attempts := if tagOf entry != "attempted" then w.attempts else
+      match (entry.getObjVal? "outcome").toOption with
+      | some o => match o.getObjValAs? String "id", o.getObjValAs? Nat "attempt", o.getObjValAs? Nat "next" with
+        | .ok id, .ok n, .ok next => w.attempts.insert id (n, next)
+        | _, _, _ => w.attempts
+      | none => w.attempts
     interpretsStarted := if tagOf entry != "suspended" then w.interpretsStarted else
       match (entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "interpretation" |>.toOption),
           (entry.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption) with
@@ -2645,6 +2672,14 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
     | .ok (.null) | .error _ => pure none
     | .ok s => pure (some (← parseSlot s))
   let (page, part) ← postedPage j
+  -- The reservation the post settles (HOST-HANDOFF 5.107), when the transport reserved one.
+  let reserved ← match (j.getObjValAs? String "intent").toOption with
+    | none => pure none
+    | some i =>
+      match w.reservations[i]? with
+      | some r => if r.released then throw s!"the reservation of {i} was released" else
+          if r.posted then throw s!"the reservation of {i} is already posted" else pure (some i)
+      | none => throw s!"no reservation of {i}; reserve it with world-post-reserve first"
   -- An AT post, or a message of the Zulip playtest transport (`zulip://<stream>/<topic>/<id>`).
   unless postSchemes.any (fun (p : String) => uri.startsWith p) do
     throw s!"uri must be an at:// or zulip:// URI, not {(uri.splitOn "://").head!}://"
@@ -2653,7 +2688,8 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
   unless w.objects.contains object do throw s!"unknown object {object}"
   let fields := [("tag", toJson "posted"), ("uri", toJson uri), ("cid", toJson cid), ("object", toJson object)] ++
     (slot.map fun s => [("slot", s)]).getD [] ++
-    (if page.isEmpty then [] else [("page", toJson page), ("section", toJson part)])
+    (if page.isEmpty then [] else [("page", toJson page), ("section", toJson part)]) ++
+    (reserved.map fun i => [("intent", toJson i)]).getD []
   let digest := Journal.bodyHash (Json.mkObj fields)
   let answer := fun (entry : Json) => Json.mkObj [("status", toJson "posted"),
     ("height", (entry.getObjVal? "height").toOption.getD Json.null), ("receipt", entry)]
@@ -2666,6 +2702,78 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
       [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
        ("request", toJson digest), ("outcome", Json.mkObj fields)] [object]
     return (w', answer entry)
+
+/-- The clock hour posts are counted in (60 clock units, as `interpretQuota` counts). -/
+def postHour (w : World) : Nat := w.clock / 60
+
+/-- The source whose posts count against `postQuota` (delve.town's etiquette; Zulip has none). -/
+def quotaSource : String := "delve"
+
+/-- Reservations of `source` standing in the current hour (not released). -/
+def postsUsed (w : World) (source : String) : Nat :=
+  w.reservations.fold (fun n _ r => if r.source == source && r.hour == postHour w && !r.released then n + 1 else n) 0
+
+/-- Would a reservation of `source` now be refused? The clock at which the next may be made. -/
+def postRefusal (w : World) (source : String) : Option Nat :=
+  if source == quotaSource && postsUsed w source ≥ w.postQuota then some ((postHour w + 1) * 60) else none
+
+/-- `world-post-reserve {principal: clock, intent, source}` (HOST-HANDOFF 5.107): admit one post of
+    `intent` before the network is touched. `delve` posts count against the journaled `postQuota` per
+    clock hour and are refused `quota {next}` past it; another source reserves without a count. The
+    reservation is journaled `reserved {intent, source, hour}` under `(clock, "post:" intent)`, so a
+    retry of the intent answers it again and takes no second slot; an intent released is reserved
+    anew. -/
+def postReserveOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let intent ← boundedText "intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
+  let source ← boundedText "source" Limits.maxSourceBytes (← j.getObjValAs? String "source")
+  if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
+    throw s!"posts are reserved only by {w.clockPrincipal}"
+  let round := match w.reservations[intent]? with
+    | some r => if r.released then r.round + 1 else r.round
+    | none => 0
+  let key := s!"post:{intent}" ++ (if round == 0 then "" else s!"/{round}")
+  let digest := Journal.bodyHash (Json.mkObj [("intent", toJson intent), ("source", toJson source)])
+  if let some r := retained w principal key digest then return (w, r)
+  if let some next := postRefusal w source then
+    return (w, Json.mkObj [("status", toJson "refused"), ("class", toJson "quota"), ("source", toJson source),
+      ("reason", toJson s!"{w.postQuota} {source} posts an hour; the next at clock {next}"), ("next", toJson next)])
+  let (w', entry) := push w (identityKey principal key)
+    [("identity", identityJson principal key), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson digest), ("outcome", Json.mkObj [("tag", toJson "reserved"), ("intent", toJson intent),
+       ("source", toJson source), ("hour", toJson (postHour w))])] []
+  return (w', reply entry)
+
+/-- `world-post-release {principal: clock, intent, reason}`: give back a reservation whose post
+    certainly did not leave (credentials unreadable, the request refused before the network); never
+    one that may have landed. Journaled `released {intent, reason}`; releasing it again answers
+    without an entry. -/
+def postReleaseOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let intent ← boundedText "intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
+  let reason ← j.getObjValAs? String "reason"
+  if reason.utf8ByteSize > Limits.maxHandleBytes then throw s!"reason must be at most {Limits.maxHandleBytes} bytes"
+  if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
+    throw s!"posts are released only by {w.clockPrincipal}"
+  let some r := w.reservations[intent]? | throw s!"no reservation of {intent}"
+  if r.posted then throw s!"{intent} was posted; a posted reservation stands"
+  if r.released then return (w, Json.mkObj [("status", toJson "released"), ("intent", toJson intent)])
+  let key := s!"release:{intent}/{r.round}"
+  let (w', entry) := push w (identityKey principal key)
+    [("identity", identityJson principal key), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson (Journal.bodyHash (Json.mkObj [("intent", toJson intent), ("reason", toJson reason)]))),
+     ("outcome", Json.mkObj [("tag", toJson "released"), ("intent", toJson intent), ("reason", toJson reason)])] []
+  return (w', reply entry)
+
+/-- `world-status.posts`: per source standing this clock hour, how many are reserved and, for the
+    counted source, the quota and the clock at which the next may be made. -/
+def postsStatus (w : World) : Json :=
+  let sources := (w.reservations.fold (fun acc _ r => if r.hour == postHour w && !acc.contains r.source then acc ++ [r.source] else acc)
+    [quotaSource])
+  Json.mkObj [("hour", toJson (postHour w)), ("sources", Json.arr (sources.toArray.map fun src =>
+    Json.mkObj ([("source", toJson src), ("used", toJson (postsUsed w src))] ++
+      (if src == quotaSource then [("quota", toJson w.postQuota),
+        ("next", match postRefusal w src with | some n => toJson n | none => Json.null)] else []))))]
 
 /-- `world-principal {principal, did, handle}`: the clock principal records the display handle
     of `did` (the bridge, at the first observed post of each author). Journaled as a
@@ -2921,6 +3029,25 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     discard <| outcome.getObjValAs? String "handle"
     if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "principal recorded by another principal"
     return record w entry key []
+  | "reserved" =>
+    if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "post reserved by another principal"
+    let source ← outcome.getObjValAs? String "source"
+    unless (← natField outcome "hour") == postHour w do throw "a reservation not in its clock hour"
+    if (postRefusal w source).isSome then throw "a reservation past its source's quota"
+    return record w entry key []
+  | "released" =>
+    if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "post released by another principal"
+    let some r := w.reservations[← outcome.getObjValAs? String "intent"]? | throw "release of an unknown reservation"
+    if r.posted || r.released then throw "release of a settled reservation"
+    return record w entry key []
+  | "attempted" =>
+    unless principal == interpretationPrincipal do throw "an attempt under another identity than the interpreter's"
+    let id ← outcome.getObjValAs? String "id"
+    unless w.suspended.any (fun s => ((s.getObjVal? "outcome").toOption.bind fun o => (o.getObjVal? "interpretation").toOption
+        |>.bind fun i => (i.getObjValAs? String "id").toOption) == some id) do
+      throw "an attempt at an unknown or settled interpretation"
+    unless (← natField outcome "attempt") == ((w.attempts[id]?).map (·.1)).getD 0 + 1 do throw "attempts out of order"
+    return record w entry key []
   | "posted" =>
     let uri ← outcome.getObjValAs? String "uri"
     let object ← outcome.getObjValAs? String "object"
@@ -2931,6 +3058,10 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       | .ok s => pure (some (← parseSlot s))
       | .error _ => pure none
     let (page, part) ← postedPage outcome
+    if let .ok i := outcome.getObjValAs? String "intent" then
+      match w.reservations[i]? with
+      | some r => if r.released || r.posted then throw "a post settles a settled reservation"
+      | none => throw "a post settles an unknown reservation"
     return record (postIndex w uri { object, slot, page, part, height := ← natField entry "height" }) entry key [object]
   | "suspended" =>
     let checkpoint ← expandSuspended w entry

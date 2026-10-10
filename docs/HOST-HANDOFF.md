@@ -829,6 +829,62 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    Zero extra model calls. Test: `tests/test_interpret_object.py` `SeveralSpells` (a World copy with the
    lines; two spells and a misfit, the second garden planting, a replay).
 
+107. **Posting reservations and model retries as host facts (host12; codex transport 9, 10; built as
+   designed, with the root's change: the quota is per source).** Python keeps custody (credentials, the network, the record key it fixes) and
+   decides nothing; every decision below is a journaled entry keyed by intent, so a restart, a second
+   process or a replay reaches the same answer. Clock units are the world clock's (`world-advance`;
+   an hour is 60, as `interpretQuota` counts).
+
+   *Posting (transport 9).* `world-post-reserve {principal: clock, intent, source}` admits one post of
+   `intent`; a `source: "delve"` post counts against `postQuota` (journaled, per clock hour) and past
+   it is refused `{status: refused, class: quota, next}` naming the clock at which a slot frees (no
+   entry: the count is the journal's); any other source (`zulip`) reserves without a count and is never
+   refused (delve.town's etiquette; Zulip has none); it journals `reserved {intent, hour}` under identity `(clock, "post:"+intent)`,
+   so a retry of the same intent returns the same reservation and takes no second slot. The count is
+   the hour's reservations minus its releases, never wall time or a directory. `world-post-release
+   {principal: clock, intent, reason}` journals `released` for a reservation whose post certainly did
+   not leave (credentials unreadable, the request refused before the network); a slot is never given
+   back for an ambiguous network failure, which the transport retries under its fixed record key.
+   `world-posted {…, intent}` (the existing op, gaining `intent`) settles the reservation: a
+   `posted` entry naming a reserved intent is that post's outcome, and posting without a reservation
+   is still admitted (a `posted` naming `intent` must settle a standing reservation; one without is
+   the transport's until it reserves). A released intent is reserved anew under `post:<intent>/<round>`.
+   The welcome command and the hand read the quota through `world-status.posts {hour, sources:
+   [{source, used, quota?, next?}]}` (`delve` always listed, with `quota` and `next`) and reserve before
+   sending; `transport/post.py`'s `take_slot` and `post-log.json` go. Replay re-checks a reservation's
+   hour and quota and a release's standing reservation.
+
+   *Model retries (transport 10).* `world-interpretation {id, reply}` takes every transport result
+   verbatim, failures included, and the host decides: a `failed` reply whose `reason` is transient
+   (`transport`, `rate`; the host's list) under `Limits.interpretAttempts` (8) journals `attempted
+   {id, attempt, reason, next}` (`next` = clock + 2^(attempt-1), at most 60) and answers `{status:
+   "retrying", attempt, next}`; the activity stays suspended. Any other reply, or the attempt past the
+   limit, is the verdict as today (`unclear {needs: ["model: <reason>"]}`). `world-interpretations`
+   lists each pending item with `attempts` and `next` (null when it may be asked now), and the
+   interpreter asks only items whose `next` has passed; its receipt files and `MAX_ATTEMPTS`/`BACKOFF`
+   go (it may keep a cache of a reply it could not submit, keyed by id, and resubmit it verbatim).
+   Built as written: `attempted` entries are keyed `(interpretation, "<id>/attempt/<n>")`, replay
+   checks their order, `World.attempts` holds `(n, next)`. Tests: `tests/test_post_reserve.py`
+   (`Reservations`, `Retries`); `test_policy` and `test_reflection` now fail a reply with a reason the
+   host does not retry. The principal's `interpretQuota` is spent once, when the interpretation starts
+   (`interpretsStarted`); retries spend none of it, and the `attempted` entries are the record of model
+   credit spent.
+
+108. **State bytes are canonical bytes (host12; OBJECTS-HANDOFF §4).** `stateBytes`, which
+   `Limits.maxStateBytes` and `maxSeedBytes` (256 KiB), the storage ledger and the creation charge
+   count, is the length of the Data's canonical DAG-CBOR (`Delvetalk.Canonical.encode`), not of its wire
+   JSON (about 150 B of tags and names per relation row: the Anthology refused its 631st short line).
+   `world-inspect` answers `stateBytes`. Measured on hbox, a Bell with 2,048 rains (a 32-byte DID
+   author, a 19-byte handle, `at` and `n` four digits) is 216,899 B with 20-character texts, about
+   86 B per row plus the text; at 60 characters 2,048 rows exceed the bound (about 297 KB), and at the
+   rain form's 280 at most about 716 rows fit. So a relation's `limit` must satisfy limit × (86 + its
+   widest text) ≤ 262,144 for the object to stay writable when full (retention cannot drop below the
+   byte bound): for the Bell 640 rows (worst case 234 KB), or 2,048 with a 40-character text. The
+   statement FOUNDATION's scale section should make: "a relation's declared limit times its widest row
+   fits in 256 KiB; the lazy cells (KERNEL-HANDOFF §15) are the real fix, after which the bound is
+   per cell". Test: `tests/test_relation.py` `test_state_bytes_are_the_canonical_encodings` (2,048 rows
+   that were 600 KB of wire JSON, created).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
