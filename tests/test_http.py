@@ -531,6 +531,7 @@ class Pages(FrontCase):
         self.assertEqual(s, 200)
         self.assertIn(b'2 planted, newest first:', page)
         self.assertIn(b'href="/play/plot"', page)
+        self.assertIn(b'colour: one of amber, violet, silver\nseed: &lt;text 1..80&gt;', page)  # the plant form, as a spell
         self.assertIn(b'prefers-color-scheme', self.request('GET', '/static/style.css')[2])
         self.assertEqual(self.request('GET', '/o/nowhere')[0], 404)
         self.assertEqual(self.request('POST', '/o/plot/spell', raw='text=x', headers={'Content-Type': FORM})[0], 404)  # speaking is /play/

@@ -65,7 +65,8 @@ def form(name, act):
         return T['f_typed'].format(method=e(act['name']), id=e(name))
     inputs = ''.join(T['f_' + f['kind']].format(name=e(f['name']), min=e(str(f['bounds'].get('min', ''))), max=e(str(f['bounds'].get('max', ''))),
                                                 options=''.join(f'<option>{e(o)}</option>' for o in f['bounds'].get('options', []))) for f in act['fields'])
-    return T['action'].format(href=e(quote(name, safe='/:')), method=e(act['name']), inputs=inputs)
+    return T['action'].format(href=e(quote(name, safe='/:')), method=e(act['name']), inputs=inputs,
+                              spell=T['spell'].format(spell=e(act['spell'])) if act.get('spell') else '')
 
 
 def dl(v):

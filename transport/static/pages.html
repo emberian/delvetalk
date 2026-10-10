@@ -95,7 +95,9 @@
 <!-- actions -->
 <section><h2>Actions</h2><p>Each runs a turn as you, the same turn the play page runs; the object's law decides.</p>{forms}</section>
 <!-- action -->
-<details class="action"><summary><span class="code">POST</span> {method}</summary><form method="post" action="/play/{href}"><input type="hidden" name="method" value="{method}">{inputs}<button>{method}</button></form></details>
+<details class="action"><summary><span class="code">POST</span> {method}</summary><form method="post" action="/play/{href}"><input type="hidden" name="method" value="{method}">{inputs}<button>{method}</button></form>{spell}</details>
+<!-- spell: the same call as a spell, for a reply -->
+<pre class="listing">{spell}</pre>
 <!-- f_text -->
 <label>{name} <small>text, {min} to {max} characters</small><input name="{name}" minlength="{min}" maxlength="{max}"></label>
 <!-- f_natural -->

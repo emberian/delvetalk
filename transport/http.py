@@ -203,10 +203,10 @@ def oid(obj):
 
 
 def shown(kind):
-    """A form field's kind as a spell line shows it."""
+    """A form field's kind as a spell line shows its value: a choice names its options, the rest their bounds."""
     if kind.get('tag') == 'choice':
-        return ' | '.join(kind.get('options') or [])
-    return f"{kind.get('tag')} {kind.get('min')}..{kind.get('max')}"
+        return 'one of ' + ', '.join(kind.get('options') or [])
+    return f"<{kind.get('tag')} {kind.get('min')}..{kind.get('max')}>"
 
 
 def actions(base, obj, inspected, only=None):
@@ -227,7 +227,7 @@ def actions(base, obj, inspected, only=None):
         if m['name'] == 'receive':
             out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'spell': "text: any action's spell, or prose"}})
             continue
-        spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: <{shown(f['kind'])}>\n" for f in form['fields'])
+        spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: {shown(f['kind'])}\n" for f in form['fields'])
         out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
                     **({'spell': spell} if 'receive' in forms else {})})
     return out
