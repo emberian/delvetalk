@@ -401,9 +401,9 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    Super` layer form in old snapshots) and its test; `utteranceBlock` in `expandInterpretation`; the
    `tokenTree.relative` refusal; `withoutCompiled` (replay compares reprograms and creations as
    journaled); the index edits `amend {index}`/`remove {index}`, `amendItem`/`removeItem` by index and
-   the class `outOfRange`; `via` on `call`/`send` (only `callVia`/`sendVia` name a grant). Kept:
-   `amend {item, change}`/`remove {item}` (item-addressed under the old labels; Plan.obend writes
-   `amendItem`/`removeItem`, so the objects lane may drop them) and `withBindingContext`'s
+   the class `outOfRange`; `via` on `call`/`send` (only `callVia`/`sendVia` name a grant). Kept then:
+   `amend {item, change}`/`remove {item}` (item-addressed under the old labels; host10 deleted them,
+   since no object writes them: `EditKind.amendItem`/`removeItem` only) and `withBindingContext`'s
    Context-carrying `turn-start` request, which `tests/test_layers.py` and the kernel tests send.
    Not deleted then: `receiveArgument` (host10 deleted it after transport2 stopped sending `slot`). Removing it failed `test_http`, `test_hypermedia`, `test_bridge` and
    `test_zulip`: `transport/http.py:113` sends `{text, post, slot: ""}` and the bridge and zulip tests'

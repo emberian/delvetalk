@@ -75,11 +75,10 @@ inductive EditKind where
   | set (value : Data)
   | add (delta : Nat)
   | append (item : Data)
-  /-- The first item whose canonical bytes are `item`'s, replaced by `change` or removed. The
-      label is the constructor the object used (`amendItem`/`removeItem` in Plan.obend, or
-      `amend`/`remove` with an `item` payload), kept so the journal records what was written. -/
-  | amendBy (label : String) (item change : Data)
-  | removeBy (label : String) (item : Data)
+  /-- The first item whose canonical bytes are `item`'s, replaced by `change` (`amendItem`) or
+      removed (`removeItem`). -/
+  | amendItem (item change : Data)
+  | removeItem (item : Data)
   /-- Relation edits (RELATIONAL.md §3), on a field the package declares a relation: a row added
       under its key (`insert` refuses a taken key with another row, `upsert` replaces it), or the row
       of a key removed (`retract`; an absent key is no change). -/
@@ -100,8 +99,8 @@ def EditKind.data : EditKind → Data
   | .set v => .variant "set" (.record [("value", v)])
   | .add n => .variant "add" (.record [("delta", .natural n)])
   | .append v => .variant "append" (.record [("item", v)])
-  | .amendBy l item c => .variant l (.record [("item", item), ("change", c)])
-  | .removeBy l item => .variant l (.record [("item", item)])
+  | .amendItem item c => .variant "amendItem" (.record [("item", item), ("change", c)])
+  | .removeItem item => .variant "removeItem" (.record [("item", item)])
   | .insert row => .variant "insert" (.record [("row", row)])
   | .upsert row => .variant "upsert" (.record [("row", row)])
   | .retract key => .variant "retract" (.record [("key", key)])
@@ -123,16 +122,12 @@ def parseKind : Data → Option EditKind
       | some (.natural n) => some (.add n)
       | _ => none
   | .variant "append" (.record f) => (f.lookup "item").map .append
-  | .variant "remove" (.record f) => (f.lookup "item").map (.removeBy "remove")
-  | .variant "amend" (.record f) => match f.lookup "item", f.lookup "change" with
-      | some item, some c => some (.amendBy "amend" item c)
-      | _, _ => none
-  | .variant "removeItem" (.record f) => (f.lookup "item").map (.removeBy "removeItem")
+  | .variant "removeItem" (.record f) => (f.lookup "item").map .removeItem
   | .variant "insert" (.record f) => (f.lookup "row").map .insert
   | .variant "upsert" (.record f) => (f.lookup "row").map .upsert
   | .variant "retract" (.record f) => (f.lookup "key").map .retract
   | .variant "amendItem" (.record f) => match f.lookup "item", f.lookup "change" with
-      | some item, some c => some (.amendBy "amendItem" item c)
+      | some item, some c => some (.amendItem item c)
       | _, _ => none
   | _ => none
 
@@ -542,8 +537,8 @@ def applyStep (decls : List RelDecl) (fields : List (String × Data)) (step : St
         | .natural m => put (.natural (m + n))
         | _ => throw "typeMismatch"
     | .append item => put (← appendItem item old)
-    | .amendBy _ item c => put (← editByItem item (some c) old)
-    | .removeBy _ item => put (← editByItem item none old)
+    | .amendItem item c => put (← editByItem item (some c) old)
+    | .removeItem item => put (← editByItem item none old)
     | .insert _ | .upsert _ | .retract _ => match decl with
       | some d => pure (replaceField acc e.field (← relationEdit d old e.kind))
       | none => throw "typeMismatch"
