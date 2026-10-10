@@ -14,7 +14,7 @@ import shutil
 import tempfile
 import unittest
 
-from tests.host import whole
+from tests.host import posted, whole
 
 from tests.test_chain import field
 from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
@@ -32,7 +32,7 @@ class Posts(Reflection):
         self.make("bell", PACKAGE, source_seed())
 
     def posted(self, uri=URI, principal="transport", **extra):
-        return self.host.send(op="world-posted", principal=principal, uri=uri, cid="bafyreiabc", object="bell", **extra)
+        return posted(self.host, principal=principal, uri=uri, cid="bafyreiabc", object="bell", **extra)
 
     def test_a_reply_to_a_recorded_post_finds_its_object_and_slot_and_a_stranger_post_is_unknown(self):
         r = self.posted(slot=SLOT)
@@ -54,11 +54,11 @@ class Posts(Reflection):
         first = self.posted()
         again = self.posted()
         self.assertEqual(again["height"], first["height"])
-        other = self.host.send(op="world-posted", principal="transport", uri=URI, cid="bafyreiother", object="bell")
+        other = posted(self.host, principal="transport", uri=URI, cid="bafyreiother", object="bell")
         self.assertEqual(other.get("class"), "duplicateIdentity", other)
 
     def test_a_post_for_an_unknown_object_or_a_non_at_uri_is_a_request_error(self):
-        self.assertEqual(self.host.send(op="world-posted", principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
+        self.assertEqual(posted(self.host, principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
         refused = self.posted(uri="https://example.com")
         self.assertEqual(refused, {"status": "error", "message": "uri must be an at:// or zulip:// URI, not https://"})
 
@@ -378,8 +378,8 @@ class Publish(Reflection):
 
     def test_a_reply_to_the_confirmed_post_finds_the_object(self):
         self.publish()
-        posted = self.host.send(op="world-posted", principal="transport", uri=URI, cid="bafyreipage", object="teller")
-        self.assertEqual(posted["status"], "posted", posted)
+        confirmed = posted(self.host, principal="transport", uri=URI, cid="bafyreipage", object="teller")
+        self.assertEqual(confirmed["status"], "posted", confirmed)
         self.assertEqual(self.host.send(op="world-addressee", parent=URI)["object"], "teller")
 
     def test_world_publications_lists_bodies_and_a_section_edit_replies_to_its_pages_newest_post(self):
@@ -400,14 +400,14 @@ class Publish(Reflection):
         self.assertNotIn("replyTo", whole)
         self.assertEqual(listing(after=whole["height"])["publications"], [])
         for i, uri in enumerate((URI, URI + "-checkpoint")):
-            r = self.host.send(op="world-posted", principal="transport", uri=uri, cid=f"c{i}", object="teller", page="teller", section="")
+            r = posted(self.host, principal="transport", uri=uri, cid=f"c{i}", object="teller", page="teller", section="")
             self.assertEqual(r["status"], "posted", r)
             self.assertEqual(listing()["publications"][0]["replyTo"], uri)  # the newest post of the page
         self.assertEqual(self.host.send(op="world-addressee", parent=URI),
                          {"status": "addressee", "object": "teller", "page": "teller", "section": ""})
         self.reopen()
         self.assertEqual(listing()["publications"][0]["replyTo"], URI + "-checkpoint")
-        bad = self.host.send(op="world-posted", principal="transport", uri=URI + "-2", cid="c", object="teller", section="Notes")
+        bad = posted(self.host, principal="transport", uri=URI + "-2", cid="c", object="teller", section="Notes")
         self.assertEqual(bad["status"], "error", bad)
 
     def test_a_title_with_a_line_break_is_refused(self):
@@ -615,7 +615,7 @@ class PostWaiterWorld(Reflection):
         self.make("card", POST_WAITER, record(note=label("")))
 
     def posted(self, uri, obj="w", **extra):
-        r = self.host.send(op="world-posted", principal="transport", uri=uri, cid="c", object=obj, **extra)
+        r = posted(self.host, principal="transport", uri=uri, cid="c", object=obj, **extra)
         self.assertEqual(r["status"], "posted", r)
 
     def reply(self, uri, parent, obj="w", text="hi", **fields):
@@ -922,7 +922,7 @@ class Settings(Reflection):
         self.assertEqual(self.host.send(op="world-advance", height=3)["status"], "error")
         self.assertEqual(self.host.send(op="world-advance", height=3, principal="mallory")["status"], "error")
         self.assertEqual(self.host.send(op="world-advance", height=3, principal="transport")["status"], "advanced")
-        mallory = self.host.send(op="world-posted", principal="mallory", uri=URI, cid="c", object="bell")
+        mallory = posted(self.host, principal="mallory", uri=URI, cid="c", object="bell")
         self.assertEqual(mallory["status"], "error")
         self.reopen()
         self.assertEqual(self.host.send(op="world-advance", height=4)["status"], "error")

@@ -9,6 +9,8 @@ The clock is `world-advance`; the host never reads wall time.
 """
 import unittest
 
+from tests.host import posted
+
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_replay import get, rows, silver
@@ -65,7 +67,7 @@ class Await(Chain):
         """The reply that answers the post: a turn on the hub with replyTo = post."""
         post = uri(post)
         if post not in self.recorded:
-            r = self.host.send(op="world-posted", principal="transport", uri=post, cid="c", object="hub")
+            r = posted(self.host, principal="transport", uri=post, cid="c", object="hub")
             self.assertEqual(r["status"], "posted", r)
             self.recorded.add(post)
         return self.host.send(op="world-turn", principal=who, object="hub", method="receive",

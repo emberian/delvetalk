@@ -852,8 +852,8 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    back for an ambiguous network failure, which the transport retries under its fixed record key.
    `world-posted {…, intent}` (the existing op, gaining `intent`) settles the reservation: a
    `posted` entry naming a reserved intent is that post's outcome, and posting without a reservation
-   is still admitted (a `posted` naming `intent` must settle a standing reservation; one without is
-   the transport's until it reserves). A released intent is reserved anew under `post:<intent>/<round>`.
+   is refused by name, "a post settles a reservation; name its intent" (transport reserves every live
+   post; the host suites post through `tests.host.posted`, which reserves under a test source first). A released intent is reserved anew under `post:<intent>/<round>`.
    The welcome command and the hand read the quota through `world-status.posts {hour, sources:
    [{source, used, quota?, next?}]}` (`delve` always listed, with `quota` and `next`) and reserve before
    sending; `transport/post.py`'s `take_slot` and `post-log.json` go. Replay re-checks a reservation's
@@ -931,6 +931,38 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    carries `reading` now, and `refusedWith` answers `{clause, reading: ""}` to a result shaped so
    (`Created`, `Programmed`, `Amended`). Plan.obend gains `record MadeFrom`; pins re-recorded. Test:
    `tests/test_make.py`.
+
+113. **The host's spells: `become` (host12; docs/CATALOGUE.md §2, higher-order cards).** A spell whose
+   action is one of `hostSpells` on a card that defines no form of that name is the host's
+   (`SpellRoute.host`, `hostSpell`), a direct turn's only (a call or delivery naming one is refused
+   `noAction`). `delvetalk <card> become / kind: <id>` lays the kind's `body` (any readable object whose
+   state has a non-empty text `body`: a layer source over the card's package) over the card: a reprogram
+   in extend mode by the speaker, judged by the card's own law (kind 1; the default law admits the
+   creator only), journaled under the turn's identity (a retry answers the receipt) with `madeFrom
+   {object: <kind>, pin, receipt: the entry that made the kind's current version}` on the reprogram
+   (`Proposal.madeFrom`; replay reads it back). Refusals: `missingField`, `unknownKind`, `noBody`
+   (badSpell), the law's, or `programRefused` with the compiler's diagnostic. `?` usage adds "The
+   host's spells for any card" with `become` when the law would admit the speaker's reprogram
+   (`kindAdmits`, as `methodAdmits` on the state as it stands). Test: `tests/test_extend.py` `HostSpells`.
+
+114. **`adopt` (host12; docs/CATALOGUE.md §2).** `delvetalk <card> adopt / law: <id>` appends the
+   named clause set to the card's law: the text `law` of a readable object (a kind, or a library page
+   kept as an object with a `law` field) after the card's current text, with its readings; an
+   amendment by the speaker, judged by the metarule and the card's law (kind 2), journaled under the
+   turn's identity. Refusals: `missingField`, `unknownLaw`, `noLaw`, `lawClash` (a clause name the law
+   already has), `law syntax`, or the law's. `?` lists it where the law would admit the speaker's
+   amendment. Test: `tests/test_extend.py` `test_adopt_appends_a_kinds_clauses_under_the_amend_metarule`.
+
+115. **`lend` (host12; docs/CATALOGUE.md §2).** `delvetalk <card> lend / to: <handle or me> / method:
+   <m> / until: +<n>` is the speaker's grant: grantor the speaker, holder and object the card, `to` the
+   principal the handle names in the registry (`me` the speaker; else as written), until clock now + n,
+   with `reading` "lent by <handle>: <m>, until clock N" (`Grant.reading`, journaled with the grant, for
+   the holder's card). Only a method the card offers and its law admits the speaker to run
+   (`methodAdmits`): else `notYours` ("The law of <card> does not let you run <m>, so you cannot lend
+   it."). The borrower's direct turn or spell of `m` on the card runs under the standing grant
+   (`lentVia`, `TurnMeta.via`), judged with the lender as subject, until the clock passes it or it is
+   revoked. `?` lists `lend` where the speaker may run some offered method. Test: `tests/test_extend.py`
+   `test_lend_grants_a_method_until_a_clock_and_the_borrower_runs_it_as_the_lender`.
 
 ## 6. Gotchas
 

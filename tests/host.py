@@ -234,6 +234,15 @@ def as_owner(host, reply, principal=None):
     return out
 
 
+def posted(host, intent=None, source="test", **request):
+    """`world-posted` as the transport makes it (HOST-HANDOFF 5.107): the post's reservation first, under
+    its intent (by default its uri; a source other than `delve` counts against no quota)."""
+    intent = intent or request["uri"]
+    principal = request.get("principal", "transport")
+    host.send(op="world-post-reserve", principal=principal, intent=intent, source=source)
+    return host.send(op="world-posted", intent=intent, **request)
+
+
 def card_texts(reply):
     """Every card and offer text in a host reply: what a reader sees, which never cites a hash."""
     out = []
