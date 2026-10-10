@@ -6,18 +6,6 @@ import Theory.ObjectiveBendDemandMachineFast
 import Theory.ObjectiveBendTypes
 namespace Minidregg.Theory.ObjectiveBendDemandData
 open ObjectiveBendDemandMachine
-def lengthBytes (n : Nat) : List UInt8 := (toString n).toUTF8.toList ++ [0]
-def encoded : Nat → Data → Option (List UInt8)
-  | 0,_ => none
-  | _+1,.natural n => some ([0] ++ lengthBytes n)
-  | _+1,.boolean b => some [1,if b then 1 else 0]
-  | _+1,.label s => some ([2] ++ lengthBytes s.utf8ByteSize ++ s.toUTF8.toList)
-  | depth+1,.record fields => do
-      let children ← fields.mapM fun field => do
-        pure (lengthBytes field.1.utf8ByteSize ++ field.1.toUTF8.toList ++ (← encoded depth field.2))
-      pure ([3] ++ lengthBytes fields.length ++ children.flatten)
-  | depth+1,.variant label payload => do
-      pure ([4] ++ lengthBytes label.utf8ByteSize ++ label.toUTF8.toList ++ (← encoded depth payload))
 inductive Failure where
   /-- Only machine tick suspension: forceWith exhausted its countdown. -/
   | tickExhausted
@@ -111,6 +99,57 @@ def naturalStepCost (primitive : ObjectiveBendOpenRecursion.Primitive) (a b : Na
   | .multiply => (linear + words, x + y)
   | .divide | .modulo => (linear + words, x)
   | _ => (linear, 0)
+
+/-! ## Canonical sizes: the bytes `Delvetalk.Canonical.encode` writes (checked there) -/
+
+/-- A CBOR head's bytes for argument `n`. -/
+def cborHeadBytes (n : Nat) : Nat :=
+  if n < 24 then 1 else if n < 256 then 2 else if n < 65536 then 3 else if n < 4294967296 then 5 else 9
+
+/-- A natural: its head below 2^64, else a byte string of its big-endian magnitude. -/
+def naturalCanonicalBytes (n : Nat) : Nat :=
+  if n < 18446744073709551616 then cborHeadBytes n else cborHeadBytes (naturalBytes n) + naturalBytes n
+
+def textCanonicalBytes (s : String) : Nat := cborHeadBytes s.utf8ByteSize + s.utf8ByteSize
+
+/-- A `cons` cell's size from its head's bytes and its tail's shape: an array one longer
+when the tail is a proper list, else the one-key map `{cons: {head, tail}}`. -/
+def consCanonicalShape (head : Nat) (tail : Option (Nat × Nat) × Nat) : Option (Nat × Nat) × Nat :=
+  match tail.1 with
+  | some (k, items) => (some (k + 1, items + head), cborHeadBytes (k + 1) + items + head)
+  | none => (none, 1 + textCanonicalBytes "cons" + 1 + textCanonicalBytes "head" + head +
+      textCanonicalBytes "tail" + tail.2)
+
+/-- A value's canonical size and, when it is a proper `nil`/`cons` chain (an array in
+canonical form), its element count and the elements' bytes. A record counts each field
+name once (the first, as the encoder keeps it). -/
+def Data.canonicalShape : Data → Option (Nat × Nat) × Nat
+  | .natural n => (none, naturalCanonicalBytes n)
+  | .boolean _ => (none, 1)
+  | .label s => (none, textCanonicalBytes s)
+  | .variant "nil" (.record []) => (some (0, 0), 1)
+  | .variant "cons" (.record [("head", h), ("tail", t)]) =>
+      consCanonicalShape (Data.canonicalShape h).2 (Data.canonicalShape t)
+  | .variant "cons" (.record [("tail", t), ("head", h)]) =>
+      consCanonicalShape (Data.canonicalShape h).2 (Data.canonicalShape t)
+  | .variant name payload => (none, 1 + textCanonicalBytes name + (Data.canonicalShape payload).2)
+  | .record fields =>
+    let unique := fields.attach.foldl (fun (acc : List String × Nat) field =>
+      if acc.1.contains field.1.1 then acc
+      else (field.1.1 :: acc.1, acc.2 + textCanonicalBytes field.1.1 + (Data.canonicalShape field.1.2).2)) ([], 0)
+    (none, cborHeadBytes unique.1.length + unique.2)
+termination_by d => sizeOf d
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have mem := List.sizeOf_lt_of_mem field.2
+       have pair : sizeOf field.1.2 < sizeOf field.1 := by
+         rcases field with ⟨⟨_, _⟩, _⟩; simp only [Prod.mk.sizeOf_spec]; omega
+       omega)
+
+/-- The exact size of a value's canonical DAG-CBOR: what the byte budget measures. -/
+def Data.canonicalBytes (d : Data) : Nat := d.canonicalShape.2
 
 /-- Hosted text work and exact result allocation bound, checked before
 `stepRaw` constructs a String. Ordinary pinned transitions retain unit cost.
@@ -210,7 +249,11 @@ def forceHostedWith (policy : State → Bool) (limits : Limits) (bytes ticks : N
   forceHostedFrom policy limits bytes ticks state state.stack.length
 
 /-- Materialization threads the remaining budget through failures as well as successes.
-Tick counts come directly from forceWith; failed children retain all earlier field spend. -/
+Tick counts come directly from forceWith; failed children retain all earlier field spend.
+Bytes: each scalar spends its canonical size as it is reached (the same in every context, so
+never more than the value's canonical bytes); records and variants spend nodes, and their
+heads, keys and labels are counted once the value is whole, by `Data.canonicalBytes`
+(a list's cells are no map in canonical form, only an array head). -/
 def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget → RuntimeValue → State → Except (Failure × State × Budget) Result
   | 0, budget, _, state => .error (.budget,state,budget)
   | depth+1, budget, value, state => do
@@ -218,28 +261,24 @@ def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget
     let remaining := {budget with nodes:=budget.nodes-1}
     match value with
     | .natural n =>
-      let bytes := (toString n).utf8ByteSize + 2
+      let bytes := naturalCanonicalBytes n
       if bytes > remaining.bytes then throw (.budget,state,remaining)
       pure ⟨.natural n,state,{remaining with bytes:=remaining.bytes-bytes}⟩
     | .boolean b =>
-      if remaining.bytes < 2 then throw (.budget,state,remaining)
-      pure ⟨.boolean b,state,{remaining with bytes:=remaining.bytes-2}⟩
+      if remaining.bytes < 1 then throw (.budget,state,remaining)
+      pure ⟨.boolean b,state,{remaining with bytes:=remaining.bytes-1}⟩
     | .label s =>
-      let bytes := s.utf8ByteSize + (toString s.utf8ByteSize).utf8ByteSize + 2
+      let bytes := textCanonicalBytes s
       if bytes > remaining.bytes then throw (.budget,state,remaining)
       pure ⟨.label s,state,{remaining with bytes:=remaining.bytes-bytes}⟩
     | .record fields =>
-      let headerBytes := (toString fields.length).utf8ByteSize+2
-      if headerBytes > remaining.bytes then throw (.budget,state,remaining)
-      let remaining := {remaining with bytes:=remaining.bytes-headerBytes}
       if (fields.map Prod.fst).eraseDups.length != fields.length then throw (.duplicateField,state,remaining)
       if fields.length > remaining.nodes then throw (.budget,state,remaining)
       let pair ← fields.foldlM (fun (prior : List (String × Data) × State × Budget) field => do
-        let bytes := field.1.utf8ByteSize+(toString field.1.utf8ByteSize).utf8ByteSize+1
-        if bytes > prior.2.2.bytes || prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
+        if prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
         let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}
         let (outcome,ticks) := forceHostedWith policy limits prior.2.2.bytes prior.2.2.ticks entered
-        let nextBudget := {prior.2.2 with ticks:=ticks,bytes:=prior.2.2.bytes-bytes}
+        let nextBudget := {prior.2.2 with ticks:=ticks}
         match outcome with
         | .finished forced retained =>
           let child ← materializeWith policy limits depth nextBudget forced retained
@@ -250,11 +289,10 @@ def materializeWith (policy : State → Bool) (limits : Limits) : Nat → Budget
         | .yielded _ retained => throw (.yielded,retained,nextBudget)) ([],state,remaining)
       pure ⟨.record pair.1.reverse,pair.2.1,pair.2.2⟩
     | .variant label payload =>
-      let bytes := label.utf8ByteSize+(toString label.utf8ByteSize).utf8ByteSize+2
-      if bytes > remaining.bytes || remaining.nodes = 0 then throw (.budget,state,remaining)
+      if remaining.nodes = 0 then throw (.budget,state,remaining)
       let entered : State := {state with control:=.enter payload,stack:=[]}
       let (outcome,ticks) := forceHostedWith policy limits remaining.bytes remaining.ticks entered
-      let nextBudget := {remaining with ticks:=ticks,bytes:=remaining.bytes-bytes}
+      let nextBudget := {remaining with ticks:=ticks}
       match outcome with
       | .finished forced retained =>
         let child ← materializeWith policy limits depth nextBudget forced retained
@@ -270,8 +308,7 @@ def completeWith (policy : State → Bool) (limits : Limits) (budget : Budget) (
   match state.control,state.stack with
   | .complete value,[] => do
     let result ← materializeWith policy limits budget.nodes budget value state
-    let some bytes := encoded budget.nodes result.value | throw (.budget,result.state,result.remaining)
-    if bytes.length > budget.bytes then throw (.budget,result.state,result.remaining)
+    if result.value.canonicalBytes > budget.bytes then throw (.budget,result.state,result.remaining)
     pure result
   | _,_ => .error (.suspended,state,budget)
 /-- A receiver keeps this exact graph-to-full-data correspondence alongside
@@ -414,6 +451,7 @@ def yieldedPlanWith (policy : State → Bool) (limits : Limits) (budget : Budget
     | (.finished forced retained,ticks) => do
       -- Materialization runs on the scratch copy; the checkpoint keeps its stack.
       let result ← materializeWith policy limits budget.nodes {budget with ticks:=ticks} forced retained
+      if result.value.canonicalBytes > budget.bytes then throw (.budget,result.state,result.remaining)
       pure {result with state:={result.state with control:=state.control,stack:=state.stack}}
     | (.suspended reason retained,ticks) => .error (suspensionFailure reason,retained,{budget with ticks := ticks})
     | (.divergent _ retained,ticks) => .error (.divergent,retained,{budget with ticks := ticks})

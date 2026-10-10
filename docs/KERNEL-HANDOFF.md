@@ -110,7 +110,7 @@ Digests:
 
 ## 4. Limits (`spec/Delvetalk/Limits.lean`, namespace `Delvetalk.Bounds`)
 
-Per machine segment (default / ceiling): `ticks` 100,000 / 1,000,000; `heap` 100,000 / 1,000,000 (cells); `stack` 10,000 / 100,000 (frames); `nodes` 100,000 / 1,000,000 (Data nodes materialized for a result or Plan); `bytes` 1 MiB / 16 MiB (encoded result/Plan bytes and the largest single text-primitive reserve per step). `lawTicks` 100,000. `typeFuelDefault` 16384.
+Per machine segment (default / ceiling): `ticks` 100,000 / 1,000,000; `heap` 100,000 / 1,000,000 (cells); `stack` 10,000 / 100,000 (frames); `nodes` 100,000 / 1,000,000 (Data nodes materialized for a result or Plan); `bytes` 1 MiB / 16 MiB (the canonical DAG-CBOR size of a result or Plan, `Data.canonicalBytes`, `#guard`ed against `Canonical.encode` in Canonical.lean; and the largest single text-primitive reserve per step). Materialization spends each scalar's canonical bytes as it is reached and checks the whole value's size once it is whole (a list's cells cost nothing but its array head); before kernel10 it charged a legacy decimal-length encoding, so `true` needed 2 bytes (`test_tariff.CanonicalBytes`). `lawTicks` 100,000. `typeFuelDefault` 16384.
 
 Wire: `dataWireDepth` 256, `plainJsonDepth` 64, `documentWireDepth` 8192, `entryArrowDepth` 64. Packages: `maxModules` 64, `maxModuleBytes` 512 KiB, `maxPackageSourceBytes` 1 MiB (import scan only), `frontCacheSourceBytes` 8 MiB, `entryCacheBytes` 64 MiB. Documents: `documentDepth` 64, `documentNodes` 65,536, `documentOutputBytes` 1 MiB, `offersPerTurn` 16 (their text shares the 1 MiB). `Document.maxOffersPerTurn`/`maxOutputBytes` are aliases that `TurnLoop.lean` reads.
 

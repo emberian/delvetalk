@@ -134,5 +134,83 @@ class NaturalArithmetic(unittest.TestCase):
         self.assertEqual(summed["value"], {"tag": "boolean", "value": True})
 
 
+VALUES = """edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./World.obend as World
+def yes(n: Nat) -> Bool:
+  0n < n
+def word(n: Nat) -> String:
+  textTake("abcdefghijklmnopqrstuvwxyz", n)
+def big(n: Nat) -> Nat:
+  n * 18446744073709551616n
+def items(n: Nat) -> Lists.List<Nat>:
+  match n:
+    case 0: Lists.List::<Nat>.nil({})
+    case 1+p: Lists.List::<Nat>.cons({head: n, tail: items(p)})
+def pair(n: Nat) -> {left: Nat, right: String}:
+  {left: n, right: word(n)}
+def shout(n: Nat) -> Activity<Nat>:
+  match world.note({text: word(n), count: n, items: items(n)}):
+    case ok(_): n
+"""
+
+NOTE_WORLD = """edition ObjectiveBend 1
+import ./List.obend as Lists
+record Reference:
+  world: String
+  object: String
+record Message:
+  object: Reference
+  method: String
+  argument: Data
+record Note:
+  text: String
+  count: Nat
+  items: Lists.List<Nat>
+sum Reply:
+  ok: {}
+protocol world:
+  note(Note) -> Reply
+"""
+
+
+class CanonicalBytes(unittest.TestCase):
+    """The byte budget is the canonical DAG-CBOR size of the result or Plan: a value runs
+    under exactly its encoded size and is refused a byte short (review kernel 8: `true`, one
+    byte, was refused under `bytes: 1`; sizes were decimal-length legacy accounting)."""
+
+    def test_each_result_runs_under_exactly_its_canonical_size(self):
+        from tests.test_objects import check
+        from tests.test_turn import library_modules
+        h = Host()
+        self.addCleanup(h.close)
+        for entry, argument in (("yes", 3), ("word", 2), ("word", 26), ("big", 7), ("pair", 5)):
+            with self.subTest(entry=entry, argument=argument):
+                art = h.compile(VALUES, entry, library=("List",), world=NOTE_WORLD)
+                free = h.send({"op": "run", "artifact": art, "arguments": [nat(argument)], "limits": BIG})
+                self.assertEqual(free["status"], "finished", free)
+                size = h.send({"op": "canonical-encode", "data": free["value"]})["bytes"]
+                ran = h.send({"op": "run", "artifact": art, "arguments": [nat(argument)],
+                              "limits": {"ticks": "1000000", "bytes": str(size)}})
+                self.assertEqual((ran["status"], ran.get("value")), ("finished", free["value"]), (size, ran))
+                short = h.send({"op": "run", "artifact": art, "arguments": [nat(argument)],
+                                "limits": {"ticks": "1000000", "bytes": str(size - 1)}})
+                self.assertEqual(short["status"], "refused", (size, short))
+
+    def test_a_plan_yields_under_exactly_its_canonical_size(self):
+        h = Host()
+        self.addCleanup(h.close)
+        art = h.compile(VALUES, "shout", library=("List",), world=NOTE_WORLD)
+        for n in (0, 4, 30):  # the items list crosses as an array: one head, no cons cells
+            with self.subTest(n=n):
+                free = h.start(art, [nat(n)])
+                self.assertEqual(free["status"], "yielded", free)
+                size = h.send({"op": "canonical-encode", "data": free["plan"]})["bytes"]
+                fits = h.start(art, [nat(n)], bytes=str(size))
+                self.assertEqual((fits["status"], fits.get("plan")), ("yielded", free["plan"]), (size, fits))
+                short = h.start(art, [nat(n)], bytes=str(size - 1))
+                self.assertEqual((short["status"], short.get("resource")), ("exhausted", "bytes"), (size, short))
+
+
 if __name__ == "__main__":
     unittest.main()
