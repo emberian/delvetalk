@@ -139,7 +139,7 @@ Quadratic idioms to avoid: `Lists.append xs x` in a loop; `Lists.length` in a lo
 
 `impl/python/evaluator.py`, `impl/js/evaluator.mjs`, `impl/c/evaluator.c` are independent small-step, call-by-name interpreters of the core. Input line `{"name","term","responses","fuel"}`; output `{"name","status": value|yield|exhausted|stuck,"term","plans"}`. Term array wire: `["bound",i] ["nat","12"] ["boolean",b] ["label",s] ["lam",b] ["app",f,a] ["mix",l,u] ["fix",s,i] ["specification",m,e] ["prototype",s,t] ["reflect"|"metadata"|"project"|"perform"|"done",x] ["unary",prim,x] ["binary",prim,l,r] ["get",x,name] ["inject",label,x] ["ifZero",v,z,s] ["ifBool",c,t,f] ["record",[[n,t]..]] ["extend",x,fields] ["case",x,arms] ["refuse",text]`, plus `toData` and `textJoin`. An evaluator that rejects a line stops its stream; the runner restarts it and counts the line `rejected`. Text and unary primitives use code-point semantics; `textTake`/`textDrop` use the byte-size guard `n >= byteSize`; C has its own SHA-256. `perform` yields `status:"yield"` with `plans`, resumed from `responses` in order; `["refuse", text]` is a stuck leaf.
 
-Harness: `tests/conformance/generate.py` (seeded; kinds term, activity, stuck, diverge, shared-effect, exotic-value, chain; asserts every tag and primitive occurs) and `tests/test_conformance.py` (compares status, weak-head shape, and Plans when literal data). `python3 -m tests.test_conformance 1500 [IMPL_DIR]` prints the report. Last recorded (kernel lane, 1500 cases): 1445 agree per evaluator, 55 known shared-effect, 0 unexpected.
+Harness: `tests/conformance/generate.py` (seeded; kinds term, activity, stuck, diverge, shared-effect, exotic-value, chain; asserts every tag and primitive occurs) and `tests/test_conformance.py` (compares status, weak-head shape, and Plans when literal data). `python3 -m tests.test_conformance 1500 [IMPL_DIR]` prints the report. Last recorded (kernel10, 1500 cases plus the three fixed `textHasAny` cases of 2,000 words a side that `generate` appends after its seeded stream): 1435 of 1503 agree per evaluator, 68 known shared-effect, 0 unexpected. All three evaluators look `textHasAny`'s wanted words up in a set (C: an FNV-1a open-addressing table), linear as the kernel's.
 
 Known divergence (`KNOWN_DIVERGENCE["shared-effect"]`): a `perform` reached while forcing a shared argument cell. The machine refuses it (`Refusal.sharedEffect`); call-by-name evaluators perform at each use. Typed programs cannot reach it (`noActivity`). Machine `divergent` and tick/capacity suspension map to `exhausted`. Not compared: step counts, deep values, non-literal plans.
 
@@ -354,8 +354,6 @@ codex review of a3e1fb2 (kernel10, §24). Remaining:
    host that ever resumes a checkpoint from outside its journal must look its digest up there.
 13. Stateless `turn-resume` resumes only checkpoints its process issued (§24): the HTTP REPL's
    client-held checkpoints die with the repl process (transport lane, if that matters to it).
-14. The three evaluators' `textHasAny` are still list searches; they are references, not
-   budgeted, so only if conformance ever times them.
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 

@@ -122,15 +122,32 @@ static void sha256_hex(const unsigned char *msg,size_t len,char out[65]) {
 /* Words: maximal runs of ASCII letters and digits and non-ASCII bytes, ASCII lowercased. */
 static int word_byte(unsigned char c) { return c>=0x80||(c>='0'&&c<='9')||(c>='a'&&c<='z')||(c>='A'&&c<='Z'); }
 static unsigned char lower_byte(unsigned char c) { return (c>='A'&&c<='Z')?(unsigned char)(c+32):c; }
-/* Whether the word x[i..i+n) (lowercased) is among the words of y. */
-static int has_word(const char *x,size_t n,const char *y,size_t yn) {
- size_t j=0;
- while(j<yn) {
+/* The words of y, lowercased, in an open-addressing hash set (FNV-1a), built once: a lookup
+   per word of the text, so textHasAny is linear in both texts, as the kernel's is. */
+typedef struct { const char *p; size_t n; } Word;
+static uint64_t word_hash(const char *p,size_t n) { uint64_t h=1469598103934665603ULL; for(size_t k=0;k<n;k++) { h^=lower_byte((unsigned char)p[k]); h*=1099511628211ULL; } return h; }
+static int word_same(const char *a,size_t an,const char *b,size_t bn) { if(an!=bn) return 0; for(size_t k=0;k<an;k++) if(lower_byte((unsigned char)a[k])!=lower_byte((unsigned char)b[k])) return 0; return 1; }
+static int text_has_any(const char *x,size_t xn,const char *y,size_t yn) {
+ size_t cap=16; while(cap<2*(yn/2+1)) cap*=2;
+ Word *slots=calloc(cap,sizeof(Word)); if(!slots) fail("allocation failure");
+ for(size_t j=0;j<yn;) {
   while(j<yn&&!word_byte((unsigned char)y[j])) j++;
   size_t start=j; while(j<yn&&word_byte((unsigned char)y[j])) j++;
-  if(j-start==n&&n>0) { size_t k=0; while(k<n&&lower_byte((unsigned char)x[k])==lower_byte((unsigned char)y[start+k])) k++; if(k==n) return 1; }
+  if(j==start) continue;
+  size_t h=(size_t)word_hash(y+start,j-start)&(cap-1);
+  while(slots[h].p&&!word_same(slots[h].p,slots[h].n,y+start,j-start)) h=(h+1)&(cap-1);
+  if(!slots[h].p) { slots[h].p=y+start; slots[h].n=j-start; }
  }
- return 0;
+ int found=0;
+ for(size_t i=0;i<xn&&!found;) {
+  while(i<xn&&!word_byte((unsigned char)x[i])) i++;
+  size_t start=i; while(i<xn&&word_byte((unsigned char)x[i])) i++;
+  if(i==start) continue;
+  size_t h=(size_t)word_hash(x+start,i-start)&(cap-1);
+  while(slots[h].p&&!found) { if(word_same(slots[h].p,slots[h].n,x+start,i-start)) found=1; h=(h+1)&(cap-1); }
+ }
+ free(slots);
+ return found;
 }
 static J *text_primitive(const char *op,J *a,J *b) {
  if(!strcmp(op,"textCanonicalCompare")) {
@@ -142,13 +159,7 @@ static J *text_primitive(const char *op,J *a,J *b) {
  if(!strcmp(op,"textHasAny")) {
   if(!tag(a,"label")||!tag(b,"label")) return NULL;
   const char *x=str(AT(a,1)),*y=str(AT(b,1)); size_t xn=(size_t)json_object_get_string_len(AT(a,1)),yn=(size_t)json_object_get_string_len(AT(b,1));
-  size_t i=0; int found=0;
-  while(i<xn&&!found) {
-   while(i<xn&&!word_byte((unsigned char)x[i])) i++;
-   size_t start=i; while(i<xn&&word_byte((unsigned char)x[i])) i++;
-   if(i>start&&has_word(x+start,i-start,y,yn)) found=1;
-  }
-  return one("boolean",json_object_new_boolean(found));
+  return one("boolean",json_object_new_boolean(text_has_any(x,xn,y,yn)));
  }
  if(!strcmp(op,"textConcat")||!strcmp(op,"textSpan")||!strcmp(op,"textBreak")) {
   if(!tag(a,"label")||!tag(b,"label")) return NULL;
