@@ -4,6 +4,7 @@ import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 # The commons (after main's protocols/commons): a bounded place graph, directed paths,
 # entry places, gates on paths, and declared presence. A turn moves only its own
@@ -45,8 +46,6 @@ record Seed:
 record Edits:
   gates: Plans.Entries<Gate, Gate>
   presence: Plans.Entries<Presence, Presence>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
 # Anyone enters, moves and leaves (the code moves only the turn's own principal and
 # checks every gate); only the owner changes who a gate admits.
 law owner "only the owner changes it; anyone enters, moves and leaves": request.subject == new.owner or (request.kind == 0 and (request.method == "enter" or request.method == "move" or request.method == "leave" or request.method == "receive"))
@@ -94,54 +93,48 @@ def gateCheck(found: Lists.Maybe<Gate>, context: Abi.Context) -> String:
 sum Done:
   moved: {from: String, to: String}
   refused: Card.Refusal
-def same(done: Done) -> Done:
-  done
 def no(clause: String, reading: String) -> Done:
   Done.refused({clause: clause, reading: reading})
-def entered<T>(state: State, place: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if problem(state) != "" then then(no("misconfigured", "The commons is misconfigured: {problem(state)}")) else entering(state, here(state, context), place, context, then)
-def entering<T>(state: State, found: Lists.Maybe<Presence>, place: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+# The helpers take the State after their own inputs: a definition whose first parameter is
+# the State is a method any turn may run.
+def enter(state: State, input: {place: String}, context: Abi.Context) -> Activity<Done>:
+  if problem(state) != "" then no("misconfigured", "The commons is misconfigured: {problem(state)}") else entering(here(state, context), input.place, state, context)
+def entering(found: Lists.Maybe<Presence>, place: String, state: State, context: Abi.Context) -> Activity<Done>:
   match found:
-    case some(p): then(no("alreadyHere", "Already here, at {p.value.at}"))
-    case none(_): if Lists.any(state.entries, fn(e: String) -> Bool: e == place) == false then then(no("noWayIn", "{place} is not a way in")) else if Lists.length(state.presence) >= presenceMax() then then(no("full", "Sixteen are here already.")) else arrive(place, context, then)
-def arrive<T>(place: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(write {presence: append {who: context.principal, at: place}})
-  then(Done.moved({from: "", to: place}))
-def enter(state: State, input: {place: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  entered(state, input.place, context, same)
-def walked<T>(state: State, to: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+    case some(p): no("alreadyHere", "Already here, at {p.value.at}")
+    case none(_): if Lists.any(state.entries, fn(e: String) -> Bool: e == place) == false then no("noWayIn", "{place} is not a way in") else if Lists.length(state.presence) >= presenceMax() then no("full", "Sixteen are here already.") else arrive(place, context)
+def arrive(place: String, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {presence: append {who: context.principal, at: place}}
+  Done.moved({from: "", to: place})
+def move(state: State, input: {to: String}, context: Abi.Context) -> Activity<Done>:
   match here(state, context):
-    case none(_): then(no("notHere", "Enter first."))
-    case some(p): stepping(state, p.value, to, context, then)
-def stepping<T>(state: State, me: Presence, to: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if pathFrom(state, me.at, to) == false then then(no("noPath", "No path from {me.at} to {to}")) else if gateCheck(gateOn(state, me.at, to), context) != "" then then(no("gated", "Gated: {gateCheck(gateOn(state, me.at, to), context)}")) else crossed(me, to, context, then)
-def crossed<T>(me: Presence, to: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {presence: Plans.Entries.amendItem({item: me, change: {who: me.who, at: to}})})}))
-  then(Done.moved({from: me.at, to: to}))
-def move(state: State, input: {to: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  walked(state, input.to, context, same)
-def departed<T>(state: State, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+    case none(_): no("notHere", "Enter first.")
+    case some(p): stepping(p.value, input.to, state, context)
+def stepping(me: Presence, to: String, state: State, context: Abi.Context) -> Activity<Done>:
+  if pathFrom(state, me.at, to) == false then no("noPath", "No path from {me.at} to {to}") else if gateCheck(gateOn(state, me.at, to), context) != "" then no("gated", "Gated: {gateCheck(gateOn(state, me.at, to), context)}") else crossed(me, to)
+def crossed(me: Presence, to: String) -> Activity<Done>:
+  let written(_) = world.write(extend(keep(), {presence: Plans.Entries.amendItem({item: me, change: {who: me.who, at: to}})}))
+  Done.moved({from: me.at, to: to})
+def leave(state: State, context: Abi.Context) -> Activity<Done>:
   match here(state, context):
-    case none(_): then(no("notHere", "Not here."))
-    case some(p): departing(p.value, context, then)
-def departing<T>(me: Presence, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(write {presence: removeItem me})
-  then(Done.moved({from: me.at, to: ""}))
-def leave(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  departed(state, context, same)
+    case none(_): no("notHere", "Not here.")
+    case some(p): departing(p.value)
+def departing(me: Presence) -> Activity<Done>:
+  let written(_) = write {presence: removeItem me}
+  Done.moved({from: me.at, to: ""})
 # The owner lets one more principal through a members gate.
-def allow(state: State, input: {from: String, to: String, principal: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.principal != state.owner then no("notOwner", "Only the owner changes a gate; that is {Card.name(state.owner, context)}") else allowedOn(gateOn(state, input.from, input.to), input.principal, context)
-def allowedOn(found: Lists.Maybe<Gate>, principal: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
+def allow(state: State, input: {from: String, to: String, principal: String}, context: Abi.Context) -> Activity<Done>:
+  if context.principal != state.owner then no("notOwner", "Only the owner changes a gate; that is {Card.name(state.owner, context)}") else allowedOn(gateOn(state, input.from, input.to), input.principal)
+def allowedOn(found: Lists.Maybe<Gate>, principal: String) -> Activity<Done>:
   match found:
     case none(_): no("noGate", "No gate on that path.")
-    case some(g): allowing(g.value, principal, context)
-def allowing(gate: Gate, principal: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
+    case some(g): allowing(g.value, principal)
+def allowing(gate: Gate, principal: String) -> Activity<Done>:
   match gate.rule:
-    case members(m): if Lists.length(m.names) >= 16n then no("gateFull", "A gate knows sixteen names.") else if Lists.any(m.names, fn(n: String) -> Bool: n == principal) then no("alreadyAllowed", "Already allowed.") else regated(gate, extend(gate, {rule: Rule.members({names: Lists.append(m.names, principal)})}), context)
+    case members(m): if Lists.length(m.names) >= 16n then no("gateFull", "A gate knows sixteen names.") else if Lists.any(m.names, fn(n: String) -> Bool: n == principal) then no("alreadyAllowed", "Already allowed.") else regated(gate, extend(gate, {rule: Rule.members({names: Lists.append(m.names, principal)})}))
     case _: no("notMembersGate", "Only a members gate lists who may cross.")
-def regated(gate: Gate, next: Gate, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {gates: Plans.Entries.amendItem({item: gate, change: next})})}))
+def regated(gate: Gate, next: Gate) -> Activity<Done>:
+  let written(_) = world.write(extend(keep(), {gates: Plans.Entries.amendItem({item: gate, change: next})}))
   Done.moved({from: next.from, to: next.to})
 form enter:
   place: text 1..64
@@ -152,18 +145,8 @@ def forms() -> Card.Forms:
   Card.Forms.cons({head: enterForm(), tail: Card.Forms.cons({head: moveForm(), tail: Card.Forms.cons({head: leaveForm(), tail: Card.Forms.nil()})})})
 def blurb() -> Card.Door:
   {word: "commons", blurb: "Places, paths and gates: enter, walk, and see who may cross."}
-def doneReply(action: String) -> Done -> Card.Replied:
-  fn(done: Done) -> Card.Replied: replied(action, done)
-def replied(action: String, done: Done) -> Card.Replied:
-  match done:
-    case refused(r): Card.Replied.refused(r)
-    case moved(_): Card.Replied.done({action: action})
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match routed:
-    case act(a): if a.action == "enter" then entered(state, Card.text(a.fields, "place"), context, doneReply("enter")) else if a.action == "move" then walked(state, Card.text(a.fields, "to"), context, doneReply("move")) else departed(state, context, doneReply("leave"))
-    case _: Card.answerPlan(routed, context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 def ruleText(rule: Rule, context: Abi.Context) -> String:
   match rule:
     case open(_): ""
