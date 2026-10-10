@@ -3,8 +3,11 @@ REPL, private heaps, pages for people, limits.
 
 Evidence for FOUNDATION §7 (layer: transport).
 """
+import html
 import http.client
 import json
+import re
+import time
 import os
 import tempfile
 import threading
@@ -515,36 +518,21 @@ class Pages(FrontCase):
         self.assertEqual(s, 404)
         self.assertIn('/AGENTS.md/api', e['hint'])
 
-    def test_html_card_and_spell_form(self):
+    def test_html_card_and_the_way_to_play(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-plot', 'object': 'plot',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(2)})
         self.assertEqual(r['status'], 'created', r)
         s, headers, body = self.request('GET', '/')
         self.assertEqual(s, 200)
         self.assertIn(b'Log in', body)
-        s, headers, _ = self.request('POST', '/AGENTS.md/challenge', raw='handle=' + HANDLE,
-                                     headers={'Content-Type': 'application/x-www-form-urlencoded'})
-        cookie = [v for k, v in headers if k == 'Set-Cookie'][0].split(';')[0]
-        self.assertTrue(cookie.startswith('dt_credential=dt_agent_'))
-        ch = self.front.identity.db.execute('SELECT text FROM challenges').fetchone()['text']
-        self.provider.texts[DID] = ch
-        s, headers, _ = self.request('POST', '/AGENTS.md/verify', raw=f'handle={HANDLE}&uri={urllib.parse.quote(URI)}',
-                                     headers={'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookie})
-        self.assertEqual(s, 200)
-        self.assertIn(cookie, [v for k, v in headers if k == 'Set-Cookie'][0])
+        cookie = browser_login(self)
         s, _, page = self.request('GET', '/o/plot', headers={'Cookie': cookie})
         self.assertEqual(s, 200)
         self.assertIn(b'2 planted, newest first:', page)
+        self.assertIn(b'href="/play/plot"', page)
         self.assertIn(b'prefers-color-scheme', self.request('GET', '/static/style.css')[2])
-        before = self.host.send({'op': 'world-status'})['height']
-        s, _, page = self.request('POST', '/o/plot/spell', raw='text=' + urllib.parse.quote('delvetalk plot plant'),
-                                  headers={'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookie})
-        self.assertEqual(s, 200)
-        self.assertGreater(self.host.send({'op': 'world-status'})['height'], before)
-        self.assertIn(b'Result', page)
         self.assertEqual(self.request('GET', '/o/nowhere')[0], 404)
-        self.assertEqual(self.request('POST', '/o/plot/spell', raw='text=x',
-                                      headers={'Content-Type': 'application/x-www-form-urlencoded'})[0], 401)
+        self.assertEqual(self.request('POST', '/o/plot/spell', raw='text=x', headers={'Content-Type': FORM})[0], 404)  # speaking is /play/
 
     def test_page_uses_world_card_without_journaling_and_history_is_newest_first(self):
         for i in range(25):
@@ -569,6 +557,112 @@ class Pages(FrontCase):
         self.assertEqual(len(heights), 20)
         self.assertEqual(heights, sorted(heights, reverse=True))
         self.assertEqual(heights[0], newest)
+
+
+FORM = 'application/x-www-form-urlencoded'
+
+
+def browser_login(case, handle=HANDLE):
+    """The login page's two forms, as a browser sends them: the challenge sets the session cookie, verify keeps it."""
+    s, headers, _ = case.request('POST', '/AGENTS.md/challenge', raw='handle=' + handle, headers={'Content-Type': FORM})
+    cookie = [v for k, v in headers if k == 'Set-Cookie'][0].split(';')[0]
+    case.assertTrue(cookie.startswith('dt_credential=dt_agent_'))
+    did = PEOPLE[handle]
+    case.provider.texts[did] = case.front.identity.db.execute('SELECT text FROM challenges WHERE handle = ? ORDER BY created DESC', (handle,)).fetchone()['text']
+    s, headers, _ = case.request('POST', '/AGENTS.md/verify', raw=f'handle={handle}&uri={urllib.parse.quote(f"at://{did}/town.delve.feed.post/3abc")}',
+                                 headers={'Content-Type': FORM, 'Cookie': cookie})
+    case.assertEqual(s, 200)
+    case.assertIn(cookie, [v for k, v in headers if k == 'Set-Cookie'][0])
+    return cookie
+
+
+class Play(FrontCase):
+    """/play/ against the genesis town: the directory, the garden and its interpreter, as a verified browser sees them."""
+    OPENER = 'did:plc:' + 'e' * 24
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from deploy import genesis
+        made, refusal = genesis.run(HostClient(cls.socket), cls.OPENER)
+        assert refusal is None, refusal
+
+    def setUp(self):
+        super().setUp()
+        self.cookie = browser_login(self)
+
+    def play(self, path, text=None, cookie=True):
+        self.now[0] += 3  # under the per-credential rate
+        headers = {'Cookie': self.cookie} if cookie else {}
+        if text is None:
+            return self.request('GET', path, headers=headers)
+        return self.request('POST', path, raw='text=' + urllib.parse.quote(text), headers={**headers, 'Content-Type': FORM})
+
+    def answer(self, spell):
+        """The town's interpreter, by hand: the one pending request on the garden, answered with a spell."""
+        for _ in range(300):
+            pending = [p for p in self.host.send({'op': 'world-interpretations'}).get('pending') or [] if p['object'] == 'garden']
+            if pending:
+                break
+            time.sleep(0.1)
+        r = self.host.send({'op': 'world-interpretation', 'id': pending[-1]['id'],
+                            'reply': {'status': 'replied', 'model': 'claude-haiku-5-5', 'json': None, 'raw': spell}})
+        self.assertEqual(r['status'], 'interpreted', r)
+
+    def test_without_the_session_cookie_play_redirects_to_the_login_page(self):
+        for method_text in (None, 'delvetalk garden plant'):
+            s, headers, _ = self.play('/play/', method_text, cookie=False)
+            self.assertEqual((s, dict(headers)['Location']), (303, '/'))
+        s, _, page = self.request('GET', '/')
+        self.assertIn(b'Log in', page)
+        self.assertIn(b'action="/AGENTS.md/challenge"', page)
+
+    def test_the_directory_is_its_card_as_world_card_renders_it_with_its_doors(self):
+        s, _, page = self.play('/play/')
+        card = self.host.send({'op': 'world-card', 'principal': DID, 'object': 'directory'})['text']
+        self.assertEqual(s, 200)
+        self.assertIn(html.escape(card).encode(), page)
+        self.assertIn(b'<a href="/play/garden">GARDEN</a>', page)
+        self.assertNotIn(b'<script>', page.split(b'</head>')[1])
+        s, _, garden = self.play('/play/garden')
+        self.assertIn(b'THE NIGHT GARDEN', garden)
+        self.assertIn(b'value="delvetalk garden ?"', garden)
+        s, _, usage = self.play('/play/garden', 'delvetalk garden ?')
+        self.assertIn(b'Reply with a spell:', usage)
+
+    def test_plant_by_spell_and_read_the_receipt(self):
+        s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths')
+        self.assertEqual(s, 200, page)
+        line = re.search(rb'admitted garden v(\d+) at height (\d+), receipt ([a-z-]+)', page)
+        self.assertIsNotNone(line, page)
+        self.assertIn(b'It lives at garden/bell/', page)
+        tok = self.cookie.split('=', 1)[1]  # the session is the credential: the agent API reads the same receipt
+        s, r = self.call('GET', '/AGENTS.md/receipt/' + line[3].decode(), token=tok)
+        self.assertEqual((s, r['receipt']['height']), (200, int(line[2])), r)
+
+    def test_plant_by_prose_shows_the_interpreters_offer(self):
+        out = {}
+        t = threading.Thread(target=lambda: out.update(page=self.play('/play/garden', 'please plant me something violet for the owls')[2]))
+        t.start()
+        self.answer('delvetalk garden plant\nseed: a bell for the owls\ncolour: violet')
+        t.join(60)
+        self.assertIn(b'suspended at height', out['page'])
+        self.assertIn(b'a bell for the owls', out['page'])  # the interpreter's proposal, as the offer to this turn
+
+    def test_prose_the_interpreter_never_answers_is_stated_as_no_reply(self):
+        self.front.sleep = lambda seconds: None
+        s, _, page = self.play('/play/garden', 'something green perhaps')
+        self.assertIn(b'suspended at height', page)
+        self.assertIn(b'no reply', page)
+
+    @unittest.expectedFailure  # until the host lane's interpretQuota (48 an hour per principal) lands
+    def test_the_49th_prose_reply_in_an_hour_is_refused_by_quota_with_its_next_at(self):
+        self.front.sleep = lambda seconds: None
+        for i in range(48):
+            self.play('/play/garden', f'something green, number {i}')
+        s, _, page = self.play('/play/garden', 'one more')
+        self.assertIn(b'refused quota', page)
+        self.assertIn(b'next at', page)
 
 
 class StubHost:
