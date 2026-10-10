@@ -242,5 +242,55 @@ class LawAtCreation(Reflection):
         self.assertNotEqual(self.host.send(op="world-view", principal="ember", object="h").get("status"), "viewed")
 
 
+PROPOSED = PLAIN.replace("law small: new.count <= 100\n", "law small: new.count <= 100\nlaw owner: request.kind == 0 or request.subject == \"ember\"\n")
+
+
+class Proposed(Reflection):
+    """A state write no method of the object made (a `world-propose`, a reprogram's migration) is judged
+    `request.kind == 3`, proposed: a law that admits `request.kind == 0` admits only the object's own
+    method writes (codex objects 1-8; the root's decision)."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("p", PROPOSED, record(count=nat(0)))
+
+    def propose(self, who, identity, n=7):
+        version = self.host.send(op="world-view", principal="ember", object="p")["version"]
+        edit = {"tag": "variant", "label": "set", "payload": record(value=nat(n))}
+        return self.host.send(op="world-propose", principal=who, identity=identity, roots=[{"object": "p", "version": version}],
+                              writes=[{"object": "p", "edits": [record(count=edit)]}])
+
+    def test_a_strangers_proposal_is_not_the_objects_own_write(self):
+        self.assertEqual(self.turn("p", "bump", record(n=nat(1)), principal="kim")["status"], "admitted")
+        r = self.propose("kim", "k1")
+        out = r["receipt"]["outcome"]
+        self.assertEqual((r["status"], out["class"], out.get("clause")), ("refused", "lawRefused", "owner"), r)
+        mine = self.propose("ember", "e1")
+        self.assertEqual(mine["status"], "admitted", mine)
+        self.assertEqual(mine["receipt"]["outcome"]["writes"][0]["kinds"], [3])
+        self.assertEqual(field(self.state("p"), "count")["value"], "7")
+        self.reopen()
+        self.assertEqual(field(self.state("p"), "count")["value"], "7")
+        kinds = self.host.send(op="world-inspect", principal="kim", object="p")["requestKinds"]
+        self.assertEqual(kinds, {"write": 0, "reprogram": 1, "amend": 2, "proposed": 3})
+
+    def test_a_law_naming_kind_three_judges_proposals_and_migrations(self):
+        a = self.host.send(op="world-amend", principal="ember", identity="a1", object="p", version=0,
+                           law='law owner: request.kind == 0 or request.subject == "ember"\nlaw proposals: request.kind == 3 implies new.count <= 5')
+        self.assertEqual(a["status"], "admitted", a)
+        self.assertEqual(self.propose("ember", "e2", n=9)["receipt"]["outcome"].get("clause"), "proposals")
+        self.assertEqual(self.propose("ember", "e3", n=4)["status"], "admitted")
+        self.assertEqual(self.turn("p", "bump", record(n=nat(2)))["status"], "admitted")
+        version = self.host.send(op="world-view", principal="ember", object="p")["version"]
+        moved = PROPOSED + "def migrate(old: State) -> State:\n  {count: 50n}\n"
+        r = self.host.send(op="world-reprogram", principal="ember", identity="r1", object="p", version=version,
+                           package=moved, migration="migrate")
+        self.assertEqual((r["status"], r["receipt"]["outcome"].get("clause")), ("refused", "proposals"), r)
+        r = self.host.send(op="world-reprogram", principal="ember", identity="r2", object="p", version=version,
+                           package=PROPOSED + "def migrate(old: State) -> State:\n  {count: 5n}\n", migration="migrate")
+        self.assertEqual(r["status"], "admitted", r)
+
+
 if __name__ == "__main__":
     unittest.main()

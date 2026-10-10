@@ -207,7 +207,7 @@ class LawsOnWho(Authority):
         self.assertEqual(self.turn("a", "bump")["status"], "admitted")
 
     def test_request_caller_is_the_calling_objects_id_in_a_call_and_empty_in_a_direct_turn(self):
-        law = 'law only: request.kind == 0 implies request.caller == "garden"\n'
+        law = 'law only: request.kind == 0 or request.kind == 3 implies request.caller == "garden"\n'
         self.ledger("garden")
         self.ledger("bell", law)
         direct = self.turn("bell", "bump")

@@ -301,8 +301,8 @@ def parseFieldRoots (j : Json) : Except String (List (String × String × Nat)) 
     out := out ++ [(object, field, ← natField r "version")]
   return out
 
-/-- Writes as a client sends them: direct, so every step has the empty caller. A client
-    cannot name a caller. -/
+/-- Writes as a client sends them: direct, so every step has the empty caller, and proposed (kind
+    `Law.proposedKind`): no method of the object made them. A client cannot name a caller. -/
 def parseWrites (j : Json) : Except String (List (String × List Written)) := do
   let raw ← j.getArr?
   if raw.size > Limits.maxWrites then throw "too many writes"
@@ -310,7 +310,8 @@ def parseWrites (j : Json) : Except String (List (String × List Written)) := do
   for w in raw do
     let object ← boundedText "object id" Limits.maxObjectIdBytes (← w.getObjValAs? String "object")
     if out.any (·.1 == object) then throw "duplicate write"
-    out := out ++ [(object, (← parseSteps (← w.getObjVal? "edits")).map fun step => { caller := "", edits := step })]
+    out := out ++ [(object, (← parseSteps (← w.getObjVal? "edits")).map fun step =>
+      { caller := "", kind := Law.proposedKind, edits := step })]
   return out
 
 /-- Writes as the journal records them: steps with their callers and kinds. -/
@@ -1791,7 +1792,7 @@ def touchesOf (entry : Json) : List (String × Touch) :=
     let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
     let steps := (((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
     let edits : Option (List (String × Data)) :=
-      if kinds.any (fun k => k.getNat?.toOption != some 0) then none else
+      if kinds.any (fun k => !((k.getNat?.toOption.map Law.editKind).getD false)) then none else
       steps.foldlM (init := []) fun acc step => match decodeData Limits.dataDepth step with
         | .ok (.record fs) => some (acc ++ fs.filter fun (_, k) => match k with
             | .variant "keep" _ => false
@@ -1823,7 +1824,7 @@ def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : S
       | _, _ => false
   match writes.lookup id with
   | none => own && changedFields.isSome
-  | some changes => !changes.isEmpty && changes.all fun c => c.kind == 0 && c.edits.all fun e =>
+  | some changes => !changes.isEmpty && changes.all fun c => Law.editKind c.kind && c.edits.all fun e =>
       e.kind.commutes || untouched e ||
         (match changedFields with
          | some fields => !fields.contains e.field
@@ -1940,7 +1941,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- is the object whose call it was (empty when the turn's own method wrote).
     -- A change made under a grant is judged with the grantor as its subject, if the grant
     -- still stands for this object and method; otherwise the turn is refused `noGrant`.
-    let judgments := (changes.map fun c => (c.caller, c.kind, c.method, c.via)).eraseDups
+    -- The state a reprogram's migration makes is a proposed write too: judged once more as kind
+    -- `proposed`, as whoever asked for the reprogram.
+    let migrated := if ((p.programs.lookup id).map (·.2.isEmpty)) == some false then
+        (changes.filter (·.kind == 1)).map fun c => { c with kind := Law.proposedKind }
+      else []
+    let judgments := ((changes ++ migrated).map fun c => (c.caller, c.kind, c.method, c.via)).eraseDups
     for (caller, kind, method, via) in (if judgments.isEmpty then [("", 0, "", "")] else judgments) do
       let subject ← if via.isEmpty then pure p.principal else
         match grantStands w via id method with
@@ -1950,14 +1956,16 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
                                  relations := next.relations }
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id, reason := readingOf o clause }
-    -- The Bend law, after the text admits: once for each ordinary change, with its argument.
+    -- The Bend law, after the text admits: once for each write of edits (the object's own or a
+    -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
+    -- law's alone: the old code's law does not read the new type.
     if o.predicate then
-      let seen := (changes.filter (·.kind == 0)).foldl (fun (acc : List (String × Written)) c =>
-        let key := (Json.arr #[toJson c.caller, toJson c.method, toJson c.via, dataJson c.argument]).compress
+      let seen := (changes.filter (Law.editKind ·.kind)).foldl (fun (acc : List (String × Written)) c =>
+        let key := (Json.arr #[toJson c.caller, toJson c.kind, toJson c.method, toJson c.via, dataJson c.argument]).compress
         if acc.any (·.1 == key) then acc else acc ++ [(key, c)]) []
       for (_, c) in seen do
         let subject := if c.via.isEmpty then p.principal else ((grantStands w c.via id c.method).map (·.grantor)).getD p.principal
-        if let some r := bendLaw w p id o state subject c.caller c.method c.argument 0 next.pin then throw r
+        if let some r := bendLaw w p id o state subject c.caller c.method c.argument c.kind next.pin then throw r
     if let some text := p.laws.lookup id then
       let refuse := fun (clause : String) => ({ cls := "lawRefused", clause := some clause, object := some id } : Refusal)
       let law ← match parseLawText text with
@@ -2727,7 +2735,7 @@ def changesJson (w : World) (principal intent : String) (ledger : Ledger) (used 
   let mut unserved : Array Json := #[]
   for (id, o) in updates do
     let some before := w.objects[id]? | continue
-    let touched := (((writes.lookup id).getD []).filter (·.kind == 0)).flatMap fun c =>
+    let touched := (((writes.lookup id).getD []).filter (Law.editKind ·.kind)).flatMap fun c =>
       (c.edits.filter fun e => match e.kind with | .keep => false | _ => true).map (·.field)
     for x in w.subscriptions.getD id #[] do
       unless touched.contains x.field do continue
