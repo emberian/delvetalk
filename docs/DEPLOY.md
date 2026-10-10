@@ -85,7 +85,7 @@ post for the object, so replies to it route there. A door whose page was not pub
     docker compose --profile town up -d --wait --remove-orphans
     docker compose ps
 
-`delvetalk-interpret` is in the `town` profile: without `--profile town` it does not start and interpretations wait.
+`delvetalk-interpret` is in the `town` profile, kept on purpose so a stack without the model key still comes up: every `up` that should run it names `--profile town` (as here, after a restore and after a new binary); without it the interpreter does not start and interpretations wait.
 
 `--wait` fails red unless the healthcheck passes: `/AGENTS.md` answers and the
 home page shows a journal height (a refused `world-open` shows none). From
@@ -185,7 +185,7 @@ Run it from a timer and copy the tarballs off the box. Restore:
 
     docker compose down
     deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
-    docker compose up -d --wait
+    docker compose --profile town up -d --wait
 
 `restore.sh` checks the checksum and replays before touching the data, refuses
 while the lock is held, and moves the current data to `v2.before-<stamp>`.
@@ -224,7 +224,7 @@ hash match the journal.
     deploy/backup.sh --image delvetalk-host:<old> ...      # first
     deploy/build.sh; docker save ... | ssh ... docker load  # new sha
     # .env: DELVETALK_IMAGE=delvetalk:<new sha12>
-    docker compose up -d --wait
+    docker compose --profile town up -d --wait
     deploy/smoke.sh https://delvetalk.fg-goose.online --pin <new sha256>
 
 If the new compiler refuses an old object, `world-open` fails, the healthcheck

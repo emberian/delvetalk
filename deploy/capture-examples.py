@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from deploy.seed import closure, modules_on_disk  # noqa: E402
+from deploy import genesis  # noqa: E402
 from transport import delve, identity  # noqa: E402
 from transport.hostd import Hostd  # noqa: E402
 from transport.hostproc import BINARY, LIBRARY, HostClient, RemoteHeaps  # noqa: E402
@@ -108,7 +108,8 @@ class Capture:
 
     def step(self, method, path, body=None, auth=True):
         status, reply = self.request(method, path, body, auth)
-        cmd = f'curl -s {"-X POST " if method == "POST" else ""}{{{{origin}}}}/AGENTS.md{path}'
+        url = f'{{{{origin}}}}/AGENTS.md{path}'
+        cmd = f'curl -s {"-X POST " if method == "POST" else ""}' + (f'"{url}"' if '?' in path else url)  # zsh globs a bare ?
         cmd += ' -H "Authorization: Bearer $T"' if auth and self.token else ''
         if body is not None:
             cmd += " -d '" + json.dumps(body).replace("'", "'\\''") + "'"
@@ -140,17 +141,10 @@ class Capture:
         assert settled['status'] == 'interpreted', settled
 
 
-def genesis(sock):
-    """The objects the sessions need, as GENESIS.md creates them: the opener, over hostd's socket."""
-    host, found = HostClient(sock), modules_on_disk()
-    ref = lambda name: record(world=label(''), object=label(name))
-    seeds = [('policy', 'Policy', record(model=label('claude-haiku-5-5'), system=label('Turn the participant\'s words into one delvetalk spell.'))),
-             ('garden', 'Garden', record(policy=ref('policy'))), ('workshop', 'Workshop', record()), ('directory', 'Directory', record()),
-             ('anthology', 'Anthology', record()), ('cistern', 'Cistern', record()), ('tide', 'Tide', record())]
-    for name, package, seed in seeds:
-        made = host.send({'op': 'world-create', 'principal': OPENER, 'identity': 'genesis-' + name, 'object': name,
-                          'modules': closure(package, found), 'entry': 'initial', 'seed': seed})
-        assert made['status'] == 'created', (name, made)
+def seed_town(sock):
+    """The town as production creates it: deploy/genesis.py, run by the opener."""
+    made, refusal = genesis.run(HostClient(sock), OPENER)
+    assert refusal is None and all(m['status'] == 'created' for m in made), (refusal, made)
 
 
 def planter(cap):
@@ -221,7 +215,7 @@ def main(argv=None):
         hostd = Hostd(tmp, str(Path(tmp) / 'world.journal'), a.binary, opener=OPENER, library=LIBRARY)
         threading.Thread(target=hostd.serve_forever, daemon=True).start()
         sock = Path(tmp) / 'host.sock'
-        genesis(sock)
+        seed_town(sock)
         provider = Provider()
         front = Front(('127.0.0.1', 0), HostClient(sock), identity.Identity(tmp, delve.Client(provider), clock=lambda: NOW),
                       clock=lambda: NOW, heaps=RemoteHeaps(sock, Path(tmp) / 'heaps'), repl=HostClient(sock, stateless=True))
