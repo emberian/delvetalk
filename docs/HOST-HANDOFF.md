@@ -241,6 +241,20 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    as `view`; the root is recorded at the CURRENT version. Cost is linear in the object's writes up to
    `version`. Test: `tests/test_view_at.py`.
 
+48. **The world object (host8; WHOLENESS §1, host day 1).** A message activity (`Activity<R>`, artifact
+   `dialect: "message"`) yields `World.Message {object, method, argument}`; `drive` re-heads it
+   (`messagePlan`) as the variant the arms answer: `write`'s argument is the running object's edits,
+   `judge`'s the edits to judge, every other method's argument is its arm's payload. A message whose
+   `object` is not `{world: "", object: "world"}` is answered `refused {clause: notWorld}` (a message to an
+   object is a `call`), a method outside `worldMethods` `refused {clause: noMethod}`; `spell`, `subscribe`
+   and `unsubscribe` are listed and answered by later days. The response is checked against the call
+   site's type the kernel reports (`responseType`). A sum Plan is answered by constructor as before, so
+   both dialects run side by side. A handler (`run`) sees the Message as yielded. The world has no state
+   and no law (WHOLENESS §5): who may call which method is the authority model as built (`write`
+   self-only, `create` under the creator's rules, grants, read policy). The id `world` is reserved
+   (`worldId`, `validObjectId`). A message suspension's checkpoint (two-token site prefix) goes through
+   the block scheme like any other. Test: `tests/test_world_object.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

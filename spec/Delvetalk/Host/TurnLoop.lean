@@ -552,6 +552,34 @@ def dryChange (w : World) (s : TurnState) (self id : String) (version : Nat) (pr
   | .ok _ => none
   | .error r => some (r.clause.getD r.cls)
 
+/-- The world's methods (WHOLENESS §1, `protocol world`), which a message activity calls. -/
+def worldMethods : List String :=
+  ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "spell", "send",
+   "sendVia", "create", "createUnder", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
+   "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
+   "objects", "card", "subscribe", "unsubscribe"]
+
+/-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
+    host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
+    answer (`write`'s argument is the edits of the running object, `judge`'s the edits to judge).
+    `none` for a sum Plan (the older dialect, answered by constructor); `.error clause` for a
+    message to another object (`notWorld`: a message to an object is a `call`) or a method the
+    world has not (`noMethod`). -/
+def messagePlan (self : String) : Data → Option (Except String Data)
+  | .record fs =>
+    match fs.lookup "object", (fs.lookup "method").bind labelOf, fs.lookup "argument" with
+    | some target, some method, some argument =>
+      if fs.length != 3 then none else
+      if referenceId target != some worldId then
+        some (.error "notWorld")
+      else if !worldMethods.contains method then some (.error "noMethod")
+      else some (.ok (match method with
+        | "write" => .variant "write" (.record [("object", .record [("world", .label ""), ("object", .label self)]), ("edits", argument)])
+        | "judge" => .variant "judge" (.record [("edits", argument)])
+        | _ => .variant method argument))
+    | _, _, _ => none
+  | _ => none
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -609,17 +637,24 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
   | .exhausted resource used =>
     spend used
     throw (.budget resource)
-  | .yielded plan _ responseType checkpoint used =>
+  | .yielded message _ responseType checkpoint used =>
     spend used
     countPlan
+    -- A message activity calls the world by method name; a sum Plan names its constructor.
+    let plan ← match messagePlan self message with
+      | none => pure message
+      | some (.ok p) => pure p
+      | some (.error clause) => pure (.variant "refusedMessage" (.record [("clause", .label clause)]))
     let response ← match plan with
+      | .variant "refusedMessage" (.record f) =>
+        refusedWith compiled.bounds responseType (((f.lookup "clause").bind labelOf).getD "noMethod")
       | .variant "await" (.record f) | .variant "awaitUntil" (.record f) => awaitPlan depth self compiled.bounds f responseType checkpoint
       | .variant "awaitPost" (.record f) | .variant "awaitPostUntil" (.record f) => awaitPostPlan depth self compiled.bounds f responseType checkpoint
       | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType checkpoint
       | _ => do
         -- A frame run under a handler offers each Plan to it first.
         match (← get).handlers.lookup depth with
-        | some handler => match ← handleWith handler self plan compiled.bounds responseType with
+        | some handler => match ← handleWith handler self message compiled.bounds responseType with
           | some response => pure response
           | none => answer depth self caller compiled.bounds plan responseType
         | none => answer depth self caller compiled.bounds plan responseType
