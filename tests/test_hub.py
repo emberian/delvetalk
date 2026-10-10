@@ -160,10 +160,7 @@ class Hub(test_chain.Chain):
         return resumed
 
     # The host fits the model's spell against the offered forms and answers `proposal {object,
-    # method, argument}` for the door it names (World.obend); until it checks a proposal against
-    # that door rather than the directory, it answers `unclear` ("plant is not a method of the
-    # object").
-    @unittest.expectedFailure
+    # method, argument}` for the door it names (HOST-HANDOFF 5.64).
     def test_with_a_policy_the_models_spell_runs_on_the_door_it_names(self):
         self.policy()
         self.directory("policy")
@@ -207,7 +204,7 @@ class Hub(test_chain.Chain):
         quiet = self.interpret("unclear: not addressed")
         self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
 
-    # Expected to fail with the proposal case above, until the host answers it.
+    # The garden's colour shows as a choice only once the host reads the form's kinds from forms().
     @unittest.expectedFailure
     def test_an_action_the_policy_confirms_is_shown_back_and_not_passed_on(self):
         """The policy's confirmFor (here plant, taught by its owner) holds an interpreted spell
