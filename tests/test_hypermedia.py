@@ -183,6 +183,18 @@ class Controls(FrontCase):
                                'heap': ('created', 'admitted', {'tag': 'natural', 'value': '1'}),
                                'repl': ('finished', {'tag': 'natural', 'value': '42'})})
 
+    def test_a_strangers_read_of_a_refused_receipt_by_slug_keeps_its_object_and_recovery_links(self):
+        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-kept', 'object': 'kept', 'entry': 'initial',
+                            'modules': [{'name': 'Kept', 'source': LAWFUL}], 'seed': {'tag': 'record', 'fields': []}})
+        self.assertEqual(r['status'], 'created', r)
+        s, t = self.call('POST', '/AGENTS.md/world/kept/bump', {'intent': 'no'}, self.tok)
+        self.assertEqual((s, t['class']), (200, 'lawRefused'), t)
+        for reader in (self.tok, self.login('glm.delve.town')):  # mine, then someone else's public view of it
+            s, got = self.call('GET', f"/AGENTS.md/receipt/{t['receipt']['slug']}", token=reader)
+            links = {k: v['href'] for k, v in got['_links'].items() if k in ('object', 'source', 'hint')}
+            self.assertEqual((s, links), (200, {'object': '/AGENTS.md/world/kept', 'source': '/AGENTS.md/world/kept/source',
+                                                'hint': '/AGENTS.md/world/kept/source'}), got)
+
     def test_host_ops_wanted_project_when_the_host_answers_them(self):
         """Stubs of docs/AGENTS-API.md "Host ops wanted": `admits` per method, `methods` per listed id."""
         real = self.host.send

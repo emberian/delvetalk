@@ -259,12 +259,13 @@ def receipt_links(base, reply, intent=None):
     """Where a turn's or receipt's reply leads: the receipt by slug, the object it read or made, the offers it left,
     and for a refusal the relation its class names (REFUSALS)."""
     rc, out = reply.get('receipt') or {}, {}
-    outcome = rc.get('outcome') or {}
+    # Someone else's refusal is the host's public projection, flat: {status: refused, class, root, slug}.
+    outcome = rc.get('outcome') or ({'tag': 'refused', 'class': rc.get('class')} if rc.get('status') == 'refused' else {})
     if rc.get('slug'):
         out['receipt'] = link(f"{base}/receipt/{rc['slug']}")
     elif intent and reply.get('class') == 'duplicateIdentity':
         out['receipt'] = link(f'{base}/receipt/{urllib.parse.quote(str(intent), safe="")}')
-    roots = rc.get('roots') or []
+    roots = rc.get('roots') or ([rc['root']] if isinstance(rc.get('root'), dict) else [])
     o = outcome.get('object') if outcome.get('tag') == 'created' or not roots else roots[0].get('object')  # a refusal may name no root
     if o:
         out.update({'object': link(f'{base}/world/{oid(o)}'), 'source': link(f'{base}/world/{oid(o)}/source')})
