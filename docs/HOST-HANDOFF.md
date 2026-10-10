@@ -563,8 +563,10 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    frame in turn; the first `answer` is the response, a `pass` (or a plan the handler's input does not
    name) goes to the next one out, and the host answers what all passed. Activities need nothing more:
    only a top frame suspends (an await in a call is refused), and a `run` callee is never the top.
+   A message-dialect frame offers the `World.Message` it yields: a handler whose `handle` takes
+   `World.Message` answers with the result the site's protocol method types (`written {}` for `write`).
    Test: `tests/test_handlers.py` (a sandbox answers the write of a frame its callee calls; an inner
-   `views` handler passes a write to the `sandbox` around it).
+   `views` handler passes a write to the `sandbox` around it; the same in the message dialect).
 
 74. **`insertOnly` under retention (host11; RELATIONAL §12, WORLD-REVIEW finding 10's trap).**
    `insertOnly(F)` means: no admitted write retracts or alters a row of F; a row the declared retention
