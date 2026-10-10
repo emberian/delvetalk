@@ -17,7 +17,7 @@ import ./Spween.obend as Spween
 # (sixteen passages of eight choices are what a card can show), or a ```spween block a
 # reader posts here, which makes a new scene at <this scene>/<its id> (world/lib/
 # Spween.obend). Presence holds sixteen readers, variables sixteen names, and `left` the
-# newest 64 departures.
+# newest 64 departures, never dropping one still cooling (an entry that could is `crowded`).
 #
 # A choice offers itself only when its guard holds over the variables; taking it applies
 # its effects in order and moves the reader to its target, or out of the scene at END.
@@ -50,14 +50,25 @@ def initial() -> State:
 def leftKey(l: Left) -> {at: Nat, who: String}:
   {at: l.at, who: l.who}
 def relations() -> Relations.Decls:
-  Lists.append(Lists.append(Relations.Decls.nil(), {field: "presence", key: Text.words("who"), limit: 16n}), {field: "left", key: Text.words("at who"), limit: 64n})
+  Lists.append(Lists.append(Relations.Decls.nil(), {field: "presence", key: Text.words("who"), limit: 16n}), {field: "left", key: Text.words("at who"), limit: leftMax()})
 law owner "only the owner reprograms or amends it; anyone enters, chooses and leaves": request.kind == 0 or request.subject == new.owner
 law fixed "the owner, title, passages, start, cooldown and requirements never change": unchanged(owner) and unchanged(title) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)
 # The cooldown, as the second tier of the law: a reader who appears in presence must have
 # left at least `cooldown` clock units before the turn's clock. A write no method made (a
 # proposal of presence at any passage) is refused (`methods`).
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if Plans.unnamed(request) then Plans.proposedRefused() else if old.cooldown == 0n then Abi.Verdict.admitted({}) else arrivals(Relations.rows(new.presence), request.context.clock, old)
+  if Plans.unnamed(request) then Plans.proposedRefused() else if old.cooldown == 0n then Abi.Verdict.admitted({}) else if forgets(old, new, request.context.clock) then Abi.Verdict.refused({clause: "cooldown", reading: "A departure still cooling is never forgotten."}) else arrivals(Relations.rows(new.presence), request.context.clock, old)
+# Whether the write drops a departure still cooling: rows leave `left` oldest first (the host's
+# retention, or a leaver's own row, which had cooled before they entered), so the oldest
+# cooling row is the one to look for.
+def forgets(old: State, new: State, clock: Nat) -> Bool:
+  match Lists.find(Relations.rows(old.left), fn(l: Left) -> Bool: clock < l.at + old.cooldown):
+    case some(l): absent(Relations.lookup(new.left, leftKey(l.value), leftKey))
+    case none(_): false
+def absent(found: Lists.Maybe<Left>) -> Bool:
+  match found:
+    case some(_): false
+    case none(_): true
 def arrivals(presence: Lists.List<Presence>, clock: Nat, old: State) -> Abi.Verdict:
   if Lists.any(presence, fn(p: Presence) -> Bool: Rows.isPresent(old.presence, p.who) == false && cooling(p.who, clock, old)) then Abi.Verdict.refused({clause: "cooldown", reading: "One who left enters again only after the cooldown."}) else Abi.Verdict.admitted({})
 def lastLeft(who: String, state: State) -> Lists.Maybe<Left>:
@@ -92,7 +103,21 @@ def enterVerdict(context: Abi.Context, state: State) -> Verdict:
 def admitted(context: Abi.Context, state: State) -> Verdict:
   match Scenes.failing(state.requires, state.vars):
     case some(c): no("unmet", "The scene requires {Scenes.clauseText(c.value)}.")
-    case none(_): if cooling(context.principal, context.clock, state) then no("cooldown", "You left at clock {natText(leftAt(context.principal, state))}; enter again from clock {natText(leftAt(context.principal, state) + state.cooldown)}.") else Verdict.enter({at: state.start})
+    case none(_): if cooling(context.principal, context.clock, state) then no("cooldown", "You left at clock {natText(leftAt(context.principal, state))}; enter again from clock {natText(leftAt(context.principal, state) + state.cooldown)}.") else roomy(context, state)
+# `left` keeps leftMax() departures, and one still cooling must never be dropped for a newer one.
+# Everyone present may leave, so an entry is refused while the cooling departures, the readers
+# here and this one would pass the limit (a returning reader's own row has cooled already).
+def leftMax() -> Nat:
+  64n
+def coolingRows(context: Abi.Context, state: State) -> Lists.List<Left>:
+  Lists.filter(Relations.rows(state.left), fn(l: Left) -> Bool: context.clock < l.at + state.cooldown)
+def roomy(context: Abi.Context, state: State) -> Verdict:
+  let cooling = coolingRows(context, state)
+  if state.cooldown > 0n && Lists.length(cooling) + Relations.count(state.presence) + 1n > leftMax() then crowded(cooling, state) else Verdict.enter({at: state.start})
+def crowded(cooling: Lists.List<Left>, state: State) -> Verdict:
+  match cooling:
+    case cons(c): no("crowded", "{natText(Lists.length(cooling))} left within the cooldown; enter again from clock {natText(c.head.at + state.cooldown)}.")
+    case nil(_): no("crowded", "Sixteen readers are here; enter when one leaves.")
 def leftAt(who: String, state: State) -> Nat:
   match lastLeft(who, state):
     case some(l): l.value.at
