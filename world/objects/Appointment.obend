@@ -59,10 +59,10 @@ def cancelling(context: Abi.Context) -> Activity<Plan, Response, Done>:
   Done.cancelled({})
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "appointment", blurb: "A note sent when its time comes."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
+  Card.answerPlan(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
 def statusName(status: Status) -> String:
   match status:
     case booked(_): "booked"

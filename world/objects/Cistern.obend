@@ -30,10 +30,10 @@ def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) 
 # A receipt is structured data, not a spell: the card offers no form.
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "cistern", blurb: "Keeps receipts, refusals first."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
+  Card.answerPlan(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
 def outcomeName(outcome: Plans.Outcome) -> String:
   match outcome:
     case admitted(_): "admitted"

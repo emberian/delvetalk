@@ -150,20 +150,20 @@ form move:
 form leave:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: enterForm(), tail: Card.Forms.cons({head: moveForm(), tail: Card.Forms.cons({head: leaveForm(), tail: Card.Forms.nil()})})})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "commons", blurb: "Places, paths and gates: enter, walk, and see who may cross."}
-def doneReply(action: String) -> Done -> Card.Reply:
-  fn(done: Done) -> Card.Reply: replied(action, done)
-def replied(action: String, done: Done) -> Card.Reply:
+def doneReply(action: String) -> Done -> Card.Replied:
+  fn(done: Done) -> Card.Replied: replied(action, done)
+def replied(action: String, done: Done) -> Card.Replied:
   match done:
-    case refused(r): Card.Reply.refused(r)
-    case moved(_): Card.Reply.done({action: action})
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+    case refused(r): Card.Replied.refused(r)
+    case moved(_): Card.Replied.done({action: action})
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
     case act(a): if a.action == "enter" then entered(state, Card.text(a.fields, "place"), context, doneReply("enter")) else if a.action == "move" then walked(state, Card.text(a.fields, "to"), context, doneReply("move")) else departed(state, context, doneReply("leave"))
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 def ruleText(rule: Rule, context: Abi.Context) -> String:
   match rule:
     case open(_): ""

@@ -161,23 +161,23 @@ form whisper:
   line: text 1..280
 def forms() -> Card.Forms:
   Card.Forms.cons({head: sayForm(), tail: Card.Forms.cons({head: emoteForm(), tail: Card.Forms.cons({head: whisperForm(), tail: Card.Forms.nil()})})})
-def talking(state: State, action: String, fields: Card.Fields, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if holds(state.present, person(context)) == false then Card.tell(Card.Reply.refused({clause: "notPresent", reading: "Only someone here can {action}."}), Document.text("Not done: only someone here can {action}.\n")) else if action == "whisper" then whispered(state, Card.text(fields, "to"), Card.text(fields, "line"), context) else told(Lists.take(Relations.rows(state.present), 32n), spoken(action, speaker(context), Card.text(fields, "line")), action)
+def talking(state: State, action: String, fields: Card.Fields, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
+  if holds(state.present, person(context)) == false then Card.tellPlan(Card.Replied.refused({clause: "notPresent", reading: "Only someone here can {action}."}), Document.text("Not done: only someone here can {action}.\n")) else if action == "whisper" then whispered(state, Card.text(fields, "to"), Card.text(fields, "line"), context) else told(Lists.take(Relations.rows(state.present), 32n), spoken(action, speaker(context), Card.text(fields, "line")), action)
 def spoken(action: String, who: String, line: String) -> String:
   if action == "emote" then "* {who} {line}\n" else "{who}: {line}\n"
 def speaker(context: Abi.Context) -> String:
   Card.name(context.principal, context)
-def told(present: Lists.List<Plans.Reference>, line: String, action: String) -> Activity<Plan, Response, Card.Reply>:
+def told(present: Lists.List<Plans.Reference>, line: String, action: String) -> Activity<Plan, Response, Card.Replied>:
   match present:
-    case nil(_): Card.Reply.done({action: action})
+    case nil(_): Card.Replied.done({action: action})
     case cons(c): toldOne(c.head, c.tail, line, action)
-def toldOne(to: Plans.Reference, rest: Lists.List<Plans.Reference>, line: String, action: String) -> Activity<Plan, Response, Card.Reply>:
+def toldOne(to: Plans.Reference, rest: Lists.List<Plans.Reference>, line: String, action: String) -> Activity<Plan, Response, Card.Replied>:
   match perform(Plan.offer({to: to.object, document: Document.text(line)})):
     case _: told(rest, line, action)
-def whispered(state: State, to: String, line: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def whispered(state: State, to: String, line: String, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match Lists.find(Relations.rows(state.present), fn(p: Plans.Reference) -> Bool: p.object == to || Card.handle(p.object) == to):
     case some(p): told(Lists.List.cons({head: p.value, tail: Lists.List.nil()}), "{speaker(context)} whispers: {line}\n", "whisper")
-    case none(_): Card.tell(Card.Reply.refused({clause: "notHere", reading: "{to} is not here."}), Document.text("Not done: {to} is not here.\n"))
+    case none(_): Card.tellPlan(Card.Replied.refused({clause: "notHere", reading: "{to} is not here."}), Document.text("Not done: {to} is not here.\n"))
 # Derived views (FOUNDATION §16, `viewDerived {object, view}`): pure definitions of the state
 # and the reader's context that another object may ask for by name.
 def views() -> Lists.List<String>:
@@ -187,11 +187,11 @@ def views() -> Lists.List<String>:
 # avatar's move (an avatar's id is its principal's DID).
 def affordances(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Card.usage(context.object, forms()), tail: Lists.concat(Lists.map(Relations.rows(state.things), fn(t: Plans.Reference) -> Document.Document: Document.text("\n    delvetalk {t.object} acquire\n")), Lists.map(state.exits, fn(e: Exit) -> Document.Document: Document.text("\n    delvetalk {context.principal} move\n    exit: {e.label}\n")))})})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "place", blurb: "A room: who is here, what lies here, the exits."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
     case act(a): talking(state, a.action, a.fields, context)
     case _: Card.answerLensed(routed, context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the room's owner changes it; that is {Card.name(state.owner, context)}", render(state, context))

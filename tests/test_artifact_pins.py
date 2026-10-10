@@ -46,6 +46,8 @@ def activity_rows(type_json):
         type_json = type_json["codomain"]
     if type_json.get("tag") != "computation":
         return None
+    if type_json["plan"].get("tag") != "variant":
+        return None  # the message dialect: one World.Message, the response a site's own sum
     return row_names(type_json["plan"]["row"]), row_names(type_json["response"]["row"])
 
 

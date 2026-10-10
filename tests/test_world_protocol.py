@@ -34,7 +34,7 @@ def asked(state: State, input: {other: Plans.Reference}, context: Abi.Context) -
     case returned(r): r.result
     case _: ""
 def follow(state: State, input: {other: Plans.Reference}, context: Abi.Context) -> Activity<String>:
-  match world.subscribe({object: input.other, field: "count"}):
+  match world.subscribe({object: input.other, field: "count", method: "changed"}):
     case subscribed(_): "subscribed"
     case denied(_): "denied"
     case refused(r): r.clause

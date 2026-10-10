@@ -30,14 +30,14 @@ def tick(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 form tick:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "loop", blurb: "Ticks itself until the causal budget runs out."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
-    case act(a): ticked(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case act(a): ticked(state, context, fn(count: Nat) -> Card.Replied: Card.Replied.done({action: a.action}))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("Ticks: {natText(state.count)}\n")

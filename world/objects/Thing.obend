@@ -192,11 +192,11 @@ def transferred(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Res
 # owned by whoever asked (the host fills `owner` with the creating principal; the law must
 # admit its own owner's amendment).
 def copy(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  if state.copyable == false then Card.tellTo(Place.Done.refused({clause: "notCopyable", reading: "{state.name} is not copyable"}), context.principal, Document.text("Not copied: {state.name} is not copyable; its owner, {Card.name(state.owner, context)}, decides.\n")) else copying(state, context)
+  if state.copyable == false then Card.tellToPlan(Place.Done.refused({clause: "notCopyable", reading: "{state.name} is not copyable"}), context.principal, Document.text("Not copied: {state.name} is not copyable; its owner, {Card.name(state.owner, context)}, decides.\n")) else copying(state, context)
 def copying(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match perform(Plan.create({package: "Thing", seed: {name: state.name, description: state.description, holder: Plans.nobody(), location: Plans.nobody(), copyable: state.copyable}, law: "", requireAbsent: Plans.nobody()})):
-    case created(c): Card.tellTo(Place.Done.done({}), context.principal, Document.text("Copied {state.name} as {c.object.object}.\n"))
-    case refused(r): Card.tellTo(Place.Done.refused({clause: r.clause, reading: "The world refused the copy ({r.clause})."}), context.principal, Document.text("Not copied: {r.clause}\n"))
+    case created(c): Card.tellToPlan(Place.Done.done({}), context.principal, Document.text("Copied {state.name} as {c.object.object}.\n"))
+    case refused(r): Card.tellToPlan(Place.Done.refused({clause: r.clause, reading: "The world refused the copy ({r.clause})."}), context.principal, Document.text("Not copied: {r.clause}\n"))
     case _: Place.Done.refused({clause: "noCreation", reading: "The copy was not made."})
 def holding(state: State, context: Abi.Context) -> String:
   if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else "Held by {Card.shown(state.holder.object, state.holderHandle, context)}."
@@ -217,7 +217,7 @@ form offer:
 form withdraw:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: acquireForm(), tail: Card.Forms.cons({head: offerForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.nil()})})})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "thing", blurb: "Pick it up, put it down, offer it to someone who accepts."}
 # A spell's `to` names the recipient's avatar, which is the recipient's DID.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
@@ -226,7 +226,7 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
   match routed:
     case act(a): if a.action == "acquire" then acquire(state, context) else if a.action == "withdraw" then withdraw(state, context) else offered(state, {world: context.world, object: Card.text(a.fields, "to")}, Card.natural(a.fields, "until"), context)
     case _: Card.answerLensedAs(routed, context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the thing's owner changes it; that is {Card.name(state.owner, context)}", render(state, context), done)
-def done(reply: Card.Reply) -> Place.Done:
+def done(reply: Card.Replied) -> Place.Done:
   match reply:
     case done(_): Place.Done.done({})
     case refused(r): Place.Done.refused(r)

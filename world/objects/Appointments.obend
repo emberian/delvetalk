@@ -48,18 +48,18 @@ form book:
   after: natural 1..1000000
 def forms() -> Card.Forms:
   Card.Forms.cons({head: bookForm(), tail: Card.Forms.nil()})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "appointments", blurb: "Book a note for later: it is sent when its time comes."}
-def bookedReply(done: Done) -> Card.Reply:
+def bookedReply(done: Done) -> Card.Replied:
   match done:
-    case booked(_): Card.Reply.done({action: "book"})
-    case refused(r): Card.Reply.refused(r)
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+    case booked(_): Card.Replied.done({action: "book"})
+    case refused(r): Card.Replied.refused(r)
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
     case act(a): booking(state, Card.text(a.fields, "topic"), Card.text(a.fields, "to"), Card.natural(a.fields, "after"), context, bookedReply)
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 def childLine(reference: Plans.Reference) -> Document.Document:
   Document.text("- {reference.object}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).

@@ -31,14 +31,14 @@ def light(state: State, context: Abi.Context) -> Activity<Plan, Response, Bool>:
 form light:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: lightForm(), tail: Card.Forms.nil()})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "lantern", blurb: "Light it, or let a door light it."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
-    case act(a): lit(state, context, fn(done: Bool) -> Card.Reply: Card.Reply.done({action: a.action}))
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case act(a): lit(state, context, fn(done: Bool) -> Card.Replied: Card.Replied.done({action: a.action}))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text(if state.lit then "The lantern is lit by {Card.shown(state.litBy, state.litHandle, context)}{Card.mine(state.litBy, context)}.\n" else "The lantern is dark.\n")

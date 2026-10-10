@@ -128,20 +128,20 @@ form countersign:
 form withdraw:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: countersignForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.nil()})})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "deal", blurb: "Terms every party countersigns; at rest when all have."}
-def doneReply(done: Done) -> Card.Reply:
+def doneReply(done: Done) -> Card.Replied:
   match done:
-    case refused(r): Card.Reply.refused(r)
-    case withdrawn(_): Card.Reply.done({action: "withdraw"})
-    case _: Card.Reply.done({action: "countersign"})
+    case refused(r): Card.Replied.refused(r)
+    case withdrawn(_): Card.Replied.done({action: "withdraw"})
+    case _: Card.Replied.done({action: "countersign"})
 # A countersign by post cites that post: the reply is the signature.
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, input.post, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, post: String, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, post: String, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
     case act(a): if a.action == "withdraw" then withdrew(state, context, doneReply) else countersigned(state, post, context, doneReply)
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 def signatureLine(signature: Signature) -> Document.Document:
   Document.text("signed: {Card.shown(signature.principal, signature.handle, Card.stranger())} at {signature.post}\n")
 def waitingLine(state: State) -> Document.Document:

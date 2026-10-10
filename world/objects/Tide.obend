@@ -91,7 +91,7 @@ def refused(w: Why) -> Done:
 # Every subscribe and tick ends by offering what happened and the Tide's card as the
 # write leaves it (a refusal shows the card as read), refusals included.
 def told<T>(done: Done, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  Card.tell(then(done), Document.concat(Document.text(doneLine(done)), card))
+  Card.tellPlan(then(done), Document.concat(Document.text(doneLine(done)), card))
 def doneLine(done: Done) -> String:
   match done:
     case subscribed(s): "Subscribed, from tick {natText(s.since)}.\n\n"
@@ -139,21 +139,21 @@ def forms() -> Card.Forms:
   Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})})
 # The card as a public page under the door word (genesis publishes one page per door).
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  Card.publishPage(Card.pageName(input.page, door().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
-def door() -> Card.Door:
+  Card.publishPagePlan(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
+def blurb() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
-def doneReply(done: Done) -> Card.Reply:
+def doneReply(done: Done) -> Card.Replied:
   match done:
-    case tooSoon(t): Card.Reply.refused({clause: "tooSoon", reading: "the next tick may come at clock {natText(t.next)}"})
-    case refused(r): Card.Reply.refused(r)
-    case subscribed(_): Card.Reply.done({action: "subscribe"})
-    case ticked(_): Card.Reply.done({action: "tick"})
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+    case tooSoon(t): Card.Replied.refused({clause: "tooSoon", reading: "the next tick may come at clock {natText(t.next)}"})
+    case refused(r): Card.Replied.refused(r)
+    case subscribed(_): Card.Replied.done({action: "subscribe"})
+    case ticked(_): Card.Replied.done({action: "tick"})
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
     case act(a): if a.action == "tick" then ticked(state, context, render(state, context), doneReply) else subscribed(state, Card.natural(a.fields, "every"), Card.text(a.fields, "note"), context, render(state, context), doneReply)
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 def line(context: Abi.Context) -> Sub -> Document.Document:
   fn(sub: Sub) -> Document.Document: Document.text("{Card.shown(sub.who, sub.handle, context)}{Card.mine(sub.who, context)} every {natText(sub.every)} from tick {natText(sub.since)}: {sub.note}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
