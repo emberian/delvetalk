@@ -409,7 +409,7 @@ class Interpret(Reflection):
         r = self.ask()
         self.assertEqual(r["status"], "suspended", r)
         [item] = self.pending()
-        self.assertEqual(set(item), {"id", "object", "policy", "utterance", "offers", "card", "held", "misfit", "attempts", "next"})
+        self.assertEqual(set(item), {"id", "object", "policy", "utterance", "offers", "card", "held", "misfit", "reach", "attempts", "next"})
         self.assertEqual((item["attempts"], item["next"]), (0, None))
         self.assertEqual(item["object"], "probe")
         self.assertEqual(item["utterance"], "ring it three times")

@@ -990,6 +990,23 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `test_the_request_carries_the_card_as_the_speaker_reads_it`, `tests/test_policy.py`
    `test_the_interpretation_shows_the_model_the_card_as_the_speaker_reads_it`.
 
+118. **Reach (host13; docs/FLEX.md §2).** A turn's `reach` says how its words reached the object:
+   `reply` (its `replyTo` names a post the world recorded; the host checks), `spell` (its text has a
+   spell line; the host parses), `delivery` (an object sent it), `direct` (a principal named a method
+   other than `receive`), or what the transport saw of the post and states on `world-turn {reach}`
+   (`statedReaches`: `mention`, a mention or summons of the world; `door`, a door's word in a thread
+   the world opened; `fields`, field lines there, checked: a `fields` with no field line is a request
+   error; `direct`, asked on the card itself: the play page and `/turn` send it). Any other value,
+   `reply` and `spell` included, is a request error. A stated reach is part of the request digest.
+   `runTurn` settles it (`reachOf`) before the spell is read; `TurnState.reach` carries it through
+   calls; a suspension's activity journals it (when non-empty), so a resumed segment and a stale
+   re-run keep it, and `world-interpretations` lists it per item. An `interpret` Plan of a turn with
+   no reach answers `unclear {needs: ["not addressed"]}` at once: no suspension, no model, no quota.
+   The bridge must state the rule `route` used (transport lane; until then the town's prose is not
+   addressed), and on Zulip pass the recorded ancestor it found as `replyTo`. Tests:
+   `tests/test_reach.py`; prose tests in test_policy, test_hub, test_fork state `mention` (or
+   `direct` for the play page's).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1021,16 +1038,6 @@ dropped from this list: `proposed` by name (`4f8af5c`), Deal under kind 3 (`7017
 `proposals` arm and Bell's `actions` (`65c477f`), the Bell's limits under 5.108 (`8ddd2c4`), the
 transport on reservations, retries and cursors (`d99d691`, `e1f3359`, `e8cf553`).
 
-- **Reach (host, next; docs/FLEX.md §2, the root's third FLEX item).** A `receive` reaches the model only
-  when its post is a direct reply (the turn's `replyTo` names a recorded post: host-verified), a
-  mention with a door word (the transport's `mention: true` on `world-turn`, a fact of the post, plus a
-  door word of the offered forms in the utterance: host-checked), or carries a spell line; otherwise
-  `interpret` answers `unclear {needs: ["not addressed"]}` at once, unsuspended, spending no quota, and
-  the interpretation journals `reach` (`reply`, `mention`, `spell`, `delivery`). Design: `TurnState.reach`
-  from `runTurnWith`'s request; the gate in `interpretPlan`. Cost: every prose test that interprets
-  without `replyTo` (test_policy, test_hub, test_interpret_text, test_spell_turns `Interpreted`,
-  test_reflection `Interpret`, test_interpret_object, test_fork, test_world_object) passes
-  `mention: true` or a recorded `replyTo`. Closed by a test per reach and one unreached prose.
 - **FLEX §4 host 2 to 4** (host, queued): case-folded names and the addressee-aware `parse`, bare
   values bound by type, misfits of a direct turn to the card's `receive` with `misfit`.
 - **`world-posted` without `intent`** (host): the transport now reserves every post, so `postedOp`

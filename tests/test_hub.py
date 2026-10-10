@@ -55,7 +55,7 @@ class Hub(test_chain.Chain):
             self.assertEqual(self.turn("root", "add", record(door=door(*d)), principal="ember")["result"]["label"], "done")
 
     def say(self, text, who, uri="at://x/post/1"):
-        return self.turn("root", "receive", record(text=label(text), post=label(uri)), principal=who)
+        return self.turn("root", "receive", record(text=label(text), post=label(uri)), principal=who, reach="mention")
 
     def greet(self, *who):
         for principal in who:
@@ -308,7 +308,7 @@ class Hub(test_chain.Chain):
     def test_the_garden_hears_the_first_of_several_spells(self):
         self.policy()
         self.make("garden", closure("Garden"), garden_seed("policy", confirm=False))
-        asked = self.turn("garden", "receive", record(text=label("plant a fern and a moss"), post=label("at://x/p")), principal=KIMI)
+        asked = self.turn("garden", "receive", record(text=label("plant a fern and a moss"), post=label("at://x/p")), principal=KIMI, reach="mention")
         self.assertEqual(asked["status"], "suspended", asked)
         r = self.interpret("delvetalk garden plant\nseed: a fern\ncolour: silver\ndelvetalk garden plant\nseed: a moss\ncolour: amber")
         self.assertEqual(r["result"]["label"], "planted", r)
@@ -321,7 +321,7 @@ class Hub(test_chain.Chain):
         reply naming a door is interpreted."""
         self.policy()
         self.directory("policy")
-        direct = lambda text: self.turn("root", "receive", record(text=label(text), post=label("")), principal=KIMI)
+        direct = lambda text: self.turn("root", "receive", record(text=label(text), post=label("")), principal=KIMI, reach="direct")
         self.assertEqual(direct("hello there")["result"]["label"], "menu")             # the greeting: this hour's card
         for text in ("what a lovely evening", "thank you all", "see you tomorrow"):
             r = direct(text)
@@ -569,7 +569,7 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
 
     def say(self, text, ident):
-        r = self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
+        r = self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident, reach="mention")
         # A reply to the bell itself that fits none of its forms gets the bell's card once an hour
         # (the directory's `due`), then nothing; either way the prose is handed on.
         first, self.answered = not getattr(self, "answered", False), True
@@ -640,7 +640,7 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # The same words under the hub are a request: the garden's plant, the bells' rain.
         self.assertEqual(self.turn("directory", "receive", record(text=label("hello"), post=label("at://x/h")), principal=KIMI)["result"]["label"], "menu")
-        hub = self.turn("directory", "receive", record(text=label("Could I rain on the lighthouse bell?"), post=label("at://x/h2")), principal=KIMI)
+        hub = self.turn("directory", "receive", record(text=label("Could I rain on the lighthouse bell?"), post=label("at://x/h2")), principal=KIMI, reach="mention")
         self.assertEqual(hub["status"], "suspended", hub)
 
     def test_the_owners_door_actions_are_not_words(self):
@@ -651,7 +651,7 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.add("GARDEN", "garden")
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("garden/bell/1", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
-        hub = lambda text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI)
+        hub = lambda text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, reach="mention")
         self.assertEqual(hub("hello", "h0")["result"]["label"], "menu")
         self.assertEqual([hub(text, "h%d" % n)["result"]["label"] for n, text in enumerate(("Which door is the anthology behind?", "I'd undoor it if I could"), 1)], ["silent", "silent"])
         self.assertEqual(hub("Could I rain on the moss bell?", "h3")["status"], "suspended")
@@ -683,7 +683,7 @@ class AnthologyReachable(test_chain.Chain):
     interpret = Hub.interpret
 
     def say(self, obj, text, who):
-        return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who)
+        return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who, reach="mention")
 
     # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which
     # the host reads as a spell (SpellsPassedOn).
