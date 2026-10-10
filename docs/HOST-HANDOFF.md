@@ -434,7 +434,26 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - `tests/test_bridge.py` `test_end_to_end_clock_and_addressee_against_the_real_host` is still `@unittest.expectedFailure` with a comment that `world-addressee` is missing; the op exists (`Session.lean`). Remove the decorator and run it.
 - `world-reprogram`/`amend` are gated only by the object's law.
 
-### Queue for the next host lane, in order (from lane/host8, which stopped at its context ceiling)
+### Queue for the next host lane, in order (from lane/host9)
+
+host9 landed 5.52 to 5.61, one commit each: words for sums at the boundary; typed receivers for
+`subscribe` and `spell` out of the world's methods; model replies fitted as spells and lens `set`;
+`admits` per method, `world-objects {methods}`, `world-inspect {source: false}`; in-process yields
+resuming from the held machine state (KERNEL-HANDOFF §18); compile caches carried across the worlds a
+process opens; `interpretQuota`; the deletion pass. Full `tests.run` on hbox at lane/host9's last
+code commit: 1040 tests in 253 classes, 0 failed.
+
+1. **The on-disk compile cache** (the open half of host9's item 4): the design points (key naming the
+   binary, prefetch around the pure compile paths, a `LawExpr` codec, `DELVETALK_COMPILE_CACHE`, the
+   cache dir in the TCB) and the measurement (82 ms compile against 10 ms from packet) are below as
+   item 4.
+2. **Delete `receiveArgument`** once transport stops sending `slot` (5.61 says what to change).
+3. **`amend {item}`/`remove {item}`** under the old labels: delete when no object writes them
+   (`world/` writes `amendItem`/`removeItem`).
+4. The rest of host8's queue, below: rows as roots, the rehearsal wall, the older open items.
+
+host8's queue as host9 left it:
+
 
 host8 landed, one commit each (5.46 to 5.51 and the commits on lane/host8): compile caches kept across
 turns and card reads; a migration made canonical (test); the relational law atoms denoted; relations read
@@ -474,6 +493,12 @@ the full `tests.run` once (1011 tests green at lane/host8's last commit).
    foreign worlds, `tests/test_bridge.py`'s stale `expectedFailure` (check it is still there).
 
 Requests to other lanes (not the host's files):
+- Objects (from host9): World.obend's `subscribe` line gains `method: String` ("" = `changed`), with
+  shared row types in `world/lib/Rows.obend` so a receiver's `inserted: List<Rows.Rain>` types; a
+  message-dialect card with lenses declares `def lenses() -> Lists.List<Form.Field>` and a method
+  `set(state, input: {field: String, value: Form.Value}, context)` (5.54).
+- Transport (from host9): `transport/http.py:113` stops sending `slot: ""` in `receive`, and the bridge and
+  zulip test objects stop declaring `slot`, so `receiveArgument` can go (5.61).
 - Kernel: (a) in-turn yields encode, hash and decode the whole checkpoint for every Plan the host answers at
   once (`Turn.conclude` -> `Checkpoint.makeFor` -> `checkpointDigest`, then `prepareResumeEntry` re-hashes and
   decodes): ~45% of host CPU in the rehearsal profile. A yielded outcome that carries the machine state and a
