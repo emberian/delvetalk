@@ -112,7 +112,7 @@ def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\nReply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n\n"), tail: Lists.concat(Lists.map(menu(state), doorLine), Document.Documents.cons({head: Document.text("An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"), tail: Document.Documents.nil()}))})})
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "directory", blurb: "The doors of DelveTalk."}
 # What the directory did with a reply.
 sum Heard:
@@ -137,9 +137,9 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
 def passOn(card: String, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Plan.call({object: {world: context.world, object: if card == "env" || card == "wake" then Card.own(card, context) else card}, method: "receive", argument: input})):
     case returned(_): Heard.passed({card: card})
-    case denied(_): Card.tell(Heard.refused({reason: "Not visible: {card}"}), Document.text("The card {card} is not visible to you.\n"))
-    case refused(r): Card.tell(Heard.refused({reason: r.clause}), Document.text(notPassed(card, r.clause)))
-    case _: Card.tell(Heard.refused({reason: "No answer from {card}"}), Document.text("No answer from {card}.\n"))
+    case denied(_): Card.tellPlan(Heard.refused({reason: "Not visible: {card}"}), Document.text("The card {card} is not visible to you.\n"))
+    case refused(r): Card.tellPlan(Heard.refused({reason: r.clause}), Document.text(notPassed(card, r.clause)))
+    case _: Card.tellPlan(Heard.refused({reason: "No answer from {card}"}), Document.text("No answer from {card}.\n"))
 # A card that does not exist is named, with where to look (rehearsal finding 7: "Not passed to
 # forge: unknownObject" told the speaker nothing). The host's refusal carries only its clause.
 def notPassed(card: String, clause: String) -> String:
@@ -247,9 +247,11 @@ def without(words: Lists.List<String>, excluded: Lists.List<String>) -> Lists.Li
 # Learning: a door's word and object id, and its forms' actions and fields, by inspect.
 def doorWords(door: Door) -> String:
   "{door.label} {door.to.object} "
-# Only what a door offers counts: the method table also lists helpers that take the state
-# and a context (here, guard, reading, admitted), so a method counts when it takes fields,
-# as an offered form does. (A form without fields, such as ring, is not a word here.)
+# Only what a door offers counts. Inspect lists the method table, which holds the forms,
+# the protocol's own methods (excluded by name) and nothing else when every helper takes its
+# State after another parameter (rehearsal run 10: Scene's `reading` and Table's `played`
+# were methods, and seven readings came of their words). A form without fields, such as
+# ring, is not a word here.
 def offeredForm(form: Form.Form) -> Bool:
   offered(form) && Lists.length(form.fields) > 0n
 def formWords(forms: Lists.List<Form.Form>) -> String:
@@ -309,7 +311,10 @@ def gathered(state: State, input: Card.Heard, to: Plans.Reference, rest: Lists.L
     case _: gathering(state, input, rest, forms, policy, context)
 # A door's methods minus the protocol's own (receive, render and the observers').
 def offered(form: Form.Form) -> Bool:
-  form.action != "receive" && form.action != "render" && form.action != "observe" && form.action != "unobserve"
+  Lists.any(protocolMethods(), fn(m: String) -> Bool: m == form.action) == false
+# Methods every card has by the protocol, which no reader names as an action.
+def protocolMethods() -> Lists.List<String>:
+  Card.wordList("receive render observe unobserve publishPage")
 def interpreting(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Card.asking(input.text, forms, state.policy, policy, attempt, needs)):
     case replied(r): readBack(state, input, forms, policy, attempt, r.text, Card.fitting(r.text, forms), context)
@@ -371,9 +376,9 @@ def slashed(id: String) -> Lists.List<String>:
 def kindLine(id: String, missed: String) -> String:
   if kindOf(id) == "bell" then " A bell's card takes {missed}: reply to the planting post." else " A {kindOf(id)}'s card takes {missed}: reply to its post."
 def noDoor(needs: Form.Names, kind: String) -> Activity<Plan, Response, Heard>:
-  Card.tell(Heard.unclear({needs: needs}), Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}).{kind}\n"))
+  Card.tellPlan(Heard.unclear({needs: needs}), Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}).{kind}\n"))
 def usageOf(card: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Activity<Plan, Response, Heard>:
-  Card.tell(Heard.unclear({needs: needs}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card))))
+  Card.tellPlan(Heard.unclear({needs: needs}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card))))
 # An action the policy confirms (a give, an offer, a reprogram) is not passed on from prose:
 # the speaker is shown the spell, and sending it is the yes.
 def actionOf(parsed: Spell.Parsed) -> String:
@@ -381,7 +386,7 @@ def actionOf(parsed: Spell.Parsed) -> String:
     case spell(s): s.action
     case notASpell(_): ""
 def askedFirst(card: String, text: String) -> Activity<Plan, Response, Heard>:
-  Card.tell(Heard.asked({card: card}), Document.text("✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it:\n\n{text}\n"))
+  Card.tellPlan(Heard.asked({card: card}), Document.text("✾ DELVETALK · ROOT\n\nI understood this, and it asks first. To do it, reply with it:\n\n{text}\n"))
 def needsCard(needs: Form.Names) -> Document.Document:
   Document.text("✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: {Spell.joined(needs)}.\n")
 # The door words, for a card that lists them.
@@ -390,15 +395,15 @@ def words(state: State) -> String:
 # A link door (no object; genesis's STUDIO) answers with its description, which carries the
 # URL; it has no card to ask for and no forms to read.
 def linkDoor(door: Door) -> Activity<Plan, Response, Heard>:
-  Card.tell(Heard.door({object: ""}), Document.text("{door.label}\n{door.description}\n"))
+  Card.tellPlan(Heard.door({object: ""}), Document.text("{door.label}\n{door.description}\n"))
 def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match perform(Plan.card({object: to})):
-    case carded(c): Card.tell(Heard.door({object: to.object}), c.document)
-    case _: Card.tell(Heard.refused({reason: "No card at {to.object}"}), Document.text("The door to {to.object} opens on nothing yet.\n"))
+    case carded(c): Card.tellPlan(Heard.door({object: to.object}), c.document)
+    case _: Card.tellPlan(Heard.refused({reason: "No card at {to.object}"}), Document.text("The door to {to.object} opens on nothing yet.\n"))
 # The menu once per principal: the greeting is remembered (at most 4,096 principals; past
 # that the menu goes out without being remembered).
 def greeting(state: State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
-  if Relations.count(state.greeted) >= 4096n then Card.tell(Heard.menu({}), render(state, context)) else greeted(state, context)
+  if Relations.count(state.greeted) >= 4096n then Card.tellPlan(Heard.menu({}), render(state, context)) else greeted(state, context)
 def greeted(state: State, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   let written(_) = perform(write {greeted: insert {principal: context.principal}})
-  Card.tell(Heard.menu({}), render(state, context))
+  Card.tellPlan(Heard.menu({}), render(state, context))

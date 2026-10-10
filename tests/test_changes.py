@@ -58,12 +58,12 @@ record Edits:
 def initial() -> State:
   {seen: 0n, last: 0n}
 def watch(state: State, input: {target: String, field: String}, context: Abi.Context) -> Activity<String>:
-  match world.subscribe({object: {world: "", object: input.target}, field: input.field}):
+  match world.subscribe({object: {world: "", object: input.target}, field: input.field, method: "changed"}):
     case subscribed(_): "subscribed"
     case denied(_): "denied"
     case refused(r): r.clause
 def unwatch(state: State, input: {target: String, field: String}, context: Abi.Context) -> Activity<String>:
-  match world.unsubscribe({object: {world: "", object: input.target}, field: input.field}):
+  match world.unsubscribe({object: {world: "", object: input.target}, field: input.field, method: "changed"}):
     case subscribed(_): "unsubscribed"
     case denied(_): "denied"
     case refused(r): r.clause
@@ -242,12 +242,8 @@ class Receivers(Reflection):
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
         library = extended_library(scratch.name, "")
-        path = os.path.join(library, "World.obend")
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-        self.assertIn(RECEIVER_PROTOCOL[0], text)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text.replace(RECEIVER_PROTOCOL[0], RECEIVER_PROTOCOL[1]))
+        with open(os.path.join(library, "World.obend"), encoding="utf-8") as f:
+            self.assertIn(RECEIVER_PROTOCOL[1], f.read())  # world/lib/World.obend names the receiver
         self.open_library(library=library)
         self.make2("bell", BELL)
         self.make2("r", RECEIVER)

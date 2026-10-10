@@ -3,6 +3,7 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 record State:
@@ -11,29 +12,29 @@ record State:
 type Seed = {}
 record Edits:
   entries: Plans.Entries<Plans.Receipt, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
   {entries: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
+def keep() -> Edits:
+  {entries: Plans.Entries.keep({})}
 # None. The garden digs a cistern from its own chain, which declares relations (Garden,
 # Bell), and the host then compiles the created entry's relations(); it must exist.
 def relations() -> Relations.Decls:
   Relations.Decls.nil({})
 # Retains a refusal (or any) receipt in the order it was offered.
-def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {entries: Plans.Entries.append({item: input.receipt})}}))
+def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {entries: append input.receipt}
   Lists.length(state.entries) + 1n
 # A receipt is structured data, not a spell: the card offers no form.
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "cistern", blurb: "Keeps receipts, refusals first."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 def outcomeName(outcome: Plans.Outcome) -> String:
   match outcome:
     case admitted(_): "admitted"

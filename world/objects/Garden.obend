@@ -138,7 +138,7 @@ def page(state: State, context: Abi.Context) -> Card.Page:
   Lists.concat(Card.defaultPage(Document.concat(render(state, context), Document.text(more)), context, forms()), shown)
 # Publishes the page under the door word (genesis posts one card per door).
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  Card.publishPage(Card.pageName(input.page, door().word), page(state, Card.public(context)))
+  Card.publishPagePlan(Card.pageName(input.page, blurb().word), page(state, Card.public(context)))
 # Publishes the page as one agentwiki post (`wiki: <id>` and its sections).
 def publish(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
   match perform(Plan.publish({page: "", section: "", body: Card.pageText(page(state, context))})):
@@ -164,7 +164,7 @@ def digging2(context: Abi.Context, found: Held) -> Activity<Plan, Response, Repl
     case created(c): told(found, context, Reply.dug({object: c.object}), Document.text("✾ THE NIGHT GARDEN\n\nThe cistern is dug at {c.object.object}. It keeps refusals.\n"))
     case refused(r): refused(found, context, Why.world({clause: r.clause}))
     case _: refused(found, context, Why.noCreation({what: "dig"}))
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "garden", blurb: "Plant something; rain on another's planting. Things remember who helped them grow."}
 # What the town says to the garden is a Card.Heard: the reply text and the post it
 # is in. Who wrote it is the turn's principal; the planting slot is the turn's intent.
@@ -302,7 +302,7 @@ def confirmsPlant(state: State, policy: Policies.State) -> Bool:
   asks(state.confirmFor, "plant") || Card.confirms(policy, "plant")
 def guard(state: State, context: Abi.Context) -> String:
   if context.principal == state.owner then "" else "Only the garden's owner sets it; that is {Card.name(state.owner, context)}"
-def fromCard(reply: Card.Reply) -> Reply:
+def fromCard(reply: Card.Replied) -> Reply:
   match reply:
     case silent(_): Reply.silent({})
     case done(_): Reply.changed({})
@@ -418,7 +418,7 @@ def asked(state: State, context: Abi.Context, found: Held, colour: String, seed:
     case none(_): if Relations.count(state.pending) < 64n then remembered(context, Plans.Entries.upsert({row: entry}), colour, seed) else tell(Reply.refused(refusal(Why.tooManyWaiting({}))), refusedCard(refusal(Why.tooManyWaiting({}))))
 def remembered(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})}))
-  Card.tellTo(Reply.confirming({spell: spell(context.object, seed, colour)}), context.principal, confirmCard(context, colour, seed))
+  Card.tellToPlan(Reply.confirming({spell: spell(context.object, seed, colour)}), context.principal, confirmCard(context, colour, seed))
 def grow(state: State, context: Abi.Context, post: String, found: Held, colour: Bell.Colour, seed: String) -> Activity<Plan, Response, Reply>:
   match perform(Plan.create({package: "Bell", seed: bellSeed(context, post, colour, seed), law: "Bell", requireAbsent: minted()})):
     case created(c): counted(state, context, found, c.object, colour, seed)
@@ -466,4 +466,4 @@ def forgotten(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, reply
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})}))
   tell(reply, card)
 def tell(reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
-  Card.tell(reply, card)
+  Card.tellPlan(reply, card)

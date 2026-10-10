@@ -259,19 +259,19 @@ form unwatch:
   id: natural 1..1000000
 def forms() -> Card.Forms:
   Card.Forms.cons({head: mentionForm(), tail: Card.Forms.cons({head: keywordForm(), tail: Card.Forms.cons({head: unwatchForm(), tail: Card.Forms.nil()})})})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "wake", blurb: "Choose what wakes you: mentions, words, replies, a schedule."}
-def doneReply(done: Done) -> Card.Reply:
+def doneReply(done: Done) -> Card.Replied:
   match done:
-    case refused(r): Card.Reply.refused(r)
-    case _: Card.Reply.done({action: "watch"})
+    case refused(r): Card.Replied.refused(r)
+    case _: Card.Replied.done({action: "watch"})
 # From a post: watch a mention or a keyword (the action is a note to you), or unwatch.
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
     case act(a): if a.action == "unwatch" then unwatched(state, Card.natural(a.fields, "id"), context, doneReply) else watched(state, spelled(a.action, a.fields), Action.notify({}), context, doneReply)
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 def spelled(action: String, fields: Card.Fields) -> On:
   if action == "mention" then On.mention({actor: Card.text(fields, "actor")}) else On.keyword({term: Card.text(fields, "term")})
 def onText(on: On) -> String:

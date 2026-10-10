@@ -2,6 +2,7 @@ edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Seats.obend as Seats
 # One player's seat. commit seals a digest of (table, round, seat, source, target,
@@ -21,8 +22,6 @@ record Edits:
   opened: Plans.Edit<Bool, {}>
   source: Plans.Edit<Nat, {}>
   target: Plans.Edit<Nat, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {table: Plans.nobody(), seat: 0n, owner: "", opponent: "", rival: Plans.nobody()}
 def seeded(seed: Seed) -> State:
@@ -39,48 +38,50 @@ def commitment(table: String, round: Nat, seat: Nat, source: Nat, target: Nat, n
   sha256Text("{tag}{framed(table)}{framed(natText(round))}{framed(natText(seat))}{framed(natText(source))}{framed(natText(target))}{framed(nonce)}")
 def hex(text: String) -> Bool:
   textLength(text) == 64n && textSpan(text, "0123456789abcdef") == 64n
-def mine(state: State, round: Nat, context: Abi.Context) -> String:
+def mine(round: Nat, state: State, context: Abi.Context) -> String:
   if context.principal != state.owner then "This seat is {Card.name(state.owner, context)}" else if round != state.round then "The round is {natText(state.round)}" else ""
-def commit(state: State, input: {round: Nat, digest: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if mine(state, input.round, context) != "" then Done.refused({reason: mine(state, input.round, context)}) else if state.digest != "" then Done.refused({reason: "Already sealed this round."}) else if hex(input.digest) == false then Done.refused({reason: "A digest is 64 lower-case hex characters."}) else if context.intent != Seats.commitIntent(state.table.object, state.round) then Done.refused({reason: "Seal in the turn named {Seats.commitIntent(state.table.object, state.round)}"}) else sealed(input.digest, context)
-def sealed(digest: String, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(write {digest: set digest})
+def commit(state: State, input: {round: Nat, digest: String}, context: Abi.Context) -> Activity<Done>:
+  if mine(input.round, state, context) != "" then Done.refused({reason: mine(input.round, state, context)}) else if state.digest != "" then Done.refused({reason: "Already sealed this round."}) else if hex(input.digest) == false then Done.refused({reason: "A digest is 64 lower-case hex characters."}) else if context.intent != Seats.commitIntent(state.table.object, state.round) then Done.refused({reason: "Seal in the turn named {Seats.commitIntent(state.table.object, state.round)}"}) else sealed(input.digest, context)
+def sealed(digest: String, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {digest: set digest}
   Done.committed({})
 # Open the move: it must match the seal, and the opponent's commitment must be admitted;
 # until it is, the turn waits on the opponent's slot.
-def reveal(state: State, input: {round: Nat, source: Nat, target: Nat, nonce: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if mine(state, input.round, context) != "" then Done.refused({reason: mine(state, input.round, context)}) else if state.digest == "" || state.opened then Done.refused({reason: "Nothing sealed to open."}) else if commitment(state.table.object, state.round, state.seat, input.source, input.target, input.nonce) != state.digest then Done.refused({reason: "The opening does not match the seal."}) else awaiting(state, input.source, input.target, context)
-def awaiting(state: State, source: Nat, target: Nat, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.await({slot: {principal: state.opponent, intent: Seats.commitIntent(state.table.object, state.round)}, patience: 64n})):
-    case reply(r): answered(state, r.receipt.outcome, source, target, context)
+def reveal(state: State, input: {round: Nat, source: Nat, target: Nat, nonce: String}, context: Abi.Context) -> Activity<Done>:
+  if mine(input.round, state, context) != "" then Done.refused({reason: mine(input.round, state, context)}) else if state.digest == "" || state.opened then Done.refused({reason: "Nothing sealed to open."}) else if commitment(state.table.object, state.round, state.seat, input.source, input.target, input.nonce) != state.digest then Done.refused({reason: "The opening does not match the seal."}) else awaiting(input.source, input.target, state, context)
+# The helpers below take the State after their own inputs: a definition whose first
+# parameter is the State is a method any turn may run.
+def awaiting(source: Nat, target: Nat, state: State, context: Abi.Context) -> Activity<Done>:
+  match world.await({slot: {principal: state.opponent, intent: Seats.commitIntent(state.table.object, state.round)}, patience: 64n}):
+    case reply(r): answered(r.receipt.outcome, source, target, state, context)
     case timedOut(_): Done.refused({reason: "The opponent did not seal in time."})
     case _: Done.refused({reason: "The opponent's seal is unknown."})
 # Any admitted turn of the opponent under that intent settles the slot, so the seal
 # itself is read from the rival seat before the move is opened.
-def answered(state: State, outcome: Plans.Outcome, source: Nat, target: Nat, context: Abi.Context) -> Activity<Plan, Response, Done>:
+def answered(outcome: Plans.Outcome, source: Nat, target: Nat, state: State, context: Abi.Context) -> Activity<Done>:
   match outcome:
-    case admitted(_): checked(state, source, target, context)
+    case admitted(_): checked(source, target, state, context)
     case refused(_): Done.refused({reason: "The opponent's seal was refused."})
-def checked(state: State, source: Nat, target: Nat, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.view({object: state.rival})):
+def checked(source: Nat, target: Nat, state: State, context: Abi.Context) -> Activity<Done>:
+  match world.view::<State>({object: state.rival}):
     case viewed(v): if v.state.round == state.round && v.state.digest != "" then opening(source, target, context) else Done.refused({reason: "The opponent has not sealed this round."})
     case _: Done.refused({reason: "The opponent's seat did not answer."})
-def opening(source: Nat, target: Nat, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(write {opened: set true, source: set source, target: set target})
+def opening(source: Nat, target: Nat, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {opened: set true, source: set source, target: set target}
   Done.opened({})
 # The table, having resolved, moves every seat to the next round.
-def next(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if context.caller != state.table.object then Done.refused({reason: "Only the table moves the round."}) else nextRound(state, context)
-def nextRound(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {round: Plans.Edit.add({delta: 1n}), digest: Plans.Edit.set({value: ""}), opened: Plans.Edit.set({value: false}), source: Plans.Edit.set({value: 0n}), target: Plans.Edit.set({value: 0n})}}))
-  Done.next({round: state.round + 1n})
+def next(state: State, context: Abi.Context) -> Activity<Done>:
+  if context.caller != state.table.object then Done.refused({reason: "Only the table moves the round."}) else nextRound(state.round, context)
+def nextRound(round: Nat, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {round: add 1n, digest: set "", opened: set false, source: set 0n, target: set 0n}
+  Done.next({round: round + 1n})
 # A seal is made off the town's posts (the move stays private): the card shows status.
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "seat", blurb: "Your seat at a commit-reveal table."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let where = if state.opened then "opened {natText(state.source)} to {natText(state.target)}" else if state.digest != "" then "sealed" else "choosing"

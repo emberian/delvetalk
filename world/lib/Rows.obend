@@ -1,0 +1,55 @@
+edition ObjectiveBend 1
+# The row types of the relations other objects read (WHOLENESS, root decisions, second set,
+# item 3): a subscriber's typed receiver takes `inserted` and `retracted` as lists of one of
+# these, so a Wake imports this module rather than the object that keeps the rows. Each
+# relation's key and limit are its object's (`relations()`); RELATIONAL §12 has the ordering.
+#
+# A rain on a bell, keyed {author, at, n}: `at` the height its turn read, `n` the count of
+# rains then, so key order (n first) is the order they fell.
+record Rain:
+  author: String
+  handle: String
+  text: String
+  at: Nat
+  n: Nat
+# An event an Env took in (world/lib/Event.obend's Event with `n`), keyed {at, actor, uri, n}.
+record Sensed:
+  kind: String
+  actor: String
+  handle: String
+  uri: String
+  cid: String
+  text: String
+  replyTo: String
+  at: Nat
+  n: Nat
+# A principal the directory's menu has gone to once, keyed {principal}.
+record Greeting:
+  principal: String
+# A line submitted to an anthology, keyed {author, at, n}; admission upserts it admitted.
+sum Status:
+  proposed: {}
+  admitted: {}
+record Proposal:
+  author: String
+  handle: String
+  line: String
+  status: Status
+  at: Nat
+  n: Nat
+# What happened in a place, admitted or refused (`clause` "" when admitted), keyed
+# {at, who, action, n}.
+record Trace:
+  who: String
+  handle: String
+  action: String
+  clause: String
+  at: Nat
+  n: Nat
+# A principal's subscription to a tide, keyed {who}: woken every `every` ticks from `since`.
+record Subscription:
+  who: String
+  every: Nat
+  note: String
+  since: Nat
+  handle: String

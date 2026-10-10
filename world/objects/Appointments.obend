@@ -4,6 +4,7 @@ import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Appointment.obend as Appointment
 # A book of appointments. Booking creates one Appointment object (owned by the turn's
@@ -16,50 +17,39 @@ type Seed = {}
 record Edits:
   booked: Plans.Edit<Nat, Nat>
   children: Plans.Entries<Plans.Reference, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
   {booked: 0n, children: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
+def keep() -> Edits:
+  {booked: Plans.Edit.keep({}), children: Plans.Entries.keep({})}
 sum Done:
   booked: {object: Plans.Reference}
   refused: Card.Refusal
-def booking<T>(state: State, topic: String, to: String, after: Nat, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if after == 0n then then(Done.refused({clause: "afterZero", reading: "after is at least 1."})) else creating(state, {owner: context.principal, topic: topic, to: {world: context.world, object: to}, after: after}, context, then)
-def creating<T>(state: State, seed: Appointment.Seed, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.create({package: "Appointment", seed: seed, law: "", requireAbsent: {world: "", object: "{context.object}/{natText(state.booked + 1n)}"}})):
-    case created(c): counted(c.object, seed, context, then)
-    case refused(r): then(Done.refused({clause: r.clause, reading: "The world refused it ({r.clause})."}))
-    case _: then(Done.refused({clause: "noCreation", reading: "The book could not make it."}))
-def counted<T>(object: Plans.Reference, seed: Appointment.Seed, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {booked: Plans.Edit.add({delta: 1n}), children: Plans.Entries.append({item: object})}}))
-  kept(object, seed, then)
-def kept<T>(object: Plans.Reference, seed: Appointment.Seed, then: Done -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.send({object: object, method: "keep", argument: Plans.nothing()})):
-    case _: then(Done.booked({object: object}))
-def book(state: State, input: {topic: String, to: String, after: Nat}, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  booking(state, input.topic, input.to, input.after, context, fn(done: Done) -> Done: done)
+def book(state: State, input: {topic: String, to: String, after: Nat}, context: Abi.Context) -> Activity<Done>:
+  if input.after == 0n then Done.refused({clause: "afterZero", reading: "after is at least 1."}) else creating({owner: context.principal, topic: input.topic, to: {world: context.world, object: input.to}, after: input.after}, state, context)
+def creating(seed: Appointment.Seed, state: State, context: Abi.Context) -> Activity<Done>:
+  match world.create({package: "Appointment", seed: seed, law: "", requireAbsent: {world: "", object: "{context.object}/{natText(state.booked + 1n)}"}}):
+    case created(c): counted(c.object)
+    case refused(r): Done.refused({clause: r.clause, reading: "The world refused it ({r.clause})."})
+def counted(object: Plans.Reference) -> Activity<Done>:
+  let written(_) = write {booked: add 1n, children: append object}
+  kept(object)
+def kept(object: Plans.Reference) -> Activity<Done>:
+  match world.send({object: object, method: "keep", argument: Plans.nothing()}):
+    case _: Done.booked({object: object})
 form book:
   topic: text 1..140
   to: text 1..128
   after: natural 1..1000000
 def forms() -> Card.Forms:
   Card.Forms.cons({head: bookForm(), tail: Card.Forms.nil()})
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "appointments", blurb: "Book a note for later: it is sent when its time comes."}
-def bookedReply(done: Done) -> Card.Reply:
-  match done:
-    case booked(_): Card.Reply.done({action: "book"})
-    case refused(r): Card.Reply.refused(r)
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  match routed:
-    case act(a): booking(state, Card.text(a.fields, "topic"), Card.text(a.fields, "to"), Card.natural(a.fields, "after"), context, bookedReply)
-    case _: Card.answer(routed, context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 def childLine(reference: Plans.Reference) -> Document.Document:
   Document.text("- {reference.object}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).

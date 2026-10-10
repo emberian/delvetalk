@@ -83,29 +83,29 @@ def forms() -> Card.Forms:
   Card.Forms.cons({head: submitForm(), tail: Card.Forms.cons({head: admitForm(), tail: Card.Forms.nil()})})
 # The card as a public page under the door word (genesis posts one card per door).
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  Card.publishPage(Card.pageName(input.page, door().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
-def door() -> Card.Door:
+  Card.publishPagePlan(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
+def blurb() -> Card.Door:
   {word: "anthology", blurb: "Submit a line; the anthology's law admits it."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
     case act(a): if a.action == "admit" then admitting(state, Card.natural(a.fields, "number"), context) else submittedCard(state, Card.text(a.fields, "line"), context)
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 # A submission from a reply is answered with the anthology as it now stands, to its author.
-def submittedCard(state: State, line: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def submittedCard(state: State, line: String, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   let proposal = proposed(state, line, context)
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.insert({row: proposal}), ownerHandle: Plans.Edit.keep({})}}))
-  Card.tellTo(Card.Reply.done({action: "submit"}), context.principal, render(extend(state, {proposals: Relations.insert(state.proposals, proposal, proposalKey)}), context))
-def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  if context.principal != state.owner then Card.Reply.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(Relations.rows(state.proposals), number - 1n), number, context)
-def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  Card.tellToPlan(Card.Replied.done({action: "submit"}), context.principal, render(extend(state, {proposals: Relations.insert(state.proposals, proposal, proposalKey)}), context))
+def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
+  if context.principal != state.owner then Card.Replied.refused({clause: "notOwner", reading: "Only the anthology's owner admits; that is {Card.name(state.owner, context)}"}) else admittingAt(at(Relations.rows(state.proposals), number - 1n), number, context)
+def admittingAt(found: Found, number: Nat, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match found:
-    case none(_): Card.Reply.refused({clause: "noLine", reading: "No line numbered {natText(number)}"})
+    case none(_): Card.Replied.refused({clause: "noLine", reading: "No line numbered {natText(number)}"})
     case some(s): admittedReply(context, s.proposal)
-def admittedReply(context: Abi.Context, proposal: Proposal) -> Activity<Plan, Response, Card.Reply>:
+def admittedReply(context: Abi.Context, proposal: Proposal) -> Activity<Plan, Response, Card.Replied>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {proposals: Plans.Entries.upsert({row: extend(proposal, {status: Status.admitted({})})}), ownerHandle: Plans.Edit.set({value: context.handle})}}))
-  Card.tell(Card.Reply.done({action: "admit"}), Document.text("Admitted: {proposal.line}\n"))
+  Card.tellPlan(Card.Replied.done({action: "admit"}), Document.text("Admitted: {proposal.line}\n"))
 def statusName(status: Status) -> String:
   match status:
     case proposed(_): "proposed"

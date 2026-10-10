@@ -111,30 +111,32 @@ form ring:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: rainForm(), tail: Card.Forms.cons({head: ringForm(), tail: Card.Forms.cons({head: Card.doorForm(), tail: Card.Forms.cons({head: Card.undoorForm(), tail: Card.Forms.nil()})})})})
 # Doors on the bell's card are its planter's (the garden gives it one home on planting).
-def doored(edit: Card.DoorEdit, action: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def doored(edit: Card.DoorEdit, action: String, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match edit:
-    case refused(r): Card.tell(Card.Reply.refused(r), Document.text("Not done: {r.reading}\n"))
+    case refused(r): Card.tellPlan(Card.Replied.refused(r), Document.text("Not done: {r.reading}\n"))
     case edit(e): doorWritten(e.entries, action, context)
-def doorWritten(entries: Plans.Entries<Card.Doorway, {}>, action: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def doorWritten(entries: Plans.Entries<Card.Doorway, {}>, action: String, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {doors: entries})}))
-  Card.Reply.done({action: action})
-def door() -> Card.Door:
+  Card.Replied.done({action: action})
+def blurb() -> Card.Door:
   {word: "bell", blurb: "A bell from the Night Garden: rain on it, ring it."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   heard(state, Card.routeHeard(input, context, forms()), context)
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
-    case act(a): if a.action == "door" || a.action == "undoor" then doored(Card.dooring(state.doors, state.planter, a.action, a.fields, context), a.action, context) else if a.action == "rain" then rainedCard(state, Card.text(a.fields, "text"), context) else rang(state, context, fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "ring"}))
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case act(a): if a.action == "door" || a.action == "undoor" then doored(Card.dooring(state.doors, state.planter, a.action, a.fields, context), a.action, context) else if a.action == "rain" then rainedCard(state, Card.text(a.fields, "text"), context) else rang(state, context, fn(sent: Nat) -> Card.Replied: Card.Replied.done({action: "ring"}))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 # A rain from a reply is answered with the bell as it now stands, to its author; then the
 # observers of rows are told.
-def rainedCard(state: State, text: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def rainedCard(state: State, text: String, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   let rain = fallen(state, text, context)
   let written(_) = perform(write {rains: insert rain})
-  rainOffered(state, rain, context)
-def rainOffered(state: State, rain: Rain, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  rainOffered(rain, state, context)
+# A helper takes its State second: a definition whose first parameter is the State is a
+# method anyone may call (the host's method table), and this one must not be.
+def rainOffered(rain: Rain, state: State, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match perform(Plan.offer({to: context.principal, document: render(extend(state, {rains: Relations.insert(state.rains, rain, rainKey)}), context)})):
-    case _: Card.notifyRows(state.observers, "rains", rainRows(rain), fn(sent: Nat) -> Card.Reply: Card.Reply.done({action: "rain"}))
+    case _: Card.notifyRows(state.observers, "rains", rainRows(rain), fn(sent: Nat) -> Card.Replied: Card.Replied.done({action: "rain"}))
 def colourName(colour: Colour) -> String:
   match colour:
     case amber(_): "amber"

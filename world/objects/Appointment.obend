@@ -2,6 +2,7 @@ edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 # One appointment: at `after` clock units from its keeping turn, it sends a note to
 # `to` (an Avatar is the principal's DID). keep is an await on a slot nobody settles,
@@ -22,10 +23,10 @@ record Seed:
   topic: String
   to: Plans.Reference
   after: Nat
+# Writes give the whole Edits: `keep` is this card's action, so there is no `keep()` for
+# the `write {…}` sugar to extend.
 record Edits:
   status: Plans.Edit<Status, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {owner: "", topic: "", to: Plans.nobody(), after: 1n}
 def seeded(seed: Seed) -> State:
@@ -40,29 +41,31 @@ def open(state: State) -> Bool:
   match state.status:
     case booked(_): true
     case _: false
-def keep(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if open(state) then waiting(state, context) else Done.refused({reason: "This appointment is no longer booked."})
-def waiting(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.await({slot: {principal: context.object, intent: "keep/{context.intent}"}, patience: state.after})):
-    case timedOut(_): due(state, context)
+def keep(state: State, context: Abi.Context) -> Activity<Done>:
+  if open(state) then waiting(context, state) else Done.refused({reason: "This appointment is no longer booked."})
+# The helpers take the State after the Context: a definition whose first parameter is the
+# State is a method any turn may run (`due` would send the note before its time).
+def waiting(context: Abi.Context, state: State) -> Activity<Done>:
+  match world.await({slot: {principal: context.object, intent: "keep/{context.intent}"}, patience: state.after}):
+    case timedOut(_): due(context, state)
     case _: Done.refused({reason: "The appointment was answered before its time."})
-def due(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {status: Plans.Edit.set({value: Status.kept({})})}}))
+def due(context: Abi.Context, state: State) -> Activity<Done>:
+  let written(_) = world.write::<Edits>({status: Plans.Edit.set({value: Status.kept({})})})
   sent(state)
-def sent(state: State) -> Activity<Plan, Response, Done>:
-  match perform(Plan.send({object: state.to, method: "note", argument: {text: "appointment: {state.topic}"}})):
+def sent(state: State) -> Activity<Done>:
+  match world.send({object: state.to, method: "note", argument: {text: "appointment: {state.topic}"}}):
     case _: Done.kept({})
-def cancel(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
+def cancel(state: State, context: Abi.Context) -> Activity<Done>:
   if context.principal != state.owner then Done.refused({reason: "Only its owner cancels it; that is {Card.name(state.owner, context)}"}) else if open(state) then cancelling(context) else Done.refused({reason: "This appointment is no longer booked."})
-def cancelling(context: Abi.Context) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {status: Plans.Edit.set({value: Status.cancelled({})})}}))
+def cancelling(context: Abi.Context) -> Activity<Done>:
+  let written(_) = world.write::<Edits>({status: Plans.Edit.set({value: Status.cancelled({})})})
   Done.cancelled({})
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def door() -> Card.Door:
+def blurb() -> Card.Door:
   {word: "appointment", blurb: "A note sent when its time comes."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 def statusName(status: Status) -> String:
   match status:
     case booked(_): "booked"

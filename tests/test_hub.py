@@ -28,7 +28,7 @@ from tests.test_chain import garden_seed, reference
 from tests.test_objects import closure
 from tests.test_receive import ROOT_DOORS, door
 from tests.test_replay import get, items, rows
-from tests.test_turn_world import label, record
+from tests.test_turn_world import label, nat, record
 from transport.identity import ORIGIN
 
 POSTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rehearsal", "fixtures", "posts.json")
@@ -317,6 +317,25 @@ class LinkDoors(test_chain.Chain):
         self.assertEqual(planted["result"]["label"], "passed", planted)
 
 
+class SpellsPassedOn(test_chain.Chain):
+    """A spell under the directory's post naming another card is passed on by call to its
+    `receive` (Directory.passOn). The host reads spells only on a direct turn (HOST-HANDOFF
+    5.49), so a card in the message dialect gets the call unparsed and without `fields`, and
+    refuses it `typeMismatch`. Expected to fail until the host reads a `receive` call or
+    delivery to a message-dialect card as it reads a direct one (or the Directory moves, when
+    the host retargets the turn itself)."""
+
+    @unittest.expectedFailure
+    def test_a_spell_under_the_directory_runs_on_a_message_dialect_card(self):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("")))
+        self.assertEqual(r["status"], "created", r)
+        self.make("k", closure("Counter"), record())
+        r = self.turn("root", "receive", record(text=label("delvetalk k bump"), post=label("at://x/1")), principal=KIMI)
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "passed"), r)
+        self.assertEqual(get(self.state("k"), "count"), nat(1))
+
+
 class HandedToTheDirectory(test_chain.Chain):
     """Rehearsal run 6: anthology lines posted under glm's planting reached the bell, which has
     no policy and no anthology form, and were lost. A card's quiet prose is sent to the
@@ -391,6 +410,24 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.add("ANTHOLOGY", "anthology")
         self.assertEqual(self.say("What a lovely evening it is; thank you for this.", "c1"), 0)
         self.assertEqual(self.say("anthology: a line about the merchant's hat", "c2"), 1)
+
+    def test_helpers_and_protocol_methods_are_not_words(self):
+        """Rehearsal run 10, finding 2: `reading` (Scene), `played` (Table) and `publishPage` with
+        its `page` field were learned as words, and seven readings came of them. Only a door's
+        forms count; `choose` (a Scene form) still does."""
+        r = self.host.send(op="world-create", principal="ember", identity="mk-rooms", object="rooms", modules=closure("Scene"),
+                           entry="initial", seed=record(title=label("The Moss Gate")))
+        self.assertEqual(r["status"], "created", r)
+        self.make("table", closure("Table"), record())
+        self.add("ROOMS", "rooms")
+        self.add("PLAY", "table")
+        self.assertEqual(self.say("the reading was lovely", "r1"), 0)
+        self.assertEqual(self.say("the match was played well", "r2"), 0)
+        self.assertEqual(self.say("page: the second one", "r3"), 0)
+        self.assertEqual(self.say("I would choose the moss path", "r4"), 1)
+        # Not a method: `played` took the State first, so a turn naming it wrote any result it
+        # liked; now the object's own state is its first argument and does not fit a Result.
+        self.assertEqual(self.turn("table", "played", record(), principal=KIMI, identity="forge")["status"], "refused")
 
     def test_glms_long_reply_under_a_bell_is_cheap_to_hand_on_and_to_judge(self):
         """Run 8: glm's 1,788-character `3mxgtb2dklk2f` under a bell burned 999,861 ticks (a walk

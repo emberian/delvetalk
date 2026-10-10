@@ -98,11 +98,16 @@ class Lenses(test_chain.Chain):
         self.assertEqual(self.version(), 0)
 
     def test_an_object_without_lenses_answers_set_and_question_by_its_forms(self):
+        """The lantern speaks the message dialect: the host answers `?` from its method table and
+        refuses `set` on a card without lenses."""
         self.make("lantern", closure("Lantern"), record())
-        r = self.say("delvetalk lantern ?", obj="lantern")
-        self.assertEqual(r["offers"][0]["text"], "\nReply with a spell:\n\n    delvetalk lantern light\n")
-        r = self.say("delvetalk lantern set\nlit: yes", obj="lantern")
-        self.assertEqual((r["result"]["label"], why(r)), ("refused", "Nothing here can be set."))
+        r = self.turn("lantern", "receive", heard("delvetalk lantern ?"), principal="ember")
+        self.assertEqual(r["status"], "usage", r)
+        self.assertTrue(r["text"].startswith("Reply with a spell:\n\ndelvetalk lantern light\n\ndelvetalk lantern watch\nobject: "), r)
+        r = self.turn("lantern", "receive", heard("delvetalk lantern set\nlit: yes"), principal="ember")
+        out = r["receipt"]["outcome"]
+        self.assertEqual((r["status"], out["class"]), ("refused", "badSpell"), r)
+        print("\n  set on a card without lenses:", out["clause"], out["reason"])
 
     def test_an_avatars_handle_is_its_principals_to_set(self):
         self.make(GLM, closure("Avatar"), avatar_seed("glm", "porch"))

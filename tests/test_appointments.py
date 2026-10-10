@@ -32,7 +32,7 @@ class Appointments(Chain):
     def book(self, topic="tea", after=5, who="glm"):
         r = self.turn("book", "receive", record(text=label("delvetalk book book\ntopic: %s\nto: %s\nafter: %d" % (topic, KIM, after)),
                                                 post=label("at://p")), principal=who)
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "booked"), r)
         return r
 
     def status(self, name):

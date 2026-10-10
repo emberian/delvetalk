@@ -192,41 +192,41 @@ def forms() -> Card.Forms:
   Card.Forms.cons({head: enterForm(), tail: Card.Forms.cons({head: chooseForm(), tail: Card.Forms.cons({head: leaveForm(), tail: Card.Forms.nil()})})})
 # The card as a public page under the door word (genesis posts one card per door).
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  Card.publishPage(Card.pageName(input.page, door().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
-def door() -> Card.Door:
+  Card.publishPagePlan(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
+def blurb() -> Card.Door:
   {word: "scene", blurb: "A passage-and-choice scene: enter, choose, leave; post a ```spween block to make one."}
-def doneReply(done: Done) -> Card.Reply:
+def doneReply(done: Done) -> Card.Replied:
   match done:
-    case refused(r): Card.Reply.refused(r)
-    case entered(_): Card.Reply.done({action: "enter"})
-    case moved(_): Card.Reply.done({action: "choose"})
-    case left(_): Card.Reply.done({action: "leave"})
+    case refused(r): Card.Replied.refused(r)
+    case entered(_): Card.Replied.done({action: "enter"})
+    case moved(_): Card.Replied.done({action: "choose"})
+    case left(_): Card.Replied.done({action: "leave"})
 # A ```spween block makes a new scene beside this one; anything else is a spell.
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match Spween.block(input.text):
     case some(b): authored(state, Spween.parse(b.value), context)
     case none(_): heard(state, Card.routeHeard(input, context, forms()), context)
-def authored(state: State, parsed: Spween.Parsed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def authored(state: State, parsed: Spween.Parsed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match parsed:
-    case refused(r): Card.answer(Card.Routed.refused({clause: "spween", reading: r.reason}), context, forms(), render(state, context))
+    case refused(r): Card.answerPlan(Card.Routed.refused({clause: "spween", reading: r.reason}), context, forms(), render(state, context))
     case parsed(p): creating(p.seed, "{context.object}/{p.id}", context)
-def creating(seed: Seed, id: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def creating(seed: Seed, id: String, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match perform(Plan.create({package: "Scene", seed: seed, law: "", requireAbsent: {world: "", object: id}})):
-    case created(c): Card.tell(Card.Reply.done({action: "create"}), Document.text("SCENE {seed.title} is at {c.object.object}: {natText(Lists.length(seed.passages))} passages. Reply delvetalk {c.object.object} enter to begin.\n"))
-    case refused(r): Card.tell(Card.Reply.refused({clause: r.clause, reading: "The world refused it ({r.clause})."}), Document.text("Not made, refused {r.clause}: {id}\n"))
-    case _: Card.tell(Card.Reply.refused({clause: "noCreation", reading: "The scene could not be made."}), Document.text("Not made: the scene could not be made.\n"))
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+    case created(c): Card.tellPlan(Card.Replied.done({action: "create"}), Document.text("SCENE {seed.title} is at {c.object.object}: {natText(Lists.length(seed.passages))} passages. Reply delvetalk {c.object.object} enter to begin.\n"))
+    case refused(r): Card.tellPlan(Card.Replied.refused({clause: r.clause, reading: "The world refused it ({r.clause})."}), Document.text("Not made, refused {r.clause}: {id}\n"))
+    case _: Card.tellPlan(Card.Replied.refused({clause: "noCreation", reading: "The scene could not be made."}), Document.text("Not made: the scene could not be made.\n"))
+def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match routed:
     case act(a): acted(state, a.action, Card.text(a.fields, "choice"), context)
-    case _: Card.answer(routed, context, forms(), render(state, context))
+    case _: Card.answerPlan(routed, context, forms(), render(state, context))
 # A refusal offers the reader's card with its clause ("refused notOffered: ...").
-def acted(state: State, action: String, choice: String, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def acted(state: State, action: String, choice: String, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   judged(state, verdictFor(state, action, choice, context), context)
 def verdictFor(state: State, action: String, choice: String, context: Abi.Context) -> Verdict:
   if action == "enter" then enterVerdict(state, context) else if action == "choose" then chooseVerdict(state, choice, context) else leaveVerdict(state, context)
-def judged(state: State, verdict: Verdict, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+def judged(state: State, verdict: Verdict, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
   match verdict:
-    case no(n): Card.answer(Card.Routed.refused(n), context, forms(), render(state, context))
+    case no(n): Card.answerPlan(Card.Routed.refused(n), context, forms(), render(state, context))
     case _: done(state, verdict, context, doneReply)
 def choiceLine(c: Choice) -> Document.Document:
   Document.text("  * {c.label}\n")
@@ -235,7 +235,7 @@ def varLine(v: Var) -> Document.Document:
 def stranger(state: State, context: Abi.Context) -> Document.Document:
   let card = if context.object == "" then "<scene>" else context.object
   Document.text("SCENE {state.title}: {natText(Lists.length(state.presence))} here. Reply delvetalk {card} enter to join.\n")
-def reading(state: State, me: Presence, context: Abi.Context) -> Document.Document:
+def reading(me: Presence, state: State, context: Abi.Context) -> Document.Document:
   match passageAt(state, me.at):
     case none(_): stranger(state, context)
     case some(ps): passageCard(state, ps.value)
@@ -249,5 +249,5 @@ def passageCard(state: State, ps: Passage) -> Document.Document:
 # The card as the reader in the context sees it: a present reader sees their passage.
 def render(state: State, context: Abi.Context) -> Document.Document:
   match here(state, context):
-    case some(p): reading(state, p.value, context)
+    case some(p): reading(p.value, state, context)
     case none(_): stranger(state, context)
