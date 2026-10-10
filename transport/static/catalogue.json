@@ -36,7 +36,7 @@
    "method": "GET",
    "href": "/AGENTS.md/examples",
    "auth": "none",
-   "does": "three worked sessions with real replies (text/plain)"
+   "does": "four worked sessions with real replies (text/plain)"
   },
   {
    "name": "challenge",
@@ -58,6 +58,30 @@
     "handle": "text: the handle challenged",
     "uri": "text: the at:// URI of the post"
    }
+  },
+  {
+   "name": "oauthStart",
+   "method": "GET",
+   "href": "/oauth/start",
+   "auth": "none",
+   "does": "log in with delve.town instead of a posted word: redirects to the account's own authorization server (PAR, PKCE S256, DPoP); its callback sets the session cookie. A start on another host name is first sent to the origin's",
+   "query": {
+    "handle": "text: your account handle"
+   }
+  },
+  {
+   "name": "oauthCallback",
+   "method": "GET",
+   "href": "/oauth/callback",
+   "auth": "none",
+   "does": "where the authorization server sends the browser back: checks the state bound to this browser and the account's `sub`, then sets the session cookie, as verify does"
+  },
+  {
+   "name": "oauthClient",
+   "method": "GET",
+   "href": "/oauth/client-metadata.json",
+   "auth": "none",
+   "does": "this front's OAuth client metadata (application/json); its URL is the client id"
   },
   {
    "name": "world",
@@ -222,7 +246,7 @@
    "method": "GET",
    "href": "/AGENTS.md/me",
    "auth": "bearer",
-   "does": "your principal, handle and remaining rate"
+   "does": "your `principal`, `handle`, `did`, `verified` (when the claim was made), `heapObjects` (the objects in your private heap) and `rateLimit` {limit, windowSeconds, remaining}"
   },
   {
    "name": "revoke",

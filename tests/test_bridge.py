@@ -215,7 +215,7 @@ class Bridging(BridgeCase):
         self.assertEqual(self.run_bridge()['failed'], [])
         (d,) = self.drafts()
         self.assertIn('planted', d['text'])
-        self.assertTrue(d['text'].endswith(f"receipt {d['receipt']['slug']}: garden-1 v1, entry {d['receipt']['height']}\n"), d['text'])
+        self.assertTrue(d['text'].endswith(f"● admitted garden-1 v1, entry {d['receipt']['height']}, receipt {d['receipt']['slug']}\n"), d['text'])
 
 
 class HostParses(BridgeCase):
@@ -490,7 +490,7 @@ class RealOffers(test_outbound.TellerWorld):
             self.assertEqual(bridge.offer_drafts(d, H()), ["t-1"])
             (draft,) = list((Path(d) / "outbox").glob("*.json"))
             slug = self.host.send(op="world-receipt", principal="ann", identity="t-1")["receipt"]["slug"]
-            self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\nreceipt {slug}: teller v\d+, entry \d+\n$")
+            self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\n● admitted teller v\d+, entry \d+, receipt {slug}\n$")
             self.assertEqual(bridge.offer_drafts(d, H()), [])
 
 
@@ -504,8 +504,8 @@ class Projection(unittest.TestCase):
                                     'public': {'class': 'lawRefused', 'root': {'object': 'garden', 'version': 3}}}),
                  bridge.draft_text({'status': 'refused', 'receipt': {**unslugged, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}, 'public': {}}, 'https://x.example'),
                  bridge.draft_text({'status': 'refused', 'receipt': unslugged, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
-        self.assertIn('receipt babab-dabab: garden v3, entry 9', texts[0])
-        self.assertIn('receipt: garden v3, entry 9\nhttps://x.example/o/garden#v3', texts[1])
+        self.assertIn('● admitted garden v3, entry 9, receipt babab-dabab\n', texts[0])  # VOICE's turn line, as the JSON `line` has it
+        self.assertIn('● admitted garden v3, entry 9\nhttps://x.example/o/garden#v3', texts[1])
         self.assertIn('receipt babab-dabab\n', texts[2])
         for t in texts:
             self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', t), t)

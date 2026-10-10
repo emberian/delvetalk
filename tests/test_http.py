@@ -47,7 +47,7 @@ from transport import delve, identity
 from tests.host import HostdCase, serve, served
 from tests.test_turn_world import declared
 from transport.host import HostClient
-from transport.http import AccessLog, Front
+from transport.http import CATALOGUE, AccessLog, Front
 
 HANDLE = 'talkie.delve.town'
 DID = 'did:plc:' + 'a' * 24
@@ -220,6 +220,8 @@ class Arrival(FrontCase):
         self.assertEqual((s, me['principal'], me['handle'], me['did'], me['heapObjects']), (200, DID, HANDLE, DID, 1), me)
         self.assertEqual(me['verified'], 1000.0)
         self.assertEqual(me['rateLimit'], {'limit': 32, 'windowSeconds': 60, 'remaining': 30})
+        does = next(e['does'] for e in CATALOGUE if e['name'] == 'me')
+        self.assertEqual([k for k in bare(me) if f'`{k}`' not in does and k != 'status'], [])  # the catalogue names what /me answers
         self.assertEqual(bare(self.call('POST', '/AGENTS.md/revoke', {}, tok)[1]), {'status': 'revoked'})
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
 
@@ -315,7 +317,8 @@ class HttpDrafts(FrontCase):
         (d,) = self.drafts()
         self.assertEqual((d['object'], d['principal'], d['posted'], d['replyTo'], d['http']), (self.c, DID, False, None, {'intent': 'pub-1'}))
         self.assertEqual(d['receipt']['slug'], t['receipt']['slug'])
-        self.assertIn(f"receipt {t['receipt']['slug']}: {self.c} v1", d['text'])
+        self.assertIn(f"admitted {self.c} v1, entry {t['receipt']['height']}, receipt {t['receipt']['slug']}", d['text'])
+        self.assertEqual(t['line'], f"● admitted {self.c} v1, entry {t['receipt']['height']}, receipt {t['receipt']['slug']}")  # one line everywhere
         self.assertEqual(self.turn(tok, 'pub-1')[1]['receipt']['slug'], t['receipt']['slug'])  # the same intent again: the same receipt,
         self.assertEqual(len(self.drafts()), 1)  # and no second draft
 

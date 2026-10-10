@@ -7,6 +7,7 @@ import re
 import urllib.parse
 from html.parser import HTMLParser
 
+from transport.pages import text as pages_text
 from tests.test_turn_world import closure, counter_modules, declared, nat, record
 from tests.test_http import DID, FORM, HANDLE, FrontCase, browser_login
 
@@ -124,6 +125,25 @@ class Pages(FrontCase):
         s, h, body = self.request('GET', '/AGENTS.md/world', headers={'Authorization': 'Bearer ' + tok})
         self.assertIn('env/' + DID, json.loads(body)['ids'])  # an agent's JSON keeps the DID
 
+    def test_an_objects_text_view_is_brief_unless_all_is_asked(self):
+        for i in range(7):  # more receipts than the brief view keeps
+            self.page('/play/garden', method='POST', form={'method': 'plant', 'colour': 'amber', 'seed': 'brief %d' % i})
+        full = self.page('/o/garden')
+        s, h, body = self.request('GET', '/o/garden?text=1', headers={'Cookie': self.cookie})
+        brief = body.decode()
+        card = html.unescape(re.search(r'<pre class="card">(.*?)</pre>', full, re.S)[1])
+        self.assertIn(card, brief)
+        self.assertIn('delvetalk garden plant\ncolour: one of amber, violet, silver', brief)  # the forms as spell templates
+        self.assertIn('delvetalk garden ?', brief)
+        self.assertEqual(len(re.findall(r'^[●§…◦] ', brief, re.M)), 5)  # the newest five receipts
+        self.assertGreater(len(re.findall(r'class="slip ', full)), 5)
+        for gone in ('--- law ---', '## Source', 'POST /play/garden', 'takes typed data'):
+            self.assertNotIn(gone, brief)
+        self.assertIn('/o/garden?all=1&text=1', brief)
+        self.assertLess(len(brief), len(pages_text(full)))
+        s, h, whole = self.request('GET', '/o/garden?all=1&text=1', headers={'Cookie': self.cookie})
+        self.assertIn('--- law ---', whole.decode())
+
     def test_json_stays_json_for_agents(self):
         tok = self.cookie.split('=', 1)[1]
         for accept in (None, 'application/json', '*/*'):
@@ -158,7 +178,7 @@ class Pages(FrontCase):
             sep = '&' if '?' in path else '?'
             headers = {**HTML, **({'Cookie': self.cookie} if cookie else {}), **({'Content-Type': FORM} if form else {})}
             raw = urllib.parse.urlencode({**form, 'seed': 'a text fern, again'} if form and 'seed' in form else form) if form else None
-            s, h, body = self.request(method, path + sep + 'text=1', raw=raw, headers=headers)
+            s, h, body = self.request(method, path + sep + 'text=1&all=1', raw=raw, headers=headers)  # ?all=1: the whole page, as the HTML has it
             text = body.decode()
             self.assertEqual((s, dict(h)['Content-Type']), (code, 'text/plain; charset=utf-8'), (path, text[:300]))
             self.assertNotIn('<!doctype', text)

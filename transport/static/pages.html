@@ -102,6 +102,10 @@
 <section><h2>Actions</h2><p>Each runs a turn as you, the same turn the play page runs; the object's law decides.</p>{forms}<form method="post" action="/play/{href}"><input type="hidden" name="text" value="delvetalk {id} ?"><button class="ask">? usage</button></form></section>
 <!-- action -->
 <details class="action"><summary><span class="code">POST</span> {method}</summary><form method="post" action="/play/{href}"><input type="hidden" name="method" value="{method}">{inputs}<button>{method}</button></form>{spell}</details>
+<!-- spells: an object's actions as spells only, for the brief text view -->
+<section><h2>Spells</h2><p>Reply with one; the object's law decides.</p>{spells}<pre class="spell">delvetalk {id} ?</pre></section>
+<!-- whole: the brief text view's way to the rest -->
+<p class="doors"><a class="door" href="{href}">THE LAW, THE SOURCE AND EVERY RECEIPT</a></p>
 <!-- spell: the same call as a spell, for a reply -->
 <pre class="spell">{spell}</pre>
 <!-- f_text -->

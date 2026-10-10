@@ -81,15 +81,28 @@ def cite(object_, version, origin=None):
     return text, link
 
 
-def receipt_line(receipt, origin=None):
-    """`receipt <slug>: <object> v<n>, entry <h>`: the version the turn wrote of the object it addressed (its first
-    root; a garden's planting writes kind/bell first), else its first write, else the version it read."""
+def turn_root(receipt):
+    """The version a turn wrote of the object it addressed (its first root; a garden's planting writes kind/bell first),
+    else its first write, else the version it read."""
     read = (receipt.get('roots') or [{}])[0]
     writes = (receipt.get('outcome') or {}).get('writes') or []
-    root = next((w for w in writes if w.get('object') == read.get('object')), (writes or [read])[0])
-    text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
-    name = f"receipt {receipt['slug']}" if receipt.get('slug') else 'receipt'  # the slug is the name people and posts use
-    return f"{name}: {text}, entry {receipt.get('height')}{link}\n"
+    return next((w for w in writes if w.get('object') == read.get('object')), (writes or [read])[0])
+
+
+def turn_words(receipt):
+    """`admitted garden v1, entry 26, receipt lodif-rukuz`: VOICE's turn line, the same in the JSON `line`, the play
+    page, the text view and a draft."""
+    root, tag = turn_root(receipt), (receipt.get('outcome') or {}).get('tag') or 'admitted'
+    what = f" {root['object']}" + (f" v{root['version']}" if root.get('version') is not None else '') if root.get('object') else ''
+    return f"{tag}{what}, entry {receipt.get('height')}" + (f", receipt {receipt['slug']}" if receipt.get('slug') else '')
+
+
+def receipt_line(receipt, origin=None):
+    """The turn line with its stamp, and with a reachable origin the object's short link on the next line."""
+    from transport.pages import stamp
+    root = turn_root(receipt)
+    link = cite(root['object'], root.get('version'), origin)[1] if root.get('object') else ''
+    return f"{stamp((receipt.get('outcome') or {}).get('tag') or 'admitted', word=False)} {turn_words(receipt)}{link}\n"
 
 
 def refusal_line(outcome, fallback_class=None):

@@ -67,6 +67,9 @@ def resolve(method, path):
             name = ROUTES.get((method, head, bool(obj)))
             name = None if name in (('create',) if not heap else TOP_ONLY) else name
         return (name, {'heap': heap, 'object': obj, 'method': tail}) if name else (None, None)
+    if parts[:1] == ['oauth'] and len(parts) == 2 and method == 'GET':  # answered by oauth.route; named here so OPTIONS describes them
+        name = {'start': 'oauthStart', 'callback': 'oauthCallback', 'client-metadata.json': 'oauthClient'}.get(parts[1])
+        return (name, {}) if name else (None, None)
     if parts[:1] == ['xrpc'] and len(parts) == 2:
         return 'xrpc', {'nsid': parts[1]}  # the repository answers every method (405 for a write)
     get = {('',): 'home', ('o',): 'find', ('.well-known', 'did.json'): 'did', ('style', ''): 'specimen', ('style',): 'specimen'}.get(tuple(parts))
@@ -136,8 +139,6 @@ def turn_view(reply):
     receipt is `?full=1` and `GET /receipt/<slug>`."""
     rc = reply['receipt']
     line = turn_line(reply)
-    if rc.get('slug'):
-        line = line.removesuffix(f", receipt {rc['slug']}")
     outcome = rc.get('outcome') or {}
     cls = reply.get('class') or outcome.get('class')
     return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
@@ -170,12 +171,7 @@ def turn_line(r):
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
-        # the turn's own object's write when it made one (a garden's planting writes kind/bell first)
-        root = ((rc.get('roots') or [{}])[0]).get('object')
-        writes = out.get('writes') or [None]
-        w = next((x for x in writes if x and x.get('object') == root), writes[0])
-        return f"admitted {w['object']} v{w.get('version')}, entry {rc.get('height')}, receipt {rc.get('slug')}" if w else \
-            f"admitted, entry {rc.get('height')}, receipt {rc.get('slug')}"
+        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}})
     if r.get('status') == 'refused':
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
@@ -919,8 +915,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(404, pages.refusal(name, handle, view, view.get('status')))
         card, seen = (host.send({'op': op, 'principal': principal or 'anonymous', 'object': name}) for op in ('world-card', 'world-inspect'))
         acts = actions('', name, seen) if principal and seen.get('status') == 'inspected' else ()
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
         self.html(200, pages.obj(name, handle, view, card.get('text') if card.get('status') == 'card' else None,
-                                 self.history(host, name, principal), principal, door_rows(view), seen, acts))
+                                 self.history(host, name, principal), principal, door_rows(view), seen, acts, brief))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, read from the tail of the journal under the reader's authority."""

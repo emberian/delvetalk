@@ -22,7 +22,7 @@ from tests.test_http import PEOPLE, REPL_COUNTER, FrontCase, StubHost
 import transport.http
 from transport import delve, identity
 from transport.host import HostClient
-from transport.http import CATALOGUE, ERRORS, GUIDE, REFUSALS, Front
+from transport.http import CATALOGUE, ERRORS, EXAMPLES, GUIDE, REFUSALS, Front
 from tests.test_turn_world import closure
 
 LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 implies request.subject == "ember"\n'
@@ -351,6 +351,13 @@ class Catalogue(unittest.TestCase):
         c.close()
         return r.status, dict(r.getheaders()), data
 
+
+    def test_the_login_routes_are_in_the_catalogue_and_options_describes_them(self):
+        for path, name in (('/oauth/start', 'oauthStart'), ('/oauth/callback', 'oauthCallback'), ('/oauth/client-metadata.json', 'oauthClient')):
+            s, h, raw = self.call('OPTIONS', path)
+            self.assertEqual((s, [e['name'] for e in json.loads(raw)['routes']], h['Allow']), (200, [name], 'GET, OPTIONS'), path)
+        count = re.match(r'# DelveTalk: (\w+) worked sessions', EXAMPLES.read_text())[1]  # the examples page names its own count
+        self.assertTrue(next(e['does'] for e in CATALOGUE if e['name'] == 'examples').startswith(count + ' worked sessions'))
 
     def test_the_catalogue_is_served_as_data_and_the_guide_links_to_it(self):
         s, h, raw = self.call('GET', '/AGENTS.md/api')
