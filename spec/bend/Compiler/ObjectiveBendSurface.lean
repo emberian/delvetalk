@@ -55,12 +55,17 @@ inductive Expr where
   | specialize (target : Expr) (types : List String) (span : Span)
   /-- `Data.of::<T>(value)` as the generics pass rewrites it. -/
   | dataOf (type : String) (value : Expr) (span : Span)
+  /-- `world.METHOD::<T>(argument)` as the generics pass lowers it: the world's method,
+  its input and result types as the calling module spells them. The elaborator makes it
+  the perform of the `World.Message` `{object: world, method, argument: Data}` at `result`. -/
+  | worldCall (method input result : String) (argument : Expr) (span : Span)
   deriving Inhabited, Repr, BEq
 
 def Expr.span : Expr → Span
   | .var _ s | .nat _ s | .bool _ s | .str _ s | .unit s | .record _ s | .extend _ _ s | .member _ _ s
   | .call _ _ s | .compose _ s | .fix _ _ s | .lambda _ _ _ s | .extensionValue _ _ _ s | .binary _ _ _ s
-  | .ite _ _ _ s | .letE _ _ _ _ s | .specialize _ _ s | .dataOf _ _ s => s
+  | .ite _ _ _ s | .letE _ _ _ _ s | .specialize _ _ s | .dataOf _ _ s
+  | .worldCall _ _ _ _ s => s
 
 inductive Pattern where
   | zero
@@ -108,6 +113,8 @@ structure Field where
   name : String
   type : String
   span : Span
+  /-- A protocol method's own type parameters (`view<S>(...)`); empty elsewhere. -/
+  typeParameters : List String := []
   deriving Inhabited, Repr, BEq
 
 structure Spec where
@@ -207,6 +214,8 @@ def Expr.json : Expr → Json
   | .letE n t v b s => node "let" [("name", toJson n), ("type", toJson t), ("value", v.json), ("body", b.json)] s
   | .specialize t types s => node "specialize" [("target", t.json), ("types", toJson types)] s
   | .dataOf t v s => node "dataOf" [("type", toJson t), ("value", v.json)] s
+  | .worldCall m i r a s =>
+    node "worldCall" [("method", toJson m), ("input", toJson i), ("result", toJson r), ("argument", a.json)] s
 def fieldsJson : List (String × Expr) → Json
   | fs => Json.arr (fieldsList fs).toArray
 def fieldsList : List (String × Expr) → List Json
@@ -256,7 +265,9 @@ def Claim.json (c : Claim) : Json :=
     ("span", c.span.json)]
 
 def Field.json (f : Field) : Json :=
-  Json.mkObj [("name", toJson f.name), ("type", toJson f.type), ("span", f.span.json)]
+  Json.mkObj ([("name", toJson f.name), ("type", toJson f.type)] ++
+    (if f.typeParameters.isEmpty then [] else [("typeParameters", toJson f.typeParameters)]) ++
+    [("span", f.span.json)])
 
 def Field.caseJson (f : Field) : Json :=
   Json.mkObj [("label", toJson f.name), ("type", toJson f.type), ("span", f.span.json)]
@@ -322,6 +333,7 @@ def Expr.mapSpans (f : Span → Span) : Expr → Expr
   | .letE n t v b s => .letE n t (v.mapSpans f) (b.mapSpans f) (f s)
   | .specialize t types s => .specialize (t.mapSpans f) types (f s)
   | .dataOf t v s => .dataOf t (v.mapSpans f) (f s)
+  | .worldCall m i r a s => .worldCall m i r (a.mapSpans f) (f s)
 def mapFieldSpans (f : Span → Span) : List (String × Expr) → List (String × Expr)
   | [] => []
   | (n, v) :: rest => (n, v.mapSpans f) :: mapFieldSpans f rest
@@ -378,6 +390,7 @@ def Expr.mapVars (f : String → String) : Expr → Expr
   | .letE n t v b s => .letE n t (v.mapVars f) (b.mapVars f) s
   | .specialize t types s => .specialize (t.mapVars f) types s
   | .dataOf t v s => .dataOf t (v.mapVars f) s
+  | .worldCall m i r a s => .worldCall m i r (a.mapVars f) s
   | e => e
 def mapFieldVars (f : String → String) : List (String × Expr) → List (String × Expr)
   | [] => []

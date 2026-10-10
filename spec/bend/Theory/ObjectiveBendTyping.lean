@@ -322,12 +322,15 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       PartialTyping assumptions context whenTrue result tu →
       PartialTyping assumptions context whenFalse result fu →
       PartialTyping assumptions context (.ifBool condition whenTrue whenFalse) result (addUses cu (addUses tu fu))
-  /-- Yield a Plan (a sum of first-order actions); the response is data. -/
+  /-- Yield a Plan (a sum of first-order actions, or a message record); the response is
+  data. A sum Plan's activity is resumed at `response` itself; a message's at `Data`, the
+  site's `response` being this perform's own (`Ty.performResponse`). -/
   | perform {context : Context} {plan : Term} {planType response : Ty} {uses : Uses} :
       PartialTyping assumptions context plan planType uses →
       planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
-      PartialTyping assumptions context (.perform plan) (.computation planType response response) uses
+      PartialTyping assumptions context (.perform plan)
+        (.computation planType (planType.performResponse response) response) uses
   /-- Hosted extension: first-order data injected into the universal `Data`
   type. The only rule that produces `Data`; there is no elimination. The
   declarative rule takes any walk fuel (`isDataUnder` is a greatest fixed point
@@ -629,13 +632,14 @@ def infer (assumptions : Assumptions) (annotations : Annotations) (context : Con
       else none
   | fuel + 1, .perform plan => do
       -- The annotation at a perform's position is its effect signature:
-      -- domain = the Plan sum, codomain = the response data type.
+      -- domain = the Plan (a sum or a message), codomain = this site's response type.
       let annotation ← annotations position
       let value ← infer assumptions annotations context (position ++ [0]) fuel plan
       if hs : agree assumptions value.type annotation.domain = true then
         if hp : annotation.domain.isPlanUnder assumptions.bounds assumptions.rigid = true then
           if hr : annotation.codomain.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
-            some ⟨.computation annotation.domain annotation.codomain annotation.codomain, value.uses,
+            some ⟨.computation annotation.domain (annotation.domain.performResponse annotation.codomain)
+                annotation.codomain, value.uses,
               .perform (.conversion value.derivation (agree_sameType hs)) hp hr⟩
           else none
         else none
@@ -1631,6 +1635,48 @@ theorem refusal_in_field_refused :
       some ⟨.computation planType responseType .natural,.computation planType responseType .natural,
         .unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
 
+/-! Messages: a record Plan, answered at each site's own result type. -/
+
+def messageRow : Ty := .field "method" .label .emptyRow
+def viewedType : Ty := .variant (.field "viewed" .natural .emptyRow)
+def writtenType : Ty := .variant (.field "written" .emptyRow .emptyRow)
+def message (method : String) : Term := .record [("method",.label method)]
+/-- A view, then a write: two sites with two result types, in one activity. -/
+def viewThenWrite (rest : Term) : Term :=
+  .case (.perform (message "view")) [("viewed", .case (.perform (message "write")) [("written", rest)])]
+def viewThenWriteAt (inner : LambdaAnnotation) : Annotations := fun position =>
+  if position = [0] then some ⟨messageRow,viewedType,.unrestricted,.reusable⟩
+  else if position = [1,0,0] then some inner
+  else if position = [1,0,1,0] then some ⟨messageRow,.data,.unrestricted,.reusable⟩
+  else none
+
+/-- Rule perform-message: each site resumes at its own type, the activity at `Data`, so a
+view answered `viewed` and a write answered `written` sequence in one activity. -/
+theorem message_sites_accepted :
+    (check ⟨viewThenWrite (.done (.bound 1)),
+      viewThenWriteAt ⟨messageRow,writtenType,.unrestricted,.reusable⟩,{}⟩ [] 32).map
+      (fun checked => checked.type) = some (.computation messageRow .data .natural) := by decide
+/-- ...a site's result is still first-order data... -/
+theorem message_closure_result_refused :
+    (check ⟨viewThenWrite (.done (.bound 1)),
+      viewThenWriteAt ⟨messageRow,.arrow .reusable .unrestricted .natural .natural,.unrestricted,.reusable⟩,{}⟩
+      [] 32).isNone = true := by decide
+/-- ...and a sum-Plan perform does not continue a message activity (its activity is
+resumed at its one response type, not at `Data`). -/
+theorem message_then_sum_plan_refused :
+    (check ⟨.case (.perform (message "view")) [("viewed", writeActivity (.done (.nat 1)) (.done (.nat 0)))],
+      fun position =>
+        if position = [0] then some ⟨messageRow,viewedType,.unrestricted,.reusable⟩
+        else if position = [1,0,0] then some effectSignature
+        else if position = [1,0,0,0] then some writeAction
+        else if position = [1,0,1,0] ∨ position = [1,0,1,1] then some effectSignature
+        else none,{}⟩ [] 32).isNone = true := by decide
+/-- The old dialect is unchanged: a sum Plan's perform concludes at its response. -/
+theorem sum_plan_response_unchanged (row response : Ty) :
+    (Ty.variant row).performResponse response = response := rfl
+
+#assert_axioms message_sites_accepted message_closure_result_refused message_then_sum_plan_refused
+  sum_plan_response_unchanged
 #assert_axioms record_to_data_accepted closure_to_data_refused data_not_eliminated
 #assert_axioms refusal_arm_accepted pure_refusal_refused refusal_in_field_refused
 #assert_axioms exhaustive_case_accepted reordered_arms_accepted missing_arm_refused

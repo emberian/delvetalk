@@ -58,12 +58,16 @@ inductive Expr where
   /-- `Data.of::<T>(value)` (rewritten by the hosted front end): inject first-order
   data of type `T` into the universal type `Data`. -/
   | toData (type : String) (value : Expr) {span : ObjectiveBendSurface.Span}
+  /-- `world.METHOD::<T>(argument)` as the generics pass lowers it (`input`, `result` are
+  the instantiated types as this module spells them): the perform of the message
+  `{object: {world: "", object: "world"}, method, argument: Data}` at `result`. -/
+  | worldCall (method input result : String) (argument : Expr) {span : ObjectiveBendSurface.Span}
   deriving Inhabited, Repr
 
 def Expr.span : Expr → ObjectiveBendSurface.Span
   | @var _ s | @nat _ s | @bool _ s | @str _ s | @unit s | @record _ s | @extend _ _ s | @member _ _ s
   | @call _ _ s | @compose _ s | @fix _ _ s | @closure _ _ _ s | @binary _ _ _ s | @ite _ _ _ s
-  | @letE _ _ _ _ s | @toData _ _ s => s
+  | @letE _ _ _ _ s | @toData _ _ s | @worldCall _ _ _ _ s => s
 
 abbrev Pattern := ObjectiveBendSurface.Pattern
 
@@ -171,6 +175,7 @@ def expr : Nat → ObjectiveBendSurface.Expr → Except String Expr
     | .ite c t f s => return .ite (← expr fuel c) (← expr fuel t) (← expr fuel f) (span := s)
     | .letE n t v b s => return .letE n t (← expr fuel v) (← expr fuel b) (span := s)
     | .dataOf t v s => return .toData t (← expr fuel v) (span := s)
+    | .worldCall method i r a s => return .worldCall method i r (← expr fuel a) (span := s)
     | .specialize .. => .error "unknown AST expression specialize"
 
 def body : Nat → ObjectiveBendSurface.Body → Except String Body
@@ -761,7 +766,9 @@ def variantRowOf (s : St) : Option PTy → Option PTy
 def isPerform (c : Ctx) (e : Expr) (env : List Binding) (m : Module) : Bool :=
   match e with
   | .call (.var "perform") _ => !env.any (·.name == "perform") && (lookupGlobal c "perform" m).isNone
+  | .worldCall .. => true
   | _ => false
+
 
 /-! ## Types: source annotations, declaration types, synthesis -/
 
@@ -778,6 +785,34 @@ def overDefs (defs : List (String × PTy)) (inherited : PTy) : PTy :=
 def isRowTy : PTy → Bool
   | .field .. | .emptyRow => true
   | _ => false
+
+/-- An activity over messages (`Activity<Result>`): its Plan is a record, its response `Data`. -/
+def isMessageEffect : Option (PTy × PTy) → Bool
+  | some (p, .data) => isRowTy p
+  | _ => false
+
+/-- A proposal type in surface syntax (structural: rows and sums spelled out). -/
+partial def typeText : PTy → String
+  | .natural => "Nat" | .boolean => "Bool" | .label => "String" | .data => "Data" | .emptyRow => "{}"
+  | .variable i => "T" ++ toString i
+  | .arrow _ _ d c => "(" ++ typeText d ++ ") -> " ++ typeText c
+  | t@(.field ..) =>
+    let rec fields : PTy → List String
+      | .field n m rest => (n ++ ": " ++ typeText m) :: fields rest
+      | .emptyRow => []
+      | other => ["..." ++ typeText other]
+    "{" ++ ", ".intercalate (fields t) ++ "}"
+  | .variant row =>
+    let rec cases : PTy → List String
+      | .field n m rest => (n ++ ": " ++ typeText m) :: cases rest
+      | .emptyRow => []
+      | other => ["..." ++ typeText other]
+    "(" ++ " | ".intercalate (cases row) ++ ")"
+  | .computation p r a =>
+    if isMessageEffect (some (p, r)) then "Activity<" ++ typeText a ++ ">"
+    else "Activity<" ++ typeText p ++ ", " ++ typeText r ++ ", " ++ typeText a ++ ">"
+  | .specification m e => "Specification<" ++ typeText m ++ ", " ++ typeText e ++ ">"
+  | .prototype sp t => "Prototype<" ++ typeText sp ++ ", " ++ typeText t ++ ">"
 
 def requirementsOf (s : Spec) : M (List Signature) :=
   pure (s.requirements.map Surface.signature)
@@ -914,7 +949,17 @@ def sourceTypeUncached (c : Ctx) : Nat → String → String → List String →
         return match plan, response, result with
           | some p, some r, some a => some (.computation p r a)
           | _, _, _ => none
-      | _ => do typeError "Activity<Plan, Response, Result> takes three types"; return none
+      | [resultText] =>
+        -- `Activity<Result>`: yields `World.Message`s, each world call resumed at its own result.
+        if (moduleNamed c "World").isNone then
+          typeError ("Activity<" ++ trimStr resultText ++ "> yields World.Message, but no module named World is in this package; import ./World.obend")
+          return none
+        let message ← sourceType c fuel "Message" "World" []
+        let result ← sourceType c fuel resultText moduleName seen
+        return match message, result with
+          | some p, some a => if isRowTy p then some (.computation p .data a) else none
+          | _, _ => none
+      | _ => do typeError "Activity<Result> or Activity<Plan, Response, Result> takes one or three types"; return none
     if name.startsWith "Prototype<" && name.endsWith ">" then
       let parts := splitTop (dropEndStr (dropStr name "Prototype<".length) 1) ","
       match parts with
@@ -1186,6 +1231,9 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
     | .toData type value =>
       let declared ← sourceType c fuel type m.name []
       return if sameTy (← synth c fuel value env m) declared then some .data else none
+    | .worldCall _ _ resultText _ =>
+      let some (p, r) := (← get).effect | return none
+      return (← sourceType c fuel resultText m.name []).map fun t => .computation p r t
     | .call callee args =>
       if isPerform c e env m then
         return (← get).effect.map fun (p, r) => .computation p r r
@@ -1942,10 +1990,36 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
       unless sameTy actual (some declared) do
         fail ("Data.of::<" ++ type ++ ">: the value is not a " ++ type)
       return .toData declared (← expression c fuel value env m)
+    | .worldCall method inputText resultText argument =>
+      let shown := "world." ++ method
+      let some (p, r) := (← get).effect
+        | fail ("refused (world-call-outside-activity): " ++ shown ++ " needs an enclosing definition whose result type is Activity<Result>")
+      unless isMessageEffect (some (p, r)) do
+        fail ("refused (world-call): " ++ shown ++ " yields a World.Message, so it stands only in an Activity<Result>; " ++
+          "this definition's Plans are a sum (Activity<Plan, Response, Result>)")
+      noActivity c fuel argument env m "effect-in-plan" "a world call's argument is data"
+      let some input ← sourceType c fuel inputText m.name [] | fail (shown ++ ": unknown input type " ++ inputText)
+      let some result ← sourceType c fuel resultText m.name [] | fail (shown ++ ": unknown result type " ++ resultText)
+      let actual ← synth c fuel argument env m
+      let term ← expression c fuel argument env m
+      let saved ← get
+      let (term, changed) ← if mentionsData saved.sumBounds 4096 [] input then
+          coerceGo c fuel (some input) argument term env m
+        else pure (term, false)
+      unless changed do set saved
+      if !changed && actual.isSome && !sameTy actual (some input) then
+        failAt (← get).here ("refused (world-call): " ++ shown ++ " takes " ++ typeText input ++ ", not " ++
+            ((actual.map typeText).getD "unresolved"))
+          (some ("the argument is the input the world's protocol (`protocol world:`) declares for " ++ method))
+          (some (typeText input)) (actual.map typeText)
+      let world := ATerm.record [("world", .label ""), ("object", .label "world")]
+      return .perform p result (.record [("object", world), ("method", .label method), ("argument", .toData input term)])
     | .call callee args =>
       if isPerform c e env m then
         let some (p, r) := (← get).effect
           | fail "refused (perform-outside-activity): perform needs an enclosing definition whose result type is Activity<Plan, Response, Result>"
+        if isMessageEffect (some (p, r)) then
+          fail "refused (perform-in-message-activity): an Activity<Result> yields only world calls; write world.METHOD(...)"
         match args with
         | [a] =>
           noActivity c fuel a env m "effect-in-plan" "a Plan is data"
@@ -2267,6 +2341,8 @@ def body (c : Ctx) : Nat → Body → List Binding → Module → M ATerm
         fail "a sum match takes label(binder) cases and an optional final wildcard"
       let labels := branches.filterMap (fun b => match b.1 with | .ctor l _ => some l | _ => none)
       if duplicate labels then fail "duplicate sum case"
+      if isMessageEffect (← get).effect && !(scrutinee matches .worldCall ..) && isPerform c scrutinee env m then
+        fail "refused (perform-in-message-activity): an Activity<Result> yields only world calls; write world.METHOD(...)"
       if branches.any (·.1 == .unexpected) && !isPerform c scrutinee env m then
         fail "refused (let-response): `let label(x) = ...` takes a perform(...): it continues with one response and refuses the turn on any other"
       let defaults := branches.filter (fun b => b.1 == .wildcard || b.1 == .unexpected)
@@ -2603,27 +2679,6 @@ def Elaborated.reachable (e : Elaborated) (entryKey : String) : List (String × 
     | [owner, _] => seen.contains owner
     | _ => false
   return e.fields.filter fun (key, _) => seen.contains key || claimed key
-
-/-- A proposal type in surface syntax (structural: rows and sums spelled out). -/
-partial def typeText : PTy → String
-  | .natural => "Nat" | .boolean => "Bool" | .label => "String" | .data => "Data" | .emptyRow => "{}"
-  | .variable i => "T" ++ toString i
-  | .arrow _ _ d c => "(" ++ typeText d ++ ") -> " ++ typeText c
-  | t@(.field ..) =>
-    let rec fields : PTy → List String
-      | .field n m rest => (n ++ ": " ++ typeText m) :: fields rest
-      | .emptyRow => []
-      | other => ["..." ++ typeText other]
-    "{" ++ ", ".intercalate (fields t) ++ "}"
-  | .variant row =>
-    let rec cases : PTy → List String
-      | .field n m rest => (n ++ ": " ++ typeText m) :: cases rest
-      | .emptyRow => []
-      | other => ["..." ++ typeText other]
-    "(" ++ " | ".intercalate (cases row) ++ ")"
-  | .computation p r a => "Activity<" ++ typeText p ++ ", " ++ typeText r ++ ", " ++ typeText a ++ ">"
-  | .specification m e => "Specification<" ++ typeText m ++ ", " ++ typeText e ++ ">"
-  | .prototype sp t => "Prototype<" ++ typeText sp ++ ", " ++ typeText t ++ ">"
 
 /-- An override keeps the declared type of what it overrides; refused by name, at the override. -/
 def checkOverrides (c : Ctx) (fuel : Nat) : M Unit := do

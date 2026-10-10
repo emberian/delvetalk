@@ -233,6 +233,32 @@ theorem lawTable_names (laws : List String) (ast : Minidregg.Compiler.ObjectiveB
     (lawTable laws ast).map (·.1) = laws := by
   simp [lawTable, Function.comp_def]
 
+/-- The world method a message plan term names (`{object, method: "X", argument}`). -/
+def worldMethodOf : Minidregg.Theory.ObjectiveBendOpenRecursion.Term → Option String
+  | .record fields => match fields.lookup "method" with
+    | some (.label m) => some m
+    | _ => none
+  | _ => none
+
+/-- A message activity's artifact (WHOLENESS §1): `dialect: "message"`, `world`, the world
+methods the entry performs (first occurrence order), and `worldProtocol`, the World module's
+source SHA-256. Refused when two of its world calls cannot be told apart
+(`Turn.messageSites`). Any other artifact is unchanged. -/
+def messageFields (modules : List SourceModule) (entry : String)
+    (source : Minidregg.Theory.ObjectiveBendTyping.AnnotatedTerm)
+    (type : Minidregg.Theory.ObjectiveBendTypes.Ty) (artifact : Json) : Except Diagnostic Json := do
+  let .computation plan _ _ := Delvetalk.Turn.peelArrows Bounds.entryArrowDepth type | return artifact
+  unless Delvetalk.Turn.isMessagePlan plan do return artifact
+  let sites ← (Delvetalk.Turn.messageSites source).mapError fun message =>
+    ({ stage := "objective-typed-check", message, definition := some entry,
+       sourceModule := (modules.getLast?).map (·.name) } : Diagnostic)
+  let methods := sites.toList.filterMap (worldMethodOf ·.1)
+  let methods := methods.foldl (fun acc m => if acc.contains m then acc else acc ++ [m]) []
+  let artifact := (artifact.setObjVal! "dialect" (toJson "message")).setObjVal! "world" (toJson methods)
+  return match modules.find? (·.name == "World") with
+    | some world => artifact.setObjVal! "worldProtocol" (toJson world.sha256)
+    | none => artifact
+
 /-- Compile `entry` from a prepared closure: select its reached knot, build the proposal
 and packet once, check it. -/
 def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagnostic EntryCompiled := do
@@ -273,6 +299,7 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
           | none => row)
       | _ => artifact.getObjValD "methods"
     (artifact.setObjVal! "methods" tagged).setObjVal! "protocols" (toJson (claims.map (·.1)))
+  let artifact ← messageFields modules entry accepted.source accepted.typed.type artifact
   let readings := lawTable (lowered.laws.map (·.1)) (prepared.asts.getLastD default)
   let artifact := if readings.isEmpty then artifact else artifact.setObjVal! "laws"
     (Json.arr (readings.toArray.map fun (name, reading) =>
