@@ -49,7 +49,7 @@ from transport import delve, identity
 from tests.host import HostdCase, serve, start_hostd, stop_hostd
 from tests.test_turn_world import declared
 from transport.hostproc import HostClient
-from transport.http import Front, RemoteHeaps
+from transport.http import AccessLog, Front, RemoteHeaps
 from transport.identity import ORIGIN
 
 HANDLE = 'talkie.delve.town'
@@ -246,6 +246,37 @@ class Arrival(FrontCase):
         self.assertEqual(me['rateLimit'], {'limit': 32, 'windowSeconds': 60, 'remaining': 30})
         self.assertEqual(bare(self.call('POST', '/AGENTS.md/revoke', {}, tok)[1]), {'status': 'revoked'})
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
+
+
+class Access(FrontCase):
+    def test_one_line_per_request_with_the_principal_and_never_a_token_or_a_body(self):
+        log = Path(self.tmp.name) / 'access.log'
+        self.front.access = AccessLog(log)
+        self.request('GET', '/AGENTS.md/api')
+        tok = self.login()
+        self.call('GET', '/AGENTS.md/me?x=secret-query', token=tok)
+        s, _ = self.call('GET', '/AGENTS.md/world/nowhere', token=tok)
+        lines = [l.split() for l in log.read_text().splitlines()]
+        self.assertEqual([(l[1], l[2], l[3]) for l in lines[:1]], [('GET', '/AGENTS.md/api', '200')])
+        self.assertEqual(lines[0][5], '-')
+        me = [l for l in lines if l[2] == '/AGENTS.md/me'][0]
+        self.assertEqual((me[3], me[5]), ('200', DID))
+        self.assertGreater(int(me[4]), 50)
+        self.assertEqual([l[3] for l in lines if l[2] == '/AGENTS.md/world/nowhere'], [str(s)])
+        text = log.read_text()
+        self.assertNotIn(tok, text)
+        self.assertNotIn('secret-query', text)
+        self.assertNotIn('Bearer', text)
+        self.assertEqual(len(lines), 2 + 2 + 1, lines)  # api, challenge, verify, me, nowhere
+
+    def test_the_log_rotates_by_size(self):
+        log = Path(self.tmp.name) / 'rot.log'
+        a = AccessLog(log, limit=100)
+        for n in range(6):
+            a.write(1000.0, 'GET', f'/p{n}', 200, 10, None)
+        self.assertTrue(log.with_name('rot.log.1').exists())
+        self.assertLessEqual(log.stat().st_size, 100)
+        self.assertIn('/p5', log.read_text())
 
 
 class Turns(FrontCase):

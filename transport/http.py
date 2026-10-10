@@ -275,12 +275,33 @@ def receipt_links(base, reply, intent=None):
     return out
 
 
+class AccessLog:
+    """One line per request: time, method, path (no query), status, bytes sent, the principal's DID or `-`. Never a credential
+    or a body. Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
+    LIMIT = 16 * 1024 * 1024
+
+    def __init__(self, path, limit=LIMIT):
+        self.path, self.limit, self.lock = Path(path), limit, threading.Lock()
+
+    def write(self, when, method, path, status, sent, did):
+        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'}\n"
+        with self.lock:
+            try:
+                if self.path.exists() and self.path.stat().st_size + len(line) > self.limit:
+                    os.replace(self.path, self.path.with_name(self.path.name + '.1'))
+                with open(self.path, 'a') as f:
+                    f.write(line)
+            except OSError:
+                pass  # the log is not the front's to fail on
+
+
 class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, not the front
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None):
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None):
         super().__init__(address, Handler)
+        self.access = access
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps, repl, trust_proxy, sleep, hand
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
@@ -333,6 +354,19 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         return path.read_text().replace('{{origin}}', self.origin)
 
 
+class Counted:
+    """The reply socket's file, counting what is written."""
+    def __init__(self, f):
+        self.f, self.sent = f, 0
+
+    def write(self, data):
+        self.sent += len(data)
+        return self.f.write(data)
+
+    def __getattr__(self, name):
+        return getattr(self.f, name)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'DelveTalk'
 
@@ -342,6 +376,19 @@ class Handler(BaseHTTPRequestHandler):
     def setup(self):
         self.timeout = self.server.request_timeout  # a client that stalls sending its request is dropped after this
         super().setup()
+        self.wfile = Counted(self.wfile)
+
+    def send_response(self, code, message=None):
+        self.status = code
+        super().send_response(code, message)
+
+    def handle_one_request(self):
+        self.status, self.did = 0, None
+        self.wfile.sent = 0
+        super().handle_one_request()
+        if self.server.access and self.status:  # a request that never parsed has no status
+            self.server.access.write(self.server.clock(), getattr(self, 'command', '-'), urllib.parse.urlsplit(self.path).path,
+                                     self.status, self.wfile.sent, self.did)
 
     def reply(self, code, body, ctype='application/json', headers=()):
         raw = body.encode('utf-8', 'backslashreplace') if isinstance(body, str) else body  # a lone surrogate the host echoed stays a JSON escape
@@ -444,9 +491,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def principal(self, credential):
         try:
-            return self.server.identity.authenticate(credential)
+            who = self.server.identity.authenticate(credential)
         except IdentityError:
             return None
+        self.did = (who or {}).get('did') or self.did
+        return who
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = lambda self: self.dispatch(self.command)
 
@@ -810,7 +859,8 @@ def main(argv=None):
     host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
     front = Front((a.bind, a.port), host, Identity(a.state, Client(http_transport), a.origin), a.origin,
                   heaps=heaps, repl=repl, trust_proxy=a.trust_proxy,
-                  hand=hand.Hand(a.state, host, a.hand_token, a.credentials) if a.hand_token else None)
+                  hand=hand.Hand(a.state, host, a.hand_token, a.credentials) if a.hand_token else None,
+                  access=AccessLog(Path(a.state) / 'access.log'))
     try:
         front.serve_forever()
     finally:
