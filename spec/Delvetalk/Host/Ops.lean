@@ -2370,7 +2370,9 @@ def receiptOf (principal intent : String) (height : Nat) (outcome : Json) : Data
   .record [("slot", .record [("principal", .label principal), ("intent", .label intent)]),
     ("height", .natural height),
     ("outcome", if text "tag" == "refused" then .variant "refused" (.record [("class", .label (text "class")), ("root", .label (text "object"))])
-      else .variant "admitted" (.record []))]
+      else .variant "admitted" (.record [])),
+    -- The entry that carries this receipt is the one being sealed: its hash is not known inside it.
+    ("hash", .label "")]
 
 /-- The `ended` field of an entry: a delivery of `ended {receipt, how}` to the supervisor of
     `object`, under the ledger the activity ran with, one level deeper and less the work it

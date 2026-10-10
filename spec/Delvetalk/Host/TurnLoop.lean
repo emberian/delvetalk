@@ -125,6 +125,10 @@ structure Send where
   sender : String
   via : String := ""
   grantor : String := ""
+  /-- A `receive` handed on carries how the original words reached the turn that sent it (a card
+      forwarding a reply to the directory), so the receiver's interpretation is judged by it: "" is
+      words that reached nobody, none a send that carries no reach (a delivery). -/
+  reach : Option String := none
 
 structure TurnState where
   world : World
@@ -365,8 +369,10 @@ def ensureWrite (id caller : String) (kind : Nat) : M Bool := do
   set { s with writes := s.writes ++ [(id, [change])] }
   return true
 
-/-- The receipt a settled slot answers an await with. -/
-def receiptData (entry : Json) : Data :=
+/-- The receipt a settled slot answers an await with, its `hash` the entry's CID, so Bend may cite it
+    (`madeFrom`); `hashed := false` is the shape before `Receipt.hash`, for a call site compiled
+    against it. -/
+def receiptData (entry : Json) (hashed : Bool := true) : Data :=
   let identity := (entry.getObjVal? "identity").toOption.getD Json.null
   let text := fun (j : Json) (k : String) => ((j.getObjValAs? String k).toOption).getD ""
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -374,9 +380,14 @@ def receiptData (entry : Json) : Data :=
     | .ok "refused" => .variant "refused" (.record [("class", .label (text outcome "class")),
         ("root", .label (text outcome "object"))])
     | _ => .variant "admitted" (.record [])
-  .record [("slot", .record [("principal", .label (text identity "principal")),
+  let fields : List (String × Data) := [("slot", .record [("principal", .label (text identity "principal")),
       ("intent", .label (text identity "intent"))]),
     ("height", .natural ((entry.getObjValAs? Nat "height").toOption.getD 0)), ("outcome", result)]
+  .record (fields ++ (if hashed then [("hash", Data.label (text entry "hash"))] else []))
+
+/-- An await's `reply`, with the receipt's hash and, for an older call site, without it. -/
+def receiptReplies (entry : Json) : List Data :=
+  [.record [("receipt", receiptData entry)], .record [("receipt", receiptData entry false)]]
 
 /-- The settled entry of an identity, if it has one (a suspension is not settled). -/
 def settled (w : World) (principal intent : String) : Option Json :=
@@ -401,6 +412,17 @@ def mintId (self package : String) : M String := do
     let id := s!"{self}/{kind}/{n}"
     if !(s.world.objects.contains id || s.creates.any (·.1 == id) || reserved.contains id) then return id
     n := n + 1
+  evaluation "no child id is free"
+
+/-- The first free `<prefix><n>`, n from 1: not an object, not created this turn, not held by a
+    suspension's absence. -/
+def mintUnder (pfx : String) : M String := do
+  let s ← get
+  let held := fun (id : String) => s.world.objects.contains id || s.creates.any (·.1 == id) ||
+    s.world.suspended.any fun e => (((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
+      |>.bind (·.getObjVal? "absent" |>.toOption) |>.bind (·.getArr? |>.toOption)).getD #[]).contains (toJson id)
+  for n in [1:Limits.maxObjects + Limits.createsPerTurn + 2] do
+    if !held s!"{pfx}{n}" then return s!"{pfx}{n}"
   evaluation "no child id is free"
 
 /-- Compile an object's new sibling: `package` is a module of the creator's own sealed
@@ -1256,7 +1278,7 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
   else
     set { s with awaited := s.awaited ++ [key], awaits := s.awaits + 1 }
     match settled s.world sp si with
-    | some entry => respond bounds responseType "reply" [.record [("receipt", receiptData entry)]]
+    | some entry => respond bounds responseType "reply" (receiptReplies entry)
     | none =>
       if patience == 0 then respond bounds responseType "timedOut" [emptyRecord]
       else if patience > Limits.maxPatience then evaluation "await patience exceeds its capacity"
@@ -1284,7 +1306,7 @@ partial def awaitPostPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
     let answered := s.world.replies[post]?
     if answered == some (s.principal, s.intent) then respond bounds responseType "broken" [emptyRecord] else
     match answered.bind fun (sp, si) => settled s.world sp si with
-    | some entry => respond bounds responseType "reply" [.record [("receipt", receiptData entry)]]
+    | some entry => respond bounds responseType "reply" (receiptReplies entry)
     | none =>
       if patience == 0 then respond bounds responseType "timedOut" [emptyRecord]
       else if patience > Limits.maxPatience then evaluation "await patience exceeds its capacity"
@@ -1692,8 +1714,11 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let lawArg := ((f.lookup "law").bind labelOf).getD ""
     let some target := f.lookup "requireAbsent" | evaluation "malformed create plan"
     let some named := referenceId target | refusedWith bounds responseType "foreignWorld"
-    -- An empty `requireAbsent` asks the host to mint the child's id.
-    let id ← if named.isEmpty then mintId self package else pure named
+    -- An empty `requireAbsent` asks the host to mint the child's id; one ending in `/` names the
+    -- prefix to mint under, the first free `<prefix><n>` (a kind numbering a garden's bells past ids
+    -- someone already holds).
+    let id ← if named.isEmpty then mintId self package
+      else if named.endsWith "/" then mintUnder named else pure named
     let s ← get
     let note := fun (s : TurnState) => { s with absent := if s.absent.contains id then s.absent else s.absent ++ [id] }
     if !validObjectId id || id == "self" || ownCards.contains id then
@@ -1741,7 +1766,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if s.world.pending.size + s.sends.length ≥ Limits.maxPending then
         evaluation "world exceeds the pending delivery capacity"
       let delivery := deliveryId s.principal s.intent s.sends.length
-      let staged : Send := { to := id, method, argument, sender := self, via, grantor := if via.isEmpty then "" else subject }
+      let staged : Send := { to := id, method, argument, sender := self, via, grantor := if via.isEmpty then "" else subject,
+                             reach := if method == "receive" && s.reach != "delivery" then some s.reach else none }
       set { s with sends := s.sends ++ [staged] }
       respond bounds responseType "delivery" [.record [("id", .label delivery)]]
   | .variant "grant" (.record f) | .variant "grantWith" (.record f) =>
@@ -1867,6 +1893,8 @@ structure TurnMeta where
   receiver : Bool := false
   /-- A turn root ran `as` its principal (docs/ROOT.md §1.1): `{by, reason}`, journaled beside it. -/
   root : Option Json := none
+  /-- The reach a delivered `receive` carries from the turn that handed it on (`Send.reach`). -/
+  reach : Option String := none
 
 def ledgerJson (l : Ledger) : Json := l.json
 
@@ -1879,7 +1907,8 @@ def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : 
   [("sends", Json.arr (sends.zipIdx.toArray.map fun (x, i) => Json.mkObj
     ([("id", toJson (deliveryId principal intent i)), ("to", toJson x.to), ("method", toJson x.method),
      ("argument", dataJson x.argument), ("sender", toJson x.sender), ("ledger", child.json)] ++
-     (if x.via.isEmpty then [] else [("via", toJson x.via), ("principal", toJson x.grantor)]))))]
+     (if x.via.isEmpty then [] else [("via", toJson x.via), ("principal", toJson x.grantor)]) ++
+     ((x.reach.map fun r => [("reach", toJson r)]).getD []))))]
 
 /-- What a turn segment carries into its end: who it is, how it began, what it has spent. -/
 structure Ctx where
@@ -1913,14 +1942,16 @@ structure Ctx where
 def sendJson (s : Send) : Json :=
   Json.mkObj ([("to", toJson s.to), ("method", toJson s.method), ("argument", dataJson s.argument),
     ("sender", toJson s.sender)] ++
-    (if s.via.isEmpty then [] else [("via", toJson s.via), ("grantor", toJson s.grantor)]))
+    (if s.via.isEmpty then [] else [("via", toJson s.via), ("grantor", toJson s.grantor)]) ++
+    ((s.reach.map fun r => [("reach", toJson r)]).getD []))
 
 def sendOfJson (j : Json) : Except String Send := do
   return { to := ← j.getObjValAs? String "to", method := ← j.getObjValAs? String "method",
            argument := ← decodeData Limits.dataDepth (← j.getObjVal? "argument"),
            sender := ← j.getObjValAs? String "sender",
            via := (j.getObjValAs? String "via").toOption.getD "",
-           grantor := (j.getObjValAs? String "grantor").toOption.getD "" }
+           grantor := (j.getObjValAs? String "grantor").toOption.getD "",
+           reach := (j.getObjValAs? String "reach").toOption }
 
 def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
   [("turnRequest", toJson ctx.digest), ("ticksUsed", toJson used), ("ledger", ctx.ledger.json)] ++
@@ -2099,7 +2130,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
                             direct := how.delivery.isNone, receiver := how.receiver, ticks, limits := req.limits, profiling := req.profile,
                             origin := req.origin, command := req.command,
                             post := if req.post.isEmpty then (heardPost req.method req.argument).getD "" else req.post,
-                            reach := if how.delivery.isSome then "delivery" else if !req.reach.isEmpty then req.reach
+                            reach := if how.delivery.isSome then how.reach.getD "delivery"
+                              else if !req.reach.isEmpty then req.reach
                               else if req.method != "receive" then "direct" else "" }
   -- A reply to a post recorded for this very object answers it (reply-is-address).
   let post := if req.replyTo.isEmpty then none else w.posts[req.replyTo]?
@@ -2618,7 +2650,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
     let response ← match kind with
       | .reply e =>
         if tagOf e == "interpreted" then interpretedResponse compiled.bounds responseType e
-        else respond compiled.bounds responseType "reply" [.record [("receipt", receiptData e)]]
+        else respond compiled.bounds responseType "reply" (receiptReplies e)
       | .timedOut => respond compiled.bounds responseType "timedOut" [emptyRecord]
     -- The activity began with only its own object as a root, at the version still current.
     let binding := Delvetalk.Turn.Binding.make object principal intent
@@ -2741,6 +2773,7 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
         intent := id
         limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))]
         digest := Journal.bodyHash d }
+    let how := { how with reach := (d.getObjValAs? String "reach").toOption }
     -- A delivered `receive` to a card of the message dialect is read as a spell, as a direct turn's
     -- is, against the card it was sent to (not under a grant: that names the one method it may run).
     match if via.isEmpty then routeSpell w principal object method argument false else .asIs with

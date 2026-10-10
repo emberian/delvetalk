@@ -99,7 +99,8 @@ class Replay(Chain):
         self.make("cistern", closure("Cistern"), record())
         refusal = record(slot=record(principal=label("glm"), intent=label("at://glm/3m-cistern")), height=nat(9),
                          outcome={"tag": "variant", "label": "refused",
-                                  "payload": record(**{"class": label("requiredAbsence"), "root": label("0" * 64)})})
+                                  "payload": record(**{"class": label("requiredAbsence"), "root": label("0" * 64)})},
+                         hash=label(""))
         reply = self.turn("cistern", "retain", record(receipt=refusal), principal="kimik3")
         self.assertEqual(reply["status"], "admitted", reply)
         entries = rows(self.state_field("cistern", "entries"))

@@ -1192,6 +1192,28 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `unignore`; the powers), `tests/test_post_reserve.py` `Unposted`; the catalogue and AGENTS-API's class table
      gain `quiet`.
 
+127. **The objects lane's three, and a handed-on reply's reach (host14).**
+   - *Atomic make:* on foundation fixtures a body grafted by same-turn create-then-extend gives the made thing
+     its methods, a form-derived input (`RainInput`) included, which run, survive a later `extend` and a reopen
+     (`tests/test_make.py`
+     `test_a_method_the_body_adds_runs_on_the_made_thing_and_a_later_layer_lays_over_it`). The objects lane's
+     `typeMismatch` did not reproduce here: its Kind grafted `input.id`, which with a minted id names
+     nothing, so the lane's failing input is wanted before more host work.
+   - *Minting under a prefix:* a `create` whose `requireAbsent.object` ends in `/` takes the first free
+     `<prefix><n>` (`mintUnder`: not an object, not created this turn, not held by a suspension's absence), so a
+     squatted `garden/bell/3` refuses nothing; the creation's `object` names the id taken (a kind grafts
+     `c.object.object`). Test: `test_a_prefix_mints_past_the_ids_already_held`.
+   - *An await's receipt carries `hash`:* `Plan.obend` `Receipt` gains `hash: String` (the entry's CID;
+     `receiptData`); a call site compiled against the older Receipt gets the shape without it
+     (`receiptReplies`); the `ended` receipt carries "" (its entry is the one being sealed). Pins re-recorded.
+     Test: `ReceiptHash`.
+   - *A handed-on reply keeps its reach:* a `send` of `receive` from a turn whose reach is not `delivery`
+     carries that reach (`Send.reach`, journaled on the send and across a suspension; `TurnMeta.reach`), so
+     the receiver's turn has it: prose that reached nobody stays "not addressed" at the directory and costs
+     no model call. `test_hub`'s HandedToTheDirectory now states `reach: mention`, as the bridge must. Test:
+     `tests/test_reach.py` `test_a_reply_handed_on_by_send_keeps_its_reach`. The original `replyTo` is not
+     carried (the `post` is in the argument).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
