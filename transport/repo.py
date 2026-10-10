@@ -16,7 +16,7 @@ COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication
 PUBLIC = 'anonymous'  # the reader an unauthenticated request is; the front's object page reads as it too
 LIMIT, MAX_LIMIT = 50, 100
 CAR = 'application/vnd.ipld.car'
-NEW_KEY = re.compile(r'([A-Za-z0-9._~:-]+)\.([0-9]+)')  # <object with / as ~>.<version>
+OBJECT_KEY = re.compile(r'([A-Za-z0-9._~:-]+)\.([0-9]+)')  # <object with / as ~>.<version>
 SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]-(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]')
 # Collections a host op pages by journal height: (op, the reply's list, the item's record key, the item's cid).
 PAGED = {'receipt': ('world-entries', 'entries', 'slug', 'hash'), 'source': ('world-sources', 'sources', 'cid', 'cid'),
@@ -158,10 +158,10 @@ class Repo:
             item = self.entry(host, rkey, who)['receipt']
             cid = item.get('hash')
         elif collection == 'object':
-            new = None if '/' in rkey else NEW_KEY.fullmatch(rkey)
-            oid, _, version = (new[1].replace('~', '/'), '', new[2]) if new else rkey.rpartition('/')  # <object>/<version>: one release
-            if not oid or not (version.isascii() and version.isdigit()):
+            key = OBJECT_KEY.fullmatch(rkey)
+            if not key:
                 raise Refusal(400, 'InvalidRequest', 'an object record key is <object with / as ~>.<version>')
+            oid, version = key[1].replace('~', '/'), key[2]
             item = self.object(host, oid, int(version), who)
             cid, rkey = item.get('stateCid'), object_key(oid, version)
         elif collection == 'source':

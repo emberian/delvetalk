@@ -216,8 +216,7 @@ def mention_turns(state, host, obs, authors, handles):
 
 def route(host, obs, known=None):
     """-> (object, slot|None) or None. A reply to a journaled post goes to that post's addressee; the
-    card word applies only to posts with no journaled parent. TODO(Directory): drop the summon special
-    case once Directory is reachable by replying to the journaled welcome post."""
+    card word applies only to posts with no journaled parent, and a summon with none routes to the directory."""
     known, seen, ancestor = known or {}, set(), obs['replyTo']
     for _ in range(MAX_HOPS):  # the nearest recorded ancestor, walking replyTo through what the observer stored
         if not ancestor or ancestor in seen:

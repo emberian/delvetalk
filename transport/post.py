@@ -50,8 +50,7 @@ def mention_facets(client, text):
 
 
 def quota_limit(host):
-    """The hourly cap: the host's world-status `postQuota` when it has one, else this file's constant.
-    TODO(host quota object): the host will own this as a journaled object."""
+    """The hourly cap: the host's world-status `postQuota` when it has one, else this file's constant."""
     got = host.send({'op': 'world-status'}) if host else {}
     if isinstance(got.get('postQuota'), int):
         return got['postQuota'], 'host'
