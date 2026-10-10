@@ -270,6 +270,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
       | "world-object" => return (session, objectOp s.world request)
       | "world-source" => return (session, sourceOp s.world request)
       | "world-sources" => return (session, sourcesOp s.world request)
+      | "world-grants" => return (session, grantsOp s.world request)
       | "world-receipt" => return (session, receipt s.world request)
       | "world-history" => return (session, history s.world request)
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),

@@ -686,7 +686,10 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    unchanged. `world-source {principal, cid}` / `world-sources {principal, after?, before?, reverse?, limit?}`
    (`sourceRecords`: each source an entry's `sources` or a library entry carried, named as compile inputs name it, at the
    height that first carried it) answer `{cid, name, text, height}` records the reader may read (`readableSources`: the
-   modules of objects it may view, and the libraries'); `denied` / `unknown` otherwise. Test: `tests/test_reads.py`.
+   modules of objects it may view, and the libraries'); `denied` / `unknown` otherwise. `world-grants {principal, after?,
+   before?, reverse?, limit?}` (`grantsOp`) lists the grants whose object the reader may view, as they stand
+   (`revoked`, `uses` left), with the making entry's `height` and `hash`. Tests: `tests/test_reads.py`,
+   `test_grants.Attenuation`.
 
 ## 6. Gotchas
 

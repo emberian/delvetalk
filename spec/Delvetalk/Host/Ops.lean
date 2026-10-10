@@ -2559,6 +2559,24 @@ def sourcesOp (w : World) (j : Json) : Except String Json := do
   let (shown, more) ← pageByHeight j ((sourceRecords w).filterMap fun (h, cid, r) => if readable.contains cid then some (h, r) else none)
   return Json.mkObj [("status", toJson "sources"), ("sources", Json.arr shown), ("more", toJson more)]
 
+/-- `world-grants {principal, after?, before?, reverse?, limit?}`: every grant an admitted entry made whose
+    object the reader may view, as it stands now (`revoked`, `uses` left), with the `height` and `hash` of
+    the entry that made it, paged by that height. -/
+def grantsOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let mut items : Array (Nat × Json) := #[]
+  for (entry, i) in w.entries.zipIdx do
+    if tagOf entry != "admitted" then continue
+    let made := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "grants" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]
+    for g in made do
+      let some id := (g.getObjValAs? String "id").toOption | continue
+      let some now := w.grants[id]? | continue
+      unless viewable w reader now.object do continue
+      items := items.push (i + 1, (now.json.setObjVal! "revoked" (toJson now.revoked)).setObjVal! "height" (toJson (i + 1))
+        |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
+  let (shown, more) ← pageByHeight j items
+  return Json.mkObj [("status", toJson "grants"), ("grants", Json.arr shown), ("more", toJson more)]
+
 /-- `world-entry {principal, hash, bytes?}`: the entry whose hash it is, as the reader may see it
     (`projectEntry`), and with `bytes: true` the lowercase hex of its canonical DAG-CBOR without `hash`
     when the reader sees it whole (the identity's own principal); `unknown` otherwise. -/
