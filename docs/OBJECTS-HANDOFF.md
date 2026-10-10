@@ -142,15 +142,58 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   end-to-end case as an expected failure.
 
 * **The world protocol** (WHOLENESS §1; objects6). `world/lib/World.obend` is the `protocol
-  world:` declaration (KERNEL-HANDOFF §17) with `Message {object, method, argument}` and one
-  closed result sum per method, `refused {clause}` on each and `denied {}` on reads. Only
-  the methods the host answers today are lines (`spell`, `subscribe`, `unsubscribe`,
-  `viewDerived`, `viewAt` join when it answers them). `tests/test_world_protocol.py` compiles
-  a message-dialect object against it. Migrating objects waits on the host: a message turn
-  is refused "plan is not a variant" (measured: a `bump` doing `write {count: add 1n}`)
-  until `answer` dispatches on the method name (WHOLENESS §4 host day 2). The spell
-  deletions (§2) wait on `Host/Spell.lean`, the observer deletions (§3) on `subscribe` and
-  `changed`.
+  world:` declaration (KERNEL-HANDOFF §17): `Message {object, method, argument}`, one closed
+  result sum per method (`refused {clause}` on each, `denied {}` on reads), `Derived<T>`,
+  `Subscribed`, and `Changed {object, field, version, inserted, retracted}` (Data; a
+  subscriber types the two lists in its own `changed` input). Every method host8 answers is a
+  line (`viewAt`, `viewDerived`, `viewField`, `subscribe`, `unsubscribe` included); `spell` is
+  not, because host8 lists it but has no arm for it. `tests/test_world_protocol.py` compiles a
+  message-dialect object and runs it through the host: a write, a subscription and its
+  `changed` delivery, `viewAt` and `viewDerived`.
+
+### Wholeness migration: where it stands (objects6 stopped here; a successor starts from this)
+
+Nothing has moved to the message dialect yet. What host8 does that the migration must meet
+(HOST-HANDOFF 5.46 to 5.51, measured against foundation 3a02eba):
+
+* **Spells are the host's** for a card whose `receive` is a message activity: the host parses,
+  retargets to the named card, fits the action against `methodForms` (derived from the
+  METHOD TABLE: a method taking a context whose input is a record of text, natural and
+  empty-payload sum fields) and runs that method with the typed argument; a misfit is
+  `badSpell {clause, reason, hint}`; prose and a spell missing fields reach `receive {text,
+  post, fields}`. So each form action must be a method of that name with that input record;
+  the Bend `form` blocks no longer bound a spell (the host's text bounds are 0..1400), they
+  remain for interpret offers and usage cards. Garden's `plant {colour: Bell.Colour, seed}`
+  becomes a choice the host fits from `colour: violet`.
+* **Conflicts to settle first:** (1) `door()` is the directory blurb but `door {label, to}` is
+  a form action on Bell and every card with doors: a method named `door` would collide;
+  rename the blurb (`blurb()`), it is read by the Directory only through inspect. (2) Lenses:
+  host8 does not answer `set` yet ("Not yet: lenses' set"), so Policy, Avatar, Place, Thing
+  and Garden lose `delvetalk <card> set` when migrated; migrate them after the host lands it,
+  or give each a `set {field, value}` method and accept `field:`/`value:` lines meanwhile.
+  (3) The interpretation verdict is not yet fitted by the host, so Garden and the Directory
+  keep `Card.fitting` over `replied {text}` until it is. (4) `changed` carries Data: a Wake
+  can consume `changed` only for a field whose type it knows (a natural like `planted`: its
+  `changed` input names `inserted: List<Nat>`); `On.rows` over arbitrary relations (Card.Row)
+  has no successor until Bend can read Data or each watched object exports its row type to a
+  library module (Bell's Rain to `world/lib`, then Wake imports it and `changed` takes
+  `List<Rain>`). Decide before Wake moves. (5) `Card.Heard` is `{text, post}` for the sum
+  dialect; the message dialect's `receive` takes `{text, post, fields: Spell.Bindings}`; a
+  new record (or `Heard` gaining `fields` at day 4) must not break the unmigrated cards.
+* **Card.obend**: message-dialect helpers go beside the old ones under their final names (an
+  offer helper `Activity<T>` over `world.offer`, the prose default: blank text offers the card
+  and usage, prose is sent to the directory, fields without a spell answer the usage), so no
+  object is renamed twice; the `<E, S, R, T>` helpers, `route`, `withBare`, `fitting`,
+  observers and `broadcast`/`notifyRows` are deleted with the last object. Kernel rule to
+  respect: two world calls building the same message at different result types in one entry
+  are refused `world-call-site`.
+* **Order that avoids the conflicts:** Counter, Lantern, Loop, Cistern, Seat, Table,
+  Appointment(s), Scene, Commons, Anthology, Deal, Tide (no lenses, no observers beyond what
+  `subscribe` replaces); Door and Lantern on `subscribe` to the bell's `rung` and the door's
+  `open`; Bell after the `door` rename; Directory, Garden after the interpretation fit; Env
+  (`Sensed` to `world/lib/Event.obend` so a Wake can import it), Wake after decision (4);
+  Place, Thing, Avatar (`outbox` relation) and Policy after lenses. Test each through
+  world-turn with the host reading its spells; re-record pins per commit.
 
 ## 2. Limits found
 
