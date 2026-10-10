@@ -277,7 +277,7 @@ class Wakes(Chain):
         self.tide()
         self.make("bell", closure("Bell"), bell_seed())
         wake = self.wake()
-        where = {"tag": "list", "items": [record(column=label("author"), equals={"tag": "variant", "label": "text", "payload": record(value=label(OTHER))})]}
+        where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": record(column=label("author"), equals={"tag": "variant", "label": "text", "payload": record(value=label(OTHER))})}]}
         rule = {"tag": "variant", "label": "rows", "payload": record(object=label("bell"), field=label("rains"), where=where, atLeast=nat(1))}
         call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
         self.assertEqual(self.label_of(self.turn(wake, "watch", record(event=rule, action=call), principal=OWNER)), "watching")
@@ -416,14 +416,21 @@ def one(a: Tide.Sub) -> Lists.List<Tide.Sub>:
   Lists.List.cons({head: a, tail: Lists.List.nil({})})
 def cell(text: String) -> Relations.Cell:
   Relations.text(text)
-def row(author: String, n: Nat) -> Card.Row:
-  Card.Row.cons({head: Card.column("author", cell(author)), tail: Card.Row.cons({head: Card.column("n", Relations.nat(n)), tail: Card.Row.nil({})})})
-def rule(field: String, author: String, atLeast: Nat) -> Wake.On:
-  Wake.On.rows({object: "bell", field: field, where: Lists.List.cons({head: {column: "author", equals: cell(author)}, tail: Lists.List.nil({})}), atLeast: atLeast})
-# Rows (kimik3 0, glm 1, kimik3 2) on bell.rains: how many match each rule.
+def row(author: String, n: Nat, text: String) -> Card.Row:
+  Card.Row.cons({head: Card.column("author", cell(author)), tail: Card.Row.cons({head: Card.column("n", Relations.nat(n)), tail: Card.Row.cons({head: Card.column("text", cell(text)), tail: Card.Row.nil({})})})})
+def by(author: String) -> Wake.Where:
+  Wake.Where.equals({column: "author", equals: cell(author)})
+def only(w: Wake.Where) -> Lists.List<Wake.Where>:
+  Lists.List.cons({head: w, tail: Lists.List.nil({})})
+def rule(field: String, where: Lists.List<Wake.Where>) -> Wake.On:
+  Wake.On.rows({object: "bell", field: field, where: where, atLeast: 1n})
+# Rows (kimik3 0 "a Moth drizzle", glm 1 "dry", kimik3 2 "moths") on bell.rains: how many
+# match each rule.
 def rowsMatched(which: Nat) -> Nat:
-  let rows = Card.Rows.cons({head: row("kimik3", 0n), tail: Card.Rows.cons({head: row("glm", 1n), tail: Card.Rows.cons({head: row("kimik3", 2n), tail: Card.Rows.nil({})})})})
-  if which == 0n then Wake.matched(rule("rains", "kimik3", 1n), "bell", "rains", rows) else if which == 1n then Wake.matched(rule("rains", "zero", 1n), "bell", "rains", rows) else if which == 2n then Wake.matched(rule("doors", "kimik3", 1n), "bell", "rains", rows) else Wake.matched(rule("rains", "kimik3", 1n), "garden", "rains", rows)
+  let rows = Card.Rows.cons({head: row("kimik3", 0n, "a Moth drizzle"), tail: Card.Rows.cons({head: row("glm", 1n, "dry"), tail: Card.Rows.cons({head: row("kimik3", 2n, "moths"), tail: Card.Rows.nil({})})})})
+  if which == 0n then Wake.matched(rule("rains", only(by("kimik3"))), "bell", "rains", rows) else if which == 1n then Wake.matched(rule("rains", only(by("zero"))), "bell", "rains", rows) else if which == 2n then Wake.matched(rule("doors", only(by("kimik3"))), "bell", "rains", rows) else if which == 3n then Wake.matched(rule("rains", only(by("kimik3"))), "garden", "rains", rows) else moreMatched(which, rows)
+def moreMatched(which: Nat, rows: Card.Rows) -> Nat:
+  if which == 4n then Wake.matched(rule("rains", only(Wake.Where.above({column: "n", above: 0n}))), "bell", "rains", rows) else if which == 5n then Wake.matched(rule("rains", only(Wake.Where.below({column: "n", below: 2n}))), "bell", "rains", rows) else if which == 6n then Wake.matched(rule("rains", only(Wake.Where.contains({column: "text", contains: "moth"}))), "bell", "rains", rows) else Wake.matched(rule("rains", Lists.List.cons({head: by("kimik3"), tail: only(Wake.Where.above({column: "n", above: 0n}))})), "bell", "rains", rows)
 # Each case: old subs, new subs, requester glm. "own" adds glm beside an unchanged kimik3;
 # "theirs" changes kimik3's row; "drop" retracts kimik3's; "mine" replaces and drops glm's own.
 def changedBy(which: Nat) -> String:
@@ -467,7 +474,9 @@ class LawPredicates(unittest.TestCase):
         self.assertEqual(self.run_probe("subscribeAs", label("glm")), "refused self")
 
     def test_a_rows_rule_counts_the_rows_matching_its_patterns_on_its_object_and_field(self):
-        self.assertEqual([self.run_probe("rowsMatched", nat(n)) for n in range(4)], ["2", "0", "0", "0"])
+        # equals, a missing author, another field, another object; above 0, below 2, the whole
+        # word "moth" (case aside; "moths" is another word), and two patterns at once.
+        self.assertEqual([self.run_probe("rowsMatched", nat(n)) for n in range(8)], ["2", "0", "0", "0", "2", "2", "1", "1"])
 
     def test_the_changed_keys_of_a_subscription_write_are_the_requesters(self):
         self.assertEqual([self.run_probe("changedBy", nat(n)) for n in range(4)],
