@@ -46,7 +46,12 @@ src.close()
 PY
 done
 
-"$here/verify.sh" "$mode" "$host" "$dest/mirror"
+# The watch reads the last verify (transport.hand status --json): ok, or broken with its stamp.
+if ! "$here/verify.sh" "$mode" "$host" "$dest/mirror"; then
+  echo "broken $(date -u +%Y%m%dT%H%M%SZ)" > "$dest/last-verify"
+  exit 1
+fi
+echo "ok $(date -u +%Y%m%dT%H%M%SZ)" > "$dest/last-verify"
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 tar -czf "$dest/delvetalk-$stamp.tar.gz.part" -C "$dest/mirror" .

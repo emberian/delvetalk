@@ -296,6 +296,26 @@ Within a poll the card comes back in the topic (the journal height grows by the 
 The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
 `python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.
 
+## Watching
+
+One probe every five minutes (docs/OPERATIONS.md section b): `python3 -m transport.hand status --json` prints the
+front's 5xx (five minutes, the hour, from `access.log`), refusals by class (the host's `world-status.hour` when it
+keeps it; until then the newest hundred entries), model calls and dollars for the hour and the day
+(`model-spend.jsonl`), the delve reservations, pending interpretations and the highest attempt, the journal's height,
+bytes and median suspension, the clock against unix minutes, the observation count, the newest backup tarball, its age
+and `last-verify` (written by `backup.sh`), and the free fraction of the state and backup disks. `python3 -m
+deploy.watch` appends it to `<state>/watch.jsonl` and posts one line per crossed threshold, naming the playbook below,
+to the owner's Zulip: stream **`delvetalk-ops`**, topic **`watch`**, as the bot whose rc `.env` names
+(`DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc`, mode 0400, owner 10425). A condition speaks at most once per
+six hours (`<state>/alerted.json`); two repeat hourly: a compose service not running or unhealthy, and a backup verify
+that failed or a newest tarball older than seven hours. Install on the workhorse:
+
+    scp deploy/watch.sh deploy/delvetalk-watch.service deploy/delvetalk-watch.timer root@workhorse:/opt/delvetalk/
+    ssh root@workhorse 'cp /opt/delvetalk/delvetalk-watch.{service,timer} /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now delvetalk-watch.timer'
+
+`journalctl -u delvetalk-watch` shows each run; `python3 -m deploy.watch ... --dry-run` prints the lines without
+posting or remembering them.
+
 ## Opening another community
 
     python3 -m deploy.open --state /data/state --world ring --transport zulip --realm tulip.arke.me --channel ring --zuliprc ~/.zuliprc-ring
