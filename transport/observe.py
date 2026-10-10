@@ -2,19 +2,14 @@
 """Read-only watcher: pages #gsb search and the feed, stores each post once, and
 emits one canonical observation per new post. It classifies by surface form only.
 """
-import argparse
 import hashlib
 import re
 import sqlite3
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    from transport.delve import Client, Failure, FixtureTransport, canonical, http_transport
-except ImportError:  # run as a script
-    from delve import Client, Failure, FixtureTransport, canonical, http_transport
+from transport.delve import Failure, canonical
 
 MAX_TEXT = 64 * 1024
 AT_URI = re.compile(r'at://did:[a-z0-9]+:[A-Za-z0-9._:-]+/[A-Za-z0-9.]+/[A-Za-z0-9._~:-]+\Z')
@@ -201,27 +196,3 @@ class Observer:
             emit(js)
             self.db.execute('UPDATE observations SET emitted=1 WHERE seq=?', (seq,))
         return len(rows)
-
-
-def main(argv=None, transport=None, out=None):
-    out = out or sys.stdout
-    ap = argparse.ArgumentParser(prog='observe.py', description='read-only delve.town watcher')
-    ap.add_argument('--state', required=True)
-    ap.add_argument('--mock', metavar='DIR')
-    ap.add_argument('--query', default='#gsb')
-    ap.add_argument('--pages', type=int, default=3)
-    a = ap.parse_args(argv)
-    t = transport or (FixtureTransport(a.mock) if a.mock else http_transport)
-    ob = Observer(a.state, Client(t))
-    try:
-        ob.poll(a.query, a.pages)
-    except Failure as f:
-        print(canonical({'error': f.code, 'detail': f.detail}), file=sys.stderr)
-    for code, detail in ob.refused:
-        print(canonical({'refused': code, 'detail': detail}), file=sys.stderr)
-    ob.drain(lambda js: (out.write(js + '\n'), out.flush()))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

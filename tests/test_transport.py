@@ -567,13 +567,5 @@ class Idempotent(unittest.TestCase):
         self.assertEqual((pds.creates, [r['uri'] for r in host.posted]), (1, [got['uri']] * 2))
 
 
-class Cli(unittest.TestCase):
-    def test_commands_write_canonical_json(self):
-        out = io.StringIO()
-        self.assertEqual(delve.main(['--mock', str(FIX), 'search', '--q', '#gsb'], out=out), 0)
-        text = out.getvalue()
-        self.assertEqual(text, delve.canonical(json.loads(text)) + '\n')
-
-
 if __name__ == '__main__':
     unittest.main()

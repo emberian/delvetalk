@@ -4,21 +4,16 @@ own account, and we read that post from the fixed PDS (by URI when given, else t
 account; grants nothing. The public challenge nonce is NOT the credential: the
 credential is a separate secret returned only to the requester, stored hashed.
 """
-import argparse
 import hashlib
 import os
 import re
 import secrets
 import sqlite3
-import sys
 import threading
 import time
 from pathlib import Path
 
-try:
-    from transport.delve import Client, Failure, FixtureTransport, canonical, http_transport
-except ImportError:
-    from delve import Client, Failure, FixtureTransport, canonical, http_transport
+from transport.delve import Failure
 
 ORIGIN = os.environ.get('DELVETALK_ORIGIN') or 'https://gsb.fg-goose.online'  # the one place the portal's origin is named
 COLLECTION = 'town.delve.feed.post'
@@ -181,32 +176,3 @@ class Identity:
         if cur.rowcount != 1:
             raise IdentityError('invalid_credential')
         return {'status': 'revoked'}
-
-
-def main(argv=None, transport=None, out=None, clock=time.time):
-    out = out or sys.stdout
-    ap = argparse.ArgumentParser(prog='identity.py')
-    ap.add_argument('--state', required=True)
-    ap.add_argument('--mock', metavar='DIR')
-    ap.add_argument('--origin', default=ORIGIN)
-    sub = ap.add_subparsers(dest='cmd', required=True)
-    sub.add_parser('challenge').add_argument('handle')
-    v = sub.add_parser('verify')
-    v.add_argument('handle')
-    v.add_argument('at_uri')
-    sub.add_parser('revoke').add_argument('token', help='the credential returned by challenge')
-    a = ap.parse_args(argv)
-    t = transport or (FixtureTransport(a.mock) if a.mock else http_transport)
-    ident = Identity(a.state, Client(t), a.origin, clock)
-    try:
-        result = (ident.challenge(a.handle) if a.cmd == 'challenge' else
-                  ident.verify(a.handle, a.at_uri) if a.cmd == 'verify' else ident.revoke(a.token))
-    except IdentityError as e:
-        print(canonical({'error': e.code}), file=sys.stderr)
-        return 1
-    out.write(canonical(result) + '\n')
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())
