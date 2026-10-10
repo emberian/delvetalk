@@ -1,4 +1,9 @@
-"""Entries by item (FOUNDATION section 13, row 1): `amendItem {item, change}` and `removeItem {item}`
+"""List items are amended and removed by their canonical bytes, so two removals never race on an
+index, and every object writes that way.
+
+Evidence for FOUNDATION §3 Edits (layer: host).
+
+Entries by item: `amendItem {item, change}` and `removeItem {item}`
 address the first list item whose canonical bytes equal `item`, so two turns that each remove
 something do not race on an index. The index forms stay one release.
 
@@ -6,7 +11,8 @@ The host landed them with lane/host4 (7196363, merged in foundation 88b9534); be
 turn was refused with class "evaluation" and reason "malformed write plan".
 
 Refuted by: a removeItem that removes another item or none, an amendItem of an absent item that
-commits, or the index forms stopping to work before the release ends."""
+commits, or the index forms stopping to work before the release ends.
+"""
 import unittest
 
 from tests.test_chain import nil

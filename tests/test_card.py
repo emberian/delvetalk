@@ -1,6 +1,12 @@
-"""The uniform card protocol (world/lib/Card.obend): receive {text, post, slot} routes a spell
+"""The card protocol: a spell naming the card runs its action, an empty reply gets the card, prose
+addressed to nobody gets nothing.
+
+Evidence for FOUNDATION §5 (layer: objects).
+
+The uniform card protocol (world/lib/Card.obend): receive {text, post, slot} routes a spell
 naming the object to one of its forms, and answers anything else with the card and its
-forms. Lantern is the smallest object that follows it."""
+forms. Lantern is the smallest object that follows it.
+"""
 import unittest
 
 from tests.host import HostCase
@@ -60,20 +66,16 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class CounterCard(Receive):
-    """Counter, the host suites' timed reference, follows the protocol too (200 HTTP turns: 0.50 s
-    on hbox with Card in its closure, 0.39 s without; test_http's bound is 10 s)."""
-    test_a_spell_naming_the_card_and_an_action_runs_it = None
-    test_prose_is_not_addressed_and_gets_nothing_and_an_empty_reply_the_card = None
-    test_another_card_or_an_unknown_action_is_refused_by_name = None
+class CounterCard(TurnWorld):
+    """Counter, the host suites' reference object, follows the protocol too."""
 
     def setUp(self):
-        HostCase.setUp(self)
+        super().setUp()
         r = self.host.send(op="world-create", principal="ember", identity="mk-k", object="k", modules=closure("Counter"),
                            entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
 
-    def test_a_bump_spell_bumps_and_prose_gets_the_count(self):
+    def test_a_bump_spell_bumps_an_empty_reply_shows_the_count_and_prose_gets_nothing(self):
         r = self.turn("k", "receive", heard("delvetalk k bump"), principal="glm")
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
         r = self.turn("k", "receive", heard(""), principal="glm")

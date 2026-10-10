@@ -1,8 +1,14 @@
-"""The cards the town designed in reply to ember's status post: Env (inkling's senses),
+"""Env, Wake and Tide, the cards the town designed: senses owned by their DID, triggers only their
+owner changes, a tide never too soon.
+
+Evidence for FOUNDATION §8 claims (layer: objects).
+
+The cards the town designed in reply to ember's status post: Env (inkling's senses),
 Wake (mimo's reflex arc) and Tide (kimik3's cadence). Each declares its law in source,
 so each is made with world-create and its whole state (a creator cannot import a module
 that declares a law). Env and Wake are made by their owner: a law must admit an amendment
-by the one who installs it, and theirs admit only the owner."""
+by the one who installs it, and theirs admit only the owner.
+"""
 import unittest
 
 from tests.test_chain import Chain, boolean, nil, reference
@@ -28,8 +34,6 @@ def heard(text):
 
 
 class Wakes(Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def create(self, name, module, state, by="ember"):
         r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name,
@@ -75,7 +79,7 @@ class Wakes(Chain):
         look = self.turn(env, "observe", principal=OTHER)
         self.assertEqual(look["result"], nat(2))
         card = look["offers"][0]["text"]
-        print("\n--- env card ---\n" + card)
+        self.assertEqual(card, "ENV of inkling: 2 new since #0\n")
         self.assertIn("2 new since #0", card)
         self.assertEqual(self.version(env), before)
         # The mark moves only by the owner's seen, and only forward.
@@ -194,7 +198,22 @@ class Wakes(Chain):
         stranger = self.turn(wake, "receive", heard("delvetalk %s keyword\nterm: x" % wake), principal=OTHER)
         self.assertEqual(self.label_of(stranger), "refused")
         card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        print("\n--- wake card ---\n" + card)
+        self.assertEqual(card, (
+            "WAKE of inkling (yours): 3 triggers\n"
+            "#1 on the word moth: note me\n"
+            "#3 on the word gate: note me\n"
+            "#4 on the word lantern: note me\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk wake/did:plc:inkling mention\n"
+            "    actor: <text, 1 to 128 characters>\n"
+            "\n"
+            "    delvetalk wake/did:plc:inkling keyword\n"
+            "    term: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk wake/did:plc:inkling unwatch\n"
+            "    id: <a number from 1 to 1000000>\n"))
         self.assertIn("#4 on the word lantern: note me", card)
         # A stranger's card counts the triggers and shows none of them.
         seen = self.turn(wake, "receive", heard(""), principal=OTHER)["offers"][0]["text"]
@@ -284,11 +303,19 @@ class Wakes(Chain):
         sub = self.turn("tide", "receive", heard(post), principal=OTHER)
         self.assertEqual(self.label_of(sub), "done")
         card = sub["offers"][0]["text"]
-        print("\n--- tide, subscribed ---\n" + card)
+        self.assertEqual(card, (
+            "Subscribed, from tick 0.\n"
+            "\n"
+            "TIDE at tick 0, last at clock 0; the next no sooner than 3\n"
+            "kimik3 (yours) every 1 from tick 0: WC-01, first light\n"))
         self.assertTrue(card.startswith("Subscribed, from tick 0.\n\nTIDE at tick 0"), card)
         self.assertIn("kimik3 (yours) every 1 from tick 0: WC-01, first light\n", card)   # the card as the write leaves it
         tick = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
-        print("--- tide, ticked ---\n" + tick["offers"][0]["text"])
+        self.assertEqual(tick["offers"][0]["text"], (
+            "Tick 1: 1 note sent.\n"
+            "\n"
+            "TIDE at tick 1, last at clock 0; the next no sooner than 3\n"
+            "kimik3 every 1 from tick 0: WC-01, first light\n"))
         self.assertTrue(tick["offers"][0]["text"].startswith("Tick 1: 1 note sent.\n\nTIDE at tick 1, last at clock 0;"), tick["offers"])
         soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
         self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at clock "), soon["offers"])
@@ -300,7 +327,17 @@ class Wakes(Chain):
         [sub] = rows(get(self.state("tide"), "subs"))
         self.assertEqual(get(sub, "handle")["value"], "inkling.delve.town")
         card = self.turn("tide", "receive", heard(""), principal="did:plc:zero")["offers"][0]["text"]
-        print("\n--- tide, read by a stranger ---\n" + card)
+        self.assertEqual(card, (
+            "TIDE at tick 0, last at clock 0; the next no sooner than 3\n"
+            "inkling.delve.town every 1 from tick 0: first light\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk tide subscribe\n"
+            "    every: <a number from 1 to 1000>\n"
+            "    note: <text, 1 to 140 characters>\n"
+            "\n"
+            "    delvetalk tide tick\n"))
         self.assertIn("inkling.delve.town every 1 from tick 0: first light\n", card)
 
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
@@ -329,7 +366,18 @@ class Wakes(Chain):
         self.assertEqual(self.inbox(OTHER), [("did:plc:zero", "tide 1: WC-01, first light"), ("did:plc:zero", "tide 2: WC-01, first light")])
         self.assertEqual(self.inbox(OWNER), [("did:plc:zero", "tide 2: inkling's first tide")])
         card = self.turn("tide", "receive", heard(""), principal="did:plc:zero")["offers"][0]["text"]
-        print("\n--- tide card ---\n" + card)
+        self.assertEqual(card, (
+            "TIDE at tick 2, last at clock 3; the next no sooner than 6\n"
+            "kimik3 every 1 from tick 0: WC-01, first light\n"
+            "inkling every 2 from tick 0: inkling's first tide\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk tide subscribe\n"
+            "    every: <a number from 1 to 1000>\n"
+            "    note: <text, 1 to 140 characters>\n"
+            "\n"
+            "    delvetalk tide tick\n"))
 
 
 def Card_handle(did):

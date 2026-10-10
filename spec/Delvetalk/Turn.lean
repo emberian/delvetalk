@@ -299,6 +299,48 @@ def exhaustedResource (limits : Limits) (failure : Failure) (state : State) (rem
       else some "bytes"
   | _ => none
 
+/-! ## Call sites of a message activity
+
+A message activity (`Activity<R>`, Plan `World.Message`) resumes each perform at that
+perform's own result type, the codomain of its annotation. The machine keeps no positions,
+so a site is named by its plan term: the yielded plan cell's origin before the checkpoint
+settles it. An entry in which two performs build the same plan term at different result
+types is refused at compile (`messageSites`), so the plan term names exactly one type. A
+checkpoint taken at a message yield is prefixed `[siteEdition, i]`, `i` the site's index
+in `messageSites`; resuming reads the type there. The prefix is inside the digest, so it
+is bound like the state; a sum-Plan checkpoint carries none and is unchanged. -/
+
+/-- The edition marker a message checkpoint's site index follows. -/
+def siteEdition : String := "delvetalk.checkpoint.site.v1"
+
+/-- The site whose plan the yielded state's plan cell was built from. -/
+def yieldedSite (sites : Array (Term × Ty)) (state : State) : Option Nat :=
+  match state.control with
+  | .yielded address => match state.heap[address]? with
+    | some (.suspended c) | some (.evaluating c) | some (.cached c _) =>
+      sites.findIdx? fun (t, _) => Minidregg.Theory.ObjectiveBendCheckpoint.termEq t c.term
+    | _ => none
+  | _ => none
+
+open Minidregg.Theory.ObjectiveBendCheckpoint in
+/-- A checkpoint's site index and its state tokens. -/
+def splitSite : Tokens → Option Nat × Tokens
+  | .text edition :: .nat i :: rest => if edition == siteEdition then (some i, rest) else (none, .text edition :: .nat i :: rest)
+  | tokens => (none, tokens)
+
+open Minidregg.Theory.ObjectiveBendCheckpoint in
+/-- The response type a checkpoint resumes at: the activity's for a sum Plan, the site's for
+a message. -/
+def resumeType (sites : Option (Array (Term × Ty))) (response : Ty) (tokens : Tokens) :
+    Except String (Ty × Tokens) :=
+  match sites, splitSite tokens with
+  | none, (none, rest) => .ok (response, rest)
+  | some s, (some i, rest) => match s[i]? with
+    | some (_, t) => .ok (t, rest)
+    | none => .error "checkpoint names no call site of this entry"
+  | some _, (none, _) => .error "checkpoint names no call site of this entry"
+  | none, (some _, _) => .error "checkpoint does not decode"
+
 /-- The dictionary a packet's checkpoints are written against: its entry term's. -/
 def programDictionary (packet : Json) : Dictionary :=
   match decodePacket packet with
@@ -308,7 +350,8 @@ def programDictionary (packet : Json) : Dictionary :=
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
 /-- Turn the outcome of a bounded run into a typed outcome. -/
 def conclude (dictionary : Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary) (pin : String) (binding : Binding) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
-    (outcome : Except (Failure × State × Budget) (Data × Budget)) : Except String Delvetalk.Turn.Outcome :=
+    (outcome : Except (Failure × State × Budget) (Data × Budget))
+    (sites : Option (Array (Term × Ty)) := none) : Except String Delvetalk.Turn.Outcome :=
   match outcome with
   | .ok (value, remaining) =>
       if !value.conformsUnder bounds result then .error "turn refused: result does not conform to its type"
@@ -327,9 +370,15 @@ def conclude (dictionary : Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary) 
           | none => .error ("turn refused: " ++ refusalText failure st)
       | .ok extracted =>
           if !extracted.value.conformsUnder bounds plan then .error "turn refused: Plan does not conform to its type"
-          else .ok (.yielded extracted.value plan response
-            (Checkpoint.makeFor pin binding (encodeStateV3 dictionary (checkpoint extracted.state)))
-            (b.ticks - extracted.remaining.ticks))
+          else
+            let tokens := encodeStateV3 dictionary (checkpoint extracted.state)
+            let ticks := b.ticks - extracted.remaining.ticks
+            match sites with
+            | none => .ok (.yielded extracted.value plan response (Checkpoint.makeFor pin binding tokens) ticks)
+            | some sites => match yieldedSite sites extracted.state with
+              | some i => .ok (.yielded extracted.value plan (sites[i]?.map (·.2) |>.getD response)
+                  (Checkpoint.makeFor pin binding (.text siteEdition :: .nat i :: tokens)) ticks)
+              | none => .error "turn refused: the yielded message has no call site in this entry"
   | .error (failure, st, rem) =>
       match exhaustedResource limits failure st rem with
       | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
@@ -361,10 +410,11 @@ def prepareStart (packet : Json) (arguments : List Data) :
 
 def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
   let (source, plan, response, result) ← prepareStart packet arguments
+  let sites ← sitesFor (← decodePacket packet).source plan
   let capacities : Limits := ⟨b.heap, b.stack⟩
   let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude (programDictionary packet) (packetDigest packet) binding source.assumptions.bounds plan response result b capacities outcome
+  conclude (programDictionary packet) (packetDigest packet) binding source.assumptions.bounds plan response result b capacities outcome sites
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
 def prepareResume (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) :
@@ -380,7 +430,8 @@ def prepareResume (packet : Json) (checkpoint : Checkpoint) (binding : Binding) 
   unless checkpoint.principal == binding.principal do throw "checkpoint belongs to another principal"
   unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
   unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
-  let some state := decodeStateAny (Dictionary.ofProgram decoded.source.term) checkpoint.tokens
+  let (response, tokens) ← resumeType (← sitesFor decoded.source plan) response checkpoint.tokens
+  let some state := decodeStateAny (Dictionary.ofProgram decoded.source.term) tokens
     | throw "checkpoint does not decode"
   unless value.conformsUnder decoded.source.assumptions.bounds response do throw "turn refused: response does not conform to the response type"
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
@@ -391,10 +442,11 @@ open Minidregg.Theory.ObjectiveBendDemandCollect in
 def resumeActivity (packet : Json) (checkpoint : Checkpoint) (binding : Binding) (value : Data) (b : Budgets) :
     Except String Delvetalk.Turn.Outcome := do
   let (bounds, plan, response, result, state, resumed) ← prepareResume packet checkpoint binding value
+  let sites ← sitesFor (← decodePacket packet).source plan
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
   let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude (programDictionary packet) (packetDigest packet) binding bounds plan response result b capacities outcome
+  conclude (programDictionary packet) (packetDigest packet) binding bounds plan response result b capacities outcome sites
 
 /-! ## A decoded, checked entry: no packet decoding or re-checking per turn -/
 
@@ -420,10 +472,11 @@ def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (binding
     (dictionary : Option Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary := none) :
     Except String Delvetalk.Turn.Outcome := do
   let (applied, plan, response, result) ← prepareStartEntry entry arguments
+  let sites := entry.sites
   let capacities : Limits := ⟨b.heap, b.stack⟩
   let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ applied.source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude (dictionary.getD (Dictionary.ofProgram entry.source.term)) entry.pin binding applied.source.assumptions.bounds plan response result b capacities outcome
+  conclude (dictionary.getD (Dictionary.ofProgram entry.source.term)) entry.pin binding applied.source.assumptions.bounds plan response result b capacities outcome sites
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
 def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (binding : Binding) (value : Data)
@@ -438,7 +491,8 @@ def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint
   unless checkpoint.principal == binding.principal do throw "checkpoint belongs to another principal"
   unless checkpoint.intent == binding.intent do throw "checkpoint belongs to another intent"
   unless checkpoint.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
-  let some state := decodeStateAny (dictionary.getD (Dictionary.ofProgram entry.source.term)) checkpoint.tokens
+  let (response, tokens) ← resumeType entry.sites response checkpoint.tokens
+  let some state := decodeStateAny (dictionary.getD (Dictionary.ofProgram entry.source.term)) tokens
     | throw "checkpoint does not decode"
   unless value.conformsUnder assumptions.bounds response do throw "turn refused: response does not conform to the response type"
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
@@ -452,10 +506,11 @@ def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (bind
     Except String Delvetalk.Turn.Outcome := do
   let dictionary := dictionary.getD (Dictionary.ofProgram entry.source.term)
   let (bounds, plan, response, result, state, resumed) ← prepareResumeEntry entry checkpoint binding value (some dictionary)
+  let sites := entry.sites
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
   let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude dictionary entry.pin binding bounds plan response result b capacities outcome
+  conclude dictionary entry.pin binding bounds plan response result b capacities outcome sites
 
 def wantsProfile (request : Json) : Bool := (request.getObjValAs? Bool "profile").toOption.getD false
 

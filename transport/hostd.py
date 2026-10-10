@@ -40,6 +40,23 @@ def take_lock(path):
     return fd
 
 
+def binary_pin(cache, binary):
+    """The SHA-256 of the host binary, hashed once: cached in <state>/binary-pin by (path, size, mtime)."""
+    st = Path(binary).stat()
+    key = {'path': str(binary), 'size': st.st_size, 'mtimeNs': st.st_mtime_ns}
+    try:
+        held = json.loads(Path(cache).read_text())
+        if {k: held.get(k) for k in key} == key:
+            return held['sha256']
+    except (OSError, ValueError, AttributeError):
+        pass
+    sha = hashlib.sha256(Path(binary).read_bytes()).hexdigest()
+    tmp = Path(cache).with_suffix('.tmp')
+    tmp.write_text(json.dumps({**key, 'sha256': sha}))
+    os.replace(tmp, cache)
+    return sha
+
+
 def sealed_library(library, directory):
     """<directory>: the library plus the packages arrival creates from (world/objects/{Avatar,Env,Wake,Place}),
     rebuilt at each start; this is what hostd seals into the world."""
@@ -52,14 +69,15 @@ def sealed_library(library, directory):
 
 class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
+    request_queue_size = 128  # the default backlog of 5 refuses connections when a burst arrives faster than accept() runs
 
-    def __init__(self, state, journal, binary=BINARY, lock=None, opener=None, library=None):
+    def __init__(self, state, journal, binary=BINARY, lock=None, opener=None, library=None, sync='fsync'):
         self.state = Path(state)
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock_fd = take_lock(lock or self.state / 'journal.lock')  # before anything else is touched
         self.binary, self.order = binary, threading.Lock()
         library = self.library = sealed_library(library, self.state / 'library') if library else None
-        self.shared = Host(str(journal), binary, clock=CLOCK, opener=opener, library=library, librarian=opener)
+        self.shared = Host(str(journal), binary, clock=CLOCK, opener=opener, library=library, librarian=opener, sync=sync)
         self.stateless = Host(None, binary, preload=library)
         self.heaps = Heaps(self.state / 'heaps', binary=binary, library=library)
         self.pidfile = self.state / 'hostd.pid'
@@ -72,7 +90,7 @@ class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
         finally:
             os.umask(old)
         os.chmod(sock, 0o600)
-        self.sha = hashlib.sha256(Path(binary).read_bytes()).hexdigest()
+        self.sha = binary_pin(self.state / 'binary-pin', binary)
 
     def dispatch(self, req):
         with self.order:  # one op at a time, in arrival order
@@ -124,9 +142,10 @@ def main(argv=None):
     ap.add_argument('--opener', default=os.environ.get('DELVETALK_OPENER'), metavar='DID', help="the world's opener (ember's DID); only the opener may create objects with an owner")
     ap.add_argument('--library', default=LIBRARY, help="the standard library sealed into each journal at its first open (with the packages arrival creates from), as the "
                     "opener's (each heap's as its owner's), so packages import it by name; '' for none")
+    ap.add_argument('--sync', default='fsync', choices=('none', 'fsync', 'full'), help='how appends are made durable (default fsync)')
     a = ap.parse_args(argv)
     try:
-        daemon = Hostd(a.state, a.journal, lock=a.lock, opener=a.opener, library=a.library or None)
+        daemon = Hostd(a.state, a.journal, lock=a.lock, opener=a.opener, library=a.library or None, sync=a.sync)
     except Locked as err:
         print(f'hostd: {err}; refusing to start a second writer', file=sys.stderr)
         return EX_TEMPFAIL

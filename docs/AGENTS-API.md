@@ -2,7 +2,9 @@
 
 {{origin}} carries your requests to a world host and returns the host's answers.
 It decides nothing: every refusal is the host's, in the host's words.
-Every route is under /AGENTS.md. Bodies are JSON. Three worked sessions with real replies: `GET /AGENTS.md/examples`.
+Every route is under /AGENTS.md. Bodies are JSON. Four worked sessions with real replies: `GET /AGENTS.md/examples`.
+The same API as data, every route with its parameters, errors and limits: `GET /AGENTS.md/api` (or this URL with
+`Accept: application/json`); `OPTIONS` on any path answers its entries. Every reply carries `_links` and, for an object, `_actions` (Controls, below).
 
     O={{origin}}/AGENTS.md
 
@@ -128,6 +130,52 @@ Every route is under /AGENTS.md. Bodies are JSON. Three worked sessions with rea
 16. The rest: `GET $O/me` (your principal and remaining rate), `GET $O/pending` and `POST $O/deliver` (run queued sends; the host
     already runs them after every turn), `POST $O/revoke` (this credential answers 401 afterwards).
 
+## Controls
+
+Every JSON reply carries `_links`, in the style of HAL: a relation name to `{"href"}` (or a list of them, each with
+`name`). `self` is always there; the others appear where the reply has them, each a projection of what the host said:
+
+| Relation | On | Leads to |
+|---|---|---|
+| `object`, `card`, `source` | an object, card, source, turn or receipt reply | that object's view, card, and law/source/forms |
+| `world`, `item`, `next` | listings | the listing; one `item` per id; the next page when `more` |
+| `receipt` | a turn or receipt reply | the receipt by its slug |
+| `created` | a turn that created objects | each new object |
+| `offers` | a turn (from its height; with `wait` when it is suspended), an object | your offers |
+| `hint` | a refusal or an error | where to read next: the law for `lawRefused` and `typeMismatch`, the receipt otherwise |
+| `verify`, `me`, `heap`, `deliver`, `pending`, `check`, `repl` | the routes that lead there | the next route |
+
+An object, card or source reply also carries `_actions`: one per method in the object's method table that takes a
+context (that a turn can run), as the host's `world-inspect` answers it to you. Each is `{name, method: "POST", href,
+fields: [{name, kind, bounds}], body, spell?}`: `fields` is the host's form (`kind` text, natural or choice;
+`bounds` `{min, max}` or `{options}`); `body` names what to send; `spell` (when the object hears spells, through
+`receive`) is the same call as a spell. A method with no form shows its `input` type and takes `argument`. A refused or
+failed turn carries `_actions` with only the method it called, and `_links.hint`. Whether the law admits your call is
+decided when you make it.
+
+**Walking by controls.** A client that knows only `GET /AGENTS.md/api` and follows the controls in replies, never this
+page, is `walk` in `tests/test_hypermedia.py`, and `deploy/capture-examples.py` records it against the genesis town as the
+last session of `/AGENTS.md/examples`: challenge and verify from the catalogue's `challenge` route and the challenge's
+`_links.verify`; `_links.world`, then each `item` until an object's `_actions` offers `plant` (the garden, the 15th
+id); its `_links.card` for the colours a text field takes; the plant action's `href` with `fields`, admitted, with
+`_links.created` naming the new bell; `_links.receipt`, the receipt by slug; the catalogue's `create` route for a
+counter in the heap, the reply's `_links.object`, its `bump` action, admitted; the catalogue's `repl` route, finished.
+26 requests, 1,284 bytes sent, 118,322 received (2026-10-10); 15 of them are the views it reads looking for
+`plant`, which the listing's `actions` (host ops wanted, 2) would make one.
+
+**Host ops wanted.** The front projects these the moment the host answers them (stubbed in `tests/test_hypermedia.py`):
+
+1. `world-inspect {principal, object}`: each `methods[]` entry gains `admits: true | {clause, reading?}`, the text law's
+   verdict for a kind-0 change by `principal` through that method (Facts `{subject: principal, caller: "", kind: 0,
+   method, height, turn, pin}`, `new` = the current state), so `_actions` lists only what the caller may call. A
+   method whose verdict needs the change's new state is `true` (the commit decides).
+2. `world-objects {principal, prefix?, after?, methods?: true}` → `{status: "listed", ids, more, methods: {<id>: [<name>]}}`,
+   the turnable method names (`context: true`) of each listed id the reader may inspect; each `item` link then carries
+   `actions`.
+3. Forms for text fields with closed choices: the garden's `colour` is a `String`, so its form says `text 0..1400` and
+   only the card says `amber, violet or silver`. A `sum Colour` input would make the form a `choice` (world change,
+   not a host op).
+
 ## Typed data
 
 Turn `argument`, REPL `arguments` and `response` are the host's typed data. `fields` and `seed` also take plain JSON.
@@ -178,15 +226,27 @@ Either resolves at `{{origin}}/xrpc/com.atproto.repo.getRecord?repo=did:web:<ori
 
 ## Errors
 
-Every error is `{"status": "error", "message": "...", "hint"?: "..."}`. A compile error also carries `stage`, `module` and `span`.
+Every 4xx and 5xx is one envelope: `{"status": "error" | "refused", "class", "message", "hint"?, "_links": {"self", "api", "hint"?}}`.
+`refused` is the host saying no; `error` is anything else. When the host answered, its own fields stay beside these
+(`object`; a compile error's `stage`, `module`, `span`, `diagnostic`). `GET /AGENTS.md/api` has this table as `errors`.
 
-| Code | Meaning |
-|---|---|
-| 400 | Bad JSON, a failed challenge or verification, a malformed request the host refused, a compile error |
-| 401 | Credential missing, unverified or revoked; `hint` says how to get one |
-| 404 | Unknown route (`hint` lists them), or an object the host does not know (`{"status": "unknown"}`) |
-| 413 | Body over 64 KiB, or a module you sent over 16 KiB (the library is not counted) |
-| 429 | Over a limit below |
+| Code | Class | When |
+|---|---|---|
+| 400 | badRequest, badJson, badModules, identity, hostRequest | a malformed request line, header, Content-Length or body; a failed challenge or verification; a request the host refused as malformed (its words) |
+| 401 | unauthenticated | credential missing, unverified or revoked; `_links.hint` is the challenge |
+| 403 | denied | the host says you may not read it |
+| 404 | unknown, unknownRoute | the host knows no such object you may see; no route here |
+| 405, 501 | methodNotAllowed, notImplemented | the route takes another method (`Allow`); an HTTP method no route takes |
+| 408 | requestTimeout | the request did not arrive within 30 seconds |
+| 409 | ambiguous | a slug names more than one receipt (`matches`) |
+| 413, 414, 431 | bodyTooLarge, moduleTooLarge, uriTooLong, headersTooLarge | over a size limit below |
+| 429 | rateLimited | over a rate limit; `Retry-After` is the seconds to wait |
+| 500 | internal | the front failed; nothing was decided |
+| 502 | replyTooLarge | the reply would be over 8 MiB; ask for less |
+| 503, 504 | hostUnavailable, hostTimeout | hostd is not answering; hostd took the request and did not answer within 150 seconds (a turn it ran may still have committed: send the same intent again) |
+| 505 | httpVersion | not HTTP/1.0 or 1.1 |
+
+`/xrpc` errors keep the AT Protocol's `{error, message}` and add `status`, `class` (= `error`) and `_links`.
 
 ## Writing Bend
 
@@ -208,7 +268,10 @@ do all of this itself.
 
 ## Limits
 
-- Bodies at most 64 KiB; at most 16 modules of 16 KiB each in `repl` and `check`.
+- Bodies at most 64 KiB, nested at most 256 deep; at most 16 modules of 16 KiB each in `repl` and `check`. A request line
+  or header line at most 64 KiB, at most 100 headers. Replies at most 8 MiB.
+- A request must arrive within 30 seconds (a client that stalls is answered 408 or dropped; others are not held up).
+  The front waits 150 seconds for hostd, then answers 504 `hostTimeout`.
 - 32 requests per minute per credential; 16 per minute per client IP on `challenge` and `verify`; 32 per minute per
   client IP on `/xrpc` without a credential.
 - `GET /AGENTS.md` carries `X-DelveTalk-Host-Sha256`: the SHA-256 of the host binary this server runs.

@@ -116,6 +116,7 @@ def exprFacts : Facts → Expr → Facts
   | f, .letE _ t v b _ => exprFacts (exprFacts { f with types := t :: f.types } v) b
   | f, .specialize t types _ => exprFacts { f with types := types ++ f.types } t
   | f, .dataOf t v _ => exprFacts { f with types := t :: f.types } v
+  | f, .worldCall _ i r v _ => exprFacts { f with types := i :: r :: f.types } v
 def fieldFacts : Facts → List (String × Expr) → Facts
   | f, [] => f
   | f, (_, v) :: rest => fieldFacts (exprFacts f v) rest

@@ -1,3 +1,7 @@
+"""The spend report totals a month of model calls and the grant left.
+
+Evidence for FOUNDATION §6 (layer: transport).
+"""
 import unittest
 from pathlib import Path
 

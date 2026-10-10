@@ -1,4 +1,9 @@
-"""FOUNDATION section 10: the hour of 2026-10-09, replayed as proposals.
+"""The hour of 2026-10-09, step by step on the host: planting, rain, the second cistern refused, the
+strike awaiting the planting post, the anthology.
+
+Evidence for FOUNDATION §11 (layer: rehearsal).
+
+The hour of 2026-10-09, replayed as proposals.
 
 Every step runs on the host: Garden creates the bell and the cistern, the strike awaits the
 planting turn's receipt. Authors and planters are the turns' principals.
@@ -52,7 +57,10 @@ class Replay(Chain):
         self.assertEqual(reply["result"]["label"], "planted", reply)
         bell = self.state("garden/bell/1")
         self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
+        self.assertEqual(get(bell, "rung"), boolean(False))            # the rest of the bell is its initial()
+        self.assertEqual(self.host.send(op="world-view", principal="e", object="garden/bell/1")["version"], 0)
         self.assertEqual(rows(self.state_field("garden", "children")), [reference("garden/bell/1")])
+        self.assertEqual(self.state_field("garden", "planted"), nat(1))
 
     def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):
         self.make("bell", closure("Bell"), bell_seed())
@@ -73,6 +81,7 @@ class Replay(Chain):
         self.assertEqual((second["status"], out["class"], out["object"]),
                          ("refused", "requiredAbsence", "garden/cistern"))
         self.assertEqual(second["receipt"]["absent"], ["garden/cistern"])
+        self.assertNotIn("creates", out)
 
     def test_4_the_cistern_retains_the_refusal_receipt_as_its_first_entry(self):
         self.make("cistern", closure("Cistern"), record())

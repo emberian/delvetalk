@@ -1,4 +1,8 @@
-"""The hand: the owner's console at /hand/, over a real front with a stub host and a stub poster.
+"""The owner's console at /hand/ over a real front, with a stub host and a stub poster.
+
+Evidence for FOUNDATION §7 (layer: transport).
+
+The hand: the owner's console at /hand/, over a real front with a stub host and a stub poster.
 
     python3 -W ignore -m tests.run test_hand
 """

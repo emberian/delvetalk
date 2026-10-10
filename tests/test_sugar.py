@@ -1,4 +1,9 @@
-"""Surface sugar without new semantics: each sugared form compiles to the packet of
+"""Surface sugar compiles to the packet of its explicit spelling and moves no receipt; a misuse is
+refused by name with the spelling it means.
+
+Evidence for FOUNDATION §8 Surface (layer: kernel).
+
+Surface sugar without new semantics: each sugared form compiles to the packet of
 its explicit spelling. A packet names its modules' source hashes (`sourceModules`),
 so two spellings are compared on the packet without that one field; everything else
 (term, annotations, types, bounds, entry) must be byte-identical.

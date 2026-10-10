@@ -1,4 +1,9 @@
-"""Kernel integration in the host: an argument that does not conform to the method's input is
+"""An argument the method does not take is the journaled class typeMismatch, saying what the method
+takes; a turn can be profiled without changing its receipt; inspect answers forms.
+
+Evidence for FOUNDATION §2 Turn (layer: host).
+
+Kernel integration in the host: an argument that does not conform to the method's input is
 the journaled class `typeMismatch`; `profile: true` on `world-turn` answers the tick breakdown of
 the turn's activity segments; `inspect` answers the object's actions as forms derived from the
 artifact's method table.
@@ -10,6 +15,7 @@ import unittest
 
 from tests.test_reflection import PROBE, Reflection, probe_seed
 from tests.test_turn_world import label, nat, record
+from tests.test_world import COUNTER, WorldCase, put, root, seed, write
 
 # Calls PROBE.bump2 (input {n: Nat}) with {m: Nat}, and inspects objects.
 CALLER = """edition ObjectiveBend 1
@@ -164,27 +170,23 @@ class Integration(Reflection):
         self.assertEqual(before["methods"], after["methods"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-class WriteOnce(unittest.TestCase):
+class WriteOnce(WorldCase):
     """`writeOnce(F)` admits exactly one change of F away from its empty value, for every type."""
 
     def test_a_text_field_changes_once(self):
-        from tests.test_world import COUNTER, WorldCase, put, root, seed, write
-        case = WorldCase("run")
-        case.setUp()
-        self.addCleanup(case.tearDown)
         source = COUNTER.replace("def initial", "law once: writeOnce(name)\ndef initial")
-        r = case.host.send(op="world-create", principal="ember", identity="mk", object="o", source=source,
+        r = self.host.send(op="world-create", principal="ember", identity="mk", object="o", source=source,
                            entry="initial", seed=seed(name=""))
         self.assertEqual(r["status"], "created", r)
-        first = case.propose("p1", [root("o", 0)], [write("o", put("name", label("ann")))])
+        first = self.propose("p1", [root("o", 0)], [write("o", put("name", label("ann")))])
         self.assertEqual(first["status"], "admitted", first)
-        second = case.propose("p2", [root("o", 1)], [write("o", put("name", label("bob")))])
+        second = self.propose("p2", [root("o", 1)], [write("o", put("name", label("bob")))])
         self.assertEqual((second["status"], second["receipt"]["outcome"]["clause"]), ("refused", "once"), second)
-        back = case.propose("p3", [root("o", 1)], [write("o", put("name", label("")))])
+        back = self.propose("p3", [root("o", 1)], [write("o", put("name", label("")))])
         self.assertEqual(back["status"], "refused", back)
-        same = case.propose("p4", [root("o", 1)], [write("o", put("name", label("ann")))])
+        same = self.propose("p4", [root("o", 1)], [write("o", put("name", label("ann")))])
         self.assertEqual(same["status"], "admitted", same)
+
+
+if __name__ == "__main__":
+    unittest.main()

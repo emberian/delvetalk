@@ -1,4 +1,10 @@
-"""Turn-by-turn activity execution through delvetalk-obend (turn-start / turn-resume).
+"""An activity yields Plans and resumes from a checkpoint bound to its package, object, principal,
+intent and roots; a tampered or foreign checkpoint is refused by name, exhaustion is a named
+silence.
+
+Evidence for FOUNDATION §2 Turn (layer: kernel).
+
+Turn-by-turn activity execution through delvetalk-obend (turn-start / turn-resume).
 
 Each test names what would refute it. One host process per test unless the test
 is about process boundaries.
@@ -220,7 +226,17 @@ def walk(text: String, n: Nat) -> Nat:
 
 
 class TurnCase(unittest.TestCase):
+    """Stateless turn ops on one process per class; `fresh` classes (cache counters) get one per call."""
+    independent = True
+    fresh = False
+    shared = None
+
     def host(self):
+        if not self.fresh:
+            if type(self).shared is None or type(self).shared.proc.poll() is not None:
+                type(self).shared = Host()
+                self.addClassCleanup(type(self).shared.close)
+            return type(self).shared
         h = Host()
         self.addCleanup(h.close)
         return h
@@ -698,6 +714,7 @@ class KnotTests(TurnCase):
 
 class SessionCacheTests(TurnCase):
     """One prepared closure per package, entries held decoded and checked, runs by pin."""
+    fresh = True  # the tests read the process's cache counters
 
     SOURCE = "edition ObjectiveBend 1\ndef double(n: Nat) -> Nat:\n  n + n\ndef seven() -> Nat:\n  7n\n"
 

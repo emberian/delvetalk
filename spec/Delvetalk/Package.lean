@@ -233,6 +233,27 @@ theorem lawTable_names (laws : List String) (ast : Minidregg.Compiler.ObjectiveB
     (lawTable laws ast).map (·.1) = laws := by
   simp [lawTable, Function.comp_def]
 
+/-- The world method a message plan term names (`{object, method: "X", argument}`). -/
+def worldMethodOf : Minidregg.Theory.ObjectiveBendOpenRecursion.Term → Option String
+  | .record fields => match fields.lookup "method" with
+    | some (.label m) => some m
+    | _ => none
+  | _ => none
+
+/-- A message activity's artifact (WHOLENESS §1): `dialect: "message"`, `world`, the world
+methods the entry performs (first occurrence order), and `worldProtocol`, the World module's
+source SHA-256. Any other artifact is unchanged. -/
+def messageFields (modules : List SourceModule) (held : Delvetalk.CheckedEntry) (artifact : Json) : Json :=
+  match held.sites with
+  | none => artifact
+  | some sites =>
+    let methods := sites.toList.filterMap (worldMethodOf ·.1)
+    let methods := methods.foldl (fun acc m => if acc.contains m then acc else acc ++ [m]) []
+    let artifact := (artifact.setObjVal! "dialect" (toJson "message")).setObjVal! "world" (toJson methods)
+    match modules.find? (·.name == "World") with
+    | some world => artifact.setObjVal! "worldProtocol" (toJson world.sha256)
+    | none => artifact
+
 /-- Compile `entry` from a prepared closure: select its reached knot, build the proposal
 and packet once, check it. -/
 def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagnostic EntryCompiled := do
@@ -273,11 +294,16 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
           | none => row)
       | _ => artifact.getObjValD "methods"
     (artifact.setObjVal! "methods" tagged).setObjVal! "protocols" (toJson (claims.map (·.1)))
+  let entryModuleName := (modules.getLast?).map (·.name)
+  let refused := fun (message : String) =>
+    ({ stage := "objective-typed-check", message, definition := some entry, sourceModule := entryModuleName } : Diagnostic)
+  let held ← (Delvetalk.CheckedEntry.make pin accepted.source accepted.typed accepted.packet.fuel).mapError refused
+  let artifact := messageFields modules held artifact
   let readings := lawTable (lowered.laws.map (·.1)) (prepared.asts.getLastD default)
   let artifact := if readings.isEmpty then artifact else artifact.setObjVal! "laws"
     (Json.arr (readings.toArray.map fun (name, reading) =>
       Json.mkObj [("name", toJson name), ("reading", toJson reading)]))
-  return ⟨artifact, ⟨pin, accepted.source, accepted.typed, accepted.packet.fuel⟩, lowered.laws, readings⟩
+  return ⟨artifact, held, lowered.laws, readings⟩
 
 /-- Compile the request's entry: prepare its closure, then the entry. -/
 def compileEntry (j : Json) : Except Diagnostic EntryCompiled := do

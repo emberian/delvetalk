@@ -1,4 +1,8 @@
-"""The principal is the host's: every write that records who acted records the turn's
+"""Who acted is the turn's principal: no argument can name another author, planter or sender.
+
+Evidence for FOUNDATION §3 Context (layer: objects).
+
+The principal is the host's: every write that records who acted records the turn's
 principal (context.principal), and no argument can name another one.
 
 Each object is driven as principal "kimik3"; the forged argument carries the field the
@@ -19,8 +23,6 @@ ACTOR, CLAIMED = "kimik3", "glm"
 
 
 class Principal(Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def forged(self, obj, method, argument, field):
         forged = dict(argument["fields"] and {f["name"]: f["value"] for f in argument["fields"]} or {})

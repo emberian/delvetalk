@@ -1,3 +1,8 @@
+"""hostd is the one writer: a private socket, one lock, concurrent clients in one chain, a respawned
+host replaying to the same receipts, private heaps and the sealed library.
+
+Evidence for FOUNDATION §7 (layer: transport).
+"""
 import io
 import json
 import os
@@ -34,20 +39,28 @@ def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 
 
 class Hostd(unittest.TestCase):
+    """One hostd per class (no library); each test bumps a counter of its own."""
+    made = 0
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.state = Path(cls.tmp.name)
+        cls.d = start_hostd(str(cls.state))
+        cls.addClassCleanup(stop_hostd, cls.d)
+        cls.sock = cls.state / 'host.sock'
+
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.state = Path(self.tmp.name)
-        self.d = start_hostd(str(self.state))
-        self.addCleanup(stop_hostd, self.d)
-        self.sock = self.state / 'host.sock'
         self.client = HostClient(self.sock)
-        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk', 'object': 'c1',
+        type(self).made += 1
+        self.c = 'c%d' % self.made
+        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk-' + self.c, 'object': self.c,
                                  'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
         self.assertEqual(made['status'], 'created', made)
 
     def turn(self, client, intent):
-        return client.send({'op': 'world-turn', 'principal': 'e', 'object': 'c1', 'method': 'bump', 'argument': record(), 'identity': intent})
+        return client.send({'op': 'world-turn', 'principal': 'e', 'object': self.c, 'method': 'bump', 'argument': record(), 'identity': self.c + intent})
 
     def test_socket_is_private_and_the_pid_file_is_touched_per_op(self):
         self.assertEqual(stat.S_IMODE(os.stat(self.sock).st_mode), 0o600)
@@ -91,14 +104,14 @@ class Hostd(unittest.TestCase):
         self.d.shared.proc.wait()
         again = [self.turn(self.client, f'k{i}') for i in range(3)]
         self.assertEqual([a['receipt'] for a in again], [f['receipt'] for f in first])
-        self.assertEqual(self.client.send({'op': 'world-view', 'principal': 'e', 'object': 'c1'})['version'], 3)
+        self.assertEqual(self.client.send({'op': 'world-view', 'principal': 'e', 'object': self.c})['version'], 3)
 
     def test_heaps_and_stateless_are_separate_worlds_in_one_daemon(self):
         heap = HostClient(self.sock, heap=DID)
-        self.assertEqual(heap.send({'op': 'world-view', 'principal': 'e', 'object': 'c1'})['status'], 'unknown')
+        self.assertEqual(heap.send({'op': 'world-view', 'principal': 'e', 'object': self.c})['status'], 'unknown')
         self.assertTrue((self.state / 'heaps' / f'{DID}.journal').exists())
         self.assertEqual(HostClient(self.sock, heap='../../etc/passwd').send({'op': 'world-status'})['status'], 'error')
-        self.assertEqual(HostClient(self.sock).send({'op': 'world-status'})['objects'], 1)
+        self.assertEqual(HostClient(self.sock).send({'op': 'world-view', 'principal': 'e', 'object': self.c})['status'], 'viewed')
         self.assertEqual(HostClient(self.sock, stateless=True).send({'op': 'compile', 'modules': [], 'entry': 'x'})['status'], 'error')
 
     def test_the_world_is_opened_with_the_configured_opener(self):
@@ -157,6 +170,78 @@ class Hostd(unittest.TestCase):
             finally:
                 stop_hostd(dd)
 
+    def test_one_client_keeps_a_connection_per_thread_and_survives_a_hostd_restart(self):
+        import tempfile as tf
+        import threading
+        with tf.TemporaryDirectory() as d2:
+            dd = start_hostd(d2, opener=DID)
+            try:
+                client = HostClient(Path(d2) / 'host.sock')
+                self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')
+                held = client.local.conn[0]
+                self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')
+                self.assertIs(client.local.conn[0], held)  # the same connection served both ops
+                seen = []
+                t = threading.Thread(target=lambda: seen.append((client.send({'op': 'world-status'})['status'], client.local.conn[0] is held)))
+                t.start()
+                t.join()
+                self.assertEqual(seen, [('world', False)])  # another thread has its own
+            finally:
+                stop_hostd(dd)
+            dd = start_hostd(d2, opener=DID)  # a new hostd behind the same path
+            try:
+                self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')
+                self.assertIsNot(client.local.conn[0], held)
+            finally:
+                stop_hostd(dd)
+
+    def test_a_write_op_on_a_broken_connection_is_not_re_sent_but_a_read_is(self):
+        import tempfile as tf
+        with tf.TemporaryDirectory() as d2:
+            dd = start_hostd(d2, opener=DID)
+            try:
+                client = HostClient(Path(d2) / 'host.sock')
+                seen = []
+                real = dd.dispatch
+                dd.dispatch = lambda req: (seen.append(req['op']), real(req))[1]
+                client.send({'op': 'world-status'})
+                client.local.conn[0].shutdown(2)  # the held connection breaks under the client
+                self.assertEqual(client.send({'op': 'world-advance', 'principal': 'transport', 'height': 1})['message'], 'hostd unavailable')
+                self.assertEqual(seen, ['world-status'])  # the write never reached hostd again
+                client.send({'op': 'world-status'})
+                client.local.conn[0].shutdown(2)
+                self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')  # a read is retried on a new connection
+            finally:
+                stop_hostd(dd)
+
+    def test_the_binary_is_hashed_once_and_cached_by_path_size_and_mtime(self):
+        import hashlib
+        import tempfile as tf
+        from unittest import mock
+        from transport import hostd
+        with tf.TemporaryDirectory() as d2:
+            binary, cache = Path(d2) / 'bin', Path(d2) / 'binary-pin'
+            binary.write_bytes(b'host one')
+            first = hostd.binary_pin(cache, binary)
+            self.assertEqual(first, hashlib.sha256(b'host one').hexdigest())
+            with mock.patch.object(hostd.hashlib, 'sha256', side_effect=AssertionError('hashed again')):
+                self.assertEqual(hostd.binary_pin(cache, binary), first)
+            binary.write_bytes(b'host two!')  # size and mtime moved
+            self.assertEqual(hostd.binary_pin(cache, binary), hashlib.sha256(b'host two!').hexdigest())
+
+    def test_a_host_opens_its_journal_with_the_sync_it_is_given(self):
+        import tempfile as tf
+        from transport.hostproc import Host as TransportHost
+        sent = []
+        with tf.TemporaryDirectory() as d2:
+            for kw, want in (({}, 'fsync'), ({'sync': 'none'}, 'none')):
+                h = TransportHost(str(Path(d2) / f'{want}.journal'), binary(), **kw)
+                real = h._exchange
+                h._exchange = lambda req, real=real: (sent.append(req), real(req))[1]
+                h.send({'op': 'world-status'})
+                h.close()
+        self.assertEqual([r['sync'] for r in sent if r['op'] == 'world-open'], ['fsync', 'none'])
+
     def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
         import tempfile as tf
         from transport.hostproc import LIBRARY
@@ -174,7 +259,7 @@ class Hostd(unittest.TestCase):
             finally:
                 stop_hostd(dd)
         # without a library the same module names an import nobody supplied
-        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk2', 'object': 't', 'modules': one,
+        made = self.client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk-t', 'object': 't', 'modules': one,
                                  'entry': 'initial', 'seed': record()})
         self.assertEqual(made['status'], 'error', made)
 

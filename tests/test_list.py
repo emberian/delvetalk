@@ -1,4 +1,9 @@
-"""The prelude's Maybe and list searches: find, filterMap, indexWhere, removeWhere.
+"""The prelude's Maybe and list searches (find, filterMap, indexWhere, removeWhere) answer in order,
+up to the 247-item cap.
+
+Evidence for FOUNDATION §1 (layer: kernel).
+
+The prelude's Maybe and list searches: find, filterMap, indexWhere, removeWhere.
 
 `run` refuses variant arguments and recursive results, so a probe module builds the
 lists in Bend and answers a String.

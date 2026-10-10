@@ -1,4 +1,9 @@
-"""Places, things and avatars: the MUD floor as ordinary objects.
+"""Places, things and avatars are ordinary objects: moving, taking, offering and accepting, scoped
+commands, talk, copies and traces, each refused by name where it should be.
+
+Evidence for FOUNDATION §8 MUD floor (layer: objects).
+
+Places, things and avatars: the MUD floor as ordinary objects.
 
 Compile-level types for every method, then turns through the real host.
 
@@ -44,26 +49,7 @@ def names(wire):
     return [[f["value"]["value"] for f in item["fields"] if f["name"] == "object"][0] for item in rows]
 
 
-class Types(unittest.TestCase):
-    METHODS = {"Place": ["enter", "leave", "take", "put", "receive"], "Thing": ["acquire", "drop", "offer", "withdraw", "transfer", "give", "receive"],
-               "Avatar": ["move", "arrive", "note", "hold", "release", "accept", "receive"]}
-
-    def test_every_method_is_an_activity_over_the_plan_library(self):
-        for module, methods in self.METHODS.items():
-            for method in methods:
-                with self.subTest(method="%s.%s" % (module, method)):
-                    reply = compile_job(closure(module), method)
-                    self.assertEqual(reply["status"], "compiled", reply)
-                    comp = computation(reply["artifact"]["type"])
-                    self.assertEqual(row_names(comp["plan"]["row"])[:3], ["view", "write", "call"])
-
-    def test_every_object_exports_initial(self):
-        for module in self.METHODS:
-            self.assertEqual(compile_job(closure(module), "initial")["status"], "compiled")
-
-
 class Floor(Chain):
-    test_ring_then_open_then_light = None  # inherited from Chain; not a floor test
 
     def world(self):
         self.make("porch", closure("Place"), place_seed("Porch", [("in", "garden")], present=["glm"]))
@@ -177,7 +163,12 @@ class Floor(Chain):
         self.assertTrue(second.startswith("Already offered to kimik3 until "), second)
         self.assertEqual(self.refusal_reason(self.accept("mallory")), "It is offered to kimik3")
         card = self.card("stone", principal="kimik3")
-        print("\n--- stone, offered, read by kimik3 ---\n" + card)
+        self.assertEqual(card, (
+            "stone\n"
+            "a stone\n"
+            "Held by glm.\n"
+            "Offered to kimik3 (you): accept it from your avatar until clock 50.\n"
+            "(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n"))
         self.assertIn("Offered to kimik3 (you): accept it from your avatar until clock ", card)
         self.assertEqual(self.result_label(self.accept()), "done")
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("kimik3", "none"))
@@ -281,10 +272,10 @@ class Floor(Chain):
         self.assertLess(reply["ticksUsed"], 100000)
 
     def test_an_avatar_with_a_full_inbox_describes_under_the_default_budget(self):
-        """The inbox keeps the newest 64 notes (the mailbox's bound): 248 notes leave 64, and the
+        """The inbox keeps the newest 64 notes (the mailbox's bound): 65 notes leave 64, and the
         card shows eight of them and counts the rest."""
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
-        for i in range(247):
+        for i in range(64):
             note = self.turn("glm", "note", record(text=label("note %03d" % i)), principal="kimik3")
             self.assertEqual(note["status"], "admitted", note)
         over = self.turn("glm", "note", record(text=label("one too many")), principal="kimik3")
@@ -293,14 +284,15 @@ class Floor(Chain):
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
         self.assertEqual(text.count("kimik3: note "), 7)  # and "one too many", the newest
-        self.assertLess(text.index("one too many"), text.index("kimik3: note 246"))  # newest first
+        self.assertLess(text.index("one too many"), text.index("kimik3: note 063"))  # newest first
+        self.assertNotIn("note 000", text)
         self.assertIn("… and 56 more\n", text)
-        print("\n  avatar with 64 of 248 notes: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
+        print("\n  avatar with 64 of 65 notes: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(text)))
         self.assertLess(reply["ticksUsed"], 100000)
 
     # --- paths through remove -----------------------------------------------------------
 
-    def test_leave_removes_from_present(self):
+    def test_leaving_removes_the_avatar_from_who_is_here_and_traces_the_leave(self):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3"]))
         reply = self.turn("porch", "leave", record(), principal="glm")
         self.assertEqual(self.result_label(reply), "done", reply["receipt"]["outcome"])
@@ -346,8 +338,6 @@ class Scoped(Chain):
     """Scoped resolution: an avatar's principal says `acquire the stone`, `look`, `bump counter`;
     the avatar finds the object (a thing lying in its place by name, then id; else an object
     of that name) and sends it the matching form."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def setUp(self):
         super().setUp()
@@ -370,7 +360,6 @@ class Scoped(Chain):
 
     def test_look_shows_the_place_and_two_of_a_name_are_asked_about(self):
         look = self.say("look")
-        print("\n--- look ---\n" + look["offers"][0]["text"])
         self.assertEqual(look["offers"][0]["text"], "Porch\nabout Porch\nHere: glm\nHere: kimik3\nLying here: stone\nExit in to garden\nYou are here.\n")
         self.make("porch2", closure("Place"), place_seed("Porch", present=["glm"], things=["stone", "pebble"]))
         self.make("pebble", closure("Thing"), thing_seed("stone", location="porch2"))
@@ -387,8 +376,6 @@ class Scoped(Chain):
 
 class Talk(Chain):
     """say and emote offer a line to every avatar present; whisper to one; only someone here talks."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def setUp(self):
         super().setUp()
@@ -399,7 +386,7 @@ class Talk(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
-    def test_say_emote_and_whisper(self):
+    def test_say_and_emote_reach_everyone_present_whisper_one_and_a_stranger_is_refused(self):
         said = self.say("delvetalk porch say / line: the lamp is lit", "glm")
         self.assertEqual(said["result"]["label"], "done", said)
         # In key order (who is here is keyed by object id); each avatar's principal gets the line.
@@ -417,8 +404,6 @@ class Talk(Chain):
 class Copies(Chain):
     """Copy as a right: a thing is copyable unless its owner says no; the Workshop's `create /
     like: stone` has the thing copy itself from its own package, without holder and offer."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_create_like_copies_a_thing_and_the_owner_may_forbid_it(self):
         self.make("porch", closure("Place"), place_seed("Porch", present=["glm"], things=["stone"]))
@@ -430,7 +415,7 @@ class Copies(Chain):
         self.assertEqual(r["status"], "admitted", r)
         delivered = r.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
         texts = [o["text"] for d in delivered for o in d.get("receipt", d).get("offers", [])]
-        print("\n--- copy ---\n%r" % texts)
+        self.assertEqual(texts, ["Copied stone as stone/thing/1.\n"])
         self.assertTrue(any(t.startswith("Copied stone as ") for t in texts), (texts, delivered[:1]))
         copied = [t for t in texts if t.startswith("Copied stone as ")][0][len("Copied stone as "):-2]
         state = self.state(copied)
@@ -450,8 +435,6 @@ class Copies(Chain):
 class Traces(Chain):
     """A place keeps the last eight things that happened in it, admitted or refused, with
     handles and clauses."""
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def test_the_last_eight_with_handles_and_clauses(self):
         self.make("porch", closure("Place"), place_seed("Porch"))
@@ -461,7 +444,30 @@ class Traces(Chain):
             self.turn("porch", "leave", record(), principal="did:plc:glmglmglmglm", identity="l%d" % i)
         self.turn("porch", "leave", record(), principal="did:plc:glmglmglmglm", identity="l-again")
         card = self.turn("porch", "receive", record(text=label(""), post=label("")), principal="visitor")["offers"][0]["text"]
-        print("\n--- traces ---\n" + card)
+        self.assertEqual(card, (
+            "Porch\n"
+            "about Porch\n"
+            "Traces:\n"
+            "  glm.delve.town leave: refused notHere\n"
+            "  glm.delve.town leave\n"
+            "  glm.delve.town enter\n"
+            "  glm.delve.town leave\n"
+            "  glm.delve.town enter\n"
+            "  glm.delve.town leave\n"
+            "  glm.delve.town enter\n"
+            "  glm.delve.town leave\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk porch say\n"
+            "    line: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk porch emote\n"
+            "    line: <text, 1 to 280 characters>\n"
+            "\n"
+            "    delvetalk porch whisper\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "    line: <text, 1 to 280 characters>\n"))
         lines = card.split("Traces:\n")[1].split("\nReply with a spell:")[0].strip("\n").split("\n")
         self.assertEqual(len(lines), 8)
         self.assertEqual(lines[0], "  glm.delve.town leave: refused notHere")

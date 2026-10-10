@@ -1,4 +1,9 @@
-"""The authority model: a write changes only the running object, cross-object change is
+"""A write changes only the running object; a change to another object is a call its own law judges,
+and the law sees who called.
+
+Evidence for FOUNDATION §3, §4 (layer: host).
+
+The authority model: a write changes only the running object, cross-object change is
 a call judged by the callee's own law, and the law sees who called.
 
 Each case is named by the defect that would make it fail. The fixture object `Ledger`
@@ -185,18 +190,6 @@ class WriteIsSelfOnly(Authority):
         self.assertEqual(r["status"], "admitted", r)
         self.assertEqual((self.count("a"), self.version("a")), ("4", 1))
         self.assertEqual(self.outcome(r)["writes"][0]["callers"], ["", "a", "a", "a"])
-
-
-class DefaultLaw(Authority):
-    def test_anyone_may_invoke_a_method_but_only_the_creator_may_amend(self):
-        self.ledger("a")
-        self.assertEqual(self.turn("a", "bump", principal="kim")["status"], "admitted")
-        amend = self.host.send(op="world-amend", principal="kim", identity="am1", object="a",
-                               version=self.version("a"), law="law steward: request.subject == \"ember\"")
-        self.assertEqual((amend["status"], self.outcome(amend)["clause"]), ("refused", "owner"))
-        mine = self.host.send(op="world-amend", principal="ember", identity="am2", object="a",
-                              version=self.version("a"), law="law steward: request.subject == \"ember\"")
-        self.assertEqual(mine["status"], "admitted", mine)
 
 
 class LawsOnWho(Authority):

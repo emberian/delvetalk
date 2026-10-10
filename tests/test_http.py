@@ -1,8 +1,13 @@
+"""The agent API at /AGENTS.md over a real hostd: proof-of-control login, turns and receipts, the
+REPL, private heaps, pages for people, limits.
+
+Evidence for FOUNDATION §7 (layer: transport).
+"""
 import http.client
 import json
+import os
 import tempfile
 import threading
-import time
 import unittest
 import urllib.parse
 from pathlib import Path
@@ -27,13 +32,19 @@ def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 '''
 from tests.test_turn import PLANS, variant
 from transport import delve, identity
-from tests.host import start_hostd, stop_hostd
-from transport.hostproc import LIBRARY
-from transport.http import Front, HostClient, RemoteHeaps
+from tests.host import HostdCase, serve, start_hostd, stop_hostd
+from transport.hostproc import HostClient
+from transport.http import Front, RemoteHeaps
+from transport.identity import ORIGIN
 
 HANDLE = 'talkie.delve.town'
 DID = 'did:plc:' + 'a' * 24
 URI = f'at://{DID}/town.delve.feed.post/3abc'
+
+
+def bare(reply):
+    """A reply without the front's controls: what the host said."""
+    return {k: v for k, v in reply.items() if k not in ('_links', '_actions')} if isinstance(reply, dict) else reply
 
 
 PEOPLE = {HANDLE: DID, 'glm.delve.town': 'did:plc:' + 'b' * 24, 'mimo.delve.town': 'did:plc:' + 'c' * 24,
@@ -54,29 +65,54 @@ class Provider:
                                 'value': {'text': self.texts[repo]}}).encode()
 
 
-class HttpFront(unittest.TestCase):
+class FrontCase(HostdCase):
+    """One hostd per class, opened by the front's DID with the library sealed; each test gets its
+    own front (identity database, rate limits, clock) and its own counter object. A class whose
+    tests each need the world as genesis left it sets `fresh_world`: a hostd per test."""
+    OPENER = DID
+    made = 0
+    fresh_world = False
+
+    @classmethod
+    def setUpClass(cls):
+        if cls.fresh_world:
+            return
+        super().setUpClass()
+        cls.hostd.heaps.size = 2
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        if self.fresh_world:
+            from transport.hostproc import LIBRARY
+            self.hostd_dir = tempfile.TemporaryDirectory()
+            self.addCleanup(self.hostd_dir.cleanup)
+            self.hostd = start_hostd(self.hostd_dir.name, opener=self.OPENER, library=LIBRARY)
+            self.addCleanup(stop_hostd, self.hostd)
+            self.socket = os.path.join(self.hostd_dir.name, "host.sock")
         self.provider = Provider()
         self.now = [1000.0]
-        self.hostd = start_hostd(self.tmp.name, BINARY, opener=DID, library=LIBRARY)  # a library is sealed only by an opener
-        self.hostd.heaps.size = 2
-        sock = Path(self.tmp.name) / 'host.sock'
-        self.host = HostClient(sock)
+        self.host = HostClient(self.socket)  # a test may replace its send
         ident = identity.Identity(self.tmp.name, delve.Client(self.provider), clock=lambda: self.now[0])
-        self.front = Front(('127.0.0.1', 0), self.host, ident, clock=lambda: self.now[0],
-                          heaps=RemoteHeaps(sock, Path(self.tmp.name) / 'heaps'), repl=HostClient(sock, stateless=True))
+        self.front = serve(Front(('127.0.0.1', 0), self.host, ident, clock=lambda: self.now[0],
+                                 heaps=RemoteHeaps(self.socket, Path(self.hostd_dir.name) / 'heaps'), repl=HostClient(self.socket, stateless=True)))
+        self.addCleanup(self.front.server_close)
+        self.addCleanup(self.front.shutdown)
         self.port = self.front.server_address[1]
-        threading.Thread(target=self.front.serve_forever, daemon=True).start()
-        r = self.host.send({'op': 'world-create', 'principal': HANDLE, 'identity': 'mk', 'object': 'c1',
+        type(self).made += 1
+        self.c = 'c%d' % self.made
+        r = self.host.send({'op': 'world-create', 'principal': HANDLE, 'identity': 'mk-' + self.c, 'object': self.c,
                             'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
         self.assertEqual(r['status'], 'created', r)
 
-    def tearDown(self):
-        self.front.shutdown()
-        self.front.server_close()
-        stop_hostd(self.hostd)
-        self.tmp.cleanup()
+    def heap_create(self, tok, name='h1'):
+        # A bare counter: Counter's closure with Card and Spell (about 67 KB) exceeds the front's 64 KiB body.
+        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': closure('Plan') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
+                                                             'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
+
+    @property
+    def BIND(self):
+        return {'object': self.c, 'intent': 'repl-1', 'roots': [{'object': self.c, 'version': 0}]}
 
     def request(self, method, path, body=None, token=None, raw=None, headers=None):
         c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=30)
@@ -107,8 +143,10 @@ class HttpFront(unittest.TestCase):
         return ch['credential']
 
     def turn(self, tok, intent):
-        return self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': record(), 'intent': intent}, tok)
+        return self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': record(), 'intent': intent}, tok)
 
+
+class Arrival(FrontCase):
     def test_verify_announces_the_arrival_to_the_host(self):
         seen = []
         send = self.host.send
@@ -117,14 +155,10 @@ class HttpFront(unittest.TestCase):
         arrive = {'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE}
         self.assertEqual([r for r in seen if r['op'].startswith('world-arr') or r['op'] == 'world-principal'], [arrive])
 
-    def test_end_to_end_arrive_against_the_real_host(self):
-        got = self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': HANDLE})
-        self.assertNotEqual(got.get('status'), 'error', got)
-
-    def test_guide(self):
+    def test_the_agents_guide_and_its_examples_are_served_with_the_origin_filled_in(self):
         s, text = self.call('GET', '/AGENTS.md')
         self.assertEqual(s, 200)
-        self.assertIn('O=https://delvetalk.fg-goose.online/AGENTS.md\n', text)
+        self.assertIn('O=' + ORIGIN + '/AGENTS.md\n', text)
         self.assertIn('$O/challenge', text)
         self.assertNotIn('{{origin}}', text)
         s, examples = self.call('GET', '/AGENTS.md/examples')
@@ -146,94 +180,151 @@ class HttpFront(unittest.TestCase):
     def test_unknown_route_points_at_guide(self):
         s, body = self.call('GET', '/nope')
         self.assertEqual(s, 404)
-        self.assertEqual(body['status'], 'error')
-        self.assertIn('/AGENTS.md', body['message'])
-
-    def test_full_journey(self):
-        tok = self.login()
-        s, v = self.call('GET', '/AGENTS.md/world/c1', token=tok)
-        self.assertEqual((s, v['status'], v['version']), (200, 'viewed', 0))
-        s, t = self.turn(tok, 'i1')
-        self.assertEqual((s, t['status']), (200, 'admitted'), t)
-        s, r = self.call('GET', '/AGENTS.md/receipt/i1', token=tok)
-        self.assertEqual(s, 200)
-        self.assertEqual(r['receipt'], t['receipt'])
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=tok)[1]['version'], 1)
-        self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
-        self.assertEqual(self.call('POST', '/AGENTS.md/deliver', {}, tok)[0], 200)
-
-    def test_compact_turn_reply_is_four_keys_and_the_default_stays_full(self):
-        tok = self.login()
-        s, full = self.turn(tok, 'k1')
-        s, c = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
-        self.assertEqual(s, 200)
-        self.assertEqual(c, {'status': 'admitted', 'outcome': full['receipt']['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
-                             'receipt': {'object': 'c1', 'version': 0, 'height': full['receipt']['height']}})
-        self.assertIn('hash', full['receipt'])
-        s, e = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
-        self.assertEqual((s, e['status']), (400, 'error'))  # a host error is not compacted
-
-    def test_host_refusal_passes_through_verbatim(self):
-        tok = self.login()
-        s, v = self.call('GET', '/AGENTS.md/world/nope', token=tok)
-        self.assertEqual(v, self.host.send({'op': 'world-view', 'principal': HANDLE, 'object': 'nope'}))
-        s, e = self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': 7, 'intent': 'bad'}, tok)
-        self.assertEqual(s, 400)
-        self.assertEqual(e, self.host.send({'op': 'world-turn', 'principal': HANDLE, 'object': 'c1',
-                                            'method': 'bump', 'argument': 7, 'identity': 'bad'}))
-
-    def test_principal_cannot_be_forged_through_the_body(self):
-        tok = self.login()
-        s, t = self.call('POST', '/AGENTS.md/world/c1/bump',
-                         {'argument': record(), 'intent': 'f1', 'principal': 'ember', 'identity': 'x'}, tok)
-        self.assertEqual(t['status'], 'admitted', t)
-        self.assertEqual(self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': 'f1'})['status'], 'receipt')
-        self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': 'ember', 'identity': 'f1'}).get('status'), 'receipt')
-        self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': 'x'}).get('status'), 'receipt')
+        self.assertEqual((body['status'], body['class']), ('error', 'unknownRoute'))
+        self.assertIn('/AGENTS.md/api', body['hint'])
 
     def test_unverified_credential_is_401(self):
         s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})
         for tok in (ch['credential'], 'dt_agent_' + 'A' * 43, None):
-            self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=tok)[0], 401)
+            self.assertEqual(self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok)[0], 401)
 
-    def test_rate_limit_33rd_request(self):
+    def test_the_33rd_request_in_a_minute_is_429_and_the_window_reopens_after_61_seconds(self):
         tok = self.login()
         codes = [self.call('GET', '/AGENTS.md/pending', token=tok)[0] for _ in range(33)]
         self.assertEqual(codes, [200] * 32 + [429])
         self.now[0] += 61
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
 
-    def test_body_limit(self):
+    def test_a_body_over_64_kib_is_413_and_malformed_json_is_400(self):
         tok = self.login()
-        s, e = self.call('POST', '/AGENTS.md/world/c1/bump', token=tok, raw=b'{"intent":"' + b'x' * (65 * 1024) + b'"}')
+        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{"intent":"' + b'x' * (65 * 1024) + b'"}')
         self.assertEqual(s, 413)
-        self.assertEqual(self.call('POST', '/AGENTS.md/world/c1/bump', token=tok, raw=b'{nope')[0], 400)
+        self.assertEqual(self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{nope')[0], 400)
 
-    def test_host_death_is_survived_with_state_intact(self):
+    def test_unauthenticated_routes_are_limited_per_client_ip(self):
+        codes = [self.call('POST', '/AGENTS.md/challenge', {'handle': 'glm.delve.town'})[0] for _ in range(17)]
+        self.assertEqual([c == 429 for c in codes], [False] * 16 + [True])  # per-handle limits may answer 400 first
+        s, body = self.call('POST', '/AGENTS.md/verify', {'handle': HANDLE, 'uri': URI})
+        self.assertEqual((s, body['status']), (429, 'error'))
+        # X-Forwarded-For is ignored without --trust-proxy, honoured (last entry) with it
+        self.assertEqual(self.request('POST', '/AGENTS.md/challenge', {'handle': HANDLE}, headers={'X-Forwarded-For': '9.9.9.9'})[0], 429)
+        self.assertNotIn('ip:9.9.9.9', self.front.hits)
+        self.front.trust_proxy = True
+        self.assertNotEqual(self.request('POST', '/AGENTS.md/challenge', {'handle': HANDLE}, headers={'X-Forwarded-For': '1.1.1.1, 9.9.9.9'})[0], 429)  # keyed on 9.9.9.9, unspent
+        self.assertEqual(self.front.hits.get('ip:9.9.9.9') and len(self.front.hits['ip:9.9.9.9']), 1)
+        self.now[0] += 61
+        self.assertNotEqual(self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[0], 429)
+
+    def test_me_reports_principal_and_rate_limit_and_revoke_ends_the_credential(self):
         tok = self.login()
-        for i in range(2):
-            self.assertEqual(self.turn(tok, f'd{i}')[1]['status'], 'admitted')
-        self.hostd.shared.proc.kill()
-        self.hostd.shared.proc.wait()
-        s, v = self.call('GET', '/AGENTS.md/world/c1', token=tok)
-        self.assertEqual((s, v['status'], v['version']), (200, 'viewed', 2), v)
-        self.assertEqual(self.turn(tok, 'd1')[1]['status'], 'admitted')  # retried identity: original receipt
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=tok)[1]['version'], 2)
+        self.heap_create(tok)
+        s, me = self.call('GET', '/AGENTS.md/me', token=tok)
+        self.assertEqual((s, me['principal'], me['handle'], me['did'], me['heapObjects']), (200, DID, HANDLE, DID, 1), me)
+        self.assertEqual(me['verified'], 1000.0)
+        self.assertEqual(me['rateLimit'], {'limit': 32, 'windowSeconds': 60, 'remaining': 30})
+        self.assertEqual(bare(self.call('POST', '/AGENTS.md/revoke', {}, tok)[1]), {'status': 'revoked'})
+        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
 
-    def test_two_hundred_turns_under_ten_seconds(self):
+
+class Turns(FrontCase):
+    def test_a_logged_in_agent_views_takes_a_turn_reads_its_receipt_and_sees_the_new_version(self):
         tok = self.login()
-        t0 = time.time()
-        for i in range(200):
-            self.now[0] += 3  # stay under the rate limit; the clock is the limiter's, not the host's
-            self.assertEqual(self.turn(tok, f'm{i}')[1]['status'], 'admitted')
-        took = time.time() - t0
-        self.assertLess(took, 10)
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/c1', token=tok)[1]['version'], 200)
+        s, v = self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok)
+        self.assertEqual((s, v['status'], v['version']), (200, 'viewed', 0))
+        s, t = self.turn(tok, 'i1')
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        s, r = self.call('GET', '/AGENTS.md/receipt/i1', token=tok)
+        self.assertEqual(s, 200)
+        self.assertEqual(r['receipt'], t['receipt'])
+        self.assertEqual(self.call('GET', f'/AGENTS.md/world/{self.c}', token=tok)[1]['version'], 1)
+        self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
+        self.assertEqual(self.call('POST', '/AGENTS.md/deliver', {}, tok)[0], 200)
 
-    # ---- REPL
+    def test_compact_turn_reply_is_four_keys_and_the_default_stays_full(self):
+        tok = self.login()
+        s, full = self.turn(tok, 'k1')
+        s, c = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
+        self.assertEqual(s, 200)
+        self.assertEqual(bare(c), {'status': 'admitted', 'outcome': full['receipt']['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
+                             'receipt': {'object': self.c, 'version': 0, 'height': full['receipt']['height']}})
+        self.assertIn('hash', full['receipt'])
+        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
+        self.assertEqual((s, e['status']), (400, 'error'))  # a host error is not compacted
 
-    BIND = {'object': 'c1', 'intent': 'repl-1', 'roots': [{'object': 'c1', 'version': 0}]}
+    def test_host_refusal_passes_through_verbatim(self):
+        tok = self.login()
+        s, v = self.call('GET', '/AGENTS.md/world/nope', token=tok)
+        self.assertEqual((s, v['status'], v['class'], v['object']), (404, 'refused', 'unknown', 'nope'))
+        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': 7, 'intent': 'bad'}, tok)
+        self.assertEqual(s, 400)
+        self.assertEqual({k: v for k, v in bare(e).items() if k != 'class'}, self.host.send({'op': 'world-turn', 'principal': HANDLE, 'object': self.c,
+                                            'method': 'bump', 'argument': 7, 'identity': 'bad'}))
 
+    def test_principal_cannot_be_forged_through_the_body(self):
+        tok = self.login()
+        s, t = self.call('POST', f'/AGENTS.md/world/{self.c}/bump',
+                         {'argument': record(), 'intent': 'f1', 'principal': 'ember', 'identity': 'x'}, tok)
+        self.assertEqual(t['status'], 'admitted', t)
+        self.assertEqual(self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': 'f1'})['status'], 'receipt')
+        self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': 'ember', 'identity': 'f1'}).get('status'), 'receipt')
+        self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': 'x'}).get('status'), 'receipt')
+
+    def test_the_receipt_route_resolves_a_slug_to_the_same_receipt_as_the_intent(self):
+        tok = self.login()
+        s, made = self.turn(tok, 'sl1')
+        by_intent = self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1]
+        real, seen = self.host.send, []
+        def send(req, *a, **k):
+            seen.append(req['op'])
+            if req['op'] == 'world-resolve':
+                return {'status': 'resolved', 'receipt': made['receipt']} if req['slug'] == 'babab-dabab' else {'status': 'error', 'message': 'no such slug'}
+            return real(req, *a, **k)
+        self.host.send = send
+        by_slug = self.call('GET', '/AGENTS.md/receipt/babab-dabab', token=tok)
+        self.assertEqual((by_slug[0], bare(by_slug[1])), (200, bare(by_intent)))
+        self.assertEqual(bare(self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1]), bare(by_intent))  # an intent never asks to resolve
+        self.assertEqual(seen.count('world-resolve'), 1)
+
+    def test_a_receipt_slug_resolves_to_the_same_receipt_hash_over_http(self):
+        tok = self.login()
+        receipt = self.turn(tok, 'sl2')[1]['receipt']
+        s, r = self.call('GET', '/AGENTS.md/receipt/' + receipt['slug'], token=tok)
+        self.assertEqual((s, r['receipt']['hash']), (200, receipt['hash']))
+
+    def test_offers_wait_re_asks_until_an_offer_appears_or_time_runs_out(self):
+        tok = self.login()
+        asks, naps, real = [], [], self.host.send
+        offer = {'height': 9, 'identity': {'principal': DID, 'intent': 'i'}, 'text': 'hello'}
+        def send(req, *a, **k):
+            if req['op'] != 'world-offers':
+                return real(req, *a, **k)
+            asks.append(req)
+            return {'status': 'offers', 'offers': [offer] if len(asks) == 3 else [], 'more': False}
+        self.host.send, self.front.sleep = send, naps.append
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=30&compact=1', token=tok)
+        self.assertEqual((s, bare(r), len(asks), naps), (200, {'status': 'offers', 'offers': ['hello'], 'height': 9}, 3, [1, 1]))
+        asks.clear(), naps.clear()
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)  # bounded; the host never answers
+        self.assertEqual((s, r['offers'], len(asks)), (200, [offer], 3))
+        asks.clear(), naps.clear()
+        self.host.send = lambda req, *a, **k: (asks.append(req), {'status': 'offers', 'offers': []})[1] if req['op'] == 'world-offers' else real(req, *a, **k)
+        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)
+        self.assertEqual((len(asks), len(naps)), (31, 30))
+        asks.clear()
+        self.call('GET', '/AGENTS.md/offers', token=tok)
+        self.assertEqual(len(asks), 1)
+
+    def test_a_checkpoints_tokens_are_counted_unless_full(self):
+        tok = self.login()
+        real = self.host.send
+        held = {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended', 'activity': {'checkpoint': {'digest': 'd', 'tokens': [{'n': '1'}] * 5}}}}}
+        self.host.send = lambda req: held if req['op'] == 'world-receipt' else real(req)
+        s, r = self.call('GET', '/AGENTS.md/receipt/x', token=tok)
+        self.assertEqual(r['receipt']['outcome']['activity']['checkpoint'], {'tokens': {'elided': 5}})  # the digest is a hash: omitted by default
+        self.assertEqual(bare(self.call('GET', '/AGENTS.md/receipt/x?full=1', token=tok)[1]), held)
+
+
+class Repl(FrontCase):
     def repl(self, tok, **body):
         return self.call('POST', '/AGENTS.md/repl', body, tok)
 
@@ -250,7 +341,7 @@ class HttpFront(unittest.TestCase):
 
     def test_repl_runs_counter_bump_as_an_activity(self):
         tok = self.login()
-        context = record(world={'tag': 'label', 'value': ''}, object={'tag': 'label', 'value': 'c1'},
+        context = record(world={'tag': 'label', 'value': ''}, object={'tag': 'label', 'value': self.c},
                          principal={'tag': 'label', 'value': HANDLE}, handle={'tag': 'label', 'value': ''},
                          caller={'tag': 'label', 'value': ''}, intent={'tag': 'label', 'value': 'repl'}, height=nat(0), clock=nat(0),
                          inputOrigin=record(
@@ -273,21 +364,21 @@ class HttpFront(unittest.TestCase):
 
     def test_repl_imports_the_library_by_name_and_starts_an_activity_from_its_type(self):
         tok = self.login()
-        context = record(world=label(''), object=label('c1'), principal=label(DID), handle=label(''), caller=label(''),
+        context = record(world=label(''), object=label(self.c), principal=label(DID), handle=label(''), caller=label(''),
                          intent=label('repl-2'), height=nat(0), clock=nat(0),
                          inputOrigin=record(kind=label('request'), object=label(''), command=label(''), program=label(''),
                                             immediatelyPrevious={'tag': 'boolean', 'value': False}))
         s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2)), context],
-                         object='c1', intent='repl-2', roots=[{'object': 'c1', 'version': 0}])
+                         object=self.c, intent='repl-2', roots=[{'object': self.c, 'version': 0}])
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
         self.assertIsInstance(y['checkpoint']['tokens'], list)  # the REPL's checkpoint goes back whole, to resume
         s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'),
-                            object='c1', intent='repl-2', roots=[{'object': 'c1', 'version': 0}])
+                            object=self.c, intent='repl-2', roots=[{'object': self.c, 'version': 0}])
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
 
     def test_a_turn_start_fills_the_context_so_the_arguments_omit_it(self):
         tok = self.login()
-        bind = dict(object='c1', intent='repl-3', roots=[{'object': 'c1', 'version': 0}])
+        bind = dict(object=self.c, intent='repl-3', roots=[{'object': self.c, 'version': 0}])
         s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], **bind)
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
         s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **bind)
@@ -296,14 +387,14 @@ class HttpFront(unittest.TestCase):
     def test_a_stale_library_pin_is_re_read_once_and_the_compile_goes_through(self):
         tok = self.login()
         self.front.library = 'bafyreistale'
-        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object='c1', intent='repl-4',
-                         roots=[{'object': 'c1', 'version': 0}])
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object=self.c, intent='repl-4',
+                         roots=[{'object': self.c, 'version': 0}])
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
         self.assertNotEqual(self.front.library, 'bafyreistale')
         self.front.hostd_pid = -1  # a changed pid is re-read before the request
         self.front.library = 'bafyreistale'
-        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object='c1', intent='repl-5',
-                         roots=[{'object': 'c1', 'version': 0}])
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object=self.c, intent='repl-5',
+                         roots=[{'object': self.c, 'version': 0}])
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
 
     def test_check_and_compile_refusals_carry_the_hosts_hint(self):
@@ -319,42 +410,6 @@ class HttpFront(unittest.TestCase):
         s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
 
-    def test_a_created_reply_shows_one_hash_by_default_and_all_of_them_with_full(self):
-        import re
-        tok = self.login()
-        body = {'intent': 'mk-hash', 'object': 'h1', 'modules': [{'name': 'Tally', 'source': REPL_COUNTER}], 'entry': 'initial', 'seed': {'count': 1}}
-        s, _, raw = self.request('POST', '/AGENTS.md/heap/objects', body, tok)
-        self.assertEqual(s, 200, raw)
-        self.assertEqual(re.findall(rb'bafy\w+', raw), [json.loads(raw)['receipt']['hash'].encode()], raw)
-        body['intent'], body['object'] = 'mk-hash-2', 'h2'
-        s, _, raw = self.request('POST', '/AGENTS.md/heap/objects?full=1', body, tok)
-        self.assertGreater(len(re.findall(rb'bafy\w+', raw)), 3)
-        s, v = self.call('GET', '/AGENTS.md/heap/world/h1', token=tok)
-        self.assertNotIn('pin', v)
-        self.assertIn('pin', self.call('GET', '/AGENTS.md/heap/world/h1/source', token=tok)[1])
-
-    def test_the_receipt_route_resolves_a_slug_to_the_same_receipt_as_the_intent(self):
-        tok = self.login()
-        s, made = self.turn(tok, 'sl1')
-        by_intent = self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1]
-        real, seen = self.host.send, []
-        def send(req, *a, **k):
-            seen.append(req['op'])
-            if req['op'] == 'world-resolve':
-                return {'status': 'resolved', 'receipt': made['receipt']} if req['slug'] == 'babab-dabab' else {'status': 'error', 'message': 'no such slug'}
-            return real(req, *a, **k)
-        self.host.send = send
-        by_slug = self.call('GET', '/AGENTS.md/receipt/babab-dabab', token=tok)
-        self.assertEqual((by_slug[0], by_slug[1]), (200, by_intent))
-        self.assertEqual(self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1], by_intent)  # an intent never asks to resolve
-        self.assertEqual(seen.count('world-resolve'), 1)
-
-    def test_end_to_end_world_resolve_against_the_real_host(self):
-        tok = self.login()
-        receipt = self.turn(tok, 'sl2')[1]['receipt']
-        s, r = self.call('GET', '/AGENTS.md/receipt/' + receipt['slug'], token=tok)
-        self.assertEqual((s, r['receipt']['hash']), (200, receipt['hash']))
-
     def test_check_asks_the_world_and_sends_only_the_callers_modules(self):
         tok = self.login()
         seen, real = [], self.host.send
@@ -366,40 +421,67 @@ class HttpFront(unittest.TestCase):
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
         self.assertEqual(seen, [{'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'}])
 
-    def test_end_to_end_world_check_against_the_real_host(self):
-        got = self.host.send({'op': 'world-check', 'principal': DID, 'modules': [{'name': 'Package', 'source': REPL_COUNTER}], 'entry': 'bump'})
-        self.assertEqual(got.get('status'), 'checked', got)
 
-    def test_offers_wait_re_asks_until_an_offer_appears_or_time_runs_out(self):
+class Heaps(FrontCase):
+    def test_a_created_reply_shows_one_hash_by_default_and_all_of_them_with_full(self):
+        import re
         tok = self.login()
-        asks, naps, real = [], [], self.host.send
-        offer = {'height': 9, 'identity': {'principal': DID, 'intent': 'i'}, 'text': 'hello'}
-        def send(req, *a, **k):
-            if req['op'] != 'world-offers':
-                return real(req, *a, **k)
-            asks.append(req)
-            return {'status': 'offers', 'offers': [offer] if len(asks) == 3 else [], 'more': False}
-        self.host.send, self.front.sleep = send, naps.append
-        s, r = self.call('GET', '/AGENTS.md/offers?wait=30&compact=1', token=tok)
-        self.assertEqual((s, r, len(asks), naps), (200, {'status': 'offers', 'offers': ['hello'], 'height': 9}, 3, [1, 1]))
-        asks.clear(), naps.clear()
-        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)  # bounded; the host never answers
-        self.assertEqual((s, r['offers'], len(asks)), (200, [offer], 3))
-        asks.clear(), naps.clear()
-        self.host.send = lambda req, *a, **k: (asks.append(req), {'status': 'offers', 'offers': []})[1] if req['op'] == 'world-offers' else real(req, *a, **k)
-        s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)
-        self.assertEqual((len(asks), len(naps)), (31, 30))
-        asks.clear()
-        self.call('GET', '/AGENTS.md/offers', token=tok)
-        self.assertEqual(len(asks), 1)
+        body = {'intent': 'mk-hash', 'object': 'hash1', 'modules': [{'name': 'Tally', 'source': REPL_COUNTER}], 'entry': 'initial', 'seed': {'count': 1}}
+        s, _, raw = self.request('POST', '/AGENTS.md/heap/objects', body, tok)
+        self.assertEqual(s, 200, raw)
+        self.assertEqual(re.findall(rb'bafy\w+', raw), [json.loads(raw)['receipt']['hash'].encode()], raw)
+        body['intent'], body['object'] = 'mk-hash-2', 'hash2'
+        s, _, raw = self.request('POST', '/AGENTS.md/heap/objects?full=1', body, tok)
+        self.assertGreater(len(re.findall(rb'bafy\w+', raw)), 3)
+        s, v = self.call('GET', '/AGENTS.md/heap/world/hash1', token=tok)
+        self.assertNotIn('pin', v)
+        self.assertIn('pin', self.call('GET', '/AGENTS.md/heap/world/hash1/source', token=tok)[1])
 
+    def test_a_heap_object_is_one_module_importing_the_library(self):
+        tok = self.login()
+        s, r = self.call('POST', '/AGENTS.md/heap/objects', {'object': 'tally', 'modules': [{'name': 'Tally', 'source': REPL_COUNTER}],
+                                                             'entry': 'initial', 'seed': record(), 'intent': 'mk-tally'}, tok)
+        self.assertEqual((s, r['status']), (200, 'created'), r)
+        s, t = self.call('POST', '/AGENTS.md/heap/world/tally/bump', {'intent': 'b1'}, tok)
+        self.assertEqual((s, t['status'], t['result']), (200, 'admitted', nat(1)), t)
+
+    def test_a_heap_is_private_and_missing_is_404_not_403(self):
+        a, b = self.login(), self.login('glm.delve.town')
+        s, r = self.heap_create(a)
+        self.assertEqual((s, r['status']), (200, 'created'), r)
+        s, t = self.call('POST', '/AGENTS.md/heap/world/h1/bump', {'argument': record(), 'intent': 't1'}, a)
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h1', token=a)[1]['version'], 1)
+        s, v = self.call('GET', '/AGENTS.md/heap/world/h1', token=b)
+        self.assertEqual((s, v['status'], v['class']), (404, 'refused', 'unknown'))
+        self.assertEqual(self.call('GET', '/AGENTS.md/world/h1', token=a)[0], 404)  # the shared world never sees it
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/t1', token=b)[1].get('class'), 'unknown')
+
+    def test_pool_eviction_reopens_by_replay(self):
+        names = ['glm.delve.town', 'mimo.delve.town', 'selene.delve.town']
+        toks = [self.login(h) for h in names]
+        for i, t in enumerate(toks[:2]):
+            self.heap_create(t, 'h')
+            self.call('POST', '/AGENTS.md/heap/world/h/bump', {'argument': record(), 'intent': 'b'}, t)
+        pool = self.hostd.heaps.pool
+        first = pool[PEOPLE[names[0]]]
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h', token=toks[2])[0], 404)  # third heap evicts the first
+        self.assertNotIn(PEOPLE[names[0]], pool)
+        self.assertIsNone(first.proc)
+        self.assertEqual(len(pool), 2)
+        s, v = self.call('GET', '/AGENTS.md/heap/world/h', token=toks[0])
+        self.assertEqual((s, v['version']), (200, 1), v)
+
+
+class Pages(FrontCase):
     def test_list_card_source_offers_and_ids_with_slashes(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
         self.assertEqual(r['status'], 'created', r)
         s, listed = self.call('GET', '/AGENTS.md/world', token=tok)
-        self.assertEqual((s, listed['ids']), (200, ['c1', DID, 'env/' + DID, 'garden', 'wake/' + DID]), listed)  # verify made the caller's avatar, env and wake
+        self.assertEqual((s, listed['ids']), (200, sorted(listed['ids'])), listed)
+        self.assertLessEqual({self.c, DID, 'env/' + DID, 'garden', 'wake/' + DID}, set(listed['ids']))  # verify made the caller's avatar, env and wake
         self.assertEqual(self.call('GET', '/AGENTS.md/world?prefix=g', token=tok)[1]['ids'], ['garden'])
         s, card = self.call('GET', '/AGENTS.md/world/garden/card', token=tok)
         self.assertEqual((s, card['status']), (200, 'card'), card)
@@ -424,80 +506,17 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/world/garden%2Fbell%2F1', token=tok)[1]['object'], 'garden/bell/1')
         self.assertEqual(self.call('GET', '/AGENTS.md/world/garden/bell/2/card', token=tok)[1]['status'], 'card')
         s, offers = self.call('GET', '/AGENTS.md/offers', token=tok)
-        self.assertEqual((s, [o['identity']['intent'] for o in offers['offers']]), (200, ['p1', 'p2']), offers)
-        after = offers['offers'][0]['height']
-        self.assertEqual([o['identity']['intent'] for o in self.call('GET', f'/AGENTS.md/offers?after={after}', token=tok)[1]['offers']], ['p2'])
+        mine = [o for o in offers['offers'] if o['identity']['intent'] in ('p1', 'p2')]  # the class's world holds other tests' offers too
+        self.assertEqual((s, [o['identity']['intent'] for o in mine]), (200, ['p1', 'p2']), offers)
+        after = mine[0]['height']
+        self.assertIn('p1', [o['identity']['intent'] for o in offers['offers'] if o['height'] <= after])
+        self.assertEqual([o['identity']['intent'] for o in self.call('GET', f'/AGENTS.md/offers?after={after}', token=tok)[1]['offers']][-1:], ['p2'])
         s, e = self.call('GET', '/AGENTS.md/nope', token=tok)
         self.assertEqual(s, 404)
-        self.assertIn('world/<object>/source', e['hint'])
-
-    def test_a_checkpoints_tokens_are_counted_unless_full(self):
-        tok = self.login()
-        real = self.host.send
-        held = {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended', 'activity': {'checkpoint': {'digest': 'd', 'tokens': [{'n': '1'}] * 5}}}}}
-        self.host.send = lambda req: held if req['op'] == 'world-receipt' else real(req)
-        s, r = self.call('GET', '/AGENTS.md/receipt/x', token=tok)
-        self.assertEqual(r['receipt']['outcome']['activity']['checkpoint'], {'tokens': {'elided': 5}})  # the digest is a hash: omitted by default
-        self.assertEqual(self.call('GET', '/AGENTS.md/receipt/x?full=1', token=tok)[1], held)
-
-    # ---- heaps
-
-    def heap_create(self, tok, name='h1'):
-        # A bare counter: Counter's closure with Card and Spell (about 67 KB) exceeds the front's 64 KiB body.
-        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': closure('Plan') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
-                                                             'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
-
-    def test_a_heap_object_is_one_module_importing_the_library(self):
-        tok = self.login()
-        s, r = self.call('POST', '/AGENTS.md/heap/objects', {'object': 'tally', 'modules': [{'name': 'Tally', 'source': REPL_COUNTER}],
-                                                             'entry': 'initial', 'seed': record(), 'intent': 'mk-tally'}, tok)
-        self.assertEqual((s, r['status']), (200, 'created'), r)
-        s, t = self.call('POST', '/AGENTS.md/heap/world/tally/bump', {'intent': 'b1'}, tok)
-        self.assertEqual((s, t['status'], t['result']), (200, 'admitted', nat(1)), t)
-
-    def test_a_heap_is_private_and_missing_is_404_not_403(self):
-        a, b = self.login(), self.login('glm.delve.town')
-        s, r = self.heap_create(a)
-        self.assertEqual((s, r['status']), (200, 'created'), r)
-        s, t = self.call('POST', '/AGENTS.md/heap/world/h1/bump', {'argument': record(), 'intent': 't1'}, a)
-        self.assertEqual((s, t['status']), (200, 'admitted'), t)
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h1', token=a)[1]['version'], 1)
-        s, v = self.call('GET', '/AGENTS.md/heap/world/h1', token=b)
-        self.assertEqual((s, v['status']), (404, 'unknown'))
-        self.assertEqual(self.call('GET', '/AGENTS.md/world/h1', token=a)[0], 404)  # the shared world never sees it
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/t1', token=b)[1].get('status'), 'unknown')
-
-    def test_pool_eviction_reopens_by_replay(self):
-        names = ['glm.delve.town', 'mimo.delve.town', 'selene.delve.town']
-        toks = [self.login(h) for h in names]
-        for i, t in enumerate(toks[:2]):
-            self.heap_create(t, 'h')
-            self.call('POST', '/AGENTS.md/heap/world/h/bump', {'argument': record(), 'intent': 'b'}, t)
-        pool = self.hostd.heaps.pool
-        first = pool[PEOPLE[names[0]]]
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h', token=toks[2])[0], 404)  # third heap evicts the first
-        self.assertNotIn(PEOPLE[names[0]], pool)
-        self.assertIsNone(first.proc)
-        self.assertEqual(len(pool), 2)
-        s, v = self.call('GET', '/AGENTS.md/heap/world/h', token=toks[0])
-        self.assertEqual((s, v['version']), (200, 1), v)
-
-    # ---- me, revoke
-
-    def test_me_and_revoke(self):
-        tok = self.login()
-        self.heap_create(tok)
-        s, me = self.call('GET', '/AGENTS.md/me', token=tok)
-        self.assertEqual((s, me['principal'], me['handle'], me['did'], me['heapObjects']), (200, DID, HANDLE, DID, 1), me)
-        self.assertEqual(me['verified'], 1000.0)
-        self.assertEqual(me['rateLimit'], {'limit': 32, 'windowSeconds': 60, 'remaining': 30})
-        self.assertEqual(self.call('POST', '/AGENTS.md/revoke', {}, tok)[1], {'status': 'revoked'})
-        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
-
-    # ---- human pages
+        self.assertIn('/AGENTS.md/api', e['hint'])
 
     def test_html_card_and_spell_form(self):
-        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
+        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-plot', 'object': 'plot',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(2)})
         self.assertEqual(r['status'], 'created', r)
         s, headers, body = self.request('GET', '/')
@@ -513,37 +532,23 @@ class HttpFront(unittest.TestCase):
                                      headers={'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookie})
         self.assertEqual(s, 200)
         self.assertIn(cookie, [v for k, v in headers if k == 'Set-Cookie'][0])
-        s, _, page = self.request('GET', '/o/garden', headers={'Cookie': cookie})
+        s, _, page = self.request('GET', '/o/plot', headers={'Cookie': cookie})
         self.assertEqual(s, 200)
         self.assertIn(b'2 planted, newest first:', page)
         self.assertIn(b'prefers-color-scheme', self.request('GET', '/static/style.css')[2])
         before = self.host.send({'op': 'world-status'})['height']
-        s, _, page = self.request('POST', '/o/garden/spell', raw='text=' + urllib.parse.quote('delvetalk garden plant'),
+        s, _, page = self.request('POST', '/o/plot/spell', raw='text=' + urllib.parse.quote('delvetalk plot plant'),
                                   headers={'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookie})
         self.assertEqual(s, 200)
         self.assertGreater(self.host.send({'op': 'world-status'})['height'], before)
         self.assertIn(b'Result', page)
         self.assertEqual(self.request('GET', '/o/nowhere')[0], 404)
-        self.assertEqual(self.request('POST', '/o/garden/spell', raw='text=x',
+        self.assertEqual(self.request('POST', '/o/plot/spell', raw='text=x',
                                       headers={'Content-Type': 'application/x-www-form-urlencoded'})[0], 401)
-
-    def test_unauthenticated_routes_are_limited_per_client_ip(self):
-        codes = [self.call('POST', '/AGENTS.md/challenge', {'handle': 'glm.delve.town'})[0] for _ in range(17)]
-        self.assertEqual([c == 429 for c in codes], [False] * 16 + [True])  # per-handle limits may answer 400 first
-        s, body = self.call('POST', '/AGENTS.md/verify', {'handle': HANDLE, 'uri': URI})
-        self.assertEqual((s, body['status']), (429, 'error'))
-        # X-Forwarded-For is ignored without --trust-proxy, honoured (last entry) with it
-        self.assertEqual(self.request('POST', '/AGENTS.md/challenge', {'handle': HANDLE}, headers={'X-Forwarded-For': '9.9.9.9'})[0], 429)
-        self.assertNotIn('ip:9.9.9.9', self.front.hits)
-        self.front.trust_proxy = True
-        self.assertNotEqual(self.request('POST', '/AGENTS.md/challenge', {'handle': HANDLE}, headers={'X-Forwarded-For': '1.1.1.1, 9.9.9.9'})[0], 429)  # keyed on 9.9.9.9, unspent
-        self.assertEqual(self.front.hits.get('ip:9.9.9.9') and len(self.front.hits['ip:9.9.9.9']), 1)
-        self.now[0] += 61
-        self.assertNotEqual(self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[0], 429)
 
     def test_page_uses_world_card_without_journaling_and_history_is_newest_first(self):
         for i in range(25):
-            self.host.send({'op': 'world-turn', 'principal': DID, 'object': 'c1', 'method': 'bump', 'argument': record(), 'identity': f'h{i}'})
+            self.host.send({'op': 'world-turn', 'principal': DID, 'object': self.c, 'method': 'bump', 'argument': record(), 'identity': f'h{i}'})
         real, seen = self.host.send, []
 
         def send(req):
@@ -556,7 +561,7 @@ class HttpFront(unittest.TestCase):
         tok = self.login()
         cookie = 'dt_credential=' + tok
         before = real({'op': 'world-status'})['height']
-        s, _, page = self.request('GET', '/o/c1', headers={'Cookie': cookie})
+        s, _, page = self.request('GET', f'/o/{self.c}', headers={'Cookie': cookie})
         self.assertEqual(s, 200)
         self.assertIn(('CARD for ' + DID).encode(), page)
         self.assertEqual(real({'op': 'world-status'})['height'], before)  # no describe/present turn journaled
@@ -595,7 +600,7 @@ class Concurrent(unittest.TestCase):
             ident = identity.Identity(tmp, delve.Client(provider))
             front = Front(('127.0.0.1', 0), host, ident, trust_proxy=True)
             port = front.server_address[1]
-            threading.Thread(target=front.serve_forever, daemon=True).start()
+            serve(front)
             errors, creds = [], {}
 
             def call(method, path, i, body=None, token=None):

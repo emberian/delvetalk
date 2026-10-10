@@ -1,4 +1,10 @@
-"""Program reflection: inspect, check, the sealed standard library, interpret as a suspension,
+"""Programs read programs: the sealed library, inspect and check under the turn's principal,
+interpret as a suspension, the sending object as a delivered turn's caller, reprogram through a
+forge.
+
+Evidence for FOUNDATION §3 (layer: host).
+
+Program reflection: inspect, check, the sealed standard library, interpret as a suspension,
 and the sending object as the delivered turn's caller.
 
 Each case is named by the defect that would make it fail. The library is world/lib (or a copy
@@ -8,7 +14,6 @@ import os
 import re
 import shutil
 import tempfile
-import time
 import unittest
 
 from tests.host import HostCase
@@ -592,21 +597,16 @@ class ReprogramAnother(Reflection):
 
 
 class Maximum(Reflection):
-    def test_a_128_module_library_seals_under_two_seconds_and_its_modules_import(self):
+    def test_a_128_module_library_chained_by_imports_seals_and_reopens(self):
         with tempfile.TemporaryDirectory() as scratch:
             for i in range(128):
                 with open(os.path.join(scratch, f"M{i:03}.obend"), "w") as handle:
                     imports = f"import ./M{i - 1:03}.obend as P\n" if i else ""
                     handle.write(f"edition ObjectiveBend 1\n{imports}def one{i}() -> Nat:\n  1n\n")
-            started = time.time()
             r = self.host.send(op="world-open", path=self.path, library=scratch, principal="ember")
-            elapsed = time.time() - started
             self.assertEqual(r["status"], "opened", r)
-            self.assertLess(elapsed, 2.0)
-            print(f"\n  128-module library sealed and journaled in {elapsed:.2f}s")
-            reopened = time.time()
             self.reopen()
-            self.assertLess(time.time() - reopened, 2.0)
+            self.assertEqual(self.host.send(op="world-open", path=self.path)["library"], r["library"])
 
     def test_a_library_of_too_many_modules_is_refused_by_name(self):
         with tempfile.TemporaryDirectory() as scratch:

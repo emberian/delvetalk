@@ -342,82 +342,79 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
-## 16. Queue for the successor (lane/kernel5 at 9a29080, after foundation b47046b)
+## 16. Queue for the successor (lane/kernel6, after foundation e9d8ca9)
 
-Done on this lane and committed (each green on hbox, details in §14 and §15): typed views
-(9c5af54), protocols (b1fe9f8), `textHasAny` (d8929d9), checkpoint v3 relative addresses
-(e6b6b86), relational grammar atoms + `write` insert/upsert/retract + `relations` in the
-artifact (b05234d), the lazy-state note §15 (b00b32d), `canonicalCompare` (5994055).
-Nothing of the Wholeness kernel work is started; the tree is clean. Run in this order:
+Done on lane/kernel6 (§17): Wholeness kernel day 1 (c6033f7), day 2 (9d65553), call sites
+cached per held entry (after foundation cdfa59a). Remaining,
+in order:
 
-1. **`textWords(s) -> List<String>`** (not done). Needs a list-producing term form: on a
-   label value the machine allocates one native cell holding the words' Data list and
-   enters it; typed by its annotation's codomain (`isTextList`), like `refuse`; checkpoint
-   tag in v1 and v2/v3 codecs, `related_stepRaw` case (a native allocation, as
-   `forceNative`), Fast `sizesAfter`, the three evaluators (`["textWords", x]` steps to a
-   list literal), the generator. Words as `textWordsOf` (OpenRecursion). Only if the
-   objects lane still needs it after switching to `textHasAny`.
-2. **Wholeness kernel day 1** (WHOLENESS §1, §4). Fixed shapes and what the contract gets
-   wrong or leaves open, as found reading the code:
-   - `Ty.isPlanUnder` admits a record row of data (`.field`/`.emptyRow`, or a variable
-     bound to one) beside a variant.
-   - `PartialTyping.perform` concludes `computation planType (performResponse planType T) T`
-     with `performResponse` = `.data` when the plan type is a row (message dialect), else
-     `T` (old dialect: `T` is the activity's `R`, so every old packet and the decided
-     examples at Typing ~1550-1600 are unchanged). The checker's perform case already takes
-     `T` from the annotation's codomain; only the conclusion's middle type changes.
-   - Surface `Activity<A>` = `computation Message .data A`, `Message` resolved as the record
-     `Message` of the module named `World` (refuse by name when the closure has none).
-     `St.effect` is then `(Message, .data)`.
-   - World calls: lower in the generics pass (it is the only place type arguments
-     instantiate): `world.X::<T>(arg)` / `world.X(arg)` → a NEW Surface/core Expr
-     `typedPerform (resultType : String) (plan : Expr)` with plan
-     `{object: {world: "", object: "world"}, method: "X", argument: Data.of::<Input[T]>(arg)}`
-     and `resultType` the rendered `Result[T]`; the elaborator emits
-     `ATerm.perform Message ResultT planTerm` (its `response` field becomes the site type,
-     `annotate` already writes it as the codomain). `isPerform` must accept it (for
-     `let label(x) =` and `noActivity`). Infer `T` only when the method's input is exactly
-     the type parameter (`write<E>`, `judge<E>`); otherwise require `::<T>`.
-   - The `protocol world:` lines are SIGNATURE form `name<Ps>(INPUT) -> RESULT`, unlike
-     this lane's `name: TYPE` protocol lines: extend `Surface.Decl.protocol` with per-method
-     type parameters, parse both line forms, and in `Generics.rewriteDecl` bind each
-     method's parameters (and State/Plan/Response) as atoms. `implements` (this lane)
-     stays for the `name: TYPE` form.
-   - `write {…}` relowering to `world.write(extend(keep(), {...}))`: decide by dialect (the
-     parser does not know it); suggested: the parser emits a marker callee and the generics
-     pass picks `Plan.write` when the module has a `Plan` type alias, else `world.write`.
-   - Surface `perform(...)` inside an `Activity<A>` body: refuse by name ("an Activity<A>
-     yields only world calls"); keep it for the old dialect until day 4.
-3. **Wholeness kernel day 2.** Site types at a yield and a resume (the contract's
-   "annotation at the preorder index of the yielded perform"): at a yield the plan cell
-   holds the perform's argument subterm, but `settle` replaces every cached origin with a
-   self origin, so the term is gone in the checkpoint. Fix found: make `settleCell` keep,
-   for the yielded plan cell only, `⟨planTerm, []⟩` (environment emptied, so collection
-   retains nothing); `settle_heap_erased`/`agree_settle` hold unchanged because `Agree` is
-   equality up to cached origins (`eraseCell`). Then `Turn.conclude` and
-   `resumeActivity`/`resumeEntry` find the site: plan cell origin term → its index by
-   `Dictionary.findTerm` → a map index → `T` built once per entry by walking the entry
-   term in `Dictionary.addTerm`'s preorder with the checker's positions (`lam [0]`, `app
-   [0][1]`, record field `i`, `extend`/`case` `[1, i]`, …) and reading each `perform`'s
-   annotation codomain. Report it as the yield's `responseType` and check the response
-   against it (message dialect only; old dialect keeps `R`).
-   Artifact: `dialect: "message"` when the entry's activity is `computation Message …`
-   (absent otherwise, so old artifacts are byte-identical), `world: [method names]` the
-   entry's packet performs (scan its `ATerm.perform` plans for the `method` label), and
-   the World module's source sha256 as `worldProtocol`. Tests: `test_sugar` (world-call
-   lowering against the explicit `typedPerform` spelling is impossible in source, so
-   compare packets of `world.view::<S>` with a hand-built expected plan JSON), new
-   `test_world_calls` (turn-start yields the Message; `responseType` is `Viewed<S>`;
-   turn-resume with `viewed {version, state}` finishes; a non-conforming response is
-   refused). Re-record `tests/fixtures/pins/artifacts.json` only if a world packet moves
-   (it should not until objects migrate). KERNEL-HANDOFF gets the section.
-4. **Day 4 (after the objects lane):** refuse `Activity<P, R, A>` and variant Plans by
-   name; delete the old perform dialect.
+1. **Day 4 (after the objects lane has moved every object to `Activity<R>`):** refuse
+   `Activity<P, R, A>` and a sum Plan by name (`sourceType`'s three-argument case and
+   `Ty.isPlanUnder`'s variant case; the decided examples at Typing ~1545-1600 move to the
+   message form), delete the `$write` Plan branch (`writeLowered`), surface `perform`, the
+   typed-view rewrite (`typedViews`, `viewAs`) and `Package.methodTable`'s old rows, then
+   re-record the pins once with the relational re-record (WHOLENESS §4, RELATIONAL §9).
+2. **`textWords(s) -> List<String>`**, only if an object still needs it once the objects
+   lane uses `textHasAny` (no `world/` source does yet). Shape as the old §16 item 1: a
+   list-producing term form, which touches the machine, collector and checkpoint codecs,
+   now lane perf2's files; route through the root.
 
-Contract notes. `canonicalCompare` was asked as `(Data, Data)`; it is `(T, T)` for one
-first-order `T` (Data has no shape Bend can read; generic `Relation<T>` is monomorphised).
-RELATIONAL §5's atoms compile to `Pred.any []`; the host's `Law.lean` fails closed on them
-until it denotes them. The rehearsal's large suspensions come mostly from the directory's
-word walk leaving every suffix of the reply in the heap (§14), which `textHasAny` removes
-once the objects lane switches.
+Contract notes. WHOLENESS §1 says the yield's site is "the annotation at the preorder index
+of the yielded perform (the index `Dictionary.ofProgram` assigns)": the dictionary indexes
+terms, not positions, and identical perform terms share an index, so a site is named by its
+plan term and an entry whose world calls build one message at two result types is refused
+(`refused (world-call-site)`). The old §16's route to the term at resume (keep the plan
+cell's origin in `settleCell`) is in DemandCollect, now lane perf2's; the site index rides
+as a checkpoint token prefix instead (§17). "No `Checkpoint` field changes" holds; the
+token stream of a message checkpoint gains two leading tokens.
 
+## 17. World calls (WHOLENESS §1, lane/kernel6)
+
+- Day 1. `Ty.isPlanUnder` admits a record row of data (a message) beside a variant;
+  `Ty.performResponse plan T` is `Data` for a record plan, else `T`, and
+  `PartialTyping.perform` concludes `computation plan (plan.performResponse T) T`, the checker
+  taking `T` from the perform's annotation codomain. A sum-Plan activity is unchanged
+  (`sum_plan_response_unchanged`); `message_sites_accepted` sequences a view and a write with
+  different result types in one `computation Message Data Nat`;
+  `message_then_sum_plan_refused` keeps the dialects apart. Surface `Activity<A>` is
+  `computation Message Data A`, `Message` the record of the module named `World` ("…yields
+  World.Message, but no module named World is in this package"). The `protocol world:`
+  lines are signature form `name<Ps>(INPUT) -> RESULT` (`protocolSignature`; one input,
+  refused by name otherwise), stored as `Field {name, type := "INPUT -> RESULT",
+  typeParameters}`; the generics pass leaves such methods unrewritten and instantiates them
+  at each call. `world.X::<T>(arg)` / `world.X(arg)` (`world` not a local, declaration or
+  alias) lowers in the generics pass (`worldCallOf`, `worldMethod`) to the Surface node
+  `worldCall method input result arg` with both types rendered for the calling module; `T`
+  is inferred only when the input is exactly the one type parameter (`write<E>`,
+  `judge<E>`). The elaborator makes it `ATerm.perform Message RESULT {object: {world: "",
+  object: "world"}, method, argument: toData INPUT arg}`, the argument injected where the
+  input has `Data` fields (`coerceGo`), else refused with `expected`/`found`. `isPerform`
+  accepts it, so `let label(x) = world.X(...)` and the shared-position rules hold.
+  `write {...}` emits the marker callee `$write` (`writeMarker`); the generics pass makes it
+  `world.write(edits)` in an `Activity<R>` definition, `Plan.write({object, edits})`
+  otherwise. Surface `perform` in an `Activity<R>` and a world call in an
+  `Activity<P, R, A>` are refused by name. Old-dialect packets are byte-identical (pins: 0
+  recompiled). Test: `tests/test_world_calls.py` (its `WORLD` is a stand-in for the objects
+  lane's World.obend).
+
+- Day 2. Site types at a yield and a resume, without touching the machine, collector or
+  codecs (those files are lane perf2's): the machine keeps no positions, so a site is named
+  by its plan term. `Turn.performsOf` walks the entry term at the checker's positions and
+  reads each perform's annotation codomain; `messageSites` keeps one `(plan term, T)` per
+  distinct plan (`termEq`) and refuses an entry in which two performs build the same plan
+  term at different types ("refused (world-call-site)", at compile: `Package.messageFields`,
+  so no such artifact exists). At a message yield `conclude` finds the site from the plan
+  cell's origin in the extracted state (before `checkpoint` settles it), reports its `T` as
+  `responseType`, and prefixes the checkpoint tokens with `["delvetalk.checkpoint.site.v1",
+  i]`; resume (`resumeType`) strips the prefix (inside the digest), checks the response
+  against `T` and decodes the rest. A sum-Plan checkpoint carries no prefix and is
+  byte-identical; a prefix on one, or none on a message checkpoint, is refused. No
+  `Checkpoint` field changed. The site table is built once per held entry
+  (`CheckedEntry.make`, field `sites`, `Entry.lean`), so the host's per-method
+  `Compiled.entry` and the package session's held entries carry it; only the packet path
+  (`startActivity`/`resumeActivity`) walks per call. Measured on hbox, interleaved, a
+  three-segment message turn on a held entry reaching N helpers: N=300 (251 KB packet)
+  5.0 -> 3.9 ms, N=1000 (791 KB) 16.7 -> 13.7 ms.
+  Artifact (message activities only): `dialect: "message"`, `world` (methods the entry's
+  sites name, first occurrence), `worldProtocol` (the World module's source SHA-256 hex).
+  Tests: `tests/test_world_calls.py` `SiteTypes`.

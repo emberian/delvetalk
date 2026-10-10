@@ -1,5 +1,10 @@
-"""The compiler's method table and the shape of a package's Bend law predicate,
-both recorded in the artifact (FOUNDATION section 13).
+"""The compiler records an object's method table and the shape of its Bend law predicate in the
+artifact, and refuses a law that is an activity or returns another sum.
+
+Evidence for FOUNDATION §4, §5 (layer: kernel).
+
+The compiler's method table and the shape of a package's Bend law predicate,
+both recorded in the artifact.
 
     python3 -m unittest tests.test_methods -v
 """

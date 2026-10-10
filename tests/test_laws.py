@@ -1,4 +1,9 @@
-"""Laws in source (FOUNDATION section 2 and section 13's two tiers) on the objects.
+"""The world's objects carry their laws in source: only owners change directories and admit anthology
+lines, and Tide's and Wake's predicates refuse what their code would.
+
+Evidence for FOUNDATION §4 (layer: objects).
+
+Laws in source on the objects.
 
 Policy: `owner: (request.kind == 0 and request.method == "describe") or request.subject == new.owner`.
 Directory: only its owner adds or removes a door. Anthology: anyone submits, only its owner admits.
@@ -12,7 +17,8 @@ the real one makes (and, for Wake, whose law text admits any ordinary write, so 
 stands); the refusal's clause is the predicate's: "self", "tooSoon", "owner".
 
 Refuted by: a stranger's add, remove or admit committing; an owner's being refused; a stranger's
-submit being refused; the variants committing once the host runs predicates."""
+submit being refused; the variants committing once the host runs predicates.
+"""
 import unittest
 
 from tests.test_chain import nil, reference
@@ -96,6 +102,7 @@ def tide_variant():
         source = handle.read()
     source = source.replace("{who: context.principal, every: every,", '{who: "did:plc:someone-else", every: every,', 1)
     source = source.replace("if state.ticks > 0n && context.clock < state.last + state.gap then", "if false then", 1)
+    assert source.count("did:plc:someone-else") == 1 and "if false then" in source, "Tide changed: the variant no longer skips its checks"
     return closure("Tide", override={"Tide": source})
 
 
@@ -106,13 +113,12 @@ def wake_variant():
     source = source.replace('law owner "only its owner writes it": request.subject == new.owner', "law owner: request.kind == 0 or request.subject == new.owner", 1)
     source = source.replace("if context.principal != state.owner then then(notOwner(state)) else if Lists.length(state.triggers) < 32n",
                             "if Lists.length(state.triggers) < 32n", 1)
+    assert "request.kind == 0 or request.subject == new.owner" in source and "else if Lists.length(state.triggers) < 32n" not in source, \
+        "Wake changed: the variant no longer skips its checks"
     return closure("Wake", override={"Wake": source})
 
 
 class Predicates(LawWorld):
-    def test_the_variants_differ_from_the_real_packages(self):
-        self.assertNotEqual(tide_variant()[-1]["source"], closure("Tide")[-1]["source"])
-        self.assertNotEqual(wake_variant()[-1]["source"], closure("Wake")[-1]["source"])
 
     def test_tides_predicate_refuses_someone_elses_subscription(self):
         self.create("tide", tide_variant(), TIDE_SEED)

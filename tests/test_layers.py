@@ -1,4 +1,9 @@
-"""Layer stacks (KERNEL-HANDOFF section 13): a module whose first line is
+"""A layer module overrides the definitions below it for every caller in the package, Super reaches
+the version below, and an override keeps its type.
+
+Evidence for FOUNDATION §8 extend (layer: kernel).
+
+Layer stacks (KERNEL-HANDOFF section 13): a module whose first line is
 `layer over ./X.obend` overrides X's definitions for every caller in the object, its own
 `Super.f` reaching the version below; an override keeps its type; the method table lists
 the whole stack; an unlayered package compiles exactly as before

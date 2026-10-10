@@ -119,10 +119,14 @@ def Ty.dataFuelFor (bounds : DataBounds) (type : Ty) : Nat :=
 /-- No bounds: the closed, non-recursive first-order types. -/
 def Ty.isData (type : Ty) : Bool := type.isDataUnder [] [] Ty.dataFuel []
 
-/-- A Plan is a sum of typed actions over first-order data; a recursive sum
-may itself be a Plan. -/
+/-- A Plan is a sum of typed actions over first-order data (a recursive sum may itself
+be a Plan), or a record of first-order data: a message (`World.Message`), whose
+response type belongs to each perform site rather than to the activity
+(`Ty.performResponse`). -/
 def Ty.isPlanUnder (bounds : DataBounds) (rigid : List Nat) : Ty → Bool
   | .variant row => row.isDataUnder bounds rigid Ty.dataFuel []
+  | .emptyRow => true
+  | row@(.field _ _ _) => row.isDataUnder bounds rigid Ty.dataFuel []
   | .variable index =>
       !rigid.contains index &&
       match bounds.lookup index with
@@ -131,6 +135,15 @@ def Ty.isPlanUnder (bounds : DataBounds) (rigid : List Nat) : Ty → Bool
   | _ => false
 
 def Ty.isPlan : Ty → Bool := Ty.isPlanUnder [] []
+
+/-- The middle type of a perform's activity. A sum Plan (the old dialect) is answered at
+the activity's one response type, so the perform's result is that type. A message (a
+record Plan) is answered at each site's own result type, so the activity's response
+type is `Data`: performs with different results sequence in one activity. -/
+def Ty.performResponse (planType response : Ty) : Ty :=
+  match planType with
+  | .field _ _ _ | .emptyRow => .data
+  | _ => response
 
 theorem Ty.shareable_not_computation (type : Ty) (shareable : type.shareable = true) :
     type.isComputation = false := by

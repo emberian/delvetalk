@@ -1,11 +1,17 @@
-"""A Scene object: passages and choices as data, presence per principal, variables a choice sets.
+"""A Scene keeps passages, presence and variables per reader: only an offered choice moves its
+reader, a refusal writes nothing, every bound is refused at its edge.
+
+Evidence for FOUNDATION §8 (layer: objects).
+
+A Scene object: passages and choices as data, presence per principal, variables a choice sets.
 
 The reader is the turn's principal (no method names one), a choice must be offered by the
 reader's current passage, and a refused choice writes nothing (the version stays).
 
 Refuted by: a choice moving a reader whose passage does not offer it, a refusal that writes,
 one reader's choice moving another, a stranger's card equal to a reader's, a second enter
-admitted, a seventeenth reader or variable admitted, or a full card past 1,400 characters."""
+admitted, a seventeenth reader or variable admitted, or a full card past 1,400 characters.
+"""
 import unittest
 
 from tests import test_chain
@@ -62,8 +68,6 @@ def plain(item):
 
 
 class Scenes(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
     def scene(self, passages=GATE, **kw):
         r = self.host.send(op="world-create", principal="ember", identity="mk-scene", object="scene",
@@ -96,18 +100,57 @@ class Scenes(test_chain.Chain):
     def test_enter_then_choose_moves_the_reader_and_sets_a_variable(self):
         self.scene()
         stranger = self.card(GLM)
-        print("\n--- stranger ---\n" + stranger)
+        self.assertEqual(stranger, (
+            "SCENE The Moss Gate: 0 here. Reply delvetalk scene enter to join.\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk scene enter\n"
+            "\n"
+            "    delvetalk scene choose\n"
+            "    choice: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk scene leave\n"))
         r = self.say("delvetalk scene enter")
         self.assertEqual(r["result"]["label"], "done")
         reader = self.card(GLM)
-        print("--- reader at the gate ---\n" + reader)
+        self.assertEqual(reader, (
+            "SCENE The Moss Gate (1 here), you are at gate:\n"
+            "A moss gate, ajar.\n"
+            "Choices:\n"
+            "  * Open\n"
+            "  * Wait\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk scene enter\n"
+            "\n"
+            "    delvetalk scene choose\n"
+            "    choice: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk scene leave\n"))
         self.assertIn("you are at gate", reader)
         self.assertIn("A moss gate, ajar.", reader)
         self.assertIn("  * Open\n", reader)
         r = self.say("delvetalk scene choose\nchoice: Open")
         self.assertEqual(r["result"]["label"], "done", r)
         moved = self.card(GLM)
-        print("--- reader in the yard ---\n" + moved)
+        self.assertEqual(moved, (
+            "SCENE The Moss Gate (1 here), you are at yard:\n"
+            "A quiet yard.\n"
+            "Choices:\n"
+            "  * Back\n"
+            "  * Knock\n"
+            "gate = open\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk scene enter\n"
+            "\n"
+            "    delvetalk scene choose\n"
+            "    choice: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk scene leave\n"))
         self.assertIn("you are at yard", moved)
         self.assertIn("gate = open\n", moved)
         _, state = self.view()
@@ -132,7 +175,23 @@ class Scenes(test_chain.Chain):
                 self.assertTrue(why(r).startswith("notOffered: gate does not offer"), why(r))
                 self.assertEqual(self.view(), before)
         r = self.say("delvetalk scene choose\nchoice: Knock")
-        print("--- refused card ---\n" + r["offers"][0]["text"])
+        self.assertEqual(r["offers"][0]["text"], (
+            "SCENE The Moss Gate (1 here), you are at gate:\n"
+            "A moss gate, ajar.\n"
+            "Choices:\n"
+            "  * Open\n"
+            "  * Wait\n"
+            "\n"
+            "refused notOffered: gate does not offer Knock\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk scene enter\n"
+            "\n"
+            "    delvetalk scene choose\n"
+            "    choice: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk scene leave\n"))
         self.assertIn("refused notOffered: ", r["offers"][0]["text"])
         # A principal who never entered has no passage to choose from.
         r = self.say("delvetalk scene choose\nchoice: Open", principal=KIM)
@@ -162,7 +221,32 @@ class Scenes(test_chain.Chain):
         before = self.card("did:plc:nobody")
         self.say("delvetalk scene enter", GLM)
         stranger, reader = self.card("did:plc:nobody"), self.card(GLM)
-        print("--- stranger after one entered ---\n" + stranger + "--- reader ---\n" + reader)
+        self.assertEqual(stranger, (
+            "SCENE The Moss Gate: 1 here. Reply delvetalk scene enter to join.\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk scene enter\n"
+            "\n"
+            "    delvetalk scene choose\n"
+            "    choice: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk scene leave\n"))
+        self.assertEqual(reader, (
+            "SCENE The Moss Gate (1 here), you are at gate:\n"
+            "A moss gate, ajar.\n"
+            "Choices:\n"
+            "  * Open\n"
+            "  * Wait\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk scene enter\n"
+            "\n"
+            "    delvetalk scene choose\n"
+            "    choice: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk scene leave\n"))
         self.assertNotEqual(stranger, reader)
         self.assertNotEqual(stranger, before)
         self.assertIn("1 here", stranger)
@@ -214,7 +298,32 @@ class Scenes(test_chain.Chain):
                 self.say("delvetalk scene choose\nchoice: next", who)
             self.assertEqual(self.say("delvetalk scene choose\nchoice: s%d" % (n % 7), who)["result"]["label"], "done")
         full = self.card(who)
-        print("--- the full scene, sixteen readers and sixteen variables ---\n" + full)
+        self.assertEqual(full, (
+            "SCENE The Moss Gate (16 here), you are at p2:\n"
+            "Passage 2, xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+            "Choices:\n"
+            "  * s0\n"
+            "  * s1\n"
+            "  * s2\n"
+            "  * s3\n"
+            "  * s4\n"
+            "  * s5\n"
+            "  * s6\n"
+            "  * next\n"
+            "v0_0 = onyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n"
+            "v0_1 = onyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n"
+            "v0_2 = onyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n"
+            "v0_3 = onyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n"
+            "… and 12 more\n"
+            "\n"
+            "Reply with a spell:\n"
+            "\n"
+            "    delvetalk scene enter\n"
+            "\n"
+            "    delvetalk scene choose\n"
+            "    choice: <text, 1 to 64 characters>\n"
+            "\n"
+            "    delvetalk scene leave\n"))
         self.assertEqual(len(self.view()[1]["vars"]), 16)
         self.assertIn("you are at p2", full)
         self.assertIn("(16 here)", full)
@@ -237,7 +346,7 @@ class Scenes(test_chain.Chain):
                      "delvetalk scene choose\nwho: " + KIM + "\nchoice: Open"):
             with self.subTest(text=text):
                 r = self.say(text, GLM)
-                print("--- forged ---\n" + r["offers"][0]["text"].split("\n", 1)[0])
+                self.assertEqual(r["offers"][0]["text"].split("\n", 1)[0], "SCENE The Moss Gate (1 here), you are at gate:")
                 self.assertEqual(r["result"]["label"], "refused")
         self.assertEqual(self.view(), before)
         self.assertEqual([p["who"] for p in self.view()[1]["presence"]], [GLM])
