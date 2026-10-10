@@ -715,6 +715,114 @@ theorem forceNative_related {f : Nat → Nat} {D : Nat → Prop} {heap heap' : A
       simp only [forceNative, allocateNativeFields, valueAddresses, List.map_reverse, List.mem_reverse] at member
       exact inside x member
 
+theorem objectCell_rename (f : Nat → Nat) (stored : List (String × Nat)) (field : String × Data) :
+    renameCell f (objectCell stored field) = objectCell stored field := by
+  unfold objectCell; split <;> rfl
+
+theorem objectCell_addresses (stored : List (String × Nat)) (field : String × Data) :
+    cellAddresses (objectCell stored field) = [] := by
+  unfold objectCell; split <;> rfl
+
+theorem allocateObjectFields_foldl {f : Nat → Nat} {D : Nat → Prop} (stored : List (String × Nat))
+    (fields : List (String × Data)) :
+    ∀ (heap heap' : Array Cell) (acc : List (String × Nat)),
+      HeapRel f D heap heap' → AllIn D (acc.map Prod.snd) →
+      HeapRel f D
+          (fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+            (prior.1.push (objectCell stored field), (field.1, prior.1.size) :: prior.2)) (heap,acc)).1
+          (fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+            (prior.1.push (objectCell stored field), (field.1, prior.1.size) :: prior.2))
+            (heap',acc.map fun field => (field.1, f field.2))).1 ∧
+        (fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+            (prior.1.push (objectCell stored field), (field.1, prior.1.size) :: prior.2))
+            (heap',acc.map fun field => (field.1, f field.2))).2 =
+          (fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+            (prior.1.push (objectCell stored field), (field.1, prior.1.size) :: prior.2))
+            (heap,acc)).2.map (fun field => (field.1, f field.2)) ∧
+        AllIn D ((fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+            (prior.1.push (objectCell stored field), (field.1, prior.1.size) :: prior.2))
+            (heap,acc)).2.map Prod.snd) ∧
+        heap.size ≤ (fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+            (prior.1.push (objectCell stored field), (field.1, prior.1.size) :: prior.2)) (heap,acc)).1.size := by
+  induction fields with
+  | nil => intro heap heap' acc hr accIn; exact ⟨hr, rfl, accIn, Nat.le_refl _⟩
+  | cons field rest ih =>
+    intro heap heap' acc hr accIn
+    have ⟨image, sizeIn⟩ := hr.image_size
+    have pushed := hr.push (c := objectCell stored field) (by rw [objectCell_addresses]; exact allIn_nil D)
+    have accIn' : AllIn D (((field.1, heap.size) :: acc).map Prod.snd) := by
+      intro x member
+      simp only [List.map_cons, List.mem_cons] at member
+      rcases member with rfl | member
+      · exact sizeIn
+      · exact accIn x member
+    have := ih _ _ _ pushed accIn'
+    simp only [List.foldl_cons]
+    simp only [List.map_cons, image, objectCell_rename] at this
+    refine ⟨this.1, this.2.1, this.2.2.1, ?_⟩
+    have := this.2.2.2
+    simp at this ⊢
+    omega
+
+theorem forceStored_none {heap heap' : Array Cell} {part : Stored} (unforced : forceStored heap part = Option.none) :
+    forceStored heap' part = Option.none := by
+  cases part with
+  | spine field position size => by_cases h : position < size <;> simp [forceStored, h] at unforced
+  | row field position => rfl
+  | _ => simp [forceStored] at unforced
+
+/-- Forcing a stored part allocates the same address-free children at both heap ends. -/
+theorem forceStored_related {f : Nat → Nat} {D : Nat → Prop} {heap heap' : Array Cell}
+    (hr : HeapRel f D heap heap') (part : Stored) {forcedHeap : Array Cell} {value : RuntimeValue}
+    (forced : forceStored heap part = some (forcedHeap, value)) :
+    ∃ forcedHeap', forceStored heap' part = some (forcedHeap', renameValue f value) ∧
+      HeapRel f D forcedHeap forcedHeap' ∧ AllIn D (valueAddresses value) ∧ heap.size ≤ forcedHeap.size := by
+  have ⟨image, sizeIn⟩ := hr.image_size
+  have free : ∀ (c : Cell), cellAddresses c = [] → AllIn D (cellAddresses c) := fun c h => by
+    rw [h]; exact allIn_nil D
+  cases part with
+  | object state stored =>
+    simp only [forceStored, allocateObjectFields, Option.some.injEq, Prod.mk.injEq] at forced
+    obtain ⟨rfl, rfl⟩ := forced
+    obtain ⟨hr', same, inside, grows⟩ := allocateObjectFields_foldl stored state heap heap' [] hr (allIn_nil D)
+    simp only [List.map_nil] at same
+    refine ⟨_, ?_, hr', ?_, grows⟩
+    · simp only [forceStored, allocateObjectFields, same]
+      simp [renameValue, List.map_reverse]
+    · intro x member
+      simp only [valueAddresses, List.map_reverse, List.mem_reverse] at member
+      exact inside x member
+  | relation field size =>
+    simp only [forceStored, Option.some.injEq, Prod.mk.injEq] at forced
+    obtain ⟨rfl, rfl⟩ := forced
+    exact ⟨_, by simp [forceStored, renameValue, image, renameCell], hr.push (free _ rfl),
+      allIn_cons sizeIn (allIn_nil D), by simp⟩
+  | items field size =>
+    simp only [forceStored, Option.some.injEq, Prod.mk.injEq] at forced
+    obtain ⟨rfl, rfl⟩ := forced
+    exact ⟨_, by simp [forceStored, renameValue, image, renameCell], hr.push (free _ rfl),
+      allIn_cons sizeIn (allIn_nil D), by simp⟩
+  | spine field position size =>
+    by_cases h : position < size
+    · simp only [forceStored, h, if_true, Option.some.injEq, Prod.mk.injEq] at forced
+      obtain ⟨rfl, rfl⟩ := forced
+      exact ⟨_, by simp [forceStored, h, renameValue, image, renameCell], hr.push (free _ rfl),
+        allIn_cons sizeIn (allIn_nil D), by simp⟩
+    · simp only [forceStored, h, if_false, Option.some.injEq, Prod.mk.injEq] at forced
+      obtain ⟨rfl, rfl⟩ := forced
+      exact ⟨_, by simp [forceStored, h, renameValue, image, renameCell], hr.push (free _ rfl),
+        allIn_cons sizeIn (allIn_nil D), by simp⟩
+  | cons field position size =>
+    simp only [forceStored, Option.some.injEq, Prod.mk.injEq] at forced
+    obtain ⟨rfl, rfl⟩ := forced
+    have one := hr.push (c := .stored (.row field position) none) (free _ rfl)
+    have two := one.push (c := .stored (.spine field (position + 1) size) none) (free _ rfl)
+    have ⟨image1, sizeIn1⟩ := hr.image_size_succ
+    refine ⟨_, ?_, two, ?_, by simp only [Array.size_push]; omega⟩
+    · simp [forceStored, renameValue, image, image1, renameCell]
+    · exact allIn_cons sizeIn (allIn_cons sizeIn1 (allIn_nil D))
+  | row field position => simp [forceStored] at forced
+
 /-- **Lockstep.** A related pair steps to a related pair: the renaming and its domain
 are fixed, and the two machines allocate at the two heap ends (`f heap.size = heap'.size`). -/
 theorem related_stepRaw {f : Nat → Nat} {D : Nat → Prop} {s t : State} (related : Related f D s t) :
@@ -758,6 +866,19 @@ theorem related_stepRaw {f : Nat → Nat} {D : Nat → Prop} {s t : State} (rela
       | suspended o =>
         exact ⟨hr.set inA (bound_of_some found) (c := .evaluating o) cellIn, cellIn, rfl,
           frames_cons (allIn_cons inA (allIn_nil D)) stackIn, rfl⟩
+      | stored part value =>
+        cases value with
+        | some v => exact ⟨hr, cellIn, rfl, stackIn, rfl⟩
+        | none =>
+          rcases hf : forceStored heap part with _ | ⟨forcedHeap, v⟩
+          · have hf' : forceStored heap' part = Option.none := forceStored_none hf
+            simp only [Option.map, renameCell, Option.map_none, hf, hf']
+            exact ⟨hr, allIn_nil D, rfl, stackIn, rfl⟩
+          · obtain ⟨forcedHeap', hf', hr', valueIn, grows⟩ := forceStored_related hr part hf
+            have bound : a < forcedHeap.size := Nat.lt_of_lt_of_le (bound_of_some found) grows
+            have set := hr'.set inA bound (c := .stored part (some v)) valueIn
+            simp only [Option.map, renameCell, Option.map_none, hf, hf']
+            exact ⟨set, valueIn, rfl, stackIn, rfl⟩
   | evaluate term env =>
     have envIn : AllIn D env := controlIn
     cases term with
@@ -839,6 +960,7 @@ theorem related_stepRaw {f : Nat → Nat} {D : Nat → Prop} {s t : State} (rela
           | cached o w => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
           | native o => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
           | nativeCached o w => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+          | stored part w => cases w <;> exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
           | evaluating o =>
             exact ⟨hr.set inA (bound_of_some found) (c := .cached o v) (allIn_append cellIn valueIn),
               valueIn, rfl, restIn, rfl⟩
@@ -1252,37 +1374,87 @@ theorem related_sizesAfter {f : Nat → Nat} {D : Nat → Prop} {s t : State} (r
   have le := next.heap.size_le
   exact ⟨by simp only; omega, by simp only; exact next.stack_length⟩
 
-theorem forceHostedFrom_inactive {policy : State → Bool} {limits : Limits} {bytes ticks depth : Nat}
+theorem forceHostedFrom_inactive {policy : State → Bool} {fetch : Fetch} {limits : Limits} {bytes ticks depth : Nat}
     {s : State} (inactive : active s.control = false) :
-    forceHostedFrom policy limits bytes (ticks + 1) s depth = (runBounded limits 0 s, ticks + 1) := by
+    forceHostedFrom policy fetch limits bytes (ticks + 1) s depth = (runBounded limits 0 s, ticks + 1) := by
   rw [forceHostedFrom.eq_def]
   cases control : s.control <;> rw [control] at inactive <;> simp [active] at inactive <;> simp [control]
 
-theorem forceHostedFrom_active {policy : State → Bool} {limits : Limits} {bytes ticks depth : Nat}
+theorem related_fetchable {f : Nat → Nat} {D : Nat → Prop} {s t : State} (related : Related f D s t) (fetch : Fetch) :
+    fetchable fetch t = (fetchable fetch s).map (fun found => (f found.1, found.2)) := by
+  obtain ⟨hr, controlIn, controlEq, _, _⟩ := related
+  obtain ⟨heap, control, stack⟩ := s
+  obtain ⟨heap', control', stack'⟩ := t
+  simp only at hr controlIn controlEq
+  subst controlEq
+  cases control with
+  | enter a =>
+    have inA : D a := controlIn a (List.mem_singleton_self a)
+    simp only [fetchable, renameControl]
+    rw [hr.lookup inA]
+    cases heap[a]? with
+    | none => rfl
+    | some cell =>
+      cases cell with
+      | stored part value =>
+        cases value with
+        | some v => simp [renameCell]
+        | none => cases part <;> simp [renameCell] <;> cases fetch _ _ <;> rfl
+      | _ => rfl
+  | _ => rfl
+
+/-- Supplying a fetched row keeps a related pair related: the same row forced at both ends. -/
+theorem related_fetchStep {f : Nat → Nat} {D : Nat → Prop} {s t : State} (related : Related f D s t)
+    {fetch : Fetch} {a : Nat} {field : String} {position : Nat} {row : Data}
+    (found : fetchable fetch s = some (a, field, position, row)) :
+    Related f D (fetchStep s a field position row) (fetchStep t (f a) field position row) := by
+  obtain ⟨ctl, cell, _⟩ := fetchable_spec found
+  obtain ⟨hr, controlIn, controlEq, stackIn, stackEq⟩ := related
+  have inA : D a := by rw [ctl] at controlIn; exact controlIn a (List.mem_singleton_self a)
+  obtain ⟨hr', same, valueIn, grows⟩ := forceNative_related hr row
+  have bound : a < (forceNative s.heap row).1.size := Nat.lt_of_lt_of_le (bound_of_some cell) grows
+  have set := hr'.set inA bound (c := .stored (.row field position) (some (forceNative s.heap row).2)) valueIn
+  refine ⟨?_, valueIn, ?_, stackIn, stackEq⟩
+  · show HeapRel f D ((forceNative s.heap row).1.set! a (.stored (.row field position) (some (forceNative s.heap row).2)))
+      ((forceNative t.heap row).1.set! (f a) (.stored (.row field position) (some (forceNative t.heap row).2)))
+    rw [same]; exact set
+  · show Control.returned (forceNative t.heap row).2 = renameControl f (.returned (forceNative s.heap row).2)
+    rw [same]; rfl
+
+theorem forceHostedFrom_active {policy : State → Bool} {fetch : Fetch} {limits : Limits} {bytes ticks depth : Nat}
     {s : State} (isActive : active s.control = true) :
-    forceHostedFrom policy limits bytes (ticks + 1) s depth =
+    forceHostedFrom policy fetch limits bytes (ticks + 1) s depth =
+      match fetchable fetch s with
+      | some (address, field, position, row) =>
+        if !policy s || (fetchCost row).2 > bytes then (.suspended .capacity s, ticks + 1)
+        else if (fetchCost row).1 > ticks + 1 then (.suspended .ticks s, ticks + 1)
+        else if s.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits.heap && depth ≤ limits.stack then
+          forceHostedFrom policy fetch limits bytes (ticks + 1 - (fetchCost row).1)
+            (fetchStep s address field position row) depth
+        else (.suspended .capacity s, ticks + 1 - (fetchCost row).1)
+      | none =>
       if !policy s || (textStepCost s (ticks + 1)).2 > bytes then (.suspended .capacity s, ticks + 1)
       else if (textStepCost s (ticks + 1)).1 > ticks + 1 then
         (.suspended .ticks s, preflightRemaining s.control s.stack (ticks + 1))
       else if (ObjectiveBendDemandMachineFast.sizesAfter s depth).1 ≤ limits.heap &&
           (ObjectiveBendDemandMachineFast.sizesAfter s depth).2 ≤ limits.stack then
-        forceHostedFrom policy limits bytes (ticks + 1 - max 1 (textStepCost s (ticks + 1)).1)
+        forceHostedFrom policy fetch limits bytes (ticks + 1 - max 1 (textStepCost s (ticks + 1)).1)
           (ObjectiveBendDemandMachineFast.stepRawFast s) (ObjectiveBendDemandMachineFast.sizesAfter s depth).2
       else (.suspended .capacity s, ticks + 1 - max 1 (textStepCost s (ticks + 1)).1) := by
   rw [forceHostedFrom.eq_def]
   cases control : s.control <;> rw [control] at isActive <;> simp [active] at isActive <;>
-    simp only [control]
+    simp only [control] <;> rfl
 
 /-- **Hosted forcing agrees**: under exactly the room collection freed, the related run
 ends in the related outcome with exactly the same remaining ticks, for any policy that
 related states pass alike. -/
-theorem related_forceHostedFrom {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool}
+theorem related_forceHostedFrom {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Related f D s t → policy t = policy s) (limits limits' : Limits) (bytes : Nat) :
     ∀ (ticks : Nat) (s t : State), Related f D s t → ExactRoom limits limits' s t →
-      OutcomeRel f D (forceHostedFrom policy limits bytes ticks s s.stack.length).1
-          (forceHostedFrom policy limits' bytes ticks t t.stack.length).1 ∧
-        (forceHostedFrom policy limits' bytes ticks t t.stack.length).2 =
-          (forceHostedFrom policy limits bytes ticks s s.stack.length).2 := by
+      OutcomeRel f D (forceHostedFrom policy fetch limits bytes ticks s s.stack.length).1
+          (forceHostedFrom policy fetch limits' bytes ticks t t.stack.length).1 ∧
+        (forceHostedFrom policy fetch limits' bytes ticks t t.stack.length).2 =
+          (forceHostedFrom policy fetch limits bytes ticks s s.stack.length).2 := by
   intro ticks
   induction ticks using Nat.strongRecOn with
   | ind ticks ih =>
@@ -1299,46 +1471,79 @@ theorem related_forceHostedFrom {f : Nat → Nat} {D : Nat → Prop} {policy : S
       exact ⟨runBounded_zero_related related limits limits', rfl⟩
     | true =>
       rw [forceHostedFrom_active isActive, forceHostedFrom_active (by rw [activeT, isActive])]
-      rw [related_textStepCost related, respects s t related, related_preflightRemaining related]
-      have ⟨sizeHeap, sizeStack⟩ := related_sizesAfter related
-      have next : Related f D (ObjectiveBendDemandMachineFast.stepRawFast s)
-          (ObjectiveBendDemandMachineFast.stepRawFast t) := by
-        rw [ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw,
-          ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw]
-        exact related_stepRaw related
-      have nextDepth : ∀ u, (ObjectiveBendDemandMachineFast.sizesAfter u u.stack.length).2 =
-          (ObjectiveBendDemandMachineFast.stepRawFast u).stack.length := by
-        intro u
-        rw [ObjectiveBendDemandMachineFast.sizesAfter_eq, ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw]
-      have fitsEq : ((ObjectiveBendDemandMachineFast.sizesAfter t t.stack.length).1 ≤ limits'.heap &&
-            (ObjectiveBendDemandMachineFast.sizesAfter t t.stack.length).2 ≤ limits'.stack) =
-          ((ObjectiveBendDemandMachineFast.sizesAfter s s.stack.length).1 ≤ limits.heap &&
-            (ObjectiveBendDemandMachineFast.sizesAfter s s.stack.length).2 ≤ limits.stack) := by
-        have roomHeap := room.heap
-        have roomStack := room.stack
-        rw [sizeStack, ← roomStack]
-        congr 1
-        apply Bool.eq_iff_iff.mpr
-        simp only [decide_eq_true_eq]
-        omega
+      rw [related_fetchable related fetch]
       have same : OutcomeRel f D (.suspended .capacity s) (.suspended .capacity t) := ⟨rfl, related⟩
       have sameTicks : OutcomeRel f D (.suspended .ticks s) (.suspended .ticks t) := ⟨rfl, related⟩
-      split
-      · exact ⟨same, rfl⟩
-      split
-      · exact ⟨sameTicks, rfl⟩
-      rw [fitsEq]
-      split
-      · rw [nextDepth s, nextDepth t]
-        exact ih _ (by omega) _ _ next (room.shift related next)
-      · exact ⟨same, rfl⟩
+      cases hfetch : fetchable fetch s with
+      | some found =>
+        obtain ⟨a, field, position, row⟩ := found
+        simp only [Option.map_some]
+        rw [respects s t related]
+        have fits : (t.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits'.heap &&
+              t.stack.length ≤ limits'.stack) =
+            (s.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits.heap &&
+              s.stack.length ≤ limits.stack) := by
+          have roomHeap := room.heap
+          have roomStack := room.stack
+          have le := related.heap.size_le
+          rw [related.stack_length, ← roomStack]
+          congr 1
+          apply Bool.eq_iff_iff.mpr
+          simp only [decide_eq_true_eq]
+          omega
+        split
+        · exact ⟨same, rfl⟩
+        split
+        · exact ⟨sameTicks, rfl⟩
+        rw [fits]
+        split
+        · have next := related_fetchStep related hfetch
+          have run := ih (n + 1 - (fetchCost row).1) (by simp only [fetchCost]; omega) _ _ next (room.shift related next)
+          rw [fetchStep_stack, fetchStep_stack] at run
+          exact run
+        · exact ⟨same, rfl⟩
+      | none =>
+        simp only [Option.map_none]
+        rw [related_textStepCost related, respects s t related, related_preflightRemaining related]
+        have ⟨sizeHeap, sizeStack⟩ := related_sizesAfter related
+        have next : Related f D (ObjectiveBendDemandMachineFast.stepRawFast s)
+            (ObjectiveBendDemandMachineFast.stepRawFast t) := by
+          rw [ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw,
+            ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw]
+          exact related_stepRaw related
+        have nextDepth : ∀ u, (ObjectiveBendDemandMachineFast.sizesAfter u u.stack.length).2 =
+            (ObjectiveBendDemandMachineFast.stepRawFast u).stack.length := by
+          intro u
+          rw [ObjectiveBendDemandMachineFast.sizesAfter_eq, ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw]
+        have fitsEq : ((ObjectiveBendDemandMachineFast.sizesAfter t t.stack.length).1 ≤ limits'.heap &&
+              (ObjectiveBendDemandMachineFast.sizesAfter t t.stack.length).2 ≤ limits'.stack) =
+            ((ObjectiveBendDemandMachineFast.sizesAfter s s.stack.length).1 ≤ limits.heap &&
+              (ObjectiveBendDemandMachineFast.sizesAfter s s.stack.length).2 ≤ limits.stack) := by
+          have roomHeap := room.heap
+          have roomStack := room.stack
+          rw [sizeStack, ← roomStack]
+          congr 1
+          apply Bool.eq_iff_iff.mpr
+          simp only [decide_eq_true_eq]
+          omega
+        have same : OutcomeRel f D (.suspended .capacity s) (.suspended .capacity t) := ⟨rfl, related⟩
+        have sameTicks : OutcomeRel f D (.suspended .ticks s) (.suspended .ticks t) := ⟨rfl, related⟩
+        split
+        · exact ⟨same, rfl⟩
+        split
+        · exact ⟨sameTicks, rfl⟩
+        rw [fitsEq]
+        split
+        · rw [nextDepth s, nextDepth t]
+          exact ih _ (by omega) _ _ next (room.shift related next)
+        · exact ⟨same, rfl⟩
 
-theorem related_forceHostedWith {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool}
+theorem related_forceHostedWith {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Related f D s t → policy t = policy s) (limits limits' : Limits) (bytes ticks : Nat)
     {s t : State} (related : Related f D s t) (room : ExactRoom limits limits' s t) :
-    OutcomeRel f D (forceHostedWith policy limits bytes ticks s).1 (forceHostedWith policy limits' bytes ticks t).1 ∧
-      (forceHostedWith policy limits' bytes ticks t).2 = (forceHostedWith policy limits bytes ticks s).2 :=
-  related_forceHostedFrom respects limits limits' bytes ticks s t related room
+    OutcomeRel f D (forceHostedWith policy fetch limits bytes ticks s).1 (forceHostedWith policy fetch limits' bytes ticks t).1 ∧
+      (forceHostedWith policy fetch limits' bytes ticks t).2 = (forceHostedWith policy fetch limits bytes ticks s).2 :=
+  related_forceHostedFrom (fetch := fetch) respects limits limits' bytes ticks s t related room
 
 /-! ## Extracted Data agrees -/
 
@@ -1391,12 +1596,12 @@ theorem foldlM_related {f : Nat → Nat} {D : Nat → Prop}
 
 /-- **Materialization agrees**: a related state and the renamed value materialize the
 same Data with the same remaining budget, whenever the original succeeds. -/
-theorem related_materializeWith {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool}
+theorem related_materializeWith {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Related f D s t → policy t = policy s) (limits limits' : Limits) :
     ∀ (depth : Nat) (budget : Budget) (value : RuntimeValue) (s t : State) (r : Result),
       Related f D s t → ExactRoom limits limits' s t → AllIn D (valueAddresses value) →
-      materializeWith policy limits depth budget value s = .ok r →
-      ∃ r', materializeWith policy limits' depth budget (renameValue f value) t = .ok r' ∧
+      materializeWith policy fetch limits depth budget value s = .ok r →
+      ∃ r', materializeWith policy fetch limits' depth budget (renameValue f value) t = .ok r' ∧
         ResultRel f D r r' := by
   intro depth
   induction depth with
@@ -1451,13 +1656,13 @@ theorem related_materializeWith {f : Nat → Nat} {D : Nat → Prop} {policy : S
           have enteredRel := related_entered related payloadIn
           have enteredRoom : ExactRoom limits limits' ⟨s.heap, .enter payload, []⟩ ⟨t.heap, .enter (f payload), []⟩ :=
             ⟨room.heap, room.stack⟩
-          cases forced : (forceHostedWith policy limits budget.bytes budget.ticks ⟨s.heap, .enter payload, []⟩).1 with
+          cases forced : (forceHostedWith policy fetch limits budget.bytes budget.ticks ⟨s.heap, .enter payload, []⟩).1 with
           | finished value retained =>
             rw [forced] at found
-            have ⟨rel, ticksEq⟩ := related_forceHostedWith respects limits limits' budget.bytes budget.ticks
+            have ⟨rel, ticksEq⟩ := related_forceHostedWith (fetch := fetch) respects limits limits' budget.bytes budget.ticks
               enteredRel enteredRoom
             rw [forced] at rel
-            cases forcedT : (forceHostedWith policy limits' budget.bytes budget.ticks ⟨t.heap, .enter (f payload), []⟩).1 <;>
+            cases forcedT : (forceHostedWith policy fetch limits' budget.bytes budget.ticks ⟨t.heap, .enter (f payload), []⟩).1 <;>
               rw [forcedT] at rel <;> simp only [OutcomeRel] at rel
             obtain ⟨valueEq, valueIn', retainedRel⟩ := rel
             simp at found
@@ -1471,8 +1676,8 @@ theorem related_materializeWith {f : Nat → Nat} {D : Nat → Prop} {policy : S
     | record fields =>
       have fieldsIn : AllIn D (fields.map Prod.snd) := valueIn
       obtain ⟨gate, out, folded, rfl⟩ := materializeWith_record_ok found
-      have key := foldlM_related (f := f) (D := D) (step := recordStep policy limits depth)
-        (step' := recordStep policy limits' depth) ?_ fields [] s t _ out related fieldsIn folded
+      have key := foldlM_related (f := f) (D := D) (step := recordStep policy fetch limits depth)
+        (step' := recordStep policy fetch limits' depth) ?_ fields [] s t _ out related fieldsIn folded
       · obtain ⟨out', folded', same1, same2, outRel⟩ := key
         refine ⟨⟨.record out'.1.reverse, out'.2.1, out'.2.2⟩, ?_, by simp [same1], by simp [same2], outRel⟩
         have gate' : RecordGate budget (fields.map fun field => (field.1, f field.2)) := by
@@ -1496,11 +1701,11 @@ theorem related_materializeWith {f : Nat → Nat} {D : Nat → Prop} {policy : S
           have stRoom : ExactRoom limits limits' st st' := room.shift related stRel
           have enteredRoom : ExactRoom limits limits' ⟨st.heap, .enter field.2, []⟩ ⟨st'.heap, .enter (f field.2), []⟩ :=
             ⟨stRoom.heap, stRoom.stack⟩
-          have ⟨rel, ticksEq⟩ := related_forceHostedWith respects limits limits' b.bytes b.ticks enteredRel enteredRoom
-          cases forced : (forceHostedWith policy limits b.bytes b.ticks ⟨st.heap, .enter field.2, []⟩).1 with
+          have ⟨rel, ticksEq⟩ := related_forceHostedWith (fetch := fetch) respects limits limits' b.bytes b.ticks enteredRel enteredRoom
+          cases forced : (forceHostedWith policy fetch limits b.bytes b.ticks ⟨st.heap, .enter field.2, []⟩).1 with
           | finished value retained =>
             rw [forced] at stepped rel
-            cases forcedT : (forceHostedWith policy limits' b.bytes b.ticks ⟨st'.heap, .enter (f field.2), []⟩).1 <;>
+            cases forcedT : (forceHostedWith policy fetch limits' b.bytes b.ticks ⟨st'.heap, .enter (f field.2), []⟩).1 <;>
               rw [forcedT] at rel <;> simp only [OutcomeRel] at rel
             obtain ⟨valueEq, valueIn', retainedRel⟩ := rel
             obtain ⟨a, materialized, done⟩ := (except_bind_ok _ _ _).mp stepped
@@ -1515,11 +1720,11 @@ theorem related_materializeWith {f : Nat → Nat} {D : Nat → Prop} {policy : S
           | _ => rw [forced] at stepped; cases stepped
 
 /-- **Completion agrees**: a finished related state completes to the same Data. -/
-theorem related_completeWith {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool}
+theorem related_completeWith {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Related f D s t → policy t = policy s) (limits limits' : Limits)
     (budget : Budget) {s t : State} {r : Result} (related : Related f D s t) (room : ExactRoom limits limits' s t)
-    (found : completeWith policy limits budget s = .ok r) :
-    ∃ r', completeWith policy limits' budget t = .ok r' ∧ ResultRel f D r r' := by
+    (found : completeWith policy fetch limits budget s = .ok r) :
+    ∃ r', completeWith policy fetch limits' budget t = .ok r' ∧ ResultRel f D r r' := by
   cases allowed : policy s with
   | false => simp [completeWith, allowed] at found
   | true =>
@@ -1538,7 +1743,7 @@ theorem related_completeWith {f : Nat → Nat} {D : Nat → Prop} {policy : Stat
         simp [completeWith, allowed] at found
         obtain ⟨a, materialized, rest⟩ := found
         obtain ⟨a', materialized', aValue, aRemaining, aRel⟩ :=
-          related_materializeWith respects limits limits' _ _ _ _ _ _ related room controlIn materialized
+          related_materializeWith (fetch := fetch) respects limits limits' _ _ _ _ _ _ related room controlIn materialized
         split at rest
         · simp at rest
         · rename_i small
@@ -1551,11 +1756,11 @@ theorem related_completeWith {f : Nat → Nat} {D : Nat → Prop} {policy : Stat
     | _ => simp [completeWith, allowed] at found
 
 /-- **Plan extraction agrees**: a yielded related state's Plan is the same Data. -/
-theorem related_yieldedPlanWith {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool}
+theorem related_yieldedPlanWith {f : Nat → Nat} {D : Nat → Prop} {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Related f D s t → policy t = policy s) (limits limits' : Limits)
     (budget : Budget) {s t : State} {r : Result} (related : Related f D s t) (room : ExactRoom limits limits' s t)
-    (found : yieldedPlanWith policy limits budget s = .ok r) :
-    ∃ r', yieldedPlanWith policy limits' budget t = .ok r' ∧ ResultRel f D r r' := by
+    (found : yieldedPlanWith policy fetch limits budget s = .ok r) :
+    ∃ r', yieldedPlanWith policy fetch limits' budget t = .ok r' ∧ ResultRel f D r r' := by
   obtain ⟨hr, controlIn, controlEq, stackIn, stackEq⟩ := related
   obtain ⟨heap, control, stack⟩ := s
   obtain ⟨heap', control', stack'⟩ := t
@@ -1569,13 +1774,13 @@ theorem related_yieldedPlanWith {f : Nat → Nat} {D : Nat → Prop} {policy : S
     have enteredRoom : ExactRoom limits limits' ⟨heap, .enter plan, []⟩ ⟨heap', .enter (f plan), []⟩ :=
       ⟨room.heap, room.stack⟩
     simp only [yieldedPlanWith, renameControl] at found ⊢
-    have ⟨rel, ticksEq⟩ := related_forceHostedWith respects limits limits' budget.bytes budget.ticks enteredRel enteredRoom
-    cases forced : forceHostedWith policy limits budget.bytes budget.ticks ⟨heap, .enter plan, []⟩ with
+    have ⟨rel, ticksEq⟩ := related_forceHostedWith (fetch := fetch) respects limits limits' budget.bytes budget.ticks enteredRel enteredRoom
+    cases forced : forceHostedWith policy fetch limits budget.bytes budget.ticks ⟨heap, .enter plan, []⟩ with
     | mk outcome ticks =>
       rw [forced] at found rel ticksEq
       cases outcome with
       | finished value retained =>
-        cases forcedT : forceHostedWith policy limits' budget.bytes budget.ticks ⟨heap', .enter (f plan), []⟩ with
+        cases forcedT : forceHostedWith policy fetch limits' budget.bytes budget.ticks ⟨heap', .enter (f plan), []⟩ with
         | mk outcome' ticks' =>
           rw [forcedT] at rel ticksEq
           simp only at rel ticksEq
@@ -1590,7 +1795,7 @@ theorem related_yieldedPlanWith {f : Nat → Nat} {D : Nat → Prop} {policy : S
           simp [small] at rest
           subst rest
           obtain ⟨a', materialized', aValue, aRemaining, aRel⟩ :=
-            related_materializeWith respects limits limits' _ _ _ _ _ _ retainedRel
+            related_materializeWith (fetch := fetch) respects limits limits' _ _ _ _ _ _ retainedRel
               (enteredRoom.shift enteredRel retainedRel) valueIn materialized
           refine ⟨{a' with state := {a'.state with control := .yielded (f plan), stack := stack.map (renameFrame f)}},
             ?_, aValue, aRemaining, aRel.heap, controlIn, rfl, stackIn, rfl⟩
@@ -1651,48 +1856,48 @@ end in related outcomes (same constructor and reason, renamed payload, related r
 state) with EXACTLY the same remaining ticks, capacity suspensions included, and a Plan
 or result that extracts from the original extracts from the collected run as the same
 Data with the same remaining budget. -/
-theorem collect_resume_segment {state resumed : State} {response : Term}
+theorem collect_resume_segment {fetch : Fetch} {state resumed : State} {response : Term}
     (yielded : resume response state = some resumed) (limits : Limits) (bytes ticks : Nat) (budget : Budget) :
     ∃ resumed', resume response (collect state) = some resumed' ∧
       OutcomeRel (collectRenaming state) (liveDomain state)
-        (forceHostedWith (fun _ => true) (limitsPast limits state) bytes ticks resumed).1
-        (forceHostedWith (fun _ => true) (limitsPast limits (collect state)) bytes ticks resumed').1 ∧
-      (forceHostedWith (fun _ => true) (limitsPast limits (collect state)) bytes ticks resumed').2 =
-        (forceHostedWith (fun _ => true) (limitsPast limits state) bytes ticks resumed).2 ∧
-      (∀ plan y r, (forceHostedWith (fun _ => true) (limitsPast limits state) bytes ticks resumed).1 = .yielded plan y →
-        yieldedPlan (limitsPast limits state) budget y = .ok r →
-        ∃ y' r', (forceHostedWith (fun _ => true) (limitsPast limits (collect state)) bytes ticks resumed').1 =
+        (forceHostedWith (fun _ => true) fetch (limitsPast limits state) bytes ticks resumed).1
+        (forceHostedWith (fun _ => true) fetch (limitsPast limits (collect state)) bytes ticks resumed').1 ∧
+      (forceHostedWith (fun _ => true) fetch (limitsPast limits (collect state)) bytes ticks resumed').2 =
+        (forceHostedWith (fun _ => true) fetch (limitsPast limits state) bytes ticks resumed).2 ∧
+      (∀ plan y r, (forceHostedWith (fun _ => true) fetch (limitsPast limits state) bytes ticks resumed).1 = .yielded plan y →
+        yieldedPlan fetch (limitsPast limits state) budget y = .ok r →
+        ∃ y' r', (forceHostedWith (fun _ => true) fetch (limitsPast limits (collect state)) bytes ticks resumed').1 =
             .yielded (collectRenaming state plan) y' ∧
-          yieldedPlan (limitsPast limits (collect state)) budget y' = .ok r' ∧ ResultRel (collectRenaming state) (liveDomain state) r r') ∧
-      (∀ value y r, (forceHostedWith (fun _ => true) (limitsPast limits state) bytes ticks resumed).1 = .finished value y →
-        complete (limitsPast limits state) budget y = .ok r →
-        ∃ y' r', (forceHostedWith (fun _ => true) (limitsPast limits (collect state)) bytes ticks resumed').1 =
+          yieldedPlan fetch (limitsPast limits (collect state)) budget y' = .ok r' ∧ ResultRel (collectRenaming state) (liveDomain state) r r') ∧
+      (∀ value y r, (forceHostedWith (fun _ => true) fetch (limitsPast limits state) bytes ticks resumed).1 = .finished value y →
+        complete fetch (limitsPast limits state) budget y = .ok r →
+        ∃ y' r', (forceHostedWith (fun _ => true) fetch (limitsPast limits (collect state)) bytes ticks resumed').1 =
             .finished (renameValue (collectRenaming state) value) y' ∧
-          complete (limitsPast limits (collect state)) budget y' = .ok r' ∧ ResultRel (collectRenaming state) (liveDomain state) r r') := by
+          complete fetch (limitsPast limits (collect state)) budget y' = .ok r' ∧ ResultRel (collectRenaming state) (liveDomain state) r r') := by
   obtain ⟨resumed', again, related⟩ := related_resume (related_collect state) response yielded
   have room := collect_exactRoom limits (resume_keeps_heap_and_stack _ _ _ yielded).1
     (resume_keeps_heap_and_stack _ _ _ again).1
   have always : ∀ s t, Related (collectRenaming state) (liveDomain state) s t →
       (fun _ => true : State → Bool) t = (fun _ => true : State → Bool) s := fun _ _ _ => rfl
-  have ⟨ran, sameTicks⟩ := related_forceHostedWith always _ _ bytes ticks related room
+  have ⟨ran, sameTicks⟩ := related_forceHostedWith (fetch := fetch) always _ _ bytes ticks related room
   refine ⟨resumed', again, ran, sameTicks, ?_, ?_⟩
   · intro plan y r run extracted
     rw [run] at ran
-    cases runT : (forceHostedWith (fun _ => true) (limitsPast limits (collect state)) bytes ticks resumed').1 <;>
+    cases runT : (forceHostedWith (fun _ => true) fetch (limitsPast limits (collect state)) bytes ticks resumed').1 <;>
       rw [runT] at ran <;> simp only [OutcomeRel] at ran
     obtain ⟨same, yRel⟩ := ran
     subst same
     have yRoom := room.shift related yRel
-    obtain ⟨r', extracted', resultRel⟩ := related_yieldedPlanWith always _ _ budget yRel yRoom extracted
+    obtain ⟨r', extracted', resultRel⟩ := related_yieldedPlanWith (fetch := fetch) always _ _ budget yRel yRoom extracted
     exact ⟨_, r', rfl, extracted', resultRel⟩
   · intro value y r run completed
     rw [run] at ran
-    cases runT : (forceHostedWith (fun _ => true) (limitsPast limits (collect state)) bytes ticks resumed').1 <;>
+    cases runT : (forceHostedWith (fun _ => true) fetch (limitsPast limits (collect state)) bytes ticks resumed').1 <;>
       rw [runT] at ran <;> simp only [OutcomeRel] at ran
     obtain ⟨same, _, yRel⟩ := ran
     subst same
     have yRoom := room.shift related yRel
-    obtain ⟨r', completed', resultRel⟩ := related_completeWith always _ _ budget yRel yRoom completed
+    obtain ⟨r', completed', resultRel⟩ := related_completeWith (fetch := fetch) always _ _ budget yRel yRoom completed
     exact ⟨_, r', rfl, completed', resultRel⟩
 
 /-- **The checkpoint a turn stores resumes as the yielded state itself.** A yield stores
@@ -1700,24 +1905,24 @@ theorem collect_resume_segment {state resumed : State} {response : Term}
 heap (what `Turn.resumeActivity` does) decides the same outcome, spends exactly the same
 ticks, and a Plan or result that extracts from the uncollected run extracts from the
 checkpoint's run as the same Data with the same remaining budget. -/
-theorem checkpoint_resume_segment {state resumed : State} {response : Term}
+theorem checkpoint_resume_segment {fetch : Fetch} {state resumed : State} {response : Term}
     (yielded : resume response state = some resumed) (limits : Limits) (bytes ticks : Nat) (budget : Budget) :
     ∃ resumed', resume response (checkpoint state) = some resumed' ∧
-      (forceHostedWith (fun _ => true) (limitsPast limits (checkpoint state)) bytes ticks resumed').1.verdict =
-        (forceHostedWith (fun _ => true) (limitsPast limits state) bytes ticks resumed).1.verdict ∧
-      (forceHostedWith (fun _ => true) (limitsPast limits (checkpoint state)) bytes ticks resumed').2 =
-        (forceHostedWith (fun _ => true) (limitsPast limits state) bytes ticks resumed).2 ∧
-      (∀ plan y r, (forceHostedWith (fun _ => true) (limitsPast limits state) bytes ticks resumed).1 = .yielded plan y →
-        yieldedPlan (limitsPast limits state) budget y = .ok r →
-        ∃ plan' y' r', (forceHostedWith (fun _ => true) (limitsPast limits (checkpoint state)) bytes ticks resumed').1 =
+      (forceHostedWith (fun _ => true) fetch (limitsPast limits (checkpoint state)) bytes ticks resumed').1.verdict =
+        (forceHostedWith (fun _ => true) fetch (limitsPast limits state) bytes ticks resumed).1.verdict ∧
+      (forceHostedWith (fun _ => true) fetch (limitsPast limits (checkpoint state)) bytes ticks resumed').2 =
+        (forceHostedWith (fun _ => true) fetch (limitsPast limits state) bytes ticks resumed).2 ∧
+      (∀ plan y r, (forceHostedWith (fun _ => true) fetch (limitsPast limits state) bytes ticks resumed).1 = .yielded plan y →
+        yieldedPlan fetch (limitsPast limits state) budget y = .ok r →
+        ∃ plan' y' r', (forceHostedWith (fun _ => true) fetch (limitsPast limits (checkpoint state)) bytes ticks resumed').1 =
             .yielded plan' y' ∧
-          yieldedPlan (limitsPast limits (checkpoint state)) budget y' = .ok r' ∧
+          yieldedPlan fetch (limitsPast limits (checkpoint state)) budget y' = .ok r' ∧
           r'.value = r.value ∧ r'.remaining = r.remaining) ∧
-      (∀ value y r, (forceHostedWith (fun _ => true) (limitsPast limits state) bytes ticks resumed).1 = .finished value y →
-        complete (limitsPast limits state) budget y = .ok r →
-        ∃ value' y' r', (forceHostedWith (fun _ => true) (limitsPast limits (checkpoint state)) bytes ticks resumed').1 =
+      (∀ value y r, (forceHostedWith (fun _ => true) fetch (limitsPast limits state) bytes ticks resumed).1 = .finished value y →
+        complete fetch (limitsPast limits state) budget y = .ok r →
+        ∃ value' y' r', (forceHostedWith (fun _ => true) fetch (limitsPast limits (checkpoint state)) bytes ticks resumed').1 =
             .finished value' y' ∧
-          complete (limitsPast limits (checkpoint state)) budget y' = .ok r' ∧
+          complete fetch (limitsPast limits (checkpoint state)) budget y' = .ok r' ∧
           r'.value = r.value ∧ r'.remaining = r.remaining) := by
   unfold checkpoint
   have sameS : limitsPast limits (settle state) = limitsPast limits state := by
@@ -1725,14 +1930,14 @@ theorem checkpoint_resume_segment {state resumed : State} {response : Term}
   have sameT : limitsPast limits (trim (collect (settle state))) = limitsPast limits (collect (settle state)) := by
     simp [limitsPast]
   obtain ⟨settled, againS, agreeS, ticksS, plansS, resultsS⟩ :=
-    settle_resume_segment yielded (limitsPast limits state) bytes ticks budget
+    settle_resume_segment (fetch := fetch) yielded (limitsPast limits state) bytes ticks budget
   obtain ⟨collected, againC, relC, ticksC, plansC, resultsC⟩ :=
-    collect_resume_segment againS limits bytes ticks budget
+    collect_resume_segment (fetch := fetch) againS limits bytes ticks budget
   rw [sameS] at relC ticksC plansC resultsC
   obtain ⟨trimmed, againT, agreeT, ticksT, plansT, resultsT⟩ :=
-    trim_resume_segment againC (limitsPast limits (collect (settle state))) bytes ticks budget
+    trim_resume_segment (fetch := fetch) againC (limitsPast limits (collect (settle state))) bytes ticks budget
   obtain ⟨final, againF, relF, ticksF, plansF, resultsF⟩ :=
-    collect_resume_segment againT limits bytes ticks budget
+    collect_resume_segment (fetch := fetch) againT limits bytes ticks budget
   rw [sameT] at relF ticksF plansF resultsF
   refine ⟨final, againF, ?_, ?_, ?_, ?_⟩
   · rw [OutcomeRel.verdict relF, OutcomeAgree.verdict agreeT, OutcomeRel.verdict relC, OutcomeAgree.verdict agreeS]
@@ -1754,5 +1959,7 @@ theorem checkpoint_resume_segment {state resumed : State} {response : Term}
 
 #assert_axioms related_collect related_stepRaw related_forceHostedFrom related_materializeWith
 #assert_axioms collect_resume_segment checkpoint_resume_segment
+#assert_axioms forceStored_related forceStored_none allocateObjectFields_foldl related_fetchable related_fetchStep
+#assert_axioms forceHostedFrom_active related_forceHostedWith related_completeWith related_yieldedPlanWith
 
 end Minidregg.Theory.ObjectiveBendDemandCollect

@@ -314,6 +314,78 @@ def chain(g, rng):
     return ["binary", "modulo", term, ["nat", "1000003"]]
 
 
+def stored_cases(rng, count=32):
+    """A function of a state holding a relation `r` of rows {k, v, w}, reading none, some or all
+    of its rows (KERNEL-HANDOFF section 15). The machine runs the function on the state with `r`
+    held as stored cells fetched from the state's own rows (`evaluate-term` with `stored`); the
+    evaluators run it applied to the state as a literal. Both must agree."""
+    def row_data(i):
+        return {"tag": "record", "fields": [
+            {"name": "k", "value": {"tag": "natural", "value": str(i)}},
+            {"name": "v", "value": {"tag": "label", "value": rng.choice(LABELS) + str(i)}},
+            {"name": "w", "value": {"tag": "natural", "value": str(rng.choice(NATS[:8]))}}]}
+
+    def literal(d):
+        tag = d["tag"]
+        if tag == "natural":
+            return ["nat", d["value"]]
+        if tag == "label":
+            return ["label", d["value"]]
+        if tag == "boolean":
+            return ["boolean", d["value"]]
+        if tag == "record":
+            return ["record", [[f["name"], literal(f["value"])] for f in d["fields"]]]
+        if tag == "variant":
+            return ["inject", d["label"], literal(d["payload"])]
+        items = ["inject", "nil", ["record", []]]
+        for item in reversed(d["items"]):
+            items = ["inject", "cons", ["record", [["head", literal(item)], ["tail", items]]]]
+        return items
+
+    rows = ["case", ["get", ["bound", 0], "r"], [["rows", ["get", ["bound", 0], "items"]]]]
+
+    def nth(lst, k, column):
+        hit = ["get", ["get", ["bound", 0], "head"], column] if k == 0 else nth(["get", ["bound", 0], "tail"], k - 1, column)
+        return ["case", lst, [["nil", ["label", "none"]], ["cons", hit]]]
+
+    def fold(step):
+        # fix (self, inherited, list): nil -> 0; cons c -> step(c, self(c.tail)); self is index 3
+        recur = ["app", ["bound", 3], ["get", ["bound", 0], "tail"]]
+        return ["fix", ["lam", ["lam", ["lam", ["case", ["bound", 0],
+                [["nil", ["nat", "0"]], ["cons", step(recur)]]]]]], ["nat", "0"]]
+
+    total = fold(lambda recur: ["binary", "add", ["get", ["get", ["bound", 0], "head"], "w"], recur])
+    length = fold(lambda recur: ["binary", "add", ["nat", "1"], recur])
+    cases = []
+    for index in range(count):
+        size = rng.randrange(0, 7)
+        state = {"tag": "record", "fields": [
+            {"name": "n", "value": {"tag": "natural", "value": str(rng.choice(NATS[:8]))}},
+            {"name": "r", "value": {"tag": "variant", "label": "rows", "payload": {"tag": "record", "fields": [
+                {"name": "items", "value": {"tag": "list", "items": [row_data(i) for i in range(size)]}}]}}}]}
+        k = rng.randrange(0, 7)
+        shape, responses = rng.randrange(6), []
+        if shape == 0:
+            body = ["get", ["bound", 0], "n"]
+        elif shape == 1:
+            body = nth(rows, k, rng.choice(["k", "v", "w"]))
+        elif shape == 2:
+            body = ["app", total, rows]
+        elif shape == 3:
+            body = ["app", length, rows]
+        elif shape == 4:
+            body = ["perform", nth(rows, k, "v")]
+        else:
+            body = ["record", [["first", nth(rows, k, "k")], ["n", ["get", ["bound", 0], "n"]]]]
+        function = ["lam", body]
+        cases.append({"name": f"stored-{index:02d}", "kind": "stored", "term": ["app", function, literal(state)],
+                      "responses": responses, "fuel": 100000,
+                      "stored": {"function": function, "state": state, "relations": ["r"],
+                                 "reads": [[], [k] if k < size else [], list(range(size)), [],
+                                           [k] if k < size else [], []][shape]}})
+    return cases
+
+
 def generate(count, seed=1025):
     rng = random.Random(seed)
     g = Gen(rng)
@@ -350,6 +422,8 @@ def generate(count, seed=1025):
                               ("has-any-fold", ", ".join(["Café", "ÉTÉ"] * 1000) + " WORD!", " ".join(["été"] * 1999 + ["word"]))):
         cases.append({"name": name, "kind": "term", "term": ["binary", "textHasAny", ["label", text], ["label", words]],
                       "responses": [], "fuel": 100000})
+    # Stored state, after the seeded stream from a stream of its own (no generated case moves).
+    cases.extend(stored_cases(random.Random(seed + 15)))
     return cases
 
 

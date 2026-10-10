@@ -86,10 +86,23 @@ def shape (state : State) : RuntimeValue → Json
   | .prototype .. => Json.mkObj [("kind", toJson "prototype")]
   | .variant label _ => Json.mkObj [("kind", toJson "inject"), ("label", toJson label)]
 
-/-- Run to a result, resuming each yielded Plan with the next response. -/
-def evaluate (term : Term) (responses : List Term) (ticks : Nat) : Json :=
+/-- Run to a result, resuming each yielded Plan with the next response. With `stored`, the term
+is applied to a state whose named relations are stored cells fetched from the state's own rows
+(KERNEL-HANDOFF §15), run by the hosted runner, and the reply names the rows it forced; the
+evaluators run the same term applied to the state as a literal. -/
+def evaluate (term : Term) (responses : List Term) (ticks : Nat)
+    (stored : Option (List (String × Data) × List (String × Array Data)) := none) : Json :=
   let limits : Limits := ⟨1000000, 100000⟩
   let budget : Budget := ⟨1000000, 100000000, 16777216⟩
+  let fetch : Fetch := match stored with
+    | some (_, relations) => fun field position => (relations.lookup field).bind (·[position]?)
+    | none => Fetch.none
+  let runBounded := fun (limits : Limits) (ticks : Nat) (state : State) => match stored with
+    | some _ => (forceHostedWith (fun _ => true) fetch limits budget.bytes ticks state).1
+    | none => Minidregg.Theory.ObjectiveBendDemandMachine.runBounded limits ticks state
+  let reads := fun (state : State) (reply : Json) => match stored with
+    | some _ => reply.setObjVal! "forced" (toJson ((forcedRows state).map fun (f, j) => [toJson f, toJson j]))
+    | none => reply
   let rec go (fuel : Nat) (state : State) (responses : List Term) (plans : Array Json) : Json :=
     let done := fun (status : String) (value : Json) => Json.mkObj
       [("status", toJson status), ("shape", value), ("plans", Json.arr plans)]
@@ -99,22 +112,25 @@ def evaluate (term : Term) (responses : List Term) (ticks : Nat) : Json :=
     | 0 => done "exhausted" Json.null
     | fuel + 1 =>
       match runBounded limits ticks state with
-      | .finished value final => done "value" (shape final value)
-      | .suspended _ _ => done "exhausted" Json.null
-      | .divergent _ _ => done "exhausted" Json.null
-      | .refused _ _ => done "stuck" Json.null
+      | .finished value final => reads final (done "value" (shape final value))
+      | .suspended _ st => reads st (done "exhausted" Json.null)
+      | .divergent _ st => reads st (done "exhausted" Json.null)
+      | .refused _ st => reads st (done "stuck" Json.null)
       | .yielded _ yielded =>
-        match yieldedPlan limits budget yielded with
+        match yieldedPlan fetch limits budget yielded with
         | .error _ => done "unmaterializable-plan" Json.null
         | .ok extracted =>
           let plans := plans.push (dataJson extracted.value)
           match responses with
-          | [] => doneWith "yield" plans
+          | [] => reads extracted.state (doneWith "yield" plans)
           | response :: rest =>
             match resume response yielded with
             | none => doneWith "stuck" plans
             | some next => go fuel next rest plans
-  go 64 (initial term) responses #[]
+  let start := match stored with
+    | some (state, relations) => storedInitial term state (relations.map fun (f, rows) => (f, rows.size))
+    | none => initial term
+  go 64 start responses #[]
 
 def op (j : Json) : Except String Json := do
   let term ← termOf 4096 (← j.getObjVal? "term")
@@ -122,6 +138,22 @@ def op (j : Json) : Except String Json := do
     | .ok r => (← r.getArr?).toList.mapM (termOf 4096)
     | .error _ => pure []
   let ticks := (j.getObjValAs? Nat "ticks").toOption.getD 200000
-  return Json.mkObj [("schema", toJson "delvetalk.evaluate-term.v1"), ("result", evaluate term responses ticks)]
+  -- `stored: {state, relations}`: the term applied to the state, the named relation fields held
+  -- as stored cells over the state's own rows.
+  let stored ← match j.getObjVal? "stored" with
+    | .error _ => pure none
+    | .ok s => do
+      let .record state ← Minidregg.Compiler.ObjectiveBendDataWire.decodeData 256 (← s.getObjVal? "state")
+        | throw "stored state must be a record"
+      let names ← (← s.getObjVal? "relations").getArr?
+      let relations ← names.toList.mapM fun name => do
+        let field ← name.getStr?
+        let some (.variant "rows" (.record [("items", items)])) := state.lookup field
+          | throw s!"stored field {field} is not a relation"
+        let some rows := Minidregg.Compiler.ObjectiveBendDataWire.listItems? items
+          | throw s!"stored field {field} holds no list"
+        pure (field, rows)
+      pure (some (state, relations))
+  return Json.mkObj [("schema", toJson "delvetalk.evaluate-term.v1"), ("result", evaluate term responses ticks stored)]
 
 end Delvetalk.EvaluateTerm

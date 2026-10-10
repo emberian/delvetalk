@@ -178,6 +178,7 @@ def eraseCell : Cell → Cell
   | .cached _ value => .cached ⟨.nat 0, []⟩ (trimValue 0 value)
   | .native origin => .native origin
   | .nativeCached origin value => .nativeCached origin (trimValue 0 value)
+  | .stored part value => .stored part (value.map (trimValue 0))
 
 /-- A frame with every environment slot it never reads replaced by 0. -/
 def eraseFrame : Frame → Frame
@@ -203,7 +204,9 @@ def eraseControl : Control → Control
   cases value <;> simp [trimValue]
 
 @[simp] theorem eraseCell_eraseCell (cell : Cell) : eraseCell (eraseCell cell) = eraseCell cell := by
-  cases cell <;> simp [eraseCell, trimClosure]
+  cases cell with
+  | stored part value => cases value <;> simp [eraseCell]
+  | _ => simp [eraseCell, trimClosure]
 
 @[simp] theorem eraseFrame_eraseFrame (frame : Frame) : eraseFrame (eraseFrame frame) = eraseFrame frame := by
   cases frame <;> simp [eraseFrame]
@@ -323,6 +326,52 @@ theorem erase_forceNative (heap : Array Cell) (value : Data) :
       ((forceNative heap value).1.map eraseCell, (forceNative heap value).2) := by
   cases value <;> simp [forceNative, erase_allocateNativeFields, Array.map_push, eraseCell]
 
+theorem eraseCell_objectCell (stored : List (String × Nat)) (field : String × Data) :
+    eraseCell (objectCell stored field) = objectCell stored field := by
+  unfold objectCell; split <;> rfl
+
+theorem erase_allocateObjectFields (heap : Array Cell) (stored : List (String × Nat)) (fields : List (String × Data)) :
+    allocateObjectFields (heap.map eraseCell) stored fields =
+      ((allocateObjectFields heap stored fields).1.map eraseCell, (allocateObjectFields heap stored fields).2) := by
+  have loop : ∀ (fields : List (String × Data)) (heap : Array Cell) (names : List (String × Address)),
+      fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+        (prior.1.push (objectCell stored field),(field.1,prior.1.size)::prior.2)) (heap.map eraseCell, names) =
+      ((fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+        (prior.1.push (objectCell stored field),(field.1,prior.1.size)::prior.2)) (heap, names)).1.map eraseCell,
+       (fields.foldl (fun (prior : Array Cell × List (String × Address)) field =>
+        (prior.1.push (objectCell stored field),(field.1,prior.1.size)::prior.2)) (heap, names)).2) := by
+    intro fields
+    induction fields with
+    | nil => intro heap names; rfl
+    | cons field rest ih =>
+      intro heap names
+      simp only [List.foldl_cons, Array.size_map]
+      have := ih (heap.push (objectCell stored field)) ((field.1, heap.size) :: names)
+      rw [← this]
+      simp [Array.map_push, eraseCell_objectCell]
+  simp only [allocateObjectFields]
+  rw [loop]
+
+/-- Forcing a stored part allocates cells erasure leaves alone (address-free stored parts and
+native data) and returns a value that is no closure. -/
+theorem erase_forceStored (heap : Array Cell) (part : Stored) :
+    forceStored (heap.map eraseCell) part =
+      (forceStored heap part).map (fun forced => (forced.1.map eraseCell, forced.2)) := by
+  cases part with
+  | object state stored => simp [forceStored, erase_allocateObjectFields]
+  | spine field position size =>
+    by_cases h : position < size <;> simp [forceStored, h, Array.map_push, eraseCell]
+  | _ => simp [forceStored, Array.map_push, eraseCell]
+
+theorem trimValue_forceStored {heap heap' : Array Cell} {part : Stored} {value : RuntimeValue}
+    (forced : forceStored heap part = some (heap', value)) : trimValue 0 value = value := by
+  cases part with
+  | object state stored => simp [forceStored] at forced; rw [← forced.2]; rfl
+  | spine field position size =>
+    by_cases h : position < size <;> simp [forceStored, h] at forced <;> rw [← forced.2] <;> rfl
+  | row field position => simp [forceStored] at forced
+  | _ => simp [forceStored] at forced; rw [← forced.2]; rfl
+
 theorem forcingShared_erase (stack : List Frame) : forcingShared (stack.map eraseFrame) = forcingShared stack := by
   induction stack with
   | nil => rfl
@@ -390,7 +439,18 @@ theorem erase_stepRaw (s : State) : eraseState (stepRaw (eraseState s)) = eraseS
     cases found : heap[address]? with
     | none => simp [stepRaw, eraseState, eraseControl, Array.getElem?_map, found, Array.map_map, List.map_map]
     | some cell =>
-      cases cell <;>
+      cases cell with
+      | stored part value =>
+        cases value with
+        | some value =>
+          simp [stepRaw, eraseState, eraseControl, eraseCell, Array.getElem?_map, found, Array.map_map, List.map_map]
+        | none =>
+          rcases hf : forceStored heap part with _ | ⟨heap', value⟩
+          · simp [stepRaw, eraseState, eraseControl, eraseCell, Array.getElem?_map, found, Array.map_map,
+              List.map_map, erase_forceStored, hf]
+          · simp [stepRaw, eraseState, eraseControl, eraseCell, Array.getElem?_map, found, Array.map_map,
+              List.map_map, erase_forceStored, hf, erase_set!, trimValue_forceStored hf]
+      | _ =>
         simp [stepRaw, eraseState, eraseControl, eraseCell, Array.getElem?_map, found, Array.map_map,
           List.map_map, erase_forceNative, erase_set!, trimValue_forceNative, trimClosure]
   | evaluate term environment =>
@@ -539,7 +599,10 @@ theorem sizesAfter_erase (s : State) (depth : Nat) :
     simp only [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, Array.getElem?_map, Array.size_map]
     cases heap[address]? with
     | none => rfl
-    | some cell => cases cell <;> rfl
+    | some cell =>
+      cases cell with
+      | stored part value => cases value <;> rfl
+      | _ => rfl
   | evaluate term environment =>
     cases term <;> simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, forcingShared_erase]
   | returned value =>
@@ -570,10 +633,49 @@ theorem halted_erase (control : Control) : halted (eraseControl control) = halte
 theorem halted_agree {s t : State} (agree : Agree s t) : halted s.control = halted t.control := by
   rw [← halted_erase s.control, ← halted_erase t.control, agree.control]
 
-theorem forceHostedFrom_succ (policy : State → Bool) (limits : Limits) (bytes remaining : Nat)
+theorem fetchable_erase (fetch : Fetch) (s : State) : fetchable fetch (eraseState s) = fetchable fetch s := by
+  obtain ⟨heap, control, stack⟩ := s
+  cases control with
+  | enter address =>
+    simp only [fetchable, eraseState, eraseControl, Array.getElem?_map]
+    cases heap[address]? with
+    | none => rfl
+    | some cell =>
+      cases cell with
+      | stored part value => cases value <;> cases part <;> rfl
+      | _ => rfl
+  | _ => rfl
+
+theorem fetchable_agree (fetch : Fetch) {s t : State} (agree : Agree s t) : fetchable fetch s = fetchable fetch t := by
+  rw [← fetchable_erase fetch s, ← fetchable_erase fetch t]; exact congrArg _ agree
+
+theorem erase_fetchStep (s : State) (address : Nat) (field : String) (position : Nat) (row : Data) :
+    eraseState (fetchStep (eraseState s) address field position row) = eraseState (fetchStep s address field position row) := by
+  obtain ⟨heap, control, stack⟩ := s
+  simp [fetchStep, eraseState, erase_forceNative, erase_set!, eraseCell, trimValue_forceNative, Array.map_map,
+    List.map_map]
+
+theorem agree_fetchStep {s t : State} (agree : Agree s t) (address : Nat) (field : String) (position : Nat) (row : Data) :
+    Agree (fetchStep s address field position row) (fetchStep t address field position row) := by
+  unfold Agree
+  rw [← erase_fetchStep s, ← erase_fetchStep t, agree]
+
+theorem Agree.heap_size {s t : State} (agree : Agree s t) : s.heap.size = t.heap.size := by
+  have := congrArg (fun state => state.heap.size) agree; simpa [eraseState] using this
+
+theorem forceHostedFrom_succ (policy : State → Bool) (fetch : Fetch) (limits : Limits) (bytes remaining : Nat)
     (state : State) (depth : Nat) :
-    forceHostedFrom policy limits bytes (remaining + 1) state depth =
+    forceHostedFrom policy fetch limits bytes (remaining + 1) state depth =
       if halted state.control then (runBounded limits 0 state, remaining + 1) else
+      match fetchable fetch state with
+      | some (address, field, position, row) =>
+        if !policy state || (fetchCost row).2 > bytes then (.suspended .capacity state, remaining + 1)
+        else if (fetchCost row).1 > remaining + 1 then (.suspended .ticks state, remaining + 1)
+        else if state.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits.heap && depth ≤ limits.stack then
+          forceHostedFrom policy fetch limits bytes (remaining + 1 - (fetchCost row).1)
+            (fetchStep state address field position row) depth
+        else (.suspended .capacity state, remaining + 1 - (fetchCost row).1)
+      | none =>
       let cost := textStepCost state (remaining + 1)
       if !policy state || cost.2 > bytes then (.suspended .capacity state, remaining + 1)
       else if cost.1 > remaining + 1 then
@@ -581,21 +683,21 @@ theorem forceHostedFrom_succ (policy : State → Bool) (limits : Limits) (bytes 
       else
         let sizes := ObjectiveBendDemandMachineFast.sizesAfter state depth
         if sizes.1 ≤ limits.heap && sizes.2 ≤ limits.stack then
-          forceHostedFrom policy limits bytes (remaining + 1 - max 1 cost.1)
+          forceHostedFrom policy fetch limits bytes (remaining + 1 - max 1 cost.1)
             (ObjectiveBendDemandMachineFast.stepRawFast state) sizes.2
         else (.suspended .capacity state, remaining + 1 - max 1 cost.1) := by
   rw [forceHostedFrom.eq_def]
-  cases h : state.control <;> simp [halted]
+  cases h : state.control <;> simp [halted] <;> (try rw [← h]) <;> rfl
 
 /-- **Hosted forcing agrees**, for any policy that agreeing states pass alike: the
 same outcome (up to erasure) and the same remaining ticks. -/
-theorem agree_forceHostedFrom {policy : State → Bool}
+theorem agree_forceHostedFrom {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Agree s t → policy s = policy t) (limits : Limits) (bytes : Nat) :
     ∀ (ticks : Nat) (s t : State) (depth : Nat), Agree s t →
-      OutcomeAgree (forceHostedFrom policy limits bytes ticks s depth).1
-          (forceHostedFrom policy limits bytes ticks t depth).1 ∧
-        (forceHostedFrom policy limits bytes ticks t depth).2 =
-          (forceHostedFrom policy limits bytes ticks s depth).2 := by
+      OutcomeAgree (forceHostedFrom policy fetch limits bytes ticks s depth).1
+          (forceHostedFrom policy fetch limits bytes ticks t depth).1 ∧
+        (forceHostedFrom policy fetch limits bytes ticks t depth).2 =
+          (forceHostedFrom policy fetch limits bytes ticks s depth).2 := by
   intro ticks
   induction ticks using Nat.strongRecOn with
   | ind ticks ih =>
@@ -616,13 +718,22 @@ theorem agree_forceHostedFrom {policy : State → Bool}
     exact ⟨agree_runBounded_zero limits agree, rfl⟩
   | succ remaining =>
     rw [forceHostedFrom_succ, forceHostedFrom_succ]
-    rw [← halt, ← cost, ← allowed, ← pre, ← sizes]
+    rw [← halt, ← cost, ← allowed, ← pre, ← sizes, ← fetchable_agree fetch agree, ← agree.heap_size]
     have same : OutcomeAgree (.suspended .capacity s) (.suspended .capacity t) := by
       simp only [OutcomeAgree, eraseOutcome]; exact congrArg _ agree
     have sameTicks : OutcomeAgree (.suspended .ticks s) (.suspended .ticks t) := by
       simp only [OutcomeAgree, eraseOutcome]; exact congrArg _ agree
     split
     · exact ⟨agree_runBounded_zero limits agree, rfl⟩
+    split
+    · rename_i address field position row _
+      split
+      · exact ⟨same, rfl⟩
+      split
+      · exact ⟨sameTicks, rfl⟩
+      split
+      · exact ih _ (by simp only [fetchCost]; omega) _ _ _ (agree_fetchStep agree address field position row)
+      · exact ⟨same, rfl⟩
     simp only []
     split
     · exact ⟨same, rfl⟩
@@ -632,16 +743,16 @@ theorem agree_forceHostedFrom {policy : State → Bool}
     · exact ih _ (by omega) _ _ _ next
     · exact ⟨same, rfl⟩
 
-theorem agree_forceHostedWith {policy : State → Bool}
+theorem agree_forceHostedWith {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Agree s t → policy s = policy t) (limits : Limits) (bytes ticks : Nat)
     {s t : State} (agree : Agree s t) :
-    OutcomeAgree (forceHostedWith policy limits bytes ticks s).1 (forceHostedWith policy limits bytes ticks t).1 ∧
-      (forceHostedWith policy limits bytes ticks t).2 = (forceHostedWith policy limits bytes ticks s).2 := by
+    OutcomeAgree (forceHostedWith policy fetch limits bytes ticks s).1 (forceHostedWith policy fetch limits bytes ticks t).1 ∧
+      (forceHostedWith policy fetch limits bytes ticks t).2 = (forceHostedWith policy fetch limits bytes ticks s).2 := by
   unfold forceHostedWith
   have depth : s.stack.length = t.stack.length := by
     have := congrArg List.length agree.stack; simpa using this
   rw [← depth]
-  exact agree_forceHostedFrom respects limits bytes ticks s t _ agree
+  exact agree_forceHostedFrom (fetch := fetch) respects limits bytes ticks s t _ agree
 
 section ExceptLemmas
 variable {ε α β : Type}
@@ -704,30 +815,30 @@ theorem agree_entered {s t : State} (agree : Agree s t) (address : Nat) :
   Agree.mk' agree.heap rfl rfl
 
 /-- One field of a record's materialization (the body of `materializeWith`'s fold). -/
-def recordStep (policy : State → Bool) (limits : Limits) (depth : Nat)
+def recordStep (policy : State → Bool) (fetch : Fetch) (limits : Limits) (depth : Nat)
     (prior : List (String × Data) × State × Budget) (field : String × Nat) :
     Except (Failure × State × Budget) (List (String × Data) × State × Budget) := do
   if prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
   let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}
-  let (outcome,ticks) := forceHostedWith policy limits prior.2.2.bytes prior.2.2.ticks entered
+  let (outcome,ticks) := forceHostedWith policy fetch limits prior.2.2.bytes prior.2.2.ticks entered
   let nextBudget := {prior.2.2 with ticks:=ticks}
   match outcome with
   | .finished forced retained =>
-    let child ← materializeWith policy limits depth nextBudget forced retained
+    let child ← materializeWith policy fetch limits depth nextBudget forced retained
     pure ((field.1,child.value)::prior.1,child.state,child.remaining)
   | .suspended reason retained => throw (suspensionFailure reason,retained,nextBudget)
   | .divergent _ retained => throw (.divergent,retained,nextBudget)
   | .refused _ retained => throw (.refused,retained,nextBudget)
   | .yielded _ retained => throw (.yielded,retained,nextBudget)
 
-theorem materializeWith_record (policy : State → Bool) (limits : Limits) (depth : Nat) (budget : Budget)
+theorem materializeWith_record (policy : State → Bool) (fetch : Fetch) (limits : Limits) (depth : Nat) (budget : Budget)
     (fields : List (String × Nat)) (state : State) :
-    materializeWith policy limits (depth+1) budget (.record fields) state = (do
+    materializeWith policy fetch limits (depth+1) budget (.record fields) state = (do
       if budget.nodes = 0 then throw (.budget,state,budget)
       let remaining := {budget with nodes:=budget.nodes-1}
       if (fields.map Prod.fst).eraseDups.length != fields.length then throw (.duplicateField,state,remaining)
       if fields.length > remaining.nodes then throw (.budget,state,remaining)
-      let pair ← fields.foldlM (recordStep policy limits depth) ([],state,remaining)
+      let pair ← fields.foldlM (recordStep policy fetch limits depth) ([],state,remaining)
       pure ⟨.record pair.1.reverse,pair.2.1,pair.2.2⟩) := rfl
 
 /-- The three admission checks a record passes before its fields are forced. -/
@@ -738,20 +849,20 @@ def RecordGate (budget : Budget) (fields : List (String × Nat)) : Prop :=
 def recordStart (budget : Budget) (_fields : List (String × Nat)) : Budget :=
   {nodes := budget.nodes - 1, ticks := budget.ticks, bytes := budget.bytes}
 
-theorem materializeWith_record_gate {policy : State → Bool} {limits : Limits} {depth : Nat} {budget : Budget}
+theorem materializeWith_record_gate {policy : State → Bool} {fetch : Fetch} {limits : Limits} {depth : Nat} {budget : Budget}
     {fields : List (String × Nat)} {state : State} (gate : RecordGate budget fields) :
-    materializeWith policy limits (depth+1) budget (.record fields) state =
-      (fields.foldlM (recordStep policy limits depth) ([],state,recordStart budget fields) >>= fun pair =>
+    materializeWith policy fetch limits (depth+1) budget (.record fields) state =
+      (fields.foldlM (recordStep policy fetch limits depth) ([],state,recordStart budget fields) >>= fun pair =>
         pure (⟨.record pair.1.reverse,pair.2.1,pair.2.2⟩ : Result)) := by
   obtain ⟨c1, c3, c4⟩ := gate
   rw [materializeWith_record]
   simp only [c1, c3, c4, ↓reduceIte, Bool.false_eq_true, recordStart]
 
-theorem materializeWith_record_ok {policy : State → Bool} {limits : Limits} {depth : Nat} {budget : Budget}
+theorem materializeWith_record_ok {policy : State → Bool} {fetch : Fetch} {limits : Limits} {depth : Nat} {budget : Budget}
     {fields : List (String × Nat)} {state : State} {r : Result}
-    (found : materializeWith policy limits (depth+1) budget (.record fields) state = .ok r) :
+    (found : materializeWith policy fetch limits (depth+1) budget (.record fields) state = .ok r) :
     RecordGate budget fields ∧ ∃ pair,
-      fields.foldlM (recordStep policy limits depth) ([],state,recordStart budget fields) = .ok pair ∧
+      fields.foldlM (recordStep policy fetch limits depth) ([],state,recordStart budget fields) = .ok pair ∧
       r = ⟨.record pair.1.reverse,pair.2.1,pair.2.2⟩ := by
   have gate : RecordGate budget fields := by
     rw [materializeWith_record] at found
@@ -773,11 +884,11 @@ theorem trimValue_eq_of_not_closure {value value' : RuntimeValue} (same : trimVa
   cases value <;> cases value' <;> simp_all
 
 /-- **Materialization agrees**, for values that agree up to erasure. -/
-theorem agree_materializeWith {policy : State → Bool}
+theorem agree_materializeWith {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Agree s t → policy s = policy t) (limits : Limits) :
     ∀ (depth : Nat) (budget : Budget) (value value' : RuntimeValue) (s t : State) (r : Result),
-      trimValue 0 value = trimValue 0 value' → Agree s t → materializeWith policy limits depth budget value s = .ok r →
-      ∃ r', materializeWith policy limits depth budget value' t = .ok r' ∧ ResultAgree r r' := by
+      trimValue 0 value = trimValue 0 value' → Agree s t → materializeWith policy fetch limits depth budget value s = .ok r →
+      ∃ r', materializeWith policy fetch limits depth budget value' t = .ok r' ∧ ResultAgree r r' := by
   intro depth
   induction depth with
   | zero => intro budget value value' s t r _ _ found; simp [materializeWith] at found
@@ -831,12 +942,12 @@ theorem agree_materializeWith {policy : State → Bool}
       · split at found
         · simp at found
         · rename_i c1 c2
-          cases forced : (forceHostedWith policy limits budget.bytes budget.ticks ⟨s.heap, .enter payload, []⟩).1 with
+          cases forced : (forceHostedWith policy fetch limits budget.bytes budget.ticks ⟨s.heap, .enter payload, []⟩).1 with
           | finished value retained =>
             rw [forced] at found
-            have ⟨rel, ticksEq⟩ := agree_forceHostedWith respects limits budget.bytes budget.ticks (agree_entered agree payload)
+            have ⟨rel, ticksEq⟩ := agree_forceHostedWith (fetch := fetch) respects limits budget.bytes budget.ticks (agree_entered agree payload)
             rw [forced] at rel
-            cases forcedT : (forceHostedWith policy limits budget.bytes budget.ticks ⟨t.heap, .enter payload, []⟩).1 <;>
+            cases forcedT : (forceHostedWith policy fetch limits budget.bytes budget.ticks ⟨t.heap, .enter payload, []⟩).1 <;>
               rw [forcedT] at rel <;>
               simp only [OutcomeAgree, eraseOutcome, Outcome.finished.injEq, reduceCtorEq] at rel
             rename_i valueT retainedT
@@ -862,12 +973,12 @@ theorem agree_materializeWith {policy : State → Bool}
         · cases stepped
         · rename_i cond
           simp only [cond, ↓reduceIte, Bool.false_eq_true]
-          have ⟨rel, ticksEq⟩ := agree_forceHostedWith respects limits b.bytes b.ticks
+          have ⟨rel, ticksEq⟩ := agree_forceHostedWith (fetch := fetch) respects limits b.bytes b.ticks
             (agree_entered stAgree field.2)
-          cases forced : (forceHostedWith policy limits b.bytes b.ticks ⟨st.heap, .enter field.2, []⟩).1 with
+          cases forced : (forceHostedWith policy fetch limits b.bytes b.ticks ⟨st.heap, .enter field.2, []⟩).1 with
           | finished value retained =>
             rw [forced] at stepped rel
-            cases forcedT : (forceHostedWith policy limits b.bytes b.ticks ⟨st'.heap, .enter field.2, []⟩).1 <;>
+            cases forcedT : (forceHostedWith policy fetch limits b.bytes b.ticks ⟨st'.heap, .enter field.2, []⟩).1 <;>
               rw [forcedT] at rel <;>
               simp only [OutcomeAgree, eraseOutcome, Outcome.finished.injEq, reduceCtorEq] at rel
             obtain ⟨valueEq, retainedAgree⟩ := rel
@@ -893,11 +1004,11 @@ theorem eraseControl_eq_complete {control : Control} {value : RuntimeValue}
   exact ⟨_, rfl, same⟩
 
 /-- **Completion agrees.** -/
-theorem agree_completeWith {policy : State → Bool}
+theorem agree_completeWith {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Agree s t → policy s = policy t) (limits : Limits)
     (budget : Budget) {s t : State} {r : Result} (agree : Agree s t)
-    (found : completeWith policy limits budget s = .ok r) :
-    ∃ r', completeWith policy limits budget t = .ok r' ∧ ResultAgree r r' := by
+    (found : completeWith policy fetch limits budget s = .ok r) :
+    ∃ r', completeWith policy fetch limits budget t = .ok r' ∧ ResultAgree r r' := by
   cases allowed : policy s with
   | false => simp [completeWith, allowed] at found
   | true =>
@@ -914,7 +1025,7 @@ theorem agree_completeWith {policy : State → Bool}
       simp only [except_bind_ok] at found
       obtain ⟨a, materialized, rest⟩ := found
       obtain ⟨a', materialized', aValue, aRemaining, aAgree⟩ :=
-        agree_materializeWith respects limits _ _ _ _ _ _ _ sameValue.symm agree materialized
+        agree_materializeWith (fetch := fetch) respects limits _ _ _ _ _ _ _ sameValue.symm agree materialized
       split at rest
       · simp at rest
       · rename_i small
@@ -925,11 +1036,11 @@ theorem agree_completeWith {policy : State → Bool}
     · simp at found
 
 /-- **Plan extraction agrees.** -/
-theorem agree_yieldedPlanWith {policy : State → Bool}
+theorem agree_yieldedPlanWith {policy : State → Bool} {fetch : Fetch}
     (respects : ∀ s t, Agree s t → policy s = policy t) (limits : Limits)
     (budget : Budget) {s t : State} {r : Result} (agree : Agree s t)
-    (found : yieldedPlanWith policy limits budget s = .ok r) :
-    ∃ r', yieldedPlanWith policy limits budget t = .ok r' ∧ ResultAgree r r' := by
+    (found : yieldedPlanWith policy fetch limits budget s = .ok r) :
+    ∃ r', yieldedPlanWith policy fetch limits budget t = .ok r' ∧ ResultAgree r r' := by
   unfold yieldedPlanWith at found ⊢
   split at found
   · rename_i plan yielded
@@ -938,14 +1049,14 @@ theorem agree_yieldedPlanWith {policy : State → Bool}
       rw [yielded] at this
       exact eraseControl_eq_yielded.mp (by simpa [eraseControl] using this.symm)
     rw [controlT]
-    have ⟨rel, ticksEq⟩ := agree_forceHostedWith respects limits budget.bytes budget.ticks (agree_entered agree plan)
+    have ⟨rel, ticksEq⟩ := agree_forceHostedWith (fetch := fetch) respects limits budget.bytes budget.ticks (agree_entered agree plan)
     simp only at found rel ticksEq ⊢
-    cases forced : forceHostedWith policy limits budget.bytes budget.ticks ⟨s.heap, .enter plan, []⟩ with
+    cases forced : forceHostedWith policy fetch limits budget.bytes budget.ticks ⟨s.heap, .enter plan, []⟩ with
     | mk outcome ticks =>
       rw [forced] at found rel ticksEq
       cases outcome with
       | finished value retained =>
-        cases forcedT : forceHostedWith policy limits budget.bytes budget.ticks ⟨t.heap, .enter plan, []⟩ with
+        cases forcedT : forceHostedWith policy fetch limits budget.bytes budget.ticks ⟨t.heap, .enter plan, []⟩ with
         | mk outcome' ticks' =>
           rw [forcedT] at rel ticksEq
           simp only at rel ticksEq
@@ -960,7 +1071,7 @@ theorem agree_yieldedPlanWith {policy : State → Bool}
           simp [small] at rest
           subst rest
           obtain ⟨a', materialized', aValue, aRemaining, aAgree⟩ :=
-            agree_materializeWith respects limits _ _ _ _ _ _ _ valueEq retainedAgree materialized
+            agree_materializeWith (fetch := fetch) respects limits _ _ _ _ _ _ _ valueEq retainedAgree materialized
           refine ⟨{a' with state := {a'.state with control := t.control, stack := t.stack}},
             ?_, aValue, aRemaining, Agree.mk' aAgree.heap agree.control agree.stack⟩
           have small' : ¬ budget.bytes < a'.value.canonicalBytes := by rw [aValue]; exact small
@@ -1007,7 +1118,9 @@ theorem trim_heap_erased (state : State) :
   cases state.heap[i]? with
   | none => rfl
   | some cell =>
-    cases cell <;> simp [trimCell, eraseCell, trimClosure, trimEnv_redummy, trimValue_redummy]
+    cases cell with
+    | stored part value => cases value <;> simp [trimCell, eraseCell, trimValue_redummy]
+    | _ => simp [trimCell, eraseCell, trimClosure, trimEnv_redummy, trimValue_redummy]
 
 /-- **A trimmed state agrees with the state it trimmed.** -/
 theorem agree_trim (state : State) : Agree state (trim state) :=
@@ -1031,76 +1144,79 @@ byte allowance and tick budget:
   the same remaining budget;
 * a result that extracts from the original extracts from the other run as the same Data
   with the same remaining budget. -/
-theorem agree_resume_segment {state state' resumed : State} {response : Term} (agree : Agree state state')
+theorem agree_resume_segment {fetch : Fetch} {state state' resumed : State} {response : Term} (agree : Agree state state')
     (yielded : resume response state = some resumed) (limits : Limits) (bytes ticks : Nat) (budget : Budget) :
     ∃ resumed', resume response state' = some resumed' ∧
-      OutcomeAgree (forceHostedWith (fun _ => true) limits bytes ticks resumed).1
-        (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 ∧
-      (forceHostedWith (fun _ => true) limits bytes ticks resumed').2 =
-        (forceHostedWith (fun _ => true) limits bytes ticks resumed).2 ∧
-      (∀ plan y r, (forceHostedWith (fun _ => true) limits bytes ticks resumed).1 = .yielded plan y →
-        yieldedPlan limits budget y = .ok r →
-        ∃ y' r', (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 = .yielded plan y' ∧
-          Agree y y' ∧ yieldedPlan limits budget y' = .ok r' ∧ ResultAgree r r') ∧
-      (∀ value y r, (forceHostedWith (fun _ => true) limits bytes ticks resumed).1 = .finished value y →
-        complete limits budget y = .ok r →
-        ∃ value' y' r', (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 = .finished value' y' ∧
-          complete limits budget y' = .ok r' ∧ ResultAgree r r') := by
+      OutcomeAgree (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1
+        (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 ∧
+      (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').2 =
+        (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).2 ∧
+      (∀ plan y r, (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1 = .yielded plan y →
+        yieldedPlan fetch limits budget y = .ok r →
+        ∃ y' r', (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 = .yielded plan y' ∧
+          Agree y y' ∧ yieldedPlan fetch limits budget y' = .ok r' ∧ ResultAgree r r') ∧
+      (∀ value y r, (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1 = .finished value y →
+        complete fetch limits budget y = .ok r →
+        ∃ value' y' r', (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 = .finished value' y' ∧
+          complete fetch limits budget y' = .ok r' ∧ ResultAgree r r') := by
   obtain ⟨resumed', again, agreeR⟩ := agree_resume agree response yielded
   have always : ∀ s t, Agree s t → (fun _ => true : State → Bool) s = (fun _ => true : State → Bool) t :=
     fun _ _ _ => rfl
-  have ⟨ran, sameTicks⟩ := agree_forceHostedWith always limits bytes ticks agreeR
+  have ⟨ran, sameTicks⟩ := agree_forceHostedWith (fetch := fetch) always limits bytes ticks agreeR
   refine ⟨resumed', again, ran, sameTicks, ?_, ?_⟩
   · intro plan y r run extracted
     rw [run] at ran
-    cases runT : (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 <;> rw [runT] at ran <;>
+    cases runT : (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 <;> rw [runT] at ran <;>
       simp only [OutcomeAgree, eraseOutcome, Outcome.yielded.injEq, reduceCtorEq] at ran
     obtain ⟨same, yAgree⟩ := ran
     subst same
-    obtain ⟨r', extracted', resultAgree⟩ := agree_yieldedPlanWith always limits budget yAgree extracted
+    obtain ⟨r', extracted', resultAgree⟩ := agree_yieldedPlanWith (fetch := fetch) always limits budget yAgree extracted
     exact ⟨_, r', rfl, yAgree, extracted', resultAgree⟩
   · intro value y r run completed
     rw [run] at ran
-    cases runT : (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 <;> rw [runT] at ran <;>
+    cases runT : (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 <;> rw [runT] at ran <;>
       simp only [OutcomeAgree, eraseOutcome, Outcome.finished.injEq, reduceCtorEq] at ran
     obtain ⟨_, yAgree⟩ := ran
-    obtain ⟨r', completed', resultAgree⟩ := agree_completeWith always limits budget yAgree completed
+    obtain ⟨r', completed', resultAgree⟩ := agree_completeWith (fetch := fetch) always limits budget yAgree completed
     exact ⟨_, _, r', rfl, completed', resultAgree⟩
 
-theorem settle_resume_segment {state resumed : State} {response : Term}
+theorem settle_resume_segment {fetch : Fetch} {state resumed : State} {response : Term}
     (yielded : resume response state = some resumed) (limits : Limits) (bytes ticks : Nat) (budget : Budget) :
     ∃ resumed', resume response (settle state) = some resumed' ∧
-      OutcomeAgree (forceHostedWith (fun _ => true) limits bytes ticks resumed).1
-        (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 ∧
-      (forceHostedWith (fun _ => true) limits bytes ticks resumed').2 =
-        (forceHostedWith (fun _ => true) limits bytes ticks resumed).2 ∧
-      (∀ plan y r, (forceHostedWith (fun _ => true) limits bytes ticks resumed).1 = .yielded plan y →
-        yieldedPlan limits budget y = .ok r →
-        ∃ y' r', (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 = .yielded plan y' ∧
-          Agree y y' ∧ yieldedPlan limits budget y' = .ok r' ∧ ResultAgree r r') ∧
-      (∀ value y r, (forceHostedWith (fun _ => true) limits bytes ticks resumed).1 = .finished value y →
-        complete limits budget y = .ok r →
-        ∃ value' y' r', (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 = .finished value' y' ∧
-          complete limits budget y' = .ok r' ∧ ResultAgree r r') :=
+      OutcomeAgree (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1
+        (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 ∧
+      (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').2 =
+        (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).2 ∧
+      (∀ plan y r, (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1 = .yielded plan y →
+        yieldedPlan fetch limits budget y = .ok r →
+        ∃ y' r', (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 = .yielded plan y' ∧
+          Agree y y' ∧ yieldedPlan fetch limits budget y' = .ok r' ∧ ResultAgree r r') ∧
+      (∀ value y r, (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1 = .finished value y →
+        complete fetch limits budget y = .ok r →
+        ∃ value' y' r', (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 = .finished value' y' ∧
+          complete fetch limits budget y' = .ok r' ∧ ResultAgree r r') :=
   agree_resume_segment (agree_settle state) yielded limits bytes ticks budget
 
-theorem trim_resume_segment {state resumed : State} {response : Term}
+theorem trim_resume_segment {fetch : Fetch} {state resumed : State} {response : Term}
     (yielded : resume response state = some resumed) (limits : Limits) (bytes ticks : Nat) (budget : Budget) :
     ∃ resumed', resume response (trim state) = some resumed' ∧
-      OutcomeAgree (forceHostedWith (fun _ => true) limits bytes ticks resumed).1
-        (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 ∧
-      (forceHostedWith (fun _ => true) limits bytes ticks resumed').2 =
-        (forceHostedWith (fun _ => true) limits bytes ticks resumed).2 ∧
-      (∀ plan y r, (forceHostedWith (fun _ => true) limits bytes ticks resumed).1 = .yielded plan y →
-        yieldedPlan limits budget y = .ok r →
-        ∃ y' r', (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 = .yielded plan y' ∧
-          Agree y y' ∧ yieldedPlan limits budget y' = .ok r' ∧ ResultAgree r r') ∧
-      (∀ value y r, (forceHostedWith (fun _ => true) limits bytes ticks resumed).1 = .finished value y →
-        complete limits budget y = .ok r →
-        ∃ value' y' r', (forceHostedWith (fun _ => true) limits bytes ticks resumed').1 = .finished value' y' ∧
-          complete limits budget y' = .ok r' ∧ ResultAgree r r') :=
+      OutcomeAgree (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1
+        (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 ∧
+      (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').2 =
+        (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).2 ∧
+      (∀ plan y r, (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1 = .yielded plan y →
+        yieldedPlan fetch limits budget y = .ok r →
+        ∃ y' r', (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 = .yielded plan y' ∧
+          Agree y y' ∧ yieldedPlan fetch limits budget y' = .ok r' ∧ ResultAgree r r') ∧
+      (∀ value y r, (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed).1 = .finished value y →
+        complete fetch limits budget y = .ok r →
+        ∃ value' y' r', (forceHostedWith (fun _ => true) fetch limits bytes ticks resumed').1 = .finished value' y' ∧
+          complete fetch limits budget y' = .ok r' ∧ ResultAgree r r') :=
   agree_resume_segment (agree_trim state) yielded limits bytes ticks budget
 
 #assert_axioms agree_resume_segment agree_forceHostedFrom erase_stepRaw freeIn_rename
+#assert_axioms erase_forceStored trimValue_forceStored erase_allocateObjectFields fetchable_agree agree_fetchStep
+#assert_axioms forceHostedFrom_succ sizesAfter_erase trim_heap_erased settle_resume_segment trim_resume_segment
+#assert_axioms agree_materializeWith agree_completeWith agree_yieldedPlanWith
 
 end Minidregg.Theory.ObjectiveBendDemandCollect

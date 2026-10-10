@@ -126,6 +126,7 @@ def failureName : Failure → String
 def refusalText (failure : Failure) (state : State) : String :=
   match failure, state.control with
   | .refused, .refused (.program reason) => reason
+  | .refused, .refused .unfetched => "a stored row is missing from the store or exceeds the cell bound"
   | _, _ => failureName failure
 
 /-- The activity shape a turn requires of a checked type. -/
@@ -317,12 +318,18 @@ open Minidregg.Theory.ObjectiveBendDemandMachine in
 /-- Which budget a machine failure names, if it is budget exhaustion. A capacity
 suspension keeps the pre-step state: whichever of heap or stack the next step would
 exceed is the resource; otherwise the step's text allocation exceeded `bytes`. -/
-def exhaustedResource (limits : Limits) (failure : Failure) (state : State) (remaining : Budget) :
-    Option String :=
+def exhaustedResource (limits : Limits) (failure : Failure) (state : State) (remaining : Budget)
+    (fetch : Fetch := Fetch.none) : Option String :=
   match failure with
   | .tickExhausted => some "ticks"
   | .budget => some (if remaining.nodes == 0 then "nodes" else "bytes")
   | .suspended =>
+      -- A row fetch suspends before its step: its heap is the row's fields.
+      match fetchable fetch state with
+      | some (_, _, _, row) =>
+        some (if state.heap.size + Minidregg.Theory.ObjectiveBendDemandMachineFast.nativeChildren row > limits.heap
+          then "heap" else "bytes")
+      | none =>
       let next := stepRaw state
       if next.heap.size > limits.heap then some "heap"
       else if next.stack.length > limits.stack then some "stack"
@@ -420,20 +427,20 @@ open Minidregg.Theory.ObjectiveBendDemandCollect in
 /-- Turn the outcome of a bounded run into a typed step; a yield holds the collected state. -/
 def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
     (outcome : Except (Failure × State × Budget) (Data × Budget))
-    (sites : Option (Array (Term × Ty)) := none) : Except String Step :=
+    (sites : Option (Array (Term × Ty)) := none) (fetch : Fetch := Fetch.none) : Except String Step :=
   match outcome with
   | .ok (value, remaining) =>
       if !value.conformsUnder bounds result then .error "turn refused: result does not conform to its type"
       else .ok (.finished value result (b.ticks - remaining.ticks))
   | .error (.yielded, state, remaining) =>
-      match yieldedPlan limits remaining state with
+      match yieldedPlan fetch limits remaining state with
       | .error (failure, st, rem) =>
           -- A materialization budget failure is nodes when it vanishes with unlimited nodes.
           let resource? := match failure with
-            | .budget => some (match yieldedPlan limits {remaining with nodes := 1 <<< 40} state with
+            | .budget => some (match yieldedPlan fetch limits {remaining with nodes := 1 <<< 40} state with
                 | .error (.budget, _, _) => "bytes"
                 | _ => "nodes")
-            | _ => exhaustedResource limits failure st rem
+            | _ => exhaustedResource limits failure st rem fetch
           match resource? with
           | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
           | none => .error ("turn refused: " ++ refusalText failure st)
@@ -449,7 +456,7 @@ def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (b
               | some i => .ok (.yielded extracted.value plan (sites[i]?.map (·.2) |>.getD response) (held (some i)) ticks)
               | none => .error "turn refused: the yielded message has no call site in this entry"
   | .error (failure, st, rem) =>
-      match exhaustedResource limits failure st rem with
+      match exhaustedResource limits failure st rem fetch with
       | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
       | none => .error ("turn refused: " ++ refusalText failure st)
 
@@ -487,7 +494,7 @@ def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b
   let (source, plan, response, result) ← prepareStart packet arguments
   let sites ← sitesFor (← decodePacket packet).source plan
   let capacities : Limits := ⟨b.heap, b.stack⟩
-  let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
+  let outcome := (executeWith (fun _ => true) Fetch.none capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
   conclude (programDictionary packet) (packetDigest packet) binding source.assumptions.bounds plan response result b capacities outcome sites
 
@@ -515,7 +522,7 @@ def startEntryStep (entry : Delvetalk.CheckedEntry) (arguments : List Data) (bin
     (dictionary : Option Dictionary := none) : Except String Step := do
   let (applied, plan, response, result) ← prepareStartEntry entry arguments
   let capacities : Limits := ⟨b.heap, b.stack⟩
-  let outcome := (executeWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ applied.source.term).map
+  let outcome := (executeWith (fun _ => true) Fetch.none capacities ⟨b.nodes, b.ticks, b.bytes⟩ applied.source.term).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
   concludeStep (dictionary.getD (Dictionary.ofProgram entry.source.term)) entry.pin binding
     applied.source.assumptions.bounds plan response result b capacities outcome entry.sites
@@ -569,7 +576,7 @@ def runResumed (entry : Delvetalk.CheckedEntry) (state : State) (site : Option N
     (value : Data) (b : Budgets) (dictionary : Dictionary) : Except String Step := do
   let (bounds, plan, response, result, resumed) ← resumeState entry state site value
   let capacities := limitsPast ⟨b.heap, b.stack⟩ state
-  let outcome := (executeStateWith (fun _ => true) capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
+  let outcome := (executeStateWith (fun _ => true) Fetch.none capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
     fun e => (e.extraction.result.value, e.extraction.result.remaining)
   concludeStep dictionary entry.pin binding bounds plan response result b capacities outcome entry.sites
 
@@ -599,6 +606,141 @@ def resumeSuspended (entry : Delvetalk.CheckedEntry) (suspension : Suspension) (
   unless suspension.binding.intent == binding.intent do throw "checkpoint belongs to another intent"
   unless suspension.binding.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
   runResumed entry suspension.state suspension.site binding value b suspension.dictionary
+
+/-! ## Stored state (KERNEL-HANDOFF §15)
+
+The stored path takes every argument natively (no quoting, no per-turn check: each data
+argument is admitted by `conformsUnder`, which `conformsUnder_iff` makes `HasType`, as a card's
+are), and the first, the object's state, as one stored object cell whose relations named in the
+store are stored cells: rows are fetched from the store only when forced, and a segment reports
+the rows it forced (`Reads`) for the host to record as roots. -/
+
+/-- A relation field of the state the host holds: its row count and key columns, at the turn's
+read height. -/
+structure StoredRelation where
+  field : String
+  size : Nat
+  key : List String
+
+/-- The host's store for one turn: its stored relations and their rows (`fetch field position`,
+canonical key order, at the turn's read height). -/
+structure Store where
+  relations : List StoredRelation
+  fetch : Fetch
+
+def Store.empty : Store := ⟨[], Fetch.none⟩
+
+/-- What the kernel fetches: the store's rows within the cell bound (`Bounds.maxCellBytes`); a
+larger one is refused as missing (`refusalText`). -/
+def Store.bounded (store : Store) : Fetch := fun field position =>
+  (store.fetch field position).filter (·.canonicalBytes ≤ Bounds.maxCellBytes)
+
+/-- A forced row: its relation field, its key projection (a record of the key columns), and
+its canonical bytes. -/
+structure Read where
+  field : String
+  key : Data
+  bytes : Nat
+
+/-- A segment's reads: the rows it forced and, per stored field, how far its spine was forced
+(`n + 1` once its `nil` was: the whole key set was observed). -/
+structure Reads where
+  rows : List Read
+  spans : List (String × Nat)
+
+def keyProjection (key : List String) : Data → Data
+  | .record fields => .record (key.filterMap fun column => (fields.lookup column).map (column, ·))
+  | row => row
+
+def Store.readsOf (store : Store) (state : State) : Reads :=
+  { rows := (forcedRows state).filterMap fun (field, position) => do
+      let relation ← store.relations.find? (·.field == field)
+      let row ← store.fetch field position
+      return ⟨field, keyProjection relation.key row, row.canonicalBytes⟩
+    spans := spineReach state }
+
+def Reads.toJson (r : Reads) : Json :=
+  Json.mkObj [("rows", Json.arr (r.rows.map fun read => Json.mkObj [("field", Lean.toJson read.field),
+      ("key", dataJson read.key), ("bytes", Lean.toJson read.bytes)]).toArray),
+    ("spans", Json.arr (r.spans.map fun (field, reach) =>
+      Json.mkObj [("field", Lean.toJson field), ("reach", Lean.toJson reach)]).toArray)]
+
+/-- The state with its stored relations emptied (`rows {items: []}`): what the kernel checks
+of a stored state, and the scalar part the host bounds by `Bounds.maxCellBytes`. -/
+def scalarPart (stored : List String) : Data → Data
+  | .record fields => .record (fields.map fun (name, value) =>
+      if stored.contains name then (name, .variant "rows" (.record [("items", .variant "nil" (.record []))]))
+      else (name, value))
+  | state => state
+
+/-- The machine state a stored turn starts from, with its activity shape: `entry` applied to
+the state (one stored object cell at address 0) and the remaining arguments natively. -/
+def storedStart (entry : Delvetalk.CheckedEntry) (arguments : List Data) (store : Store) :
+    Except String (State × Ty × Ty × Ty) := do
+  let bounds := entry.source.assumptions.bounds
+  let stored := store.relations.map (·.field)
+  let mut type := entry.type
+  for (v, i) in arguments.zipIdx do
+    let (domain, rest) := match callable type with
+      | .arrow _ _ d c => (d, c)
+      | other => (other, other)
+    let checked := if i == 0 then scalarPart stored v else v
+    if domain.isDataUnder bounds [] Ty.dataFuel [] && !checked.conformsUnder bounds domain then
+      throw "turn refused: argument does not conform to its type"
+    if domain == .data && !checked.wellFormed then throw "turn refused: argument does not conform to Data (repeated field)"
+    type := rest
+  let (plan, response, result) ← activityShape entry.source.assumptions type
+  let .record fields :: rest := arguments | throw "turn refused: a stored turn's first argument is its state record"
+  let start : State := ⟨#[.stored (.object fields (store.relations.map fun r => (r.field, r.size))) none],
+    .evaluate entry.source.term [], .argument (.bound 0) [0] :: rest.map .nativeArgument⟩
+  return (start, plan, response, result)
+
+/-- Run a stored segment from `start` under `limits`, conclude it, and read its reads off the
+state it ended in (a yield's after its Plan was materialized). -/
+def runStored (entry : Delvetalk.CheckedEntry) (store : Store) (dictionary : Dictionary) (binding : Binding)
+    (plan response result : Ty) (b : Budgets) (limits : Limits) (start : State) : Except String (Step × Reads) := do
+  let fetch := store.bounded
+  let run := executeStateWith (fun _ => true) fetch limits ⟨b.nodes, b.ticks, b.bytes⟩ start
+  let ended := match run with
+    | .ok e => e.extraction.result.state
+    | .error (_, state, _) => state
+  let step ← concludeStep dictionary entry.pin binding entry.source.assumptions.bounds plan response result b limits
+    (run.map fun e => (e.extraction.result.value, e.extraction.result.remaining)) entry.sites fetch
+  let ended := match step with
+    | .yielded _ _ _ suspension _ => suspension.state
+    | _ => ended
+  return (step, store.readsOf ended)
+
+/-- Start a stored turn on a held entry: its first step and the rows it forced. -/
+def startEntryStored (entry : Delvetalk.CheckedEntry) (arguments : List Data) (store : Store) (binding : Binding)
+    (b : Budgets) (dictionary : Option Dictionary := none) : Except String (Step × Reads) := do
+  let (start, plan, response, result) ← storedStart entry arguments store
+  runStored entry store (dictionary.getD (Dictionary.ofProgram entry.source.term)) binding plan response result b
+    ⟨b.heap, b.stack⟩ start
+
+/-- Resume a stored yield held in this process (`resumeSuspended`'s refusals), fetching from
+`store`, which must answer the read height the turn started at. -/
+def resumeSuspendedStored (entry : Delvetalk.CheckedEntry) (suspension : Suspension) (store : Store)
+    (binding : Binding) (value : Data) (b : Budgets) : Except String (Step × Reads) := do
+  discard <| activityShape entry.source.assumptions (peelArrows Bounds.entryArrowDepth entry.type)
+  unless suspension.pin == entry.pin do throw "checkpoint belongs to another package"
+  unless suspension.binding.object == binding.object do throw "checkpoint belongs to another object"
+  unless suspension.binding.principal == binding.principal do throw "checkpoint belongs to another principal"
+  unless suspension.binding.intent == binding.intent do throw "checkpoint belongs to another intent"
+  unless suspension.binding.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
+  let (_, plan, response, result, resumed) ← resumeState entry suspension.state suspension.site value
+  runStored entry store suspension.dictionary binding plan response result b
+    (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state) resumed
+
+/-- Resume a stored turn's checkpoint whose digest the caller recorded (`issued`). -/
+def resumeEntryStepStored (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String)
+    (binding : Binding) (value : Data) (b : Budgets) (store : Store) (dictionary : Option Dictionary := none) :
+    Except String (Step × Reads) := do
+  let dictionary := dictionary.getD (Dictionary.ofProgram entry.source.term)
+  let (state, site) ← checkpointState entry checkpoint issued binding dictionary
+  let (_, plan, response, result, resumed) ← resumeState entry state site value
+  runStored entry store dictionary binding plan response result b
+    (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) resumed
 
 def wantsProfile (request : Json) : Bool := (request.getObjValAs? Bool "profile").toOption.getD false
 

@@ -398,6 +398,20 @@ forcing it (one tick; on an ordinary list a walk), and records a whole-relation 
 on an ordinary list a walk by canonical bytes. `Relation.obend`'s `count` and `lookup` move
 onto them (objects lane).
 
+**Built (lane/kernel11).** Step 2: `Stored`, `Cell.stored`, `Refusal.unfetched` (checkpoint
+refusal code 9), `objectCell`/`allocateObjectFields`/`forceStored` (Machine); `storedChildren`,
+`forceStored_size` (Fast); `Fetch`, `fetchable`, `fetchStep`, `fetchCost`, `fetchable_spec`,
+`storedInitial`, `forcedRows`, `spineReach` and the fetch branch of `forceHostedFrom` (Data);
+`encodeStored`/`decodeStored`, `stored_roundTrip`, v3 cell tag 5 (`cellV2_roundTrip`); collector,
+trim and erase cases; `erase_forceStored`, `fetchable_agree`, `agree_fetchStep`,
+`forceStored_related`, `related_fetchable`, `related_fetchStep`; `agree_*`, `related_*`, the three
+`*_resume_segment` theorems and `checkpoint_resume_segment` take `{fetch}`. `yieldedPlan` and
+`complete` take a `Fetch`. `evaluate-term` takes `stored: {state, relations}` and answers
+`forced: [[field, position]]`; the generator appends 32 `stored` cases from their own stream
+(`stored_cases`), and `test_conformance.StoredCells` checks stored against literal runs and the
+forced rows. Conformance 1500: 1467 of 1535 agree per evaluator, 68 known, 0 unexpected (the 32
+stored cases all agree). No packet or pinned tick moved.
+
 **Estimate.** Kernel: cells, fetch, codecs, Fast, proofs, generator (step 2) 2 days; runner and
 reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `Store` over its
 state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with

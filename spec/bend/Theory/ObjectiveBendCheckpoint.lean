@@ -331,6 +331,27 @@ def decodeDataFields : Nat → Nat → Tokens → Option (List (String × Data) 
   | _, _ + 1, _ => none
 end
 
+/-- A stored part (KERNEL-HANDOFF §15): its kind and fields; the object's state as Data. -/
+def encodeStored : Stored → Tokens
+  | .object state stored => .nat 0 :: (encodeData (.record state) ++ encodeNamed stored)
+  | .relation field size => [.nat 1, .text field, .nat size]
+  | .items field size => [.nat 2, .text field, .nat size]
+  | .spine field position size => [.nat 3, .text field, .nat position, .nat size]
+  | .cons field position size => [.nat 4, .text field, .nat position, .nat size]
+  | .row field position => [.nat 5, .text field, .nat position]
+def decodeStored (fuel : Nat) : Tokens → Option (Stored × Tokens)
+  | .nat 0 :: rest => do
+      let (state, rest) ← decodeData fuel rest
+      match state with
+      | .record state => do let (stored, rest) ← decodeNamed rest; pure (.object state stored, rest)
+      | _ => none
+  | .nat 1 :: .text field :: .nat size :: rest => some (.relation field size, rest)
+  | .nat 2 :: .text field :: .nat size :: rest => some (.items field size, rest)
+  | .nat 3 :: .text field :: .nat position :: .nat size :: rest => some (.spine field position size, rest)
+  | .nat 4 :: .text field :: .nat position :: .nat size :: rest => some (.cons field position size, rest)
+  | .nat 5 :: .text field :: .nat position :: rest => some (.row field position, rest)
+  | _ => none
+
 def encodeFrame : Frame → Tokens
   | .argument term environment => .nat 0 :: (encodeTerm term ++ encodeAddresses environment)
   | .update address => [.nat 1, .nat address]
@@ -402,12 +423,14 @@ def encodeRefusal : Refusal → Tokens
   | .unbound => [.nat 0] | .missingCell => [.nat 1] | .missingField => [.nat 2] | .wrongValue => [.nat 3]
   | .invalidUpdate => [.nat 4] | .capacity => [.nat 5] | .missingArm => [.nat 6] | .sharedEffect => [.nat 7]
   | .program reason => [.nat 8, .text reason]
+  | .unfetched => [.nat 9]
 def decodeRefusal : Tokens → Option (Refusal × Tokens)
   | .nat 0 :: rest => some (.unbound, rest) | .nat 1 :: rest => some (.missingCell, rest)
   | .nat 2 :: rest => some (.missingField, rest) | .nat 3 :: rest => some (.wrongValue, rest)
   | .nat 4 :: rest => some (.invalidUpdate, rest) | .nat 5 :: rest => some (.capacity, rest)
   | .nat 6 :: rest => some (.missingArm, rest) | .nat 7 :: rest => some (.sharedEffect, rest)
   | .nat 8 :: .text reason :: rest => some (.program reason, rest)
+  | .nat 9 :: rest => some (.unfetched, rest)
   | _ => none
 
 def decodeMany {α : Type} (item : Tokens → Option (α × Tokens)) : Nat → Tokens → Option (List α × Tokens)

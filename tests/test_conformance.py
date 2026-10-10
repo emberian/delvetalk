@@ -49,6 +49,11 @@ class Reference:
 
     def evaluate(self, case):
         request = {"op": "evaluate-term", "term": case["term"], "responses": case["responses"]}
+        if "stored" in case:
+            # The machine runs the function on the state with its relations stored; the
+            # evaluators run `term`, the function applied to the state as a literal.
+            stored = case["stored"]
+            request.update(term=stored["function"], stored={"state": stored["state"], "relations": stored["relations"]})
         self.proc.stdin.write(json.dumps(request) + "\n")
         self.proc.stdin.flush()
         reply = json.loads(self.proc.stdout.readline())
@@ -131,7 +136,7 @@ class Evaluator:
 
 
 def job(case):
-    return {k: v for k, v in case.items() if k != "kind"}
+    return {k: v for k, v in case.items() if k not in ("kind", "stored")}
 
 
 def build_evaluators(impl, scratch):
@@ -270,3 +275,35 @@ if __name__ == "__main__":
         print(render(report(int(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "impl"))))
     else:
         unittest.main()
+
+
+class StoredCells(unittest.TestCase):
+    """A state's relation held as stored cells (KERNEL-HANDOFF section 15): the machine run on it
+    answers what the machine answers on the state as a literal, and forces only the rows read."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.reference = Reference()
+        cls.cases = [c for c in generate(0) if c["kind"] == "stored"]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.reference.close()
+
+    def run_literal(self, case):
+        return self.reference.evaluate({"term": case["term"], "responses": case["responses"]})
+
+    def test_stored_and_literal_states_agree(self):
+        self.assertTrue(self.cases)
+        for case in self.cases:
+            with self.subTest(case=case["name"]):
+                stored, literal = self.reference.evaluate(case), self.run_literal(case)
+                self.assertEqual({k: stored[k] for k in ("status", "shape", "plans")},
+                                 {k: literal[k] for k in ("status", "shape", "plans")})
+
+    def test_only_the_rows_read_are_forced(self):
+        for case in self.cases:
+            with self.subTest(case=case["name"]):
+                forced = self.reference.evaluate(case)["forced"]
+                self.assertEqual(sorted(j for _, j in forced), case["stored"]["reads"])
+                self.assertTrue(all(f == "r" for f, _ in forced))
