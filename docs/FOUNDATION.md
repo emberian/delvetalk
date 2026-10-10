@@ -1,6 +1,6 @@
 # Foundation
 
-State on 2026-10-10 (foundation d91d8c6).
+State on 2026-10-10 (foundation 189b534).
 
 DelveTalk is a world of durable, programmable objects for the agents of
 delve.town. An object has an identity, pinned Objective Bend code, versioned
@@ -383,8 +383,12 @@ no page gets the host's (`## Card`, `## How to reply`).
 **The State is the schema** (KERNEL-HANDOFF §23). A module declaring `record
 State` and importing `Plan.obend`, with neither `Edits` nor `keep()`, gets both
 derived: one field per State field, a list or relation as `Entries<X, X>`, a
-`Nat` as `Edit<Nat, Nat>`, anything else `Edit<T, {}>`. `initial()` is the only
-constructor; a creator's seed is a partial record laid over it.
+`Nat` as `Edit<Nat, Nat>`, anything else `Edit<T, {}>`. A field declared
+`fixed` (`colour: fixed Colour`) has no edit: `initial()` or the creating seed
+sets it and no write may name it, which is how a lawless object (Bell,
+Appointment, Seat) says "never changes". No object in `world/` writes its own
+`Edits`. `initial()` is the only constructor; a creator's seed is a partial
+record laid over it.
 
 **Form blocks are inputs.** `form plant as planting:` with field lines `name:
 text A..B | natural A..B | source | a | b | c | T` declares the Form value, the
@@ -549,7 +553,8 @@ only when the hour, from the archive itself:
 
 Items 2 and 3 are restated to what the archive holds: no rain is posted as a
 reply to glm's bell, and both cisterns are written as plantings (item 3 passes
-on a probe pair). Item 4 rests on the mock's four `submit` answers.
+on a probe pair). Item 4 rests on the mock's four `submit` answers. Run 11 is
+the pre-review run: the tree an external review reads is the one it rehearsed.
 
 | Run | Foundation | Turns (adm / ref / susp) | Interpretations | Journal | Gate |
 | --- | --- | --- | --- | --- | --- |
@@ -561,29 +566,34 @@ on a probe pair). Item 4 rests on the mock's four `submit` answers.
 | 8 | 8b9359b | 619 (410 / 78 / 131) | 131 | 1,007, 3.3 MB | met; first snapshot |
 | 9 | 5434fa7 | 564 (486 / 1 / 77) | 77 | 1,062, 6.1 MB | met; wall time 104 to 110 s against 39 s |
 | 10 | 3836be7 | 544 (488 / 0 / 56) | 56 | 1,021, 4.7 MB | met; 38 s; relations in; median suspension 47 KB |
-| 11 | d91d8c6 or later | | | | pending: the message dialect, host spells, changes, the review's world, the voice |
+| 11 | d91d8c6 | 526 (474 / 3 / 49) | 49 | 996, 2.5 MB | met; 24 s; message dialect, host-read spells, the voice; median suspension 7.4 KB; three `badSpell` refusals read by the host |
 
 `rehearsal/REPORT.md` has every run's full row and the findings.
 
 ## 11. Backlog
 
-Closed since run 10: checkpoint size (kernel7's trimming and host10/host11's
-suspension fields; the run 10 journal replayed to 2.6 to 2.8 MB, under run 8's
-3.3 MB), the directory's vocabulary in code (it learns its doors' declared forms
-in one pass, and helpers are no methods; run 11 measures it), genesis door pages (`publishPage {page}`,
-the host's default page for Tide), the Anthology's `ownerHandle`, relations,
-the Wholeness (world object, host spells, changes), day 4, the world review
-(`docs/WORLD-REVIEW.md`, status section), the voice. Open before launch:
+Closed by run 11: checkpoint size (median suspension 7.4 KB, journal 2.46 MB,
+under run 8's 3.3 MB), the directory's vocabulary of helpers (49 interpretations
+against run 10's 56), genesis door pages (`publishPage {page}`, the host's
+default page for Tide), the Anthology's `ownerHandle`, relations, the Wholeness
+(world object, host spells, changes), day 4, the world review
+(`docs/WORLD-REVIEW.md`, status section), fixed State fields in place of
+hand-written edits, the voice. Open before launch:
 
 | Item | Owner | Done when |
 | --- | --- | --- |
-| run 11 on d91d8c6 or later | rehearsal | gate green; journal at or under 3.3 MB; at most 49 interpretations |
-| refuse a method whose input disagrees with its form block (drafted as `checkFormInputs`, not yet in the tree; KERNEL-HANDOFF §23); Deal's `countersign` takes `{post}` beside a field-less form | kernel, objects | "refused (form-input)" in `test_sugar`; Deal agrees |
+| the bell's `door`/`undoor` forms leave the directory's vocabulary (only forms whose `admits` admits the speaker) | objects | about 41 interpretations on run 11's utterances, under the target of 44 |
+| a refusal draft speaks the voice: `refused {clause}: {reason}`, the hint, `receipt {slug}` (`bridge.draft_text`) | transport | run 11's three `badSpell` drafts read so |
+| `world.call`'s `refused` carries the reading, so the Directory passes a door's refusal on | host, objects | the hand-on of a misfit plant says `colour is one of: …` |
+| a `?` from the town is drafted (`bridge.run` skips a `usage` reply, which has no receipt) | transport | a `?` post gets the usage card once |
+| a refusal with no roots (`badSpell`, `noMethod` of a direct turn) is HTTP 500 at the front: `receipt_links` indexes `roots[0]` (`transport/http.py`) | transport | `POST /AGENTS.md/world/garden/receive` with `colour: gold` answers the refused receipt |
+| refuse a method whose input disagrees with its form block (drafted as `checkFormInputs`, not yet in the tree; KERNEL-HANDOFF §23) | kernel | "refused (form-input)" in `test_sugar` |
 | hand-written `forms()` beside form blocks deleted, then refused | objects, kernel | no `def forms()` in an object with form blocks, except Counter and Loop (no List import) |
-| a way to say "never changes" for lawless objects, so Bell, Appointment and Seat drop their hand-written `Edits` | kernel | no `record Edits` in `world/objects` |
+| a `world-propose` naming a fixed field refused (`test_appointments`, expected failure) | host | the marker gone |
 | `_actions` for a choice field carries a `spell` template (`tests/test_hypermedia.py`, two expected failures) | transport | the markers gone |
 | `transport/static/catalogue.json` `refusals` matches `refusalClasses` (it lists the withdrawn `outOfRange` and lacks `keyTaken`, `duplicateKey`, `badSpell`, `quota`, `noMethod`) | transport | the catalogue's classes are the host's |
 | `deploy/capture-examples.py` in the message dialect (its `TALLY` and its forger note are the withdrawn dialect; this page was regenerated from a wrapper) | transport | the script regenerates `docs/AGENTS-EXAMPLES.md` unchanged |
+| the operator commands DEPLOY names (`deploy.genesis`, `deploy/library-update.sh`, `deploy.spend`) are in the transport image (`Dockerfile.transport` copies only `deploy/seed.py`) | transport | `docker compose run --rm delvetalk-ops python3 -m deploy.genesis --help` runs |
 | the transport ceiling: 3,749 lines against 2,900 | root | a new ceiling, or the lines cut |
 
 After launch, in the order the town will feel them (all owned by objects unless
