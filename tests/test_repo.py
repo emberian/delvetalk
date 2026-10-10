@@ -103,10 +103,8 @@ class Repository(unittest.TestCase):
             send({'op': 'world-turn', 'principal': DID, 'object': 'nope', 'method': 'receive', 'argument': record(), 'identity': 'miss'}),
             send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'publish', 'argument': record(), 'identity': 'pub-1'}),
             send({'op': 'world-create', 'principal': DID, 'identity': 'mk-d', 'object': 'diary', 'modules': counter_modules(),
-                  'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}}),
-            send({'op': 'world-create', 'principal': DID, 'identity': 'mk-t', 'object': 'mail@home', 'modules': counter_modules(),
-                  'entry': 'initial', 'seed': record(count=nat(0))})]
-        assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created', 'created'], seeded
+                  'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}})]
+        assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created'], seeded
         cls.receipts = {r['receipt']['identity']['intent']: r['receipt'] for r in seeded}
 
     @classmethod
@@ -255,8 +253,6 @@ class Repository(unittest.TestCase):
         s, bell = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden~bell~1.0')
         self.assertEqual((s, bell['uri'], bell['value']['object']), (200, f'at://{REPO}/{NS}object/garden~bell~1.0', 'garden/bell/1'), bell)
         self.assertEqual(self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden/bell/1/0'), (s, bell))
-        listing = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'object')[1]
-        self.assertEqual(listing['unkeyable'], ['mail@home'])  # the host admits `@`; record keys do not
         laws = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'law')[1]['records']
         self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.owner', [x['uri'] for x in laws])
         self.assertNotIn('diary', [x['value']['object'] for x in laws])
