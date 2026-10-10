@@ -105,12 +105,13 @@ class Chains(Chain):
         self.assertEqual(field(self.state("door"), "openedBy"), label("bell"))  # opened by the change, not a turn
         self.assertEqual(field(self.state("lantern"), "lit"), boolean(True))
         self.assertEqual(field(self.state("lantern"), "litBy"), label("door"))
-        # A `changed` that is no delivery from the watched object opens nothing.
+        # The receiver is a helper: no turn may name it, so a forged `changed` opens nothing.
         self.make("door2", closure("Door"), record())
         self.turn("door2", "watch", record(object=label("bell")))
         forged = record(object=reference("bell"), field=label("rung"), version=nat(9), inserted={"tag": "list", "items": [boolean(True)]},
                         retracted={"tag": "list", "items": []})
-        self.assertEqual(self.turn("door2", "changed", forged, principal="gemini")["result"], boolean(False))
+        refused = self.turn("door2", "changed", forged, principal="gemini")
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["class"]), ("refused", "noMethod"), refused)
         self.assertEqual(field(self.state("door2"), "open"), boolean(False))
 
     def test_a_tick_cycle_ends_in_a_budget_exhausted_refusal(self):

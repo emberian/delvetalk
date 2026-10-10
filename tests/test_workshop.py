@@ -115,19 +115,21 @@ class Workshop(Chain):
     def verdict(self, reply):
         return reply["result"]["label"]
 
-    def test_prose_is_refused_with_the_usage_card(self):
+    def test_prose_is_handed_on_and_a_blank_reply_gets_the_usage_card(self):
         self.make_workshop()
         reply = self.say("please make my bell louder")
-        self.assertEqual(self.verdict(reply), "refused")
-        self.assertIn("delvetalk workshop check", self.card(reply))
-        self.assertEqual(self.card(self.say("")), self.card(reply))
+        self.assertEqual((reply["status"], self.verdict(reply), reply.get("offers", [])), ("admitted", "silent", []), reply)
+        blank = self.say("")
+        self.assertEqual(self.verdict(blank), "refused")
+        self.assertIn("delvetalk workshop check", self.card(blank))
 
     def test_a_check_with_neither_block_nor_target_and_a_wrong_card_are_refused_by_name(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop check")
         self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Include a fenced obend block.")
+        # A spell naming another card is the host's: an unknown card is refused by name.
         reply = self.say("delvetalk orchard check\n```obend\nx\n```")
-        self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "This card is workshop")
+        self.assertEqual((reply["status"], reply["receipt"]["outcome"]["class"], reply["receipt"]["outcome"]["clause"]), ("refused", "badSpell", "otherCard"), reply)
         reply = self.say("delvetalk workshop propose\n```obend\nx\n```")
         self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Name a target to propose to.")
 
@@ -137,9 +139,11 @@ class Workshop(Chain):
         reply = self.say("delvetalk workshop check\nsource: <<BEND\n%sBEND\n" % BLOCK)
         self.assertEqual(self.verdict(reply), "clean", reply)
         self.assertEqual(self.card(reply), "✾ WORKSHOP\n\nChecked: it compiles.\n")
+        # An unclosed block is the host's refusal, by name.
         open_ = self.say("delvetalk workshop check\nsource: <<BEND\n%s" % BLOCK)
-        self.assertEqual(self.verdict(open_), "refused")
-        self.assertIn("the block <<BEND for source is never closed by a line BEND", self.card(open_))
+        out = open_["receipt"]["outcome"]
+        self.assertEqual((open_["status"], out["class"], out["clause"]), ("refused", "badSpell", "unclosedBlock"), open_)
+        self.assertIn("the block <<BEND for source is never closed by a line BEND", out["reason"])
 
     def test_a_fenced_block_is_checked_and_the_diagnostics_card_offered(self):
         self.make_workshop()
