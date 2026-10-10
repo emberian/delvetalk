@@ -9,16 +9,11 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Text.obend as Text
+import ./Rows.obend as Rows
 # A proposal the target's law refused, held for the target's owner to adopt, or for its
-# proposer to withdraw. Keyed {n}, numbered in order, so past sixteen the host drops the
+# proposer to withdraw. Keyed {n}, numbered in order, so past twelve the host drops the
 # oldest.
-record Held:
-  n: Nat
-  target: String
-  package: String
-  migration: String
-  proposer: String
-  proposerHandle: String
+type Held = Rows.Held
 record State:
   title: String
   held: Relations.Relation<Held>
@@ -40,7 +35,7 @@ def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
 def initial() -> State:
   {title: "Workshop", held: Relations.empty(), next: 1n}
 def relations() -> Relations.Decls:
-  Lists.append(Relations.Decls.nil(), {field: "held", key: Text.words("n"), limit: 16n})
+  Lists.append(Relations.Decls.nil(), {field: "held", key: Text.words("n"), limit: 12n})
 def heldKey(held: Held) -> {n: Nat}:
   {n: held.n}
 # The host's check answers "<module>:<line>: <stage>: <message>", and, when the
@@ -105,20 +100,22 @@ def adopted(target: String, was: Nat, package: String, migration: String, contex
 # and answered; only a refusal by the target's law is held, for an owner whose law may admit it.
 def programFault(clause: String) -> Bool:
   clause == "compile" || clause == "program" || clause == "packageBytes" || clause == "migration" || clause == "stateType"
-def faultReading(clause: String, target: String) -> String:
-  if clause == "stateType" then "Its State is not {target}'s; name a migration from the old one." else clause
+def faultReading(clause: String, reading: String, target: String) -> String:
+  if clause == "stateType" then "Its State is not {target}'s; name a migration from the old one." else if reading != "" then reading else clause
 def reprogramming(target: String, was: Nat, package: String, migration: String, context: Abi.Context, state: State) -> Activity<Verdict>:
   match world.reprogram({object: {world: context.world, object: target}, package: package, migration: migration}):
     case reprogrammed(r): Card.tell(Verdict.reprogrammed({pin: r.pin}), reprogrammedCard(target, was))
-    case refused(r): if programFault(r.clause) then refusing(r.clause, faultReading(r.clause, target)) else holding({n: state.next, target: target, package: package, migration: migration, proposer: context.principal, proposerHandle: context.handle}, r.clause, state)
+    case refused(r): if programFault(r.clause) then refusing(r.clause, faultReading(r.clause, r.reading, target)) else holding({n: state.next, target: target, package: package, migration: migration, proposer: context.principal, proposerHandle: context.handle}, r.clause, r.reading, state)
 # Held: the law refused the proposer's reprogram, so it waits for the target's owner. When
-# sixteen are held, the host drops the oldest as this one comes, and the card says which.
-def holding(held: Held, clause: String, state: State) -> Activity<Verdict>:
+# twelve are held, the host drops the oldest as this one comes, and the card says which.
+# The law's reading, when the host gives one, says why before the card says what is held.
+def holding(held: Held, clause: String, reading: String, state: State) -> Activity<Verdict>:
   let written(_) = write {held: insert held, next: add 1n}
-  Card.tell(Verdict.held({n: held.n, clause: clause}), Document.text("refused {clause}: held as #{natText(held.n)} for the owner of {held.target} to adopt:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n{dropping(state)}"))
+  let why = if reading == "" then "" else "{reading}\n"
+  Card.tell(Verdict.held({n: held.n, clause: clause}), Document.text("{why}refused {clause}: held as #{natText(held.n)} for the owner of {held.target} to adopt:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n{dropping(state)}"))
 def dropping(state: State) -> String:
   match Relations.rows(state.held):
-    case cons(c): if Relations.count(state.held) >= 16n then "The oldest held proposal, #{natText(c.head.n)}, was dropped.\n" else ""
+    case cons(c): if Relations.count(state.held) >= 12n then "The oldest held proposal, #{natText(c.head.n)}, was dropped.\n" else ""
     case nil(_): ""
 def heldNumbered(n: Nat, state: State) -> Lists.Maybe<Held>:
   Relations.lookup(state.held, {n: n}, heldKey)
@@ -132,7 +129,7 @@ def adopt(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Verdi
 def adoptRun(held: Held, context: Abi.Context) -> Activity<Verdict>:
   match world.reprogram({object: {world: context.world, object: held.target}, package: held.package, migration: held.migration}):
     case reprogrammed(r): adoptWritten(held, r.pin, context)
-    case refused(r): if programFault(r.clause) then refusing(r.clause, "#{natText(held.n)} cannot be applied to {held.target}: {faultReading(r.clause, held.target)}") else refusing("notOwner", "Only the owner of {held.target} adopts #{natText(held.n)} (refused {r.clause})")
+    case refused(r): if programFault(r.clause) then refusing(r.clause, "#{natText(held.n)} cannot be applied to {held.target}: {faultReading(r.clause, r.reading, held.target)}") else refusing("notOwner", "Only the owner of {held.target} adopts #{natText(held.n)} (refused {r.clause})")
 def adoptWritten(held: Held, pin: String, context: Abi.Context) -> Activity<Verdict>:
   let written(_) = write {held: retract heldKey(held)}
   Card.tell(Verdict.reprogrammed({pin: pin}), Document.text("✾ WORKSHOP\n\nAdopted #{natText(held.n)} from {Card.shown(held.proposer, held.proposerHandle, context)}: {held.target} is reprogrammed.\n"))

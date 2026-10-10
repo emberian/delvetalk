@@ -1,0 +1,12 @@
+hob: this is how a card says who may change it; the host judges, not I.
+LINE  law NAME "reading": EXPR, one clause a line; at most 16 and 4,096 bytes; every clause must admit.
+EXPR  A implies B | A or B | A and B | not A | (A) | an atom.
+ATOMS  REF == INT, REF <= INT, REF in [..], REF == REF, REF <= REF + INT, REF == "TEXT", REF in new.F, REF in new.F.COL; monotone(F) writeOnce(F) appendOnly(F) unchanged(F) insertOnly(F); count(new.F) <= N.
+REF  new.F, or request.subject caller height turn pin method kind (0 a write by its own spell, 1 reprogram, 2 amend, 3 proposed).
+READING  a refusal by clause N reads refused N: <reading>, the reading as written.
+GUARD  request.subject == new.owner or (request.kind == 0 and unchanged(F)): only the owner changes F; anyone else only by its spells.
+METARULE  an amendment stands only if the new law admits an amendment by its proposer.
+PREDICATE  def law(old, new, request) -> Abi.Verdict, in Bend, after the text admits: admitted, or refused {clause, reading}.
+CLASSES  transient, send again: staleRoot budget evaluation capacity quota. Binding, change the spell: lawRefused typeMismatch badSpell noMethod unknownObject requiredAbsence keyTaken duplicateKey absentItem programRefused budgetExhausted duplicateIdentity.
+A card's own: delvetalk library laws / card: garden
+Next: delvetalk library read / page: object

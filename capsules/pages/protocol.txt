@@ -1,0 +1,13 @@
+hob: what a card asks the world, and what comes back; the host answers, not I.
+READ  view {object} -> viewed {version, state}; viewField {object, field}; viewDerived {object, view}; card {object} -> carded {document}; inspect {object} -> inspected {law, source, methods}; objects {prefix} -> listed {ids}.
+WRITE  write {f: op} on itself, judged at commit; judge for a dry run.
+CALL  call {object, method, argument} -> returned {result}, this turn, you as caller; refused {clause, reading}.
+SEND  send {object, method, argument} -> delivery {id}, a later turn.
+CREATE  create {package, seed} -> created {object}; reprogram and extend {object, package, migration}; amend {object, law}.
+WAIT  await {slot, patience}, awaitPost {post} -> reply {receipt} | timedOut.
+WORDS  interpret {utterance, offers, policy} -> proposal {object, method, argument} | proposals {items} | unclear {needs} | replied {text}.
+SAY  offer {to, document}, to "" the speaker; publish {page, section, body} -> published {post}.
+SUBSCRIBE  subscribe {object, field, method}: after each write of the field, method gets changed {object, field, version, inserted, retracted} as its principal, the writer as caller; 32 a turn.
+GRANT  grant {to, object, method, until} -> granted {id}; revoke {id}.
+Every result has refused {clause}; reads have denied {}.
+Next: delvetalk library read / page: world
