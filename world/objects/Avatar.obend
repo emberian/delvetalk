@@ -252,6 +252,8 @@ form subscribe:
   to: text 1..160
 form unsubscribe:
   to: text 1..160
+def methods() -> Lists.List<String>:
+  Card.wordList("observe unobserve notice hold release")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: moveForm(), tail: Card.Forms.cons({head: noteForm(), tail: Card.Forms.cons({head: acceptForm(), tail: Card.Forms.cons({head: sendForm(), tail: Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: unsubscribeForm(), tail: Card.Forms.nil()})})})})})})
 def blurb() -> Card.Door:

@@ -108,6 +108,8 @@ def observed(change: Card.Change, entries: Plans.Entries<Card.Observer, {}>, con
 form rain:
   text: text 1..280
 form ring:
+def methods() -> Lists.List<String>:
+  Card.wordList("observe unobserve strike")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: rainForm(), tail: Card.Forms.cons({head: ringForm(), tail: Card.Forms.cons({head: Card.doorForm(), tail: Card.Forms.cons({head: Card.undoorForm(), tail: Card.Forms.nil()})})})})
 # Doors on the bell's card are its planter's (the garden gives it one home on planting).

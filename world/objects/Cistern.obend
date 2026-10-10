@@ -29,6 +29,8 @@ def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) 
   let written(_) = write {entries: append input.receipt}
   Lists.length(state.entries) + 1n
 # A receipt is structured data, not a spell: the card offers no form.
+def methods() -> Lists.List<String>:
+  Card.wordList("retain")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def blurb() -> Card.Door:

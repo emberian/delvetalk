@@ -110,6 +110,8 @@ def doorLine(door: Door) -> Document.Document:
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("✾ DELVETALK · ROOT\n\nReply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n\n"), tail: Lists.concat(Lists.map(menu(state), doorLine), Document.Documents.cons({head: Document.text("An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"), tail: Document.Documents.nil()}))})})
+def methods() -> Lists.List<String>:
+  Card.wordList("add remove")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def blurb() -> Card.Door:

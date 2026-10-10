@@ -215,6 +215,8 @@ form offer:
   to: text 1..128
   until: natural 1..1000000000
 form withdraw:
+def methods() -> Lists.List<String>:
+  Card.wordList("transfer copy drop")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: acquireForm(), tail: Card.Forms.cons({head: offerForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.nil()})})})
 def blurb() -> Card.Door:
