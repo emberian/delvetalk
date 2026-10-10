@@ -28,7 +28,7 @@ OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
 
 
 def door(name):
-    return record(label=label(name), description=label("a " + name), to=reference(name))
+    return record(label=label(name), description=label("a " + name), to=reference(name), examples={"tag": "list", "items": []}, watch=label(""))
 
 
 def heard(text):

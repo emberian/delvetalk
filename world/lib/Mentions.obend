@@ -1,0 +1,134 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Form.obend as Form
+import ./Spell.obend as Spell
+import ./Card.obend as Card
+import ./Text.obend as Text
+import ./Menu.obend as Menu
+type Door = Menu.Door
+# How the directory reads prose before any model call (pure): which door words, actions and
+# fields a reply names, and what a miss names.
+# A form without fields, such as ring, is not a word here, nor `receive`.
+def withFields(forms: Lists.List<Form.Form>) -> Lists.List<Form.Form>:
+  Lists.filter(forms, fn(f: Form.Form) -> Bool: f.action != "receive" && Lists.length(f.fields) > 0n)
+def formWords(forms: Lists.List<Form.Form>) -> Lists.List<String>:
+  Lists.map(withFields(forms), fn(f: Form.Form) -> String: f.action)
+def formFields(forms: Lists.List<Form.Form>) -> Lists.List<String>:
+  Lists.fold(withFields(forms), Lists.List.nil(), fn(f: Form.Form) -> Lists.List<String> -> Lists.List<String>: fn(rest: Lists.List<String>) -> Lists.List<String>: Lists.concat(Lists.map(f.fields, fn(x: Form.Field) -> String: x.name), rest))
+def wordAt(words: Lists.List<String>, index: Nat) -> String:
+  match Lists.at(words, index):
+    case some(w): w.value
+    case none(_): ""
+# A miss that says the action is not offered is not asked again (no attempt can offer it):
+# it is answered once, naming a door only when one offers an action resembling the miss.
+def notOffered(need: String) -> Bool:
+  Text.contains(need, "not offered") || Text.contains(need, "not one of the offered")
+def unoffered(needs: Form.Names) -> Bool:
+  Lists.any(needs, notOffered)
+# The missed action: the word before "is" in the need ("rain is not one of the offered
+# actions", the host's "garden water is not one of the offered actions").
+def missedAction(needs: Form.Names) -> String:
+  match Lists.find(needs, notOffered):
+    case some(n): beforeIs(Text.words(n.value), "")
+    case none(_): ""
+def beforeIs(words: Lists.List<String>, last: String) -> String:
+  match words:
+    case nil(_): ""
+    case cons(c): if c.head == "is" then last else beforeIs(c.tail, c.head)
+def resembles(action: String, missed: String) -> Bool:
+  textLength(missed) >= 3n && (action == missed || Text.contains(action, missed) || Text.contains(missed, action) && textLength(action) >= 3n)
+# "garden/bell/3" is a bell: the next-to-last segment of its id.
+def kindOf(id: String) -> String:
+  wordAt(Lists.reverse(slashed(id)), 1n)
+def slashed(id: String) -> Lists.List<String>:
+  if id == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(id, textBreak(id, "/")), tail: slashed(textDrop(id, textBreak(id, "/") + 1n))})
+def kindLine(id: String, missed: String) -> String:
+  if kindOf(id) == "bell" then " A bell's card takes {missed}: reply to the planting post." else " A {kindOf(id)}'s card takes {missed}: reply to its post."
+# The directory's mention scan (it alone reads prose for door words, before any model call).
+# Whether prose names one of `words` (door words and form actions, each a whole word) or,
+# as a `name:` line, one of `words` or `fields`. One pass: the text is split at blanks
+# once, and a word of three or more letters (a leading and a trailing mark dropped) is
+# looked up among the words of its own length (a 1,788-character reply costs about
+# 20,000 ticks, where a walk of the text for each word cost a million).
+def mentions(text: String, bindings: Spell.Bindings, words: Lists.List<String>, fields: Lists.List<String>) -> Bool:
+  let v = vocabulary(words)
+  let first = firsts(words)
+  fieldNamed(bindings, v, vocabulary(fields)) || scanned(text, v, first)
+def fieldNamed(bindings: Spell.Bindings, words: Vocabulary, fields: Vocabulary) -> Bool:
+  Lists.any(bindings, fn(b: Spell.Binding) -> Bool: known(words, b.name) || known(fields, b.name))
+# Words by length: the first list holds the one-letter words, and so on to 24.
+type Vocabulary = Lists.List<Lists.List<String>>
+def vocabulary(words: Lists.List<String>) -> Vocabulary:
+  Lists.fold(words, empty(24n), fn(word: String) -> Vocabulary -> Vocabulary: fn(v: Vocabulary) -> Vocabulary: inserted(v, word, textLength(word)))
+def empty(n: Nat) -> Vocabulary:
+  if n == 0n then Lists.List.nil({}) else Lists.List.cons({head: Lists.List.nil({}), tail: empty(n - 1n)})
+def inserted(v: Vocabulary, word: String, n: Nat) -> Vocabulary:
+  match v:
+    case nil(_): v
+    case cons(c): if n <= 1n then Lists.List.cons({head: Lists.List.cons({head: word, tail: c.head}), tail: c.tail}) else Lists.List.cons({head: c.head, tail: inserted(c.tail, word, n - 1n)})
+def known(v: Vocabulary, word: String) -> Bool:
+  Lists.any(bucket(v, textLength(word)), fn(w: String) -> Bool: w == word)
+def bucket(v: Vocabulary, n: Nat) -> Lists.List<String>:
+  match v:
+    case nil(_): Lists.List.nil({})
+    case cons(c): if n <= 1n then c.head else bucket(c.tail, n - 1n)
+def scanned(text: String, v: Vocabulary, first: String) -> Bool:
+  if text == "" then false else cut(text, textBreak(text, " \n"), v, first)
+def cut(text: String, at: Nat, v: Vocabulary, first: String) -> Bool:
+  if at >= 3n && textSpan(textTake(text, 1n), first) == 1n && wordKnown(textTake(text, at), v) then true else scanned(textDrop(text, at + 1n), v, first)
+# The letters the words start with, and the marks a word may open with: a word starting
+# with anything else is not looked up.
+def firsts(words: Lists.List<String>) -> String:
+  Lists.fold(words, Card.marks(), fn(w: String) -> String -> String: fn(acc: String) -> String: if textSpan(textTake(w, 1n), acc) == 1n then acc else textConcat(acc, textTake(w, 1n)))
+def wordKnown(word: String, v: Vocabulary) -> Bool:
+  let n = textLength(word)
+  if n > 24n then false else known(v, Card.stripped(word, n))
+
+# A door word is short: only the first 65 scalars are looked at (measuring and trimming a
+# long reply would cost its bytes).
+def doorWord(text: String) -> String:
+  short(textTake(Text.trimStart(text), 65n))
+def short(head: String) -> String:
+  if textLength(head) > 64n then "" else Text.trimEnd(head)
+# What the directory learns of its doors, once a turn and only when a reply needs it: each
+# door's forms, and the forms of the first card listed under it (a garden's bells), by
+# inspect. A door's word, its actions and its forms' fields are what prose must name before
+# the model reads it; a door's forms are what the model is offered.
+record Learned:
+  card: String
+  door: String
+  child: Bool
+  form: Form.Form
+type Learning = Lists.List<Learned>
+# Only what a card offers a reader counts: inspect lists the forms of its public methods and
+# `receive`, which no reader names as an action, and the owner's door actions (`door` is a word
+# the town uses for the directory's doors; prose naming it asks nothing of a bell).
+def learnedOf(card: String, door: String, child: Bool, forms: Lists.List<Form.Form>) -> Learning:
+  Lists.map(Lists.filter(forms, fn(f: Form.Form) -> Bool: f.action != "receive" && Lists.any(Card.ownerActions(), fn(a: String) -> Bool: a == f.action) == false), fn(f: Form.Form) -> Learned: {card: card, door: door, child: child, form: f})
+# The spell the field lines mean for a form: the action line as it was written (the
+# door's own fit gives its value to the form's first open text field) and every
+# line naming one of the form's fields.
+def spellFor(card: String, form: Form.Form, fields: Spell.Bindings) -> String:
+  let lines = textJoin(Lists.map(Lists.filter(fields, fn(b: Spell.Binding) -> Bool: b.name == form.action || Card.hasField(form, b.name)), fn(b: Spell.Binding) -> String: "{b.name}: {b.value}"), "\n")
+  "delvetalk {card} {form.action}\n{lines}"
+def family(learned: Learning, door: Lists.Maybe<Door>) -> Lists.List<String>:
+  match door:
+    case none(_): Lists.List.nil()
+    case some(d): Lists.concat(doorWords(d.value), learnedWords(Lists.filter(learned, fn(l: Learned) -> Bool: l.child == false && l.card == d.value.to.object)))
+def allDoorWords(doors: Lists.List<Door>) -> Lists.List<String>:
+  Lists.fold(doors, Lists.List.nil(), fn(d: Door) -> Lists.List<String> -> Lists.List<String>: fn(rest: Lists.List<String>) -> Lists.List<String>: Lists.concat(doorWords(d), rest))
+def without(words: Lists.List<String>, excluded: Lists.List<String>) -> Lists.List<String>:
+  Lists.filter(words, fn(w: String) -> Bool: Lists.any(excluded, fn(x: String) -> Bool: x == w) == false)
+def doorWords(door: Door) -> Lists.List<String>:
+  Text.words("{door.label} {door.to.object}")
+def formsOf(learned: Learning) -> Lists.List<Form.Form>:
+  Lists.map(learned, fn(l: Learned) -> Form.Form: l.form)
+def learnedWords(learned: Learning) -> Lists.List<String>:
+  Lists.concat(formWords(formsOf(learned)), formFields(formsOf(learned)))
+# Known to the town though no door offers it: a bell's rain (a rain under the hub still
+# reaches the model, and so its second-miss card).
+def knownFields() -> Lists.List<String>:
+  Text.words("rain")
+# The forms of the doors themselves (not of a card under one): what the model is offered.
+def doorForms(learned: Learning) -> Lists.List<Form.Form>:
+  formsOf(Lists.filter(learned, fn(l: Learned) -> Bool: l.child == false))

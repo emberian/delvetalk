@@ -12,6 +12,7 @@ import ./Card.obend as Card
 import ./Policies.obend as Policies
 import ./Relation.obend as Relations
 import ./Text.obend as Text
+import ./Rows.obend as Rows
 # What the garden holds for a principal: a planting understood from prose waiting for "yes"
 # (needs empty), or a planting spell missing fields (needs names them) that a reply of only
 # the missing `name: value` lines completes (the host hands such a reply to receive with its
@@ -32,10 +33,7 @@ record Pending:
 # the owner changes confirmFor). ownerHandle: the owner's handle, from the seed (genesis passes it),
 # so a refusal names the owner as the town does. pageCheckpoint: the post the last merge answered.
 # Whoever wants to know how many grow (a Wake) subscribes to `planted`.
-record Child:
-  world: String
-  object: String
-  colour: Bell.Colour
+type Child = Rows.Child
 record State:
   owner: String
   ownerHandle: String

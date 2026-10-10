@@ -9,16 +9,11 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Text.obend as Text
+import ./Rows.obend as Rows
 # A proposal the target's law refused, held for the target's owner to adopt, or for its
 # proposer to withdraw. Keyed {n}, numbered in order, so past sixteen the host drops the
 # oldest.
-record Held:
-  n: Nat
-  target: String
-  package: String
-  migration: String
-  proposer: String
-  proposerHandle: String
+type Held = Rows.Held
 record State:
   title: String
   held: Relations.Relation<Held>

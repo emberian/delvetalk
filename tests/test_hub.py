@@ -51,8 +51,8 @@ class Hub(test_chain.Chain):
         self.assertEqual(r["status"], "created", r)
         # The garden is made first, so the directory learns its forms when its door is added.
         self.make("garden", closure("Garden"), garden_seed(""))
-        for label_, description, to in ROOT_DOORS:
-            self.assertEqual(self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")["result"]["label"], "done")
+        for d in ROOT_DOORS:
+            self.assertEqual(self.turn("root", "add", record(door=door(*d)), principal="ember")["result"]["label"], "done")
 
     def say(self, text, who, uri="at://x/post/1"):
         return self.turn("root", "receive", record(text=label(text), post=label(uri)), principal=who)

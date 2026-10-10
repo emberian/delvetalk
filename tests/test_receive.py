@@ -10,24 +10,21 @@ principal, and the reply card is what the turn offers.
 """
 import unittest
 
+from deploy.genesis import DOORS
 from tests.test_replay import get, relation, rows
 from tests.test_chain import Chain, boolean, field, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record
+from transport.identity import ORIGIN
 
-ROOT_DOORS = [  # deploy/genesis.py's set
-    ("GARDEN", "Plant something; rain on another's planting; take an attributed cutting. Things remember who helped them grow.", "garden"),
-    ("ROOMS", "Enter a Spween scene, follow its choices, inspect what makes it move.", "rooms"),
-    ("WORKSHOP", "Inspect a thing; derive a variation; write Bend or Spween; offer the change for adoption.", "workshop"),
-    ("TIDE", "Wake on a cadence: subscribe yourself; anyone may tick, never too soon.", "tide"),
-    ("ANTHOLOGY", "Submit a line; the anthology's law admits it.", "anthology"),
-    ("STUDIO", "Your authenticated private heap and reflective REPL, through /AGENTS.md.", "studio"),
-]
+ROOT_DOORS = DOORS  # (label, description, object, watched field, [(spell, what comes back)])
 
 
-def door(label_, description, to):
-    return record(label=label(label_), description=label(description), to=reference(to))
+def door(label_, description, to, watch="", examples=()):
+    """A Directory `Door`: its spells and `»` lines, and the field of its object the door line counts."""
+    return record(label=label(label_), description=label(description), to=reference(to),
+                  examples=listing(record(example=label(e), comes=label(c)) for e, c in examples), watch=label(watch))
 
 
 class Cards(Chain):
@@ -167,19 +164,19 @@ def planted(context: Abi.Context) -> String:
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label("ember"), doors=relation(), greeted=relation()))
         self.assertEqual(r["status"], "created", r)
-        for label_, description, to in ROOT_DOORS:
-            reply = self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")
+        for d in ROOT_DOORS:
+            reply = self.turn("root", "add", record(door=door(*d)), principal="ember")
             self.assertEqual(reply["result"]["label"], "done", reply)
 
     def test_world_create_lays_a_partial_seed_over_initial_as_the_create_plan_does(self):
         """Genesis scripts named every field and broke whenever an object gained one (`greeted`)."""
         create = lambda ident, seed: self.host.send(op="world-create", principal="ember", identity=ident, object=ident,
                                                     modules=closure("Directory"), entry="initial", seed=seed)
-        doors = relation(record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"), place=nat(0)))
+        doors = relation(record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"), examples=listing([]), watch=label(""), place=nat(0)))
         made = create("d1", record(owner=label("ember"), doors=doors))
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
-        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy"])
+        self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy", "news", "visits"])
         self.assertEqual(field(state, "doors"), doors)
         self.assertEqual(field(state, "greeted"), relation())
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
@@ -202,36 +199,41 @@ def planted(context: Abi.Context) -> String:
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="d1")["state"], state)
 
-    def test_the_root_menu_card_puts_affordances_first_and_fits_a_reader(self):
+    def test_the_root_menu_card_is_the_trie_and_fits_a_reader(self):
+        """docs/MENU.md §1: a door line, each spell indented to be typed back whole, a `»` line
+        for what comes back. Made before its doors' objects, the menu has no counts: it is
+        docs/previews/gsb-root-menu-v3.txt without them (and without the bell's arc)."""
         self.directory()
         text = self.card(self.say("hello?", obj="root"))
         self.assertEqual(text, (
             "✾ DELVETALK · ROOT\n"
             "\n"
-            "Six doors. Reply with a door word to open one, a spell to act, or words: the interpreter reads them.\n"
+            "Six doors. Indented lines are typed back whole; » is what comes back. Words reach the interpreter, which shows the spell first; delvetalk <card> ? lists its spells.\n"
             "\n"
             "GARDEN\n"
-            "Plant something; rain on another's planting; take an attributed cutting. Things remember who helped them grow.\n"
-            "\n"
+            "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
+            "  » a bell, garden/bell/N; you hear when it rings\n"
             "ROOMS\n"
-            "Enter a Spween scene, follow its choices, inspect what makes it move.\n"
-            "\n"
+            "  delvetalk rooms enter\n"
+            "  delvetalk rooms choose / choice: Open\n"
+            "  » the passage moves; a ```spween block here makes your own\n"
             "WORKSHOP\n"
-            "Inspect a thing; derive a variation; write Bend or Spween; offer the change for adoption.\n"
-            "\n"
+            "  delvetalk workshop check / target: garden/bell/1\n"
+            "  » checked: clean, or a hint per mistake\n"
+            "  delvetalk workshop propose / target: garden/bell/1\n"
+            "  » plus a ```obend block; refused is held as #n for the owner to adopt\n"
             "TIDE\n"
-            "Wake on a cadence: subscribe yourself; anyone may tick, never too soon.\n"
-            "\n"
+            "  delvetalk tide subscribe / every: 3 / note: first light\n"
+            "  delvetalk tide tick\n"
+            "  » sooner than the gap: refused tooSoon; a due tick notes your avatar\n"
             "ANTHOLOGY\n"
-            "Submit a line; the anthology's law admits it.\n"
+            "  delvetalk anthology submit / line: the bell kept both of us\n"
+            "  » numbered, [pending] until the keeper admits\n"
+            "STUDIO · your heap and REPL: " + ORIGIN + "/AGENTS.md\n"
             "\n"
-            "STUDIO\n"
-            "Your authenticated private heap and reflective REPL, through /AGENTS.md.\n"
-            "\n"
-            "Every card prints the exact spell to copy. Reply delvetalk <card> ? for all of a card's spells. A missing field becomes a question; answer it alone.\n"))
-        self.assertTrue(text.startswith("✾ DELVETALK · ROOT\n\nSix doors. Reply with a door word"))
-        for label_, description, _ in ROOT_DOORS:
-            self.assertIn(label_ + "\n" + description + "\n", text)
+            "  delvetalk env observe\n"
+            "  » what addressed you since you last looked\n"
+            "Every reply is a receipt, admitted or refused <clause>: <reading>. No reply: ask for the receipt; never repost.\n"))
         self.assertLess(len(text), 1400)
         # The menu goes to each principal once; anything later that names no door, card or form
         # gets no offer at all, and the owner nothing.

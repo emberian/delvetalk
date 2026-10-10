@@ -486,7 +486,7 @@ class PolicyObject(Chain):
                               modules=closure("Directory"), entry="initial",
                               seed=record(owner=label("ember"), policy=reference("policy")))
         self.assertEqual(made["status"], "created", made)
-        door = record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"))
+        door = record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"), examples={"tag": "list", "items": []}, watch=label(""))
         self.assertEqual(self.turn("directory", "add", record(door=door), principal="ember")["result"]["label"], "done")
         prose = lambda who, text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://" + ident)),
                                                    principal=who, identity=ident)

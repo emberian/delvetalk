@@ -9,10 +9,7 @@ import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
-sum Colour:
-  amber: {}
-  violet: {}
-  silver: {}
+type Colour = Rows.Colour
 # A rain keeps its author's DID and the handle the host knew when it fell, the height its
 # turn read (`at`) and `n`, the bell's count of rains at that read. The key is {author, at,
 # n}: two rains of one author read at one height are two rows whenever the bell counted a

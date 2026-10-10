@@ -164,7 +164,7 @@ class WriteIsSelfOnly(Authority):
 
 class LawsOnWho(Authority):
     def test_directory_remove_by_a_stranger_is_refused_by_the_directorys_law(self):
-        door = record(label=label("garden"), description=label("a garden"), to=reference("garden"))
+        door = record(label=label("garden"), description=label("a garden"), to=reference("garden"), examples={"tag": "list", "items": []}, watch=label(""))
         r = self.host.send(op="world-create", principal="ember", identity="mk-dir", object="dir",
                            modules=closure("Directory"), entry="initial",
                            seed=record(owner=label("ember"), doors=relation(), greeted=relation()))
