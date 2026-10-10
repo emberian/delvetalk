@@ -140,6 +140,17 @@ class Interpret(unittest.TestCase):
         self.assertEqual([s['reply']['json']['n'] for s in self.settled()], [1, 2])
         self.assertEqual(self.settled()[0]['reply']['json'], {'form': 'plant', 'n': 1})
 
+    def test_the_utterance_is_sent_once(self):
+        d = Path(self.tmp.name)
+        it = dict(item(1), policy={'model': 'claude-haiku-5-5', 'system': 'forms...\n\nParticipant: plant 1'})
+        (d / 'pending.json').write_text(json.dumps({'pending': [it]}))
+        host = Host(None, str(d / 'stub'))
+        self.addCleanup(host.close)
+        interpret.run(self.state, host, self.ask)
+        sent = self.calls[0]
+        self.assertEqual((sent['system'], sent['user']), ('forms...', 'plant 1'))  # Policy.prompt's tail is the user turn, once
+        self.assertEqual((sent['system'] + sent['user']).count('plant 1'), 1)
+
     def test_a_second_run_does_nothing(self):
         interpret.run(self.state, self.host, self.ask)
         n = len(self.calls)

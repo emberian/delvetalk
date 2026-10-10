@@ -154,8 +154,7 @@ class Run:
         """Write a model fixture for every pending interpretation: what a careful Haiku says."""
         listed = self.host.send({'op': 'world-interpretations'})
         for item in listed.get('pending') or []:
-            policy = item['policy'] or {}
-            req = {'model': policy.get('model'), 'system': policy.get('system', ''), 'user': interpret.user_content(item)}
+            req = interpret.request(item)
             # A miss asked once more carries the post's text plus what is missing: the same post, the same careful answer.
             uri = texts.get(item['utterance']) or max(((len(t), u) for t, u in texts.items() if t and item['utterance'].startswith(t)), default=(0, None))[1]
             raw = (self.answers.get(uri) or {}).get('answer') or NOT_ADDRESSED

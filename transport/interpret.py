@@ -25,6 +25,14 @@ def cache_path(state, request_id):
     return Path(state) / 'interpretations' / (hashlib.sha256(str(request_id).encode()).hexdigest()[:24] + '.json')
 
 
+def request(item):
+    """The model request: the host's policy text as the system, the utterance as the user turn, once. Policy.prompt still
+    ends with `Participant: <utterance>`; that tail is cut here so it is not sent twice (FLEX.md)."""
+    policy, tail = item['policy'], '\n\nParticipant: ' + item['utterance']
+    system = policy.get('system', '')
+    return {'model': policy.get('model'), 'system': system[:-len(tail)] if system.endswith(tail) else system, 'user': item['utterance']}
+
+
 def run(state, host, ask=model.ask):
     """Ask the model for each pending request the host says may be asked now, and submit its result verbatim."""
     listed = host.send({'op': 'world-interpretations'})
@@ -38,9 +46,7 @@ def run(state, host, ask=model.ask):
             if item.get('next') is not None:  # the host's backoff: not yet
                 retrying.append(item['id'])
                 continue
-            policy = item['policy']
-            saved = {'id': item['id'], 'object': item['object'],
-                     'reply': ask({'model': policy.get('model'), 'system': policy.get('system', ''), 'user': item['utterance']})}
+            saved = {'id': item['id'], 'object': item['object'], 'reply': ask(request(item))}
             write_atomic(path, saved)
         answer = host.send({'op': 'world-interpretation', 'id': item['id'], 'reply': saved['reply']})
         if answer.get('status') == 'error':
