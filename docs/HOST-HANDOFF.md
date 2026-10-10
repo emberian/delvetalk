@@ -851,8 +851,8 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    back for an ambiguous network failure, which the transport retries under its fixed record key.
    `world-posted {…, intent}` (the existing op, gaining `intent`) settles the reservation: a
    `posted` entry naming a reserved intent is that post's outcome, and posting without a reservation
-   is still admitted (a `posted` naming `intent` must settle a standing reservation; one without is
-   the transport's until it reserves). A released intent is reserved anew under `post:<intent>/<round>`.
+   is refused by name, "a post settles a reservation; name its intent" (transport reserves every live
+   post; the host suites post through `tests.host.posted`, which reserves under a test source first). A released intent is reserved anew under `post:<intent>/<round>`.
    The welcome command and the hand read the quota through `world-status.posts {hour, sources:
    [{source, used, quota?, next?}]}` (`delve` always listed, with `quota` and `next`) and reserve before
    sending; `transport/post.py`'s `take_slot` and `post-log.json` go. Replay re-checks a reservation's

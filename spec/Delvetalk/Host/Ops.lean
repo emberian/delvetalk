@@ -2686,14 +2686,9 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
     | .ok (.null) | .error _ => pure none
     | .ok s => pure (some (← parseSlot s))
   let (page, part) ← postedPage j
-  -- The reservation the post settles (HOST-HANDOFF 5.107), when the transport reserved one.
-  let reserved ← match (j.getObjValAs? String "intent").toOption with
-    | none => pure none
-    | some i =>
-      match w.reservations[i]? with
-      | some r => if r.released then throw s!"the reservation of {i} was released" else
-          if r.posted then throw s!"the reservation of {i} is already posted" else pure (some i)
-      | none => throw s!"no reservation of {i}; reserve it with world-post-reserve first"
+  -- The reservation the post settles (HOST-HANDOFF 5.107): every post names its intent.
+  let some reserved := (j.getObjValAs? String "intent").toOption
+    | throw "a post settles a reservation; name its intent"
   -- An AT post, or a message of the Zulip playtest transport (`zulip://<stream>/<topic>/<id>`).
   unless postSchemes.any (fun (p : String) => uri.startsWith p) do
     throw s!"uri must be an at:// or zulip:// URI, not {(uri.splitOn "://").head!}://"
@@ -2703,7 +2698,7 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
   let fields := [("tag", toJson "posted"), ("uri", toJson uri), ("cid", toJson cid), ("object", toJson object)] ++
     (slot.map fun s => [("slot", s)]).getD [] ++
     (if page.isEmpty then [] else [("page", toJson page), ("section", toJson part)]) ++
-    (reserved.map fun i => [("intent", toJson i)]).getD []
+    [("intent", toJson reserved)]
   let digest := Journal.bodyHash (Json.mkObj fields)
   let answer := fun (entry : Json) => Json.mkObj [("status", toJson "posted"),
     ("height", (entry.getObjVal? "height").toOption.getD Json.null), ("receipt", entry)]
@@ -2712,6 +2707,11 @@ def postedOp (w : World) (j : Json) : Except String (World × Json) := do
   | some r => return (w, match r.getObjVal? "receipt" with | .ok e => answer e | .error _ => r)
   | none =>
     if w.posts.contains uri then throw s!"post {uri} is already recorded"
+    match w.reservations[reserved]? with
+    | some r =>
+      if r.released then throw s!"the reservation of {reserved} was released"
+      if r.posted then throw s!"the reservation of {reserved} is already posted"
+    | none => throw s!"no reservation of {reserved}; reserve it with world-post-reserve first"
     let (w', entry) := push (postIndex w uri { object, slot, page, part, height := w.height + 1 }) (identityKey principal intent)
       [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
        ("request", toJson digest), ("outcome", Json.mkObj fields)] [object]
