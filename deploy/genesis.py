@@ -41,8 +41,24 @@ DOORS = [  # docs/previews/gsb-root-menu.txt, one line each
 ]
 POLICY_SYSTEM = 'You turn what a participant says into one spell for the card they are answering. You never act; you only propose.'
 LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
-GATE = [('gate', 'A moss gate, ajar.', [('Open', 'yard', 'gate', 'open'), ('Wait', 'gate', '', '')]),
-        ('yard', 'A quiet yard.', [('Back', 'gate', '', ''), ('Knock', 'yard', 'knock', 'twice')])]  # tests/test_scene.py's smallest scene
+def choice(text, to, key='', value=''):
+    """A choice; a key sets that variable to value when it is taken (one `set` effect). As tests/test_scene.py builds it."""
+    effects = [rec(key=lab(key), op=lab('set'), value=lab(value))] if key else []
+    return rec(label=lab(text), to=lab(to), effects=lst(*effects), guard=lst())
+
+
+def passage(pid, text, choices):
+    return rec(id=lab(pid), text=lab(text), choices=lst(*choices))
+
+
+# tests/test_scene.py's smallest scene, owned by the opener (a whole Scene state, as that test creates it).
+def moss_gate(opener):
+    return rec(owner=lab(opener), title=lab('The Moss Gate'), start=lab('gate'),
+               passages=lst(passage('gate', 'A moss gate, ajar.', [choice('Open', 'yard', 'gate', 'open'), choice('Wait', 'gate')]),
+                            passage('yard', 'A quiet yard.', [choice('Back', 'gate'), choice('Knock', 'yard', 'knock', 'twice')])),
+               presence=lst(), vars=lst(), cooldown=nat(0), requires=lst(), left=lst())
+
+
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
             ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber')]
 
@@ -60,9 +76,7 @@ def seeds(opener):
             ('anthology', 'Anthology', rec(owner=lab(opener))),
             ('cistern', 'Cistern', rec()),
             ('commons', 'Commons', rec(owner=lab(opener))),
-            ('rooms', 'Scene', rec(title=lab('The Moss Gate'), start=lab('gate'),
-                                   passages=lst(*[rec(id=lab(i), text=lab(t), choices=lst(*[rec(label=lab(a), to=lab(b), key=lab(k), value=lab(v))
-                                                                                          for a, b, k, v in cs])) for i, t, cs in GATE]))),
+            ('rooms', 'Scene', moss_gate(opener)),
             ('play', 'Table', rec())]  # the Automatafl opening is the package's default; seats join when players sit
 
 
