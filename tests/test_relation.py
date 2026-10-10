@@ -231,6 +231,21 @@ def initial() -> State:
         self.assertEqual(outcome(self.edit("insert", rain("kim", 2, "k"), who="bob", name="l")), ("refused", "small"))
         self.assertEqual(self.rows("l"), [("ember", 0, "seed"), ("ann", 1, "a")])
 
+    def test_insert_only_does_not_count_the_rows_retention_drops(self):
+        # Refuted if a full relation with a limit refuses an insert (its oldest row by key goes), or
+        # if a retract or an upsert is admitted once the relation is full.
+        source = PACKAGE.replace("LIMIT", "2n").replace("def relations()", "law grow: insertOnly(rains)\ndef relations()")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-r", object="r", source=source,
+                           entry="initial", seed=record(rains=relation(rain("ember", 0, "seed"))))
+        self.assertEqual(r["status"], "created", r)
+        outcome = lambda r: (r["status"], r["receipt"]["outcome"].get("clause"))
+        for i, who in enumerate(("ann", "kim", "eve"), 1):
+            self.assertEqual(outcome(self.edit("insert", rain(who, i, who[0]), who=who, name="r")), ("admitted", None))
+        self.assertEqual([a for a, _, _ in self.rows("r")], ["kim", "eve"])
+        self.assertEqual(outcome(self.edit("upsert", rain("kim", 2, "changed"), who="kim", name="r")), ("refused", "grow"))
+        self.assertEqual(outcome(self.edit("retract", record(author=label("kim"), at=nat(2)), who="kim", name="r")),
+                         ("refused", "grow"))
+
 
 def key(author, at):
     return record(author=label(author), at=nat(at))

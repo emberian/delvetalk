@@ -470,16 +470,11 @@ def keyOf (d : RelDecl) : Data → EditResult Data
 /-- A key as the edit gives it, put in the declaration's column order. -/
 def keyAsDeclared (d : RelDecl) (key : Data) : EditResult Data := keyOf d key
 
-def bytesLt (a b : ByteArray) : Bool := Id.run do
-  for i in [0:min a.size b.size] do
-    if a[i]! != b[i]! then return a[i]! < b[i]!
-  return a.size < b.size
-
 /-- Rows sorted by their keys' canonical bytes, no key twice (`duplicateKey`), the oldest by key
     order dropped past the declared limit. -/
 def canonicalRows (d : RelDecl) (rows : List Data) : EditResult (List Data) := do
   let keyed ← rows.mapM fun r => do return (Delvetalk.Canonical.encode (← keyOf d r), r)
-  let sorted := (keyed.toArray.qsort fun a b => bytesLt a.1 b.1).toList
+  let sorted := (keyed.toArray.qsort fun a b => Law.bytesLt a.1 b.1).toList
   let mut prev : Option ByteArray := none
   for (k, _) in sorted do
     if prev == some k then throw "duplicateKey"
@@ -818,7 +813,7 @@ def parseLawText (text : String) : Except String Law := do
     amendment (the state unchanged) by the principal who proposes it. None when it does,
     else the refusal naming that principal and the clause (`name: expression`) that refused. -/
 def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data) : Option String :=
-  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, ""⟩ (some state) state).map fun name =>
+  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, "", []⟩ (some state) state).map fun name =>
     amendmentRefusal principal (((law.lookup name).map fun e => s!"{name}: {e.render}").getD name)
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
@@ -1248,9 +1243,15 @@ partial def blockTree (items : Array Json) (depth : Nat := 0)
   if names.size ≤ treeFanout then (depth + 1, names, acc ++ named)
   else blockTree names (depth + 1) (acc ++ named)
 
+/-- The checkpoint fields a suspended entry already says: the binding's object (the activity's),
+    principal and intent (the entry's identity). The digest is derived from them and the tokens. -/
+def boundFields : List String := ["object", "principal", "intent"]
+
 /-- A checkpoint as journaled: `tokens` replaced by `tokenTree`, and the blocks the world does
-    not hold yet (each once), `extra` ones (an interpretation's) among them. -/
-def compactCheckpoint (w : World) (checkpoint : Json)
+    not hold yet (each once), `extra` ones (an interpretation's) among them. The fields the entry
+    already says (`bound`: object, principal, intent) are dropped when they agree, and so is the
+    `digest`, which `expandSuspended` derives again. -/
+def compactCheckpoint (w : World) (checkpoint : Json) (bound : List (String × String))
     (extra : Array (Array Json) := #[]) : Json × List (String × Json) :=
   match (checkpoint.getObjVal? "tokens").toOption.bind (·.getArr?.toOption) with
   | none => (checkpoint, [])
@@ -1259,7 +1260,8 @@ def compactCheckpoint (w : World) (checkpoint : Json)
     let used := used ++ extra.map fun b => (Journal.bodyHash (Json.arr b), b)
     let fresh := used.foldl (fun (acc : Array (String × Array Json)) (c, b) =>
       if w.blocks.contains c || acc.any (·.1 == c) then acc else acc.push (c, b)) #[]
-    let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokens")
+    let said := fun (k : String) (v : Json) => k == "digest" || (bound.lookup k).any (toJson · == v)
+    let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter fun (k, v) => k != "tokens" && !said k v
     (Json.mkObj (fields ++ [("tokenTree", Json.mkObj [("depth", toJson depth), ("roots", Json.arr roots)])]),
      if fresh.isEmpty then [] else
        [("blocks", Json.arr (fresh.map fun (c, b) => Json.mkObj [("cid", toJson c), ("items", Json.arr b)]))])
@@ -1389,6 +1391,27 @@ partial def expandCheckpoint (w : World) (checkpoint : Json) : Except String Jso
   let tokens ← expand (← tree.getObjValAs? Nat "depth") (← (← tree.getObjVal? "roots").getArr?)
   let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokenTree")
   return Json.mkObj (fields ++ [("tokens", Json.arr tokens)])
+
+/-- A suspended entry's checkpoint whole: its tokens from the world's blocks (`expandCheckpoint`),
+    the binding fields the entry says (`boundFields`) and the digest derived again when the journal
+    left them out (`compactCheckpoint`). -/
+def expandSuspended (w : World) (entry : Json) : Except String Json := do
+  let identity ← entry.getObjVal? "identity"
+  let act ← (← entry.getObjVal? "outcome").getObjVal? "activity"
+  let c ← expandCheckpoint w (← act.getObjVal? "checkpoint")
+  let fill := fun (c : Json) (k : String) (v : Except String String) =>
+    match c.getObjVal? k, v with
+    | .error _, .ok v => c.setObjVal! k (toJson v)
+    | _, _ => c
+  let c := fill c "object" (act.getObjValAs? String "object")
+  let c := fill c "principal" (identity.getObjValAs? String "principal")
+  let c := fill c "intent" (identity.getObjValAs? String "intent")
+  if (c.getObjVal? "digest").toOption.isSome then return c
+  let tokens ← Delvetalk.Turn.tokensOfJson (← c.getObjVal? "tokens")
+  return c.setObjVal! "digest" (toJson (Delvetalk.Turn.checkpointDigest
+    (← c.getObjValAs? String "packetSha256") (← c.getObjValAs? String "object")
+    (← c.getObjValAs? String "principal") (← c.getObjValAs? String "intent")
+    (← c.getObjValAs? String "rootsDigest") tokens))
 
 /-- The sources an entry carries, checked against their CIDs. -/
 def entrySources (entry : Json) : Except String (List (String × String)) := do
@@ -1583,14 +1606,16 @@ def handleOf (w : World) (principal : String) : String :=
     `handle` is the principal's display handle from the registry (`world-principal`), ""
     when unknown; `caller` is the calling object's id (empty for the turn's own method),
     `intent` the turn's identity, `height` the journal height the turn read, `clock` the world
-    clock (`world-advance`) the frame runs at, which deadlines compare against. None is chosen
+    clock (`world-advance`) the frame runs at, which deadlines compare against, and
+    `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none. None is chosen
     by the client. -/
-def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String) : Data :=
+def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String)
+    (post : String := "") : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
     ("handle", .label handle), ("caller", .label caller), ("intent", .label intent), ("height", .natural height),
     ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
-      ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
+      ("program", .label ""), ("immediatelyPrevious", .boolean false), ("post", .label post)])]
 
 /-- A record the host builds (a Context, a law's Request) as the receiving code's own library
     declares it: the fields its type names, in its order, each fitted alike. An object compiled
@@ -1857,7 +1882,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         match grantStands w via id method with
         | some g => pure g.grantor
         | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
-      let facts : Law.Facts := ⟨subject, caller, height, p.turn, next.pin, kind, method⟩
+      let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
+                                 relations := next.relations }
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id, reason := readingOf o clause }
     -- The Bend law, after the text admits: once for each ordinary change, with its argument.
@@ -2380,7 +2406,7 @@ def libraryLawText (opener : String) : Except String String := do
 def libraryRefusal (lawText principal : String) (height : Nat) (pin : String) : Option String :=
   match parseLawText lawText with
   | .error _ => some "law syntax"
-  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, ""⟩ (some (.record [])) (.record [])
+  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, "", []⟩ (some (.record [])) (.record [])
 
 def installLibrary (w : World) (lib : Library) (lawText : String) : World :=
   { w with library := some lib, libraries := w.libraries.insert lib.pin lib, libraryLaw := lawText }
@@ -2769,8 +2795,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let (page, part) ← postedPage outcome
     return record (postIndex w uri { object, slot, page, part, height := ← natField entry "height" }) entry key [object]
   | "suspended" =>
-    let activity ← outcome.getObjVal? "activity"
-    let checkpoint ← expandCheckpoint w (← activity.getObjVal? "checkpoint")
+    let checkpoint ← expandSuspended w entry
     let tokens ← Delvetalk.Turn.tokensOfJson (← checkpoint.getObjVal? "tokens")
     unless (← checkpoint.getObjValAs? String "digest") == Delvetalk.Turn.checkpointDigest
         (← checkpoint.getObjValAs? String "packetSha256") (← checkpoint.getObjValAs? String "object")

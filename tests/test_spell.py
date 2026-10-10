@@ -32,7 +32,7 @@ def context(card="garden-1"):
                   caller=text(""), intent=text("probe"), height={"tag": "natural", "value": "0"}, clock={"tag": "natural", "value": "0"},
                   inputOrigin=record(
         kind=text("request"), object=text(""), command=text(""), program=text(""),
-        immediatelyPrevious={"tag": "boolean", "value": False}))
+        immediatelyPrevious={"tag": "boolean", "value": False}, post=text("")))
 
 
 def propose(reply, card="garden-1"):

@@ -359,7 +359,7 @@ class Repl(FrontCase):
                          inputOrigin=record(
                              kind={'tag': 'label', 'value': 'request'}, object={'tag': 'label', 'value': ''},
                              command={'tag': 'label', 'value': ''}, program={'tag': 'label', 'value': ''},
-                             immediatelyPrevious={'tag': 'boolean', 'value': False}))
+                             immediatelyPrevious={'tag': 'boolean', 'value': False}, post={'tag': 'label', 'value': ''}))
         # The REPL takes at most MAX_BODY: Counter's closure with Card exceeds it, so the REPL
         # runs the bare counter activity.
         s, r = self.repl(tok, modules=closure('Variant') + [{'name': 'Counter', 'source': REPL_COUNTER}], entry='bump', turn=True, **self.BIND,
@@ -379,7 +379,7 @@ class Repl(FrontCase):
         context = record(world=label(''), object=label(self.c), principal=label(DID), handle=label(''), caller=label(''),
                          intent=label('repl-2'), height=nat(0), clock=nat(0),
                          inputOrigin=record(kind=label('request'), object=label(''), command=label(''), program=label(''),
-                                            immediatelyPrevious={'tag': 'boolean', 'value': False}))
+                                            immediatelyPrevious={'tag': 'boolean', 'value': False}, post={'tag': 'label', 'value': ''}))
         s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2)), context],
                          object=self.c, intent='repl-2', roots=[{'object': self.c, 'version': 0}])
         self.assertEqual((s, y['status']), (200, 'yielded'), y)

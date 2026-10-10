@@ -6,6 +6,7 @@
    request.caller` holds for any principal while order and constants need
    numerals. Absent or mistyped readings fail closed. -/
 import Delvetalk.Host.Store
+import Delvetalk.Canonical
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host.Law
@@ -23,6 +24,9 @@ structure Facts where
   kind : Nat := 0
   /-- The method whose run made the change; "" for an op. -/
   method : String := ""
+  /-- The relations the object's code declares: `insertOnly` does not count a row its declared
+      retention dropped. -/
+  relations : List RelDecl := []
 
 inductive Reading where
   | num (n : Int)
@@ -72,6 +76,30 @@ partial def rowsOf : Data → Option (List Data)
     let head ← f.lookup "head"
     return head :: (← rowsOf (← f.lookup "tail"))
   | _ => none
+
+/-- Byte order of canonical encodings: the order `canonicalRows` sorts keys in. -/
+def bytesLt (a b : ByteArray) : Bool := Id.run do
+  for i in [0:min a.size b.size] do
+    if a[i]! != b[i]! then return a[i]! < b[i]!
+  return a.size < b.size
+
+/-- The canonical bytes of a row's key under `d`, none when a key column is missing. -/
+def keyBytes (d : RelDecl) (row : Data) : Option ByteArray :=
+  match row with
+  | .record cols => (d.key.mapM fun k => (cols.lookup k).map (k, ·)).map fun ks => Delvetalk.Canonical.encode (.record ks)
+  | _ => none
+
+/-- Was `row` dropped by the declared retention of relation `field`, which now holds `after`? The
+    relation is full (`RelDecl.cap`) and the row's key sorts before every kept key (the first rows
+    in key order go), so no row with its key is kept: an altered row keeps its key and counts. -/
+def retentionDropped (decls : List RelDecl) (field : String) (after : List Data) (row : Data) : Bool :=
+  match decls.find? (·.field == field) with
+  | none => false
+  | some d =>
+    after.length == d.cap &&
+    match keyBytes d row, after.mapM (keyBytes d) with
+    | some k, some kept => kept.all fun c => bytesLt k c
+    | _, _ => false
 
 /-- `old` is a prefix of `new`. -/
 def isPrefix : List String → List String → Bool
@@ -160,12 +188,16 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
     | _, _ => false
   -- Relations (RELATIONAL §5). Rows are compared whole by canonical bytes: a relation holds no
   -- key twice, so "every old row is in new" is "new ⊇ old by key, every old row unchanged".
+  -- A row the declared retention dropped (`dropOldest`: the relation is full and the row's key
+  -- sorts before every key it kept) was not retracted by the write, so it does not count.
   | .insertOnly field => match (rawField field new).bind rowsOf with
     | none => false
     | some after => match old with
       | none => true
       | some before => match (rawField field before).bind rowsOf with
-        | some rows => let now := after.map canon; rows.all fun r => now.contains (canon r)
+        | some rows =>
+          let now := after.map canon
+          rows.all fun r => now.contains (canon r) || retentionDropped facts.relations field after r
         | none => false
   | .countLe field bound => match (rawField field new).bind rowsOf with
     | some rows => decide ((rows.length : Int) ≤ bound)
@@ -207,7 +239,7 @@ private def parsed (text : String) : LawExpr :=
   | .error _ => .or (.eqC .height 0) (.not (.eqC .height 0))
 
 private def rec1 (n : Nat) : Data := .record [("count", .natural n), ("open", .boolean true)]
-private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, ""⟩
+private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", []⟩
 
 #guard denote facts (some (rec1 3)) (rec1 4) (parsed "monotone(count)")
 #guard !denote facts (some (rec1 3)) (rec1 2) (parsed "monotone(count)")
@@ -224,16 +256,16 @@ private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, ""⟩
 #guard !denote facts none (rec1 3) (parsed "new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count in [1, 3]")
 #guard denote facts none (rec1 3) (parsed "request.subject == request.caller")
-#guard !denote ⟨"a", "b", 1, 0, "", 0, ""⟩ none (rec1 3) (parsed "request.subject == request.caller")
+#guard !denote ⟨"a", "b", 1, 0, "", 0, "", []⟩ none (rec1 3) (parsed "request.subject == request.caller")
 #guard denote facts none (rec1 3) (parsed "request.height == 3")
-#guard denote ⟨"a", "a", 1, 0, "", 2, ""⟩ none (rec1 3) (parsed "request.kind == 2")
+#guard denote ⟨"a", "a", 1, 0, "", 2, "", []⟩ none (rec1 3) (parsed "request.kind == 2")
 #guard !denote facts none (rec1 3) (parsed "request.kind == 1")
 #guard denote facts none (rec1 3) (parsed "request.subject == \"7\"")
-#guard denote ⟨"ember", "ember", 1, 0, "abc", 0, ""⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
-#guard !denote ⟨"kim", "kim", 1, 0, "abc", 0, ""⟩ none (rec1 3) (parsed "request.subject == \"ember\"")
+#guard denote ⟨"ember", "ember", 1, 0, "abc", 0, "", []⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
+#guard !denote ⟨"kim", "kim", 1, 0, "abc", 0, "", []⟩ none (rec1 3) (parsed "request.subject == \"ember\"")
 #guard !denote facts none (rec1 3) (parsed "request.subject == \"ember\"")
 #guard denote facts none (rec1 3) (parsed "request.subject == 7")
-#guard !denote ⟨"ember", "ember", 1, 0, "", 0, ""⟩ none (rec1 3) (parsed "request.subject == 7")
+#guard !denote ⟨"ember", "ember", 1, 0, "", 0, "", []⟩ none (rec1 3) (parsed "request.subject == 7")
 #guard denote facts none (rec1 3) (parsed "new.open == 1 and not new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count <= 2 implies new.open == 0")
 #guard !denote facts none (rec1 3) (parsed "new.missing == 0")
@@ -242,10 +274,10 @@ private def lst (xs : List String) : Data :=
 private def withList (xs : List String) (by_ : String) : Data :=
   .record [("entries", lst xs), ("lastBy", .label by_), ("count", .natural 1)]
 
-#guard denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (withList [] "kim") (parsed "new.lastBy == request.subject")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (withList [] "bob") (parsed "new.lastBy == request.subject")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (withList [] "kim") (parsed "new.entries == request.subject")
-#guard denote ⟨"7", "", 1, 0, "", 0, ""⟩ none (.record [("n", .natural 7)]) (parsed "new.n == request.subject")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", []⟩ none (withList [] "kim") (parsed "new.lastBy == request.subject")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", []⟩ none (withList [] "bob") (parsed "new.lastBy == request.subject")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", []⟩ none (withList [] "kim") (parsed "new.entries == request.subject")
+#guard denote ⟨"7", "", 1, 0, "", 0, "", []⟩ none (.record [("n", .natural 7)]) (parsed "new.n == request.subject")
 #guard denote facts (some (withList ["a"] "x")) (withList ["a", "b", "c"] "x") (parsed "appendOnly(entries)")
 #guard denote facts (some (withList ["a"] "x")) (withList ["a"] "x") (parsed "appendOnly(entries)")
 #guard !denote facts (some (withList ["a", "b"] "x")) (withList ["a", "c"] "x") (parsed "appendOnly(entries)")
@@ -255,12 +287,12 @@ private def withList (xs : List String) (by_ : String) : Data :=
 #guard !denote facts (some (withList ["a"] "x")) (withList ["a"] "y") (parsed "unchanged(lastBy)")
 #guard !denote facts (some (withList ["a"] "x")) (withList ["a", "b"] "x") (parsed "unchanged(entries)")
 #guard denote facts (some (rec1 3)) (.record [("open", .boolean true), ("count", .natural 3)]) (parsed "new.count == 3")
-#guard denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
-#guard !denote ⟨"bob", "", 1, 0, "", 0, ""⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.lastBy")
-#guard denote ⟨"a", "forge", 1, 0, "", 0, ""⟩ none (withList ["forge"] "x") (parsed "request.caller in new.entries")
-#guard denote ⟨"a", "", 1, 0, "", 0, "ring"⟩ none (rec1 1) (parsed "request.method == \"ring\"")
-#guard !denote ⟨"a", "", 1, 0, "", 0, "toll"⟩ none (rec1 1) (parsed "request.method == \"ring\"")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
+#guard !denote ⟨"bob", "", 1, 0, "", 0, "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.lastBy")
+#guard denote ⟨"a", "forge", 1, 0, "", 0, "", []⟩ none (withList ["forge"] "x") (parsed "request.caller in new.entries")
+#guard denote ⟨"a", "", 1, 0, "", 0, "ring", []⟩ none (rec1 1) (parsed "request.method == \"ring\"")
+#guard !denote ⟨"a", "", 1, 0, "", 0, "toll", []⟩ none (rec1 1) (parsed "request.method == \"ring\"")
 #guard (Minidregg.Compiler.ObjectiveBendLaw.parse "request.height in new.entries").toBool == false
 #guard refusedBy [("a", parsed "new.count <= 5"), ("b", parsed "new.count <= 2")] facts none (rec1 3) == some "b"
 
@@ -276,14 +308,22 @@ private def rel (rows : List Data) : Data :=
 #guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "kim" 2 "b"]) (parsed "insertOnly(rains)")
 #guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "changed"]) (parsed "insertOnly(rains)")
 #guard !denote facts (some (rec1 1)) (rec1 1) (parsed "insertOnly(count)")
+-- Retention: with `limit: 2` keyed by `at`, a full relation drops its first row by key; that row
+-- does not count against insertOnly, but a retraction or an alteration still does.
+private def limited : Facts := { facts with relations := [{ field := "rains", key := ["at"], limit := 2 }] }
+#guard denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "kim" 2 "b", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")
+#guard !denote facts (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "kim" 2 "b", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")
+#guard !denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "ann" 1 "a"]) (parsed "insertOnly(rains)")
+#guard !denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "ann" 1 "a", rain "eve" 3 "c"]) (parsed "insertOnly(rains)")
+#guard !denote limited (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "ann" 1 "x", rain "kim" 2 "b"]) (parsed "insertOnly(rains)")
 #guard denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= 2")
 #guard !denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= 1")
 #guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
 #guard !denote facts (some (rel [])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
 #guard denote facts none (rel [rain "ann" 1 "a"]) (parsed "count(new.rains) <= count(old.rains) + 1")
-#guard denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
-#guard !denote ⟨"bob", "", 1, 0, "", 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.text")
-#guard denote ⟨"a", "forge", 1, 0, "", 0, ""⟩ none (rel [rain "forge" 1 "a"]) (parsed "request.caller in new.rains.author")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
+#guard !denote ⟨"bob", "", 1, 0, "", 0, "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.text")
+#guard denote ⟨"a", "forge", 1, 0, "", 0, "", []⟩ none (rel [rain "forge" 1 "a"]) (parsed "request.caller in new.rains.author")
 
 end Delvetalk.Host.Law

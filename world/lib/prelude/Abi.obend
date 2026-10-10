@@ -6,6 +6,7 @@ record Origin:
   command: String
   program: String
   immediatelyPrevious: Bool
+  post: String
 record Context:
   world: String
   object: String
