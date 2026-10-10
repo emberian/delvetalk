@@ -430,6 +430,12 @@ class Catalogue(unittest.TestCase):
         self.assertEqual(h['Content-Type'], 'text/plain; charset=utf-8')
         self.assertIn(b'/api', text)
 
+    def test_the_catalogues_refusals_are_the_hosts_closed_set_and_its_transient_ones(self):
+        ops = (Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Host' / 'Ops.lean').read_text()
+        names = lambda decl: set(re.findall(r'"(\w+)"', re.search(rf'def {decl} : List String :=\s*\[(.*?)\]', ops, re.S)[1]))
+        self.assertEqual(set(REFUSALS), names('refusalClasses'))
+        self.assertEqual({k for k, v in REFUSALS.items() if v['transient']}, names('transientClasses'))
+
     def test_the_guides_class_tables_are_the_catalogues(self):
         guide = GUIDE.read_text()
         rows = set(re.findall(r'^\| ([a-zA-Z, ]+?) \|', guide, re.M))

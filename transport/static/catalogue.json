@@ -462,25 +462,20 @@
    "hint": "self",
    "means": "something the turn read moved while it wrote; send the same turn again"
   },
-  "budget": {
-   "transient": true,
-   "hint": "receipt",
-   "means": "the turn ran out of ticks, heap or bytes; `reason` names which; make it smaller, or send it again later"
-  },
-  "evaluation": {
-   "transient": true,
+  "typeMismatch": {
+   "transient": false,
    "hint": "source",
-   "means": "the program refused by name or a Plan was malformed; `reason` says which"
+   "means": "the argument is not what the method takes; `expected` shows the form"
   },
   "capacity": {
    "transient": true,
    "hint": "receipt",
    "means": "a host limit is full; `reason` or `object` names it; try later"
   },
-  "typeMismatch": {
+  "absentItem": {
    "transient": false,
-   "hint": "source",
-   "means": "the argument is not what the method takes; `expected` shows the form"
+   "hint": "receipt",
+   "means": "a list edit named an item not there now"
   },
   "lawRefused": {
    "transient": false,
@@ -492,35 +487,60 @@
    "hint": "world",
    "means": "no such card, or not yours to see; the world listing has the doors"
   },
-  "programRefused": {
+  "duplicateIdentity": {
    "transient": false,
+   "hint": "receipt",
+   "means": "the same intent with a different request: not a receipt; `original` is the first; choose a new intent"
+  },
+  "evaluation": {
+   "transient": true,
    "hint": "source",
-   "means": "a reprogram's package was refused at `clause`: packageBytes, compile, stateType, migration or law syntax; the workshop's check shows where"
+   "means": "the program refused by name or a Plan was malformed; `reason` says which"
   },
-  "outOfRange": {
-   "transient": false,
+  "budget": {
+   "transient": true,
    "hint": "receipt",
-   "means": "a list edit named an item past the end"
-  },
-  "absentItem": {
-   "transient": false,
-   "hint": "receipt",
-   "means": "a list edit named an item not there now"
-  },
-  "requiredAbsence": {
-   "transient": false,
-   "hint": "receipt",
-   "means": "a `create` found the card already there; `root` names who found it"
+   "means": "the turn ran out of ticks, heap or bytes; `reason` names which; make it smaller, or send it again later"
   },
   "budgetExhausted": {
    "transient": false,
    "hint": "receipt",
    "means": "a chain of sends spent its ledger (`depth`, `work` or `storage`)"
   },
-  "duplicateIdentity": {
+  "programRefused": {
+   "transient": false,
+   "hint": "source",
+   "means": "a reprogram's package was refused at `clause`: packageBytes, compile, stateType, migration or law syntax; the workshop's check shows where"
+  },
+  "requiredAbsence": {
    "transient": false,
    "hint": "receipt",
-   "means": "the same intent with a different request: not a receipt; `original` is the first; choose a new intent"
+   "means": "a `create` found the card already there; `root` names who found it"
+  },
+  "keyTaken": {
+   "transient": false,
+   "hint": "receipt",
+   "means": "a row's key is held by another row; upsert, or add an ordinal"
+  },
+  "duplicateKey": {
+   "transient": false,
+   "hint": "receipt",
+   "means": "the write names one key twice"
+  },
+  "badSpell": {
+   "transient": false,
+   "hint": "source",
+   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, unknownField, duplicateField, badValue, unclosedBlock, unclear), `reason` says why, and `hint` is the spell with its blanks, to resend"
+  },
+  "quota": {
+   "transient": true,
+   "hint": "receipt",
+   "means": "the interpreter has read its share this hour; `next` is the clock at which you may try again; reply with the spell itself, or wait"
+  },
+  "noMethod": {
+   "transient": false,
+   "hint": "source",
+   "means": "the card offers no such method; `delvetalk <object> ?` lists its spells"
   }
  }
 }
