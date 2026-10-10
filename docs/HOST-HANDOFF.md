@@ -196,7 +196,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 `world-arrive {principal, did, handle}` (clock principal only; the world must name an opener and have a library) records the handle as `world-principal` does, then creates each absent one of `<did>` from library module `Avatar`, `env/<did>` from `Env`, `wake/<did>` from `Wake`, as `create` by the opener with identity `arrive:<id>`, `owner: did`. Idempotent: a repeat answers `{status: "arrived", did, handle, created: []}` with no entry. Reply: `created [{object, height}]` and `principal`. A missing library module is a request error naming it. `transport/hostproc.py` `ARRIVAL` lists the packages the sealed library must hold (`Avatar`, `Env`, `Wake`; the Avatar imports `Places.obend` from the library). `docs/GENESIS.md` says when transport calls it. Test: `test_arrive`.
 
-Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 were folded into 5.1 to 5.8).
+Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 were folded into 5.1 to 5.8).
 
 43. **Per-op timing (host7).** With `DELVETALK_TIMING=1` in its environment, the host binary writes one stderr line per
    op after the reply: `timing<TAB>op<TAB>ms<TAB>object=…<TAB>method=…<TAB>principal=…<TAB>resumed=n<TAB>delivered=n`
@@ -1021,6 +1021,18 @@ dropped from this list: `proposed` by name (`4f8af5c`), Deal under kind 3 (`7017
 `proposals` arm and Bell's `actions` (`65c477f`), the Bell's limits under 5.108 (`8ddd2c4`), the
 transport on reservations, retries and cursors (`d99d691`, `e1f3359`, `e8cf553`).
 
+- **Reach (host, next; docs/FLEX.md §2, the root's third FLEX item).** A `receive` reaches the model only
+  when its post is a direct reply (the turn's `replyTo` names a recorded post: host-verified), a
+  mention with a door word (the transport's `mention: true` on `world-turn`, a fact of the post, plus a
+  door word of the offered forms in the utterance: host-checked), or carries a spell line; otherwise
+  `interpret` answers `unclear {needs: ["not addressed"]}` at once, unsuspended, spending no quota, and
+  the interpretation journals `reach` (`reply`, `mention`, `spell`, `delivery`). Design: `TurnState.reach`
+  from `runTurnWith`'s request; the gate in `interpretPlan`. Cost: every prose test that interprets
+  without `replyTo` (test_policy, test_hub, test_interpret_text, test_spell_turns `Interpreted`,
+  test_reflection `Interpret`, test_interpret_object, test_fork, test_world_object) passes
+  `mention: true` or a recorded `replyTo`. Closed by a test per reach and one unreached prose.
+- **FLEX §4 host 2 to 4** (host, queued): case-folded names and the addressee-aware `parse`, bare
+  values bound by type, misfits of a direct turn to the card's `receive` with `misfit`.
 - **`world-posted` without `intent`** (host): the transport now reserves every post, so `postedOp`
   can refuse a `posted` naming no intent (one line). Closed by a test in `tests/test_post_reserve.py`.
 - **A receipt by intent apart from by slug** (transport; review docs 6): `/receipt/<x>` resolves a
