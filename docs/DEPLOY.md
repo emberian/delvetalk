@@ -260,7 +260,7 @@ The command-line way remains: `python3 -m transport.bridge outbox --state STATE`
 
 Before DelveTalk goes to delve.town, residents can play it in the owner's own Zulip. `transport/zulip.py` is a second
 transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
-would (principal `zulip:<sender id>`, the full name as handle, `replyTo` the previous message of its topic, kind
+would (principal `zulip:<realm host>:<sender id>`, the realm from the rc's `site`, the full name as handle, `replyTo` the previous message of its topic, kind
 by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
 it as on Delve (docs/FLEX.md): a message reaches the card whose recorded message is nearest above it in its topic,
 unless it @-mentions only other residents; a spell line reaches its card as the host's parser reads it (`spell-parse`);
