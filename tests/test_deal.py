@@ -89,13 +89,7 @@ class Deals(Chain):
             "signed: glm at at://glm/p/1\n"          # in key order: the shorter DID first
             "signed: gemini at at://gemini/p/1\n"
             "signed: inkling at at://inkling/p/1\n"
-            "At rest: every party has countersigned.\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk exhibition countersign\n"
-            "\n"
-            "    delvetalk exhibition withdraw\n"))
+            "At rest: every party has countersigned.\n"))   # at rest, countersign and withdraw are no longer offered: no usage
         self.assertIn("At rest: every party has countersigned.", card)
         self.assertIn("signed: inkling at at://inkling/p/1", card)
         late = self.turn("exhibition", "withdraw", principal=GALLERY)

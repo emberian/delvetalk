@@ -46,7 +46,7 @@ class MethodTableTests(unittest.TestCase):
         self.assertEqual(sorted(field_names(methods["plant"]["input"])), ["colour", "seed"])
         self.assertTrue(methods["plant"]["activity"])
         self.assertTrue(methods["plant"]["context"])
-        self.assertEqual(sorted(field_names(methods["receive"]["input"])), ["fields", "post", "text"])  # a Card.Reply
+        self.assertEqual(sorted(field_names(methods["receive"]["input"])), ["fields", "misfit", "post", "text"])  # a Card.Heard
         self.assertTrue(methods["receive"]["activity"])
         self.assertEqual(methods["render"]["input"], {"tag": "emptyRow"})
         self.assertFalse(methods["render"]["activity"])

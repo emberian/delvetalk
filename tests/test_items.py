@@ -86,8 +86,8 @@ class ObjectsWriteByItem(TurnWorld):
 
     def test_a_place_retracts_who_leaves_by_key(self):
         from tests.test_chain import Chain
-        from tests.test_places import place_seed
-        Chain.make(self, "porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3", "gemini"]))
+        from tests.test_places import make_place, place_seed
+        make_place(self, "porch", place_seed("Porch", present=["glm", "kimik3", "gemini"]))
         r = self.turn("porch", "leave", principal="kimik3")
         self.assertEqual(r["status"], "admitted", r)
         self.assertEqual(self.labels(r), {"retract", "insert"})   # who left, and the trace

@@ -17,7 +17,7 @@ from tests.test_laws import anthology_seed
 from tests.test_turn_world import relation
 from tests.test_chain import Chain, garden_seed, reference, town_kinds
 from tests.test_objects import closure
-from tests.test_places import avatar_seed, names, place_seed
+from tests.test_places import make_place, avatar_seed, names, place_seed
 from tests.test_replay import bell_seed, get, items, rows
 from tests.test_turn_world import label, record
 
@@ -79,7 +79,7 @@ class Principal(Chain):
         self.assertEqual(get(self.state("lantern"), "litBy"), label(ACTOR))
 
     def test_entering_a_place_records_the_principals_avatar(self):
-        self.make("porch", closure("Place"), place_seed("Porch"))
+        make_place(self, "porch", place_seed("Porch"))
         self.ignored("porch", "enter", "by")
         self.assertEqual(names(get(self.state("porch"), "present")), [ACTOR])
 

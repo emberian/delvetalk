@@ -96,7 +96,9 @@ class Wakes(Chain):
         r = self.turn(env, "receive", heard("delvetalk env/%s seen\nat: %d" % (OWNER, at)), principal=OWNER)
         self.assertEqual(self.label_of(r), "done")
         self.assertEqual(get(self.state(env), "seen"), nat(at))
-        self.assertIn("    delvetalk env/did:plc:inkling seen\n", self.turn(env, "receive", heard(""), principal=OTHER)["offers"][0]["text"])
+        self.assertIn("    delvetalk env/did:plc:inkling seen\n", self.turn(env, "receive", heard(""), principal=OWNER)["offers"][0]["text"])
+        # A stranger's card lists no seen: it is the owner's alone to offer.
+        self.assertNotIn("seen", self.turn(env, "receive", heard(""), principal=OTHER)["offers"][0]["text"])
         # An env made at any other id takes nothing in.
         self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0)), by=OWNER)
         r = self.turn("env/elsewhere", "publish", record(event=event()), principal=OWNER)
