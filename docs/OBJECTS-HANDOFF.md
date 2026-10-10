@@ -30,7 +30,7 @@ the library).
   handle (`context.handle`, from the host's registry) and anyone else as `Card.handle`:
   never a raw DID, a long fragment is `…` and its last eight. A handle stored when the
   host knew it shows by `Card.shown`: a bell's planter, a rain's author, a Tide subscriber,
-  the Anthology's owner (stored at each admission), a lantern's lighter, a door's opener and
+  the Anthology's owner (seeded as `ownerHandle`, and stored at each admission), a lantern's lighter, a door's opener and
   knockers, a Deal's signers and withdrawer, a Thing's holder, an Avatar note's author, and
   an Env's and a Wake's owner (seeded at arrival). Deadlines (Thing offers,
   the Tide's gap) compare `context.clock`, which only world-advance moves.
@@ -109,7 +109,10 @@ the library).
   the model only prose that `Card.mentions` (a word, or a field as `name:`). The same check
   guards the directory's own reading of hub prose. At judgement the directory also reads
   the first object listed under each door (`objects {prefix}`, then inspect: a garden's
-  bell gives "rain"), and a handed-on reply does not count its caller's family: the
+  bell gives "rain"; only methods taking fields count, as offered forms do: the method table
+  also lists helpers like here, guard, reading; a bell's `rain` is always known, so a hub
+  rain still reaches its second-miss card; only the first 2,000 characters are scanned),
+  and a handed-on reply does not count its caller's family: the
   caller's own actions and fields, and the door it lives under with that door's. A card cannot
   `view directory` itself: a view answers in the card's own Response state type, which is
   not the directory's, so the hand-off costs a delivery turn but no model call. A door added
@@ -195,8 +198,8 @@ the library).
   owner, and answers a door word with that door's card. Garden ends with no offer for
   prose the model calls `not addressed`; it reads the model's text (`replied {text}`)
   with Spell. Tide answers subscribe and tick with its card.
-* **publishPage** (objects5): `Card.publishPage(door().word, page)` performs `publish {page:
-  <door word>, section: "", body}`; Garden (its own page), Scene, Table, Workshop and
+* **publishPage {page}** (objects5): `Card.publishPage(name, page)` performs `publish {page:
+  name, section: "", body}`, the name the one given or "" for the door word; Garden (its own page), Scene, Table, Workshop and
   Anthology (the default page, rendered for nobody at the object) expose `publishPage`,
   and the host lists the publication (`world-publications`). The card and its usage name
   the object's id; the page is titled by the door word.
