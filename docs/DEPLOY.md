@@ -347,8 +347,8 @@ file sharing on a Mac is for testing, not custody.
 It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
 copies SQLite through its backup API, replays every journal (world and heaps)
 in a throwaway host with no network, and only then writes a dated tarball
-and its `.sha256`. Exit 1 means a journal is broken: the tarball is not made.
-Run it from a timer and copy the tarballs off the box. The timer installed on the workhorse:
+and its `.sha256`, and records `ok <stamp>` or `broken <stamp>` in `last-verify` (the watch reads it). Exit 1 means a
+journal is broken: the tarball is not made. The timer installed on the workhorse:
 
     # /etc/systemd/system/delvetalk-v2-backup.service
     [Service]
@@ -366,12 +366,42 @@ Run it from a timer and copy the tarballs off the box. The timer installed on th
     [Install]
     WantedBy=timers.target
 
-`systemctl enable --now delvetalk-v2-backup.timer`. The off-box copy is not set up: the workhorse has no trusted key or
-host key for hbox, and hbox has no `/tank/delvetalk-backups/` (and `/tank` was 92% full on 2026-10-10). Restore:
+`systemctl enable --now delvetalk-v2-backup.timer`.
+
+**Off the box, by pull.** A copy on the box that fsyncs the journal is not custody. The owner's machine pulls; the
+workhorse holds no credential to it, so a box that is taken cannot reach its own backups. Once, on the owner's machine:
+
+    ssh-keygen -t ed25519 -N '' -f ~/.ssh/delvetalk-backups -C delvetalk-backups-pull
+    # on the workhorse, /root/.ssh/authorized_keys (rrsync ships with rsync: /usr/share/doc/rsync/scripts/rrsync, or /usr/bin/rrsync):
+    restrict,command="rrsync -ro /var/backups/delvetalk" ssh-ed25519 AAAA... delvetalk-backups-pull
+
+Then hourly on the owner's machine (cron or a launchd/systemd timer), with Docker and the host image of the deployed
+commit (`docker save`/`load` it once from the workhorse) or a host binary:
+
+    deploy/pull-backups.sh --image delvetalk-host:<sha12> ~/delvetalk-backups
+
+It rsyncs the new tarballs and their `.sha256` (`--ignore-existing`; nothing is ever written back), checks each sum,
+keeps every tarball 7 days, the first of each UTC day 56 days and the first of each month always, then untars the
+newest into a throwaway directory and replays every journal in it (`verify.sh`); exit 1 names a broken one. The verify
+is the backup: an unverified tarball is a file.
+
+**The restore drill**, quarterly and once before the welcome is posted: on the owner's machine, into a scratch
+directory, brought up on another port.
+
+    deploy/restore.sh --image delvetalk-host:<sha12> ~/delvetalk-backups/delvetalk-<stamp>.tar.gz /tmp/drill/v2
+    # .env as on the workhorse (DELVETALK_IMAGE, DELVETALK_HOST_IMAGE), with the drill's own paths; the drill makes no model call
+    DELVETALK_DATA=/tmp/drill/v2 DELVETALK_PRIVATE_IP=127.0.0.1 DELVETALK_ANTHROPIC_KEY_PATH=/tmp/drill/no.key \
+      docker compose -p delvetalk-drill --profile town up -d --wait      # first: touch /tmp/drill/no.key
+    deploy/smoke.sh http://127.0.0.1:8765 --pin <sha256>      # the home page shows the restored entry N
+    docker compose -p delvetalk-drill down
+
+Restore on the workhorse:
 
     docker compose down
     deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
     docker compose --profile town up -d --wait
+
+A tarball pulled off the box comes back the same way (`scp` it beside its `.sha256` into `/var/backups/delvetalk`).
 
 `restore.sh` checks the checksum and replays before touching the data, refuses
 while the lock is held, and moves the current data to `v2.before-<stamp>`.
