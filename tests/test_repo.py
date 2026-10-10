@@ -9,6 +9,11 @@ planting, a refusal, a publication and a private counter.
 Refuted by: a receipt read by slug, by CID and by world-receipt differing; a sync CAR whose block does not
 hash to the entry's CID (checked with this file's own DAG-CBOR decoder); a private object's record served to
 the public reader or refused to its owner; a cursor that skips or repeats an entry; did.json naming another DID.
+
+The repository primitives (transport/atproto/) against the AT Protocol interop vectors (tests/fixtures/atproto/,
+bluesky-social/atproto-interop-tests at 056e5741). Refuted by: a vector's key layer, prefix, DAG-CBOR bytes,
+CID, MST root or proof block, did:key or signature verdict differing; a signature that is not deterministic or
+not low-S; an MST a reader walking only its blocks finds out of order or at the wrong layer.
 """
 import base64
 import hashlib
@@ -25,6 +30,9 @@ from tests.test_chain import garden_state, town_kinds
 from tests.test_http import DID, PEOPLE, Provider
 from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
 from transport import delve, identity
+from transport.atproto import sign
+from transport.atproto.cbor import CID, block, decode
+from transport.atproto.mst import Tree, common_prefix, layer
 from transport.hostproc import LIBRARY, HostClient
 from transport.http import Front, RemoteHeaps
 from transport.identity import ORIGIN
@@ -310,6 +318,110 @@ class Repository(unittest.TestCase):
     def test_a_bad_bearer_is_401_not_the_public_reader(self):
         s, e = self.xrpc('com.atproto.repo.describeRepo', 'dt_agent_' + 'A' * 43, repo=REPO)
         self.assertEqual((s, e['error']), (401, 'InvalidToken'))
+
+
+FIXTURES = Path(__file__).resolve().parent / 'fixtures' / 'atproto'
+OWNER = 'did:plc:owner'
+
+
+def vectors(name):
+    return json.loads((FIXTURES / name).read_text())
+
+
+def b64(text):
+    return base64.b64decode(text + '=' * (-len(text) % 4))
+
+
+def from_json(x):
+    """The AT Protocol JSON form ({$link}, {$bytes}) as DAG-CBOR values."""
+    if isinstance(x, dict):
+        if set(x) == {'$link'}:
+            return CID.parse(x['$link'])
+        if set(x) == {'$bytes'}:
+            return b64(x['$bytes'])
+        return {k: from_json(v) for k, v in x.items()}
+    return [from_json(v) for v in x] if isinstance(x, list) else x
+
+
+def leaves(blocks, cid, depth=None):
+    """Every (key, value) under MST node `cid`, as a reader with only the blocks walks it: keys ascending, each
+    at its node's layer, children one layer down, no empty node but an empty root."""
+    node = decode(blocks[cid])
+    here = {layer(k) for k in node_keys(node)}
+    assert len(here) <= 1 and (depth is None or not here or here == {depth}), (here, depth)
+    depth = here.pop() if here else depth
+    assert depth is not None or (not node['e'] and node['l'] is None), 'an empty node only at the root'
+    out = leaves(blocks, node['l'], depth - 1) if node['l'] else []
+    for key, e in zip(node_keys(node), node['e']):
+        out.append((key, e['v']))
+        out += leaves(blocks, e['t'], depth - 1) if e['t'] else []
+    assert [k for k, _ in out] == sorted({k for k, _ in out}), 'keys ascending and distinct'
+    return out
+
+
+def node_keys(node):
+    keys, prev = [], b''
+    for e in node['e']:
+        prev = prev[:e['p']] + e['k']
+        keys.append(prev)
+    return keys
+
+
+class Vectors(unittest.TestCase):
+    def test_key_layers_and_prefixes(self):
+        for v in vectors('key_heights.json'):
+            self.assertEqual(layer(v['key'].encode()), v['height'], v)
+        for v in vectors('common_prefix.json'):
+            self.assertEqual(common_prefix(v['left'].encode(), v['right'].encode()), v['len'], v)
+
+    def test_data_model_bytes_and_cids(self):
+        for v in vectors('data-model-fixtures.json'):
+            value = from_json(v['json'])
+            cid, data = block(value)
+            self.assertEqual((data, str(cid)), (b64(v['cbor_base64']), v['cid']))
+            self.assertEqual(decode(data), value)
+        for bad in (b'\xf9\x3c\x00', b'\xa2a\x62\x01a\x61\x02', b'\x18\x01', b'\xc1\x01', b'\x9f\xff'):  # float, key order, long head, tag, indefinite
+            self.assertRaises(ValueError, decode, bad)
+
+    def test_mst_roots_and_proofs(self):
+        for v in vectors('commit-proof-fixtures.json'):
+            leaf = CID.parse(v['leafValue'])
+            for keys, root in ((set(v['keys']), v['rootBeforeCommit']),
+                               ((set(v['keys']) | set(v['adds'])) - set(v['dels']), v['rootAfterCommit'])):
+                tree, keys = Tree(), sorted(keys)
+                for k in keys:
+                    tree.append(k.encode(), leaf)
+                self.assertEqual(str(tree.root()), root, v['comment'])
+            for added in v['adds']:
+                self.assertLessEqual({str(c) for c, _ in tree.proof(keys.index(added))}, set(v['blocksInProof']), v['comment'])
+            blocks = dict(tree.blocks())
+            self.assertEqual([k.decode() for k, _ in leaves(blocks, tree.root())], keys)
+        self.assertEqual(str(Tree().root()), 'bafyreie5737gdxlw5i64vzichcalba3z2v5n6icifvx5xytvske7mr3hpm')  # the empty tree
+
+    def test_did_keys_and_signatures(self):
+        for v in vectors('w3c_didkey_K256.json'):
+            key = sign.Key(sign.ec.derive_private_key(int(v['privateKeyBytesHex'], 16), sign.ec.SECP256K1()))
+            self.assertEqual(key.did_key, v['publicDidKey'])
+        for v in vectors('w3c_didkey_P256.json'):
+            secret = int.from_bytes(sign.b58decode(v['privateKeyBytesBase58']), 'big')
+            self.assertEqual(sign.Key(sign.ec.derive_private_key(secret, sign.ec.SECP256R1())).did_key, v['publicDidKey'])
+        for v in vectors('signature-fixtures.json'):
+            got = sign.verify(sign.public_key(v['publicKeyDid']), b64(v['messageBase64']), b64(v['signatureBase64']))
+            self.assertEqual(got, v['validSignature'], v['comment'])
+        for curve in sign.CURVES:
+            key = sign.Key.generate(curve)
+            sigs = {key.sign(b'%d' % i) for i in range(64)} | {key.sign(b'0')}
+            self.assertEqual(len(sigs), 64)  # deterministic: the same message signs the same
+            for i, sig in enumerate(sorted(sigs)):
+                self.assertLessEqual(int.from_bytes(sig[32:], 'big'), sign.CURVES[curve][2] // 2)
+            self.assertTrue(sign.verify(sign.public_key(key.did_key), b'7', key.sign(b'7')))
+
+    def test_tids_sort_as_their_time(self):
+        times = [0, 1, 1023, 1 << 40, 60_000_000 * 29_000_000 + 7, (1 << 53) - 1]
+        tids = [sign.tid(t) for t in times]
+        self.assertEqual(tids, sorted(tids))
+        for t in tids:
+            self.assertRegex(t, r'\A[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}\Z')
 
 
 if __name__ == '__main__':
