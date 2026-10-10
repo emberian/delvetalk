@@ -417,6 +417,17 @@ class Posting(unittest.TestCase):
         self.assertEqual((code, req['quota']), (2, {'source': 'delve'}))  # without a host the dry run names no count
         self.assertEqual(req['request']['body']['record']['facets'][0]['features'][0]['did'], OTHER)
 
+    def test_a_live_post_names_its_object_so_its_reservation_is_settled_and_the_dry_run_need_not(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 't.txt'
+            f.write_text('hello')
+            err = io.StringIO()
+            with mock.patch.object(post, 'send', side_effect=AssertionError('send')), mock.patch('sys.stderr', err):
+                code = post.main(['--state', d, 'post', '--text-file', str(f), '--intent', 't', '--host-socket', str(Path(d) / 'h.sock'),
+                                  post.FLAG], io.StringIO(), delve.Client(Script()))
+            self.assertEqual((code, json.loads(err.getvalue())['error']), (1, 'live_post_needs_object'))
+            self.assertEqual(self.dry(d, ['--text-file', str(f)], delve.Client(Script()))[0], 2)
+
     def test_record_posted_builds_world_posted_from_the_confirmed_result(self):
         seen = []
         h = type('H', (), {'send': lambda s, r: seen.append(r) or {'status': 'posted'}})()

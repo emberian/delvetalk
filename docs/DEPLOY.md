@@ -205,8 +205,8 @@ releases it only when the post certainly did not leave, and settles it with `wor
 `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
 read it, then add the flag. `--object` names the object the card addresses: after a
 confirmed post, post.py calls the host's `world-posted` for it, so every card posted
-is recorded in the same step (replies to it then route to that object). Post a card
-without `--object` only if no object should hear its replies. An intent posts once: `<state>/posting/` keeps, per
+is recorded in the same step (replies to it then route to that object). A live post must name
+`--object`: its `world-posted {object, intent}` settles the post's reservation (the dry run may omit it). An intent posts once: `<state>/posting/` keeps, per
 intent, the record key chosen before the first send (Zulip: the stream's newest id) and the post that came back, so a
 rerun after a crash adopts the post instead of writing again. A draft whose `world-posted` failed keeps `sent` and is
 recorded by the bridge's next run, never posted twice.

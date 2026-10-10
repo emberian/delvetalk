@@ -225,7 +225,7 @@ def main(argv=None, out=None, client=None):
     p.add_argument('--credentials', default=CREDENTIALS)
     p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
     p.add_argument('--host-socket', metavar='PATH', help='hostd socket: reserve, read the quota, record posts')
-    p.add_argument('--object', '--record', dest='record', metavar='OBJECT', help='the object this card addresses: after a confirmed post, world-posted is called for it (needs --host-socket)')
+    p.add_argument('--object', '--record', dest='record', metavar='OBJECT', help='the object this card addresses: after a confirmed post, world-posted {object, intent} records it and settles its reservation; required for a live post (the dry run may omit it)')
     p.add_argument('--slot', metavar='PRINCIPAL:INTENT', help='the slot the post settles, as principal:intent')
     p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
     a = ap.parse_args(argv)
@@ -249,6 +249,8 @@ def main(argv=None, out=None, client=None):
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
         if (a.record or a.authorized) and not a.host_socket:
             raise Failure('record_needs_journal', 'the host reserves every post')
+        if a.authorized and not a.record:
+            raise Failure('live_post_needs_object', 'world-posted {object, intent} settles the reservation; without it the post stays counted')
         slot = slot_record(a.slot) if a.slot else None
         reader = client or Client(http_transport)
         reply = reply_ref(reader, a.reply_to) if a.reply_to else None
