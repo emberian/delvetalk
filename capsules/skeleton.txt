@@ -1,25 +1,27 @@
 DelveTalk object: pinned Bend + versioned State + law; methods are activities; effects are Plans.
-object: record State, Seed; seeded(Seed) -> State; initial() -> State; render(State, Context) -> Document
-  def m(state: State, input: I, context: Context) -> Activity<Plan, Response, T>:
-    let written(_) = perform(write {count: add 1n, items: append x})  # else refused
-    ..rest; match perform(p) to branch; refuse("why") ends it
-  Edits: Edit<T,D>|Entries<D,U> per State field, keep() all kept; type Plan = Plan<Edits>; Response = Response<State, R>
-  calls infer ::<T> (Lists.map(xs, f)); Data.of is implicit; "n={natText(n)}"
-record Context: world, object, principal, caller, intent, height; record Reference: world, object
-record Slot: principal, intent; record Receipt: slot, height, outcome: admitted|refused{class, root}
-sum Edit<T,D>: keep|set{value: T}|add{delta: D};  sum Entries<D,U>: keep|append{item: D}|amend{index, change: U}|remove{index}
-sum Plan<E>: view{object}|write{object, edits: E}|call{object, method, argument: Data}|send{as call}|await{slot, patience}
- |create{package, seed: Data, law, requireAbsent}|interpret{utterance, offers, policy}|offer{to, document}
- |publish{page, section, body}|reprogram{object, package, migration}|amend{object, law}|inspect{object}|check{package}
-sum Response<S,R>: viewed{version, state: S}|denied|written|refused{clause}|returned{result: R}|delivery{id}
- |created{object}|reply{receipt}|unknown|timedOut|broken|proposal{method, argument: R}|unclear{needs}
- |offered|published{post}|reprogrammed{pin}|amended|inspected{pin, law, source}|checked{diagnostics}
-record Form: card, action, fields: List<{name, kind: text{min,max}|natural{min,max}|choice{options}}>
-sum Document: text|sequence|quote|reference|offer|fields|source|result|continuation
-law NAME: EXPR;  EXPR ::= EXPR implies|or|and EXPR | not EXPR | (EXPR) | ATOM
-  ATOM ::= REF ==|<= INT | REF in [INT..] | REF == REF | REF <= REF + INT | REF == "TEXT"
-    | monotone|writeOnce|appendOnly|unchanged(F) | request.subject|caller in new.F
-  REF ::= new.F | request.subject|caller|height|turn|pin|kind|method (kind 0 write,1 reprogram,2 amend; method "" = op)
-turn: write only self, others by call; commits iff every root read is current and the law admits every write;
-  a refusal names its clause; silences reply|refused|unknown|timedOut|broken; retry = same receipt
-spell: "delvetalk CARD ACTION" then "field: value" lines; fit(parse(text), form) -> proposal|unclear|refused
+object: record State, Seed; defaultSeed(); seeded(Seed)->State; initial(); render(State, Context)->Document;
+  forms()->Card.Forms; door(); receive(state, input: Card.Heard{text, post}, context)
+  def m(state: State, input: I, context: Abi.Context) -> Activity<Plan, Response, T>:
+    let written(_) = perform(write {count: add 1n, items: append x})  # else refuses
+    match perform(p): case label(x): ..; case _: ..;  refuse("why") ends the turn
+  Edits per field: Edit<T,D>|Entries<D,U>; keep() all kept; type Plan = Plans.Plan<Edits>
+  fn(x: T) -> U: body; "n={natText(n)}"; Data.of and ::<T> inferred; Maybe<T>, find
+Context: world object principal handle caller intent height clock inputOrigin
+Edit: keep|set{value}|add{delta}  Entries: keep|append{item}|amend{index,change}|remove{index}
+  |amendItem{item,change}|removeItem{item}   (keep/add/append commute against moved roots)
+Plan: view|viewData|viewDataField|objects{prefix,after}|card|inspect|write{object,edits}|judge{edits}
+ |call|send{object,method,argument: Data}|callVia|sendVia{..,via}|run{..,handler}
+ |create|createUnder{package,seed,law,requireAbsent[,supervisor]}|reprogram|extend{object,package,migration}
+ |amend{object,law}|check{package}|await{slot,patience}|awaitUntil|awaitPost{post,patience}|awaitPostUntil
+ |interpret{utterance,offers,policy,model}|offer{to,document}|publish{page,section,body}
+ |grant{to,object,method,until}|grantWith{..,fixed,uses}|revoke{id}
+Response: viewed{version,state}|denied|written|refused{clause}|returned{result}|delivery{id}|created{object}
+ |reply{receipt}|unknown|timedOut|broken|proposal|unclear{needs}|replied{text}|offered|published{post}
+ |reprogrammed{pin}|amended|inspected{pin,law,source,methods}|checked|granted{id}|revoked|listed{ids,more}
+ |carded{document}|judged{admitted,clause}|viewedData|viewedField
+Form: card action fields[{name, kind: text{min,max}|natural{min,max}|choice{options}}]
+law NAME "reading": EXPR  ATOM: REF ==|<= INT|REF|"TEXT" | REF in [..]|new.F
+  | monotone|writeOnce|appendOnly|unchanged(F)  REF: new.F|request.subject|caller|height|turn|pin|kind|method
+  kind 0 write 1 reprogram 2 amend; optional def law(old,new,request: Abi.Request)->Abi.Verdict
+turn: write self only; commits iff roots current and laws admit; refusal = class + clause
+spell: last unquoted "delvetalk CARD ACTION", then "field: value" (<<DELIM blocks); "delvetalk CARD ?"
