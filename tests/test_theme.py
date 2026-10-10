@@ -47,19 +47,15 @@ def mark(css, oid):
 
 
 class Theme(unittest.TestCase):
-    def test_every_text_pair_passes_wcag_aa_in_both_palettes(self):
+    def test_every_text_pair_passes_wcag_aa_in_both_palettes_and_across_the_ruled_lines(self):
         failures = []
         for name, p in palettes(FRONT.read_text()).items():
             pairs = [(fg, bg) for fg in TEXT for bg in SURFACES] + [('bink', 'button'), ('violet', 'leaf')]
             failures += [(name, fg, bg, round(contrast(p[fg], p[bg]), 2)) for fg, bg in pairs if contrast(p[fg], p[bg]) < 4.5]
             self.assertGreaterEqual(contrast(p['amber'], p['paper']), 3, 'the focus ring')  # non-text contrast
-        self.assertEqual(failures, [])
-
-    def test_text_stays_aa_where_it_crosses_the_notebooks_ruled_lines(self):
-        for name, p in palettes(FRONT.read_text()).items():
-            self.assertEqual([fg for fg in TEXT if contrast(p[fg], p['ruleline']) < 4.5], [], name)
+            self.assertEqual([fg for fg in TEXT if contrast(p[fg], p['ruleline']) < 4.5], [], name)  # where text crosses a ruled line
             self.assertLess(contrast(p['ruleline'], p['paper']), 1.5, f'{name}: a ruled line is faint')
-
+        self.assertEqual(failures, [])
 
     def test_a_receipts_fate_is_a_word_and_an_icon_never_colour_alone(self):
         self.assertEqual(len(set(pages.STAMPS.values())), len(pages.STAMPS))

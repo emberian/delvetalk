@@ -239,12 +239,14 @@ class Repository(unittest.TestCase):
         s, e = self.xrpc('com.atproto.sync.getRecord', did=REPO, collection=NS + 'receipt', rkey=whole['slug'])
         self.assertEqual((s, e['error']), (403, 'Denied'), e)  # a projection is not the block its CID names
 
-    def test_get_repo_is_refused_by_name_with_a_hint(self):
+    def test_get_repo_a_write_and_a_bad_bearer_are_refused_by_name(self):
         s, e = self.xrpc('com.atproto.sync.getRepo', did=REPO)
         self.assertEqual((s, e['error']), (400, 'RepoNotServed'))
         self.assertIn('com.atproto.sync.getRecord', e['hint'])
         s, e = self.xrpc('com.atproto.repo.createRecord')
         self.assertEqual((s, e['error']), (501, 'MethodNotImplemented'))
+        s, e = self.xrpc('com.atproto.repo.describeRepo', 'dt_agent_' + 'A' * 43, repo=REPO)
+        self.assertEqual((s, e['error']), (401, 'InvalidToken'))  # a bad bearer is not the public reader
 
     def test_a_private_objects_record_is_refused_to_the_public_and_served_to_its_owner(self):
         tok = self.login()
@@ -280,10 +282,6 @@ class Repository(unittest.TestCase):
                     key = r['uri'].split(f'{NS}{c}/', 1)[1]
                     self.assertRegex(key, r'\A[A-Za-z0-9._~:-]{1,512}\Z')
                     self.assertNotIn(key, ('.', '..'))
-
-    def test_a_bad_bearer_is_401_not_the_public_reader(self):
-        s, e = self.xrpc('com.atproto.repo.describeRepo', 'dt_agent_' + 'A' * 43, repo=REPO)
-        self.assertEqual((s, e['error']), (401, 'InvalidToken'))
 
 
 if __name__ == '__main__':

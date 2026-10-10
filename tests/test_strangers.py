@@ -19,7 +19,7 @@ import unittest
 
 from tests.test_chain import Chain, garden_state, nil, reference
 from tests.test_objects import MODULES, closure
-from tests.test_places import avatar_seed, listing, place_seed, thing_seed
+from tests.test_places import avatar_seed, place_seed, thing_seed
 from tests.test_replay import get, rows
 from tests.test_scene import GATE, choice, passage, scene_state
 from tests.test_table import NORTH, OPENING, SOUTH
@@ -43,10 +43,6 @@ def setting(value):
 
 def inserting(row):
     return variant("insert", row=row)
-
-
-def upserting(row):
-    return variant("upsert", row=row)
 
 
 def migrated(name, owner):
@@ -178,22 +174,17 @@ class Strangers(Forging):
         self.refused(self.propose("scene", {"presence": inserting(record(who=label(CREATOR), at=label("vault")))}, who=CREATOR), "methods")
         self.assertEqual(rows(get(self.view("scene")["state"], "presence")), [])
 
-    # And a law that admits anyone's kind-0 write admits only its methods' writes.
-    def test_a_stranger_cannot_forge_a_gardens_children(self):
+    # And a law that admits anyone's kind-0 write, or a lawless object's default law, admits only its methods' writes.
+    def test_a_stranger_cannot_forge_a_gardens_children_a_places_traces_or_a_bells_rain(self):
         self.create("garden", "Garden", garden_state(owner=OWNER))
-        child = record(world=label(""), object=label("garden/bell/forged"), colour=variant("silver"))
-        self.refused(self.propose("garden", {"children": inserting(child), "planted": variant("add", delta=nat(1))}), "owner")
-
-    def test_a_stranger_cannot_forge_a_places_traces(self):
         self.make("porch", closure("Place"), place_seed("porch"))
-        trace = record(who=label(ALICE), handle=label("glm"), action=label("say"), clause=label(""), at=nat(0), n=nat(0))
-        self.refused(self.propose("porch", {"traces": inserting(trace)}), "owner")
-
-    # And a lawless object's default law admits only its methods' writes.
-    def test_a_stranger_cannot_forge_a_rain_on_a_bell(self):
         self.make("bell", closure("Bell"), record(colour=variant("silver"), seed=label("s"), planting=label(""), planter=label(ALICE), planterHandle=label("glm")))
+        child = record(world=label(""), object=label("garden/bell/forged"), colour=variant("silver"))
+        trace = record(who=label(ALICE), handle=label("glm"), action=label("say"), clause=label(""), at=nat(0), n=nat(0))
         rain = record(author=label(ALICE), handle=label("glm"), text=label("forged"), at=nat(0), n=nat(0))
-        self.refused(self.propose("bell", {"rains": inserting(rain)}), "owner")
+        for obj, edits in (("garden", {"children": inserting(child), "planted": variant("add", delta=nat(1))}),
+                           ("porch", {"traces": inserting(trace)}), ("bell", {"rains": inserting(rain)})):
+            self.refused(self.propose(obj, edits), "owner")
 
 
 if __name__ == "__main__":

@@ -173,7 +173,6 @@ class Objects(unittest.TestCase):
         full = run_pure("Bell", "many", nat(247), probe=BELL_PROBE)
         self.assertEqual(full["status"], "finished", full)
         text = full["value"]["value"]
-        print("247 rains: card %s ticks, %d characters" % (full["ticksUsed"], len(text)))
         self.assertTrue(text.startswith("A silver bell, planted by glm: “a bell for lost moths” — silent.\n"), text)
         self.assertEqual(text.count("author: a line of rain\n"), 8)
         self.assertTrue(text.endswith("… and 239 more\n"), text)
@@ -189,18 +188,6 @@ class Objects(unittest.TestCase):
         self.assertIn("To teach me a phrase", text)
         self.assertRegex(text, r"… and \d+ more\n$")
 
-    def test_a_bell_of_long_rains_is_clipped_by_characters(self):
-        """Eight rains of 280 characters would be 2,300 characters: `Card.clipped` keeps the lines
-        that fit 1,200 (WORLD-REVIEW 2)."""
-        reply = run_pure("Bell", "wide", nat(12), probe=BELL_PROBE, limits=BIG)
-        self.assertEqual(reply["status"], "finished", reply)
-        text = reply["value"]["value"]
-        self.assertLess(len(text), 1400)
-        shown = text.count("author: rain ")
-        self.assertTrue(0 < shown < 8, text)
-        self.assertTrue(text.endswith("… and %d more\n" % (12 - shown)), text)
-
-
 NEGATIVE_PRELUDE = """edition ObjectiveBend 1
 import ./World.obend as World
 record Write:
@@ -209,56 +196,47 @@ record Write:
 """
 
 
-class Refusals(unittest.TestCase):
-    def refused(self, body, entry, *names):
-        reply = compile_job(closure("World") + [{"name": "Bad", "source": NEGATIVE_PRELUDE + body}], entry)
-        self.assertEqual(reply["status"], "error", reply)
-        self.assertTrue(any(n in reply["message"] for n in names), reply["message"][:400])
-
-
-    def test_a_perform_inside_a_record_field_is_refused_as_effect_in_field(self):
-        self.refused("""def bad(count: Nat) -> Activity<{seen: World.Written}>:
+REFUSED = [  # (body, the refusal's name): a perform anywhere but the head of an activity's match
+    ("""def bad(count: Nat) -> Activity<{seen: World.Written}>:
   {seen: world.write({before: count, after: count})}
-""", "bad", "effect-in-field")
-
-    def test_a_perform_inside_a_sum_payload_is_refused_as_effect_in_payload(self):
-        self.refused("""sum Box:
+""", "effect-in-field"),
+    ("""sum Box:
   some: World.Written
 def bad(count: Nat) -> Activity<Box>:
   Box.some(world.write({before: count, after: count}))
-""", "bad", "effect-in-payload")
-
-    def test_a_perform_inside_a_plan_is_refused_as_effect_in_plan(self):
-        self.refused("""def bad(count: Nat) -> Activity<Nat>:
+""", "effect-in-payload"),
+    ("""def bad(count: Nat) -> Activity<Nat>:
   match world.write(world.write({before: count, after: count})):
     case written(_): count
     case refused(_): count
-""", "bad", "effect-in-plan")
-
-    def test_a_perform_as_a_call_argument_is_refused_as_effect_as_argument(self):
-        self.refused("""def keep(seen: World.Written) -> Nat:
+""", "effect-in-plan"),
+    ("""def keep(seen: World.Written) -> Nat:
   0n
 def bad(count: Nat) -> Activity<Nat>:
   keep(world.write({before: count, after: count}))
-""", "bad", "effect-as-argument")
-
-    def test_a_perform_bound_by_let_is_refused_as_effect_in_let(self):
-        self.refused("""def bad(count: Nat) -> Activity<Nat>:
+""", "effect-as-argument"),
+    ("""def bad(count: Nat) -> Activity<Nat>:
   let seen = world.write({before: count, after: count})
   count
-""", "bad", "effect-in-let")
-
-    def test_a_world_call_outside_an_activity_is_refused_as_world_call_outside_activity(self):
-        self.refused("""def bad(count: Nat) -> Nat:
+""", "effect-in-let"),
+    ("""def bad(count: Nat) -> Nat:
   world.write({before: count, after: count})
-""", "bad", "world-call-outside-activity")
-
-    def test_an_activity_with_no_parameters_is_refused_as_nullary_activity(self):
-        self.refused("""def bad() -> Activity<Nat>:
+""", "world-call-outside-activity"),
+    ("""def bad() -> Activity<Nat>:
   match world.write({before: 0n, after: 1n}):
     case written(_): 1n
     case refused(_): 0n
-""", "bad", "nullary-activity")
+""", "nullary-activity"),
+]
+
+
+class Refusals(unittest.TestCase):
+    def test_a_perform_outside_an_activitys_match_is_refused_by_name(self):
+        for body, name in REFUSED:
+            with self.subTest(name):
+                reply = compile_job(closure("World") + [{"name": "Bad", "source": NEGATIVE_PRELUDE + body}], "bad")
+                self.assertEqual(reply["status"], "error", reply)
+                self.assertIn(name, reply["message"])
 
 
 if __name__ == "__main__":

@@ -130,43 +130,30 @@ class Deliveries(TurnWorld):
 
 class Chain(Deliveries):
 
-    def test_a_delivery_runs_as_its_senders_principal_and_its_receipt_names_the_sender(self):
+    def test_a_delivery_runs_as_its_senders_principal_names_the_sender_and_inherits_the_ledger_decremented(self):
         for name in ("bell", "door", "lantern"):
             self.make(name)
         sent = self.turn("bell", "ring", arg("door"), principal="glm", identity="ring-1")
+        top, child = sent["receipt"]["ledger"], sent["receipt"]["sends"][0]["ledger"]
+        self.assertEqual((top["depth"], child["depth"]), (MAX_DEPTH, MAX_DEPTH - 1))
+        self.assertEqual(child["work"], top["work"] - sent["ticksUsed"])
+        self.assertLessEqual(child["storage"], top["storage"])
         first = self.deliver_all()[0]["receipt"]
-        self.assertEqual(first["identity"]["principal"], "glm")
-        self.assertEqual(first["identity"]["intent"], first["delivery"]["id"])
+        self.assertEqual(first["identity"], {"principal": "glm", "intent": first["delivery"]["id"]})
         self.assertEqual(first["delivery"]["from"], {"principal": "glm", "intent": "ring-1"})
         self.assertEqual(first["delivery"]["id"], sent["receipt"]["sends"][0]["id"])
 
-    def test_a_delivery_inherits_the_ledger_decremented(self):
-        for name in ("bell", "door", "lantern"):
-            self.make(name)
-        sent = self.turn("bell", "ring", arg("door"), identity="ring-1")
-        top = sent["receipt"]["ledger"]
-        self.assertEqual(top["depth"], MAX_DEPTH)
-        child = sent["receipt"]["sends"][0]["ledger"]
-        self.assertEqual(child["depth"], MAX_DEPTH - 1)
-        self.assertEqual(child["work"], top["work"] - sent["ticksUsed"])
-        self.assertLessEqual(child["storage"], top["storage"])
-
-    def test_a_refused_sending_turn_delivers_nothing(self):
+    def test_a_refused_sending_turn_delivers_nothing_and_a_send_to_nobody_is_a_refused_delivery(self):
         self.make("bell", law="law none: new.count <= 0\n")
         self.make("door")
         r = self.turn("bell", "ring", arg("door"))
         self.assertEqual(r["receipt"]["outcome"]["class"], "lawRefused")
         self.assertNotIn("sends", r["receipt"])
+        self.assertEqual((self.pending()["count"], self.deliver_all()), (0, []))
+        self.make("door2")
+        self.turn("door2", "ring", arg("ghost"))
+        self.assertEqual(self.deliver_all()[0]["receipt"]["outcome"]["class"], "unknownObject")
         self.assertEqual(self.pending()["count"], 0)
-        self.assertEqual(self.deliver_all(), [])
-
-    def test_a_send_to_an_unknown_object_is_consumed_as_a_refused_delivery(self):
-        self.make("bell")
-        self.turn("bell", "ring", arg("ghost"))
-        r = self.deliver_all()
-        self.assertEqual(r[0]["receipt"]["outcome"]["class"], "unknownObject")
-        self.assertEqual(self.pending()["count"], 0)
-
 
 class Exhaustion(Deliveries):
     def test_a_loop_sending_to_itself_stops_at_exactly_max_depth_with_a_journaled_refusal(self):
@@ -203,19 +190,16 @@ class Exhaustion(Deliveries):
         self.assertGreater(last["ledger"]["depth"], 0)
         self.assertEqual(int(self.fields("ping")["count"]) + int(self.fields("pong")["count"]), 3)
 
-    def test_a_chain_ledger_can_be_lowered_at_creation_never_raised(self):
+    def test_a_chain_ledger_can_be_lowered_at_creation_never_raised_nor_named_by_a_turn(self):
         r = self.host.send(op="world-create", principal="ember", identity="x", object="x",
                            modules=package(), entry="initial",
                            seed=record(count=nat(0), lit={"tag": "boolean", "value": False}),
                            chain={"depth": MAX_DEPTH + 1, "work": 1, "storage": 1})
         self.assertEqual(r["status"], "error")
-
-    def test_the_ledger_is_not_a_field_of_a_turn_request(self):
         self.make("loop")
         r = self.host.send(op="world-turn", principal="ember", object="loop", method="spin",
                            argument=arg("loop"), identity="t", ledger={"depth": 10 ** 9, "work": 10 ** 9, "storage": 10 ** 9})
         self.assertEqual(r["receipt"]["ledger"]["depth"], MAX_DEPTH)
-
 
 class Restart(Deliveries):
     def test_restart_with_deliveries_left_over_resumes_the_queue_and_delivers_each_id_once(self):
@@ -245,15 +229,6 @@ class Restart(Deliveries):
         [send] = r["receipt"]["sends"]
         self.assertLess(int(send["ledger"]["storage"]), int(r["receipt"]["ledger"]["storage"]), send)
 
-    def test_the_ledger_is_in_the_journal_so_restart_cannot_mint_capacity(self):
-        self.make("loop")
-        self.turn("loop", "spin", arg("loop"))
-        self.reopen()
-        self.settled = []
-        receipts = self.deliver_all()
-        self.assertEqual(int(self.fields("loop")["count"]), MAX_DEPTH)
-        self.assertEqual(receipts[-1]["receipt"]["outcome"]["reason"], "the chain of sends spent its depth.")
-
     def test_a_tampered_ledger_in_a_sending_entry_breaks_the_chain(self):
         self.make("loop")
         self.turn("loop", "spin", arg("loop"))
@@ -269,29 +244,18 @@ class Restart(Deliveries):
         self.assertIn("height 2", r["message"])
 
 
-class Maximum(Deliveries):
-
-    def test_two_hundred_fan_out_sends_are_refused_by_the_per_turn_limit_and_nothing_is_delivered(self):
+    def test_exactly_the_per_turn_limit_of_sends_is_delivered_and_two_hundred_are_refused(self):
         self.make("fanner")
         self.make("lantern")
         r = self.turn("fanner", "fan", arg("lantern", 200))
         out = r["receipt"]["outcome"]
         self.assertEqual((r["status"], out["class"]), ("refused", "evaluation"))
         self.assertIn("send capacity", out["reason"])
-        self.assertEqual(self.pending()["count"], 0)
-        self.assertEqual(self.deliver_all(), [])
-        self.assertEqual(self.fields("lantern")["lit"], False)
-
-    def test_exactly_the_limit_of_sends_is_delivered(self):
-        self.make("fanner")
-        self.make("lantern")
+        self.assertEqual((self.pending()["count"], self.deliver_all(), self.fields("lantern")["lit"]), (0, [], False))
         r = self.turn("fanner", "fan", arg("lantern", SENDS_PER_TURN))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(len(r["receipt"]["sends"]), SENDS_PER_TURN)
         self.assertEqual(len({s["id"] for s in r["receipt"]["sends"]}), SENDS_PER_TURN)
         self.assertEqual(len(self.deliver_all()), SENDS_PER_TURN)
         self.assertEqual(self.fields("lantern")["lit"], True)
-
 
 if __name__ == "__main__":
     unittest.main()

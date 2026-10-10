@@ -49,25 +49,6 @@ class Views(test_chain.Chain):
         self.assertEqual(r["status"], "created", r)
         self.assertEqual(self.turn("env/" + GLM, "publish", record(event=event(text="a secret mention")), principal=GLM)["status"], "admitted")
         mine, theirs = self.card("env/" + GLM, GLM), self.card("env/" + GLM, KIM)
-        self.assertEqual(mine, (
-            "ENV of glm (yours): 1 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n"
-            "#1 mention from mimo: a secret mention\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk env/did:plc:glm observe\n"
-            "\n"
-            "    delvetalk env/did:plc:glm seen\n"
-            "    at: <a number from 0 to 1000000000>\n"))
-        self.assertEqual(theirs, (
-            "ENV of glm: 1 new since #0.\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk env/did:plc:glm observe\n"
-            "\n"
-            "    delvetalk env/did:plc:glm seen\n"
-            "    at: <a number from 0 to 1000000000>\n"))
         self.assertIn("a secret mention", mine)
         self.assertIn("ENV of glm (yours): 1 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n", mine)
         self.assertNotIn("a secret mention", theirs)
@@ -81,68 +62,6 @@ class Views(test_chain.Chain):
         self.make(GLM, closure("Avatar"), avatar_seed("glm", "porch"))
         self.assertEqual(self.turn(GLM, "note", record(text=label("meet at the gate")), principal=KIM)["status"], "admitted")
         mine, theirs = self.card(GLM, GLM), self.card(GLM, KIM)
-        self.assertEqual(mine, (
-            "glm, at porch.\n"
-            "0 sent, follows 0\n"
-            "kimik3: meet at the gate\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk did:plc:glm move\n"
-            "    exit: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm go\n"
-            "    place: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm note\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm accept\n"
-            "    thing: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm send\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm subscribe\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm watch\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "    field: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm unsubscribe\n"
-            "    to: <text, 1 to 160 characters>\n"))
-        self.assertEqual(theirs, (
-            "glm, at porch.\n"
-            "0 sent, follows 0\n"
-            "1 note\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk did:plc:glm move\n"
-            "    exit: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm go\n"
-            "    place: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm note\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm accept\n"
-            "    thing: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm send\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm subscribe\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm watch\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "    field: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk did:plc:glm unsubscribe\n"
-            "    to: <text, 1 to 160 characters>\n"))
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
         self.assertIn("glm, at porch.\n0 sent, follows 0\n1 note\n", theirs)

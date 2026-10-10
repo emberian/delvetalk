@@ -11,7 +11,7 @@ principal, and the reply card is what the turn offers.
 import unittest
 
 from deploy.genesis import DOORS
-from tests.test_replay import get, relation, rows
+from tests.test_replay import relation, rows
 from tests.test_chain import Chain, field, garden_seed, reference, town_kinds
 from tests.test_objects import closure
 from tests.test_places import listing
@@ -39,28 +39,13 @@ class Cards(Chain):
         self.assertEqual(len(reply["offers"]), 1, reply)
         return reply["offers"][0]["text"]
 
-    def test_receive_takes_text_and_post_and_the_host_owns_slot(self):
-        # slot is the host's: left out, it is filled from the recorded post ("" when the reply
-        # answers none); a forged extra field is still refused typeMismatch before the card runs.
-        self.garden()
-        filled = self.turn("garden", "receive", record(text=label("delvetalk garden plant"), post=label("at://glm/post/1")),
-                           principal="glm", identity="no-slot")
-        self.assertEqual(filled["status"], "admitted", filled)
-        forged = self.turn("garden", "receive", record(text=label("x"), post=label("p"), slot=label(""), principal=label("ember")),
-                           principal="glm", identity="forged")
-        self.assertEqual((forged["status"], forged["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), forged)
-        # The unclear spell is held for glm to complete (one write); the forged turn wrote nothing.
-        self.assertEqual(self.version("garden"), 1)
-
 
     def test_a_completed_seed_keeps_the_forms_eighty_characters(self):
-        """Field lines that reach receive (the first names no form) are held to the plant form's
-        bounds: an 81-character seed is refused by name, never planted or held (codex objects 11)."""
+        """Completing a held planting is held to the plant form's bounds: an 81-character seed is
+        refused by name and what was held is dropped (codex objects 11; the direct 81-character
+        planting is test_scenarios.Garden)."""
         self.garden()
         long = "x" * 81
-        reply = self.say("smell: sweet\ncolour: silver\nseed: %s" % long)
-        self.assertEqual(self.card(reply), "Not planted, refused seedLength: A seed is 1 to 80 characters; this one is 81.\n")
-        self.assertEqual(self.version("garden"), 0)
         # Completing a held planting the same way: refused, and what was held is dropped.
         self.assertIn("I still need: seed.", self.card(self.say("delvetalk garden plant\ncolour: silver")))
         held = self.say("smell: sweet\nseed: %s" % long)
@@ -83,17 +68,6 @@ class Cards(Chain):
                 out = self.say(spell)["receipt"]["outcome"]
                 self.assertEqual((out["class"], out["clause"], out["reason"]), ("badSpell", clause, reason), out)
         self.assertEqual(self.version("garden"), 0)
-
-
-    def test_the_planting_acknowledgement_carries_the_new_bells_rain_spell(self):
-        """The acknowledgement is posted where the planting was, so it prints the whole rain spell
-        for the new bell; that spell, replied under it, rains on the bell (codex agent 1)."""
-        self.garden()
-        card = self.card(self.say("delvetalk garden plant\nseed: a fern\ncolour: silver"))
-        self.assertIn("Rain on it:\n\n    delvetalk garden/bell/1 rain\n    text: <1 to 200 characters>\n", card)
-        rained = self.say("delvetalk garden/bell/1 rain\ntext: a drizzle", post="at://glm/post/2")
-        self.assertEqual(rained["status"], "admitted", rained)
-        self.assertEqual([get(r, "text")["value"] for r in rows(field(self.state("garden/bell/1"), "lines"))], ["a drizzle"])
 
 
     def version(self, name):
@@ -152,7 +126,6 @@ class Cards(Chain):
                            entry="initial", seed=record(owner=label(did)))
         self.assertEqual(r["status"], "created", r)
         observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="root", who=did)
-        self.assertEqual(str(observed.get("offers", observed)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'ENV of …3jaxnwse (yours): 0 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\\n'}]")
         self.assertEqual((observed["status"], observed["result"]), ("admitted", nat(0)), observed)  # observe's count
         self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])

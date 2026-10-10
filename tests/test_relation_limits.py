@@ -33,7 +33,6 @@ class FullRelations(Chain):
         r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name, modules=closure(module), entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)
         size = self.host.send(op="world-inspect", principal=by, object=name, source=False)["stateBytes"]
-        print("\n  %s full: %d bytes" % (name, size))
         self.assertLess(size, MAX, name)
         return size
 

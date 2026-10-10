@@ -31,12 +31,8 @@ def counted(n: Nat) -> String:
 
 
 class DerivedViews(Chain):
-    def test_garden_by_colour_counts_its_bells_one_row_a_colour(self):
-        out = run_pure("Garden", "counted", nat(0), probe=GARDEN)
-        self.assertEqual(out["value"]["value"], "amber 1, violet 2")
-
-
-    def test_another_object_asks_the_garden_for_by_colour(self):
+    def test_garden_by_colour_counts_its_bells_purely_and_for_another_object(self):
+        self.assertEqual(run_pure("Garden", "counted", nat(0), probe=GARDEN)["value"]["value"], "amber 1, violet 2")
         self.make("garden", closure("Garden"), garden_seed())
         town_kinds(self.host.send)
         planted = self.turn("garden", "plant", record(colour=label("violet"), seed=label("a moth")), principal="glm")

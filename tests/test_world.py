@@ -89,36 +89,30 @@ def write(obj, *edits):
         {"name": f, "value": v} for f, v in edits]}}
 
 
-class CreateAndView(WorldCase):
-
-    def test_view_of_unknown_object_is_a_named_silence(self):
+class Requests(WorldCase):
+    def test_malformed_creates_and_requests_are_errors_before_the_journal(self):
+        h = self.spawn()
+        self.assertIn("world-open", h.send(op="world-view", principal="ember", object="c1")["message"])
         self.assertEqual(self.view("nope")["status"], "unknown")
-
-    def test_seed_not_conforming_to_the_entry_type_is_refused(self):
         # A partial seed is laid over initial() (test_receive); a field of the wrong type is refused.
         bad = {"tag": "record", "fields": [{"name": "count", "value": {"tag": "label", "value": "one"}}]}
-        r = self.host.send(op="world-create", principal="ember", identity="x", object="c1",
-                           source=COUNTER, entry="initial", seed=bad)
-        self.assertEqual(r["status"], "error")
+        r = self.host.send(op="world-create", principal="ember", identity="x", object="c1", source=COUNTER, entry="initial", seed=bad)
         self.assertIn("conform", r["message"])
-        self.assertEqual(self.host.send(op="world-status")["height"], 0)
-
-    def test_entry_that_is_not_a_data_record_is_refused(self):
-        src = "edition ObjectiveBend 1\ndef initial() -> Nat:\n  0n\n"
         r = self.host.send(op="world-create", principal="ember", identity="x", object="c1",
-                           source=src, entry="initial", seed=nat(0))
+                           source="edition ObjectiveBend 1\ndef initial() -> Nat:\n  0n\n", entry="initial", seed=nat(0))
         self.assertEqual(r["status"], "error")
-
-    def test_creating_an_existing_object_under_a_new_identity_is_refused(self):
+        self.assertIn("law adapter", self.host.send(op="compile", source=MONOTONE, entry="initial")["message"])
+        self.assertEqual(self.host.send(op="world-status")["height"], 0)
         self.create()
-        r = self.create(identity="again")
-        self.assertEqual(r["status"], "error")
-
-    def test_ops_before_world_open_say_so(self):
-        h = self.spawn()
-        r = h.send(op="world-view", principal="ember", object="c1")
-        self.assertEqual(r["status"], "error")
-        self.assertIn("world-open", r["message"])
+        self.create("c2")
+        for name, r in [("existing object", self.create(identity="again")),
+                        ("duplicate field edit", self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1), add("count", 1))])),
+                        ("write outside the roots", self.propose("p2", [root("c1", 0)], [write("c2", add("count", 1))])),
+                        ("identity over 256", self.propose("x" * 257, [root("c1", 0)], [])),
+                        ("object id over 128", self.propose("ok", [root("o" * 129, 0)], [])),
+                        ("65 roots", self.propose("many", [root(f"o{i}", 0) for i in range(65)], []))]:
+            self.assertEqual(r["status"], "error", name)
+        self.assertEqual(self.host.send(op="world-status")["height"], 2)
 
 
 class Edits(WorldCase):
@@ -126,38 +120,18 @@ class Edits(WorldCase):
         super().setUp()
         self.create(count=1)
 
-    def test_add_set_and_keep_apply_per_field(self):
-        r = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 2),
+    def test_add_set_and_keep_apply_per_field_exactly_beyond_machine_words(self):
+        r = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 2 ** 80),
                          put("name", {"tag": "label", "value": "z"}), keep("open"))])
-        self.assertEqual(r["status"], "admitted")
-        v = self.view()
-        self.assertEqual(v["version"], 1)
-        self.assertEqual(v["state"], seed(3, True, "z"))
         self.assertEqual(r["receipt"]["outcome"]["writes"][0]["version"], 1)
+        self.assertEqual(self.view()["state"], seed(2 ** 80 + 1, True, "z"))
 
-    def test_add_on_a_boolean_is_a_type_mismatch(self):
-        r = self.propose("p1", [root("c1", 0)], [write("c1", add("open", 1))])
-        self.assertEqual(r["status"], "refused")
-        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
+    def test_ill_typed_edits_are_type_mismatches_and_oversized_state_is_capacity(self):
+        for edit, cls in [(add("open", 1), "typeMismatch"), (put("count", {"tag": "boolean", "value": True}), "typeMismatch"),
+                          (add("ghost", 1), "typeMismatch"), (put("name", {"tag": "label", "value": "x" * 300000}), "capacity")]:
+            r = self.propose("p-" + edit[0] + cls, [root("c1", 0)], [write("c1", edit)])
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", cls), edit)
         self.assertEqual(self.view()["version"], 0)
-
-    def test_set_with_the_wrong_type_is_a_type_mismatch(self):
-        r = self.propose("p1", [root("c1", 0)], [write("c1", put("count", {"tag": "boolean", "value": True}))])
-        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
-
-    def test_edit_of_an_undeclared_field_is_a_type_mismatch(self):
-        r = self.propose("p1", [root("c1", 0)], [write("c1", add("ghost", 1))])
-        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch")
-
-    def test_duplicate_edit_of_one_field_is_a_malformed_request_not_a_receipt(self):
-        r = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1), add("count", 1))])
-        self.assertEqual(r["status"], "error")
-        self.assertEqual(self.host.send(op="world-status")["height"], 1)
-
-    def test_natural_add_is_exact_beyond_machine_words(self):
-        big = 2 ** 80
-        self.propose("p1", [root("c1", 0)], [write("c1", add("count", big))])
-        self.assertEqual(self.view()["state"], seed(big + 1))
 
 
 class Commit(WorldCase):
@@ -170,27 +144,15 @@ class Commit(WorldCase):
         # A `set` does not commute; two `add`s against one root both commit (tests/test_commute.py).
         self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
         r = self.propose("p2", [root("c1", 0)], [write("c1", put("count", nat(5)))])
-        self.assertEqual(r["status"], "refused")
         out = r["receipt"]["outcome"]
-        self.assertEqual((out["class"], out["object"]), ("staleRoot", "c1"))
+        self.assertEqual((r["status"], out["class"], out["object"]), ("refused", "staleRoot", "c1"))
         self.assertEqual(r["receipt"]["roots"], [root("c1", 0)])
         self.assertEqual(self.view()["state"], seed(1))
-
-    def test_a_stale_read_only_root_also_refuses_the_write_to_another_object(self):
-        self.propose("p1", [root("c2", 0)], [write("c2", add("count", 1))])
-        r = self.propose("p2", [root("c1", 0), root("c2", 0)], [write("c1", add("count", 1))])
+        # A stale read-only root refuses the write to another object too.
+        self.propose("p3", [root("c2", 0)], [write("c2", add("count", 1))])
+        r = self.propose("p4", [root("c1", 1), root("c2", 0)], [write("c1", add("count", 1))])
         self.assertEqual(r["receipt"]["outcome"]["class"], "staleRoot")
-        self.assertEqual(self.view("c1")["version"], 0)
-
-    def test_a_proposal_writing_an_object_it_never_named_as_a_root_is_a_request_error(self):
-        r = self.propose("p1", [root("c1", 0)], [write("c2", add("count", 1))])
-        self.assertEqual(r["status"], "error")
-        self.assertIn("not among the roots", r["message"])
-        self.assertEqual(self.view("c2")["version"], 0)
-
-    def test_unknown_object_in_roots_is_refused(self):
-        r = self.propose("p1", [root("ghost", 0)], [])
-        self.assertEqual(r["receipt"]["outcome"]["class"], "unknownObject")
+        self.assertEqual(self.propose("p5", [root("ghost", 0)], [])["receipt"]["outcome"]["class"], "unknownObject")
 
     def test_a_multi_object_proposal_is_all_or_nothing(self):
         r = self.propose("p1", [root("c1", 0), root("c2", 0)],
@@ -202,63 +164,40 @@ class Commit(WorldCase):
 class Laws(WorldCase):
     def test_monotone_law_refuses_a_decrement_and_names_the_clause(self):
         self.create(source=MONOTONE, count=5)
-        ok = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
-        self.assertEqual(ok["status"], "admitted")
+        self.assertEqual(self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])["status"], "admitted")
         bad = self.propose("p2", [root("c1", 1)], [write("c1", put("count", nat(2)))])
         out = bad["receipt"]["outcome"]
         self.assertEqual((bad["status"], out["class"], out["clause"]), ("refused", "lawRefused", "counter"))
         self.assertEqual(self.view()["state"], seed(6))
 
-
     def test_law_reads_the_height_of_the_entry_it_judges(self):
-        src = COUNTER.replace("def initial", "law early: request.height <= 3\ndef initial")
-        self.create(source=src)
-        a = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])  # height 2
-        b = self.propose("p2", [root("c1", 1)], [write("c1", add("count", 1))])  # height 3
-        c = self.propose("p3", [root("c1", 2)], [write("c1", add("count", 1))])  # height 4
-        self.assertEqual([a["status"], b["status"], c["status"]], ["admitted", "admitted", "refused"])
-        self.assertEqual(c["receipt"]["outcome"]["clause"], "early")
-
-    def test_plain_compile_op_still_refuses_laws(self):
-        r = self.host.send(op="compile", source=MONOTONE, entry="initial")
-        self.assertEqual(r["status"], "error")
-        self.assertIn("law adapter", r["message"])
+        self.create(source=COUNTER.replace("def initial", "law early: request.height <= 3\ndef initial"))
+        got = [self.propose(f"p{i}", [root("c1", i)], [write("c1", add("count", 1))]) for i in range(3)]  # heights 2, 3, 4
+        self.assertEqual([r["status"] for r in got], ["admitted", "admitted", "refused"])
+        self.assertEqual(got[2]["receipt"]["outcome"]["clause"], "early")
 
 
 class Retry(WorldCase):
+    """The retained receipt and duplicateIdentity on direct turns are test_properties; these are the
+    raw proposal's: a stale refusal binds nothing, identities are per principal, lookup by identity."""
+
     def setUp(self):
         super().setUp()
         self.create()
-
-    def test_retry_of_the_same_identity_returns_the_identical_receipt_and_no_entry(self):
-        first = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
-        height = self.host.send(op="world-status")["height"]
-        again = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
-        self.assertEqual(again, first)
-        self.assertEqual(self.host.send(op="world-status")["height"], height)
-        self.assertEqual(self.view()["version"], 1)
-        self.assertEqual(len(self.lines()), height)
-
 
     def test_a_stale_refusal_does_not_bind_the_identity_and_the_reread_retry_commits(self):
         first = self.propose("p1", [root("c1", 9)], [write("c1", add("count", 1))])
         self.assertEqual(first["receipt"]["outcome"]["class"], "staleRoot")
         again = self.propose("p1", [root("c1", 9)], [write("c1", add("count", 1))])
-        self.assertEqual(again["receipt"]["outcome"]["class"], "staleRoot")
         self.assertNotEqual(again["receipt"]["hash"], first["receipt"]["hash"])   # judged again, journaled again
         reread = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
         self.assertEqual(reread["status"], "admitted", reread)
         self.assertEqual(self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))]), reread)
-        receipt = self.host.send(op="world-receipt", principal="ember", identity="p1")
-        self.assertEqual(receipt["receipt"]["hash"], reread["receipt"]["hash"])
-
-    def test_same_identity_with_a_different_request_is_duplicate_identity_and_writes_nothing(self):
-        first = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
-        height = self.host.send(op="world-status")["height"]
         other = self.propose("p1", [root("c1", 1)], [write("c1", add("count", 5))])
-        self.assertEqual((other["status"], other["class"]), ("refused", "duplicateIdentity"))
-        self.assertEqual(other["original"], first["receipt"]["hash"])
-        self.assertEqual(self.host.send(op="world-status")["height"], height)
+        self.assertEqual((other["class"], other["original"]), ("duplicateIdentity", reread["receipt"]["hash"]))
+        self.assertEqual(self.host.send(op="world-receipt", principal="ember", identity="p1")["receipt"], reread["receipt"])
+        self.assertEqual(self.host.send(op="world-receipt", principal="ember", identity="zzz"), {"status": "unknown"})
+        self.assertEqual(self.host.send(op="world-receipt", principal="other", identity="p1"), {"status": "unknown"})
 
     def test_identity_is_per_principal(self):
         # The default law admits only the creator's proposals (kind 3, proposed); open them to anyone.
@@ -268,15 +207,6 @@ class Retry(WorldCase):
         a = self.propose("p1", [root("c1", 1)], [write("c1", add("count", 1))], principal="a")
         b = self.propose("p1", [root("c1", 2)], [write("c1", add("count", 1))], principal="b")
         self.assertEqual((a["status"], b["status"]), ("admitted", "admitted"))
-
-    def test_receipt_lookup_by_identity_and_the_silence_for_an_unknown_one(self):
-        first = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
-        got = self.host.send(op="world-receipt", principal="ember", identity="p1")
-        self.assertEqual(got["receipt"], first["receipt"])
-        self.assertEqual(self.host.send(op="world-receipt", principal="ember", identity="zzz"),
-                         {"status": "unknown"})
-        self.assertEqual(self.host.send(op="world-receipt", principal="other", identity="p1"),
-                         {"status": "unknown"})
 
 
 class History(WorldCase):
@@ -289,104 +219,44 @@ class History(WorldCase):
         self.propose("other", [root("c2", 0)], [write("c2", add("count", 1))])
         h = self.host.send(op="world-history", principal="ember", object="c1", limit=3)
         heights = [e["height"] for e in h["entries"]]
-        self.assertEqual(heights, [1, 3, 4])  # creation, then two writes
-        self.assertTrue(h["more"])
+        self.assertEqual((heights, h["more"]), ([1, 3, 4], True))  # creation, then two writes
         rest = self.host.send(op="world-history", principal="ember", object="c1", after=heights[-1], limit=100)
-        self.assertEqual([e["height"] for e in rest["entries"]], [5, 6, 7])
-        self.assertFalse(rest["more"])
+        self.assertEqual(([e["height"] for e in rest["entries"]], rest["more"]), ([5, 6, 7], False))
         self.assertEqual(self.host.send(op="world-history", principal="ember", object="ghost")["status"], "unknown")
-
-    def test_a_history_limit_beyond_the_cap_or_malformed_is_refused_by_name(self):
-        self.create()
         for bad in (10 ** 9, 0, "ten", -1):
-            h = self.host.send(op="world-history", principal="ember", object="c1", limit=bad)
-            self.assertEqual(h["status"], "error", (bad, h))
-            self.assertIn("limit", h["message"])
+            self.assertIn("limit", self.host.send(op="world-history", principal="ember", object="c1", limit=bad)["message"], bad)
         self.assertEqual(self.host.send(op="world-history", principal="ember", object="c1", after="x")["status"], "error")
-        self.assertEqual(self.host.send(op="world-history", principal="ember", object="c1", limit=100)["status"], "history")
-
-
-class Restart(WorldCase):
-
-    def test_the_new_chain_continues_the_old_head_after_restart(self):
-        self.create()
-        head = self.host.send(op="world-status")["head"]
-        self.let_go()
-        fresh = self.spawn()
-        fresh.send(op="world-open", path=self.path)
-        r = self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))], host=fresh)
-        self.assertEqual(r["receipt"]["previous"], head)
 
 
 class Tamper(WorldCase):
-    def build(self):
+    def test_a_damaged_journal_refuses_open_naming_the_height_and_a_restart_continues_the_head(self):
         self.create()
         for i in range(4):
             self.propose(f"p{i}", [root("c1", i)], [write("c1", add("count", 1))])
+        head = self.host.send(op="world-status")["head"]
         self.let_go()
+        good = self.lines()
 
-    def open_fresh(self):
-        h = self.spawn()
-        return h.send(op="world-open", path=self.path)
+        def opened(lines, cut=0):
+            with open(self.path, "w") as f:
+                f.write("\n".join(lines) + "\n")
+            if cut:
+                with open(self.path, "rb+") as f:
+                    f.seek(-cut, 2)
+                    f.truncate()
+            h = self.spawn()
+            return h, h.send(op="world-open", path=self.path)
 
-    def rewrite(self, index, transform):
-        lines = self.lines()
-        lines[index] = transform(lines[index])
-        with open(self.path, "w") as f:
-            f.write("\n".join(lines) + "\n")
-
-    def test_a_deleted_line_refuses_open(self):
-        self.build()
-        lines = self.lines()
-        del lines[2]
-        with open(self.path, "w") as f:
-            f.write("\n".join(lines) + "\n")
-        r = self.open_fresh()
-        self.assertEqual(r["status"], "error")
-        self.assertIn("height 3", r["message"])
-
-    def test_a_truncated_final_line_refuses_open(self):
-        self.build()
-        with open(self.path, "rb+") as f:
-            f.seek(-5, 2)
-            f.truncate()
-        r = self.open_fresh()
-        self.assertEqual(r["status"], "error")
-        self.assertIn("height 5", r["message"])
-
-    def test_garbage_line_names_its_height(self):
-        self.build()
-        self.rewrite(0, lambda l: "not json")
-        self.assertIn("height 1", self.open_fresh()["message"])
-
-    def test_a_failed_open_leaves_no_world_open(self):
-        self.build()
-        self.rewrite(2, lambda l: l.replace('"value":"1"', '"value":"9"'))
-        h = self.spawn()
-        h.send(op="world-open", path=self.path)
-        self.assertEqual(h.send(op="world-view", principal="e", object="c1")["status"], "error")
-
-
-class Maximum(WorldCase):
-
-    def test_oversized_identity_and_object_id_are_refused_before_the_journal(self):
-        self.create()
-        r = self.propose("x" * 257, [root("c1", 0)], [])
-        self.assertEqual(r["status"], "error")
-        r = self.propose("ok", [root("o" * 129, 0)], [])
-        self.assertEqual(r["status"], "error")
-        self.assertEqual(self.host.send(op="world-status")["height"], 1)
-
-    def test_too_many_roots_are_refused_before_the_journal(self):
-        self.create()
-        r = self.propose("many", [root(f"o{i}", 0) for i in range(65)], [])
-        self.assertEqual(r["status"], "error")
-
-    def test_state_beyond_the_byte_capacity_is_capacity_not_a_type_mismatch(self):
-        self.create()
-        big = {"tag": "label", "value": "x" * 300000}
-        r = self.propose("big", [root("c1", 0)], [write("c1", put("name", big))])
-        self.assertEqual(r["receipt"]["outcome"]["class"], "capacity")
+        for name, lines, cut, height in [("deleted line", good[:2] + good[3:], 0, 3), ("truncated tail", good, 5, 5),
+                                         ("garbage", ["not json"] + good[1:], 0, 1)]:
+            h, r = opened(lines, cut)
+            self.assertEqual(r["status"], "error", name)
+            self.assertIn("height %d" % height, r["message"], name)
+            self.assertEqual(h.send(op="world-view", principal="e", object="c1")["status"], "error", name)
+        fresh, r = opened(good)
+        self.assertEqual(r["status"], "opened")
+        r = self.propose("p9", [root("c1", 4)], [write("c1", add("count", 1))], host=fresh)
+        self.assertEqual(r["receipt"]["previous"], head)
 
 
 if __name__ == "__main__":

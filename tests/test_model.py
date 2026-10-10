@@ -29,40 +29,29 @@ class Model(unittest.TestCase):
         with mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY': 'k'}):
             return model.ask(request, transport=lambda *a: (status, raw))
 
-    def test_plain_fenced_and_prose_replies_all_parse(self):
+    def test_a_reply_parses_from_plain_fenced_or_prose_text_and_every_other_answer_is_a_named_failure(self):
         for text in ('{"a": 1}', '```json\n{"a": 1}\n```', 'Sure! Here you go:\n{"a": 1}\nHope that helps'):
             r = self.ask(200, body(text))
             self.assertEqual((r['status'], r['json'], r['raw'], r['model']), ('replied', {'a': 1}, text, 'claude-haiku-5-5'), text)
             self.assertEqual(r['usage'], {'input_tokens': 3, 'output_tokens': 4})
-
-    def test_model_replies_map_to_replied_malformed_rate_transport_or_refused(self):
         text_only = self.ask(200, body('no json here'))  # a plain-text reply is a reply; the host fits raw
         self.assertEqual((text_only['status'], text_only['json'], text_only['raw']), ('replied', None, 'no json here'))
-        self.assertEqual(self.ask(200, b'not json')['reason'], 'malformed')
-        self.assertEqual(self.ask(429, b'{}')['reason'], 'rate')
-        self.assertEqual(self.ask(0, b'')['reason'], 'transport')
-        self.assertEqual(self.ask(500, b'{}')['reason'], 'transport')
-        self.assertEqual(self.ask(200, body('{}', stop_reason='refusal'))['reason'], 'refused')
-        self.assertEqual(self.ask(401, b'{}')['reason'], 'refused')
+        for status, raw, reason in ((200, b'not json', 'malformed'), (429, b'{}', 'rate'), (0, b'', 'transport'), (500, b'{}', 'transport'),
+                                    (200, body('{}', stop_reason='refusal'), 'refused'), (401, b'{}', 'refused')):
+            self.assertEqual(self.ask(status, raw)['reason'], reason, (status, raw))
+        self.assertEqual(model.ask({'system': 'x' * (model.MAX_INPUT + 1), 'user': ''})['reason'], 'refused')  # oversized input
 
-
-    def test_no_key_opens_no_socket(self):
+    def test_no_key_opens_no_socket_and_a_key_file_is_read_from_the_named_path_only(self):
         with mock.patch.dict(os.environ, clear=True), \
                 mock.patch.object(socket.socket, 'connect', side_effect=AssertionError('socket')) as c, \
                 mock.patch.object(socket, 'create_connection', side_effect=AssertionError('socket')) as cc:
             r = model.ask(REQ)
         self.assertEqual((r['status'], r['reason']), ('failed', 'refused'))
         self.assertEqual((c.call_count, cc.call_count), (0, 0))
-
-    def test_key_file_is_read_from_the_named_path_only(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / 'k').write_text('filekey\n')
             with mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY_FILE': str(Path(d) / 'k')}, clear=True):
                 self.assertEqual(model.key(), 'filekey')
-
-
-    def test_oversized_input_is_refused(self):
-        self.assertEqual(model.ask({'system': 'x' * (model.MAX_INPUT + 1), 'user': ''})['reason'], 'refused')
 
 
 STUB = '''#!%s
@@ -123,6 +112,8 @@ class Interpret(unittest.TestCase):
                                          'user': 'plant 1'})
         self.assertEqual([s['reply']['json']['n'] for s in self.settled()], [1, 2])
         self.assertEqual(self.settled()[0]['reply']['json'], {'form': 'plant', 'n': 1})
+        again = interpret.run(self.state, self.host, self.ask)  # a second run does nothing
+        self.assertEqual((again['settled'], len(self.calls), len(self.settled())), ([], 2, 2))
 
     def test_the_utterance_is_sent_once(self):
         d = Path(self.tmp.name)
@@ -134,12 +125,6 @@ class Interpret(unittest.TestCase):
         sent = self.calls[0]
         self.assertEqual((sent['system'], sent['user']), ('forms...', 'plant 1'))  # Policy.prompt's tail is the user turn, once
         self.assertEqual((sent['system'] + sent['user']).count('plant 1'), 1)
-
-    def test_a_second_run_does_nothing(self):
-        interpret.run(self.state, self.host, self.ask)
-        n = len(self.calls)
-        again = interpret.run(self.state, self.host, self.ask)
-        self.assertEqual((again['settled'], len(self.calls), len(self.settled())), ([], n, 2))
 
     def test_crash_after_the_model_call_never_asks_or_settles_twice(self):
         real = self.host.send
@@ -167,9 +152,10 @@ class Interpret(unittest.TestCase):
         self.assertEqual((again['settled'], len(self.calls)), (['i1'], 2))
         self.assertEqual([(s['id'], s['reply']['json']['n']) for s in self.settled()], [('i1', 1), ('i2', 2), ('i1', 1)])
 
-    def test_a_refused_model_call_is_settled_as_the_failure_reply(self):
-        interpret.run(self.state, self.host, lambda req: model.failed('refused'))
-        self.assertEqual(self.settled()[0]['reply'], {'status': 'failed', 'reason': 'refused', 'detail': ''})
+    def test_a_refused_or_malformed_model_call_is_settled_as_the_failure_reply_without_retry(self):
+        r = interpret.run(self.state, self.host, lambda req: model.failed('refused') if req['user'] == 'plant 1' else model.failed('malformed'))
+        self.assertEqual([s['reply'] for s in self.settled()], [{'status': 'failed', 'reason': 'refused', 'detail': ''}, model.failed('malformed')])
+        self.assertEqual((r['settled'], r.get('retrying')), (['i1', 'i2'], None))
 
     def test_every_result_goes_to_the_host_verbatim_and_an_item_waiting_for_its_next_is_not_asked(self):
         r = interpret.run(self.state, self.host, lambda req: model.failed('transport'))
@@ -178,10 +164,6 @@ class Interpret(unittest.TestCase):
         calls = []
         again = interpret.run(self.state, self.host, lambda req: calls.append(1) or self.ask(req))
         self.assertEqual((calls, again['retrying'], len(self.settled())), ([], ['i1', 'i2'], 2))  # `next` has not passed
-
-    def test_malformed_settles_without_retry(self):
-        r = interpret.run(self.state, self.host, lambda req: model.failed('malformed'))
-        self.assertEqual((r['settled'], r.get('retrying')), (['i1', 'i2'], None))
 
 
 class OAuth(unittest.TestCase):
@@ -255,8 +237,7 @@ class OAuth(unittest.TestCase):
         self.assertEqual((r['account'], r['overageInUse']), ('spare', True))
         r = model.ask(REQ, transport=self.transport(200), tokeman=lambda: [probe('main', True), probe('spare', False)])
         self.assertEqual((r['account'], r['overageInUse']), ('main', False))
-
-    def test_headroom_still_beats_overage_while_any_account_has_some(self):
+        # headroom still beats overage while any account has some
         probes = [{'token_name': 'main', 'quota': {'weekly': {'utilization': 0.4}, 'overage_status': 'rejected'}},
                   {'token_name': 'spare', 'quota': {'weekly': {'utilization': 1.0}, 'overage_status': 'allowed'}}]
         self.assertEqual(model.ask(REQ, transport=self.transport(200), tokeman=lambda: probes)['account'], 'main')

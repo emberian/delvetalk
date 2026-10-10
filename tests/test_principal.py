@@ -14,11 +14,10 @@ import unittest
 
 from deploy import genesis
 from tests.test_laws import anthology_seed
-from tests.test_turn_world import relation
-from tests.test_chain import Chain, garden_seed, reference, town_kinds
+from tests.test_chain import Chain, garden_seed, town_kinds
 from tests.test_objects import closure
 from tests.test_places import avatar_seed, names, place_seed
-from tests.test_replay import bell_seed, get, items, rows
+from tests.test_replay import bell_seed, get, rows
 from tests.test_turn_world import label, record
 
 ACTOR, CLAIMED = "kimik3", "glm"
@@ -45,29 +44,20 @@ class Principal(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
-    def test_a_rain_is_authored_by_the_turns_principal(self):
-        self.make("bell", closure("Bell"), bell_seed())
-        argument = record(text=label("the moths know the way"))
-        print("\n  forged rain:", self.forged("bell", "rain", argument, "author"))
-        self.acted("bell", "rain", argument)
-        self.assertEqual([get(r, "author") for r in rows(get(self.state("bell"), "rains"))], [label(ACTOR)])
-
-    def test_a_written_line_is_authored_by_the_turns_principal(self):
+    def test_a_rain_a_line_and_a_note_are_the_turns_principals(self):
         # Record's creator passes its law, so it is made with world-create (whole state) by its owner.
+        self.make("bell", closure("Bell"), bell_seed())
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
                            entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
-        argument = record(text=label("lamps"))
-        self.forged("anthology", "write", argument, "author")
-        self.acted("anthology", "write", argument)
-        self.assertEqual([get(p, "author") for p in rows(get(self.state("anthology"), "lines"))], [label(ACTOR)])
-
-    def test_a_note_is_from_the_turns_principal(self):
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
-        argument = record(text=label("hello"))
-        self.forged("glm", "note", argument, "from")
-        self.acted("glm", "note", argument)
-        self.assertEqual([get(n, "from") for n in rows(get(self.state("glm"), "inbox"))], [label(ACTOR)])
+        for obj, method, text, field, rows_of in (("bell", "rain", "the moths know the way", "author", "rains"),
+                                                  ("anthology", "write", "lamps", "author", "lines"),
+                                                  ("glm", "note", "hello", "from", "inbox")):
+            argument = record(text=label(text))
+            self.forged(obj, method, argument, field)
+            self.acted(obj, method, argument)
+            self.assertEqual([get(x, field) for x in rows(get(self.state(obj), rows_of))], [label(ACTOR)], obj)
 
     def test_a_knock_and_a_light_record_the_turns_principal(self):
         self.make("door", closure("Door"), record())

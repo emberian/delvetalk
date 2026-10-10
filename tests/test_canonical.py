@@ -95,23 +95,10 @@ class Canonical(unittest.TestCase):
             got = self.encode(json=rec)
             if got.get("cid") != expected:
                 mismatched.append((expected, got))
-        print("AT Protocol fixture records matching their CID: %d/%d" % (len(found) - len(mismatched), len(found)))
         self.assertEqual(mismatched[:2], [])
         self.assertEqual(cid_of(found[0][0]), found[0][1])  # the independent encoder agrees
 
-    def test_field_order_does_not_change_the_cid(self):
-        a = record(x=nat(1), y=label("é"), z=boolean(True))
-        b = record(z=boolean(True), x=nat(1), y=label("é"))
-        c = record(y=label("é"), z=boolean(True), x=nat(1))
-        cids = {self.encode(data=d)["cid"] for d in (a, b, c)}
-        self.assertEqual(len(cids), 1)
-        other = record(x=nat(2), y=label("é"), z=boolean(True))
-        self.assertNotIn(self.encode(data=other)["cid"], cids)
-        # the sort is by length first: "b" < "aa" although "aa" < "b" bytewise
-        self.assertEqual(self.encode(data=record(aa=nat(1), b=nat(2)))["hex"],
-                         "a2" "6162" "02" "626161" "01")
-
-    def test_every_data_shape_has_the_expected_bytes_and_round_trips(self):
+    def test_every_data_shape_has_one_encoding_whatever_its_field_order_and_round_trips(self):
         cases = {
             "zero": (nat(0), "00"), "small": (nat(23), "17"), "one byte": (nat(24), "1818"),
             "two bytes": (nat(256), "190100"), "u64 max": (nat(2 ** 64 - 1), "1b" + "ff" * 8),
@@ -136,8 +123,16 @@ class Canonical(unittest.TestCase):
         hexed = self.encode(data=nested)["hex"]
         again = self.host.send(op="canonical-decode", hex=hexed)["data"]
         self.assertEqual(self.encode(data=again)["hex"], hexed)
-
-    def test_a_decoded_one_key_map_is_a_record_and_a_list_stays_a_list(self):
+        a = record(x=nat(1), y=label("é"), z=boolean(True))
+        b = record(z=boolean(True), x=nat(1), y=label("é"))
+        c = record(y=label("é"), z=boolean(True), x=nat(1))
+        cids = {self.encode(data=d)["cid"] for d in (a, b, c)}
+        self.assertEqual(len(cids), 1)
+        other = record(x=nat(2), y=label("é"), z=boolean(True))
+        self.assertNotIn(self.encode(data=other)["cid"], cids)
+        # the sort is by length first: "b" < "aa" although "aa" < "b" bytewise
+        self.assertEqual(self.encode(data=record(aa=nat(1), b=nat(2)))["hex"],
+                         "a2" "6162" "02" "626161" "01")
         back = self.host.send(op="canonical-decode", hex="a1626f6ba0")
         self.assertEqual(back["data"], record(ok=record()))
         back = self.host.send(op="canonical-decode", hex="83010203")
@@ -173,7 +168,7 @@ class Canonical(unittest.TestCase):
                 r = self.encode(json={"n": [n]})
                 self.assertEqual(r["status"], "error", r)
 
-    def test_lists_cross_the_wire_as_arrays_and_a_nil_cons_chain_is_refused_by_name(self):
+    def test_lists_cross_as_arrays_bounded_by_nesting_not_length_and_a_cons_chain_is_refused(self):
         b = self.encode(data=list_wire([nat(i) for i in range(5)]))
         back = self.host.send(op="canonical-decode", hex=b["hex"])["data"]
         self.assertEqual(back["tag"], "list")
@@ -188,8 +183,6 @@ class Canonical(unittest.TestCase):
         self.assertEqual(self.host.send(op="canonical-encode", data=tail_list)["status"], "error")
         improper = chain_cons(nat(0), nat(1))                          # not a list: still an ordinary variant
         self.assertNotEqual(self.host.send(op="canonical-encode", data=improper).get("status"), "error")
-
-    def test_a_long_list_is_bounded_by_element_nesting_not_by_length(self):
         items = [nat(i) for i in range(5000)]
         got = self.encode(data=list_wire(items))
         self.assertEqual(got["status"], "encoded", got)
@@ -250,7 +243,7 @@ class JournalCids(unittest.TestCase):
         status = host.send(op="world-status")
         self.assertEqual(status["head"], previous)
 
-    def test_a_tampered_byte_breaks_the_chain_at_the_named_height(self):
+    def test_a_tampered_byte_or_a_resealed_entry_breaks_the_chain_at_the_named_height(self):
         host = self.spawn()
         self.populate(host)
         host.close()
@@ -266,8 +259,8 @@ class JournalCids(unittest.TestCase):
         self.assertEqual(broken["status"], "error", broken)
         self.assertIn("journal broken at height 3", broken["message"])
         self.assertIn("hash mismatch", broken["message"])
-
-    def test_a_replaced_entry_with_a_valid_hash_breaks_the_next_link(self):
+        # An entry rewritten and resealed with a correct CID breaks the next link.
+        self.path = os.path.join(self.dir.name, "resealed.journal")
         host = self.spawn()
         self.populate(host)
         host.close()

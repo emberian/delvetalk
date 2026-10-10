@@ -164,37 +164,30 @@ class Changes(Reflection):
         argument = {f["name"]: f["value"] for f in change["argument"]["fields"]}
         self.assertEqual((argument["inserted"], argument["retracted"]),
                          ({"tag": "list", "items": [nat(1)]}, {"tag": "list", "items": [nat(0)]}))
-        self.turn("bell", "name", record(who=label("kim")))
+        self.make2("w2", WATCHER)
+        self.watch("w2", field="names")
+        named = self.turn("bell", "name", record(who=label("kim")))
         self.assertEqual(self.get("w", "seen"), nat(1))
+        entry = [e for e in self.entries() if e["identity"]["intent"] == named["receipt"]["identity"]["intent"]][0]
+        argument = {f["name"]: f["value"] for f in entry["changes"][0]["argument"]["fields"]}
+        self.assertEqual((argument["inserted"], argument["retracted"]),
+                         ({"tag": "list", "items": [label("kim")]}, {"tag": "list", "items": []}))
         # The subscription is derived from the journal: it stands after reopen, and the replayed
         # entries re-derive the changes they journaled.
         self.reopen()
         self.turn("bell", "ring", record())
         self.assertEqual((self.get("w", "seen"), self.get("w", "last")), (nat(2), nat(3)))
 
-    def test_a_list_field_reports_items_added(self):
+    def test_unsubscribe_ends_it_and_a_missing_field_or_unreadable_object_is_refused_by_name(self):
         self.make2("w", WATCHER)
-        self.watch("w", field="names")
-        named = self.turn("bell", "name", record(who=label("kim")))
-        entry = [e for e in self.entries() if e["identity"]["intent"] == named["receipt"]["identity"]["intent"]][0]
-        argument = {f["name"]: f["value"] for f in entry["changes"][0]["argument"]["fields"]}
-        self.assertEqual((argument["inserted"], argument["retracted"]),
-                         ({"tag": "list", "items": [label("kim")]}, {"tag": "list", "items": []}))
-
-    def test_unsubscribe_ends_it(self):
-        self.make2("w", WATCHER)
+        self.assertEqual(self.watch("w", field="nope"), label("field"))
         self.watch("w")
         self.turn("bell", "ring", record())
         self.assertEqual(self.watch("w", method="unwatch"), label("unsubscribed"))
         self.turn("bell", "ring", record())
-        self.assertEqual(self.get("w", "seen"), nat(1))
         self.reopen()
         self.turn("bell", "ring", record())
         self.assertEqual(self.get("w", "seen"), nat(1))
-
-    def test_refusals_by_name(self):
-        self.make2("w", WATCHER)
-        self.assertEqual(self.watch("w", field="nope"), label("field"))
         self.make2("vault", BELL, read={"principals": ["ember"]})
         self.assertEqual(self.watch("w", target="vault"), label("denied"))
         self.assertEqual(self.watch("w", target="vault", principal="ember"), label("subscribed"))
@@ -227,24 +220,19 @@ class Changes(Reflection):
         self.reopen()
         self.assertEqual((self.get("r", "got"), self.get("r2", "got")), (nat(100), nat(101)))
 
-    def test_an_inspected_object_is_a_root_of_the_turn(self):
-        # codex host 11: a turn that inspected bell and waited commits only on the bell it read.
+    def test_an_inspected_object_and_a_subscriptions_field_are_roots_of_the_turn(self):
+        # codex host 11: a turn that inspected bell, or staged a subscription to one of its fields, and
+        # waited commits only on what it read.
         self.make2("i", INSPECTOR)
-        self.assertEqual(self.turn("i", "later", record(other=label("bell"), slot=label("go1")), identity="w1")["status"], "suspended")
-        [resumed] = self.turn("bell", "ring", record(), principal="ann", identity="go1")["resumed"]
-        self.assertIn("rerunOf", resumed, resumed)
-
-    def test_a_subscription_reads_its_field(self):
-        # codex host 11: a staged subscription commits only on the field it checked.
         self.make2("ww", WAITING_WATCHER)
-        self.assertEqual(self.turn("ww", "watchLater", record(target=label("bell"), slot=label("go1")), identity="w1")["status"], "suspended")
-        [resumed] = self.turn("bell", "ring", record(), principal="ann", identity="go1")["resumed"]
-        self.assertIn("rerunOf", resumed, resumed)
         self.make2("ww2", WAITING_WATCHER)
-        self.assertEqual(self.turn("ww2", "watchLater", record(target=label("bell"), slot=label("go2")), identity="w2")["status"], "suspended")
+        self.assertEqual(self.turn("i", "later", record(other=label("bell"), slot=label("go1")), identity="w1")["status"], "suspended")
+        self.assertEqual(self.turn("ww", "watchLater", record(target=label("bell"), slot=label("go1")), identity="w2")["status"], "suspended")
+        resumed = self.turn("bell", "ring", record(), principal="ann", identity="go1")["resumed"]
+        self.assertEqual(["rerunOf" in r for r in resumed], [True, True], resumed)
+        self.assertEqual(self.turn("ww2", "watchLater", record(target=label("bell"), slot=label("go2")), identity="w3")["status"], "suspended")
         [other] = self.turn("bell", "name", record(who=label("kim")), principal="ann", identity="go2")["resumed"]
         self.assertNotIn("rerunOf", other, other)
-
 
 RECEIVER_PROTOCOL = ("  subscribe({object: Plans.Reference, field: String}) -> Subscribed",
                      "  subscribe({object: Plans.Reference, field: String, method: String}) -> Subscribed")
@@ -328,7 +316,8 @@ class Receivers(Reflection):
         self.assertEqual(entry["outcome"]["expected"]["method"], "asText")
         self.assertEqual(self.counts(), (0, 0, 0))
 
-    def test_empty_is_changed_and_another_receiver_replaces(self):
+    def test_empty_is_changed_another_receiver_replaces_and_one_the_subscriber_lacks_is_refused(self):
+        self.assertEqual((self.watch_with("ghost"), self.watch_with("not a name")), (label("method"), label("method")))
         self.assertEqual(self.watch_with(""), label("subscribed"))
         self.turn("bell", "ring", record())
         self.assertEqual(self.counts(), (0, 0, 1))
@@ -338,13 +327,6 @@ class Receivers(Reflection):
         self.reopen()
         self.turn("bell", "ring", record())
         self.assertEqual(self.counts(), (5, 0, 1))
-
-    def test_a_receiver_the_subscriber_lacks_is_refused(self):
-        self.assertEqual(self.watch_with("ghost"), label("method"))
-        self.assertEqual(self.watch_with("not a name"), label("method"))
-        self.turn("bell", "ring", record())
-        self.assertEqual(self.counts(), (0, 0, 0))
-
 
 if __name__ == "__main__":
     unittest.main()

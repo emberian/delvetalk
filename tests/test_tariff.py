@@ -1,32 +1,13 @@
-"""The tariff, pinned: exact tick counts of workloads whose code lives in the test, so only a change
-to the machine's charges moves them.
+"""The tariff charges what a workload costs before it allocates or spins: big naturals, results and
+Plans by their canonical bytes, text equality by the bytes compared, a failed prefix scan by its scan.
 
 Evidence for FOUNDATION §2 Limits (layer: kernel).
 
-The tariff, pinned: exact tick counts of workloads whose code is fixed in this file, so
-only a change to the machine's charges can move them.
-
     python3 -m unittest tests.test_tariff -v
 
-Conformance compares values, never costs, so these counts are the regression guard for
-the tariff: a change to the machine or to `textStepCost` that moves one of them must
-update the number here and say why. Workloads over world library code (a Bell card, a
-spell parse) are bounded where that code is tested, never pinned here: their counts move
-with every edit of the library.
-
-| workload                                   | before  | after   |
-| ------------------------------------------ | ------- | ------- |
-| one `bump` turn (start 73 + resume 10)     | 66      | 83      |
-| `Document.plain`, 1,025 leaves (with build)| 336,659 | 129,272 |
-| the same document's `Document.size` walk   | 120,037 | 120,037 |
-
-Before: `Document.plain` joined adjacent pairs in rounds (every byte copied about
-log2(leaves) times); `textTake`/`textDrop` were charged 2 x min(B, 4n) bytes.
-The `bump` row moved from 66 to 83 when the turn became a world call: the start now builds a
-`Message` record (object reference, method label) and injects the edit record as `Data`,
-where the old form injected one sum variant; the resume (10) is unchanged.
-After: `plain` is one `textJoin` (charged by the bytes it appends), and take/drop
-are charged by the exact bytes of the prefix they traverse.
+Conformance compares values, never costs: these are the charges a workload cannot dodge (review
+kernel 7-10): a natural past a machine word, a result's canonical size, text equality, a failed
+prefix scan. Workloads over world library code are bounded where that code is tested, never here.
 """
 import unittest
 
@@ -34,19 +15,6 @@ from tests.test_turn import Host, nat
 from tests.test_objects import run_pure
 
 BIG = {"ticks": "1000000"}
-
-
-STRINGS = """edition ObjectiveBend 1
-import ./List.obend as Lists
-def strings(n: Nat, word: String) -> Lists.List<String>:
-  match n:
-    case 0: Lists.List::<String>.nil()
-    case 1+p: Lists.List::<String>.cons({head: word, tail: strings(p, word)})
-def joined(n: Nat) -> String:
-  textJoin(strings(n, "ab"), ", ")
-def size(n: Nat) -> Nat:
-  textLength(textJoin(strings(n, "x"), ""))
-"""
 
 
 SQUARES = """edition ObjectiveBend 1
@@ -120,7 +88,7 @@ class CanonicalBytes(unittest.TestCase):
     under exactly its encoded size and is refused a byte short (review kernel 8: `true`, one
     byte, was refused under `bytes: 1`; sizes were decimal-length legacy accounting)."""
 
-    def test_each_result_runs_under_exactly_its_canonical_size(self):
+    def test_each_result_and_plan_runs_under_exactly_its_canonical_size(self):
         h = Host()
         self.addCleanup(h.close)
         for entry, argument in (("yes", 3), ("word", 2), ("word", 26), ("big", 7), ("pair", 5)):
@@ -135,10 +103,6 @@ class CanonicalBytes(unittest.TestCase):
                 short = h.send({"op": "run", "artifact": art, "arguments": [nat(argument)],
                                 "limits": {"ticks": "1000000", "bytes": str(size - 1)}})
                 self.assertEqual(short["status"], "refused", (size, short))
-
-    def test_a_plan_yields_under_exactly_its_canonical_size(self):
-        h = Host()
-        self.addCleanup(h.close)
         art = h.compile(VALUES, "shout", library=("List",), world=NOTE_WORLD)
         for n in (0, 4, 30):  # the items list crosses as an array: one head, no cons cells
             with self.subTest(n=n):

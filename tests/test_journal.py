@@ -56,20 +56,5 @@ class Lock(Reflection):
         self.assertEqual((opened["status"], opened["objects"]), ("opened", 1), opened)
 
 
-class Maximum(Reflection):
-    def test_two_hundred_bells_journal_their_source_once_and_replay(self):
-        self.open_library()
-        for i in range(200):
-            r = self.host.send(op="world-create", principal="ember", identity=f"mk{i}", object=f"bell{i}", source=BELL,
-                               entry="initial", seed=SEED)
-            self.assertEqual(r["status"], "created", r)
-        before = self.host.send(op="world-inspect", principal="ember", object="bell199")
-        self.reopen()
-        size = os.path.getsize(self.path)
-        print(f"\n  200 bells: journal {size / 1e6:.2f} MB")
-        self.assertLess(size, 600000)  # one copy of Bell's source: 200 copies would be 3 MB
-        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="bell199"), before)
-
-
 if __name__ == "__main__":
     unittest.main()

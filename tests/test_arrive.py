@@ -26,17 +26,25 @@ def field(state, name):
     return {f["name"]: f["value"] for f in state["fields"]}[name]
 
 
+def opened(case, wake=None):
+    """Open the case's world on the deployed library (world/lib, where Places, which the Avatar
+    imports, is) joined by the newcomer's packages; `wake` replaces Wake's source."""
+    case.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
+    case.addCleanup(shutil.rmtree, case.lib, True)
+    shutil.copytree(os.path.join(ROOT, "world", "lib"), case.lib, dirs_exist_ok=True)
+    for name in ("Avatar", "Env", "Wake"):
+        shutil.copy(os.path.join(OBJECTS, name + ".obend"), case.lib)
+    if wake:
+        with open(os.path.join(case.lib, "Wake.obend"), "w", encoding="utf-8") as f:
+            f.write(wake)
+    r = case.host.send(op="world-open", path=case.path, library=case.lib, principal="ember", clock="transport", opener="ember")
+    case.assertEqual(r["status"], "opened", r)
+
+
 class Arrive(HostCase):
     def setUp(self):
         super().setUp()
-        # The deployed library is world/lib (Places, which the Avatar imports, is there); a newcomer's packages join it here.
-        self.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
-        self.addCleanup(shutil.rmtree, self.lib, True)
-        shutil.copytree(os.path.join(ROOT, "world", "lib"), self.lib, dirs_exist_ok=True)
-        for name in ("Avatar", "Env", "Wake"):
-            shutil.copy(os.path.join(OBJECTS, name + ".obend"), self.lib)
-        r = self.host.send(op="world-open", path=self.path, library=self.lib, principal="ember", clock="transport", opener="ember")
-        self.assertEqual(r["status"], "opened", r)
+        opened(self)
 
     def arrive(self, handle="newt.delve.town", principal="transport", did=DID):
         return self.host.send(op="world-arrive", principal=principal, did=did, handle=handle)
@@ -70,6 +78,7 @@ class Arrive(HostCase):
         self.assertEqual(made["status"], "error", made)
 
     def test_an_arrival_creates_the_newcomers_three_objects_owned_by_the_did(self):
+        self.assertEqual(self.host.send(op="world-card", principal=DID, object="env")["status"], "unknown")
         before = self.host.send(op="world-status")["height"]
         r = self.arrive()
         self.assertEqual(r["status"], "arrived", r)
@@ -86,14 +95,8 @@ class Arrive(HostCase):
         self.assertEqual((receipt["receipt"]["outcome"]["tag"], receipt["receipt"]["outcome"]["owner"]), ("created", DID), receipt)
         avatar = self.host.send(op="world-inspect", principal=DID, object=DID)
         self.assertIn(DID, avatar["law"])
-
-    def test_env_and_wake_resolve_to_the_newcomers_own_after_arrival(self):
-        missing = self.host.send(op="world-card", principal=DID, object="env")
-        self.assertEqual(missing["status"], "unknown", missing)
-        self.arrive()
-        card = self.host.send(op="world-card", principal=DID, object="env")
+        card = self.host.send(op="world-card", principal=DID, object="env")  # env resolves to the speaker's own
         self.assertEqual((card["status"], card["object"]), ("card", "env/" + DID), card)
-
 
     def test_a_second_arrival_creates_nothing_and_a_new_handle_is_one_entry(self):
         self.arrive()
@@ -105,20 +108,16 @@ class Arrive(HostCase):
         renamed = self.arrive(handle="newt2.delve.town")
         self.assertEqual(renamed["created"], [])
         self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
+        self.reopen()
+        self.host.send(op="world-open", path=self.path, library=self.lib)
+        self.assertEqual(field(self.view(DID), "handle")["value"], "newt.delve.town")  # the avatar keeps its seed; the registry holds the new handle
+        self.assertEqual(self.arrive()["created"], [])
 
     def test_only_the_clock_principal_reports_an_arrival(self):
         r = self.arrive(principal="ember")
         self.assertEqual(r["status"], "error", r)
         self.assertIn("clock principal", r["message"])
         self.assertEqual(self.host.send(op="world-view", principal=DID, object=DID)["status"], "unknown")
-
-    def test_an_arrival_replays(self):
-        self.arrive()
-        self.reopen()
-        self.host.send(op="world-open", path=self.path, library=self.lib)
-        self.assertEqual(field(self.view(DID), "handle")["value"], "newt.delve.town")
-        self.assertEqual(self.arrive()["created"], [])
-
 
 # A Wake whose `arrived` subscribes its owner's wake to the garden's `n` (the objects lane's
 # `Wake.arrived` does the same for the real garden).
@@ -159,15 +158,7 @@ class Arrived(HostCase):
 
     def setUp(self):
         super().setUp()
-        self.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
-        self.addCleanup(shutil.rmtree, self.lib, True)
-        shutil.copytree(os.path.join(ROOT, "world", "lib"), self.lib, dirs_exist_ok=True)
-        for name in ("Avatar", "Env"):
-            shutil.copy(os.path.join(OBJECTS, name + ".obend"), self.lib)
-        with open(os.path.join(self.lib, "Wake.obend"), "w", encoding="utf-8") as f:
-            f.write(ARRIVING_WAKE)
-        r = self.host.send(op="world-open", path=self.path, library=self.lib, principal="ember", clock="transport", opener="ember")
-        self.assertEqual(r["status"], "opened", r)
+        opened(self, wake=ARRIVING_WAKE)
         r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden",
                            modules=[{"name": "Probe", "source": GARDEN}], entry="initial", seed=record())
         self.assertEqual(r["status"], "created", r)
@@ -196,13 +187,7 @@ class ToldWithoutPosting(HostCase):
 
     def setUp(self):
         super().setUp()
-        self.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
-        self.addCleanup(shutil.rmtree, self.lib, True)
-        shutil.copytree(os.path.join(ROOT, "world", "lib"), self.lib, dirs_exist_ok=True)
-        for name in ("Avatar", "Env", "Wake"):
-            shutil.copy(os.path.join(OBJECTS, name + ".obend"), self.lib)
-        r = self.host.send(op="world-open", path=self.path, library=self.lib, principal="ember", clock="transport", opener="ember")
-        self.assertEqual(r["status"], "opened", r)
+        opened(self)
         from tests.test_objects import closure
         r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden", modules=closure("Garden"),
                            entry="initial", seed=record(owner={"tag": "label", "value": "ember"}))
@@ -219,20 +204,6 @@ class ToldWithoutPosting(HostCase):
                            argument=record(text={"tag": "label", "value": "delvetalk garden plant\nseed: %s\ncolour: silver" % seed}, post={"tag": "label", "value": "at://x/" + ident}))
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
         return r
-
-    def test_a_world_with_an_arrival_a_subscription_and_a_change_reopens_as_written(self):
-        # The playtest (run 17:05, height 39): a planting both creates a bell and owes the Wake a
-        # change; first execution counted the bell in the change's ledger, replay did not.
-        self.arrive()
-        self.plant("ember", "a lamp", "p1")
-        self.plant(DID, "a fern", "p2")
-        def cids():
-            ids = self.host.send(op="world-objects", principal="ember")["ids"]
-            return {i: self.host.send(op="world-state-cid", principal="ember", object=i).get("cid") for i in ids}
-        before = (self.host.send(op="world-status")["height"], cids())
-        self.assertIn("garden/bell/2", before[1])
-        self.reopen()
-        self.assertEqual((self.host.send(op="world-status")["height"], cids()), before)
 
     def test_a_newcomer_hears_each_planting_and_its_own_bell_ring(self):
         arrived = self.arrive()

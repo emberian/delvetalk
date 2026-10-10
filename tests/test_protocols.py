@@ -59,15 +59,13 @@ class Protocols(unittest.TestCase):
         return self.h.send({"op": "check-package", "entry": entry, "modules": self.modules(thing)})
 
 
-    def test_a_missing_method_is_refused_by_name_at_the_claim(self):
+    def test_a_missing_or_mistyped_method_is_refused_by_name_where_it_is_claimed_or_written(self):
         reply = self.check(THING.replace('def door() -> String:\n  "thing"\n', ""))
         self.assertEqual(reply["status"], "refused", reply)
         d = reply["diagnostic"]
         self.assertIn("implements Card but defines no door", d["message"])
         self.assertEqual((d["module"], d["span"]["line"]), ("Thing", 6))
         self.assertIn("protocol Card", d["hint"])
-
-    def test_a_mistyped_method_is_refused_by_name_where_it_is_written(self):
         reply = self.check(THING.replace('def render(state: State, context: Abi.Context) -> String:\n  "a thing"',
                                          'def render(state: State, context: Abi.Context) -> Nat:\n  1n'))
         self.assertEqual(reply["status"], "refused", reply)

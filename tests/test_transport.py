@@ -77,10 +77,14 @@ class Classification(unittest.TestCase):
             mk(6, 'just words', parent=BASE['uri']),
             mk(7, 'merge conflicts are fun'),
             mk(8, 'delvetalk garden ?'),  # a spell or not is the host's parser's answer (bridge.spelled)
+            mk(9, 'hello @livedelvetalk.delve.town'), mk(10, 'a #gsb post', parent=BASE['uri']),  # a summon: the portal or the tag
+            mk(11, '#gsb\ndelvetalk garden plant'), mk(12, 'hi @livedelvetalk.delve.town #GSB'),  # a handle in text, no facet
+            mk(13, 'not delvetalk garden plant'),
         ])
         self.assertEqual({k: v['kind'] for k, v in obs.items()},
-                         {'00000' + str(i): k for i, k in enumerate(
-                             ['wiki-page', 'wiki-edit', 'wiki-merge', 'summon', 'reply', 'reply', 'post', 'post'], 1)})
+                         {'%06d' % i: k for i, k in enumerate(
+                             ['wiki-page', 'wiki-edit', 'wiki-merge', 'summon', 'reply', 'reply', 'post', 'post',
+                              'summon', 'summon', 'summon', 'summon', 'post'], 1)})
         self.assertEqual(obs['000001']['wiki'], {'op': 'page', 'title': 'GSB Welcome Message (v2)', 'section': None})
         self.assertEqual(obs['000002']['wiki']['section'], 'Beds')
         self.assertEqual(obs['000004']['mentions'], [{'did': OTHER, 'handle': 'livedelvetalk.delve.town'}])
@@ -88,17 +92,6 @@ class Classification(unittest.TestCase):
         self.assertEqual(obs['000006']['replyTo'], BASE['uri'])
         self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo', 'root',
                                               'mentions', 'tags', 'kind', 'wiki'})
-
-    def test_a_summon_is_a_mention_of_the_portal_or_the_gsb_tag(self):
-        obs, _ = self.kinds([mk(1, 'hello @livedelvetalk.delve.town'), mk(2, 'a #gsb post', parent=BASE['uri']),
-                             mk(3, '#gsb\ndelvetalk garden plant'), mk(4, 'not delvetalk garden plant')])
-        self.assertEqual([obs[k]['kind'] for k in sorted(obs)], ['summon', 'summon', 'summon', 'post'])
-
-
-    def test_a_handle_mention_in_text_without_a_facet_is_still_a_summon(self):
-        obs, _ = self.kinds([mk(1, 'hi @livedelvetalk.delve.town #GSB')])
-        self.assertEqual(obs['000001']['kind'], 'summon')
-
 
 class Idempotence(unittest.TestCase):
     def test_rerun_emits_nothing(self):
@@ -138,34 +131,20 @@ class Idempotence(unittest.TestCase):
 
 
 class Bounds(unittest.TestCase):
-    def test_a_thousand_post_page_is_observed_whole(self):
-        posts = [mk(i, f'wiki: T{i}\n#gsb @a.delve.town') for i in range(1000)]
+    def test_a_thousand_post_page_is_observed_whole_and_a_one_mebibyte_body_refused_by_name(self):
         with tempfile.TemporaryDirectory() as d:
-            obs, _ = run_observer(posts, d)
+            obs, ob = run_observer([mk(i, f'wiki: T{i}\n#gsb @a.delve.town') for i in range(1000)] + [mk(1000, 'x' * (1 << 20))], d)
         self.assertEqual(len(obs), 1000)
-
-    def test_one_mebibyte_body_refused_by_name(self):
-        with tempfile.TemporaryDirectory() as d:
-            obs, ob = run_observer([mk(1, 'x' * (1 << 20)), mk(2, 'ok')], d)
-        self.assertEqual([o['text'] for o in obs], ['ok'])
         self.assertEqual(ob.refused[0][0], 'post_body_too_large')
 
-    def test_the_post_writer_refuses_a_one_mebibyte_text_as_post_body_too_large(self):
+    def test_the_writer_and_the_client_refuse_what_is_too_large_a_redirect_and_any_other_endpoint_by_name(self):
         with self.assertRaises(delve.Failure) as c:
             post.build_request('x' * (1 << 20))
         self.assertEqual(c.exception.code, 'post_body_too_large')
-
-    def test_a_client_refuses_an_oversized_response_and_a_redirect_by_name(self):
-        c = delve.Client(lambda *a: (200, b'{' + b' ' * delve.MAX_RESPONSE + b'}'))
-        with self.assertRaises(delve.Failure) as e:
-            c.search('x')
-        self.assertEqual(e.exception.code, 'response_too_large')
-        c = delve.Client(lambda *a: (302, b''))
-        with self.assertRaises(delve.Failure) as e:
-            c.search('x')
-        self.assertEqual(e.exception.code, 'redirect_refused')
-
-    def test_client_cannot_write_or_reach_other_endpoints(self):
+        for answer, code in (((200, b'{' + b' ' * delve.MAX_RESPONSE + b'}'), 'response_too_large'), ((302, b''), 'redirect_refused')):
+            with self.assertRaises(delve.Failure) as e:
+                delve.Client(lambda *a, answer=answer: answer).search('x')
+            self.assertEqual(e.exception.code, code)
         c = delve.Client(lambda *a: self.fail('sent'))
         for fn in (lambda: c.write('com.atproto.repo.createRecord', {}),
                    lambda: c.get('com.atproto.server.createSession')):
@@ -256,31 +235,6 @@ class Identity(unittest.TestCase):
             self.id.authenticate(self.ch['credential'])
         self.refused('challenge_revoked')
 
-    def test_unverified_credential_does_not_authenticate(self):
-        with self.assertRaises(identity.IdentityError):
-            self.id.authenticate(self.ch['credential'])
-
-    def test_a_proof_post_by_another_did_is_refused_as_wrong_author(self):
-        self.serve()
-        self.refused('wrong_author', f'at://{OTHER}/town.delve.feed.post/3abc')
-
-    def test_a_proof_post_that_merely_contains_the_challenge_text_is_refused_as_a_mismatch(self):
-        self.serve(text='look: ' + self.ch['text'] + ' !')
-        self.refused('proof_text_mismatch')
-
-    def test_a_challenge_past_its_ttl_is_refused_as_expired(self):
-        self.serve()
-        self.now[0] += identity.TTL
-        self.refused('challenge_expired')
-
-    def test_a_redirect_when_fetching_the_proof_is_refused_as_proof_unavailable(self):
-        self.serve(status=302)
-        self.refused('proof_unavailable:redirect_refused')
-
-    def test_a_record_returned_under_a_different_uri_is_refused_as_proof_mismatch(self):
-        self.serve(uri=f'at://{DID}/town.delve.feed.post/other')
-        self.refused('proof_mismatch')
-
     def test_a_newer_challenge_by_someone_else_does_not_invalidate_the_proof_of_mine(self):
         self.now[0] += 1
         theirs = self.id.challenge(self.HANDLE)  # anyone may ask for a challenge for any handle, a second later
@@ -310,18 +264,28 @@ class Identity(unittest.TestCase):
         mine = self.id.challenge(self.HANDLE, address='198.51.100.4')
         self.assertTrue(mine['credential'].startswith('dt_agent_'))
 
+    def test_a_proof_is_refused_by_name_unless_it_is_the_word_posted_by_that_did_at_that_uri_in_time(self):
+        with self.assertRaises(identity.IdentityError):
+            self.id.authenticate(self.ch['credential'])  # unverified
+        with self.assertRaises(identity.IdentityError):
+            self.id.challenge('evil.example.com')  # not a delve handle
+        for serve, uri, code in (({}, f'at://{OTHER}/town.delve.feed.post/3abc', 'wrong_author'),
+                                 ({'text': 'look: ' + self.ch['text'] + ' !'}, None, 'proof_text_mismatch'),
+                                 ({'status': 302}, None, 'proof_unavailable:redirect_refused'),
+                                 ({'uri': f'at://{DID}/town.delve.feed.post/other'}, None, 'proof_mismatch'),
+                                 ({}, 'at://x/y/z', 'invalid_proof_uri')):
+            self.serve(**serve)
+            self.refused(code, uri)
+        self.serve()
+        self.now[0] += identity.TTL
+        self.refused('challenge_expired')
+
     def test_ninth_attempt_refused_even_if_correct(self):
         self.serve(text='nope')
         for _ in range(8):
             self.refused('proof_text_mismatch')
         self.serve()
         self.refused('too_many_attempts')
-
-    def test_a_non_delve_handle_gets_no_challenge_and_a_malformed_proof_uri_is_refused(self):
-        with self.assertRaises(identity.IdentityError):
-            self.id.challenge('evil.example.com')
-        self.refused('invalid_proof_uri', 'at://x/y/z')
-
 
 class Posting(unittest.TestCase):
     def test_no_flag_sends_nothing(self):
@@ -363,14 +327,12 @@ class Posting(unittest.TestCase):
         self.assertEqual(rec['reply'], {'root': {'uri': uri, 'cid': 'bafyparent'}, 'parent': {'uri': uri, 'cid': 'bafyparent'}})
         self.assertEqual(calls, [{'repo': DID, 'collection': 'town.delve.feed.post', 'rkey': 'page01'}])
         self.assertEqual({m for m, _ in t.calls}, {'GET'})
-
-    def test_reply_to_a_reply_keeps_the_thread_root(self):
+        # a reply to a reply keeps the thread's root
         root = {'uri': f'at://{DID}/town.delve.feed.post/root01', 'cid': 'bafyroot'}
         got = {'uri': f'at://{DID}/town.delve.feed.post/r2', 'cid': 'bafyr2', 'value': {'reply': {'root': root, 'parent': root}}}
         client = delve.Client(Script(**{'com.atproto.repo.getRecord': lambda p: (200, got)}))
         ref = post.reply_ref(client, got['uri'])
         self.assertEqual(ref, {'root': root, 'parent': {'uri': got['uri'], 'cid': 'bafyr2'}})
-
 
     def test_wiki_edit_needs_a_page_to_reply_to_and_flag_off_sends_nothing(self):
         uri, client, t, _ = self.parent()
@@ -405,15 +367,14 @@ class Posting(unittest.TestCase):
                                   post.FLAG], io.StringIO(), delve.Client(Script()))
             self.assertEqual((code, json.loads(err.getvalue())['error']), (1, 'live_post_needs_object'))
             self.assertEqual(self.dry(d, ['--text-file', str(f)], delve.Client(Script()))[0], 2)
-
-
-    def test_record_without_a_journal_is_refused_before_anything_happens(self):
+        # --record without a journal is refused before anything happens
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / 't.txt'
             f.write_text('x')
             with mock.patch.object(post, 'send', side_effect=AssertionError('send')):
                 code = post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--record', 'directory'], io.StringIO())
         self.assertEqual(code, 1)
+
 
     def test_a_reply_to_a_post_with_seven_handles_is_quiet_unless_the_card_names_one(self):
         pings = ' '.join(f'@bot{i}.delve.town' for i in range(7))

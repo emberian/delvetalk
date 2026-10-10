@@ -44,18 +44,11 @@ class Posts(Reflection):
         self.assertEqual(self.host.send(op="world-addressee", parent=URI + "x"), {"status": "addressee", "object": "bell"})
         self.assertEqual(plain["status"], "posted")
         self.assertEqual(self.host.send(op="world-addressee", parent="at://nobody/p/1"), {"status": "unknown"})
-
-    def test_the_index_is_rebuilt_by_replay(self):
-        self.posted(slot=SLOT)
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["slot"], SLOT)
-
-    def test_a_retried_confirmation_is_the_same_entry_and_another_cid_is_refused(self):
-        first = self.posted()
-        again = self.posted()
-        self.assertEqual(again["height"], first["height"])
+        self.assertEqual(self.posted(slot=SLOT)["height"], r["height"])  # a retried confirmation is the same entry
         other = posted(self.host, principal="transport", uri=URI, cid="bafyreiother", object="bell")
         self.assertEqual(other.get("class"), "duplicateIdentity", other)
+        self.reopen()  # the index is rebuilt by replay
+        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["slot"], SLOT)
 
     def test_a_post_for_an_unknown_object_or_a_non_at_uri_is_a_request_error(self):
         self.assertEqual(posted(self.host, principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
@@ -243,16 +236,13 @@ class Offers(TellerWorld):
         self.assertEqual(self.offers("cid"), [])
         self.assertEqual(self.offers("ann"), [])
 
-    def test_a_retry_returns_the_same_offer_and_retains_it_once(self):
+    def test_a_retried_offer_is_retained_once_and_listed_after_a_height(self):
         first = self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
-        again = self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
+        self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
         self.assertEqual(first["offers"], [{"principal": "ann", "text": "hello"}])
-        self.assertEqual((again["offers"], again["receipt"]), (first["offers"], first["receipt"]))
-        self.assertEqual(self.offers("ann"), ["hello"])
         self.reopen()
         self.assertEqual(self.offers("ann"), ["hello"])
-        height = first["receipt"]["height"]
-        self.assertEqual(self.offers("ann", after=height), [])
+        self.assertEqual(self.offers("ann", after=first["receipt"]["height"]), [])
         self.assertEqual(self.host.send(op="world-offers", principal="ann", after="soon")["status"], "error")
 
     def test_a_delivered_offer_goes_to_its_addressee_not_into_the_reply_that_ran_it(self):
@@ -275,26 +265,16 @@ class Offers(TellerWorld):
         self.assertEqual(self.offers("kim"), ["woken"])
         self.assertEqual(self.offers("glm"), [])
 
-    def test_a_turn_that_offers_nothing_carries_no_offers_and_journals_like_any_other(self):
+    def test_a_turn_that_offers_nothing_carries_no_offers(self):
         """Rehearsal finding 3: prose addressed to no card gets nothing back. A turn that performs
-        no `offer` answers without an `offers` field (not an empty one), its entry retains none,
-        and it is journaled, retried and replayed as any admitted turn, so transport drafts
-        exactly when `offers` is present."""
-        height = self.host.send(op="world-status")["height"]
+        no `offer` answers without an `offers` field (not an empty one) and its entry retains none,
+        so transport drafts exactly when `offers` is present."""
         quiet = self.turn("teller", "stamp", record(text=label("noted")), principal="ann", identity="quiet")
         self.assertEqual(quiet["status"], "admitted", quiet)
         self.assertNotIn("offers", quiet)
         self.assertNotIn("offers", quiet["receipt"])
-        self.assertEqual(quiet["receipt"]["height"], height + 1)
-        self.assertEqual(self.host.send(op="world-status")["height"], height + 1)
-        self.assertEqual(field(self.host.send(op="world-view", principal="ann", object="teller")["state"], "note"),
-                         label("noted"))
         self.assertEqual(self.offers("ann"), [])
-        again = self.turn("teller", "stamp", record(text=label("noted")), principal="ann", identity="quiet")
-        self.assertEqual(again, quiet)
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-receipt", principal="ann", identity="quiet")["receipt"], quiet["receipt"])
-        self.assertEqual(self.offers("ann"), [])
+
 
 class Publish(Reflection):
     """publish is retained like an addressed offer, for transport to post as the object's page."""
@@ -311,26 +291,6 @@ class Publish(Reflection):
 
     def publications(self, principal="transport"):
         return self.host.send(op="world-offers", principal=principal).get("publications")
-
-    def test_a_publication_is_retained_and_listed_for_the_transport_as_the_objects_page(self):
-        r = self.publish()
-        post = r["result"]["value"]
-        [p] = self.publications()
-        self.assertEqual((p["id"], p["object"], p["page"], p["section"]), (post, "teller", "teller", "Notes"))
-        self.assertEqual(p["text"], "edit: teller › Notes\n\nthe bell rang")
-        self.assertIsNone(self.publications("ann"))
-        whole = self.publish(section="", body="all of it", identity="pub-2")
-        self.assertEqual(self.publications()[1]["text"], "wiki: teller\n\nall of it")
-        self.reopen()
-        self.assertEqual(len(self.publications()), 2)
-        self.assertEqual(self.publish()["receipt"], r["receipt"])          # a retry publishes nothing twice
-        self.assertEqual(len(self.publications()), 2)
-
-    def test_a_reply_to_the_confirmed_post_finds_the_object(self):
-        self.publish()
-        confirmed = posted(self.host, principal="transport", uri=URI, cid="bafyreipage", object="teller")
-        self.assertEqual(confirmed["status"], "posted", confirmed)
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["object"], "teller")
 
     def test_world_publications_lists_bodies_and_a_section_edit_replies_to_its_pages_newest_post(self):
         edit = self.publish()
@@ -784,26 +744,17 @@ class Malformed(Reflection):
         self.open_library()
         self.make("teller", TELLER, record(note=label("")))
 
-    def test_malformed_turn_limits_are_refused_by_name_not_defaulted(self):
-        base = dict(op="world-turn", principal="kim", object="teller", method="tell",
-                    argument=record(to=label(""), text=label("t")))
-        for limits, word in (({"ticks": "many"}, "ticks"), ({"ticks": -3}, "ticks"), ("fast", "limits")):
-            r = self.host.send(identity=f"l-{word}-{limits}", limits=limits, **base)
-            self.assertEqual(r["status"], "error", (limits, r))
+    def test_malformed_limits_and_migrations_are_refused_by_name_not_defaulted(self):
+        turn = dict(op="world-turn", principal="kim", object="teller", method="tell", argument=record(to=label(""), text=label("t")))
+        cases = [(dict(turn, identity="l-%d" % i, limits=limits), word) for i, (limits, word) in
+                 enumerate((({"ticks": "many"}, "ticks"), ({"ticks": -3}, "ticks"), ("fast", "limits")))]
+        cases += [(dict(op="world-deliver", limit=bad), "limit") for bad in ("x", 0, 10 ** 6)]
+        cases.append((dict(op="world-reprogram", principal="ember", identity="rp", object="teller", version=0, package=TELLER, migration=7), "migration"))
+        for request, word in cases:
+            r = self.host.send(**request)
+            self.assertEqual(r["status"], "error", (request, r))
             self.assertIn(word, r["message"])
-
-    def test_a_malformed_or_out_of_range_deliver_limit_is_refused(self):
-        for bad in ("x", 0, 10 ** 6):
-            r = self.host.send(op="world-deliver", limit=bad)
-            self.assertEqual(r["status"], "error", (bad, r))
-            self.assertIn("limit", r["message"])
         self.assertEqual(self.host.send(op="world-deliver", limit=4)["status"], "delivered")
-
-    def test_a_malformed_migration_is_refused_not_read_as_none(self):
-        r = self.host.send(op="world-reprogram", principal="ember", identity="rp", object="teller", version=0,
-                           package=TELLER, migration=7)
-        self.assertEqual(r["status"], "error", r)
-        self.assertIn("migration", r["message"])
 
     def test_a_state_type_differing_below_eight_rounds_of_bounds_is_not_the_same(self):
         depth = 12

@@ -85,7 +85,7 @@ class DataTypeTests(TurnCase):
         self.assertEqual(done["value"], echoed)
         self.assertEqual(done["type"], {"tag": "data"})
 
-    def test_data_argument_with_a_repeated_field_is_refused(self):
+    def test_a_repeated_field_or_a_shape_not_its_declared_type_is_refused(self):
         # Refuted if Data admits a record that is not well-formed data.
         h = self.host()
         art = h.compile(CALLER, "keep", world=CALLER_WORLD)
@@ -93,10 +93,7 @@ class DataTypeTests(TurnCase):
         reply = h.start(art, [bad, nat(0)])
         self.assertEqual(reply["status"], "error", reply)
         self.assertIn("does not conform", reply["message"])
-
-    def test_argument_shape_not_conforming_to_the_declared_type_is_refused(self):
         # Refuted if a Data payload of the wrong shape reaches a callee typed Pair.
-        h = self.host()
         art = h.compile(CALLER, "pair", world=CALLER_WORLD)
         reply = h.start(art, [record(a=nat(1))])
         self.assertEqual(reply["status"], "error", reply)
@@ -268,7 +265,7 @@ class DataInPackageData(unittest.TestCase):
         cls.h = Host()
         cls.addClassCleanup(cls.h.close)
 
-    def test_run_data_admits_any_well_formed_value_and_refuses_a_repeated_field_by_name(self):
+    def test_run_data_and_the_compact_codec_carry_a_data_field_and_refuse_a_repeated_one_by_name(self):
         art = self.h.compile(STATE_PACKAGE, "touch")
         value = variant("deep", record(x=nat(1), y=variant("z", record())))
         ok = self.h.send({"op": "run-data-v1", "artifact": art, "arguments": [record(count=nat(4), payload=value)]})
@@ -278,13 +275,9 @@ class DataInPackageData(unittest.TestCase):
         # The strict typed-data wire refuses the repeat before admission; the compact codec
         # (below) reaches the Data admission itself.
         self.assertEqual((bad["status"], bad["message"]), ("error", "duplicate typed data field"), bad)
-
-    def test_initial_state_with_a_data_field_evaluates(self):
         art = self.h.compile(STATE_PACKAGE, "initial")
         r = self.h.send({"op": "run-data-v1", "artifact": art, "arguments": []})
         self.assertEqual((r["status"], r["value"]), ("finished", record(count=nat(0), payload=record(a=nat(1)))), r)
-
-    def test_the_compact_codec_carries_a_data_field_as_its_own_wire_value(self):
         art = self.h.compile(STATE_PACKAGE, "initial")
         value = record(count=nat(2), payload=record(b=label("x"), a=nat(3)))
         enc = self.h.send({"op": "encode-compact", "selection": {"artifact": art, "path": []}, "value": value})

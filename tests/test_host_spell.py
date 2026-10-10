@@ -4,7 +4,7 @@ input as the fixtures say: parse, bare and fit, with the refusal clause names.
 Evidence for WHOLENESS section 2 (layer: host): the host parses spells. The fixtures
 (tests/fixtures/spells/*.json) were recorded from the Bend grammar, which the host agreed with on
 every row before world/lib/Spell.obend's parser was deleted (lane/objects9); the host is the
-grammar now, and tests/test_spell.py exercises it case by case.
+grammar now; tests/test_spell.py adds the cases the recording lacks.
 
     python3 -m unittest tests.test_host_spell -v
 """
@@ -15,7 +15,6 @@ import unittest
 from tests.test_objects import check
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "spells")
-CLAUSES = {"otherCard", "noAction", "unknownField", "duplicateField", "badValue", "unclosedBlock", "unclear"}
 
 
 def fixtures(name):
@@ -55,53 +54,37 @@ def show_fit(fit):
 
 
 class Recorded(unittest.TestCase):
-    def test_parse_fixtures(self):
+    def test_every_recorded_row_parses_fits_and_binds_bare_as_recorded(self):
         for row in fixtures("parse"):
-            with self.subTest(text=row["text"][:60]):
+            with self.subTest(parse=row["text"][:60]):
                 out = host({"text": row["text"]})
                 self.assertEqual(show_parsed(out), row["expected"], row["text"])
                 self.assertEqual(show_bindings(out["bare"]), row["bare"], row["text"])
-                if "notASpell" in out:
-                    self.assertIn(out["notASpell"]["fielded"], (True, False))
-
-    def test_fit_fixtures(self):
         for row in fixtures("fit") + fixtures("natural"):
-            with self.subTest(text=row["text"][:60]):
+            with self.subTest(fit=row["text"][:60]):
                 out = host({"text": row["text"], "form": row["form"]})
                 self.assertEqual(show_parsed(out), row["parsed"], row["text"])
                 self.assertEqual(show_fit(out["fit"]), row["expected"], row["text"])
-
-    def test_bare_fixtures(self):
         for row in fixtures("bare"):
-            with self.subTest(text=row["text"][:60]):
+            with self.subTest(bare=row["text"][:60]):
                 self.assertEqual(show_bindings(host({"text": row["text"]})["bare"]), row["expected"], row["text"])
-
-    def test_the_fielded_flag_is_whether_some_line_may_be_a_field(self):
-        self.assertIs(host({"text": "plant: a fern"})["notASpell"]["fielded"], True)
-        self.assertIs(host({"text": "just prose"})["notASpell"]["fielded"], False)
 
 
 class Clauses(unittest.TestCase):
-    def clause(self, reply, form=None):
-        fit = host({"text": reply, "form": form or fixtures("fit")[0]["form"]})["fit"]
-        self.assertIn("refused", fit, fit)
-        self.assertIn(fit["refused"]["clause"], CLAUSES)
-        return fit["refused"]["clause"]
-
-
-    def test_the_clauses_by_case(self):
-        self.assertEqual(self.clause("delvetalk garden-2 plant"), "otherCard")
-        self.assertEqual(self.clause("delvetalk garden-1 prune"), "otherCard")
-        self.assertEqual(self.clause("prose"), "noAction")
-        self.assertEqual(self.clause("delvetalk garden-1 plant now"), "noAction")
-        self.assertEqual(self.clause("delvetalk garden-1 plant\nsmell: x"), "unknownField")
-        self.assertEqual(self.clause("delvetalk garden-1 plant\nseed: a\nseed: b"), "duplicateField")
-        self.assertEqual(self.clause("delvetalk garden-1 plant\ncolour: green"), "badValue")
-        self.assertEqual(self.clause("delvetalk garden-1 plant\nseed: <<S\nx"), "unclosedBlock")
-
-    def test_unclear_is_a_fit_with_needs(self):
-        fit = host({"text": "delvetalk garden-1 plant\nseed: fern", "form": fixtures("fit")[0]["form"]})["fit"]
-        self.assertEqual(fit, {"unclear": {"needs": ["colour"]}})
+    def test_each_refusal_names_its_clause_unclear_its_needs_and_prose_whether_it_has_fields(self):
+        form = fixtures("fit")[0]["form"]
+        for reply, clause in (("delvetalk garden-2 plant", "otherCard"), ("delvetalk garden-1 prune", "otherCard"),
+                              ("prose", "noAction"), ("delvetalk garden-1 plant now", "noAction"),
+                              ("delvetalk garden-1 plant\nsmell: x", "unknownField"),
+                              ("delvetalk garden-1 plant\nseed: a\nseed: b", "duplicateField"),
+                              ("delvetalk garden-1 plant\ncolour: green", "badValue"),
+                              ("delvetalk garden-1 plant\nseed: <<S\nx", "unclosedBlock")):
+            with self.subTest(reply=reply):
+                fit = host({"text": reply, "form": form})["fit"]
+                self.assertEqual(fit.get("refused", {}).get("clause"), clause, fit)
+        self.assertEqual(host({"text": "delvetalk garden-1 plant\nseed: fern", "form": form})["fit"], {"unclear": {"needs": ["colour"]}})
+        self.assertIs(host({"text": "plant: a fern"})["notASpell"]["fielded"], True)
+        self.assertIs(host({"text": "just prose"})["notASpell"]["fielded"], False)
 
 
 if __name__ == "__main__":

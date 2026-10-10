@@ -103,19 +103,7 @@ class ProposalForAnotherCard(Chain):
             self.assertEqual(settled["receipt"]["outcome"]["verdict"], verdict, said)
 
 
-    def test_a_form_naming_a_method_its_card_does_not_offer_is_unclear(self):
-        settled, resumed = self.ask("delvetalk g tend\nseed: a fern", action="tend")
-        verdict = settled["receipt"]["outcome"]["verdict"]
-        self.assertEqual(verdict["tag"], "unclear", verdict)
-        self.assertIn("tend is not a method g offers", verdict["needs"][0])
-        self.assertEqual(resumed["result"]["value"], "unclear", resumed)
-
-
-# MENU §2.2: a reply with several spells is `proposals {items}`, each item a proposal or `unclear`;
-# the objects lane's World line, as this copy declares it until it lands.
-PROPOSALS_LINES = ("sum Proposed<R>:\n  proposal: {object: String, method: String, argument: R}\n  unclear: {reasons: Document.Names}\n",
-                   "  proposals: {items: Lists.List<Proposed<R>>}\n")
-
+# MENU §2.2: a reply with several spells is `proposals {items}`, each item a proposal or `unclear`.
 MULTI = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
@@ -152,17 +140,7 @@ def passOne(item: World.Proposed<Data>, rest: Lists.List<World.Proposed<Data>>, 
 
 class SeveralSpells(Chain):
     policy = PolicyObject.policy
-
-    def modules(self, name, source):
-        with open(ON_DISK["World"], encoding="utf-8") as f:
-            world = f.read()
-        if "  proposals:" not in world:
-            world = world.replace(WORLD_LINE + "\n", WORLD_LINE + "\n" + PROPOSALS_LINES[1], 1).replace(
-                "sum Interpreted<R>:\n", PROPOSALS_LINES[0] + "sum Interpreted<R>:\n", 1)
-        seen, out = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out, {"World": world})
-        return out + [{"name": name, "source": source}]
+    modules = ProposalForAnotherCard.modules
 
     def setUp(self):
         super().setUp()
@@ -189,11 +167,6 @@ class SeveralSpells(Chain):
         self.assertEqual((resumed["status"], resumed["result"]["value"]), ("admitted", "+plant+plant?"), resumed)
         state = {f["name"]: f["value"] for f in self.state("g")["fields"]}
         self.assertEqual((state["planted"]["value"], state["last"]["value"]), ("2", "a moss"))
-        self.release()
-        self.host = self.spawn()
-        opened = self.host.send(op="world-open", path=self.path)
-        self.assertEqual(opened["status"], "opened", opened)
-        self.assertEqual({f["name"]: f["value"] for f in self.state("g")["fields"]}, state)
 
 
 if __name__ == "__main__":

@@ -80,16 +80,14 @@ class Reach(Chain):
         self.assertEqual(status["interpretations"]["remaining"], status["interpretQuota"], status)
 
 
-    def test_a_reply_to_a_recorded_post_reaches_by_reply(self):
+    def test_a_reply_to_a_recorded_post_reaches_by_reply_and_to_another_post_does_not(self):
         hub = "at://did:plc:ember/town.delve.feed.post/card"
         got = posted(self.host, principal="transport", uri=hub, cid="bafycard", object="card")
         self.assertEqual(got["status"], "posted", got)
         r = self.say(replyTo=hub)
         self.assertEqual(r["status"], "suspended", r)
         self.assertEqual(self.pending()[0]["reach"], "reply")
-
-    def test_a_reply_to_an_unrecorded_post_does_not_reach(self):
-        r = self.say(replyTo="at://did:plc:someone/app.bsky.feed.post/x")
+        r = self.say(replyTo="at://did:plc:someone/app.bsky.feed.post/x")  # an unrecorded post does not reach
         self.assertEqual(r["result"]["value"], "not addressed", r)
 
     def test_a_named_method_reaches_directly(self):
@@ -98,18 +96,16 @@ class Reach(Chain):
         self.assertEqual(r["status"], "suspended", r)
         self.assertEqual(self.pending()[0]["reach"], "direct")
 
-    def test_stated_field_lines_must_be_there(self):
+    def test_stated_field_lines_must_be_there_and_an_unknown_reach_is_a_request_error(self):
+        for bad in ("thread", "reply", "spell", "delivery", 1):
+            r = self.say(reach=bad)
+            self.assertEqual(r["status"], "error", (bad, r))
         r = self.say(reach="fields")
         self.assertEqual(r["status"], "error", r)
         self.assertIn("field line", r["message"])
         r = self.say("note: a fern\nand the rest is prose", reach="fields")
         self.assertEqual(r["status"], "suspended", r)
         self.assertEqual(self.pending()[0]["reach"], "fields")
-
-    def test_an_unknown_reach_is_a_request_error(self):
-        for bad in ("thread", "reply", "spell", "delivery", 1):
-            r = self.say(reach=bad)
-            self.assertEqual(r["status"], "error", (bad, r))
 
     def test_the_reach_is_part_of_the_request(self):
         self.say(identity="same")

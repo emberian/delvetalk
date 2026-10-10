@@ -1,12 +1,7 @@
-"""The compile caches are the process's (HOST-HANDOFF 5.59): every key is a content address (compile
-inputs naming their library by pin and modules by CID), so a world opened after another in the same
-process starts with what that one compiled, and creating the same package there compiles nothing.
-With `DELVETALK_COMPILE_CACHE` they are also the disk's (5.66): another process reads the packages and
-definitions one wrote, and a damaged file is compiled again.
+"""With `DELVETALK_COMPILE_CACHE` the compile caches are also the disk's (HOST-HANDOFF 5.59, 5.66):
+every key is a content address, and a damaged file is compiled again, never used.
 
-Evidence for HOST-HANDOFF 5.59 and 5.66 (layer: host). Refuted by a second world that starts with empty
-caches, by a creation in it that adds a package to them, by a second process that reads nothing the
-first wrote, or by a damaged file being used.
+Evidence for HOST-HANDOFF 5.66 (layer: host). Refuted by a damaged file being used.
 
     python3 -W error -m unittest tests.test_compile_cache -v
 """

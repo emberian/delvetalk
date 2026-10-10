@@ -1,5 +1,5 @@
 """Genesis seeds the town's world once through a real hostd: every door resolves, the opener's handle
-shows, and the door pages are published.
+shows, the door pages are published, and the library it shelves answers by a word and only its owner shelves.
 
 Evidence for FOUNDATION §7, §11 (layer: transport).
 """
@@ -78,6 +78,22 @@ class Genesis(unittest.TestCase):
         self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'kinds', 'rooms', 'tide', 'workshop'], pages)
         card = json.dumps(self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'anthology'}))
         self.assertIn('ember.delve.town', card)
+
+    def library(self, text, n):
+        got = self.host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'library', 'method': 'receive', 'identity': 'lib-%d' % n,
+                              'argument': genesis.rec(text=genesis.lab(text), post=genesis.lab('at://x/p/%d' % n))})
+        self.assertEqual(got['status'], 'admitted', got)
+        return got['offers'][0]['text']
+
+    def test_the_library_finds_a_page_by_a_word_names_its_pages_on_a_miss_and_shelves_only_for_its_owner(self):
+        """LIBRARY (a), (e): genesis shelved capsules/pages/ as the opener; anyone reads a page by a word of what they said."""
+        self.assertEqual(self.library('delvetalk library read / page: how do i read laws?', 1), genesis.page_body('laws'))
+        miss = self.library('delvetalk library read / page: dragons', 2)
+        self.assertIn('no page called dragons', miss)
+        self.assertIn('laws', miss)
+        refused = self.library('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine', 3)
+        self.assertTrue(refused.startswith('Not done:'), refused)
+        self.assertNotIn('mine', self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text'])
 
 
 if __name__ == '__main__':

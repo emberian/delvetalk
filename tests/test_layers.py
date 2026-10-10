@@ -90,7 +90,7 @@ class Layers(unittest.TestCase):
         self.assertEqual(self.run_(plain, "relay", [{"tag": "natural", "value": "1"}]), label("hi!"))
 
 
-    def test_an_override_that_changes_the_type_is_refused_by_name_where_it_is_written(self):
+    def test_a_retyping_override_and_a_late_layer_line_are_refused_by_name(self):
         modules = pure(closure("Bell")) + [{"name": "Retyped", "source": RETYPED}]
         reply = self.h.send({"op": "check-package", "entry": "render", "modules": modules})
         self.assertEqual(reply["status"], "refused", reply)
@@ -99,8 +99,6 @@ class Layers(unittest.TestCase):
         self.assertEqual((d["module"], d["span"]["line"]), ("Retyped", 6))
         self.assertTrue(d["found"].endswith("-> String"), d)
         self.assertIn("signature of Bell.render", d["hint"])
-
-    def test_the_layer_line_is_the_first_line(self):
         late = "edition ObjectiveBend 1\nlayer over ./Base.obend\ndef greet(n: Nat) -> String:\n  \"x\"\n"
         reply = self.h.send({"op": "check-package", "entry": "greet",
                              "modules": [{"name": "Base", "source": BASE}, {"name": "Top", "source": late}]})

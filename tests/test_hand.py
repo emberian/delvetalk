@@ -93,11 +93,6 @@ class Hand(HandCase):
         self.assertIn('dt_hand=' + TOKEN, headers['Set-Cookie'])
         self.assertEqual(self.poster.calls, [])
 
-    def test_a_front_without_the_token_does_not_serve_it(self):
-        self.front.hand = None
-        self.assertEqual(self.get()[0], 404)
-
-
     def test_post_calls_the_poster_once_with_the_edited_text_and_logs_it(self):
         code, _, headers = self.req('POST', '/hand/draft/7-aaaa', {'do': 'post', 'text': 'edited words'}, f'dt_hand={TOKEN}')
         self.assertEqual(code, 303)

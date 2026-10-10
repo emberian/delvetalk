@@ -21,7 +21,7 @@ from tests import test_policy
 from tests.test_chain import garden_seed, town_kinds
 from tests.test_objects import closure
 from tests.test_reflection import PACKAGE, Reflection, source_seed
-from tests.test_replay import get, items
+from tests.test_replay import get
 from tests.test_turn_world import label, record
 
 PLANT = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
@@ -87,6 +87,7 @@ class Fork(Reflection):
         with open(self.path) as f:
             entry = json.loads(f.read().splitlines()[at - 1])
         self.assertEqual(r["forkedFrom"]["cid"], entry["hash"])
+        self.assertEqual(self.host.send(op="world-fork", principal="ember", into=self.path)["status"], "error")  # onto an existing path
 
     def test_a_private_object_is_omitted_for_a_stranger(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-vault", object="vault", source=PACKAGE,
@@ -117,11 +118,6 @@ class Fork(Reflection):
         [resumed] = settled["resumed"]
         self.assertEqual((resumed["status"], whole(fork, resumed)["result"]["label"]), ("admitted", "planted"), resumed)
         self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 1)
-
-    def test_a_fork_is_refused_onto_an_existing_path(self):
-        r = self.host.send(op="world-fork", principal="ember", into=self.path)
-        self.assertEqual(r["status"], "error", r)
-
 
 if __name__ == "__main__":
     unittest.main()

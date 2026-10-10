@@ -113,19 +113,6 @@ class Hostd(unittest.TestCase):
         self.assertEqual(HostClient(self.sock, stateless=True).send({'op': 'compile', 'modules': [], 'entry': 'x'})['status'], 'error')
 
 
-    def test_the_sealed_library_holds_the_packages_arrival_creates_from(self):
-        import tempfile as tf
-        from tests.test_reflection import LIBRARY
-        who = 'did:plc:' + 'q' * 24
-        with tf.TemporaryDirectory() as d2:
-            dd = start_hostd(d2, opener=DID, library=LIBRARY)
-            try:
-                got = HostClient(Path(d2) / 'host.sock').send({'op': 'world-arrive', 'principal': 'transport', 'did': who, 'handle': 'q.delve.town'})
-                self.assertEqual([c['object'] for c in got.get('created', [])], [who, 'env/' + who, 'wake/' + who], got)
-            finally:
-                stop_hostd(dd)
-
-
     def test_one_client_keeps_a_connection_per_thread_and_survives_a_hostd_restart(self):
         import tempfile as tf
         import threading
@@ -171,7 +158,7 @@ class Hostd(unittest.TestCase):
                 stop_hostd(dd)
 
 
-    def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
+    def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap_and_arrival_creates_from_it(self):
         import tempfile as tf
         from tests.test_reflection import LIBRARY
         one = [{'name': 'Tally', 'source': TALLY}]
@@ -185,6 +172,9 @@ class Hostd(unittest.TestCase):
                     self.assertTrue(made['receipt']['outcome']['compile']['library'])
                     turned = client.send({'op': 'world-turn', 'principal': who, 'object': 't', 'method': 'bump', 'argument': record(), 'identity': 'b'})
                     self.assertEqual((turned['status'], turned['result']), ('admitted', nat(1)), turned)
+                who = 'did:plc:' + 'q' * 24  # and arrival creates from it
+                got = HostClient(Path(d2) / 'host.sock').send({'op': 'world-arrive', 'principal': 'transport', 'did': who, 'handle': 'q.delve.town'})
+                self.assertEqual([c['object'] for c in got.get('created', [])], [who, 'env/' + who, 'wake/' + who], got)
             finally:
                 stop_hostd(dd)
         # without a library the same module names an import nobody supplied

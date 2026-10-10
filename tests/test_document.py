@@ -111,21 +111,15 @@ class RenderTests(unittest.TestCase):
                 self.assertEqual("".join(x + "\u0001" for x in got["lines"]), expected_lines)
 
 
-    def test_depth_65_is_refused_by_name_and_depth_64_renders(self):
-        def nested(levels):
-            d = variant("text", value=label("leaf"))
-            for _ in range(levels - 1):
-                d = variant("sequence", items=as_list([d]))
-            return d
-        ok = self.s.render(nested(64))
-        self.assertEqual(ok["status"], "rendered", ok)
-        refused = self.s.render(nested(65))
-        self.assertEqual(refused["status"], "error", refused)
-        self.assertIn("document depth exceeds 64", refused["message"])
-
-    def test_node_and_byte_limits_and_malformed_documents_are_refused_by_name(self):
+    def test_depth_node_and_byte_limits_and_malformed_documents_are_refused_by_name(self):
         import sys
         sys.setrecursionlimit(20000)
+        nested = variant("text", value=label("leaf"))
+        for _ in range(63):
+            nested = variant("sequence", items=as_list([nested]))
+        self.assertEqual(self.s.render(nested)["status"], "rendered")  # depth 64
+        r = self.s.render(variant("sequence", items=as_list([nested])))
+        self.assertIn("document depth exceeds 64", r.get("message", ""), r)
         inner = lambda: variant("sequence", items=as_list([variant("text", value=label(""))
                                                        for _ in range(200)]))
         many = variant("sequence", items=as_list([inner() for _ in range(200)]))

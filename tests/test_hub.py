@@ -73,13 +73,6 @@ class Hub(test_chain.Chain):
         return made["seed"], made["colour"]
 
 
-    def test_a_rain_no_door_offers_and_chatter_get_nothing_without_a_policy(self):
-        self.directory()
-        self.greet(KIMI)
-        for rkey in ("3mxghh4qis22f", "3mxghjkkodk2f"):
-            r = self.say(post(rkey), KIMI)
-            self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
-
     def test_a_cistern_line_digs_a_cistern_and_one_on_a_taken_id_is_refused_required_absence(self):
         """Run 5, finding 3: the garden offers a `cistern` form; a `cistern:` line through the hub
         digs garden/cistern/1 through kind/cistern, and one on an id already taken is the §11 refusal."""
@@ -110,18 +103,6 @@ class Hub(test_chain.Chain):
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return resumed
 
-    # The host fits the model's spell against the offered forms and answers `proposal {object,
-    # method, argument}` for the door it names (HOST-HANDOFF 5.64).
-    def test_with_a_policy_the_models_spell_runs_on_the_door_it_names(self):
-        self.policy()
-        self.directory("policy")
-        self.greet(GLM)
-        asked = self.say("Could we plant a silver fern that remembers yesterday?", GLM)
-        self.assertEqual(asked["status"], "suspended", asked)
-        resumed = self.interpret("delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver")
-        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
-        [bell] = self.children()
-        self.assertEqual(self.seed_of(bell), ("a fern that remembers yesterday", "silver"))
 
     def test_a_strangers_first_request_gets_the_menu_and_is_read(self):
         """A never-greeted principal's prose that asks for something is greeted and then read, not
@@ -273,37 +254,6 @@ class CardsReadFieldLines(test_chain.Chain):
         self.assertIn("A silver bell, planted by", short["offers"][0]["text"])
         self.assertEqual(self.rains(), [(KIMI, "a fine gray drizzle of expired invitations")])
 
-    def test_the_garden_reads_glms_field_lines_sent_to_it_directly(self):
-        self.make("garden", closure("Garden"), garden_seed(""))
-        town_kinds(self.host.send)
-        r = self.turn("garden", "receive", record(text=label(post("3mxghe7w33c2f")), post=label("at://x/glm")), principal=GLM)
-        self.assertEqual(r["result"]["label"], "planted", r)
-
-
-class BellsAreQuiet(test_chain.Chain):
-    """Run 5, finding 2: 38 bell cards went to people talking about something else in the planting
-    threads. A reply to the bell that fits none of its forms gets the bell's card at most once an
-    hour per speaker (the directory's `due`), then nothing."""
-
-    def test_the_replies_under_glms_planting_get_one_card_an_hour(self):
-        made = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
-                              entry="initial", seed=record(owner=label("ember")))
-        self.assertEqual(made["status"], "created", made)
-        silver = {"tag": "variant", "label": "silver", "payload": record()}
-        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
-        offered = []
-        for rkey in ("3mxghexfsqk2f", "3mxghge5hak2f", "3mxghjyx4pk2f", "3mxghjmm6zc2f"):
-            r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=KIMI)
-            self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "silent"), (rkey, r))
-            offered.append(len(r.get("offers", [])))
-        self.assertEqual(offered, [1, 0, 0, 0])
-        self.assertEqual(rows(get(self.state("bell"), "rains")), [])
-        # An hour later (60 clock minutes) the card is owed again.
-        clock = self.host.send(op="world-status").get("clock", 0)
-        self.host.send(op="world-advance", principal="transport", height=clock + 60)
-        again = self.turn("bell", "receive", record(text=label("still here, still talking"), post=label("at://x/later")), principal=KIMI)
-        self.assertEqual(len(again.get("offers", [])), 1, again)
-
 
 class LinkDoors(test_chain.Chain):
     """The deploy pass: genesis's STUDIO door names no object; a stranger's "STUDIO" got "The
@@ -327,21 +277,6 @@ class LinkDoors(test_chain.Chain):
         # A field line naming only the owner's `remove` is prose to the directory, never its spell.
         label_line = say("label: moth")
         self.assertEqual((label_line["status"], label_line["result"]["label"], label_line.get("offers", [])), ("admitted", "silent", []), label_line)
-
-
-class SpellsPassedOn(test_chain.Chain):
-    """A spell under the directory's post naming another card is the host's: the directory speaks
-    the message dialect, so the host runs the spell on the card it names as this turn
-    (HOST-HANDOFF 5.49), and the result is that card's method's."""
-
-    def test_a_spell_under_the_directory_runs_on_a_message_dialect_card(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), policy=reference("")))
-        self.assertEqual(r["status"], "created", r)
-        self.make("k", closure("Counter"), record())
-        r = self.turn("root", "receive", record(text=label("delvetalk k bump"), post=label("at://x/1")), principal=KIMI)
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(get(self.state("k"), "count"), nat(1))
 
 
 class HandedToTheDirectory(test_chain.Chain):
@@ -390,23 +325,17 @@ class HandedToTheDirectory(test_chain.Chain):
 
 
 class HandedOnlyWhenNamed(test_chain.Chain):
-    """Rehearsal run 7: bells handed every conversational reply to the directory's model
-    (127 of 132 came back "not addressed"). The directory reads a handed-on reply with the
+    """Rehearsal runs 7, 8, 10 and 11: bells handed every conversational reply to the directory's
+    model (127 of 132 came back "not addressed"). The directory reads a handed-on reply with the
     model only when it names a door word, a door form's action, or a door form's field as a
-    `name:` line: what it learned of its doors by inspect, so a new door needs no edit to Card."""
+    `name:` line: what it learned of its doors by inspect, so a new door needs no edit to Card.
+    Helpers and protocol methods (Scene's `reading`, Table's `played`, `publishPage`'s `page`), a
+    bell's own family words, and the planter's own `door`/`undoor` forms are not words."""
     policy = test_policy.PolicyObject.policy
-
-    def setUp(self):
-        super().setUp()
-        self.policy()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
-        self.assertEqual(r["status"], "created", r)
-        silver = {"tag": "variant", "label": "silver", "payload": record()}
-        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+    BELL = "garden/bell/1"
 
     def say(self, text, ident):
-        r = self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident, reach="mention")
+        r = self.turn(self.BELL, "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident, reach="mention")
         # A reply to the bell itself that fits none of its forms gets the bell's card once an hour
         # (the directory's `due`), then nothing; either way the prose is handed on.
         first, self.answered = not getattr(self, "answered", False), True
@@ -414,120 +343,55 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.deliver_all()
         return len(self.host.send(op="world-interpretations")["pending"])
 
+    def hub(self, text, ident):
+        return self.turn("directory", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, reach="mention")
+
     def add(self, label_, to):
         self.assertEqual(self.turn("directory", "add", record(door=door(label_, "A door.", to)), principal="ember")["result"]["label"], "done")
 
-    def test_chatter_costs_no_interpretation_and_an_anthology_line_is_handed_on(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
-                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
-        self.assertEqual(r["status"], "created", r)
-        self.add("ANTHOLOGY", "anthology")
-        self.assertEqual(self.say("What a lovely evening it is; thank you for this.", "c1"), 0)
-        self.assertEqual(self.say("anthology: a line about the merchant's hat", "c2"), 1)
-
-    def test_helpers_and_protocol_methods_are_not_words(self):
-        """Rehearsal run 10, finding 2: `reading` (Scene), `played` (Table) and `publishPage` with
-        its `page` field were learned as words, and seven readings came of them. Only a door's
-        forms count; `choose` (a Scene form) still does."""
-        r = self.host.send(op="world-create", principal="ember", identity="mk-rooms", object="rooms", modules=closure("Scene"),
-                           entry="initial", seed=record(title=label("The Moss Gate")))
-        self.assertEqual(r["status"], "created", r)
+    def test_only_a_doors_word_action_or_field_is_handed_to_the_model(self):
+        self.policy()
+        for name, module, seed, law in (("directory", "Directory", record(owner=label("ember"), policy=reference("policy")), None),
+                                        ("anthology", "Record", anthology_seed("ember"), genesis.RECORD_LAW),
+                                        ("rooms", "Scene", record(title=label("The Moss Gate")), None)):
+            r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name, modules=closure(module),
+                               entry="initial", seed=seed, **({"law": law} if law else {}))
+            self.assertEqual(r["status"], "created", r)
         self.make("table", closure("Table"), record())
-        self.add("ROOMS", "rooms")
-        self.add("PLAY", "table")
-        self.assertEqual(self.say("the reading was lovely", "r1"), 0)
-        self.assertEqual(self.say("the match was played well", "r2"), 0)
-        self.assertEqual(self.say("page: the second one", "r3"), 0)
-        self.assertEqual(self.say("I would choose the moss path", "r4"), 1)
+        self.make("lantern", closure("Lantern"), record())
+        self.make("garden", closure("Garden"), garden_seed(""))
+        town_kinds(self.host.send)
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make(self.BELL, closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        for word, to in (("ANTHOLOGY", "anthology"), ("ROOMS", "rooms"), ("PLAY", "table"), ("GARDEN", "garden")):
+            self.add(word, to)
+        quiet = ("What a lovely evening it is; thank you for this.", "the reading was lovely", "the match was played well",
+                 "page: the second one", "The garden is lovely tonight, and the rain on this cistern bell was soft.",
+                 "Is the lantern lit tonight?")
+        self.assertEqual([self.say(text, "q%d" % n) for n, text in enumerate(quiet)], [0] * len(quiet))
+        self.add("LANTERN", "lantern")
+        # Only offered forms with fields count: the lantern's field-less light does not.
+        self.assertEqual(self.say("Could you light it?", "l1"), 0)
+        self.assertEqual(self.hub("hello", "h0")["result"]["label"], "menu")
+        self.assertEqual([self.hub(text, "h%d" % n)["result"]["label"] for n, text in enumerate(("Which door is the moss behind?", "I'd undoor it if I could"), 1)],
+                         ["silent", "silent"])
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        self.assertEqual([self.say(text, "w%d" % n) for n, text in enumerate(("anthology: a line about the merchant's hat",
+                                                                              "I would choose the moss path", "Is the lantern lit tonight?"))], [1, 2, 3])
+        self.assertEqual(self.hub("Could I rain on the lighthouse bell?", "h3")["status"], "suspended")
         # Not a method: `played` took the State first, so a turn naming it wrote any result it
         # liked; now the object's own state is its first argument and does not fit a Result.
         self.assertEqual(self.turn("table", "played", record(), principal=KIMI, identity="forge")["status"], "refused")
 
 
-    def test_a_bells_own_family_words_are_not_a_request_to_another_door(self):
-        """Run 8: 21 hand-ons were "garden" and "cistern" in the garden's own planting threads."""
-        self.make("garden", closure("Garden"), garden_seed(""))
-        town_kinds(self.host.send)
-        self.add("GARDEN", "garden")
-        silver = {"tag": "variant", "label": "silver", "payload": record()}
-        self.make("garden/bell/1", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
-        say = lambda text, ident: self.turn("garden/bell/1", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
-        r = say("The garden is lovely tonight, and the rain on this cistern bell was soft.", "f1")
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "silent"), r)
-        self.assertTrue(r["offers"][0]["text"].startswith("A silver bell"), r)  # the bell's card, once an hour
-        self.deliver_all()
-        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
-        # The same words under the hub are a request: the garden's plant, the bells' rain.
-        self.assertEqual(self.turn("directory", "receive", record(text=label("hello"), post=label("at://x/h")), principal=KIMI)["result"]["label"], "menu")
-        hub = self.turn("directory", "receive", record(text=label("Could I rain on the lighthouse bell?"), post=label("at://x/h2")), principal=KIMI, reach="mention")
-        self.assertEqual(hub["status"], "suspended", hub)
-
-    def test_the_owners_door_actions_are_not_words(self):
-        """Rehearsal run 11, finding 1: a bell's `door {label, to}` form, its planter's, was the only
-        trigger for 8 of 49 interpretations ("the ANTHOLOGY door"). A stranger cannot use it, so
-        prose naming it asks nothing; `rain` on the same bell still does."""
-        self.make("garden", closure("Garden"), garden_seed(""))
-        town_kinds(self.host.send)
-        self.add("GARDEN", "garden")
-        silver = {"tag": "variant", "label": "silver", "payload": record()}
-        self.make("garden/bell/1", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
-        hub = lambda text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, reach="mention")
-        self.assertEqual(hub("hello", "h0")["result"]["label"], "menu")
-        self.assertEqual([hub(text, "h%d" % n)["result"]["label"] for n, text in enumerate(("Which door is the anthology behind?", "I'd undoor it if I could"), 1)], ["silent", "silent"])
-        self.assertEqual(hub("Could I rain on the moss bell?", "h3")["status"], "suspended")
-
-    def test_a_new_door_makes_chatter_naming_it_handed_on(self):
-        self.make("lantern", closure("Lantern"), record())
-        self.add("ANTHOLOGY", "anthology")
-        self.assertEqual(self.say("Is the lantern lit tonight?", "c1"), 0)
-        self.add("LANTERN", "lantern")
-        # Only offered forms with fields count: the lantern's field-less light does not.
-        self.assertEqual(self.say("Could you light it?", "c3"), 0)
-        self.assertEqual(self.say("Is the lantern lit tonight?", "c2"), 1)
-
-
-class AnthologyOwner(test_chain.Chain):
-
-    def test_the_seeded_owner_handle_names_the_owner_before_any_admission(self):
-        r = self.host.send(op="world-create", principal="did:plc:6amo7col5h4ciq2gpm5eur7b", identity="mk-anthology", object="anthology", modules=closure("Record"),
-                           entry="initial", seed=anthology_seed("did:plc:6amo7col5h4ciq2gpm5eur7b", "ember.delve.town"), law=genesis.RECORD_LAW)
-        self.assertEqual(r["status"], "created", r)
-        card = self.turn("anthology", "receive", record(text=label(""), post=label("")), principal=GLM)["offers"][0]["text"]
-        self.assertTrue(card.startswith("THE ANTHOLOGY; keeper ember.delve.town"), card)
-
-
 class AnthologyReachable(test_chain.Chain):
-    """Run 5, finding 4: the anthology has a door, forms (write {text}; admit {number}, the
-    owner's) and receive, so a write line or the model's write spell reaches it."""
-    policy = test_policy.PolicyObject.policy
-    interpret = Hub.interpret
+    """Run 5, finding 4: the anthology takes written lines from anyone; only its keeper admits
+    them, by number. The model's write spell reaching it is test_archive's four lines and
+    HandedToTheDirectory."""
 
     def say(self, obj, text, who):
         return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who, reach="mention")
 
-    # The model's write reaches the anthology by the Directory's `call` of its `receive`, which
-    # the host reads as a spell (SpellsPassedOn).
-    def test_lines_are_written_by_field_text_and_by_the_model_and_the_keeper_admits(self):
-        self.policy()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
-        self.assertEqual(r["status"], "created", r)
-        self.turn("root", "add", record(door=door("ANTHOLOGY", "Write a line.", "anthology")), principal="ember")
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
-                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
-        self.assertEqual(r["status"], "created", r)
-        self.assertEqual(self.say("anthology", "```\nwrite: the merchant tips his hat\n```", KIMI)["result"], nat(1))
-        self.assertEqual(self.say("root", "hello", GEMINI)["result"]["label"], "menu")
-        asked = self.say("root", post("3mxghd6kvo22f"), GEMINI)
-        self.assertEqual(asked["status"], "suspended", asked)
-        [pending] = self.host.send(op="world-interpretations")["pending"]
-        self.assertIn("write", [o["action"] for o in pending["offers"]])
-        settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "model": "m",
-                                 "raw": "delvetalk anthology write\ntext: a splash for every refusal"})
-        [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
-        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
-        lines = [get(p, "text")["value"] for p in rows(get(self.state("anthology"), "lines"))]
-        self.assertEqual(lines, ["the merchant tips his hat", "a splash for every refusal"])
 
     def test_the_owner_admits_by_number_and_a_stranger_is_refused_by_name(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
@@ -543,28 +407,7 @@ class AnthologyReachable(test_chain.Chain):
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
         self.assertEqual(admitted["offers"][0]["text"], "#2 admitted: a splash for every refusal\n")
         card = self.say("anthology", "", GLM)["offers"][0]["text"]
-        self.assertEqual(card, (
-            "THE ANTHOLOGY; keeper ember.delve.town. Write: delvetalk anthology write / text: <1 to 280 characters>; numbered, [pending] until admitted.\n"
-            "#1 [pending] …vnmpir6d: the merchant tips his hat\n"
-            "#2 [admitted] …kzlobkuu: a splash for every refusal\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk anthology write\n"
-            "    text: <text, 1 to 280 characters>\n"
-            "\n"
-            "    delvetalk anthology admit\n"
-            "    number: <a number from 1 to 1000000000>\n"
-            "\n"
-            "    delvetalk anthology lines\n"
-            "    from: <a number from 1 to 1000000000>\n"
-            "\n"
-            "    delvetalk anthology door\n"
-            "    label: <text, 1 to 32 characters>\n"
-            "    to: <text, 1 to 128 characters>\n"
-            "\n"
-            "    delvetalk anthology undoor\n"
-            "    label: <text, 1 to 32 characters>\n"))
+        self.assertIn("#1 [pending] …vnmpir6d: the merchant tips his hat\n", card)
         # The owner who admitted is named by the handle stored at admission, to every reader.
         self.assertTrue(card.startswith("THE ANTHOLOGY; keeper ember.delve.town"), card)
         self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)

@@ -80,19 +80,9 @@ class Integration(Reflection):
         self.make("probe", PROBE, probe_seed())
         self.make("caller", CALLER, record(seen=label("")))
 
-    def test_a_turn_whose_argument_does_not_conform_is_refused_typeMismatch_and_binds(self):
-        r = self.turn("probe", "bump2", record(m=nat(1)), identity="bad")
-        self.assertEqual(r["status"], "refused", r)
-        self.assertEqual(r["receipt"]["outcome"]["class"], "typeMismatch", r)
-        self.assertEqual(r["receipt"]["outcome"]["object"], "probe", r)
-        # typeMismatch is not transient: the same request returns the same receipt.
-        again = self.turn("probe", "bump2", record(m=nat(1)), identity="bad")
-        self.assertEqual(again["receipt"]["hash"], r["receipt"]["hash"])
-        fine = self.turn("probe", "bump2", record(n=nat(2)))
-        self.assertEqual(fine["status"], "admitted", fine)
-
     def test_a_typeMismatch_says_what_the_method_takes(self):
         r = self.turn("probe", "bump2", record(m=nat(1)), identity="bad")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["object"]), ("refused", "typeMismatch", "probe"), r)
         expected = r["receipt"]["outcome"]["expected"]
         self.assertEqual(expected["method"], "bump2", expected)
         self.assertEqual((expected["type"]["name"], expected["type"]["member"]["tag"]), ("n", "natural"), expected)

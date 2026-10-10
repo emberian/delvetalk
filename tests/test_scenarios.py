@@ -4,8 +4,9 @@ on the town genesis builds: each step's receipt, and the card its reader gets.
 Evidence for FOUNDATION §3, §5, §8 and the voice (layer: scenarios).
 
 - Bell: a kind makes a bell, its maker watches its seventh rain, three people rain on it, the seventh
-  rings it; a rain past its bound is refused by name; a stranger's ring of someone's watch is not theirs.
-- Garden: a planting spell grows a bell in the garden and the card names where to rain.
+  rings it, and an avatar watching its marks is told; a rain past its bound is refused by name.
+- Garden: a planting spell grows a bell in the garden and the card names where to rain; the page's
+  owner checkpoints its page with `merge`, and nobody else does.
 - Workshop: a flawed block is checked with a located diagnostic; a proposal to another's card is held
   for its owner; a stranger cannot adopt it; the owner adopts and the target runs the new source.
 - Scene: a reader enters, chooses, and moves; a stranger's card shows the scene but not the reader's
@@ -60,6 +61,10 @@ class Arc(unittest.TestCase):
     def pin(self, obj):
         return self.town.send(op="world-inspect", principal=OPENER, object=obj, source=False)["pin"]
 
+    def inbox(self, did):
+        rows = self.field(did, "inbox")["payload"]["fields"][0]["value"]["items"]
+        return [tuple(next(f["value"]["value"] for f in r["fields"] if f["name"] == k) for k in ("from", "text")) for r in rows]
+
     def field(self, obj, name):
         state = self.town.send(op="world-view", principal=OPENER, object=obj)["state"]
         return next(f["value"] for f in state["fields"] if f["name"] == name)
@@ -70,6 +75,10 @@ class Bell(Arc):
         made = self.say(KIM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: a lamp for moths")
         self.assertEqual(made["status"], "admitted", made)
         bell = [o for o in self.objects() if o.startswith("bell/")][0]
+        followed = self.say(GLM, GLM, "delvetalk %s watch\nto: %s\nfield: marks" % (GLM, bell))
+        self.assertEqual(followed["result"]["label"], "followed", followed)
+        nothing = self.say(KIM, KIM, "delvetalk %s watch\nto: %s\nfield: chimes" % (KIM, bell))  # a field the bell lacks
+        self.assertEqual(nothing["result"]["label"], "refused", nothing)
         watch = self.turn(KIM, "wake/" + KIM, "watch", rec(
             event=variant("rows", object=lab(bell), field=lab("lines"), atLeast=nat(1),
                           where={"tag": "list", "items": [variant("equals", column=lab("n"), equals=variant("natural", value=nat(7)))]}),
@@ -83,6 +92,8 @@ class Bell(Arc):
             self.assertIn("drizzle %d" % i, card)
             self.assertEqual("rung" in card, False if i < 7 else card.count("rung") > 0)
         self.assertIn("rung", self.card(self.say(GLM, bell, "")))
+        # Its watcher's avatar is told: glm watched the bell's marks (a ring is one) before the rains.
+        self.assertIn((bell, "news from %s" % bell), self.inbox(GLM))
         long = self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
         self.assertEqual(self.outcome(long), ("refused", "badSpell"), long)
 
@@ -99,6 +110,16 @@ class Garden(Arc):
         again = self.say(KIM, "garden", "delvetalk garden plant\nseed: %s\ncolour: silver" % ("y" * 81))
         self.assertEqual(self.outcome(again), ("refused", "badSpell"), again)
         self.assertEqual(self.field("garden", "planted"), nat(1))
+        # The page's owner checkpoints it with `merge` under the page post; anyone else's merge,
+        # an owner's naming no post, and prose containing the word are refused or not a merge.
+        page = "at://%s/town.delve.feed.post/page1" % OPENER
+        for who, text, post in ((GLM, "merge", page), (OPENER, "merge", ""), (OPENER, "merge this please", page)):
+            r = self.turn(who, "garden", "receive", rec(text=lab(text), post=lab(post)))
+            self.assertNotEqual(r.get("result", {}).get("label"), "merged", r)
+        self.assertEqual(self.field("garden", "pageCheckpoint"), lab(""))
+        merged = self.turn(OPENER, "garden", "receive", rec(text=lab("merge"), post=lab(page)))
+        self.assertEqual(merged["result"]["label"], "merged", merged)
+        self.assertEqual(self.field("garden", "pageCheckpoint"), lab(page))
 
 
 class Workshop(Arc):

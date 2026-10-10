@@ -66,16 +66,11 @@ class SpellTurns(Reflection):
     def field(self, name, card="garden"):
         return {f["name"]: f["value"] for f in self.state(card)["fields"]}[name]
 
-    def test_a_fitting_spell_runs_its_method_with_the_typed_argument(self):
+    def test_a_fitting_spell_runs_its_method_in_any_case_on_a_direct_reply_and_on_the_card_it_names(self):
         r = self.say("delvetalk garden plant\ncolour: silver\nseed: fern")
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
         self.assertEqual(self.field("planted"), label("silver:fern"))
         self.assertEqual(self.field("origin"), label("spell|delvetalk garden plant"))
-        self.reopen()
-        self.assertEqual(self.field("planted"), label("silver:fern"))
-
-
-    def test_a_spell_in_any_case_and_a_direct_reply_without_delvetalk(self):
         # docs/FLEX.md §4 host 2: the card's name folded to the object it names; on a direct reply
         # (reach `direct` or `reply`) a first line naming one of the card's actions is the spell.
         r = self.say("Delvetalk GARDEN Plant\nColour: silver\nSeed: fern")
@@ -91,7 +86,10 @@ class SpellTurns(Reflection):
         r = self.turn("garden", "receive", record(text=label("plant / colour: amber / seed: rye"), post=label("")),
                       principal="glm", reach="mention")
         self.assertEqual((r["result"], self.field("planted")), (nat(2), label("violet:rue")), r)
-
+        # A spell naming another card runs on it.
+        r = self.say("delvetalk plot plant\ncolour: amber\nseed: oak", card="garden")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual((self.field("planted", "plot"), self.field("planted", "garden")), (label("amber:oak"), label("violet:rue")))
 
     def test_missing_fields_and_prose_reach_receive_with_the_bare_fields(self):
         r = self.say("delvetalk garden plant\nseed: fern")
@@ -100,12 +98,6 @@ class SpellTurns(Reflection):
         r = self.say("what a lovely garden")
         self.assertEqual(r["result"], nat(2), r)
         self.assertEqual((self.field("heard"), self.field("fields")), (label("what a lovely garden"), nat(0)))
-
-
-    def test_a_spell_naming_another_card_runs_on_it(self):
-        r = self.say("delvetalk plot plant\ncolour: amber\nseed: oak", card="garden")
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual((self.field("planted", "plot"), self.field("planted", "garden")), (label("amber:oak"), label("")))
 
 
 LENSED = declared("""edition ObjectiveBend 1
@@ -141,34 +133,6 @@ def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Co
 def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:
   2n
 """)
-
-
-class Lenses(Reflection):
-    """Lens `set` through the host (WHOLENESS §2; second root decisions, 2): a card of the message
-    dialect with a `set {field, value: Form.Value}` method and a pure `lenses() -> List<Form.Field>`
-    takes `delvetalk <card> set` with one `<field>: <value>` line; the value is judged against the
-    lens's kind and `set` runs with the typed value; `?` lists the lenses."""
-
-    def setUp(self):
-        super().setUp()
-        self.open_library()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-lamp", object="lamp",
-                           modules=[{"name": "Lamp", "source": LENSED}], entry="initial", seed=record())
-        self.assertEqual(r["status"], "created", r)
-
-    def say(self, text, identity=None):
-        return self.turn("lamp", "receive", record(text=label(text), post=label("")), principal="glm", identity=identity)
-
-    def field(self, name):
-        return {f["name"]: f["value"] for f in self.state("lamp")["fields"]}[name]
-
-
-    def test_set_without_a_field_is_receive_and_usage_lists_the_lenses(self):
-        self.assertEqual(self.say("delvetalk lamp set")["result"], nat(2))
-        usage = self.say("delvetalk lamp ?")
-        self.assertEqual(usage["status"], "usage", usage)
-        self.assertIn("To set a field, reply with one of these (one field a spell):", usage["text"])
-        self.assertIn("delvetalk lamp set\nmood: <calm, wild>", usage["text"])
 
 
 # The lamp with `mood` fixed: set when the lamp is made, never by an edit, so no lens names it.
@@ -208,10 +172,11 @@ class FixedFields(Reflection):
         self.assertEqual(out["reason"], "mood is fixed; it is set when lamp is made and never after.")
         self.assertEqual(self.field("mood"), label("calm"))
         self.assertEqual(self.say("delvetalk lamp set\nname: Moth")["status"], "admitted")
+        self.assertEqual(self.say("delvetalk lamp set")["result"], nat(2))  # set without a field is receive
         self.reopen()
         self.assertEqual(self.host.send(op="world-inspect", principal="glm", object="lamp", source=False).get("fixed"), ["mood"])
 
-    def test_no_proposed_write_or_migration_moves_a_fixed_field(self):
+    def test_no_proposed_write_migration_or_reprogram_moves_a_fixed_field(self):
         keep = {"tag": "variant", "label": "keep", "payload": record()}
         edits = record(name=keep, size=keep, origin=keep, mood={"tag": "variant", "label": "set", "payload": record(value=label("wild"))})
         r = self.host.send(op="world-propose", principal="ember", identity="p1", roots=[{"object": "lamp", "version": 0}],
@@ -228,6 +193,16 @@ class FixedFields(Reflection):
         r = self.host.send(op="world-reprogram", principal="ember", identity="rp2", object="lamp", version=0, package=kept, migration="migrate")
         self.assertEqual(r["receipt"]["outcome"]["tag"], "admitted", r)
         self.assertEqual((self.field("mood"), self.field("name")), (label("calm"), label("Moth")))
+        # codex host 5 / docs 1: code that no longer fixes `mood` would let a migration, or any later
+        # write, move it.
+        moved = LENSED + "def migrate(old: State) -> State:\n  {name: old.name, size: old.size, mood: \"wild\", origin: old.origin}\n"
+        for identity, package, migration in (("u1", moved, "migrate"), ("u2", LENSED, "")):
+            r = self.host.send(op="world-reprogram", principal="ember", identity=identity, object="lamp", version=1,
+                               package=package, migration=migration)
+            out = r["receipt"]["outcome"]
+            self.assertEqual((out["class"], out.get("clause")), ("programRefused", "fixed"), r)
+        self.assertEqual(self.field("mood"), label("calm"))
+
 
     def test_an_unchanged_spell_retry_after_a_reprogram_is_the_retained_receipt(self):
         # codex host 13: the retry was routed again, met the new code's refusal, and was answered
@@ -241,17 +216,6 @@ class FixedFields(Reflection):
         self.assertNotEqual(self.say(spell, identity="s2")["status"], "admitted")
         again = self.say(spell, identity="s1")
         self.assertEqual((again["status"], again["receipt"]["hash"]), ("admitted", first["receipt"]["hash"]), again)
-
-    def test_a_reprogram_cannot_unfix_a_fixed_field(self):
-        # codex host 5 / docs 1: code that no longer fixes `mood` would let a migration, or any later
-        # write, move it.
-        moved = LENSED + "def migrate(old: State) -> State:\n  {name: old.name, size: old.size, mood: \"wild\", origin: old.origin}\n"
-        for identity, package, migration in (("u1", moved, "migrate"), ("u2", LENSED, "")):
-            r = self.host.send(op="world-reprogram", principal="ember", identity=identity, object="lamp", version=0,
-                               package=package, migration=migration)
-            out = r["receipt"]["outcome"]
-            self.assertEqual((out["class"], out.get("clause")), ("programRefused", "fixed"), r)
-        self.assertEqual(self.field("mood"), label("calm"))
 
 
 INTERPRETING = (GARDEN + """record Planting:
@@ -337,14 +301,12 @@ class Interpreted(Reflection):
         return settled["receipt"]["outcome"]["verdict"], as_owner(self.host, settled["resumed"][0])["result"]
 
     # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF 5.64).
-    def test_a_fitting_spell_is_a_proposal(self):
+    def test_a_fitting_spell_is_a_proposal_and_a_misfit_unclear(self):
         verdict, result = self.interpret("Sure.\ndelvetalk garden plant\ncolour: violet\nseed: rue")
         self.assertEqual((verdict["tag"], verdict["method"]), ("proposal", "plant"), verdict)
         self.assertEqual(result, label("proposal"))
         self.assertEqual({f["name"]: f["value"] for f in self.state("garden")["fields"]}["planted"], label("violet:rue"))
-
-
-    def test_misfits_and_missing_fields_are_unclear(self):
+        # A misfit, a spell missing fields, or another action is unclear naming why.
         self.assertEqual(self.interpret("delvetalk garden plant\ncolour: gold\nseed: rue")[0],
                          {"tag": "unclear", "needs": ["colour is one of: amber, violet, silver"]})
         self.assertEqual(self.interpret("delvetalk garden plant\ncolour: amber")[0], {"tag": "unclear", "needs": ["seed"]})

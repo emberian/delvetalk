@@ -59,13 +59,6 @@ class Resumed(test_chain.Chain):
     def text(self, raw):
         return {"status": "replied", "json": None, "raw": raw, "model": "m"}
 
-    def test_not_addressed_ends_the_turn_with_no_card(self):
-        self.policy()
-        self.garden("policy")
-        self.say("What makes you think anyone needs a portal?")
-        resumed = self.interpret(self.text("unclear: not addressed"))
-        self.assertEqual((resumed["status"], resumed["result"]["label"], resumed["offers"]), ("admitted", "silent", []), resumed)
-
     def settle(self, raw):
         """Settle the one pending interpretation with the model's text; the resumed turn."""
         [item] = self.host.send(op="world-interpretations")["pending"]

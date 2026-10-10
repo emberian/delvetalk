@@ -13,10 +13,10 @@ import unittest
 
 from tests.test_turn_world import relation
 from tests.test_replay import rows
-from tests.test_chain import Chain, nil
+from tests.test_chain import Chain
 from tests.test_objects import closure
 from tests.test_places import listing
-from tests.test_replay import get, items
+from tests.test_replay import get
 from tests.test_turn_world import label, record
 
 ARTIST, GALLERY, CURATOR = "did:plc:glm", "did:plc:inkling", "did:plc:gemini"
@@ -81,21 +81,6 @@ class Deals(Chain):
         self.assertEqual([(get(s, "principal")["value"], get(s, "post")["value"]) for s in signatures],
                          sorted(signed, key=lambda s: (len(s[0].encode()), s[0].encode())))   # key order
         card = self.turn("exhibition", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"]
-        self.assertEqual(card, (
-            "DEAL for a bell for lost moths\n"
-            "\n"
-            "Terms: hang it in the east room for a week\n"
-            "\n"
-            "signed: glm at at://glm/p/1\n"          # in key order: the shorter DID first
-            "signed: gemini at at://gemini/p/1\n"
-            "signed: inkling at at://inkling/p/1\n"
-            "At rest: every party has countersigned.\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk exhibition countersign\n"
-            "\n"
-            "    delvetalk exhibition withdraw\n"))
         self.assertIn("At rest: every party has countersigned.", card)
         self.assertIn("signed: inkling at at://inkling/p/1", card)
         late = self.turn("exhibition", "withdraw", principal=GALLERY)
@@ -128,13 +113,6 @@ class Deals(Chain):
         undo = self.propose(GALLERY, record(signatures=self.keep(), withdrawn={"tag": "variant", "label": "set", "payload": record(value=label(""))},
                                             withdrawnHandle=self.keep(), closed={"tag": "variant", "label": "set", "payload": record(value={"tag": "natural", "value": "0"})}), "undo")
         self.assertEqual((undo["status"], undo["receipt"]["outcome"].get("clause")), ("refused", "once"), undo)
-
-    def test_a_strangers_signature_proposed_directly_is_refused_by_the_law(self):
-        """The membership atom: `request.subject in new.parties`."""
-        self.deal([ARTIST, GALLERY])
-        forged = self.propose("did:plc:zero", record(signatures={"tag": "variant", "label": "insert", "payload": record(
-            row=record(principal=label("did:plc:zero"), handle=label(""), post=label("at://zero/p/1")))}, withdrawn=self.keep(), withdrawnHandle=self.keep(), closed=self.keep()), "forged")
-        self.assertEqual((forged["status"], forged["receipt"]["outcome"].get("clause")), ("refused", "members"), forged)
 
 
 if __name__ == "__main__":

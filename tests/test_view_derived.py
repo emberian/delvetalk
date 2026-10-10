@@ -60,16 +60,13 @@ class ViewDerived(Reflection):
         return self.turn("reader", "peek", record(target=label(target), view=label(view)), principal=principal)
 
 
-    def test_an_undeclared_definition_is_not_a_view(self):
+    def test_an_undeclared_definition_is_not_a_view_and_a_private_object_is_denied(self):
         self.target("counter")
         self.assertEqual(self.peek("counter", "secret")["result"], label("noView"))
         self.assertEqual(self.peek("counter", "missing")["result"], label("noView"))
-
-    def test_a_private_object_is_denied(self):
         self.target("vault", read={"principals": ["ember"]})
         self.assertEqual(self.peek("vault", "doubled")["result"], label("denied"))
         self.assertEqual(self.peek("vault", "doubled", principal="ember")["result"], nat(6))
-
 
 if __name__ == "__main__":
     unittest.main()

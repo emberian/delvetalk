@@ -49,20 +49,17 @@ class Reproductions(Chain):
                                                         width=nat(11), height=nat(11), game=game))
         self.assertEqual(r["status"], "created", r)
 
-    def test_a_stranger_cannot_declare_a_winner_with_played(self):
+    def test_a_stranger_cannot_declare_a_winner_with_played_or_reset_a_seat_with_next_round(self):
         result = record(board=nat(0), automaton=nat(0), marks=nat(0), status=nat(1), winner=nat(2))
         refused_no_method(self, self.turn("table", "played", result, principal=STRANGER), "played", "table")
         game = {f["name"]: f["value"] for f in [f for f in self.state("table")["fields"] if f["name"] == "game"][0]["value"]["fields"]}
         self.assertEqual(game["winner"], nat(0))
-
-    def test_a_stranger_cannot_reset_a_seat_with_next_round(self):
         refused_no_method(self, self.turn("north", "nextRound", principal=STRANGER), "nextRound", "north")
         # The declared `next` still runs, and still checks its caller.
         nxt = self.turn("north", "next", principal=STRANGER)
         self.assertEqual(nxt["status"], "admitted", nxt)
         self.assertEqual({f["name"]: f["value"]["value"] for f in nxt["result"]["payload"]["fields"]},
                          {"clause": "notTable", "reading": "Only the table moves the round."})
-
 
 BARE = FIXTURE_HEAD + """def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   addSelf(context, 1n)
@@ -89,22 +86,15 @@ class Bare(Chain):
         self.make("bare", plan + [{"name": "Bare", "source": BARE}], record())
         self.make("caller", plan + [{"name": "Caller", "source": declared(BARE, "poke", "post")}], record())
 
-    def test_an_undeclared_method_is_refused_by_name_and_listed_nowhere(self):
+    def test_an_undeclared_method_is_refused_by_name_to_a_turn_call_or_send_and_listed_nowhere(self):
         refused_no_method(self, self.turn("bare", "bump", principal=STRANGER), "bump", "bare")
         inspected = self.host.send(op="world-inspect", principal=STRANGER, object="bare", source=False)
         self.assertEqual([m["name"] for m in inspected["methods"]], [])
         self.assertNotIn("bump", json.dumps(inspected["forms"]))
-
-    def test_a_call_or_send_naming_a_helper_is_refused_no_method(self):
-        poked = self.turn("caller", "poke", record(target=label("bare"), method=label("bump")))
-        self.assertEqual((poked["status"], poked["result"]["value"]), ("admitted", "7"), poked)
-        posted = self.turn("caller", "post", record(target=label("bare"), method=label("bump")))
-        self.assertEqual((posted["status"], posted["result"]["value"]), ("admitted", "7"), posted)
+        for method, target, want in (("poke", "bare", "7"), ("post", "bare", "7"), ("poke", "caller", "1")):  # 7: refused noMethod; 1: its own helper runs
+            r = self.turn("caller", method, record(target=label(target), method=label("bump")))
+            self.assertEqual((r["status"], r["result"]["value"]), ("admitted", want), (method, target, r))
         self.assertEqual(self.host.send(op="world-pending").get("count"), 0)
-
-    def test_an_object_may_call_its_own_helper(self):
-        own = self.turn("caller", "poke", record(target=label("caller"), method=label("bump")))
-        self.assertEqual((own["status"], own["result"]["value"]), ("admitted", "1"), own)
 
     def test_a_malformed_methods_declaration_refuses_the_package(self):
         from tests.test_turn_world import closure as world_closure
@@ -143,8 +133,6 @@ class HelperReceivers(Reflection):
 
 
 del Receivers
-
-# `~ping` in methods(): public, so any turn its law admits may run it, but offered to nobody.
 
 
 if __name__ == "__main__":

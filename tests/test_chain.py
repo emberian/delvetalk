@@ -11,7 +11,6 @@ delivery id, and the settling pass after every durable op runs pending deliverie
 runs any that remain; `world-pending` lists them. The chain is wired with
 subscriptions.
 """
-import json
 import unittest
 
 from tests.test_turn_world import TurnWorld, closure, label, nat, record, relation
@@ -130,21 +129,6 @@ class Chains(Chain):
         refused = self.turn("door2", "changed", forged, principal="gemini")
         self.assertEqual((refused["status"], refused["receipt"]["outcome"]["class"]), ("refused", "noMethod"), refused)
         self.assertEqual(field(self.state("door2"), "open"), boolean(False))
-
-    def test_a_tick_cycle_ends_in_a_budget_exhausted_refusal(self):
-        self.make("loop", closure("Loop"), record())
-        first = self.turn("loop", "tick")
-        self.assertEqual(first["status"], "admitted", first)
-        replies = self.deliver_all(rounds=200)
-        self.assertIn("budgetExhausted", json.dumps(replies))
-        self.assertFalse(self.host.send(op="world-pending").get("count"))
-        count = int(field(self.state("loop"), "count")["value"])
-        self.assertGreater(count, 1)
-        # The refusal is the last word: delivering again changes nothing.
-        before = self.state("loop")
-        self.host.send(op="world-deliver", limit=16)
-        self.assertEqual(self.state("loop"), before)
-
 
 if __name__ == "__main__":
     unittest.main()

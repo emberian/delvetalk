@@ -129,15 +129,11 @@ class Handlers(Reflection):
         self.assertEqual(self.count(), "0")
         self.assertIn(("sandbox", 0), [(x["object"], x["version"]) for x in r["receipt"]["roots"]])
         self.assertEqual([w["object"] for w in r["receipt"]["outcome"]["writes"]], [])
-
-    def test_a_plan_the_handler_does_not_name_passes_to_the_host(self):
-        r = self.go("views")
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
-        self.assertEqual(self.count(), "1")
-
-    def test_an_unknown_handler_is_refused(self):
-        self.assertEqual(self.go("ghost")["result"], nat(99))
+        self.assertEqual(self.go("ghost")["result"], nat(99))          # an unknown handler is refused
         self.assertEqual(self.count(), "0")
+        # A Plan the handler does not name passes to the host.
+        self.assertEqual(self.go("views")["result"], nat(1))
+        self.assertEqual(self.count(), "1")
 
     def test_a_handler_answers_the_plans_of_frames_its_callee_calls(self):
         self.make("nester", NESTER, record(n=nat(0)))

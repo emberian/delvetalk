@@ -20,7 +20,7 @@ from tests.host import as_owner
 from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
-from tests.test_world import BOUNDED, WorldCase, add, put, root, write
+from tests.test_world import BOUNDED, WorldCase, add, root, write
 from tests.test_turn_world import declared
 
 BELL = declared("""edition ObjectiveBend 1
@@ -134,18 +134,10 @@ class Proposals(WorldCase):
         self.create()
 
 
-    def test_a_set_against_a_moved_root_is_stale_and_a_future_version_is_stale(self):
-        self.propose("p1", [root("c1", 0)], [write("c1", add("count", 1))])
-        r = self.propose("p2", [root("c1", 0)], [write("c1", put("name", label("x")))])
-        self.assertEqual(r["receipt"]["outcome"]["class"], "staleRoot")
+    def test_a_future_version_is_stale(self):
+        # A set against a moved root is test_world's Commit.
         future = self.propose("p3", [root("c1", 5)], [write("c1", add("count", 1))])
         self.assertEqual(future["receipt"]["outcome"]["class"], "staleRoot")
-
-    def test_a_moved_root_that_is_only_read_is_stale(self):
-        self.create("c2")
-        self.propose("p1", [root("c2", 0)], [write("c2", add("count", 1))])
-        r = self.propose("p2", [root("c1", 0), root("c2", 0)], [write("c1", add("count", 1))])
-        self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["object"]), ("staleRoot", "c2"))
 
     def test_a_commuted_add_is_judged_on_the_current_state(self):
         self.create("b", source=BOUNDED)

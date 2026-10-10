@@ -106,19 +106,11 @@ class WorldObject(Reflection):
         self.assertIn({"object": "b", "field": "count", "key": "*", "version": 0}, r["receipt"]["roots"])
         self.assertEqual(self.turn("a", "field", record(other=label("b"), field=label("nope")))["result"], nat(777777))
         self.assertEqual(self.turn("a", "fieldText", record(other=label("b")))["result"], label("typeMismatch"))
-
-    def test_a_method_the_world_has_not_is_refused_by_name(self):
-        self.thing("a")
-        r = self.turn("a", "away", record())
-        self.assertEqual(r["result"], label("noMethod"), r)
-
-    def test_the_id_world_is_reserved(self):
+        # A method the world has not is refused by name, and the id `world` is reserved.
+        self.assertEqual(self.turn("a", "away", record())["result"], label("noMethod"))
         r = self.host.send(op="world-create", principal="ember", identity="mk-w", object="world",
-                           modules=[{"name": "Thing", "source": THING}],
-                           entry="initial", seed=record())
-        self.assertEqual(r["status"], "error", r)
+                           modules=[{"name": "Thing", "source": THING}], entry="initial", seed=record())
         self.assertIn("not world", r["message"])
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,6 @@ the world's protocol at T, and each call site resumes at its own result type.
 """
 import unittest
 
-from tests.test_sugar import core
 from tests.test_turn import Host, library_modules
 
 # A stand-in for world/lib/World.obend (the objects lane's file): the shapes WHOLENESS fixes.
@@ -69,81 +68,6 @@ def world_modules(thing=THING, world=WORLD):
     return library_modules("Abi", "Plan") + [{"name": "World", "source": world}, {"name": "Thing", "source": thing}]
 
 
-class WorldCalls(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.h = Host()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.h.close()
-
-    def check(self, entry, thing=THING, world=WORLD):
-        return self.h.send({"op": "check-package", "entry": entry, "modules": world_modules(thing, world)})
-
-    def compile(self, entry, thing=THING):
-        reply = self.h.send({"op": "compile", "entry": entry, "modules": world_modules(thing)})
-        self.assertEqual(reply["status"], "compiled", reply)
-        return reply["artifact"]
-
-    def refused(self, entry, thing, world=WORLD):
-        reply = self.check(entry, thing, world)
-        self.assertEqual(reply["status"], "refused", reply)
-        return reply["diagnostic"]
-
-
-    def start(self, entry, other="b"):
-        ref = {"tag": "record", "fields": [{"name": "world", "value": {"tag": "label", "value": ""}},
-                                           {"name": "object", "value": {"tag": "label", "value": other}}]}
-        state = {"tag": "record", "fields": [{"name": "count", "value": {"tag": "natural", "value": "2"}}]}
-        art = self.compile(entry)
-        return art, ref, self.h.start(art, [state, {"tag": "record", "fields": [{"name": "other", "value": ref}]}])
-
-
-    def packet(self, entry, thing):
-        art = self.compile(entry, thing)
-        return core(art), art["type"]
-
-
-    def test_refusals_name_the_world_call(self):
-        cases = {
-            "refused (perform): surface perform is withdrawn": ("bump", THING.replace(
-                "let written(_) = write {count: add 1n}",
-                'let written(_) = perform({object: {world: "", object: "world"}, method: "x", argument: Data.of::<Nat>(1n)})')),
-            "the world has no method mail": ("tell", THING.replace("world.send(", "world.mail(")),
-            "cannot infer the type argument S of world.view": ("peek", THING.replace(
-                "world.view::<State>({object: input.other}):", "world.view({object: input.other}):")),
-            "takes 1 type argument, not 2": ("peek", THING.replace(
-                "world.view::<State>({object: input.other}):", "world.view::<State, Nat>({object: input.other}):")),
-            "refused (old-dialect): Activity<Plan, Response, Result> is withdrawn": ("peek", THING.replace(
-                "-> Activity<Nat>:\n  match world.view", "-> Activity<World.Message, Data, Nat>:\n  match world.view")),
-        }
-        for needle, (entry, source) in cases.items():
-            with self.subTest(needle=needle):
-                d = self.refused(entry, source)
-                self.assertIn(needle, d["message"])
-
-    def test_an_argument_of_the_wrong_shape_is_located_with_expected_and_found(self):
-        d = self.refused("peek", THING.replace("world.view::<State>({object: input.other})",
-                                               "world.view::<State>({thing: input.other})"))
-        self.assertEqual(d["definition"], "Thing.peek")
-        self.assertEqual(d["expected"], "{object: {world: String, object: String}}")
-        self.assertEqual(d["found"], "{thing: {world: String, object: String}}")
-        self.assertEqual(THING.count("\n", 0, d["span"]["start"]) + 1, d["span"]["line"])
-
-    def test_without_a_world_module_the_dialect_is_refused_by_name(self):
-        reply = self.h.send({"op": "check-package", "entry": "peek", "modules": library_modules("Abi", "Plan") +
-                             [{"name": "Thing", "source": THING.replace("import ./World.obend as World\n", "")}]})
-        self.assertEqual(reply["status"], "refused", reply)
-        self.assertIn("no module named World", reply["diagnostic"]["message"])
-
-    def test_a_protocol_signature_takes_one_input(self):
-        bad = WORLD.replace("send({object", "send(Nat, {object")
-        reply = self.check("bump", THING, bad)
-        self.assertNotIn(reply["status"], ("checked",), reply)
-        self.assertIn("exactly one input", str(reply))
-
-
 def rec(**fields):
     return {"tag": "record", "fields": [{"name": n, "value": v} for n, v in fields.items()]}
 
@@ -178,9 +102,7 @@ TWICE = THING + """def twice(state: State, input: {other: Plans.Reference}, cont
 """
 
 
-class SiteTypes(unittest.TestCase):
-    """Each world call resumes at its own result type (WHOLENESS §1, day 2)."""
-
+class WorldCalls(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.h = Host()
@@ -189,17 +111,61 @@ class SiteTypes(unittest.TestCase):
     def tearDownClass(cls):
         cls.h.close()
 
+    def check(self, entry, thing=THING, world=WORLD):
+        return self.h.send({"op": "check-package", "entry": entry, "modules": world_modules(thing, world)})
+
     def compile(self, entry, thing=THING):
         reply = self.h.send({"op": "compile", "entry": entry, "modules": world_modules(thing)})
         self.assertEqual(reply["status"], "compiled", reply)
         return reply["artifact"]
+
+    def refused(self, entry, thing, world=WORLD):
+        reply = self.check(entry, thing, world)
+        self.assertEqual(reply["status"], "refused", reply)
+        return reply["diagnostic"]
+
+
+    def test_refusals_name_the_world_call_the_missing_world_and_the_one_input(self):
+        cases = {
+            "refused (perform): surface perform is withdrawn": ("bump", THING.replace(
+                "let written(_) = write {count: add 1n}",
+                'let written(_) = perform({object: {world: "", object: "world"}, method: "x", argument: Data.of::<Nat>(1n)})')),
+            "the world has no method mail": ("tell", THING.replace("world.send(", "world.mail(")),
+            "cannot infer the type argument S of world.view": ("peek", THING.replace(
+                "world.view::<State>({object: input.other}):", "world.view({object: input.other}):")),
+            "takes 1 type argument, not 2": ("peek", THING.replace(
+                "world.view::<State>({object: input.other}):", "world.view::<State, Nat>({object: input.other}):")),
+            "refused (old-dialect): Activity<Plan, Response, Result> is withdrawn": ("peek", THING.replace(
+                "-> Activity<Nat>:\n  match world.view", "-> Activity<World.Message, Data, Nat>:\n  match world.view")),
+        }
+        for needle, (entry, source) in cases.items():
+            with self.subTest(needle=needle):
+                d = self.refused(entry, source)
+                self.assertIn(needle, d["message"])
+        reply = self.h.send({"op": "check-package", "entry": "peek", "modules": library_modules("Abi", "Plan") +
+                             [{"name": "Thing", "source": THING.replace("import ./World.obend as World\n", "")}]})
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("no module named World", reply["diagnostic"]["message"])
+        bad = WORLD.replace("send({object", "send(Nat, {object")
+        reply = self.check("bump", THING, bad)
+        self.assertNotIn(reply["status"], ("checked",), reply)
+        self.assertIn("exactly one input", str(reply))
+
+    def test_an_argument_of_the_wrong_shape_is_located_with_expected_and_found(self):
+        d = self.refused("peek", THING.replace("world.view::<State>({object: input.other})",
+                                               "world.view::<State>({thing: input.other})"))
+        self.assertEqual(d["definition"], "Thing.peek")
+        self.assertEqual(d["expected"], "{object: {world: String, object: String}}")
+        self.assertEqual(d["found"], "{thing: {world: String, object: String}}")
+        self.assertEqual(THING.count("\n", 0, d["span"]["start"]) + 1, d["span"]["line"])
+
 
     def start(self, entry, count=2):
         art = self.compile(entry)
         ref = rec(world={"tag": "label", "value": ""}, object={"tag": "label", "value": "b"})
         return art, self.h.start(art, [rec(count=nat(count)), rec(other=ref)])
 
-    def test_a_view_yields_at_viewed_of_its_type_and_resumes_with_it(self):
+    def test_a_view_yields_at_viewed_of_its_type_resumes_with_it_and_refuses_another(self):
         art, y = self.start("peek")
         self.assertEqual(y["status"], "yielded", y)
         self.assertEqual(y["responseType"]["tag"], "variant")
@@ -207,8 +173,6 @@ class SiteTypes(unittest.TestCase):
         self.assertEqual(y["checkpoint"]["tokens"][0], "delvetalk.checkpoint.site.v1")
         done = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(3), state=rec(count=nat(7)))))
         self.assertEqual((done["status"], done.get("value")), ("finished", nat(7)), done)
-
-    def test_a_response_of_another_type_is_refused(self):
         art, y = self.start("peek")
         bad = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(3), state=rec(other=nat(7)))))
         self.assertEqual(bad["status"], "error", bad)
@@ -216,7 +180,7 @@ class SiteTypes(unittest.TestCase):
         written = self.h.resume(art, y["checkpoint"], variant("written", rec()))
         self.assertIn("response does not conform", written["message"])
 
-    def test_two_sites_resume_at_two_types(self):
+    def test_two_sites_resume_at_two_types_and_one_message_at_two_types_is_refused(self):
         art, y = self.start("both")
         self.assertEqual(labels(y["responseType"]), ["viewed", "denied", "refused"])
         w = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(1), state=rec(count=nat(5)))))
@@ -229,12 +193,10 @@ class SiteTypes(unittest.TestCase):
         self.assertIn("response does not conform", again["message"])
         done = self.h.resume(art, w["checkpoint"], variant("written", rec()))
         self.assertEqual((done["status"], done.get("value")), ("finished", nat(5)), done)
-
-
-    def test_two_calls_that_build_one_message_at_two_types_are_refused(self):
         reply = self.h.send({"op": "check-package", "entry": "twice", "modules": world_modules(TWICE)})
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("refused (world-call-site)", reply["diagnostic"]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

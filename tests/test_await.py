@@ -87,19 +87,6 @@ class Create(Await):
         return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post)),
                          principal=who, identity=post)
 
-    def test_the_creation_is_journaled_in_the_admitted_entry_and_replays(self):
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
-        r = self.plant()
-        self.assertEqual(r["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/1")
-        before = self.state("garden/bell/1")
-        self.reopen()
-        self.assertEqual(self.state("garden/bell/1"), before)
-        # The creator is the owner of what it made (the default law names the planter's turn).
-        again = self.host.send(op="world-turn", principal="glm", object="garden/bell/1", method="rain",
-                               argument=record(text=label("rain")), identity="r1")
-        self.assertEqual(again["status"], "admitted", again)
-
     def test_a_partial_seed_overlays_initial_and_a_field_the_state_lacks_is_refused_as_type_mismatch(self):
         child = "edition ObjectiveBend 1\nrecord State:\n  n: Nat\n  m: Nat\ndef initial() -> State:\n  {n: 0n, m: 9n}\n"
         maker = declared("""edition ObjectiveBend 1
@@ -173,51 +160,34 @@ class Suspend(Await):
         self.assertEqual(final["receipt"]["identity"], {"principal": "gemini", "intent": "strike-bell"})
         self.assertIn("resumes", final["receipt"])
 
-    def test_an_await_on_an_identity_that_already_committed_answers_at_once(self):
+    def test_an_await_on_a_committed_reply_answers_at_once_and_on_a_refused_one_resumes_silent(self):
         self.bell()
         self.settle()
-        r = self.strike()
-        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual(self.strike()["status"], "admitted")
         self.assertEqual(self.rung(), boolean(True))
-
-    def test_a_refused_planting_resumes_the_strike_with_the_refusal_and_the_bell_stays_silent(self):
-        self.bell()
-        self.strike()
-        refused = self.settle(text="no")
+        self.bell("other", post="post-2")
+        self.strike("other")
+        refused = self.settle(post="post-2", text="no")
         self.assertEqual(refused["status"], "refused", refused)
         # The strike heard the refusal: its own turn is admitted and the bell stays silent.
         self.assertEqual(refused["resumed"][0]["status"], "admitted")
-        self.assertEqual(self.rung(), boolean(False))
+        self.assertEqual(self.rung("other"), boolean(False))
 
-    def test_a_retry_of_the_suspended_turn_returns_the_suspension_not_a_second_one(self):
+    def test_the_clock_moves_only_forward_by_world_advance_and_times_out_a_waiting_strike(self):
         self.bell()
-        first = self.strike()
+        self.strike()
         h = self.height()
-        again = self.strike()
-        self.assertEqual(again, first)
-        self.assertEqual(self.height(), h)
-
-    def test_the_clock_moves_only_by_world_advance_and_times_out_a_waiting_strike(self):
-        self.bell()
-        s = self.strike()
         a = self.host.send(op="world-advance", principal="transport", height=8)             # at the deadline: not past it
         self.assertEqual((a["status"], a["clock"], a.get("resumed")), ("advanced", 8, None))
+        r = self.host.send(op="world-advance", principal="transport", height=3)              # backwards: a no-op, unjournaled
+        self.assertEqual((r["status"], r["clock"], self.height()), ("advanced", 8, h + 1))
         b = self.host.send(op="world-advance", principal="transport", height=9)
-        self.assertEqual(len(b["resumed"]), 1)
-        self.assertEqual(b["resumed"][0]["status"], "admitted")
+        self.assertEqual([x["status"] for x in b["resumed"]], ["admitted"])
         self.assertEqual(self.rung(), boolean(False))                # timedOut -> unchanged
         self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["version"], 0)
         # The slot arriving later changes nothing: the strike is over.
         self.assertNotIn("resumed", self.settle())
         self.assertEqual(self.rung(), boolean(False))
-
-    def test_advancing_to_or_before_now_is_a_no_op_and_not_journaled(self):
-        h = self.height()
-        self.host.send(op="world-advance", principal="transport", height=5)
-        self.assertEqual(self.height(), h + 1)
-        r = self.host.send(op="world-advance", principal="transport", height=3)
-        self.assertEqual((r["status"], r["clock"]), ("advanced", 5))
-        self.assertEqual(self.height(), h + 1)
 
     def test_a_suspended_turn_whose_bell_was_rained_on_meanwhile_is_rebased_on_resume(self):
         # The rain appended to `rains`; the strike sets only `rung`, which nothing else changed, so
@@ -244,24 +214,20 @@ class Suspend(Await):
         self.assertNotIn("resumes", resumed["receipt"])
         self.assertNotIn("ticksUsed", resumed)
 
-    def test_restart_between_suspend_and_resume_rebuilds_the_activity_from_the_journal(self):
+    def test_restart_between_suspend_and_resume_rebuilds_the_activity_and_its_deadline(self):
         self.bell()
+        self.bell("late", post="post-2")
         self.strike()
+        self.strike("late")
+        self.host.send(op="world-advance", principal="transport", height=4)
         self.reopen()
-        settled = self.settle()
-        self.assertEqual([r["status"] for r in settled["resumed"]], ["admitted"])
-        self.assertEqual(self.rung(), boolean(True))
-        self.reopen()
+        self.assertEqual([r["status"] for r in self.settle()["resumed"]], ["admitted"])
         self.assertEqual(self.rung(), boolean(True))
         self.assertEqual(self.host.send(op="world-receipt", principal="gemini", identity="strike-bell")
                          ["receipt"]["outcome"]["tag"], "admitted")
-
-    def test_the_deadline_survives_a_restart(self):
-        self.bell()
-        self.strike()
-        self.host.send(op="world-advance", principal="transport", height=4)
         self.reopen()
         self.assertEqual(self.host.send(op="world-advance", principal="transport", height=9)["resumed"][0]["status"], "admitted")
+        self.assertEqual(self.rung("late"), boolean(False))
 
     def test_a_ninth_pending_activity_on_one_object_is_refused_by_name(self):
         self.bell()

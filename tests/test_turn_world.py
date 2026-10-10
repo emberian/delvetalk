@@ -169,72 +169,35 @@ class TurnWorld(HostCase):
 
 
 class CounterTurns(TurnWorld):
+    """Retry and duplicateIdentity on a turn are test_properties (RandomHour)."""
 
-    def test_the_receipt_lists_the_object_as_first_root_and_reports_ticks(self):
+    def test_the_receipt_names_its_root_and_ticks_and_unknown_object_method_and_budget_are_refused(self):
         self.create("c1", counter_modules(), 4)
         read = cid_of(self.host.send(op="world-view", principal="ember", object="c1")["state"])
         r = self.turn("c1", "bump")
         # The root names the version the turn read; that state's CID is read from the journal.
         self.assertEqual(r["receipt"]["roots"], [{"object": "c1", "version": 0}])
         self.assertEqual(self.host.send(op="world-state-cid", principal="ember", object="c1", version=0)["cid"], read)
-        self.assertEqual(r["result"], nat(5))
+        self.assertEqual((r["result"], r["receipt"]["outcome"]["writes"][0]["version"]), (nat(5), 1))
         self.assertGreater(r["ticksUsed"], 0)
-        self.assertEqual(r["receipt"]["outcome"]["writes"][0]["version"], 1)
-
-    def test_retry_of_the_same_identity_returns_the_same_receipt_and_no_second_bump(self):
-        self.create("c1", counter_modules(), 0)
-        first = self.turn("c1", "bump", identity="once")
-        h = self.height()
-        again = self.turn("c1", "bump", identity="once")
-        self.assertEqual(again, first)
-        self.assertEqual(self.height(), h)
-        self.assertEqual(self.count("c1"), (1, "1"))
-
-    def test_same_identity_for_another_turn_is_duplicate_identity_and_writes_nothing(self):
-        self.create("c1", counter_modules(), 0)
-        self.turn("c1", "bump", identity="once")
-        h = self.height()
-        r = self.host.send(op="world-turn", principal="ember", object="c1", method="bump",
-                           argument=record(x=nat(1)), identity="once")
-        self.assertEqual((r["status"], r["class"]), ("refused", "duplicateIdentity"))
-        self.assertEqual(self.height(), h)
-
-    def test_unknown_object_is_refused_by_class_and_unknown_method_is_refused_noMethod(self):
-        self.create("c1", counter_modules(), 0)
-        r = self.turn("ghost", "bump")
-        self.assertEqual(r["receipt"]["outcome"]["class"], "unknownObject")
+        self.assertEqual(self.turn("ghost", "bump")["receipt"]["outcome"]["class"], "unknownObject")
         h = self.height()
         r = self.turn("c1", "nosuchmethod")
-        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "noMethod"))
-        self.assertEqual(self.height(), h + 1)
-
-
-    def test_a_ten_tick_budget_is_refused_as_budget_naming_the_resource(self):
-        self.create("c1", counter_modules(), 0)
-        r = self.turn("c1", "bump", ticks="10")
-        out = r["receipt"]["outcome"]
-        self.assertEqual((r["status"], out["class"], out["reason"]), ("refused", "budget", "the turn ran out of ticks; make it smaller, or send it again later."))
-        self.assertEqual(self.count("c1"), (0, "0"))
-
-
-class Ticks(TurnWorld):
-    def test_the_default_turn_budget_is_the_kernel_cap_and_a_request_cannot_exceed_it(self):
-        self.create("c1", counter_modules(), 0)
-        self.assertEqual(self.turn("c1", "bump")["status"], "admitted")
-        r = self.turn("c1", "bump", ticks="1000001")
-        self.assertEqual(r["status"], "error")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], self.height()), ("refused", "noMethod", h + 1))
+        out = self.turn("c1", "bump", ticks="10")["receipt"]["outcome"]
+        self.assertEqual((out["class"], out["reason"]), ("budget", "the turn ran out of ticks; make it smaller, or send it again later."))
+        self.assertEqual(self.count("c1"), (1, "5"))
+        # The default budget is the kernel cap, and a request cannot exceed it.
+        self.assertEqual(self.turn("c1", "bump", ticks="1000001")["status"], "error")
         self.assertEqual(self.turn("c1", "bump", ticks="1000000")["status"], "admitted")
 
-
-class Laws(TurnWorld):
     def test_monotone_law_refuses_the_decrement_and_leaves_state_unchanged(self):
         self.create("m", MONOTONE, 5)
         r = self.turn("m", "dec")
         out = r["receipt"]["outcome"]
         self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "lawRefused", "counter"))
         self.assertEqual(self.count("m"), (0, "5"))
-        ok = self.turn("m", "inc")
-        self.assertEqual(ok["status"], "admitted")
+        self.assertEqual(self.turn("m", "inc")["status"], "admitted")
         self.assertEqual(self.count("m"), (1, "6"))
 
 
@@ -244,37 +207,24 @@ class Plans(TurnWorld):
         self.create("a", PROBES, 1)
         self.create("b", counter_modules(), 7)
 
-    def target(self, name):
-        return record(target=label(name))
-
-    def test_view_of_another_object_records_it_as_a_root_and_returns_its_state(self):
-        r = self.turn("a", "peek", self.target("b"))
-        self.assertEqual(r["result"], nat(7))
-        self.assertEqual([x["object"] for x in r["receipt"]["roots"]], ["a", "b"])
-
-    def test_view_of_an_unknown_object_is_answered_denied(self):
-        r = self.turn("a", "peek", self.target("ghost"))
-        self.assertEqual(r["result"], nat(999))
-
-    def test_call_commits_the_callee_and_the_caller_atomically_in_one_entry(self):
+    def test_a_view_records_its_root_and_a_call_commits_callee_and_caller_in_one_entry(self):
+        r = self.turn("a", "peek", record(target=label("b")))
+        self.assertEqual((r["result"], [x["object"] for x in r["receipt"]["roots"]]), (nat(7), ["a", "b"]))
+        self.assertEqual(self.turn("a", "peek", record(target=label("ghost")))["result"], nat(999))
         h = self.height()
         r = self.turn("a", "relay", record(target=label("b"), method=label("bump")))
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(8)))
-        self.assertEqual(self.height(), h + 1)
+        self.assertEqual((r["status"], r["result"], self.height()), ("admitted", nat(8), h + 1))
         self.assertEqual([w["object"] for w in r["receipt"]["outcome"]["writes"]], ["b", "a"])
         self.assertEqual((self.count("a"), self.count("b")), ((1, "11"), (1, "8")))
+        # A pure method commits its result as a set of every field.
+        self.assertEqual(self.turn("a", "grow", record(by=nat(4)))["status"], "admitted")
+        self.assertEqual(self.count("a"), (2, "15"))
 
     def test_a_failing_callee_write_refuses_the_whole_turn(self):
         self.create("m", MONOTONE, 5)
-        # The callee's law refuses its decrement; nothing of the caller may land either.
         r = self.turn("a", "relay", record(target=label("m"), method=label("dec")))
         self.assertEqual(r["receipt"]["outcome"]["clause"], "counter")
         self.assertEqual((self.count("a"), self.count("m")), ((0, "1"), (0, "5")))
-
-    def test_a_pure_method_commits_its_result_as_a_set_of_every_field(self):
-        r = self.turn("a", "grow", record(by=nat(4)))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.count("a"), (1, "5"))
 
 
 NAMES_SOURCE = declared("""edition ObjectiveBend 1
@@ -317,52 +267,24 @@ def list_items(state):
 
 
 class ListEdits(TurnWorld):
-    def test_append_then_amend_on_a_list_field_read_back_in_order_and_replayed(self):
-        empty = {"tag": "record", "fields": []}
-        seed = record(names={"tag": "list", "items": []})
+    def test_append_amend_and_remove_by_item_refuse_an_absent_one_and_replay(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="n",
-                           modules=names_modules(), entry="initial", seed=seed)
+                           modules=names_modules(), entry="initial", seed=record(names={"tag": "list", "items": []}))
         self.assertEqual(r["status"], "created", r)
-        for text in ("one", "two", "three"):
-            r = self.turn("n", "add", record(text=label(text)))
-            self.assertEqual(r["status"], "admitted", r)
-        r = self.turn("n", "fix", record(item=label("two"), text=label("TWO")))
-        self.assertEqual(r["status"], "admitted", r)
-        view = lambda: self.host.send(op="world-view", principal="e", object="n")["state"]
-        self.assertEqual(list_items(view()), ["one", "TWO", "three"])
-        before = view()
-        self.reopen()
-        self.assertEqual(view(), before)
-
-    def test_remove_item_deletes_the_element_refuses_an_absent_one_and_replays(self):
-        empty = {"tag": "record", "fields": []}
-        self.host.send(op="world-create", principal="ember", identity="mk", object="n",
-                       modules=names_modules(), entry="initial",
-                       seed=record(names={"tag": "list", "items": []}))
-        for text in ("one", "two", "three"):
-            self.turn("n", "add", record(text=label(text)))
+        for text in ("one", "two", "three", "four"):
+            self.assertEqual(self.turn("n", "add", record(text=label(text)))["status"], "admitted")
         view = lambda: self.host.send(op="world-view", principal="e", object="n")
-        self.assertEqual(self.turn("n", "drop", record(text=label("two")))["status"], "admitted")
-        self.assertEqual(list_items(view()["state"]), ["one", "three"])
+        self.assertEqual(self.turn("n", "fix", record(item=label("two"), text=label("TWO")))["status"], "admitted")
+        self.assertEqual(self.turn("n", "drop", record(text=label("three")))["status"], "admitted")
         self.assertEqual(self.turn("n", "drop", record(text=label("one")))["status"], "admitted")
-        self.assertEqual(list_items(view()["state"]), ["three"])
+        self.assertEqual(list_items(view()["state"]), ["TWO", "four"])
         version = view()["version"]
-        r = self.turn("n", "drop", record(text=label("one")))
-        self.assertEqual(r["receipt"]["outcome"]["class"], "absentItem")
+        for method, arg in (("drop", record(text=label("one"))), ("fix", record(item=label("other"), text=label("x")))):
+            self.assertEqual(self.turn("n", method, arg)["receipt"]["outcome"]["class"], "absentItem", method)
         self.assertEqual(view()["version"], version)
         before = view()
         self.reopen()
         self.assertEqual(view(), before)
-
-    def test_amending_an_absent_item_is_refused_and_changes_nothing(self):
-        empty = {"tag": "record", "fields": []}
-        self.host.send(op="world-create", principal="ember", identity="mk", object="n",
-                       modules=names_modules(), entry="initial",
-                       seed=record(names={"tag": "list", "items": []}))
-        self.turn("n", "add", record(text=label("only")))
-        r = self.turn("n", "fix", record(item=label("other"), text=label("x")))
-        self.assertEqual(r["receipt"]["outcome"]["class"], "absentItem")
-        self.assertEqual(self.host.send(op="world-view", principal="e", object="n")["version"], 1)
 
 
 class ReadPolicy(TurnWorld):
@@ -377,34 +299,24 @@ class ReadPolicy(TurnWorld):
     def view(self, who, obj="priv"):
         return self.host.send(op="world-view", principal=who, object=obj)
 
-    def test_a_private_object_is_viewed_by_its_creator_and_denied_to_a_stranger(self):
+    def test_a_private_object_is_viewed_by_its_creator_denied_to_a_stranger_across_restart(self):
         self.assertEqual(self.view("ember")["status"], "viewed")
-        d = self.view("stranger")
-        self.assertEqual(d, {"status": "denied", "object": "priv"})
+        self.assertEqual(self.view("stranger"), {"status": "denied", "object": "priv"})
         self.assertEqual(self.view("stranger", "a")["status"], "viewed")  # default is public
+        r = self.host.send(op="world-create", principal="ember", identity="bad", object="p2", modules=counter_modules(),
+                           entry="initial", seed=record(count=nat(0)), read={"principals": "ember"})
+        self.assertEqual(r["status"], "error")
+        self.reopen()
+        self.assertEqual((self.view("stranger")["status"], self.view("ember")["status"]), ("denied", "viewed"))
 
-    def test_a_denied_in_turn_view_records_no_root_and_the_turn_still_commits(self):
+    def test_an_in_turn_view_is_denied_without_a_root_to_a_stranger_and_rooted_for_its_reader(self):
         r = self.turn("a", "probe", record(target=label("priv")), principal="stranger")
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
         self.assertEqual([x["object"] for x in r["receipt"]["roots"]], ["a"])
-        self.assertEqual(self.count("a"), (1, "101"))
-        self.assertEqual(self.count("priv"), (0, "7"))
-
-    def test_a_permitted_principal_view_in_turn_records_the_root_and_sees_the_state(self):
+        self.assertEqual((self.count("a"), self.count("priv")), ((1, "101"), (0, "7")))
         r = self.turn("a", "probe", record(target=label("priv")), principal="ember")
         self.assertEqual([x["object"] for x in r["receipt"]["roots"]], ["a", "priv"])
-        self.assertEqual(self.count("a"), (1, "8"))
-
-    def test_the_policy_survives_a_restart(self):
-        self.reopen()
-        self.assertEqual(self.view("stranger")["status"], "denied")
-        self.assertEqual(self.view("ember")["status"], "viewed")
-
-    def test_a_malformed_policy_refuses_creation(self):
-        r = self.host.send(op="world-create", principal="ember", identity="bad", object="p2",
-                           modules=counter_modules(), entry="initial", seed=record(count=nat(0)),
-                           read={"principals": "ember"})
-        self.assertEqual(r["status"], "error")
+        self.assertEqual(self.count("a"), (2, "108"))
 
 
 if __name__ == "__main__":

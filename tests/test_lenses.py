@@ -89,18 +89,6 @@ class Lenses(test_chain.Chain):
         self.assertEqual((self.version(), self.field("model"), self.field("owner")), (0, "claude-haiku", "ember"))
 
 
-    def test_an_object_without_lenses_answers_set_and_question_by_its_forms(self):
-        """The lantern speaks the message dialect: the host answers `?` from its method table and
-        refuses `set` on a card without lenses."""
-        self.make("lantern", closure("Lantern"), record())
-        r = self.turn("lantern", "receive", heard("delvetalk lantern ?"), principal="ember")
-        self.assertEqual(r["status"], "usage", r)
-        self.assertTrue(r["text"].startswith("Reply with a spell:\n\ndelvetalk lantern light\n\ndelvetalk lantern watch\nobject: "), r)
-        r = self.turn("lantern", "receive", heard("delvetalk lantern set\nlit: yes"), principal="ember")
-        out = r["receipt"]["outcome"]
-        self.assertEqual((r["status"], out["class"]), ("refused", "badSpell"), r)
-        print("\n  set on a card without lenses:", out["clause"], out["reason"])
-
     def test_an_avatars_handle_is_its_principals_to_set(self):
         self.make(GLM, closure("Avatar"), avatar_seed("glm", "porch"))
         other = self.say("delvetalk %s set\nhandle: mallory" % GLM, principal="did:plc:kimik3", obj=GLM)
@@ -162,34 +150,29 @@ class OwnedLenses(test_chain.Chain):
         r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint"], {"confirmFor": append}))
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
-    def test_a_rooms_owner_renames_it(self):
-        from tests.test_places import place_seed
+    def test_a_rooms_and_a_things_owner_sets_their_fields_and_the_law_keeps_others_out(self):
+        from tests.test_places import place_seed, thing_seed
         self.make("porch", closure("Place"), place_seed("Porch"))
-        r = self.say("porch", "delvetalk porch set\nname: Back Porch", "glm")
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the room's owner changes it; that is ember"))
-        self.assertEqual(self.say("porch", "delvetalk porch set\ndescription: moths at the lamp", "ember")["result"]["label"], "done")
-        self.assertEqual(self.say("porch", "delvetalk porch set\nname: Back Porch", "ember")["result"]["label"], "done")
-        self.assertEqual((self.field("porch", "name"), self.field("porch", "description")), ("Back Porch", "moths at the lamp"))
-        set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
-        r = self.forged("porch", (["name", "description", "present", "things", "traces"], {"name": set_}))
-        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
-
-    def test_a_things_owner_redescribes_it_and_the_law_keeps_others_out(self):
-        from tests.test_places import thing_seed
         self.make("stone", closure("Thing"), thing_seed("stone"))
-        r = self.say("stone", "delvetalk stone set\nname: pebble", "glm")
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the thing's owner changes it; that is ember"))
-        self.assertEqual(self.say("stone", "delvetalk stone set\ndescription: warm from the sun", "ember")["result"]["label"], "done")
-        self.assertEqual(self.field("stone", "description"), "warm from the sun")
         set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
-        r = self.forged("stone", (["name", "description", "holder", "location"], {"name": set_}))
-        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
+        for obj, kind, fields in (("porch", "room", ["name", "description", "present", "things", "traces"]),
+                                  ("stone", "thing", ["name", "description", "holder", "location"])):
+            r = self.say(obj, "delvetalk %s set\nname: renamed" % obj, "glm")
+            self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the %s's owner changes it; that is ember" % kind))
+            self.assertEqual(self.say(obj, "delvetalk %s set\ndescription: moths" % obj, "ember")["result"]["label"], "done")
+            self.assertEqual(self.say(obj, "delvetalk %s set\nname: renamed" % obj, "ember")["result"]["label"], "done")
+            self.assertEqual((self.field(obj, "name"), self.field(obj, "description")), ("renamed", "moths"))
+            r = self.forged(obj, (fields, {"name": set_}))
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
-    def test_the_workshop_has_nothing_to_set_and_says_so(self):
+    def test_a_card_without_lenses_refuses_set_and_answers_question_with_its_forms(self):
+        """The lantern speaks the message dialect; the workshop has nothing to set: the host answers
+        `?` from the method table and refuses `set` by name."""
+        self.make("lantern", closure("Lantern"), record())
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
-        r = self.turn("workshop", "receive", record(text=label("delvetalk workshop set\ntitle: Forge"), post=label("")), principal="ember")
-        out = r["receipt"]["outcome"]
-        self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "badSpell", "noAction"), r)
-        usage = self.turn("workshop", "receive", record(text=label("delvetalk workshop ?"), post=label("")), principal="glm")
-        self.assertEqual(usage["status"], "usage", usage)
-        self.assertIn("delvetalk workshop check", usage["text"])
+        for obj, form in (("lantern", "delvetalk lantern light"), ("workshop", "delvetalk workshop check")):
+            r = self.turn(obj, "receive", heard("delvetalk %s set\ntitle: Forge" % obj), principal="ember")
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "badSpell"), r)
+            usage = self.turn(obj, "receive", heard("delvetalk %s ?" % obj), principal="glm")
+            self.assertEqual(usage["status"], "usage", usage)
+            self.assertIn(form, usage["text"])
