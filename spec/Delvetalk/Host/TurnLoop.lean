@@ -777,7 +777,7 @@ def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
-   "objects", "card", "subscribe", "unsubscribe"]
+   "objects", "changed", "card", "subscribe", "unsubscribe"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
@@ -1061,6 +1061,22 @@ def hostUsage (w : World) (o : Object) (principal card : String) : String :=
       then [s!"delvetalk {card} lend\nto: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n"] else [])
   if lines.isEmpty then "" else "\nThe host's spells for any card:\n" ++ String.join (lines.map ("\n" ++ ·))
 
+/-- `delvetalk objects ?` (docs/METAPHYSICS.md §5): the cards `principal` may read under `prefix:`, in
+    id order, twenty a reply, `after:` the last of the reply before. A principal's own cards (ids
+    holding a DID) are listed only to a prefix that names one. -/
+def objectsListing (w : World) (principal pfx after : String) : String :=
+  let own := fun (id : String) => (id.splitOn "did:").length > 1 && (pfx.splitOn "did:").length == 1
+  let ids := (w.objects.toList.filterMap fun (id, o) =>
+    if id.startsWith pfx && decide (after < id) && !own id && o.read.permits principal then some id else none).toArray.qsort (· < ·)
+  let page := (ids.extract 0 20).toList
+  let under := if pfx.isEmpty then "" else s!" under {pfx}"
+  if page.isEmpty then s!"No card{under} that you may read{if after.isEmpty then "" else s!" after {after}"}." else
+  s!"The cards{under} you may read:\n" ++ String.join (page.map (s!"\n{·}")) ++
+    (if ids.size > page.length then s!"\n\nMore: delvetalk objects ?\nprefix: {pfx}\nafter: {page.getLast!}\n" else "")
+
+/-- The line every card's usage ends with: where the other cards are listed. -/
+def objectsLine : String := "\nTo list the cards you may read: delvetalk objects ?\n"
+
 /-- Why `me` names nothing yet. -/
 def noAvatarReason : String := "You have no avatar here yet; your first arrival in the town makes one, and then me is it."
 
@@ -1091,6 +1107,10 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   -- The opener's powers on `world`, the id the host answers for.
   if id == worldId && !w.objects.contains worldId && worldPowers.contains action && retarget then
     return .host worldId action (fields.filter (·.name != ""))
+  -- `delvetalk objects ?`, the listing no object answers.
+  if Spell.fold card == objectsCard && !w.objects.contains objectsCard && action == "?" && retarget then
+    let given := fun (n : String) => ((fields.find? (·.name == n)).map (·.value)).getD ""
+    return .usage objectsCard (objectsListing w principal (given "prefix") (given "after"))
   let some target := w.objects[id]?
     | if card == meCard then
         return .refuse self "noAvatar" noAvatarReason unknown
@@ -1102,7 +1122,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let lenses := declaredLenses w target
   -- Lenses are `set`'s: shown only when `set` is offered to the speaker.
   let shownLenses := if offeredTo w id target principal "set" then lenses else []
-  if action == "?" then return .usage id (spellUsage shown shownForms shownLenses ++ hostUsage w target principal shown)
+  if action == "?" then return .usage id (spellUsage shown shownForms shownLenses ++ hostUsage w target principal shown ++ objectsLine)
   -- The host's own spells, on any card that does not define the action itself (`hostSpell`).
   if hostSpells.contains action && !forms.any (·.action == action) then
     if !retarget then
@@ -1581,6 +1601,17 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let s ← get
     let (ids, more) := listIds s.world s.subject pfx after
     respond bounds responseType "listed" [.record [("ids", listData (ids.map Data.label)), ("more", .boolean more)]]
+  | .variant "changed" (.record f) =>
+    let some (.natural since) := f.lookup "since" | evaluation "malformed changed plan"
+    let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed changed plan"
+    let some after := (f.lookup "after").bind labelOf | evaluation "malformed changed plan"
+    let s ← get
+    let (items, more) := changedSince s.world s.subject since pfx after
+    let item := fun (c : Change) =>
+      let handle := handleOf s.world c.principal
+      Data.record [("object", .record [("world", .label ""), ("object", .label c.object)]), ("version", .natural c.version), ("height", .natural c.height),
+        ("by", .label (if handle.isEmpty then c.principal else handle))]
+    respond bounds responseType "changed" [.record [("items", listData (items.map item)), ("more", .boolean more)]]
   | .variant "card" (.record f) =>
     let s ← get
     match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
@@ -2481,14 +2512,46 @@ def computationParts : Ty → Option (Ty × Ty × Ty)
 def strings (j : Option Json) : List String :=
   ((j.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun a => a.getStr?.toOption
 
+/-- One field value as a spell line writes it: text (a block when it has a line break), a number, a
+    case with no payload as its word; none for anything else. -/
+def spellValue (name : String) : Data → Option String
+  | .label t =>
+    if t.any (· == '\n') then
+      let delimiter := (List.range 8).map (fun i => if i == 0 then "END" else s!"END{i}") |>.find? fun d =>
+        !(t.splitOn "\n").any (· == d)
+      delimiter.map fun d => s!"{name}: <<{d}\n{t}\n{d}"
+    else some s!"{name}: {t}"
+  | .natural n => some s!"{name}: {n}"
+  | .variant c (.record []) => some s!"{name}: {c}"
+  | _ => none
+
+/-- The spell a proposal stands for, `delvetalk <card> <method>` and a line per field of its argument:
+    what a card that asks first prints back for a yes. "" when a field has no spell form (a nested
+    record, a list). -/
+def proposalSpell (card method : String) (argument : Data) : String :=
+  let head := s!"delvetalk {card} {method}"
+  match argument with
+  | .record fs => match fs.mapM fun (n, v) => spellValue n v with
+    | some lines => "\n".intercalate (head :: lines)
+    | none => ""
+  | _ => ""
+
+/-- A proposal as the Plan hears it: with its `spell`, then without for a call site compiled against
+    the older `Proposed`/`Interpreted` (as `receiptReplies` keeps the older Receipt). -/
+def proposalShapes (target method : String) (argument : Data) (spell : String) : List Data :=
+  let base := [("object", Data.label target), ("method", .label method), ("argument", argument)]
+  [.variant "proposal" (.record (base ++ [("spell", .label spell)])), .variant "proposal" (.record base)]
+
 /-- One item of a `proposals` verdict as the Plan hears it (`World.Proposed<R>`): `proposal {object,
     method, argument}` or `unclear {reasons}`. -/
-def proposedData (item : Json) : Except String Data := do
+def proposedData (item : Json) (spelled : Bool := true) : Except String Data := do
   match ← item.getObjValAs? String "tag" with
   | "proposal" =>
-    return .variant "proposal" (.record [("object", .label (← item.getObjValAs? String "object")),
+    let base := [("object", Data.label (← item.getObjValAs? String "object")),
       ("method", .label (← item.getObjValAs? String "method")),
-      ("argument", ← decodeData Limits.dataDepth (← item.getObjVal? "argument"))])
+      ("argument", ← decodeData Limits.dataDepth (← item.getObjVal? "argument"))]
+    let spell := (item.getObjValAs? String "spell").toOption.getD ""
+    return .variant "proposal" (.record (if spelled then base ++ [("spell", .label spell)] else base))
   | _ => return .variant "unclear" (.record [("reasons", listData ((strings (item.getObjVal? "reasons").toOption).map Data.label))])
 
 /-- The response an `interpreted` entry resumes its `interpret` Plan with. -/
@@ -2501,13 +2564,17 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
     let argument ← liftEval (decodeData Limits.dataDepth raw)
     let method ← liftEval (verdict.getObjValAs? String "method")
     let target ← liftEval (verdict.getObjValAs? String "object")
-    respond bounds responseType "proposal" [.record [("object", .label target), ("method", .label method), ("argument", argument)]]
+    let spell := (verdict.getObjValAs? String "spell").toOption.getD ""
+    respond bounds responseType "proposal" ((proposalShapes target method argument spell).filterMap fun
+      | .variant _ payload => some payload
+      | _ => none)
   | "replied" =>
     respond bounds responseType "replied" [.record [("text", .label (← liftEval (verdict.getObjValAs? String "text")))]]
   | "proposals" =>
     let items ← liftEval ((← liftEval (verdict.getObjVal? "items")).getArr?)
-    let items ← liftEval (items.toList.mapM proposedData)
-    respond bounds responseType "proposals" [.record [("items", listData items)]]
+    let spelled ← liftEval (items.toList.mapM (proposedData · true))
+    let older ← liftEval (items.toList.mapM (proposedData · false))
+    respond bounds responseType "proposals" [.record [("items", listData spelled)], .record [("items", listData older)]]
   | _ =>
     let needs := strings (verdict.getObjVal? "needs").toOption
     respond bounds responseType "unclear" [.record [("needs", listData (needs.map Data.label))]]
@@ -3089,7 +3156,7 @@ def unclearVerdict (needs : List String) : Json :=
     method must be a method of the object, the argument (its text words read as cases) must conform
     to its input, and the suspended activity's response type must carry the proposal. -/
 def proposalVerdict (w : World) (target self : String) (obj : Object) (bounds : DataBounds) (responseType : Ty)
-    (method : String) (argument : Data) : World × Json := Id.run do
+    (method : String) (argument : Data) (card : String := target) : World × Json := Id.run do
   -- Another object will be called with it: only a method it offers.
   if target != self && !obj.offers method then return (w, unclearVerdict [s!"{method} is not a method {target} offers"])
   let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
@@ -3107,12 +3174,13 @@ def proposalVerdict (w : World) (target self : String) (obj : Object) (bounds : 
     | some dom => argument.conformsUnder compiledM.bounds dom
     | none => match argument with | .record [] => true | _ => false
   if !fits then return (w, unclearVerdict [s!"the argument does not fit the input of {method}"])
-  -- A proposal names the object whose form it fitted (`Interpreted.proposal {object, method, argument}`).
-  let carried := Data.variant "proposal" (.record [("object", .label target), ("method", .label method), ("argument", argument)])
-  unless carried.conformsUnder bounds responseType do
+  -- A proposal names the object whose form it fitted and the spell that asks it
+  -- (`Interpreted.proposal {object, method, argument, spell}`), so a card can hold it and print it back.
+  let spell := proposalSpell card method argument
+  unless (proposalShapes target method argument spell).any (·.conformsUnder bounds responseType) do
     return (w, unclearVerdict [s!"the object cannot carry a proposal of {target} {method}"])
   return (w, Json.mkObj [("tag", toJson "proposal"), ("object", toJson target), ("method", toJson method),
-    ("argument", dataJson argument)])
+    ("argument", dataJson argument), ("spell", toJson spell)])
 
 /-- What a model's text says to a suspended activity of the message dialect, fitted against the
     offered forms as a reply's spell is (WHOLENESS §2, "Interpretation"): a spell naming an offered
@@ -3209,7 +3277,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
                 match w.objects[target]? with
                 | none => pure (unclearVerdict [s!"there is no card {card}"])
                 | some targetObj =>
-                  let (w', v) := proposalVerdict w target object targetObj suspended.bounds responseType action argument
+                  let (w', v) := proposalVerdict w target object targetObj suspended.bounds responseType action argument card
                   w := w'
                   pure v
               | some (.error needs) => pure (unclearVerdict needs)
@@ -3218,9 +3286,9 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
               else Json.mkObj [("tag", toJson "unclear"), ("reasons", (item.getObjVal? "needs").toOption.getD (Json.arr #[]))])
           let verdict := Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)]
           -- An object whose Response has no `proposals` arm hears the first item, as before.
-          let carried := (items.toList.mapM proposedData).map fun ds =>
-            (Data.variant "proposals" (.record [("items", listData ds)])).conformsUnder suspended.bounds responseType
-          if carried.toOption == some true then return (w, verdict)
+          let carried := [true, false].any fun spelled => ((items.toList.mapM (proposedData · spelled)).map fun ds =>
+            (Data.variant "proposals" (.record [("items", listData ds)])).conformsUnder suspended.bounds responseType).toOption == some true
+          if carried then return (w, verdict)
           match items[0]? with
           | some first => return (w, if (first.getObjValAs? String "tag").toOption == some "proposal" then first
               else unclearVerdict (strings (first.getObjVal? "reasons").toOption))
@@ -3231,7 +3299,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
           -- another than the asking one (a directory offers its doors' forms).
           let target := if w.objects.contains card then card else resolveCard principal card
           let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
-          return proposalVerdict w target object targetObj suspended.bounds responseType action argument
+          return proposalVerdict w target object targetObj suspended.bounds responseType action argument card
         | some (.error needs) => return (w, unclearVerdict needs)
         | none => pure ()
         if (Data.variant "replied" (.record [("text", .label text)])).conformsUnder suspended.bounds responseType then

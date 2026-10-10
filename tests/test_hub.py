@@ -156,7 +156,7 @@ class Hub(test_chain.Chain):
         self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "unclear"), asked)
         [card] = [o["text"] for o in asked["receipt"]["offers"]]
         self.assertEqual(card, (
-            "hob: which bell should the rain fall on? The nearest:\n"
+            "hob: no door takes that as said. The nearest:\n"
             "GARDEN · 1 planted, newest garden/bell/1\n"
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n"))
@@ -193,7 +193,7 @@ class Hub(test_chain.Chain):
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
         [card] = [o["text"] for o in missed["receipt"]["offers"]]
         self.assertEqual(card, (
-            "hob: garden rain is not one of the offered actions The nearest:\n"
+            "hob: no door takes that as said. The nearest:\n"
             "GARDEN · 0 planted\n"
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n"))
@@ -210,8 +210,9 @@ class Hub(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_hobs_ask_is_the_menu_pruned_to_the_doors_the_reply_named(self):
-        """hob asks once: `hob: {question} The nearest:` over the doors whose words, actions or
-        fields the reply touched (all when none), to type from. No second attempt follows."""
+        """hob asks once: VOICE's fixed line (never the model's question, which may carry its
+        reasoning: playtest 68746) over the doors whose words, actions or fields the reply touched
+        (all when none), to type from. No second attempt follows."""
         self.policy()
         self.directory("policy")
         self.greet(KIMI)
@@ -220,7 +221,7 @@ class Hub(test_chain.Chain):
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
         [card] = [o["text"] for o in missed["receipt"]["offers"]]
         self.assertEqual(card, (
-            "hob: how often? The nearest:\n"
+            "hob: no door takes that as said. The nearest:\n"
             "TIDE\n"
             "  delvetalk tide subscribe / every: 3 / note: first light\n"
             "  delvetalk tide tick\n"
@@ -229,7 +230,7 @@ class Hub(test_chain.Chain):
         # A reply naming the garden's planting and the anthology gets those two branches.
         self.assertEqual(self.say("I would plant a line in the anthology", KIMI, uri="at://x/post/2")["status"], "suspended")
         two = [o["text"] for o in self.interpret("ask: which?")["receipt"]["offers"]][0]
-        self.assertEqual([l for l in two.split("\n") if l and not l.startswith(" ")][:3], ["hob: which? The nearest:", "GARDEN · 0 planted", "ANTHOLOGY"])
+        self.assertEqual([l for l in two.split("\n") if l and not l.startswith(" ")][:3], ["hob: no door takes that as said. The nearest:", "GARDEN · 0 planted", "ANTHOLOGY"])
 
     def test_several_spells_in_one_reply_each_run_in_order_with_its_result(self):
         """docs/MENU.md §2.2: the model answers each spell a reply holds, one per line starting
@@ -384,6 +385,7 @@ class HandedToTheDirectory(test_chain.Chain):
                                      "raw": "delvetalk bell rain\ntext: " + lines[who][:100]})
             [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
             self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+            self.assertEqual(settled["receipt"]["outcome"]["verdict"]["spell"], "delvetalk bell rain\ntext: " + lines[who][:100])
             # Rehearsal run 7, finding 1: the offer names the post the author replied to, through the hand-off.
             asked = r["receipt"]["identity"]["intent"]
             [offer] = [o for o in self.host.send(op="world-offers", principal=who)["offers"] if o["from"]["post"] == asked and o["identity"]["intent"] != asked]
@@ -391,6 +393,24 @@ class HandedToTheDirectory(test_chain.Chain):
         self.assertEqual([(get(r, "author")["value"], get(r, "text")["value"]) for r in rows(get(self.state("bell"), "rains"))],
                          [(KIMI, lines[KIMI][:100]), (GLM, lines[GLM][:100])])
         self.assertEqual(rows(get(self.state("anthology"), "lines")), [])
+
+    def test_prose_that_reached_no_one_handed_on_is_not_addressed_at_the_directory(self):
+        """The objects lane's hand-on: the bell's quiet prose is sent to the directory; when the words
+        reached no one (no reach stated) the directory hears it silent and no model is asked."""
+        self.policy()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(r["status"], "created", r)
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        r = self.turn("bell", "receive", record(text=label(post("3mxghjyx4pk2f")), post=label("at://x/3mxghjyx4pk2f")), principal=KIMI)
+        self.assertEqual(r["status"], "admitted", r)
+        # The hand-on is delivered within the turn: the directory hears it silent, asking no one.
+        [handed] = r["delivered"]
+        self.assertEqual((handed["status"], handed["result"]["label"], handed["receipt"]["delivery"]["from"]["intent"]),
+                         ("admitted", "silent", r["receipt"]["identity"]["intent"]), handed)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        self.assertEqual(self.host.send(op="world-status")["hour"]["interpretations"], 0)
 
 
 class HandedOnToHob(test_chain.Chain):
@@ -456,7 +476,7 @@ class HandedOnToHob(test_chain.Chain):
         asked = self.settle("ask: rain on it, or ring it?")
         self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "unclear"), asked)
         [card] = [o["text"] for o in asked["receipt"]["offers"]]
-        self.assertEqual(card, "hob: rain on it, or ring it?\n\n    delvetalk bell rain\n    text: <text, 1 to 120 characters>\n", card)
+        self.assertEqual(card, "hob: not a spell as said; the spell is below.\n\n    delvetalk bell rain\n    text: <text, 1 to 120 characters>\n", card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_hob_at_the_root_is_offered_each_doors_forms_and_no_helper_or_protocol_method(self):
@@ -499,12 +519,14 @@ class HandedOnToHob(test_chain.Chain):
         [pending] = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual({o["card"] for o in pending["offers"]}, {"garden/bell/1"}, pending["offers"])
         self.assertEqual(self.settle("none")["result"]["label"], "silent")
-        # The same words under the hub are offered every door's forms (the garden's plant), not the bell's.
+        # The same words under the hub are offered every door's forms and the first card's under each
+        # (the garden's plant and the bell's rain: the arc the menu prints).
         self.greeted()
         hub = self.root("Could I rain on the lighthouse bell?", "h2")
         self.assertEqual(hub["status"], "suspended", hub)
         [pending] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual({(o["card"], o["action"]) for o in pending["offers"]}, {("garden", "plant"), ("garden", "cistern"), ("garden", "byColour")}, pending["offers"])
+        self.assertEqual({(o["card"], o["action"]) for o in pending["offers"]}, {("garden", "plant"), ("garden", "cistern"), ("garden", "byColour"),
+                                                                                 ("garden/bell/1", "rain"), ("garden/bell/1", "strike"), ("garden/bell/1", "ring")}, pending["offers"])
 
     def test_the_owners_door_actions_are_offered_to_the_planter_alone(self):
         """Rehearsal run 11, finding 1: a bell's `door {label, to}` form, its planter's, was the only

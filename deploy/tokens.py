@@ -82,9 +82,9 @@ def extras(m, cap):
     from deploy import genesis
     from deploy.genesis import lab, lst, rec, ref
     from deploy.seed import create
-    from transport.hostproc import HostClient
+    from transport.host import HostClient
     cap.say('## town')
-    made = create(HostClient(cap.sock), m.OPENER, 'yard', 'Place', 'tokens-yard',
+    made = create(HostClient(cap.root), m.OPENER, 'yard', 'Place', 'tokens-yard',
                   rec(owner=lab(m.OPENER), name=lab('The moss yard'), description=lab('A quiet yard behind the gate.'),
                       exits=lst(rec(label=lab('garden'), to=ref('garden')))), genesis.PLACE_LAW)
     print('place:', made.get('status'), made.get('message') or '', file=sys.stderr)

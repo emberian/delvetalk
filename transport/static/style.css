@@ -217,3 +217,4 @@ dd > ol { padding-left: 1.75rem; }
   .card { font-size: 12.5px; }
   dl { grid-template-columns: 1fr; }
 }
+hr.root { border: 0; border-top: 6px solid var(--terracotta); margin: 1rem 0; }  /* the hand's root page: a red rule across the top */

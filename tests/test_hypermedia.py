@@ -21,8 +21,8 @@ from tests.test_chain import garden_state, town_kinds
 from tests.test_http import PEOPLE, REPL_COUNTER, FrontCase, StubHost
 import transport.http
 from transport import delve, identity
-from transport.hostproc import HostClient
-from transport.http import CATALOGUE, ERRORS, GUIDE, REFUSALS, Front
+from transport.host import HostClient
+from transport.http import CATALOGUE, ERRORS, EXAMPLES, GUIDE, REFUSALS, Front
 from tests.test_turn_world import closure
 
 LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 implies request.subject == "ember"\n'
@@ -352,6 +352,13 @@ class Catalogue(unittest.TestCase):
         return r.status, dict(r.getheaders()), data
 
 
+    def test_the_login_routes_are_in_the_catalogue_and_options_describes_them(self):
+        for path, name in (('/oauth/start', 'oauthStart'), ('/oauth/callback', 'oauthCallback'), ('/oauth/client-metadata.json', 'oauthClient')):
+            s, h, raw = self.call('OPTIONS', path)
+            self.assertEqual((s, [e['name'] for e in json.loads(raw)['routes']], h['Allow']), (200, [name], 'GET, OPTIONS'), path)
+        count = re.match(r'# DelveTalk: (\w+) worked sessions', EXAMPLES.read_text())[1]  # the examples page names its own count
+        self.assertTrue(next(e['does'] for e in CATALOGUE if e['name'] == 'examples').startswith(count + ' worked sessions'))
+
     def test_the_catalogue_is_served_as_data_and_the_guide_links_to_it(self):
         s, h, raw = self.call('GET', '/AGENTS.md/api')
         api = json.loads(raw)
@@ -379,11 +386,13 @@ class Catalogue(unittest.TestCase):
         self.assertEqual(set(listed.split(', ')), clauses)
 
 
-    def test_the_guides_class_tables_are_the_catalogues(self):
-        guide = GUIDE.read_text()
-        rows = set(re.findall(r'^\| ([a-zA-Z, ]+?) \|', guide, re.M))
-        documented = {c.strip() for row in rows for c in row.split(',')}
-        self.assertLessEqual(set(REFUSALS) - {'duplicateIdentity'}, documented)
+    def test_every_class_the_guide_names_is_the_catalogues(self):
+        guide = GUIDE.read_text()  # no class tables since the rewrite: the catalogue is the list, the guide names a few
+        shown = set(re.findall(r'"class": "(\w+)"', guide))
+        transient = set(re.findall(r'`(\w+)`', re.search(r'((?:`\w+`(?:, | and |,\s+))+`\w+`) are transient', guide)[1]))
+        self.assertTrue(shown and transient, (shown, transient))
+        self.assertLessEqual(shown, set(REFUSALS) | set(ERRORS))
+        self.assertEqual({c for c in transient if REFUSALS.get(c, {}).get('transient')}, transient)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,51 @@
 # Objects handoff
 
+## lane/rewrite5 (2026-10-11): the neutral half of 4b; the garden as a seed parked
+
+The owner put the town picture on hold ("when we reconsidered the metaobjects we should also reconsider the
+metaphysics"): no garden as a seed, scene body, genesis table, seed posts or previews until that lands.
+
+Landed here (metaphysics-neutral):
+
+- **hob never prints the model's words** (cracks R2, playtest 68746). `Card.Hob.ask {needs}` keeps only the
+  offered fields a need names as a word (`Card.fieldNeeds`); the lines are VOICE's: a card's ask `hob: still
+  needs {fields}; the spell is below.` or `hob: not a spell as said; the spell is below.` over its first spell;
+  the root's `hob: no door takes that as said. The nearest:` (or `…; still needs {fields}. The nearest:`); the
+  escalation copy `{name} said: {words}; hob found no spell in it ({card}).`
+- **hob at the root is offered the first card under each door too** (`Mentions.doorForms`: a bell's rain).
+- **WATCH's spells** (GROUND §6 change 5) on the Wake: `writes / object / field / above`, `grows`, `turns`,
+  `rows / object / field / where / count` (`where` one `column op value` line: `=`, `>`, `<`, `has`; blank
+  for every row; anything else `refused badWhere`), `remind / at / every` (a schedule that notes the owner).
+  Form field names must be lower case: the host folds a spell's field names (5.119), so `atLeast` could never
+  be typed. The rename to WATCH and `do: say` wait: arrival names the Wake module, and `say` needs a place.
+- **`Kind.makeUnder` judges text fields against its form** (`Forms.fault`: `missing`, `badValue` with the
+  host's readings), so a place handing text cannot seed a value outside the form. Forms' generators take
+  the form's action (`<action><Field>Text`), for verbs other than `make`.
+
+Parked on `lane/rewrite5-garden` (3a12ac9, red, not for merge): the garden as a PLACE seed. Place gains
+`verbs` {action, kind, done} and `head` (owner text with holes); `shape` writes one form per verb with exactly
+its kind's fields, or one `make` that needs only its own kind's fields (completed in `receive`, which closes
+4a's finding); the garden's word handling on Place (held spells completed by their missing lines, no, macros,
+misfits, merge, hob with the newest made thing's forms, a proposal run by a call to the card it names, the
+place's own included); genesis `garden_seed`; tests/test_garden.py green, about half the other test files
+migrated. Before it can land: `Place.obend` is 51,672 bytes, past the 32 KiB bound a reprogram is held to, so
+the layer generator goes to a library (Forms) and the word handling to Card; Kind's closure (Kind, Record,
+Place) is near the 256 generic instances (`Generics.maxInstances`): every new type a Place helper maps over
+costs one, so Place uses `Spell.Binding` and `Forms.Spec` rather than new row types. An asked-first proposal
+cannot be held for yes: its argument is Data, which Bend cannot print or keep as text. Host: the proposal
+carries its spell text (then Card holds it and renders `hob: I read that as`; cracks L1).
+
+Open, found here:
+
+- **The hand-on still costs a model call** (4a's finding): a `call` keeps the turn's reach but hob's wait
+  cannot run inside one ("a wait inside a call is not supported"). Host: a delivery keeps the reach of the
+  turn that sent it. Check: the parked tests/test_garden.py `HandOn`, an expected failure.
+- **Methods without input accept any field** (cracks): decide with the host lane whether `input: {}` refuses
+  a field (`typeMismatch`); then every no-input method takes `{}` and test_principal's `ignored` flips.
+- **An avatar keeps its first handle** after a second arrival under a new one (cracks): with THING.
+- rehearsal/rehearse.py reads the garden's `children`; with the parked garden it is `made` ({object, kind, n})
+  and `count` (rehearsal lane).
+
 ## The cut in progress (lane/rewrite, 2026-10-10 evening; docs/CATALOGUE.md §5)
 
 Done, each green on hbox (1261 tests, 0 failed) with pins re-recorded:

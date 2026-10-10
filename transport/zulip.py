@@ -13,6 +13,7 @@ import argparse
 import configparser
 import hashlib
 import json
+import os
 import re
 import sys
 import urllib.parse
@@ -263,6 +264,7 @@ def main(argv=None, out=None, transport=http_transport):
     p.add_argument('--object', help='the object the post addresses: world-posted is called for it')
     p.add_argument('--slot', metavar='PRINCIPAL:INTENT')
     p.add_argument('--host-socket', metavar='PATH')
+    p.add_argument('--world', default=os.environ.get('DELVETALK_WORLD', 'town'))
     a = ap.parse_args(argv)
     try:
         client = Client(a.zuliprc, transport)
@@ -271,8 +273,8 @@ def main(argv=None, out=None, transport=http_transport):
             ob.poll()
             ob.drain(lambda js: (out.write(js + '\n'), out.flush()))
             return 0
-        from transport.hostproc import HostClient
-        host = HostClient(a.host_socket) if a.host_socket else None
+        from transport.host import HostClient
+        host = HostClient(a.host_socket, a.world) if a.host_socket else None
         if a.object and not host:
             raise Failure('record_needs_journal')
         text = Path(a.text_file).read_text().replace('<bot name>', client.me()['full_name'])  # a card may name the bot it is posted by

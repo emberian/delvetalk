@@ -5,9 +5,9 @@
         --channel ring --zuliprc ~/.zuliprc-ring
 
 Writes `<state>/bridges/<world>.json`, one file per world: {world, transport, realm, channel, zuliprc, topicMode}.
-Starts nothing. Until the host's `serve` lands (one host over a directory of named journals), each world runs on
-today's hostd of its own, under `<state>/worlds/<world>/`; the printed commands start that hostd, the world's bridge
-and its interpreter. Genesis and the welcome are the operator's next step (docs/GENESIS.md).
+Starts nothing. One `serve` holds every world's journal (`<state>/<world>.journal`, opened at the world's first op);
+the printed commands start the world's bridge and interpreter, each over serve's socket with `--world <world>` and its
+own transport state under `<state>/worlds/<world>/`. Genesis and the welcome are the operator's next step (docs/GENESIS.md).
 """
 import argparse
 import json
@@ -34,14 +34,14 @@ def row(a):
 
 
 def commands(state, r):
-    """Today's start: one hostd per world, its bridge and its interpreter, each with the world's own state."""
-    home = Path(state) / 'worlds' / r['world']
+    """The world's bridge and interpreter on serve's socket, each with the world's own transport state."""
+    home, sock = Path(state) / 'worlds' / r['world'], Path(state) / 'host.sock'
     q = lambda p: shlex.quote(str(p))
     source = (f" --source zulip --zuliprc {q(r['zuliprc'])} --stream {q(r['channel'])}" + (f" --topic {q(r['topic'])}" if r.get('topic') else '')
               if r['transport'] == 'zulip' else ' --observe')
-    return [f'python3 -m transport.hostd --state {q(home)} --journal {q(home / "world.journal")} &',
-            f'python3 -m transport.bridge run --state {q(home)}{source} --poll 60 &',
-            f'python3 -m transport.interpret run --state {q(home)} --poll 60 &']
+    on = f'--host-socket {q(sock)} --world {q(r["world"])}'
+    return [f'python3 -m transport.bridge run --state {q(home)} {on}{source} --poll 60 &',
+            f'python3 -m transport.interpret run --state {q(home)} {on} --poll 60 &']
 
 
 def main(argv=None, out=None):

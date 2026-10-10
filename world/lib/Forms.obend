@@ -1,6 +1,7 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Text.obend as Text
+import ./Rows.obend as Rows
 # The make form of a kind, as data and as the source of a layer (docs/CATALOGUE.md section 3):
 # a kind's `form` is one `name: kind` line a field, and the layers a kind and a place graft on
 # themselves are generated from those lines. Pure; KIND and PLACE import it.
@@ -25,17 +26,18 @@ def upper(c: String) -> String:
   if at == 26n then c else textTake(textDrop("ABCDEFGHIJKLMNOPQRSTUVWXYZ", at), 1n)
 def capital(name: String) -> String:
   "{upper(textTake(name, 1n))}{textDrop(name, 1n)}"
-# The value a field gives as text, in the generated make.
-def valueExpr(spec: Spec) -> String:
-  if isChoice(spec.kind) then "make{capital(spec.name)}Text(input.{spec.name})" else if isNatural(spec.kind) then "natText(input.{spec.name})" else "input.{spec.name}"
-def fieldsExpr(items: Lists.List<Spec>) -> String:
+# The value a field of the form `action` gives as text, in a generated method: a choice's case
+# by its converter (the form block names its sum <Action><Field>), a number as digits.
+def valueExpr(action: String, spec: Spec) -> String:
+  if isChoice(spec.kind) then "{action}{capital(spec.name)}Text(input.{spec.name})" else if isNatural(spec.kind) then "natText(input.{spec.name})" else "input.{spec.name}"
+def fieldsExpr(action: String, items: Lists.List<Spec>) -> String:
   match items:
     case nil(_): "Lists.List.nil()"
-    case cons(c): "Lists.List.cons({{head: {{name: \"{c.head.name}\", value: {valueExpr(c.head)}}}, tail: {fieldsExpr(c.tail)}}})"
-def converter(spec: Spec) -> String:
-  if isChoice(spec.kind) then choiceConverter(capital(spec.name), textJoin(Lists.map(split(spec.kind, "|"), caseLine), "")) else ""
-def choiceConverter(name: String, cases: String) -> String:
-  "def make{name}Text(c: Make{name}) -> String:\n  match c:\n{cases}"
+    case cons(c): "Lists.List.cons({{head: {{name: \"{c.head.name}\", value: {valueExpr(action, c.head)}}}, tail: {fieldsExpr(action, c.tail)}}})"
+def converter(action: String, spec: Spec) -> String:
+  if isChoice(spec.kind) then choiceConverter(action, capital(spec.name), textJoin(Lists.map(split(spec.kind, "|"), caseLine), "")) else ""
+def choiceConverter(action: String, name: String, cases: String) -> String:
+  "def {action}{name}Text(c: {capital(action)}{name}) -> String:\n  match c:\n{cases}"
 def caseLine(option: String) -> String:
   let o = Text.trim(option)
   "    case {o}(_): \"{o}\"\n"
@@ -50,3 +52,43 @@ def sound(spec: Spec) -> Bool:
   textLength(spec.name) > 0n && textSpan(textTake(spec.name, 1n), letters()) == 1n && textSpan(spec.name, "{letters()}0123456789") == textLength(spec.name) && textSpan(spec.kind, "{letters()}0123456789 .|") == textLength(spec.kind)
 def letters() -> String:
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+# Fields given as text, judged against a form as the host judges a spell (a kind's makeUnder:
+# a place hands it text): the first field the form takes that is missing, outside its bounds,
+# or not one of its options, by the host's clause; fields the form does not take are not read.
+record Fault:
+  clause: String
+  reading: String
+def fault(form: String, fields: Lists.List<Rows.Field>) -> Lists.Maybe<Fault>:
+  firstFault(specs(form), fields)
+def firstFault(items: Lists.List<Spec>, fields: Lists.List<Rows.Field>) -> Lists.Maybe<Fault>:
+  match items:
+    case nil(_): Lists.Maybe.none({})
+    case cons(c): faultOr(specFault(c.head, fields), c.tail, fields)
+def faultOr(found: Lists.Maybe<Fault>, rest: Lists.List<Spec>, fields: Lists.List<Rows.Field>) -> Lists.Maybe<Fault>:
+  match found:
+    case some(_): found
+    case none(_): firstFault(rest, fields)
+def specFault(spec: Spec, fields: Lists.List<Rows.Field>) -> Lists.Maybe<Fault>:
+  match Lists.find(fields, fn(f: Rows.Field) -> Bool: f.name == spec.name):
+    case none(_): Lists.Maybe.some({value: {clause: "missing", reading: "Still needs {spec.name}."}})
+    case some(f): valueFault(spec, f.value.value)
+def valueFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
+  if isChoice(spec.kind) then choiceFault(spec, value) else if isNatural(spec.kind) then naturalFault(spec, value) else if Text.starts(spec.kind, "text") then textFault(spec, value) else Lists.Maybe.none({})
+def options(kind: String) -> Lists.List<String>:
+  Lists.map(split(kind, "|"), Text.trim)
+def choiceFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
+  let listed = textJoin(options(spec.kind), ", ")
+  if Lists.any(options(spec.kind), fn(o: String) -> Bool: o == value) then Lists.Maybe.none({}) else bad("{spec.name} is one of: {listed}")
+def bad(reading: String) -> Lists.Maybe<Fault>:
+  Lists.Maybe.some({value: {clause: "badValue", reading: reading}})
+# A kind's bounds, `text 1..80` or `natural 0..9`: the low and the high end.
+def range(kind: String) -> String:
+  Text.trim(textDrop(kind, textBreak(kind, " ")))
+def low(kind: String) -> Nat:
+  Text.digits(textTake(range(kind), textBreak(range(kind), "..")), 0n)
+def high(kind: String) -> Nat:
+  Text.digits(textDrop(range(kind), textBreak(range(kind), "..") + 2n), 0n)
+def textFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
+  if textLength(value) < low(spec.kind) || textLength(value) > high(spec.kind) then bad("{spec.name} is {natText(low(spec.kind))} to {natText(high(spec.kind))} characters; this one is {natText(textLength(value))}.") else Lists.Maybe.none({})
+def naturalFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
+  if textLength(value) == 0n || textSpan(value, "0123456789") != textLength(value) || Text.digits(value, 0n) < low(spec.kind) || Text.digits(value, 0n) > high(spec.kind) then bad("{spec.name} is a number from {natText(low(spec.kind))} to {natText(high(spec.kind))}.") else Lists.Maybe.none({})

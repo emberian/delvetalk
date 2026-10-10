@@ -335,7 +335,7 @@ def interpreted(input: Card.Reply, policy: Policies.State, misfit: String, found
   match world.interpret::<Planting>(Card.interpretation(input.text, offers(context), state.policy, heldLine(found), misfit)):
     case proposal(p): settled(p.argument.colour, p.argument.seed, input.post, confirmsPlant(policy, state), found, context, state)
     case proposals(p): firstPlanting(Lists.at(p.items, 0n), input, policy, found, context, state)
-    case unclear(u): hobbed(Card.hobNeeds(u.needs), input, policy, context, state)
+    case unclear(u): hobbed(Card.hobNeeds(u.needs, offers(context)), input, policy, context, state)
     case replied(r): hobbed(Card.hobSaid(r.text), input, policy, context, state)
     case timedOut(_): refused(Why.senseless({}), found)
     case denied(_): refused(Why.policy({}), found)
@@ -344,7 +344,7 @@ def hobbed(hob: Card.Hob, input: Card.Reply, policy: Policies.State, context: Ab
   Card.hobbed(hob, policy, input.text, context, offers(context), render(state, context), hobReply(hob))
 def hobReply(hob: Card.Hob) -> Reply:
   match hob:
-    case ask(a): Reply.unclear({needs: Card.one(a.question)})
+    case ask(a): Reply.unclear({needs: a.needs})
     case card(_): Reply.shown({})
     case none(_): Reply.silent({})
 # What hob is shown of the planting held for the speaker ("" for none).
@@ -360,7 +360,7 @@ def firstPlanting(item: Lists.Maybe<World.Proposed<Planting>>, input: Card.Reply
 def plantingItem(item: World.Proposed<Planting>, input: Card.Reply, policy: Policies.State, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   match item:
     case proposal(p): settled(p.argument.colour, p.argument.seed, input.post, confirmsPlant(policy, state), found, context, state)
-    case unclear(u): hobbed(Card.hobNeeds(u.reasons), input, policy, context, state)
+    case unclear(u): hobbed(Card.hobNeeds(u.reasons, offers(context)), input, policy, context, state)
 def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.Document:
   Document.text("✾ THE NIGHT GARDEN\n\n{Card.name(context.principal, context)}, I understood this:\n\n{spell(context.object, seed, colour)}\nReply yes or correct it.\n")
 # A planting either waits for the speaker's yes (an understood one the garden or the policy

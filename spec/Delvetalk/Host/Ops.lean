@@ -49,15 +49,19 @@ def boundedText (what : String) (cap : Nat) (s : String) : Except String String 
     activity calls. No object may take it. -/
 def worldId : String := "world"
 
+/-- The card name `delvetalk objects ?` answers: the cards the asker may read, by prefix
+    (docs/METAPHYSICS.md §5). No object takes the id. -/
+def objectsCard : String := "objects"
+
 /-- An object id a creation may take: 1..128 bytes of `Limits.nameAlphabet` (ASCII letters, digits and
     `. _ : / -`), the rule the spell grammar reads a card name by, so every object can be spelled and
     has an AT record key (`~` stands for `/` there). Journals with other ids still replay; only new
     creations are held to it. -/
 def validObjectId (id : String) : Bool :=
-  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId &&
+  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId && id != objectsCard &&
     id.toList.all fun (c : Char) => Limits.nameAlphabet.toList.contains c
 
-def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world"
+def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world or objects"
 
 /-- The public reader's name: `anonymous`, or the empty string; both read as "". -/
 def publicReader : String := "anonymous"
@@ -1833,6 +1837,48 @@ def keysChangedSince (w : World) (id : String) (seen : Nat) (d : RelDecl) : Opti
     | some (.retract key) => (keyAsDeclared d key).toOption
     | _ => none
 
+/-- The changes an entry at `height` makes (`World.changes`): an admitted entry's creations (version 0)
+    then its writes, a `created` entry's object. -/
+def changesOf (height : Nat) (entry : Json) : Array Change :=
+  let principal := ((entry.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let rows := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+  let change := fun (id : String) (version : Nat) => ({ height, object := id, version, principal } : Change)
+  match (outcome.getObjValAs? String "tag").toOption.getD "" with
+  | "admitted" =>
+    let writes := (rows "writes").filterMap fun x => do
+      return change (← (x.getObjValAs? String "object").toOption) (← (x.getObjValAs? Nat "version").toOption)
+    let creates := (rows "creates").filterMap fun x => do
+      let id ← (x.getObjValAs? String "object").toOption
+      if writes.any (·.object == id) then none else some (change id 0)
+    creates ++ writes
+  | "created" => ((outcome.getObjValAs? String "object").toOption.map fun id => #[change id 0]).getD #[]
+  | _ => #[]
+
+/-- The newest change of each object `reader` may read under `prefix` since `since` (heights above it),
+    newest first, after the row of `after` when one is named; at most `Limits.listPage`, and whether
+    more follow. Walks `World.changes` from the newest back to `since`. -/
+def changedSince (w : World) (reader : String) (since : Nat) (pfx after : String) : List Change × Bool := Id.run do
+  let mut seen : Std.HashSet String := {}
+  let mut started := after.isEmpty
+  let mut out : Array Change := #[]
+  let mut i := w.changes.size
+  while i > 0 do
+    i := i - 1
+    let c := w.changes[i]!
+    if c.height ≤ since then break
+    if seen.contains c.object then continue
+    seen := seen.insert c.object
+    if !started then
+      if c.object == after then started := true
+      continue
+    unless c.object.startsWith pfx do continue
+    let some o := w.objects[c.object]? | continue
+    unless o.read.permits reader do continue
+    if out.size == Limits.listPage then return (out.toList, true)
+    out := out.push c
+  return (out.toList, false)
+
 /-- The index entries an admitted entry adds (`World.touches`), from its `writes`. -/
 def touchesOf (entry : Json) : List (String × Touch) :=
   let ws := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
@@ -2217,7 +2263,9 @@ def recordActs (w : World) (entry : Json) : World := Id.run do
     | "state" | "owner" =>
       -- A root write of state is a write whose edits nobody knows: a root read before it is stale.
       if let .ok v := outcome.getObjValAs? Nat "version" then
-        w := { w with touches := w.touches.insert id ((w.touches.getD id #[]).push { version := v, edits := none }) }
+        w := { w with touches := w.touches.insert id ((w.touches.getD id #[]).push { version := v, edits := none }),
+                      changes := w.changes.push { height := w.height, object := id, version := v,
+                                                  principal := (entry.getObjVal? "identity" >>= (·.getObjValAs? String "principal")).toOption.getD "" } }
     | _ => pure ()
   | _ => pure ()
   return w
@@ -2312,7 +2360,8 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
     touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched
     subscriptions := subscriptionsAfter w entry
     touches := if tagOf entry != "admitted" then w.touches else
-      (touchesOf entry).foldl (fun t (id, x) => t.insert id ((t.getD id #[]).push x)) w.touches }
+      (touchesOf entry).foldl (fun t (id, x) => t.insert id ((t.getD id #[]).push x)) w.touches
+    changes := w.changes ++ changesOf (w.height + 1) entry }
 
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   recordActs (recordCore w entry key touch) entry

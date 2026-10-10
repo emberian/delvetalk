@@ -10,8 +10,8 @@ each test is named as a sentence of what the software does.
 
 `DELVETALK_OBEND` names the host binary. `tests/run.py` runs each class in its own process (a class
 declaring `independent = True` and measured over 8 s is dealt into chunks); `tests/host.py` holds the
-fixtures: `HostCase` (one process per class, a fresh unsynced journal per test), `HostdCase` (one hostd
-per class; test_http's `FrontCase` takes `fresh_world` for a hostd per test), `check` (the run's shared stateless process). [PROFILE.md](PROFILE.md) is the measurement
+fixtures: `HostCase` (one process per class, a fresh unsynced journal per test), `HostdCase` (one `serve`
+per class, `host` its public socket and `root` the opener's; test_http's `FrontCase` takes `fresh_world` for a `serve` per test), `check` (the run's shared stateless process). [PROFILE.md](PROFILE.md) is the measurement
 that shaped them.
 
 ## Properties and scenarios
@@ -123,24 +123,24 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 
 ## Transport
 
-The Python around one hostd, which carries bytes and credentials and decides nothing: the bridge, the HTTP front, the repository, Zulip, genesis.
+The Python around one `serve`, which carries bytes and credentials and decides nothing: the bridge, the HTTP front, the repository, Zulip, genesis.
 
 - `test_bridge` (§7): The bridge turns observed posts into turns in creation order, routes a reply by its nearest recorded ancestor, and drafts each offer once, never posting.
-- `test_genesis` (§7, §11): Genesis seeds the town's world once through a real hostd: every door resolves, the opener's handle shows, and the door pages are published.
+- `test_genesis` (§7, §11): Genesis seeds the town's world once through a real `serve`'s root socket: every door resolves, the opener's handle shows, and the door pages are published.
 - `test_hand` (§7): The owner's console at /hand/ over a real front, with a stub host and a stub poster.
-- `test_hostd` (§7): hostd is the one writer: a private socket, one lock, concurrent clients in one chain, a respawned host replaying to the same receipts, private heaps and the sealed library.
-- `test_http` (§7): The agent API at /AGENTS.md over a real hostd: handle-claim login, turns and receipts, the REPL, private heaps, pages for people, limits.
+- `test_serve` (§7): `delvetalk-obend serve` is the one writer of a directory of worlds: two private sockets, one lock, concurrent clients in one chain, a restart replaying to the same receipts, named worlds, private heaps, the sealed library, and the opener and root ops on the root socket only.
+- `test_http` (§7): The agent API at /AGENTS.md over a real `serve`: handle-claim login, turns and receipts, the REPL, private heaps, pages for people, limits.
 - `test_hypermedia` (§7): A stranger acts from the replies alone: every JSON reply carries `_links`, `_actions` are projected from the host's method table and forms, every error is a named envelope, and the front survives bursts, stalls and malformed input.
 - `test_model` (§6): The model client and interpreter: replies parsed, each pending interpretation asked once and settled verbatim, failures retried with backoff, credentials never shown.
 - `test_oauth` (§7 Authentication): Log in with delve.town against a fake PDS and authorization server over loopback: PAR with PKCE and DPoP, the nonce, a wrong `sub`, a late or replayed state.
 - `test_pages` (§7): Every route a browser reaches is a page in the theme; JSON stays JSON for agents.
 - `test_publish` (§5, §7): A published page reaches the outbox as a draft, is recorded when posted, and a merge reply to it routes back to its object.
-- `test_repo` (§2 Journal, §7): The journal as a read-only AT Protocol repository over a real hostd: records by slug and CID agree with the host, blocks hash to their CIDs, private records stay private.
+- `test_repo` (§2 Journal, §7): The journal as a read-only AT Protocol repository over a real `serve`: records by slug and CID agree with the host, blocks hash to their CIDs, private records stay private.
 - `test_ring_harvest` (§11): `deploy/ring/harvest.py` reads the front's access log.
 - `test_spend` (§6): The spend report totals a month of model calls and the grant left.
 - `test_theme` (site): Both palettes pass WCAG AA, the site carries the front's palette, a receipt's fate is a word and an icon.
 - `test_transport` (§7): Observation, identity and posting: posts classified, observed once, bounded; a handle claimed by a posted word; replies threaded and gated behind the posting flag.
-- `test_zulip` (§7): The Zulip playtest transport against a fake Zulip and a real hostd: topics route as threads, no hourly cap applies (delve.town's quota is not Zulip's), the welcome (`zulip-welcome-v3.txt`) is recorded.
+- `test_zulip` (§7): The Zulip playtest transport against a fake Zulip and a real `serve`: topics route as threads, no hourly cap applies (delve.town's quota is not Zulip's), the welcome (`zulip-welcome-v3.txt`) is recorded.
 
 ## Rehearsal
 

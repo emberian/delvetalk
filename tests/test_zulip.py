@@ -16,13 +16,12 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from tests.host import serve, start_hostd, stop_hostd
+from tests.host import serve, served
 from tests.test_bridge import CARD, OFFERING
-from tests.test_http import BINARY
 from tests.test_turn_world import nat, record
 from transport import bridge, zulip
-from transport.hostproc import HostClient
-from tests.test_reflection import LIBRARY
+from transport.host import HostClient
+from deploy.serve import LIBRARY
 
 OPENER = 'did:plc:' + 'o' * 24
 BOT = {'user_id': 99, 'full_name': 'Delve Bot', 'email': 'bot@zulip.test'}
@@ -120,13 +119,13 @@ class ZulipCase(unittest.TestCase):
         self.addCleanup(self.zulip.close)
         self.rc = root / 'zuliprc'
         self.rc.write_text(f'[api]\nemail={BOT["email"]}\nkey={KEY}\nsite=http://127.0.0.1:{self.zulip.server.server_port}\n')
-        self.hostd = start_hostd(str(root / 'hostd'), BINARY, opener=OPENER, library=LIBRARY)
-        self.addCleanup(stop_hostd, self.hostd)
-        self.sock = root / 'hostd' / 'host.sock'
-        self.host = HostClient(self.sock)
+        self.hostd = served(str(root / 'hostd'), opener=OPENER, library=LIBRARY)
+        self.addCleanup(self.hostd.stop)
+        self.sock = self.hostd.sock
+        self.host, self.root = HostClient(self.sock), HostClient(self.hostd.root)
         for name in ('garden-1', 'directory'):
             body = OFFERING.replace('"hello "', f'"{name} says "')
-            r = self.host.send({'op': 'world-create', 'principal': OPENER, 'identity': 'mk-' + name, 'object': name,
+            r = self.root.send({'op': 'world-create', 'principal': OPENER, 'identity': 'mk-' + name, 'object': name,
                                 'modules': [{'name': 'Echo', 'source': CARD % ('', body)}], 'entry': 'initial', 'seed': record(seen=nat(5))})
             self.assertEqual(r['status'], 'created', r)
 
@@ -183,9 +182,9 @@ class Bridging(ZulipCase):
         self.assertEqual(len(got['posted']), 2, got)
         mine = self.zulip.mine()
         self.assertEqual(sorted(m['subject'] for m in mine), ['alice garden', 'bob garden'])
-        self.assertTrue(all(f"garden-1 says zulip:127.0.0.1:{ {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]}\nreceipt " in m['content'] for m in mine), mine)
+        self.assertTrue(all(f"garden-1 says zulip:127.0.0.1:{ {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]}\n● admitted " in m['content'] for m in mine), mine)
         self.assertTrue(mine[0]['content'].startswith('@**Alice**\n'))
-        arrivals = self.host.send({'op': 'world-objects', 'principal': OPENER})['ids']
+        arrivals = self.root.send({'op': 'world-objects', 'principal': OPENER})['ids']
         self.assertIn('env/zulip:127.0.0.1:1000', arrivals)
         self.assertIn('env/zulip:127.0.0.1:1001', arrivals)
         for uri in got['posted']:  # every posted draft is recorded, so the host knows who it addresses

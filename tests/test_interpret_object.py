@@ -17,7 +17,7 @@ from tests.test_chain import Chain
 from tests.test_policy import PolicyObject
 from tests.test_turn_world import ON_DISK, closure, declared, label, record
 
-WORLD_LINE = "  proposal: {object: String, method: String, argument: R}"
+WORLD_LINE = "  proposal: {object: String, method: String, argument: R, spell: String}"
 
 HUB = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi

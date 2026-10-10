@@ -6,7 +6,6 @@ Carries bytes and a verified principal; it validates nothing but size and JSON
 well-formedness. Host replies pass through verbatim.
 """
 import argparse
-import hashlib
 import html
 import json
 import os
@@ -21,13 +20,12 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import bridge, hand, oauth, pages, post
+from transport import bridge, oauth, pages
 from transport.bridge import door_rows, plain
-from transport.hostd import CLOCK
-from transport.hostproc import HOST_TIMEOUT, HostClient, RemoteHeaps, add_host_args
+from transport.host import CLOCK, HOST_TIMEOUT, HostClient, add_host_args, connect
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
-from transport.repo import Repo
+from transport.repo import PUBLIC, Repo
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
@@ -69,6 +67,9 @@ def resolve(method, path):
             name = ROUTES.get((method, head, bool(obj)))
             name = None if name in (('create',) if not heap else TOP_ONLY) else name
         return (name, {'heap': heap, 'object': obj, 'method': tail}) if name else (None, None)
+    if parts[:1] == ['oauth'] and len(parts) == 2 and method == 'GET':  # answered by oauth.route; named here so OPTIONS describes them
+        name = {'start': 'oauthStart', 'callback': 'oauthCallback', 'client-metadata.json': 'oauthClient'}.get(parts[1])
+        return (name, {}) if name else (None, None)
     if parts[:1] == ['xrpc'] and len(parts) == 2:
         return 'xrpc', {'nsid': parts[1]}  # the repository answers every method (405 for a write)
     get = {('',): 'home', ('o',): 'find', ('.well-known', 'did.json'): 'did', ('style', ''): 'specimen', ('style',): 'specimen'}.get(tuple(parts))
@@ -138,8 +139,6 @@ def turn_view(reply):
     receipt is `?full=1` and `GET /receipt/<slug>`."""
     rc = reply['receipt']
     line = turn_line(reply)
-    if rc.get('slug'):
-        line = line.removesuffix(f", receipt {rc['slug']}")
     outcome = rc.get('outcome') or {}
     cls = reply.get('class') or outcome.get('class')
     return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
@@ -172,12 +171,7 @@ def turn_line(r):
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
-        # the turn's own object's write when it made one (a garden's planting writes kind/bell first)
-        root = ((rc.get('roots') or [{}])[0]).get('object')
-        writes = out.get('writes') or [None]
-        w = next((x for x in writes if x and x.get('object') == root), writes[0])
-        return f"admitted {w['object']} v{w.get('version')}, entry {rc.get('height')}, receipt {rc.get('slug')}" if w else \
-            f"admitted, entry {rc.get('height')}, receipt {rc.get('slug')}"
+        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}})
     if r.get('status') == 'refused':
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
@@ -295,22 +289,22 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS):
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS,
+                 outbox=None):
         super().__init__(address, Handler)
         self.slots, self.receiving, self.receiving_lock = threading.BoundedSemaphore(workers), {}, threading.Lock()
         threading.Thread(target=self.reap, daemon=True).start()
-        self.access = access
+        self.access, self.outbox, self.known = access, outbox and Path(outbox), {}  # outbox: the hand's, where an HTTP turn's draft waits
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps, repl, trust_proxy, sleep, hand
+        self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps and Path(heaps), repl, trust_proxy, sleep, hand  # heaps: serve's heaps/ directory
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
-        info = {} if hasattr(host, 'binary') else host.send({'op': 'hostd-info'})
-        self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
-        self.host_timeout = getattr(host, "timeout", HOST_TIMEOUT + 30)
-        self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library hostd sealed; the REPL compiles against it by name
+        info = host.send({'op': 'hostd-info'})
+        self.host_sha256, self.host_timeout = info.get('hostSha256', 'unknown'), getattr(host, 'timeout', HOST_TIMEOUT)
+        self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library serve sealed; the REPL compiles against it by name
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):  # every worker is taken: say so at once rather than queue behind them
@@ -341,10 +335,37 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                 except OSError:
                     pass
 
-    def sync_library(self, force=False):
-        """Re-read hostd-info when hostd's pid changed (it restarted, maybe with a new library), or when forced."""
-        if hasattr(self.host, 'binary'):
+    def draft_turn(self, principal, intent, reply):
+        """The owner's rule (cracks R6): an admitted HTTP turn that wrote an object the public reads (the host's answer to
+        `world-view` as the anonymous reader) is drafted in the hand's outbox like a town reply, once per receipt; whether
+        the town hears of it is the operator's click."""
+        receipt = reply.get('receipt') or {}
+        writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
+        if self.outbox is None or reply.get('status') != 'admitted' or not writes:
             return
+        public = [o for o in dict.fromkeys(writes) if self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': o}).get('status') == 'viewed']
+        path = self.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
+        if public and not path.exists():
+            bridge.write_atomic(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
+                                       'object': public[0], 'slot': None, 'receipt': receipt, 'posted': False,
+                                       'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
+
+    def handles(self, dids):
+        """{did: handle} for the DIDs a page names: the `handle` of each one's avatar (`world-arrive` seeds it from the
+        registry) as the public reader sees it; a handle once found is kept, a DID with no avatar asked again next time."""
+        for did in set(dids) - set(self.known):
+            view = self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': did})
+            handle = (plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None
+            if isinstance(handle, str) and handle:
+                self.known[did] = handle
+        return self.known
+
+    def heap(self, did, create=True):
+        """A principal's private heap over the host's socket; None for one never made, unless `create`."""
+        return self.host.at(did) if create or (self.heaps / f'{did}.journal').exists() else None
+
+    def sync_library(self, force=False):
+        """Re-read hostd-info when serve's pid changed (it restarted, maybe with a new library), or when forced."""
         info = self.host.send({'op': 'hostd-info'})
         if force or info.get('pid') != self.hostd_pid:
             self.library, self.hostd_pid = info.get('library'), info.get('pid')
@@ -636,7 +657,7 @@ class Handler(BaseHTTPRequestHandler):
                               headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
         if kind in ('repl', 'check'):
             return self.run_repl(who['did'], kind)
-        host = self.server.heaps.get(who['did']) if heap else self.server.host
+        host = self.server.heap(who['did']) if heap else self.server.host
         principal = who['did']  # the principal the host sees; the handle is display only
         base = PREFIX + ('/heap' if heap else '')
         if self.browser() and kind in ('object', 'card', 'source') and not heap:
@@ -710,6 +731,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.answer(reply, links=receipt_links(base, reply))
         reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,  # asked on the card itself
                            'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct'})
+        if not heap:
+            self.server.draft_turn(principal, data.get('intent'), reply)
         links, acts = {**at(obj), **receipt_links(base, reply, data.get('intent'))}, None
         if reply.get('status') in ('refused', 'error'):  # the usage action: the method as the host's table shows it
             seen = host.send({'op': 'world-inspect', 'principal': principal, 'object': obj})
@@ -784,7 +807,7 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, canonical({**terse(out), '_links': links}), headers=keep)
 
     def me(self, credential, who):
-        heap = self.server.heaps.get(who['did'], create=False)
+        heap = self.server.heap(who['did'], create=False)
         count = heap.send({'op': 'world-status'}).get('objects') if heap else 0
         self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'heapObjects': count,
                      'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))}},
@@ -854,6 +877,7 @@ class Handler(BaseHTTPRequestHandler):
             fields = {k[2:] if k[:2] in kinds else k: kinds[k[:2]](v) if k[:2] in kinds else v for k, v in data.items() if k != 'method'}
             r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent, 'reach': 'direct',
                            'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
+            self.server.draft_turn(did, intent, r)
             offers = [o['text'] for o in r.get('offers') or []]
             for _ in range(WAIT_MAX if r.get('status') == 'suspended' else 0):  # the interpreter answers as an offer to this intent
                 seen = host.send({'op': 'world-offers', 'principal': did, 'after': r['receipt']['height']}).get('offers') or []
@@ -873,6 +897,7 @@ class Handler(BaseHTTPRequestHandler):
             name=html.escape(name), path=html.escape(oid(name)), said=said, card=html.escape(card.get('text', '')), doors=pages.door_nav(door_rows(view)))))
 
     def html(self, code, body, headers=()):
+        body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
         self.reply(code, *((pages.text(body), 'text/plain') if self.textual() else (body, 'text/html')), headers)
 
     def home(self):
@@ -890,8 +915,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(404, pages.refusal(name, handle, view, view.get('status')))
         card, seen = (host.send({'op': op, 'principal': principal or 'anonymous', 'object': name}) for op in ('world-card', 'world-inspect'))
         acts = actions('', name, seen) if principal and seen.get('status') == 'inspected' else ()
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
         self.html(200, pages.obj(name, handle, view, card.get('text') if card.get('status') == 'card' else None,
-                                 self.history(host, name, principal), principal, door_rows(view), seen, acts))
+                                 self.history(host, name, principal), principal, door_rows(view), seen, acts, brief))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, read from the tail of the journal under the reader's authority."""
@@ -920,24 +947,16 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
-    ap.add_argument('--hand-token', metavar='SECRET', help='serve the owner\'s console at /hand/ (needs the token once) on --hand-bind:--hand-port only')
-    ap.add_argument('--hand-bind', default='127.0.0.1', help='the hand\'s listener: loopback, reached by an ssh forward')
-    ap.add_argument('--hand-port', type=int, default=8766)
-    ap.add_argument('--credentials', default=post.CREDENTIALS, help='the Delve credentials file the hand posts with')
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
-    sock = a.host_socket or Path(a.state) / 'host.sock'
-    host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
+    host = connect(a)
     ident = Identity(a.state, Client(http_transport), a.origin)
-    front = Front((a.bind, a.port), host, ident, a.origin, heaps=heaps, repl=repl, trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'))
-    if a.hand_token:  # never on the public port: its own listener, which serves /hand/ and nothing else
-        console = Front((a.hand_bind, a.hand_port), host, ident, a.origin, hand=hand.Hand(a.state, host, a.hand_token, a.credentials))
-        threading.Thread(target=console.serve_forever, daemon=True).start()
+    front = Front((a.bind, a.port), host, ident, a.origin, heaps=Path(host.path).parent / 'heaps', repl=HostClient(host.path, stateless=True),
+                  trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'), outbox=Path(a.state) / 'outbox')
     try:
         front.serve_forever()
     finally:
         front.host.close()
-        front.heaps.close()
         front.repl.close()
 
 if __name__ == '__main__':

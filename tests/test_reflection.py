@@ -377,7 +377,9 @@ class Interpret(Reflection):
         [item] = self.pending()
         settled = self.settle(item, self.replied(n=3))
         self.assertEqual(settled["status"], "interpreted", settled)
-        self.assertEqual(settled["receipt"]["outcome"]["verdict"]["tag"], "proposal")
+        verdict = settled["receipt"]["outcome"]["verdict"]
+        # The proposal carries the spell it stands for, for a card that asks first to print back.
+        self.assertEqual((verdict["tag"], verdict["spell"]), ("proposal", "delvetalk probe bump2\nn: 3"), verdict)
         [resumed] = settled["resumed"]
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual((self.seen("probe"), field(self.state("probe"), "count")), ("bump2", nat(3)))

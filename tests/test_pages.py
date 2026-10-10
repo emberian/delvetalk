@@ -1,17 +1,24 @@
 """Every route a browser reaches is a page in the theme's vocabulary, never a JSON dump; JSON stays JSON for agents.
 
-Against the genesis town on a real hostd, logged in through the login page's forms (the session cookie)."""
+Against the genesis town on a real `serve`, logged in through the login page's forms (the session cookie)."""
 import html
 import json
 import re
 import urllib.parse
 from html.parser import HTMLParser
 
-from tests.test_turn_world import closure, declared
-from tests.test_http import FORM, HANDLE, FrontCase, browser_login
-from transport.hostproc import HostClient
+from transport.pages import text as pages_text
+from tests.test_turn_world import closure, counter_modules, declared, nat, record
+from tests.test_http import DID, FORM, HANDLE, FrontCase, browser_login
 
 HTML = {'Accept': 'text/html,application/xhtml+xml'}
+A_DID = re.compile(r'did:plc:[a-z2-7]{24}')
+
+
+def read(page):
+    """What a person reads of a page as prose: its text, never a tag's attributes (an href may carry an id that is a DID)
+    nor a <pre> (a card, a law, a source: verbatim, and a law may name the opener's DID)."""
+    return html.unescape(re.sub(r'<[^>]*>', ' ', re.sub(r'<pre\b.*?</pre>', ' ', page, flags=re.S)))
 
 
 class Actions(HTMLParser):
@@ -80,9 +87,9 @@ class Pages(FrontCase):
     def setUpClass(cls):
         super().setUpClass()
         from deploy import genesis
-        made, refusal = genesis.run(HostClient(cls.socket), cls.OPENER)
+        made, refusal = genesis.run(cls.root, cls.OPENER)
         assert refusal is None, refusal
-        r = HostClient(cls.socket).send({'op': 'world-create', 'principal': cls.OPENER, 'identity': 'mk-picker', 'object': 'picker',
+        r = cls.root.send({'op': 'world-create', 'principal': cls.OPENER, 'identity': 'mk-picker', 'object': 'picker',
                                          'modules': closure('World') + [{'name': 'Picker', 'source': PICKER}], 'entry': 'initial', 'seed': {'tag': 'record', 'fields': []}})
         assert r['status'] == 'created', r
 
@@ -102,6 +109,40 @@ class Pages(FrontCase):
             self.assertIn(c, text, path)
         return text
 
+
+    def test_a_did_shows_as_its_handle_or_a_stranger_and_stays_in_the_json(self):
+        stranger = 'did:plc:' + 'q' * 20 + 'wxyz'  # a principal the registry knows no avatar for
+        made = self.host.send({'op': 'world-create', 'principal': stranger, 'identity': 'mk-' + stranger, 'object': 'note/' + stranger,
+                               'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
+        self.assertEqual(made['status'], 'created', made)
+        home = read(self.page('/'))
+        self.assertIn('env/talkie.delve.town', home)
+        self.assertIn('note/a stranger …wxyz', home)
+        self.assertIn(f'href="/o/env%2F{DID}"', self.page('/'))  # the link still names the object by its id
+        slips = read(self.page(f'/o/{self.c}'))
+        self.assertIn('talkie.delve.town', slips)
+        tok = self.cookie.split('=', 1)[1]
+        s, h, body = self.request('GET', '/AGENTS.md/world', headers={'Authorization': 'Bearer ' + tok})
+        self.assertIn('env/' + DID, json.loads(body)['ids'])  # an agent's JSON keeps the DID
+
+    def test_an_objects_text_view_is_brief_unless_all_is_asked(self):
+        for i in range(7):  # more receipts than the brief view keeps
+            self.page('/play/garden', method='POST', form={'method': 'plant', 'colour': 'amber', 'seed': 'brief %d' % i})
+        full = self.page('/o/garden')
+        s, h, body = self.request('GET', '/o/garden?text=1', headers={'Cookie': self.cookie})
+        brief = body.decode()
+        card = html.unescape(re.search(r'<pre class="card">(.*?)</pre>', full, re.S)[1])
+        self.assertIn(card, brief)
+        self.assertIn('delvetalk garden plant\ncolour: one of amber, violet, silver', brief)  # the forms as spell templates
+        self.assertIn('delvetalk garden ?', brief)
+        self.assertEqual(len(re.findall(r'^[●§…◦] ', brief, re.M)), 5)  # the newest five receipts
+        self.assertGreater(len(re.findall(r'class="slip ', full)), 5)
+        for gone in ('--- law ---', '## Source', 'POST /play/garden', 'takes typed data'):
+            self.assertNotIn(gone, brief)
+        self.assertIn('/o/garden?all=1&text=1', brief)
+        self.assertLess(len(brief), len(pages_text(full)))
+        s, h, whole = self.request('GET', '/o/garden?all=1&text=1', headers={'Cookie': self.cookie})
+        self.assertIn('--- law ---', whole.decode())
 
     def test_json_stays_json_for_agents(self):
         tok = self.cookie.split('=', 1)[1]
@@ -132,14 +173,17 @@ class Pages(FrontCase):
                 ('/AGENTS.md/challenge', 'POST', {'handle': HANDLE}, False, 200), ('receipt', 'GET', None, True, 200)):
             path = f'/AGENTS.md/receipt/{slug}' if path == 'receipt' else path
             page = self.page(path, code=code, cookie=cookie, method=method, form=form)
+            self.assertEqual(A_DID.findall(read(page)), [], path)  # a person reads a handle, or `a stranger` and the DID's last four
             self.now[0] += 3
             sep = '&' if '?' in path else '?'
             headers = {**HTML, **({'Cookie': self.cookie} if cookie else {}), **({'Content-Type': FORM} if form else {})}
             raw = urllib.parse.urlencode({**form, 'seed': 'a text fern, again'} if form and 'seed' in form else form) if form else None
-            s, h, body = self.request(method, path + sep + 'text=1', raw=raw, headers=headers)
+            s, h, body = self.request(method, path + sep + 'text=1&all=1', raw=raw, headers=headers)  # ?all=1: the whole page, as the HTML has it
             text = body.decode()
             self.assertEqual((s, dict(h)['Content-Type']), (code, 'text/plain; charset=utf-8'), (path, text[:300]))
             self.assertNotIn('<!doctype', text)
+            prose = re.sub(r'^--- [^\n]* ---\n.*?\n---$', '', re.sub(r'(?:<|\] )/\S*', '', text), flags=re.S | re.M)  # hrefs and <pre> fences stay verbatim
+            self.assertEqual(A_DID.findall(prose), [], path)
             seen = Actions(page)
             links, forms = text_actions(text)
             self.assertEqual((sorted(links), sorted(forms)), (sorted(seen.links), sorted(seen.forms)), path)
