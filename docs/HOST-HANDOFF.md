@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-09 (foundation f178383).
+State on 2026-10-10 (lane/host11 over foundation cce14c7).
 
 ## Summary
 
@@ -13,7 +13,7 @@ The host is one Lean process holding a world of durable objects. Every state cha
 - Refusals are receipts with a class; `staleRoot`, `budget`, `evaluation`, `capacity` are transient (a retry with the same identity runs again).
 - Ops in section 2. Limits in section 4 (`Store.lean`, namespace `Limits`).
 - Run: `make check` (parallel runner `tests/run.py`), `make smoke` (`test_turn_world test_chain`). Narrow: `DELVETALK_OBEND=<binary> python3 -W ignore -m tests.run test_x`. `tests/host.py` opens test journals with `sync: "none"`.
-- Tests: 896 `def test_` across `tests/test_*.py` on 2026-10-09.
+- Tests: full `tests.run` on hbox at lane/host11 (load ~25): 1070 tests in 263 classes; the only failures were `test_artifact_pins` (the `Abi.Origin.post` line moves every pin), re-recorded in the same commit as this line.
 - Wall-clock bounds (`test_turn_world.Maximum` 200 bumps under 5 s, `test_http` 200 turns under 10 s, `test_snapshot` reopen under 1 s) are fsync- and load-bound and can miss on a loaded box.
 - Open: section 7 (forms for sum inputs, nested handlers, foreign worlds, one stale `expectedFailure` in `tests/test_bridge.py`).
 
@@ -603,7 +603,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ### Queue for the next host lane, in order (from lane/host11)
 
-host11 landed 5.71 to 5.74, one commit each (plus foundation merges): `inputOrigin.post` and the
+host11 landed 5.71 to 5.74, one commit each (plus foundation merges and the re-recorded pins): `inputOrigin.post` and the
 forged-field rule for spells; suspensions that journal what they do not already say; handlers over a
 run's whole extent; `insertOnly` under retention.
 `tests/test_form_bounds.py` `WorkshopSource` is the Workshop's case (a 6 KB `source` block checked,
