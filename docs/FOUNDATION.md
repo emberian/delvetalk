@@ -531,3 +531,16 @@ and `contains` beside `equals`, still closure-free. No incremental or
 differential maintenance: a card renders at most eight rows and a count under
 one turn's budget, and a maintained view would be derived state the host owned
 across turns, which §2 keeps out of the store.
+
+## 17. The world from within itself (decided 2026-10-10)
+
+Three changes, introduced together before launch, each deleting a closed sum
+or a convention: the world is an object (`call world.view` replaces
+`perform(Plan.view(…))`; the Plan sum collapses to one message record and the
+Response to `Data` checked at the boundary; a host facility is a method on the
+world's table, named only by the objects that use it; `Plan.obend` changes for
+the last time); the host parses spells against the method table's forms, so a
+spell costs no ticks and `receive` exists for prose alone; the host delivers
+changes to subscribers (`subscribe {object, field}`, `changed {object, field,
+version, rows}` under the causal ledger), so Wakes, traces and doors are
+passive and no object remembers to notify. The contract is `docs/WHOLENESS.md`.
