@@ -6,9 +6,9 @@ through the host waits for the host's message dispatch (WHOLENESS §4, host day 
 import unittest
 
 from tests.test_objects import closure, compile_job
-from tests.test_turn_world import TurnWorld, label, nat, record
+from tests.test_turn_world import TurnWorld, label, nat, record, declared
 
-USER = """edition ObjectiveBend 1
+USER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./Document.obend as Document
@@ -58,7 +58,7 @@ def shown(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:
   match world.inspect({object: Plans.self(context)}):
     case inspected(i): textLength(i.pin)
     case _: 0n
-"""
+""")
 
 
 class WorldProtocol(unittest.TestCase):

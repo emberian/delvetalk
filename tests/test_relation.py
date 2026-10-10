@@ -12,11 +12,11 @@ rows; `insert`, `upsert`, `retract` follow the nine-cell table. Each case names 
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
 # The relation type and its edits are declared here as the library will declare them (Relation.obend,
 # Plan.obend's Entries): the host reads labels, not type names.
-PACKAGE = """edition ObjectiveBend 1
+PACKAGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
@@ -72,7 +72,7 @@ def laterUpsert(state: State, input: Rain, context: Abi.Context) -> Activity<Pla
   later(context, RowEdit.upsert({row: input}))
 def laterRetract(state: State, input: Key, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   later(context, RowEdit.retract({key: input}))
-"""
+""")
 
 
 def rain(author, at, text):

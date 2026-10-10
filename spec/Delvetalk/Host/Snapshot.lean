@@ -20,7 +20,7 @@ open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
 open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
-def edition : String := "delvetalk.snapshot.v1"
+def edition : String := "delvetalk.snapshot.v2"
 
 /-! ## Canonical bytes back to JSON
 

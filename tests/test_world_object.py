@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 from tests.test_reflection import LIBRARY
 
 # The library's World module with one method the host does not answer.
@@ -30,7 +30,7 @@ def extended_library(scratch, extra):
     return target
 
 
-THING = """edition ObjectiveBend 1
+THING = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./World.obend as World
@@ -81,7 +81,7 @@ def away(state: State, input: {}, context: Abi.Context) -> Activity<String>:
   match world.teleport({to: "moon"}):
     case written(_): "went"
     case refused(r): r.clause
-"""
+""")
 
 
 class WorldObject(Reflection):

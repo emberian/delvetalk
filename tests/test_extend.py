@@ -14,8 +14,9 @@ import unittest
 from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import declared
 
-BASE = """edition ObjectiveBend 1
+BASE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -33,9 +34,9 @@ def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   add(context, 1n)
 def peek(state: State, context: Abi.Context) -> State:
   {count: state.count}
-"""
+""")
 
-LAYER = """edition ObjectiveBend 1
+LAYER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 type State = Super.State
 type Plan = Super.Plan
@@ -44,9 +45,9 @@ def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   Super.add(context, 10n)
 def triple(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   Super.add(context, 3n)
-"""
+""")
 
-SECOND = """edition ObjectiveBend 1
+SECOND = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Main.obend as Base
 type State = Base.State
@@ -56,10 +57,10 @@ def triple(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   Super.triple(state, context)
 def zero(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   Base.add(context, 0n)
-"""
+""")
 
 
-FORGE = """edition ObjectiveBend 1
+FORGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -75,7 +76,7 @@ def graft(state: State, input: {target: String, package: String}, context: Abi.C
     case reprogrammed(r): "grafted"
     case refused(r): r.clause
     case _: "other"
-"""
+""")
 
 
 class Extend(Reflection):
@@ -147,13 +148,13 @@ class Extend(Reflection):
         self.assertEqual(bad["status"], "error")
 
 
-LOUDER = """edition ObjectiveBend 1
+LOUDER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 type State = Super.State
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.concat(Document.text("LOUDER\\n"), Super.render(state, context))
-"""
+""")
 
 
 class LateBinding(Reflection):

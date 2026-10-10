@@ -13,9 +13,9 @@ recording the root, or a private object answered.
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
-READER = """edition ObjectiveBend 1
+READER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -36,8 +36,8 @@ def whole(state: State, input: {target: String}, context: Abi.Context) -> Activi
     case viewedData(v): v.state
     case denied(_): Data.of::<String>("denied")
     case _: Data.of::<String>("other")
-"""
-TARGET = """edition ObjectiveBend 1
+""")
+TARGET = declared("""edition ObjectiveBend 1
 import ./List.obend as Lists
 record State:
   owner: String
@@ -45,7 +45,7 @@ record State:
   greeted: Lists.List<String>
 def initial() -> State:
   {owner: "", words: "GARDEN · ROOMS", greeted: Lists.List::<String>.cons({head: "glm", tail: Lists.List::<String>.nil({})})}
-"""
+""")
 
 
 class ViewData(Reflection):

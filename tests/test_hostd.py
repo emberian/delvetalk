@@ -17,11 +17,12 @@ from pathlib import Path
 
 from tests.host import Host, binary, start_hostd, stop_hostd
 from tests.test_turn_world import counter_modules, nat, record
+from tests.test_turn_world import declared
 from transport import bridge
 from transport.hostproc import HostClient
 
 DID = 'did:plc:' + 'a' * 24
-TALLY = """edition ObjectiveBend 1
+TALLY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -35,7 +36,7 @@ def initial() -> State:
 def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
     case _: state.count + 1n
-"""
+""")
 
 
 class Hostd(unittest.TestCase):

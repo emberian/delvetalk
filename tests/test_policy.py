@@ -15,9 +15,9 @@ from tests.test_replay import rows
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job, computation, row_names
 from tests.test_places import listing
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, declared
 
-PROBE = """edition ObjectiveBend 1
+PROBE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Form.obend as Form
@@ -38,7 +38,7 @@ def examples(n: Nat) -> Lists.List<Policy.Example>:
     case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
   textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}, forms(context), "plant me a moth"))
-"""
+""")
 
 
 def context(card="garden-1"):

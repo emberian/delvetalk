@@ -13,6 +13,7 @@ import unittest
 from tests.test_chain import Chain
 from tests.test_turn import Host, TurnCase, nat, label, library_modules, variant
 from tests.test_turn_world import closure
+from tests.test_turn_world import declared
 
 CALLER = """edition ObjectiveBend 1
 record Call:
@@ -157,7 +158,7 @@ def count(xs: Lists.List<String>, n: Nat) -> Activity<Plan, Reply, Nat>:
 # is the motivating case). `put*` write the payload in an activity; `copyAfter` awaits a
 # slot and then copies the payload it read before suspending, so the Data value crosses a
 # checkpoint; `touch` is a pure method, so the state crosses the native admission path.
-DATA_COUNTER = """edition ObjectiveBend 1
+DATA_COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./List.obend as Lists
@@ -197,7 +198,7 @@ def copyAfter(state: State, input: {principal: String, intent: String}, context:
     case _: 0n
 def touch(state: State, context: Abi.Context) -> State:
   {count: state.count + 1n, payload: state.payload, copy: state.copy}
-"""
+""")
 
 
 def data_counter_modules():
