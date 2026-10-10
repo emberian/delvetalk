@@ -214,7 +214,7 @@ class Hub(test_chain.Chain):
         at the hub: the speaker is shown the door's spell to fill in and send, never run from prose."""
         self.policy()
         taught = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")
-        self.assertEqual(taught["result"]["label"], "done", taught)
+        self.assertEqual(taught["result"]["label"], "taught", taught)
         self.directory("policy")
         self.greet(GLM)
         self.assertEqual(self.say("Could we plant a silver fern that remembers yesterday?", GLM)["status"], "suspended")

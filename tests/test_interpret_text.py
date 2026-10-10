@@ -127,7 +127,7 @@ class Resumed(test_chain.Chain):
     def test_the_policys_owner_makes_plant_ask_first(self):
         self.policy()
         taught = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")
-        self.assertEqual(taught["result"]["label"], "done", taught)
+        self.assertEqual(taught["result"]["label"], "taught", taught)
         self.garden("policy", confirm=False)
         self.say("Could we plant a silver fern that remembers?")
         _, asked = self.settle(SPELL)

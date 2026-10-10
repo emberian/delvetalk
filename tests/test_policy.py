@@ -68,10 +68,10 @@ def run(entry, *arguments, limits=None):
 class Types(unittest.TestCase):
 
     def test_the_plan_gained_inspect_check_and_the_new_interpret_and_offer(self):
-        plan_row = row_names(computation(compile_job(closure("Policy"), "teach")["artifact"]["type"])["plan"]["row"])
+        plan_row = row_names(computation(compile_job(closure("Thing"), "acquire")["artifact"]["type"])["plan"]["row"])
         for name in ("interpret", "offer", "reprogram", "inspect", "check"):
             self.assertIn(name, plan_row)
-        response_row = row_names(computation(compile_job(closure("Policy"), "teach")["artifact"]["type"])["response"]["row"])
+        response_row = row_names(computation(compile_job(closure("Thing"), "acquire")["artifact"]["type"])["response"]["row"])
         for name in ("inspected", "checked", "proposal", "unclear"):
             self.assertIn(name, response_row)
 
@@ -96,9 +96,9 @@ class PolicyObject(Chain):
     def test_teach_define_and_set_model_edit_the_policy_in_order(self):
         self.policy()
         for utterance, spell in (("a fern", "delvetalk garden-1 plant seed: fern, colour: silver"), ("a moth", "delvetalk garden-1 plant seed: moth, colour: amber")):
-            reply = self.turn("policy", "teach", record(example=record(utterance=label(utterance), spell=label(spell))), principal="ember")
+            reply = self.turn("policy", "teach", record(utterance=label(utterance), spell=label(spell)), principal="ember")
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "taught"), reply)
-        reply = self.turn("policy", "define", record(term=record(word=label("moth"), meaning=label("a seed"))), principal="ember")
+        reply = self.turn("policy", "define", record(word=label("moth"), meaning=label("a seed")), principal="ember")
         self.assertEqual(reply["status"], "admitted", reply)
         for spell in ("delvetalk policy set\nmodel: claude-sonnet", "delvetalk policy set\nescalate: claude-opus",
                       "delvetalk policy set\nescalate-to: did:plc:operator4keeper"):
@@ -139,7 +139,7 @@ class PolicyObject(Chain):
             "    delvetalk policy macro\n"
             "    name: <text, 1 to 64 characters>\n"
             "    pattern: <text, 1 to 280 characters>\n"
-            "    expansion: <text, 1 to 280 characters>\n"
+            "    expansion: <text, 1 to 560 characters>\n"
             "\n"
             "    delvetalk policy confirm\n"
             "    action: <text, 1 to 64 characters>\n"
@@ -152,7 +152,7 @@ class PolicyObject(Chain):
 
     def test_only_the_owner_teaches_and_the_law_refuses_what_bend_would_not(self):
         self.policy()
-        example = record(example=record(utterance=label("x"), spell=label("y")))
+        example = record(utterance=label("x"), spell=label("y"))
         stranger = self.turn("policy", "teach", example, principal="glm")
         self.assertEqual(stranger["status"], "admitted", stranger)
         self.assertEqual(stranger["result"]["label"], "refused")
@@ -175,7 +175,8 @@ class PolicyObject(Chain):
 
     # --- Macros: the owner's shortcuts, checked before the model ----------------------
 
-    MOTH = "delvetalk policy macro / name: moth-bell / pattern: moth for {who} / expansion: garden plant / colour: violet / seed: a bell for {who}"
+    # The expansion is one field line, which keeps its slashes.
+    MOTH = "delvetalk policy macro\nname: moth-bell\npattern: moth for {who}\nexpansion: garden plant / colour: violet / seed: a bell for {who}"
 
     def test_the_owner_teaches_a_macro_and_a_stranger_is_refused_by_name(self):
         self.policy()
@@ -183,7 +184,7 @@ class PolicyObject(Chain):
         self.assertEqual(stranger["result"]["label"], "refused", stranger)
         self.assertIn("Only the policy's owner may teach it", stranger["result"]["payload"]["fields"][1]["value"]["value"])
         taught = self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="ember")
-        self.assertEqual((taught["status"], taught["result"]["label"]), ("admitted", "done"), taught)
+        self.assertEqual((taught["status"], taught["result"]["label"]), ("admitted", "taught"), taught)
         [macro] = [f["value"] for f in self.state("policy")["fields"] if f["name"] == "macros"][0]["items"]
         self.assertEqual({f["name"]: f["value"]["value"] for f in macro["fields"]},
                          {"name": "moth-bell", "pattern": "moth for {who}", "expansion": "garden plant / colour: violet / seed: a bell for {who}"})
@@ -215,7 +216,7 @@ class PolicyObject(Chain):
             "    delvetalk policy macro\n"
             "    name: <text, 1 to 64 characters>\n"
             "    pattern: <text, 1 to 280 characters>\n"
-            "    expansion: <text, 1 to 280 characters>\n"
+            "    expansion: <text, 1 to 560 characters>\n"
             "\n"
             "    delvetalk policy confirm\n"
             "    action: <text, 1 to 64 characters>\n"
@@ -225,7 +226,7 @@ class PolicyObject(Chain):
     def test_a_macro_fires_without_the_model_and_a_non_match_falls_through_to_it(self):
         self.policy()
         self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="ember")
-        self.turn("policy", "receive", record(text=label("delvetalk policy macro\nname: two\npattern: a {colour} bell for {who} please\nexpansion: garden plant\ncolour: {colour}\nseed: a bell for {who}"), post=label("")), principal="ember")
+        self.turn("policy", "receive", record(text=label("delvetalk policy macro\nname: two\npattern: a {colour} bell for {who} please\nexpansion: garden plant / colour: {colour} / seed: a bell for {who}"), post=label("")), principal="ember")
         self.garden("policy", confirm=False)
         fired = self.say("moth for the lost ones.")
         self.assertEqual((fired["status"], fired["result"]["label"]), ("admitted", "planted"), fired)
@@ -253,9 +254,9 @@ class PolicyObject(Chain):
     def test_the_sixteenth_example_is_the_last(self):
         self.policy()
         for i in range(16):
-            r = self.turn("policy", "teach", record(example=record(utterance=label("u%d" % i), spell=label("s"))), principal="ember")
+            r = self.turn("policy", "teach", record(utterance=label("u%d" % i), spell=label("s")), principal="ember")
             self.assertEqual(r["result"]["label"], "taught", r)
-        over = self.turn("policy", "teach", record(example=record(utterance=label("u16"), spell=label("s"))), principal="ember")
+        over = self.turn("policy", "teach", record(utterance=label("u16"), spell=label("s")), principal="ember")
         self.assertEqual(over["result"]["label"], "refused")
 
     def test_the_prompt_for_gardens_plant_form_contains_its_fields_and_bounds_verbatim(self):
