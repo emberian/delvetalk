@@ -291,7 +291,7 @@ def interpreting(input: Card.Heard, read: Reading, policy: Policies.State, greet
   match world.interpret::<Data>(Card.interpretation(input.text, read.forms, state.policy, "", Card.misfitLine(input.misfit))):
     case proposal(p): proposed(p.object, p.method, p.argument, read.forms, policy, greet, context, state)
     case proposals(p): folding(p.items, Lists.List.nil(), "", policy, greet, context, state)
-    case unclear(u): hobbed(Card.hobNeeds(u.needs), input, read, policy, greet, context, state)
+    case unclear(u): hobbed(Card.hobNeeds(u.needs, read.forms), input, read, policy, greet, context, state)
     case replied(r): hobbed(Card.hobSaid(r.text), input, read, policy, greet, context, state)
     case denied(_): refusing("policy", "The policy is not visible to you.", greet, context, state)
     case _: welcomed(greet, "", Heard.silent({}), context, state)
@@ -302,9 +302,12 @@ def hobbed(hob: Card.Hob, input: Card.Heard, read: Reading, policy: Policies.Sta
   match hob:
     case none(_): quiet(greet, input, read.learned, context, state)
     case card(_): if read.card == "" then Card.tell(Heard.menu({}), render(state, context)) else doorCard({world: context.world, object: read.card}, context)
-    case ask(a): toldThen(asking(a.question, input, read, context, state), Heard.unclear({needs: Card.one(a.question)}), greet, context, state)
-def asking(question: String, input: Card.Heard, read: Reading, context: Abi.Context, state: State) -> Document.Document:
-  if read.card == "" then Menu.pruned("hob: {question} The nearest:", nearest(input, read.learned, state), menu(state), state.news, context) else Card.askCard(question, read.card, read.forms)
+    case ask(a): toldThen(asking(a.needs, input, read, context, state), Heard.unclear({needs: a.needs}), greet, context, state)
+# hob's lines are fixed (VOICE's second miss), with only the fields the forms name.
+def asking(needs: Form.Names, input: Card.Heard, read: Reading, context: Abi.Context, state: State) -> Document.Document:
+  if read.card == "" then Menu.pruned(missLine(needs), nearest(input, read.learned, state), menu(state), state.news, context) else Card.askCard(needs, read.card, read.forms)
+def missLine(needs: Form.Names) -> String:
+  if Lists.length(needs) == 0n then "hob: no door takes that as said. The nearest:" else "hob: no door takes that as said; still needs {Text.joined(needs)}. The nearest:"
 def nearest(input: Card.Heard, learned: Learning, state: State) -> Lists.List<Door>:
   let all = menu(state)
   let touched = touchedDoors(input, learned, state)

@@ -92,9 +92,10 @@ def doorWords(door: Door) -> Lists.List<String>:
   Text.words("{door.label} {door.to.object}")
 def formsOf(learned: Learning) -> Lists.List<Form.Form>:
   Lists.map(learned, fn(l: Learned) -> Form.Form: l.form)
-# The forms of the doors themselves (not of a card under one): what the model is offered.
+# What the model is offered at the root: the doors' forms and those of the first card under each
+# (a bell's rain under the garden: the arc the menu shows), each under the card it belongs to.
 def doorForms(learned: Learning) -> Lists.List<Form.Form>:
-  formsOf(Lists.filter(learned, fn(l: Learned) -> Bool: l.child == false))
+  Lists.map(learned, fn(l: Learned) -> Form.Form: {card: l.card, action: l.form.action, fields: l.form.fields})
 # Whether a reply names a door: its word or object, or an action or field of the forms learned
 # under it (a bell's rain names the garden).
 def touches(input: Card.Reply, door: Door, learned: Learning) -> Bool:

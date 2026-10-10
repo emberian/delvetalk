@@ -240,11 +240,12 @@ def layerSource(state: State, forms: String) -> String:
   let fields = fieldSpecs(forms)
   let choice = kindOptions(state)
   let formLines = textJoin(Lists.map(fields, Forms.formLine), "")
-  let converters = textJoin(Lists.map(fields, Forms.converter), "")
+  let converters = textJoin(Lists.map(fields, fn(f: Forms.Spec) -> String: Forms.converter("make", f)), "")
+  let made = Forms.fieldsExpr("make", fields)
   let spell = textJoin(Lists.map(Lists.List.cons({head: {name: "kind", kind: choice}, tail: fields}), Forms.spellField), "")
   let options = textJoin(Lists.map(Forms.split(choice, "|"), kindCase), "")
   let cases = textJoin(Lists.map(Forms.split(choice, "|"), Forms.caseLine), "")
-  "layer over ./Place.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Text.obend as Text\nimport ./Card.obend as Card\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\n{delegates()}sum Makeable:\n{options}form make:\n  kind: Makeable\n{formLines}def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Result>:\n  Super.making(state, \"kind/{{makeKindText(input.kind)}}\", {Forms.fieldsExpr(fields)}, context)\ndef makeLine(state: State, id: String) -> String:\n  \"Make one: delvetalk {{id}} make{spell}\"\ndef makeWords(state: State) -> Lists.List<String>:\n  Text.words(\"make\")\ndef makeKindText(c: Makeable) -> String:\n  match c:\n{cases}{converters}"
+  "layer over ./Place.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Text.obend as Text\nimport ./Card.obend as Card\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\n{delegates()}sum Makeable:\n{options}form make:\n  kind: Makeable\n{formLines}def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Result>:\n  Super.making(state, \"kind/{{makeKindText(input.kind)}}\", {made}, context)\ndef makeLine(state: State, id: String) -> String:\n  \"Make one: delvetalk {{id}} make{spell}\"\ndef makeWords(state: State) -> Lists.List<String>:\n  Text.words(\"make\")\ndef makeKindText(c: Makeable) -> String:\n  match c:\n{cases}{converters}"
 def kindCase(option: String) -> String:
   "  {Text.trim(option)}: {{}}\n"
 # What a base place offers of making: nothing; the grafted layer overrides both.
