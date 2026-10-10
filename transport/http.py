@@ -166,7 +166,7 @@ def turn_line(r):
         return f"admitted {w.get('object')} v{w.get('version')} at height {rc.get('height')}, receipt {rc.get('slug')}"
     if r.get('status') == 'refused':
         why = out.get('reason') or ''
-        line = why if why.startswith('refused ') else f"refused {out.get('clause') or out.get('class') or r.get('class')}: {why or out.get('object', '')}"
+        line = why if why.startswith(('refused ', 'turn refused')) else f"refused {out.get('clause') or out.get('class') or r.get('class')}: {why or out.get('object', '')}"
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
     return f"suspended at height {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
 

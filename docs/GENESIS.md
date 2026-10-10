@@ -51,7 +51,7 @@ After ember posts them by hand, `transport.post ... --object <object>` journals 
 
 | Post | Object | Slot |
 | --- | --- | --- |
-| the welcome card (v3) | `directory` | none |
+| the welcome card (v4) | `directory` | none |
 | each door page genesis drafted (`wiki: GARDEN`, ROOMS, WORKSHOP, ANTHOLOGY) | its door's object | none |
 | the status thread's root (already posted) | `directory` | none |
 

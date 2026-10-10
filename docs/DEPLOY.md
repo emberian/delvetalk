@@ -185,7 +185,7 @@ in this path reads Delve credentials.
     deploy/playtest.sh --stop
 
 It starts hostd on a fresh journal under `~/.delvetalk-playtest/run-<stamp>/` (`--dir` or `DELVETALK_PLAYTEST_DIR`
-moves it; earlier runs are kept), runs genesis, posts `docs/previews/zulip-welcome.txt` (its `<bot name>` filled in) to the stream's `welcome`
+moves it; earlier runs are kept), runs genesis, posts `docs/previews/zulip-welcome-v2.txt` (its `<bot name>` filled in) to the stream's `welcome`
 topic and records it against `directory`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds). The
 `.zuliprc` is the bot's: its user must be subscribed to the stream. The model credentials are as under "Model
 credentials" and are read from the environment of the script; `DELVETALK_OBEND` names the host binary.
