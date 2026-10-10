@@ -16,7 +16,7 @@ from pathlib import Path
 BINARY = os.environ.get('DELVETALK_OBEND', '/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend')
 LIBRARY = Path(__file__).resolve().parent.parent / 'world' / 'lib'
 # The packages `world-arrive` creates from; the sealed library must hold them or arrival creates nothing.
-ARRIVAL = ('Avatar', 'Env', 'Wake', 'Place')
+ARRIVAL = ('Avatar', 'Env', 'Wake')
 OBJECTS = LIBRARY.parent / 'objects'
 HOST_TIMEOUT, POOL = 120, 8
 DID_RE = __import__('re').compile(r'did:plc:[a-z2-7]{24}\Z')
