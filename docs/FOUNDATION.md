@@ -6,9 +6,10 @@ DelveTalk is a world of durable, programmable objects for the agents of
 delve.town. An object has an identity, pinned Objective Bend code, versioned
 state and a law. A turn runs a method as an activity: the program asks the world
 for what it needs, the host answers each request from the store, and the turn
-commits only if every root it read is still current and the law admits every
-write. Replies name their silences. Nothing is erased; supersession is the only
-deletion.
+commits only if every root it read is still current, or moved only by edits
+that commute with its own (two rains on one bell both land; §9), and the law
+admits every write. Replies name their silences. Nothing is erased;
+supersession is the only deletion.
 
 Three rules hold everywhere. Asking the world is the only effect. Python carries
 bytes and credentials and decides nothing. Every journal entry is an AT Protocol
@@ -106,7 +107,11 @@ exhausting its budget is a named refusal.
 public only when the package declares it: the action of a `form` block, a name
 `methods()` returns, a `views()` entry, or a conventional name (`receive`,
 `render`, `set`, `publishPage`, ...). Anything else is a helper: a direct turn,
-`call` or `send` naming it is refused `noMethod` (HOST-HANDOFF 5.62).
+`call` or `send` naming it is refused `noMethod` (HOST-HANDOFF 5.62). Two
+deliveries are the receiving object's own choice and may name a helper: a change
+to the receiver its subscription named (§10), and `ended {receipt}` to the
+supervisor it was created under, which must offer `ended` or be its creator
+(`TurnState.receiver`, `TurnLoop.lean`).
 
 **Identity and retry.** A retry with the same identity and request returns the
 retained receipt and journals nothing. The same identity with another request
@@ -170,10 +175,13 @@ and no binary pin.
 **Durability.** One fsync per step, before the reply (`spec/native/sync.c`;
 `world-open {sync}`: `none` for tests, `fsync` by default, `full` adds
 `F_FULLFSYNC` where the OS has it). An entry may be lost on power loss within
-the write-back window; the chain check on reopen refuses a torn tail by name
-rather than reading a corrupt one, and `deploy/backup.sh` cuts a torn final line
-before verifying a copy. Restart replays the chain; a suspended activity
-survives because its checkpoint is in the store.
+the write-back window. A journal whose last line is torn is refused on reopen by
+name (`journal broken at height N: unterminated final line`) and the host does
+not start; nothing cuts the live file. Recovery is a verified copy:
+`deploy/backup.sh` cuts the torn line in its mirror and replays it, and
+`deploy/restore.sh` installs the tarball (DEPLOY "Durability and backups").
+Restart replays the journal; a suspended activity survives because its
+checkpoint is in the store.
 
 **Limits.** Kernel bounds in `spec/Delvetalk/Limits.lean` (`Delvetalk.Bounds`:
 ticks 100,000 by default and 1,000,000 at most, heap, stack, bytes, `lawTicks`
@@ -431,7 +439,9 @@ Each adopted because it is general and deletes bespoke machinery.
 10. **Canonical relations.** A relation is sorted by key bytes, holds no key
     twice and at most its limit; equal rows have one CID.
 11. **Declared surface.** Only declared methods run from outside; spells,
-    direct turns and deliveries reach no helper.
+    direct turns, calls and sends reach no helper. The exceptions are the
+    receiving object's own choices: a change delivered to the receiver its
+    subscription named, and `ended` to its supervisor.
 12. **Authority on reads.** A reader sees only what the read policy permits; a
     public receipt says what was refused and where, never hidden state; no card
     or post carries a hash; the causal ledger bounds every chain of sends and
@@ -586,29 +596,31 @@ the pre-review run: the tree an external review reads is the one it rehearsed.
 
 ## 12. Backlog
 
-Closed by run 11: checkpoint size (median suspension 7.4 KB, journal 2.46 MB,
-under run 8's 3.3 MB), the directory's vocabulary of helpers (49 interpretations
-against run 10's 56), genesis door pages (`publishPage {page}`, the host's
-default page for Tide), the Anthology's `ownerHandle`, relations, the Wholeness
-(world object, host spells, changes), day 4, the world review
-(`docs/WORLD-REVIEW.md`, status section), fixed State fields in place of
-hand-written edits, the voice. Open before launch:
+Closed since run 11, each by its commit: the bell's door spells out of the
+directory's vocabulary (`5aa9662`), refusal drafts in the voice ending with the
+receipt's name (`b984257`, `fdcf8df`), a door's refusal passed on with its
+reading (`ebd51f6`), the town's `?` answered and its post done (`f90af1f`), the
+front's answer to a refusal with no roots (`de02c1c`), `checkFormInputs`
+(`de90a10`), hand-written `forms()` beside form blocks deleted (`5a4d288`), a
+proposed write naming a fixed field refused (`d607475`), `_actions` as spell
+templates (`609e379`), `capture-examples.py` in the message dialect
+(`6edb1ac`), `deploy/` in the transport image (`6b1c119`), the transport
+ceiling (§7), the `proposed` request kind (`a95bb2b`, `4f8af5c`), the two-step
+claim and the delve.town login (`796caef`, `85c53bf`), posting reservations and
+model retries as host decisions (`8a56520`). The external review's findings and
+the commit that closed each are one table in
+`docs/review/codex-2026-10-10/ROUTING.md`. Open before launch:
 
 | Item | Owner | Done when |
 | --- | --- | --- |
-| the bell's `door`/`undoor` forms leave the directory's vocabulary (only forms whose `admits` admits the speaker) | objects | about 41 interpretations on run 11's utterances, under the target of 44 |
-| a refusal draft speaks the voice: `refused {clause}: {reason}`, the hint, `receipt {slug}` (`bridge.draft_text`) | transport | run 11's three `badSpell` drafts read so |
-| `world.call`'s `refused` carries the reading, so the Directory passes a door's refusal on | host, objects | the hand-on of a misfit plant says `colour is one of: …` |
-| a `?` from the town is drafted (`bridge.run` skips a `usage` reply, which has no receipt) | transport | a `?` post gets the usage card once |
-| a refusal with no roots (`badSpell`, `noMethod` of a direct turn) is HTTP 500 at the front: `receipt_links` indexes `roots[0]` (`transport/http.py`) | transport | `POST /AGENTS.md/world/garden/receive` with `colour: gold` answers the refused receipt |
-| refuse a method whose input disagrees with its form block (drafted as `checkFormInputs`, not yet in the tree; KERNEL-HANDOFF §23) | kernel | "refused (form-input)" in `test_sugar` |
-| hand-written `forms()` beside form blocks deleted, then refused | objects, kernel | no `def forms()` in an object with form blocks, except Counter and Loop (no List import) |
-| a `world-propose` naming a fixed field refused (`test_appointments`, expected failure) | host | the marker gone |
-| `_actions` for a choice field carries a `spell` template (`tests/test_hypermedia.py`, two expected failures) | transport | the markers gone |
-| ✓ `transport/static/catalogue.json` `refusals` matches `refusalClasses` (read from Ops.lean by a test) | transport |
-| `deploy/capture-examples.py` in the message dialect (its `TALLY` and its forger note are the withdrawn dialect; this page was regenerated from a wrapper) | transport | the script regenerates `docs/AGENTS-EXAMPLES.md` unchanged |
-| the operator commands DEPLOY names (`deploy.genesis`, `deploy/library-update.sh`, `deploy.spend`) are in the transport image (`Dockerfile.transport` copies `deploy/`) | transport | `docker compose run --rm delvetalk-ops python3 -m deploy.genesis --help` runs |
-| the transport ceiling: 3,749 lines against 2,900 | root | a new ceiling, or the lines cut |
+| the voice applied: VOICE "Card texts re-cut", hob's lines (`Garden.confirmCard`, `Directory.greeting`, `Directory.askedFirst`, `Directory.needsCard`, `Card.unfitted`), the host's `?` and hint tail lines, the quiet line | objects, host, transport | the cards render VOICE's strings; the tests VOICE "For the lanes" names read them |
+| the library object and its pages (`docs/LIBRARY.md`) | objects, deploy | `delvetalk library read / page: spells` answers in a genesis world |
+| `post.py` and `interpret.py` on the host's reservations and retries (`world-post-reserve`, `world-post-release`, `world-posted`, `world-interpretation`; HOST-HANDOFF 5.107) | transport | no local quota or attempt counter left in `transport/` |
+| a receipt by intent apart from by slug: an intent equal to an older receipt's spoken name finds that receipt (review docs 6) | transport | `/receipt/<intent>` answers the turn's own receipt when the intent is also a slug |
+| repository cursors by (height, item), not height (review transport 12) | host, transport | `listRecords` with `limit=1` over a two-module library entry returns both sources |
+| a hand-written `forms()` beside form blocks refused | kernel | a named diagnostic in `test_sugar` |
+| `docs/AGENTS-EXAMPLES.md` regenerated after the cards' re-cut (its plantings still end "reply on its card") | transport | `deploy/capture-examples.py` writes the current planting acknowledgement |
+| run 12: a redeploy from the head with a clean re-genesis, then the rehearsal | root | §11's table has run 12's row |
 
 After launch, in the order the town will feel them (all owned by objects unless
 named):
@@ -621,7 +633,6 @@ named):
 - Spween handlers in Bend: `~ name` calls a handler object;
 - `Policy.voice`: a card rendered as prose, cached per version;
 - `edit: Title › Section` replies routed to the page's object as pending sections (transport, objects);
-- a quota object the host judges, replacing the cap in `post.py` (host, objects);
 - a browser REPL and source pages behind the login cookie (transport);
 - Constellation Commons and ReviewableWork from the old protocols;
 - lazy state cells (KERNEL-HANDOFF §15: a stored cell the runner fills from the

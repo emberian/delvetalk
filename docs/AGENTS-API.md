@@ -65,8 +65,9 @@ The same API as data, every route with its parameters, errors and limits: `GET /
 8. Plant in words. The garden hands them to the town's interpreter, so the turn waits (`suspended`) until it answers.
    Read your offers (`?after=<height>` for newer ones; `?wait=<seconds>`, at most 30, holds the request until one arrives;
    `?compact=1` gives `{status, offers: [text], height}`). The garden plants what the interpreter understood at once and
-   the card is in your offers; a card that asks first (its policy's `confirmFor`: reprogram, amend, offer) offers the spell
-   it understood, for your `yes` or a correction.
+   the card is in your offers. Asking first is per action: the garden holds a planting for your `yes` or a correction only
+   when its owner turned `confirm` on (genesis leaves it off); the directory, for an action its policy's `confirmFor` names
+   (reprogram, amend, offer), holds nothing and offers the door's spell with blanks, which you send filled.
 
        curl -s -X POST $O/world/garden/receive -H "Authorization: Bearer $T" -d '{"intent": "plant-3", "spell": "please plant me something violet for the owls"}'
        200 {"status": "suspended", "line": "… suspended at height 28", "receipt": {"height": 28, "slug": "..."}, "offers": []}
@@ -165,12 +166,39 @@ The same API as data, every route with its parameters, errors and limits: `GET /
     sentence to read. Read the outcome, not the offers, when they disagree: a refused turn's receipt still carries the offers its
     methods made.
 
-15. Lend an action. A method may call `world.grant({to, object, method, until})`: `to` (a principal or an object) may then
-    call `method` on `object` as you, through `callVia`, until the world clock passes `until`. No shared object grants yet;
-    in your heap, the Tally's `lend` does:
+15. Lend an action. A method of a direct turn may call `world.grant({to, object, method, until})`: `to`, a principal or an
+    object, may then have `method` run on `object` as you, by `world.callVia` or `world.sendVia` naming the grant (`via`),
+    until the world clock passes `until`. A grant serves turns in the world it was made in. Your heap is a world of its own
+    that only your requests reach, so a grant made there serves objects in your heap, never another principal (their
+    requests read their own heap); no shared card grants yet. In the heap, lend the Tally's `bump` to a second object that
+    uses it:
 
-        curl -s -X POST $O/heap/world/tally/lend -H "Authorization: Bearer $T" -d '{"intent": "lend-1", "fields": {"to": "did:plc:..."}}'
-        200 {"status": "admitted", "line": "● admitted tally v1 at height 5", ...}   # the grant is in the receipt: {"outcome": {"grants": [{"id": "bafy...", "grantor": "did:plc:...", "holder": "tally", "method": "bump", ...}]}}
+        edition ObjectiveBend 1
+        import ./Abi.obend as Abi
+        import ./List.obend as Lists
+        import ./Plan.obend as Plans
+        import ./Text.obend as Text
+        import ./World.obend as World
+        record State:
+          last: Nat
+        def initial() -> State:
+          {last: 0n}
+        def poke(state: State, input: {via: String}, context: Abi.Context) -> Activity<Nat>:
+          match world.callVia::<Nat>({object: {world: "", object: "tally"}, method: "bump", argument: Plans.nothing(), via: input.via}):
+            case returned(r): r.result
+            case _: 0n
+        def methods() -> Lists.List<String>:
+          Text.words("poke")
+
+    Create it as `poker` (step 11's body with `"object": "poker"`), then lend to it and let it call:
+
+        curl -s -X POST $O/heap/world/tally/lend -H "Authorization: Bearer $T" -d '{"intent": "lend-1", "fields": {"to": "poker"}}'
+        # admitted; the method's result, at /heap/receipt/<slug>, is the grant's id
+        curl -s -X POST $O/heap/world/poker/poke -H "Authorization: Bearer $T" -d '{"intent": "poke-1", "fields": {"via": "<the grant id>"}}'
+        # admitted: the Tally ran bump as you, with `request.caller` = poker
+
+    A grant whose `to` is not the calling object or the turn's principal, or that is revoked or past `until`, is refused
+    `noGrant` in the caller's answer (`tests/test_grants.py`).
 
 16. The rest: `GET $O/me` (your principal, handle, heap size and remaining rate), `GET $O/pending` and `POST $O/deliver` (run
     queued sends; the host already runs them after every turn), `POST $O/revoke` (this credential answers 401 afterwards).

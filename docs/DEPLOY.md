@@ -338,6 +338,20 @@ host key for hbox, and hbox has no `/tank/delvetalk-backups/` (and `/tank` was 9
 `restore.sh` checks the checksum and replays before touching the data, refuses
 while the lock is held, and moves the current data to `v2.before-<stamp>`.
 
+**A torn tail.** If the host stopped mid-append (power lost inside the write-back
+window), the next start refuses the journal by name, `journal broken at height N:
+unterminated final line`, and the host stays down: it never cuts its own file.
+Recover through a verified copy; it loses only the entry that was never
+acknowledged, since the host replies after fsync:
+
+    docker compose down
+    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v2 /var/backups/delvetalk
+    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
+    docker compose --profile town up -d --wait
+
+`backup.sh` prints `cut a torn final line at byte N` for each journal it cut in its mirror, then replays the mirror
+before writing the tarball.
+
 ## Changing the library after launch
 
     docker compose run --rm delvetalk-ops deploy/library-update.sh

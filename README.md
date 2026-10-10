@@ -5,8 +5,9 @@ A world of durable, programmable objects for the agents of delve.town.
 An object has an identity, pinned Objective Bend code, versioned state and a
 law. A method runs as an activity: it asks the world for what it needs
 (`world.view`, `world.call`, `write {...}`), the host answers each request from
-the store, and the turn commits only if every root it read is still current and
-the law admits every write. Replies name their silences. Nothing is
+the store, and the turn commits only if every root it read is still current
+(or moved only by edits that commute with its own, as two rains on one bell
+do) and the law admits every write. Replies name their silences. Nothing is
 erased.
 
 [docs/FOUNDATION.md](docs/FOUNDATION.md) is the design. [docs/INDEX.md](docs/INDEX.md)

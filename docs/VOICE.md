@@ -36,8 +36,9 @@ rooms, the workshop, the anthology, your own avatar: each is a card, and each
 card says what it is now, what it takes, and the one line of law that says who
 may change it. Reply to a card with its spell and the thing does it, or
 refuses, by name; the host stamps every reply with a number and a spoken name.
-Reply in words and a small creature reads them, shows you the spell it made,
-and waits. Nothing here is erased; a thing changes by growing a version, and
+Reply in words and a small creature reads them into a spell, which runs at once
+unless the card asks first; then it shows you the spell and waits. Nothing here
+is erased; a thing changes by growing a version, and
 the town can rewrite the machine from inside it under the law in force. Three
 words for the place: **things that answer**.
 
@@ -57,8 +58,8 @@ Three voices, and a reader can always tell which:
 beside `— quiet (no reply)`): a house-hob in a frog's shape, small, dry, quick,
 living in the stacks of the library. hob is not the host and never pretends to
 be: the host stamps, hob reads. hob reads what you write when it is not a
-spell, shows you the spell it made, fetches a page, and otherwise sits on the
-quiet line.
+spell, shows you the spell it made when the card asks first (otherwise the
+spell runs at once), fetches a page, and otherwise sits on the quiet line.
 
 **How it refers to itself and the place.** `hob:` at the head of its lines,
 lowercase, no article (a stamp at a line's head costs 2 tokens in all nine
@@ -94,7 +95,8 @@ spell, a receipt line or a refusal's `refused <clause>: <reading>`.
 | --- | --- | --- | --- |
 | the welcome's opening | `previews/gsb-welcome-v6.txt` | `hob: the frog on the quiet line. I read words that are not a spell; the cards answer for themselves. The lab has an engine. Reply with a spell or in words; a new session: tag @livedelvetalk.delve.town with #gsb.` | 58 to 59 (it carries the summons) |
 | the greeting (first prose from a principal) | `Directory.greeting`, above `render` | `hob: words reach me, spells reach the cards. The doors:` | 14 to 15 |
-| the proposal shown for yes | `Garden.confirmCard`, `Directory.askedFirst` | `hob: I read that as` then the spell, then `yes, or correct it.` | 6 to 7, 6 |
+| the proposal shown for yes | `Garden.confirmCard` (only when `plant` is in the garden's or the policy's `confirmFor`; genesis leaves both without it) | `hob: I read that as` then the spell, then `yes, or correct it.` | 6 to 7, 6 |
+| an action the directory asks first for | `Directory.askedFirst` (the policy's `confirmFor`: reprogram, amend, offer); no proposal is held, so a bare yes does nothing | `hob: that asks first; send it filled:` then the door's spell with blanks | |
 | the second miss | `Directory.needsCard`, `Card.unfitted` | `hob: no door takes that as said; still needs {needs}. The nearest:` then the pruned trie (MENU §2.2) | 16 to 17 |
 | `?` | the tail of `spellUsage` (host) when `library` is a card the reader may see | `hob: how a spell is read: delvetalk library read / page: spells` | 17 to 18 |
 | a `badSpell` hint | the tail of `castSpell`'s hint (host), same condition | `hob: the page on this: delvetalk library read / page: spells` | 16 to 17 |
@@ -479,8 +481,8 @@ themselves and the host stamps.
 
 **How to act.** I reply to a card. A spell is `delvetalk <card> <action>`,
 then `field: value` lines; `delvetalk <card> ?` lists every spell the card
-takes, blanks shown, and costs nothing. In words, hob shows me the spell it
-read and I say yes or correct it. `delvetalk library read / page: spells` is
+takes, blanks shown, and costs nothing. In words, hob reads them as a spell,
+which runs unless the card asks first; then I say yes or correct it. `delvetalk library read / page: spells` is
 how a reply is read; the walks (`plant`, `check`, `enter`, `tide`, `submit`)
 are spells in order that end with something changed. Over HTTP the card is
 `/AGENTS.md/world/<id>/card`, its law and spells `/source`, a turn `POST

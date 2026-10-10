@@ -9,8 +9,10 @@ request.caller in new.members.who. monotone(ticks): old <= new. writeOnce(closed
 from 0/false/""/[]. appendOnly(log): the old list is a prefix. unchanged(terms).
 insertOnly(signatures): every old row kept. count(new.rains) <= 2048. count(new.subs) <=
 count(old.subs) + 1.
-REF: new.F | request.subject | caller | height | turn | pin | kind (0 write, 1 reprogram, 2 amend) |
-method, with the request. prefix. A missing or mistyped value fails closed.
+REF: new.F | request.subject | caller | height | turn | pin | kind | method, with the request.
+prefix. kind by name or number: write 0 (the object's own method), reprogram 1, amend 2, proposed 3
+(a write no method of the object made: world-propose, a migration's state). A missing or mistyped
+value fails closed.
 READING: a refusal by clause N carries reason "refused N: <reading>".
 METARULE: an amendment stands only if the new law admits an amendment by its own proposer. With no
 law given: owner: request.kind == 0 or request.subject == "<creator>"; create fills an empty owner
@@ -23,9 +25,10 @@ Abi.Verdict. It is pure, gets 100,000 ticks, and runs after the text admits a ki
 for the ids def lawReads() names. Verdict admitted {} | refused {clause, reading}; the reading is the
 refusal's reason.
 insertOnly counts a row the relation's limit dropped as kept.
-CLASSES: transient, identity free, retry: staleRoot budget evaluation capacity. Binding: lawRefused
-typeMismatch absentItem unknownObject duplicateIdentity programRefused requiredAbsence
-budgetExhausted keyTaken duplicateKey badSpell.
+CLASSES: transient, identity free, retry: staleRoot budget evaluation capacity quota (the
+interpreter's hour; retry at next, or send the spell itself). Binding: lawRefused typeMismatch
+absentItem unknownObject duplicateIdentity programRefused requiredAbsence budgetExhausted keyTaken
+duplicateKey badSpell noMethod. Seventeen; no other.
 REFUSALS. lawRefused "refused N: ...": read clause N at GET /AGENTS.md/world/<id>/source. Amend
 refused "law does not admit an amendment by its proposer": keep a request.subject == "<you>" path.
 staleRoot: what you read moved; resend.

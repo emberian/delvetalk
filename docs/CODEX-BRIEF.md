@@ -40,7 +40,7 @@ and `docs/WHOLENESS.md` (the world as an object). `docs/INDEX.md` lists the rest
 8. **The metarule.** No law is accepted unless it admits an amendment by its own proposer.
 9. **Pins are sources.** A pin is the CID of the sealed source closure; a compiler or library change never moves the pin of unchanged source.
 10. **Canonical relations.** Rows sorted by key bytes (DAG-CBOR orders shorter column names first), no key twice, at most the declared limit; equal rows, one CID.
-11. **Declared surface.** Only declared methods (form actions, `methods()`, `views()`, conventional names) run from outside; spells, direct turns and deliveries reach no helper.
+11. **Declared surface.** Only declared methods (form actions, `methods()`, `views()`, conventional names) run from outside; spells, direct turns, calls and sends reach no helper. The exceptions are deliveries the receiver chose: a change to the receiver its subscription named, and `ended` to the supervisor it was created under (`TurnState.receiver`).
 12. **Authority on reads.** A reader sees only what the read policy permits; a public receipt names what was refused and where, never hidden state; no card or post carries a hash; the causal ledger bounds every chain of sends and changes across retry and restart.
 
 Worth an adversarial eye beyond these: the Bend predicate's budget (`lawTicks`) and its declared
@@ -78,6 +78,5 @@ the spell grammar against hostile text (`Host/Spell.lean`, 64 KiB bodies); check
 - **After launch, by decision:** per-row roots and lazy state cells (KERNEL-HANDOFF §15), foreign worlds
   (`foreignWorld`), and the items under FOUNDATION §12 "After launch".
 
-Known defects found in this pass are in FOUNDATION §12's table; the sharpest: the HTTP front answers 500 to a
-refusal whose receipt has no roots (a misfitting spell or an undeclared method of a direct turn), because
-`receipt_links` in `transport/http.py` indexes `roots[0]`.
+What is still open is FOUNDATION §12's table; the first review's findings and the commit that closed each are
+`docs/review/codex-2026-10-10/ROUTING.md`.
