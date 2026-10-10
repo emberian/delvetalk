@@ -50,6 +50,21 @@ def plant(state: State, input: {seed: String}, context: Abi.Context) -> Activity
 
 PROSE = "lovely evening, the moths are out"
 
+RELAY = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  n: Nat
+def initial() -> State:
+  {n: 0n}
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<String>:
+  match world.send({object: {world: "", object: "card"}, method: "receive", argument: Data.of::<{text: String, post: String}>({text: input.text, post: input.post})}):
+    case delivery(d): "handed on"
+    case _: "other"
+""", "receive")
+
 
 class Reach(Chain):
     policy = policy_tests.PolicyObject.policy
@@ -79,23 +94,32 @@ class Reach(Chain):
         status = self.host.send(op="world-status", principal="glm")
         self.assertEqual(status["interpretations"]["remaining"], status["interpretQuota"], status)
 
-    def test_a_stated_mention_reaches_and_the_interpretation_says_so(self):
-        r = self.say(reach="mention")
-        self.assertEqual(r["status"], "suspended", r)
-        [item] = self.pending()
-        self.assertEqual(item["reach"], "mention", item)
 
-    def test_a_reply_to_a_recorded_post_reaches_by_reply(self):
+    def test_a_reply_to_a_recorded_post_reaches_by_reply_and_to_another_post_does_not(self):
         hub = "at://did:plc:ember/town.delve.feed.post/card"
         got = posted(self.host, principal="transport", uri=hub, cid="bafycard", object="card")
         self.assertEqual(got["status"], "posted", got)
         r = self.say(replyTo=hub)
         self.assertEqual(r["status"], "suspended", r)
         self.assertEqual(self.pending()[0]["reach"], "reply")
-
-    def test_a_reply_to_an_unrecorded_post_does_not_reach(self):
-        r = self.say(replyTo="at://did:plc:someone/app.bsky.feed.post/x")
+        r = self.say(replyTo="at://did:plc:someone/app.bsky.feed.post/x")  # an unrecorded post does not reach
         self.assertEqual(r["result"]["value"], "not addressed", r)
+
+    def test_a_reply_handed_on_by_send_keeps_its_reach(self):
+        """A card that hands a reply on to another (a card forwarding to the directory) passes how the words
+        reached it: prose that reached no one is still not addressed, a mention is still a mention."""
+        seen, mods = set(), []
+        for dep in ("Abi", "List", "Plan", "World"):
+            closure(dep, seen, mods)
+        self.make("relay", mods + [{"name": "Relay", "source": RELAY}], record())
+        quiet = self.host.send(op="world-turn", principal="glm", object="relay", method="receive",
+                               argument=record(text=label(PROSE), post=label("at://glm/p/q")), identity="q")
+        self.assertEqual(quiet["status"], "admitted", quiet)
+        self.assertEqual([d.get("result") for d in quiet["delivered"]], [label("not addressed")], quiet)
+        loud = self.host.send(op="world-turn", principal="glm", object="relay", method="receive", reach="mention",
+                              argument=record(text=label(PROSE), post=label("at://glm/p/l")), identity="l")
+        self.assertEqual([d["status"] for d in loud["delivered"]], ["suspended"], loud)
+        self.assertEqual([i["reach"] for i in self.pending()], ["mention"])
 
     def test_a_named_method_reaches_directly(self):
         r = self.host.send(op="world-turn", principal="glm", object="card", method="ask",
@@ -103,18 +127,16 @@ class Reach(Chain):
         self.assertEqual(r["status"], "suspended", r)
         self.assertEqual(self.pending()[0]["reach"], "direct")
 
-    def test_stated_field_lines_must_be_there(self):
+    def test_stated_field_lines_must_be_there_and_an_unknown_reach_is_a_request_error(self):
+        for bad in ("thread", "reply", "spell", "delivery", 1):
+            r = self.say(reach=bad)
+            self.assertEqual(r["status"], "error", (bad, r))
         r = self.say(reach="fields")
         self.assertEqual(r["status"], "error", r)
         self.assertIn("field line", r["message"])
         r = self.say("note: a fern\nand the rest is prose", reach="fields")
         self.assertEqual(r["status"], "suspended", r)
         self.assertEqual(self.pending()[0]["reach"], "fields")
-
-    def test_an_unknown_reach_is_a_request_error(self):
-        for bad in ("thread", "reply", "spell", "delivery", 1):
-            r = self.say(reach=bad)
-            self.assertEqual(r["status"], "error", (bad, r))
 
     def test_the_reach_is_part_of_the_request(self):
         self.say(identity="same")

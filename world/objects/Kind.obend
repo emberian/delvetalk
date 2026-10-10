@@ -124,8 +124,13 @@ def refusedCard(state: State, context: Abi.Context, refusal: Card.Refusal) -> Ac
   Card.tell(Done.refused(refusal), Document.concat(Document.text("refused {refusal.clause}: {refusal.reading}\n\n"), render(state, context)))
 # A place making under itself passes its own id and the fields (`under`, docs/CATALOGUE.md §3):
 # the instance is <under>/<name>/<n>, with a door home, and the place answers the maker.
+# The fields come as text, so they are judged against the form here, as the host judges a make
+# spell: a missing field, a value outside its bounds or not one of its options is refused by the
+# host's clause, nothing made.
 def makeUnder(state: State, input: {under: String, fields: Lists.List<Rows.Field>}, context: Abi.Context) -> Activity<Done>:
-  making(state, input.fields, input.under, context)
+  match Forms.fault(state.form, input.fields):
+    case some(f): Card.tell(Done.refused({clause: f.value.clause, reading: f.value.reading}), Document.text("Not done: {f.value.reading}\n"))
+    case none(_): making(state, input.fields, input.under, context)
 # Grafts the kind's make: the owner's, once its form is set (genesis shapes `kinds`; `kinds`
 # shapes each kind it makes).
 def shape(state: State, input: {object: String}, context: Abi.Context) -> Activity<Done>:
@@ -146,8 +151,10 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
 def layerSource(state: State) -> String:
   let items = Forms.specs(state.form)
   let formLines = textJoin(Lists.map(items, Forms.formLine), "")
-  let converters = textJoin(Lists.map(items, Forms.converter), "")
-  "layer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\ntype State = Super.State\nform make:\n{formLines}def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, {Forms.fieldsExpr(items)}, \"\", context)\n{converters}"
+  let converters = textJoin(Lists.map(items, fn(i: Forms.Spec) -> String: Forms.converter("make", i)), "")
+  "layer over ./Kind.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Rows.obend as Rows\ntype State = Super.State\nform make:\n{formLines}def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Super.Done>:\n  Super.making(state, {makeFields(items)}, \"\", context)\n{converters}"
+def makeFields(items: Lists.List<Forms.Spec>) -> String:
+  Forms.fieldsExpr("make", items)
 # The make spell with its blanks, one inline line.
 def spellLine(id: String, items: Lists.List<Forms.Spec>) -> String:
   let fields = textJoin(Lists.map(items, Forms.spellField), "")

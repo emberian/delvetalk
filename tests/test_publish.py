@@ -39,6 +39,8 @@ class Publishing(BridgeCase):
         header, *sections = draft['text'].split('\n## ')
         self.assertEqual(header, 'wiki: garden\n')
         titles = [s.split('\n', 1)[0] for s in sections]
+        self.assertTrue(all(len(s) < 2000 for s in sections), [len(s) for s in sections])
+        self.assertIn('… and 4 more bells', sections[0])
         self.assertEqual(titles, ['Card', 'How to reply'] + [f'garden/bell/{n}' for n in range(20, 4, -1)])
         self.assertNotIn('published', self.run_bridge())               # drafted once
         self.assertEqual(len([d for d in self.drafts() if 'publication' in d]), 1)

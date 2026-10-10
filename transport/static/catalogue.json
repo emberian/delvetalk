@@ -236,7 +236,7 @@
    "method": "GET",
    "href": "/xrpc/{nsid}",
    "auth": "optional",
-   "does": "every entry as an AT Protocol record, read only (docs/REPO.md)"
+   "does": "every entry as an AT Protocol record, read only, in a signed repository (docs/REPO.md)"
   },
   {
    "name": "did",
@@ -460,7 +460,7 @@
   },
   "RepoNotServed": {
    "code": 400,
-   "when": "no MST, no signed commit"
+   "when": "no signing key on this box: no MST, no signed commit"
   },
   "InvalidToken": {
    "code": 401,
@@ -557,7 +557,7 @@
   "badSpell": {
    "transient": false,
    "hint": "source",
-   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, noAvatar, unknownField, duplicateField, missingField, badValue, fixed, unclosedBlock, unknownKind, noBody, unknownLaw, noLaw, lawClash, notYours; the last six are become's, adopt's and lend's), `reason` says why, and `hint` is the spell with its blanks, to resend"
+   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, noAvatar, unknownField, duplicateField, missingField, badValue, fixed, unclosedBlock, unknownKind, noBody, unknownLaw, noLaw, lawClash, notYours, opener; unknownKind to notYours are become's, adopt's and lend's, opener a moderation power cast by another than the world's opener), `reason` says why, and `hint` is the spell with its blanks, to resend"
   },
   "quota": {
    "transient": true,
@@ -568,6 +568,11 @@
    "transient": false,
    "hint": "source",
    "means": "the card offers no such method; `delvetalk <object> ?` lists its spells"
+  },
+  "quiet": {
+   "transient": true,
+   "hint": "receipt",
+   "means": "the world's opener quieted this principal; `clause` names the clock until which, `reason` the opener's reading, `next` the clock at which to try again"
   }
  }
 }

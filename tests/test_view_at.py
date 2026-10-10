@@ -46,7 +46,7 @@ class ViewAt(Reflection):
     def at(self, target, version, principal="ann", reader="reader"):
         return self.turn(reader, "at", record(target=label(target), version=nat(version)), principal=principal)
 
-    def test_each_past_version_and_the_root_is_the_current_version(self):
+    def test_each_past_version_the_root_at_the_current_version_and_a_private_object_denied(self):
         self.counter("reader")
         self.counter("c")
         for _ in range(3):
@@ -59,13 +59,9 @@ class ViewAt(Reflection):
         self.assertEqual(self.at("c", 4)["result"], nat(999999))
         self.reopen()
         self.assertEqual(self.at("c", 2)["result"], nat(702))
-
-    def test_a_private_object_is_denied(self):
-        self.counter("reader")
         self.counter("vault", read={"principals": ["ember"]})
         self.assertEqual(self.at("vault", 0)["result"], nat(888888))
         self.assertEqual(self.at("vault", 0, principal="ember")["result"], nat(500))
-
 
 if __name__ == "__main__":
     unittest.main()

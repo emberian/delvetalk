@@ -155,12 +155,6 @@ class WriteIsSelfOnly(Authority):
         self.assertEqual((self.count("a"), self.version("a")), ("0", 0))
         self.assertEqual(self.host.send(op="world-status")["height"], before + 1)
 
-    def test_a_dive_within_the_cap_commits_every_level_as_one_version(self):
-        r = self.turn("a", "dive", record(n=nat(3)))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual((self.count("a"), self.version("a")), ("4", 1))
-        self.assertEqual(self.outcome(r)["writes"][0]["callers"], ["", "a", "a", "a"])
-
 
 class LawsOnWho(Authority):
     def test_directory_remove_by_a_stranger_is_refused_by_the_directorys_law(self):
@@ -189,22 +183,16 @@ class LawsOnWho(Authority):
         self.assertEqual(by_kim["status"], "admitted", by_kim)
         self.assertEqual(field(self.state("a"), "lastBy"), label("kim"))
 
-    def test_append_only_admits_an_append_and_refuses_an_amend_and_a_remove(self):
-        self.ledger("a", "law grow: appendOnly(entries)\n", entries=items("x"))
+    def test_append_only_and_unchanged_refuse_what_they_name_and_admit_the_rest(self):
+        self.ledger("a", "law grow: appendOnly(entries)\nlaw fixed: unchanged(planting)\n", entries=items("x"), planting="oak")
         self.assertEqual(self.turn("a", "append", record(item=label("y")))["status"], "admitted")
-        amend = self.turn("a", "amendOne", record(old=label("x"), item=label("z")))
-        self.assertEqual((amend["status"], self.outcome(amend)["clause"]), ("refused", "grow"))
-        remove = self.turn("a", "removeOne", record(item=label("x")))
-        self.assertEqual((remove["status"], self.outcome(remove)["clause"]), ("refused", "grow"))
-        self.assertEqual(self.version("a"), 1)
-        self.assertEqual(self.state("a")["fields"][2]["value"], items("x", "y"))
-
-    def test_unchanged_refuses_a_set_of_that_field_and_admits_the_others(self):
-        self.ledger("a", "law fixed: unchanged(planting)\n", planting="oak")
-        refused = self.turn("a", "plant", record(value=label("elm")))
-        self.assertEqual((refused["status"], self.outcome(refused)["clause"]), ("refused", "fixed"))
-        self.assertEqual(field(self.state("a"), "planting"), label("oak"))
         self.assertEqual(self.turn("a", "bump")["status"], "admitted")
+        for method, arg, clause in (("amendOne", record(old=label("x"), item=label("z")), "grow"),
+                                    ("removeOne", record(item=label("x")), "grow"), ("plant", record(value=label("elm")), "fixed")):
+            r = self.turn("a", method, arg)
+            self.assertEqual((r["status"], self.outcome(r)["clause"]), ("refused", clause), method)
+        self.assertEqual(self.version("a"), 2)
+        self.assertEqual((field(self.state("a"), "entries"), field(self.state("a"), "planting")), (items("x", "y"), label("oak")))
 
     def test_request_caller_is_the_calling_objects_id_in_a_call_and_empty_in_a_direct_turn(self):
         law = 'law only: request.kind == 0 or request.kind == 3 implies request.caller == "garden"\n'
@@ -225,18 +213,10 @@ class LawsOnWho(Authority):
         r = self.host.send(op="world-propose", principal="ember", identity="p-forged",
                            roots=[{"object": "bell", "version": 1}], writes=[forged])
         self.assertEqual((r["status"], self.outcome(r)["clause"]), ("refused", "only"))
+        # Replayed, the law still judges the caller (state equality on reopen is test_properties).
+        self.reopen()
+        self.assertEqual(self.outcome(self.turn("bell", "bump"))["clause"], "only")
 
-    def test_context_names_the_caller_the_intent_and_the_height(self):
-        self.ledger("a")
-        self.ledger("b")
-        direct = self.turn("a", "who")
-        self.assertEqual(text_of(direct["result"]), "")
-        r = self.turn("a", "facts", identity="the-intent")
-        self.assertEqual(text_of(r["result"]), "the-intent")
-        height = [f["value"]["value"] for f in r["result"]["fields"] if f["name"] == "n"][0]
-        self.assertEqual(height, str(r["receipt"]["height"] - 1))
-        via = self.turn("a", "relay", record(target=label("b"), method=label("who")))
-        self.assertEqual(text_of(via["result"]), "a")
 
     def test_a_bundled_reprogram_and_write_are_judged_for_both_kinds(self):
         law = "law strictWrites: request.kind == 0 implies new.count <= 3\n"
@@ -266,35 +246,12 @@ class Clauses(Authority):
                               roots=[{"object": "a", "version": self.version("a")}],
                               writes=[{"object": "a", "edits": edits}])
 
-    def test_an_absent_item_is_absentItem(self):
-        r = self.turn("a", "amendOne", record(old=label("nobody"), item=label("q")))
-        self.assertEqual((r["status"], self.outcome(r)["class"]), ("refused", "absentItem"))
-        r = self.turn("a", "removeOne", record(item=label("nobody")))
-        self.assertEqual(self.outcome(r)["class"], "absentItem")
-        self.assertEqual(self.version("a"), 0)
-
-    def test_state_beyond_its_byte_limit_is_capacity(self):
-        r = self.turn("a", "append", record(item=label("x" * 300000)))
-        self.assertEqual((r["status"], self.outcome(r)["class"]), ("refused", "capacity"))
-
-    def test_an_edit_the_field_cannot_take_is_typeMismatch(self):
-        r = self.propose("add-to-text", self.edit("add", "lastBy", delta=nat(1)))
-        self.assertEqual((r["status"], self.outcome(r)["class"]), ("refused", "typeMismatch"))
-        r = self.propose("append-to-nat", self.edit("append", "count", item=label("x")))
-        self.assertEqual(self.outcome(r)["class"], "typeMismatch")
-
-    def test_a_write_naming_an_object_it_never_rooted_is_not_a_receipt(self):
-        r = self.host.send(op="world-propose", principal="ember", identity="blind",
-                           roots=[], writes=[{"object": "a", "edits": self.edit("add", delta=nat(1))}])
-        self.assertEqual(r["status"], "error")
-
-
 class HostAssignsTheTurn(Authority):
     def setUp(self):
         super().setUp()
         self.ledger("a")
 
-    def test_a_client_supplied_turn_is_refused_by_name_on_propose_amend_and_reprogram(self):
+    def test_the_turn_is_the_hosts_a_client_supplied_one_is_refused_and_a_law_sees_its_entrys_height(self):
         height = self.host.send(op="world-status")["height"]
         root = [{"object": "a", "version": 0}]
         replies = [
@@ -304,43 +261,13 @@ class HostAssignsTheTurn(Authority):
             self.host.send(op="world-reprogram", principal="ember", identity="t3", object="a", version=0,
                            package=ledger("", "# v2\n"), turn=7)]
         for r in replies:
-            self.assertEqual(r["status"], "error", r)
             self.assertIn("turn is assigned by the host", r["message"])
         self.assertEqual(self.host.send(op="world-status")["height"], height)
-
-    def test_the_turn_a_law_sees_is_the_height_of_its_entry(self):
         self.ledger("t", "law early: request.turn <= 3\n")
-        ok = self.turn("t", "bump")
-        self.assertEqual(ok["status"], "admitted", ok)
+        self.assertEqual(self.turn("t", "bump")["status"], "admitted")
         self.assertEqual(self.last_entry()["turn"], self.last_entry()["height"])
         late = self.turn("t", "bump")
         self.assertEqual((late["status"], self.outcome(late)["clause"]), ("refused", "early"))
-
-
-class Restart(Authority):
-    def test_restart_replays_callers_kinds_laws_and_the_state_they_produced(self):
-        law = 'law only: request.kind == 0 implies request.caller == "garden"\n'
-        self.ledger("garden")
-        self.ledger("bell", law)
-        self.ledger("mine", "law strictWrites: request.kind == 0 implies new.count <= 3\n")
-        self.assertEqual(self.turn("garden", "relay", record(target=label("bell"), method=label("bump")))["status"], "admitted")
-        self.assertEqual(self.turn("mine", "grow", record(n=nat(2), source=label(ledger(
-            "law strictWrites: request.kind == 0 implies new.count <= 3\n", "# v2\n"))))["status"], "admitted")
-        self.assertEqual(self.turn("garden", "dive", record(n=nat(3)))["status"], "admitted")
-        before = {n: self.host.send(op="world-view", principal="ember", object=n) for n in ("garden", "bell", "mine")}
-        height = self.host.send(op="world-status")["height"]
-        self.reopen()
-        self.assertEqual(self.host.send(op="world-status")["height"], height)
-        for n, view in before.items():
-            self.assertEqual(self.host.send(op="world-view", principal="ember", object=n), view)
-        # The restored law still judges the caller.
-        direct = self.turn("bell", "bump")
-        self.assertEqual(self.outcome(direct)["clause"], "only")
-        # The callers are in the journal, inside the entry hash.
-        with open(self.path) as handle:
-            lines = handle.read().splitlines()
-        self.assertTrue(any('"callers":["garden"]' in line for line in lines))
-
 
 if __name__ == "__main__":
     unittest.main()

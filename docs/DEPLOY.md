@@ -54,6 +54,8 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
 - `/var/lib/delvetalk/v2`, owner `10425:10425`, mode 0700 (the image's uid,
   next in the edge's series). On ext4 or ZFS, local disk: see "Durability".
 - `/etc/delvetalk/anthropic.key`: the key alone, owner 10425, mode 0400.
+- `/etc/delvetalk/repo/town.key`: the repository's signing key (docs/REPO.md "The key"), made at first start
+  (below), owner 10425, mode 0400, in a directory owner 10425, mode 0700. Never printed, never in a backup tarball.
 - The portal is `https://gsb.fg-goose.online` (`DELVETALK_ORIGIN` overrides it for every program; the front's `--origin` in
   `compose.yml` and `compose.hand.yml` is `${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}`, not a fixed string, and compose passes `DELVETALK_ORIGIN` from `.env` into every service). The Caddy route for
   `gsb.fg-goose.online`, and the old `delvetalk.fg-goose.online` route, both proxy to `10.10.1.10:8765` until the town
@@ -91,13 +93,15 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   `curl -s https://gsb.fg-goose.online/oauth/client-metadata.json` shows `client_id` equal to that URL. pds.delve.town
   is its own authorization server (PAR, PKCE S256, DPoP ES256, `client_id_metadata_document_supported`; checked
   2026-10-10). The image installs `cryptography` for ES256 from `deploy/requirements-transport.txt`, pinned by hash.
-- Firewall :8765 on the workhorse to Caddy's host (the anchor, 10.10.1.5) only: `--trust-proxy` believes the last
-  `X-Forwarded-For` entry from whoever connects, so anything else on 10.10.1.0/24 that reaches the port can choose it.
-  Measured 2026-10-10: the workhorse has no host firewall to add this to (no ufw; `nftables.service` disabled and
-  `/etc/nftables.conf` an empty accept skeleton; Docker's `DOCKER-USER` chain empty), and the Hetzner Cloud firewall
-  `dregg-edge` filters public interfaces only. The private network `dregg-edge-fsn1` holds the anchor and the workhorse
-  and nothing else, so today the open path is containers on the workhorse itself (the edge's bridge, 172.18.0.0/16).
-  A published port is filtered in `DOCKER-USER`, not `INPUT`; choosing and persisting that rule is dregg-infra's.
+- :8765 answers the anchor (10.10.1.5) only: `--trust-proxy` believes the last `X-Forwarded-For` entry from whoever
+  connects. The workhorse has no host firewall (no ufw, `nftables.service` disabled) and the Hetzner Cloud firewall
+  filters public interfaces only, so `delvetalk-firewall.service` (dregg-infra `edge/delvetalk/delvetalk-firewall`,
+  installed as `/usr/local/sbin/delvetalk-firewall`; after docker, `PartOf=docker.service`) owns two chains:
+  `DELVETALK-FRONT`, jumped to from `DOCKER-USER`, returns new connections to 10.10.1.10:8765 from the anchor and drops
+  every other source (the edge's and the default bridge's containers were the open path); `DELVETALK-LOCAL`, jumped to
+  from `OUTPUT`, resets a non-root process on the box (the `mini` user's sessions) connecting to :8765 or to the hand's
+  :8766. Matched on conntrack's original destination, so a recreated container keeps the rule. Checked 2026-10-10: the
+  anchor gets 200; a container on `docker0`, `nobody` on the box, hbox and the Mac get nothing; root still reaches both.
 
 ## Build and ship
 
@@ -132,8 +136,17 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b
     COMPOSE_FILE=compose.yml:compose.hand.yml       # once the hand is opened (below)
     DELVETALK_HAND_TOKEN=<secret>
+    DELVETALK_ORIGIN=https://gsb.fg-goose.online     # the portal, and the repository's did:web host
+    DELVETALK_REPO_KEY_PATH=/etc/delvetalk/repo/town.key
 
+The repository key, once (`deploy.repokey` refuses an existing file; it prints the `did:key`, which
+`/.well-known/did.json` then names as `#atproto`; the front does not start without the file, so a box deployed
+before the signed repository makes it the same way before its next `up`):
 
+    set -a; . ./.env; set +a
+    install -d -m 0700 -o 10425 -g 10425 /etc/delvetalk/repo
+    docker run --rm --user 10425:10425 --network none -v /etc/delvetalk/repo:/repo "$DELVETALK_IMAGE" \
+        python3 -m deploy.repokey --dir /repo --world town
 
     docker compose up -d --wait delvetalk-hostd
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
@@ -222,7 +235,8 @@ only when it is started with a secret, and only on a listener of its own (`--han
 
 (in compose that is `deploy/compose.hand.yml`, named by `COMPOSE_FILE` in `.env` with `DELVETALK_HAND_TOKEN`; it mounts
 `/etc/delvetalk/delve/` (owner 10425, mode 0700) read-only, where the owner puts `credentials.json`, read only at a
-Post, and publishes the hand's port on workhorse's loopback only, `127.0.0.1:8766`, so reach it by a forward):
+Post, and publishes the hand's port on workhorse's loopback only, `127.0.0.1:8766`, which `DELVETALK-LOCAL` keeps to root,
+so reach it by a forward as root):
 
     ssh -L 8766:127.0.0.1:8766 root@workhorse     # then open http://127.0.0.1:8766/hand/?token=<secret>
 
@@ -310,7 +324,8 @@ bytes and median suspension, the clock against unix minutes, the observation cou
 and `last-verify` (written by `backup.sh`), and the free fraction of the state and backup disks. `python3 -m
 deploy.watch` appends it to `<state>/watch.jsonl` and posts one line per crossed threshold, naming the playbook below,
 to the owner's Zulip: stream **`delvetalk-ops`**, topic **`watch`**, as the bot whose rc `.env` names
-(`DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc`, mode 0400, owner 10425). A condition speaks at most once per
+(`DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc`, mode 0400, owner 10425). The stream is the owner's to create
+on tulip.arke.me and subscribe the bot to: the rc in place is Sonnet46's, a guest, which cannot create a stream. A condition speaks at most once per
 six hours (`<state>/alerted.json`); two repeat hourly: a compose service not running or unhealthy, and a backup verify
 that failed or a newest tarball older than seven hours. Install on the workhorse:
 
@@ -318,7 +333,10 @@ that failed or a newest tarball older than seven hours. Install on the workhorse
     ssh root@workhorse 'cp /opt/delvetalk/delvetalk-watch.{service,timer} /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now delvetalk-watch.timer'
 
 `journalctl -u delvetalk-watch` shows each run; `python3 -m deploy.watch ... --dry-run` prints the lines without
-posting or remembering them.
+posting or remembering them. Installed 2026-10-10 (rc, `.env` line, `watch.sh`, both units) with the timer **not
+enabled**: the deployed image (foundation 18f1de9, `523ea05d7dca`) predates `deploy/watch.py` and the probe, and its one
+run by hand failed `No module named deploy.watch`. After an image from c5d4eb8 or later is up and the stream exists:
+`systemctl start delvetalk-watch.service` once, then `systemctl enable --now delvetalk-watch.timer`.
 
 ## Opening another community
 
@@ -372,27 +390,37 @@ journal is broken: the tarball is not made. The timer installed on the workhorse
 
 `systemctl enable --now delvetalk-v2-backup.timer`.
 
-**Off the box, by pull.** A copy on the box that fsyncs the journal is not custody. The owner's machine pulls; the
-workhorse holds no credential to it, so a box that is taken cannot reach its own backups. Once, on the owner's machine:
+**Off the box, by pull, to hbox.** A copy on the box that fsyncs the journal is not custody. hbox pulls; the
+workhorse holds no credential to it, so a box that is taken cannot reach its own backups. Installed 2026-10-10:
 
-    ssh-keygen -t ed25519 -N '' -f ~/.ssh/delvetalk-backups -C delvetalk-backups-pull
-    # on the workhorse, /root/.ssh/authorized_keys (rrsync ships with rsync: /usr/share/doc/rsync/scripts/rrsync, or /usr/bin/rrsync):
-    restrict,command="rrsync -ro /var/backups/delvetalk" ssh-ed25519 AAAA... delvetalk-backups-pull
+    # hbox: ssh-keygen -t ed25519 -N '' -f ~/.ssh/delvetalk-backups -C delvetalk-backups-pull@hbox
+    # workhorse, /root/.ssh/authorized_keys:
+    restrict,command="/usr/bin/rrsync -ro /var/backups/delvetalk" ssh-ed25519 AAAA... delvetalk-backups-pull@hbox
 
-Then hourly on the owner's machine (cron or a launchd/systemd timer), with Docker and the host image of the deployed
-commit (`docker save`/`load` it once from the workhorse) or a host binary:
+The key opens no shell, writes nothing, and cannot leave that directory (each refused when tried). On hbox, user
+`hbox` (linger on), `~/delvetalk-backups/` holds `pull-backups.sh` and `verify.sh` from the deployed commit and
+`pull.env` (`DELVETALK_HOST_IMAGE=delvetalk-host:<sha12>`, an image hbox built); a user timer,
+`delvetalk-pull-backups.timer` (dregg-infra `hbox/delvetalk-backups/`), runs at `00/6:47 UTC`, thirty minutes after the
+backup timer:
 
-    deploy/pull-backups.sh --image delvetalk-host:<sha12> ~/delvetalk-backups
+    ~/delvetalk-backups/pull-backups.sh --from root@2.28.141.27 --key ~/.ssh/delvetalk-backups \
+      --image ${DELVETALK_HOST_IMAGE} /tank/delvetalk-backups
+
+On a new binary, change `pull.env` on hbox with `.env` on the workhorse. `/tank` was 93 percent full (100 GB free) and
+the tarballs are 0.1 to 0.35 MB each, so the retention below holds well under a hundred MB; nothing there is removed
+but the script's own expired tarballs. The first run (2026-10-10) pulled five tarballs (810 KB) and replayed the newest,
+`delvetalk-20261010T201220Z`, at height 40. `journalctl --user -u delvetalk-pull-backups` on hbox shows each run; no
+alert watches it yet.
 
 It rsyncs the new tarballs and their `.sha256` (`--ignore-existing`; nothing is ever written back), checks each sum,
 keeps every tarball 7 days, the first of each UTC day 56 days and the first of each month always, then untars the
 newest into a throwaway directory and replays every journal in it (`verify.sh`); exit 1 names a broken one. The verify
 is the backup: an unverified tarball is a file.
 
-**The restore drill**, quarterly and once before the welcome is posted: on the owner's machine, into a scratch
+**The restore drill**, quarterly and once before the welcome is posted: on hbox, into a scratch
 directory, brought up on another port.
 
-    deploy/restore.sh --image delvetalk-host:<sha12> ~/delvetalk-backups/delvetalk-<stamp>.tar.gz /tmp/drill/v2
+    deploy/restore.sh --image delvetalk-host:<sha12> /tank/delvetalk-backups/delvetalk-<stamp>.tar.gz /tmp/drill/v2
     # .env as on the workhorse (DELVETALK_IMAGE, DELVETALK_HOST_IMAGE), with the drill's own paths; the drill makes no model call
     DELVETALK_DATA=/tmp/drill/v2 DELVETALK_PRIVATE_IP=127.0.0.1 DELVETALK_ANTHROPIC_KEY_PATH=/tmp/drill/no.key \
       docker compose -p delvetalk-drill --profile town up -d --wait      # first: touch /tmp/drill/no.key
@@ -542,8 +570,8 @@ Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on 
     du -sk /var/backups/delvetalk /var/lib/delvetalk/v2/state/heaps /var/lib/delvetalk/v2/state/access.log* | sort -n
     docker image ls 'delvetalk*'
 
-Remove only what the puller already holds: compare `ls /var/backups/delvetalk` with the owner's
-`~/delvetalk-backups` before deleting a tarball there, then old image tags (`docker image rm` of a tag `.env` does not
+Remove only what the puller already holds: compare `ls /var/backups/delvetalk` with hbox's
+`/tank/delvetalk-backups` before deleting a tarball there, then old image tags (`docker image rm` of a tag `.env` does not
 name). Bring the writers back: `docker compose --profile town up -d --wait`. Channel: `hob: the host is full; the hand
 is making room. Spells wait.` Record: what was removed and why.
 
@@ -557,7 +585,7 @@ is making room. Spells wait.` Record: what was removed and why.
   `credentials.json`.
 - **DNS and TLS.** The anchor's Caddy and the DNS record are dregg-infra's.
 - **Genesis.** Which objects exist, under which DID and policy, is the owner's.
-- **Backup schedule and off-box copy.** The owner picks the timer and the target.
+- **Backup schedule and off-box copy.** The owner picked them: every 6 h on the box, pulled to hbox 30 minutes later.
 
 ## Model credentials
 

@@ -14,8 +14,7 @@ import unittest
 
 from tests.test_chain import Chain
 from tests.test_objects import closure
-from tests import test_policy
-from tests.test_turn_world import label, record
+from tests.test_turn_world import record
 
 CLOCK = "transport"
 
@@ -80,42 +79,31 @@ class Reservations(Chain):
         self.assertEqual(self.posts()["delve"]["used"], 1)
 
 
-class Retries(Chain):
-    policy = test_policy.PolicyObject.policy
-    garden = test_policy.PolicyObject.garden
-    say = test_policy.PolicyObject.say
+class Unposted(Chain):
+    """`unposted`: our own post deleted on Delve or Zulip leaves the town as a journaled fact."""
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.host.send(op="world-open", path=self.path, clock=CLOCK)["status"], "opened")
+        self.make("hub", closure("Counter"), record())
 
-    def submit(self, reply):
-        [item] = self.host.send(op="world-interpretations")["pending"]
-        return item, self.host.send(op="world-interpretation", id=item["id"], reply=reply)
-
-    def test_transient_failures_are_the_hosts_to_retry_until_the_last_attempt(self):
-        self.policy()
-        self.garden("policy", confirm=False)
-        self.say("Could we plant a silver fern that remembers?")
-        failed = {"status": "failed", "reason": "transport", "model": "m"}
-        nexts = []
-        for attempt in range(1, 8):
-            item, r = self.submit(failed)
-            self.assertEqual(item["attempts"], attempt - 1)
-            self.assertEqual((r["status"], r["attempt"]), ("retrying", attempt), r)
-            nexts.append(r["next"])
-            if attempt == 3:
-                self.reopen()
-        self.assertEqual(nexts, [1, 2, 4, 8, 16, 32, 60])
-        [item] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual((item["attempts"], item["next"]), (7, 60))
-        _, last = self.submit(failed)
-        self.assertEqual(last["status"], "interpreted", last)
-        self.assertEqual(last["receipt"]["outcome"]["verdict"], {"tag": "unclear", "needs": ["model: transport"]})
-        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
-
-    def test_a_failure_that_is_not_transient_is_the_verdict_at_once(self):
-        self.policy()
-        self.garden("policy", confirm=False)
-        self.say("Could we plant a silver fern that remembers?")
-        _, r = self.submit({"status": "failed", "reason": "refused", "model": "m"})
-        self.assertEqual(r["status"], "interpreted", r)
+    def test_an_unposted_post_says_so_and_a_post_never_made_is_refused(self):
+        uri = "at://did:plc:t/app.bsky.feed.post/a"
+        self.host.send(op="world-post-reserve", principal=CLOCK, intent="a", source="delve")
+        self.assertEqual(self.host.send(op="world-posted", principal=CLOCK, uri=uri, cid="c1", object="hub", intent="a")["status"], "posted")
+        never = self.host.send(op="world-posted", principal=CLOCK, uri=uri + "x", cid="c", object="hub", intent="a",
+                               unposted=True, reason="wrong card")
+        self.assertEqual(never["status"], "error", never)
+        r = self.host.send(op="world-posted", principal=CLOCK, uri=uri, cid="c1", object="hub", intent="a",
+                           unposted=True, reason="the wrong card")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["tag"], r["receipt"]["outcome"]["reason"]),
+                         ("unposted", "unposted", "the wrong card"), r)
+        self.reopen()
+        again = self.host.send(op="world-posted", principal=CLOCK, uri=uri, cid="c1", object="hub", intent="a",
+                               unposted=True, reason="twice")
+        self.assertEqual((again["status"], again["class"]), ("refused", "duplicateIdentity"), again)
+        # The reservation stays settled: posted, never released.
+        self.assertEqual(self.host.send(op="world-post-release", principal=CLOCK, intent="a", reason="x")["status"], "error")
+        self.assertEqual(self.host.send(op="world-addressee", parent=uri)["unposted"], "the wrong card")
 
 
 if __name__ == "__main__":

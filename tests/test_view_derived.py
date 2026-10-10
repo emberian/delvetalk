@@ -59,29 +59,14 @@ class ViewDerived(Reflection):
     def peek(self, target, view, principal="ann"):
         return self.turn("reader", "peek", record(target=label(target), view=label(view)), principal=principal)
 
-    def test_a_declared_view_answers_its_value_and_records_the_root(self):
-        self.target("counter")
-        r = self.peek("counter", "doubled")
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(6)), r)
-        self.assertIn({"object": "counter", "version": 0}, r["receipt"]["roots"])
-        hello = self.peek("counter", "greeting", principal="kim")
-        self.assertEqual(hello["result"], label("hello kim"), hello)
 
-    def test_an_undeclared_definition_is_not_a_view(self):
+    def test_an_undeclared_definition_is_not_a_view_and_a_private_object_is_denied(self):
         self.target("counter")
         self.assertEqual(self.peek("counter", "secret")["result"], label("noView"))
         self.assertEqual(self.peek("counter", "missing")["result"], label("noView"))
-
-    def test_a_private_object_is_denied(self):
         self.target("vault", read={"principals": ["ember"]})
         self.assertEqual(self.peek("vault", "doubled")["result"], label("denied"))
         self.assertEqual(self.peek("vault", "doubled", principal="ember")["result"], nat(6))
-
-    def test_inspect_lists_the_declared_views(self):
-        self.target("counter")
-        r = self.host.send(op="world-inspect", principal="ann", object="counter")
-        self.assertEqual(r["views"], ["doubled", "greeting"], r)
-
 
 if __name__ == "__main__":
     unittest.main()

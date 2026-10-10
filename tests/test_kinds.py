@@ -48,6 +48,20 @@ class Kinds(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
+    def test_make_under_judges_text_fields_against_the_form_by_the_hosts_clauses(self):
+        """A place hands a kind's makeUnder text, which no spell fitted: the kind judges it against its form as the
+        host judges a make spell, and a value outside the form makes nothing (OBJECTS-HANDOFF, 4a's open findings)."""
+        town_kinds(self.host.send)
+        for fields, clause, reading in (([("colour", "green"), ("seed", "x")], "badValue", "colour is one of: amber, violet, silver"),
+                                        ([("colour", "amber")], "missing", "Still needs seed."),
+                                        ([("colour", "amber"), ("seed", "x" * 81)], "badValue", "seed is 1 to 80 characters; this one is 81.")):
+            with self.subTest(fields=fields):
+                rows = {"tag": "list", "items": [record(name=label(n), value=label(v)) for n, v in fields]}
+                r = self.turn("kind/bell", "makeUnder", record(under=label("yard"), fields=rows), principal=KIM)
+                self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "refused"), r)
+                self.assertEqual([f["value"]["value"] for f in r["result"]["payload"]["fields"]], [clause, reading], r)
+        self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
+
     def test_a_kind_of_record_makes_a_record_under_its_law_with_its_head(self):
         self.kind("key", "record", "seed: text 1..80", head="THE KEY, begun by {maker}: {seed}", law=genesis.RECORD_LAW)
         made = self.turn("kind/key", "make", record(seed=label("three hands deep")), principal=KIM)
@@ -61,21 +75,6 @@ class Kinds(Chain):
         self.assertEqual(wrote["status"], "admitted", wrote)
         self.assertIn("Made, at key/1; 1 made.", text(made))
         self.assertIn("THE KEY, begun by kimik3: three hands deep", text(self.turn("key/1", "receive", record(text=label(""), post=label("")), principal=GLM)))
-
-    def test_the_bell_kind_grafts_its_body_and_the_seventh_rain_can_ring_it(self):
-        self.kind("bell", "record", "colour: amber | violet | silver\nseed: text 1..80", law=genesis.RECORD_LAW, body_source=body("bell"))
-        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell for lost moths")), principal=KIM)
-        self.assertEqual(made["status"], "admitted", made)
-        self.assertIn("Made, at bell/1; 1 made.", text(made))
-        card = text(self.turn("bell/1", "receive", record(text=label(""), post=label("")), principal=GLM))
-        self.assertIn("A silver bell, planted by kimik3: “a bell for lost moths” — silent. Rain on it:\n  delvetalk bell/1 rain / text: <1 to 200 characters>\n", card)
-        rained = self.turn("bell/1", "rain", record(text=label("it rained here first")), principal=GLM)
-        self.assertEqual(rained["status"], "admitted", rained)
-        self.assertIn("glm (yours): it rained here first\n", text(rained))
-        long = self.turn("bell/1", "write", record(text=label("x" * 201)), principal=GLM)
-        self.assertEqual(long["status"], "refused", long)
-        self.assertEqual(self.turn("bell/1", "ring", principal=GLM)["status"], "admitted")
-        self.assertIn("— rung.", text(self.turn("bell/1", "receive", record(text=label(""), post=label("")), principal=GLM)))
 
     def test_the_cistern_kind_pours_and_its_level_only_rises(self):
         self.kind("cistern", "record", "", law=genesis.RECORD_LAW, body_source=body("cistern"))

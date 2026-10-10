@@ -72,8 +72,10 @@ sum Why:
   never: {}
   noRows: {field: String}
   unwatched: {object: String, field: String, clause: String}
+  badWhere: {line: String}
 def refusal(w: Why) -> Card.Refusal:
   match w:
+    case badWhere(b): {clause: "badWhere", reading: "where is one line, column op value (op =, >, <, has): not {b.line}"}
     case notOwner(n): {clause: "notOwner", reading: "Only its owner sets these triggers; that is {n.owner}"}
     case full(_): {clause: "full", reading: "Thirty-two triggers is the most a wake holds."}
     case noTrigger(n): {clause: "noTrigger", reading: "No trigger {natText(n.id)}"}
@@ -258,6 +260,52 @@ def mention(state: State, input: {actor: String}, context: Abi.Context) -> Activ
   watched(On.mention({actor: input.actor}), Action.notify({}), context, state)
 def keyword(state: State, input: {term: String}, context: Abi.Context) -> Activity<Done>:
   watched(On.keyword({term: input.term}), Action.notify({}), context, state)
+# From a post, on another card's field (docs/GROUND.md §6 change 5): a number passing a mark, a
+# number rising, a flag turning true, or rows arriving, those `where` one `column op value` line
+# admits (`name = rung`, `n > 6`, `n < 3`, `text has moth`; blank for every row), `count` of them
+# (field names are read folded, so a form's are lower case); a reminder at a
+# clock, and every so many minutes after (0: once). Each notes the owner's avatar.
+def writes(state: State, input: WritesInput, context: Abi.Context) -> Activity<Done>:
+  watched(On.writes({object: input.object, field: input.field, above: input.above}), Action.notify({}), context, state)
+def grows(state: State, input: GrowsInput, context: Abi.Context) -> Activity<Done>:
+  watched(On.grows({object: input.object, field: input.field}), Action.notify({}), context, state)
+def turns(state: State, input: TurnsInput, context: Abi.Context) -> Activity<Done>:
+  watched(On.turns({object: input.object, field: input.field}), Action.notify({}), context, state)
+def rows(state: State, input: RowsInput, context: Abi.Context) -> Activity<Done>:
+  match whereOf(input.where):
+    case some(w): watched(On.rows({object: input.object, field: input.field, where: w.value, atLeast: input.count}), Action.notify({}), context, state)
+    case none(_): refused(Why.badWhere({line: input.where}))
+def remind(state: State, input: RemindInput, context: Abi.Context) -> Activity<Done>:
+  schedule(state, {at: input.at, every: input.every, action: Action.notify({})}, context)
+# One `column op value` line as patterns: blank is none; `=` equals (digits a number, else a
+# text), `>` above and `<` below a number, `has` a whole word. Anything else is no pattern.
+def whereOf(line: String) -> Lists.Maybe<Lists.List<Where>>:
+  let words = Text.words(line)
+  if Text.blank(line) then Lists.Maybe.some({value: Lists.List.nil()}) else if Lists.length(words) < 3n then Lists.Maybe.none({}) else whereFrom(wordAt(words, 0n), wordAt(words, 1n), textJoin(afterTwo(words), " "))
+def afterTwo(words: Lists.List<String>) -> Lists.List<String>:
+  match words:
+    case nil(_): words
+    case cons(c): afterOne(c.tail)
+def afterOne(words: Lists.List<String>) -> Lists.List<String>:
+  match words:
+    case nil(_): words
+    case cons(c): c.tail
+def wordAt(words: Lists.List<String>, n: Nat) -> String:
+  match Lists.at(words, n):
+    case some(w): w.value
+    case none(_): ""
+def whereFrom(column: String, op: String, value: String) -> Lists.Maybe<Lists.List<Where>>:
+  if op == "=" then oneWhere(Where.equals({column: column, equals: cellOf(value)})) else if op == "has" then oneWhere(Where.contains({column: column, contains: value})) else numberWhere(column, op, Text.number(value))
+def numberWhere(column: String, op: String, number: Text.Number) -> Lists.Maybe<Lists.List<Where>>:
+  match number:
+    case yes(n): if op == ">" then oneWhere(Where.above({column: column, above: n.value})) else if op == "<" then oneWhere(Where.below({column: column, below: n.value})) else Lists.Maybe.none({})
+    case no(_): Lists.Maybe.none({})
+def oneWhere(w: Where) -> Lists.Maybe<Lists.List<Where>>:
+  Lists.Maybe.some({value: Lists.List.cons({head: w, tail: Lists.List.nil()})})
+def cellOf(value: String) -> Relations.Cell:
+  match Text.number(value):
+    case yes(n): Relations.nat(n.value)
+    case no(_): Relations.text(value)
 # Unwatch by id: the trigger is found here, in Bend, and removed by its bytes.
 def unwatch(state: State, input: {id: Nat}, context: Abi.Context) -> Activity<Done>:
   if context.principal != state.owner then notOwner(state) else removing(Lists.find(state.triggers, fn(t: Trigger) -> Bool: t.id == input.id), input.id)
@@ -370,6 +418,24 @@ form keyword:
   term: text 1..64
 form unwatch:
   id: natural 1..1000000
+form writes:
+  object: text 1..128
+  field: text 1..64
+  above: natural 0..1000000000
+form grows:
+  object: text 1..128
+  field: text 1..64
+form turns:
+  object: text 1..128
+  field: text 1..64
+form rows:
+  object: text 1..128
+  field: text 1..64
+  where: text 0..200
+  count: natural 1..4096
+form remind:
+  at: natural 0..1000000000
+  every: natural 0..10080
 def methods() -> Lists.List<String>:
   Text.words("watch sense schedule ~arrived ~watchBell ~due")
 def blurb() -> Card.Door:
@@ -406,5 +472,5 @@ def actionText(action: Action) -> String:
 def line(trigger: Trigger) -> Document.Document:
   Document.text("#{natText(trigger.id)} on {onText(trigger.event)}: {actionText(trigger.action)}\n")
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let how = if Card.reads(state.owner, context) then " Add one: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; delvetalk wake unwatch / id: <number> removes it." else ""
+  let how = if Card.reads(state.owner, context) then " Add: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; rows, writes, grows, turns and remind are on ?. Remove: delvetalk wake unwatch / id: <number>." else ""
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("WAKE of {Card.shown(state.owner, state.handle, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.triggers))} triggers.{how}\n"), tail: if Card.reads(state.owner, context) then Card.clipped(Lists.map(state.triggers, line), 8n) else Document.Documents.nil()})})

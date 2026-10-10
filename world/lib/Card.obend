@@ -191,39 +191,51 @@ def pageText(page: Page) -> String:
 # `world.interpret` with `interpretation`, offering its forms, what it holds for the speaker and
 # the misfit spell it was handed. hob answers once, with no second attempt: the spell meant (the
 # host fits it: a proposal), `ask: <one question>` (the host's `unclear {needs: [question]}`; a
-# spell of hob's that does not fit reads the same, its reason the question), `card` (`replied
-# {text: "card"}`) or `none` (`unclear {needs: ["not addressed"]}`: silence).
+# spell of hob's that does not fit reads the same, the fields it lacks), `card` (`replied {text:
+# "card"}`) or `none` (`unclear {needs: ["not addressed"]}`: silence).
+#
+# hob's lines are VOICE's fixed lines and the card's own field names, never the model's words
+# (a question the model wrote leaked its reasoning onto a miss card, playtest 68746): an ask
+# keeps only the needs that name a field of the forms offered.
 sum Hob:
   none: {}
   card: {}
-  ask: {question: String}
-# The first need that is a question; "not addressed", nothing, and a model that could not be
-# asked (`model: <reason>`) are none.
-def hobNeeds(needs: Form.Names) -> Hob:
-  match Lists.find(needs, fn(n: String) -> Bool: Text.blank(n) == false && n != "not addressed" && textTake(n, 6n) != "model:"):
-    case some(n): Hob.ask({question: n.value})
-    case none(_): Hob.none({})
+  ask: {needs: Form.Names}
+# "not addressed", nothing, and a model that could not be asked (`model: <reason>`) are none;
+# anything else is an ask, naming the offered fields among the needs (none: a bare ask).
+def hobNeeds(needs: Form.Names, forms: Forms) -> Hob:
+  if Lists.any(needs, fn(n: String) -> Bool: Text.blank(n) == false && n != "not addressed" && textTake(n, 6n) != "model:") then Hob.ask({needs: fieldNeeds(needs, forms)}) else Hob.none({})
+# The offered fields a need names as a word (`colour`, or a question `which colour?`): only
+# the field's own name is ever printed, in the forms' order, each once.
+def fieldNeeds(needs: Form.Names, forms: Forms) -> Form.Names:
+  Lists.filter(fieldNames(forms, Form.Names.nil()), fn(name: String) -> Bool: Lists.any(needs, fn(n: String) -> Bool: Lists.any(Text.words(n), fn(w: String) -> Bool: stripped(w, textLength(w)) == name)))
+def fieldNames(forms: Forms, seen: Form.Names) -> Form.Names:
+  match forms:
+    case nil(_): seen
+    case cons(c): fieldNames(c.tail, Lists.concat(seen, Lists.filter(Lists.map(c.head.fields, fn(f: Form.Field) -> String: f.name), fn(n: String) -> Bool: Lists.any(seen, fn(m: String) -> Bool: m == n) == false)))
 def one(need: String) -> Form.Names:
   Form.Names.cons({head: need, tail: Form.Names.nil()})
 def hobSaid(text: String) -> Hob:
   if Text.trim(text) == "card" then Hob.card({}) else Hob.none({})
-# hob's question over the card's first spell with its blanks.
-def askCard(question: String, card: String, forms: Forms) -> Document.Document:
+# hob's ask over a card's first spell: the fields still needed, or that the words are no spell yet.
+def askLine(needs: Form.Names) -> String:
+  if Lists.length(needs) == 0n then "hob: not a spell as said; the spell is below." else "hob: still needs {Text.joined(needs)}; the spell is below."
+def askCard(needs: Form.Names, card: String, forms: Forms) -> Document.Document:
   match forms:
-    case nil(_): Document.text("hob: {question}\n")
-    case cons(c): Document.concat(Document.text("hob: {question}\n"), template(card, c.head))
+    case nil(_): Document.text("hob: not a spell as said.\n")
+    case cons(c): Document.concat(Document.text("{askLine(needs)}\n"), template(card, c.head))
 # What a card does with hob's answer that is no spell: none is silence, card offers the card,
-# ask offers the question over the first spell (and, when the policy names someone to escalate
-# to, a short copy of what could not be fitted).
+# ask offers hob's line over the first spell (and, when the policy names someone to escalate to,
+# a short copy of the words that could not be fitted).
 def hobbed<T>(hob: Hob, policy: Policies.State, utterance: String, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
   match hob:
     case none(_): result
     case card(_): tell(result, card)
-    case ask(a): escalated(policy, utterance, a.question, context, askCard(a.question, context.object, forms), result)
-def escalated<T>(policy: Policies.State, utterance: String, question: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
-  if policy.escalateTo == "" then tell(result, card) else escalatedTo(policy, utterance, question, context, card, result)
-def escalatedTo<T>(policy: Policies.State, utterance: String, question: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
-  match world.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; hob asked: {question} ({context.object}).\n")}):
+    case ask(a): escalated(policy, utterance, context, askCard(a.needs, context.object, forms), result)
+def escalated<T>(policy: Policies.State, utterance: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
+  if policy.escalateTo == "" then tell(result, card) else escalatedTo(policy, utterance, context, card, result)
+def escalatedTo<T>(policy: Policies.State, utterance: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
+  match world.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; hob found no spell in it ({context.object}).\n")}):
     case _: tell(result, card)
 # The misfit line hob is shown ("" for none).
 def misfitLine(misfit: Misfit) -> String:
@@ -407,7 +419,11 @@ def answerRefused<T>(refusal: Refusal, context: Abi.Context, forms: Forms, card:
   tell(as(Replied.refused(refusal)), answerCard(card, whyNot(Replied.refused(refusal)), context, forms))
 # Prose a card does not take is sent to the directory (`receive {text, post}`, under the
 # speaker), which judges whether it names any door; the card offers nothing itself. A turn
-# some object started, and the directory itself, hand nothing on (`handsOn`).
+# some object started, and the directory itself, hand nothing on (`handsOn`). A send is a
+# delivery, whose reach asks hob of anything, even words that reached no one; a call would keep
+# this turn's reach, but hob's wait cannot run inside a call ("a wait inside a call is not
+# supported"). Host: a delivery keeps the reach of the turn that sent it (OBJECTS-HANDOFF,
+# lane/rewrite5).
 def handOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
   if handsOn(input.text, context) then handingOn(input, context, result) else result
 def handingOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
