@@ -1942,6 +1942,9 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
     dialect is read as a spell first (`spellTurn`). -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   let req := { req with object := resolveCard req.principal req.object }
+  -- A retry is answered from the identity before its spell is read again: new code may route the
+  -- same words elsewhere (codex host 13).
+  if let some r := retainedTurn w req then .ok (w, r) else
   match spellTurn w req with
   | some r => r
   | none => runTurnWith w req {}

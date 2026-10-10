@@ -759,6 +759,12 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    Tests: `tests/test_form_bounds.py` `test_a_direct_turn_is_held_to_the_declared_bounds`;
    `test_places` (an `until` of 0) and `test_wakes` (a pour of 21) now meet the host's refusal first.
 
+99. **A retry before the spell is read (host12; codex host 13).** `runTurn` answers a direct turn from
+   its identity (`retainedTurn`) before routing it as a spell, so an identical retry after a reprogram
+   that changed what the words route to gets the retained receipt, not `duplicateIdentity` against the
+   new route's proposal. Test: `tests/test_spell_turns.py`
+   `test_an_unchanged_spell_retry_after_a_reprogram_is_the_retained_receipt`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
