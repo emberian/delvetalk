@@ -251,8 +251,13 @@ class Bridging(ZulipCase):
         got = self.bridge()
         self.assertEqual(len(got['posted']), 1, got)
         self.assertIn('directory says', self.zulip.mine()[0]['content'])
-        self.zulip.say('new', 'Carol', 'and the moss too')  # in the topic the world answered: read
-        self.assertEqual(len(self.bridge()['turns']), 1)
+        self.zulip.say('new', 'Dana', '@**Carol** nice fern')  # to another resident only: not read
+        self.zulip.say('new', 'Carol', 'and the moss too')  # in the topic the world answered: read, as a reply to the world's message
+        from unittest import mock
+        real, turns = HostClient.send, []
+        with mock.patch.object(HostClient, 'send', lambda h, req: (turns.append(req) if req.get('method') == 'receive' else None) or real(h, req)):
+            self.assertEqual(len(self.bridge()['turns']), 1)
+        self.assertEqual(turns[0]['replyTo'], zulip.uri_of('delvetalk', 'new', self.zulip.mine()[0]['id']))
 
     def test_a_zulip_run_has_no_hourly_cap_so_the_seventeenth_draft_posts(self):
         self.assertEqual(self.host.send({'op': 'world-status'})['postQuota'], 16)  # the host has one; Zulip ignores it

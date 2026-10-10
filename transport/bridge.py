@@ -266,7 +266,8 @@ def door_rows(view):
 
 
 def route(host, obs, known=None):
-    """-> (object, slot|None) or None: where a post reaches (FLEX.md). (a) A reply reaches the card whose recorded post
+    """-> (object, slot|None, how) or None: where a post reaches (FLEX.md), and how, for the host to judge: `replyTo`, the
+    recorded post it answers (the host verifies a reply), or `reach`, the rule it matched (HOST-HANDOFF 118). (a) A reply reaches the card whose recorded post
     (the card's, or any of the world's replies under it) is its direct parent; on Zulip, where a topic is one thread, the
     nearest recorded message above it in the topic, unless it @-mentions only other residents. (b) A spell line reaches
     its card, as the host reads it; a summons (a mention of the world, #gsb) reaches the directory, whose interpreter
@@ -279,12 +280,12 @@ def route(host, obs, known=None):
     asked = set()
     found = walk(host, ancestor, known, hops, asked)
     if found:
-        return found
+        return found[0], found[1], {'replyTo': found[2]}
     read = parsed(host, obs)
     if (read.get('spell') or {}).get('card'):
-        return read['spell']['card'], None
+        return read['spell']['card'], None, {}  # the host reads the spell itself
     if obs['kind'] == 'summon':
-        return 'directory', None
+        return 'directory', None, {'reach': 'mention'}
     if zulip or not ancestor:
         return None
     root = obs.get('root')  # the thread's card: its nearest recorded ancestor, or its root
@@ -293,9 +294,9 @@ def route(host, obs, known=None):
     if not thread:
         return None
     if read.get('bare'):  # (c) field lines: the thread's card completes them
-        return thread
+        return thread[0], thread[1], {'reach': 'fields'}
     door = named_door(host, obs)  # (d) prose naming a door reaches that door's card
-    return (door, None) if door else None
+    return (door, None, {'reach': 'door'}) if door else None
 
 
 def named_door(host, obs):
@@ -313,7 +314,7 @@ def walk(host, ancestor, known, hops, seen):
         seen.add(ancestor)
         got = host.send({'op': 'world-addressee', 'parent': ancestor})
         if got.get('object'):
-            return got['object'], got.get('slot')
+            return got['object'], got.get('slot'), ancestor
         ancestor = (known.get(ancestor) or {}).get('replyTo')
     return None
 
@@ -395,7 +396,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
             with open(state / 'skipped.txt', 'a') as f:
                 f.write(obs['uri'] + '\n')
             continue
-        obj, slot = target
+        obj, slot, how = target
         handle, did = obs['author']['handle'], obs['author']['did']
         register(state, host, did, handle)
         # A card's receive takes {text, post}; the author is the turn's principal. The slot is the host's
@@ -404,8 +405,10 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
                   {'name': 'post', 'value': {'tag': 'label', 'value': obs['uri']}}]
         request = {'op': 'world-turn', 'principal': did, 'object': obj, 'method': 'receive',
                    'argument': {'tag': 'record', 'fields': fields}, 'identity': obs['uri']}
-        if obs['replyTo']:
-            request['replyTo'] = obs['replyTo']
+        if how.get('replyTo') or obs['replyTo']:  # on Zulip the recorded message found up the topic, so the host verifies it
+            request['replyTo'] = how.get('replyTo') or obs['replyTo']
+        if how.get('reach'):
+            request['reach'] = how['reach']  # what the bridge saw: mention, door or fields (HOST-HANDOFF 118)
         reply = host.send(request)
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
             write_atomic(outbox / f"0-{uri_hash(obs['uri'])}.json", {
