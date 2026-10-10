@@ -19,6 +19,7 @@ from deploy.seed import create  # noqa: E402
 from transport.hostproc import HostClient  # noqa: E402
 
 OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town
+HANDLE = 'ember.delve.town'
 
 
 def lab(s): return {'tag': 'label', 'value': s}
@@ -97,6 +98,10 @@ def run(host, opener=OPENER):
     taken = [name for name, _, _ in seeds(opener) if name in have]
     if taken:
         return [], f'genesis has already run here: {", ".join(taken)} exist'
+    # The opener arrives first, so readers see their handle, not a DID fragment.
+    arrived = host.send({'op': 'world-arrive', 'principal': 'transport', 'did': opener, 'handle': HANDLE})
+    if arrived.get('status') == 'error':
+        return [], 'the opener could not arrive: ' + str(arrived.get('message'))
     made = []
     for name, package, seed in seeds(opener):
         reply = create(host, opener, name, package, 'genesis-' + name, seed)
