@@ -158,9 +158,9 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ### 5.4 Interpretation
 
-- Plan `interpret {utterance, offers, policy, model}` suspends like `await` with `interpretation {id, object, policy, utterance, offers, model?}` (id = hash of principal, intent, ordinal). Deadline `interpretationPatience`, resuming `timedOut`.
+- `world.interpret::<R>({utterance, offers, policy, model})` suspends like `await` with `interpretation {id, object, policy, utterance, offers, model?}` (id = hash of principal, intent, ordinal). Deadline `interpretationPatience`, resuming `timedOut`.
 - `world-interpretations` lists pending items with the Policy's state as `{model, system, examples}`; `policy.system` is the Policy's pure `prompt(state, offers, utterance)` (`policyPrompt`) else its `system` field; `policy.model` is the item's `model` when non-empty (at most 128 bytes), else the Policy's.
-- `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts: `proposal {method, argument}` (the method exists, is offered, the argument conforms, the Response can carry it), `replied {text}` (reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (failed reply; `failed` gives `needs: ["model: <reason>"]`).
+- `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument}` (the spell fits an offered form, or a JSON `{method, argument}` for the asking object; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`), `replied {text}` (prose, or reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `Interpreted` gains `denied {reason}` (the review lane's World.obend line); the host answers no `denied` yet.
 - Capacity: `mayWait … (interpreting := true)` counts interpretations apart. Test: `test_interpret_text`, `test_policy`.
 
 ### 5.5 Cards, offers, publish, posts
@@ -241,15 +241,17 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    as `view`; the root is recorded at the CURRENT version. Cost is linear in the object's writes up to
    `version`. Test: `tests/test_view_at.py`.
 
-48. **The world object (host8; WHOLENESS §1, host day 1).** A message activity (`Activity<R>`, artifact
-   `dialect: "message"`) yields `World.Message {object, method, argument}`; `drive` re-heads it
-   (`messagePlan`) as the variant the arms answer: `write`'s argument is the running object's edits,
-   `judge`'s the edits to judge, every other method's argument is its arm's payload. A message whose
+48. **The world object (host8; WHOLENESS §1, host day 1).** An activity is `Activity<R>` (artifact
+   `dialect: "message"`; since kernel day 4 the three-argument `Activity<P, R, A>` and a variant Plan
+   are refused at compile, and the host has no other arms) and yields `World.Message {object, method,
+   argument}`. `drive` reads it with `messagePlan` into the host's internal request `answer` dispatches
+   on, by method name: `write`'s argument is the running object's edits, `judge`'s the edits to judge,
+   every other method's argument is that method's payload. A message whose
    `object` is not `{world: "", object: "world"}` is answered `refused {clause: notWorld}` (a message to an
    object is a `call`), a method outside `worldMethods` `refused {clause: noMethod}`; `spell`, `subscribe`
    and `unsubscribe` are listed and answered by later days. The response is checked against the call
-   site's type the kernel reports (`responseType`). A sum Plan is answered by constructor as before, so
-   both dialects run side by side. A handler (`run`) sees the Message as yielded. The world has no state
+   site's type the kernel reports (`responseType`): the result sum of that protocol method in World.obend
+   (`Written`, `Returned<R>`, `Interpreted<R>`, ...). A handler (`run`) sees the Message as yielded. The world has no state
    and no law (WHOLENESS §5): who may call which method is the authority model as built (`write`
    self-only, `create` under the creator's rules, grants, read policy). The id `world` is reserved
    (`worldId`, `validObjectId`). A message suspension's checkpoint (two-token site prefix) goes through
@@ -262,8 +264,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `unknownField`, `duplicateField`, `badValue`, `unclosedBlock`, `unclear`); the stateless op `spell-parse
    {text, form?}` answers `{status: "parsed", spell | notASpell, fit?, bare}`; `tests/test_host_spell.py` runs
    115 fixtures (`tests/fixtures/spells/`) through both parsers and they agree. `runTurn` sends a direct
-   `receive {text, post}` to a card whose `receive` is in the message dialect through `spellTurn` (a sum-Plan
-   card reads its own replies, unchanged): the spell's card resolves (`resolveCard`) and the turn is
+   `receive {text, post}` to a card through `spellTurn`: the spell's card resolves (`resolveCard`) and the turn is
    retargeted to it (same principal, identity, `replyTo`); `?` answers `{status: "usage", object, text}` and
    journals nothing; the action is looked up in the card's `methodForms`; a fitting spell runs the method with
    the typed argument (text, natural, a choice as its empty-payload variant), `inputOrigin.kind = "spell"`,
@@ -335,11 +336,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    naming an offered form that fits is that form's `proposal {method, argument}` (checked as a JSON
    proposal is, `proposalVerdict`), a misfit `unclear {needs: [reason]}`, missing fields `unclear
    {needs: [names]}`, a spell naming no offered form `unclear`; a text with no spell line whose first
-   field line names an offered action or field is that form's spell; prose stays `replied {text}`. A
-   sum-Plan activity still hears every text as `replied` (Garden and the Directory read their own until
-   they migrate). Lenses: a message-dialect card declares its lenses as data, `def lenses() ->
-   Lists.List<Form.Field>` (name and kind; the sum dialect's `lenses()` of `Form.Lens` closures is not
-   data and reads as none), and puts through a method `set(state, input: {field: String, value:
+   field line names an offered action or field is that form's spell; prose stays `replied {text}`. Lenses: a card declares its lenses as data, `def lenses() ->
+   Lists.List<Form.Field>` (name and kind), and puts through a method `set(state, input: {field: String, value:
    Form.Value}, context)`. `delvetalk <card> set` with one `<field>: <value>` line is judged against
    the lens's kind (`badValue`, reason as a form field's) and runs `set` with the typed value
    (`inputOrigin.kind = "spell"`, `command` `delvetalk <card> set`); a field no lens names, or more than
@@ -454,9 +452,9 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    method must be one it offers (5.62) and the argument fit its input. `Interpreted.proposal` gains
    `object: String`; whether the call site's type has it is decided where the kernel reports that type,
    at the `interpret` yield (`proposalNamesObject`), and journaled as the interpretation's `named: true`.
-   A named verdict carries `object` and resumes `proposal {object, method, argument}`; an unnamed one
-   is the old `proposal {method, argument}` and only for the asking object itself (another card is
-   `unclear`). A JSON proposal `{method, argument}` is for the asking object. Test:
+   A verdict resumes `proposal {object, method, argument}` (World.obend's `Interpreted` has carried
+   `object` since host10; an entry journaled before then, without `named`, is read as a proposal for the
+   asking object only, another card being `unclear`). A JSON proposal `{method, argument}` is for the asking object. Test:
    `tests/test_interpret_object.py` (a hub whose World copy carries the new line proposes `g plant`
    and calls it; a form naming a method its card does not offer is `unclear`). The World.obend line
    and the Directory's `world.call::<Data>({object, method, argument})` are the objects lane's.
@@ -563,8 +561,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    frame in turn; the first `answer` is the response, a `pass` (or a plan the handler's input does not
    name) goes to the next one out, and the host answers what all passed. Activities need nothing more:
    only a top frame suspends (an await in a call is refused), and a `run` callee is never the top.
-   A message-dialect frame offers the `World.Message` it yields: a handler whose `handle` takes
-   `World.Message` answers with the result the site's protocol method types (`written {}` for `write`).
+   A frame offers the `World.Message` it yields: a handler's `handle` takes `World.Message` and answers
+   with the result the site's protocol method types (`written {}` for `write`).
    Test: `tests/test_handlers.py` (a sandbox answers the write of a frame its callee calls; an inner
    `views` handler passes a write to the `sandbox` around it; the same in the message dialect).
 
@@ -584,7 +582,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
 - `canonicalTy` (Ops): two state types are equal when their canonical forms agree (variables renamed in order of first use, at most 4096 steps, else "type too deep to compare"). Reprogram and extend depend on it.
-- Plan wire shapes: `world/lib/Plan.obend` is the contract. `write.edits` is a record with one variant per state field. `respond` picks the first payload that conforms to the object's Response type; a sum lacking the label gives "response type cannot carry <label>".
+- Wire shapes: `world/lib/World.obend`'s `protocol world` is the contract (Plan.obend keeps the shared records: `Reference`, `Edit`, `Slot`, `Receipt`). `write`'s edits are a record with one variant per state field. `respond` picks the first payload that conforms to the call site's result type; a sum lacking the label gives "response type cannot carry <label>".
 - Seeds are laid over `initial()` (`mergeSeed`): a record of some fields, `{}` for `initial()`; a field the state lacks is `typeMismatch`. A seed that does not set a text `owner` gets the named `owner`, else the creating principal (`withOwner`). `create`'s `package` is a module name in the creator's sealed chain, or source starting `edition`; `law` is used only if it starts `law `.
 - Hand-built Contexts in tests must carry caller, intent and height or the method does not type.
 - Lean keywords: `meta`, `from`, `seal`. Structure-instance continuation lines must be indented past the first field.
