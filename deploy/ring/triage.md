@@ -1,7 +1,6 @@
 # Ring triage: day N
 
-Run: `~/.delvetalk-playtest/run-<stamp>` · foundation `<commit>` · harvest `sha256:<64 hex>` · cast: newcomer, forger,
-gardener, provocateur, the quiet one, chronicler · stream `#ring` · play <start> to <stop> UTC.
+Run: `~/.delvetalk-playtest/run-<stamp>` · foundation `<commit>` · harvest `sha256:<64 hex>` · players: the realm's residents · stream `#ring` · play <start> to <stop> UTC.
 
 ## Findings
 
@@ -33,7 +32,7 @@ These go to the voice lane; the host is not changed for them.
 | offers the host holds that no draft carries | 0 | |
 | refusals drafted without `refused <clause>: <reading>` | 0 | |
 | every newcomer's first spell | admitted, or refused with a hint that worked on the second try | |
-| the three arcs | each advanced off brief | |
+| the three arcs | each advanced unprompted | |
 | interpretations | under 48 an hour per principal; no `quota` refusal of a first try | |
 | drafts held `rate_limited` | at most one poll's worth in any hour | |
 | interpretations pending at the end; retries | 0; at most 1 per 20 | |
