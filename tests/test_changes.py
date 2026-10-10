@@ -19,9 +19,7 @@ from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
 from tests.test_world_object import extended_library
 
-EXTRA = ("  subscribe({object: Plans.Reference, field: String}) -> Subscribed\n"
-         "  unsubscribe({object: Plans.Reference, field: String}) -> Subscribed\n"
-         "sum Subscribed:\n  subscribed: {}\n  denied: {}\n  refused: {clause: String}\n")
+EXTRA = ""  # world/lib/World.obend declares subscribe, unsubscribe and Subscribed itself (objects6)
 
 BELL = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
