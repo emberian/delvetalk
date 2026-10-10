@@ -61,8 +61,11 @@ def keep() -> Edits:
 # An avatar answers only to its own principal: its id is the principal's DID.
 def mine(context: Abi.Context) -> Bool:
   context.principal == context.object
+# Who the avatar is, as a refusal names it: its handle, else the shortened DID.
+def owner(state: State, context: Abi.Context) -> String:
+  if state.handle == "" then Card.handle(context.object) else state.handle
 sum Why:
-  notMine: {doing: String}
+  notMine: {who: String, doing: String}
   notAThing: {doing: String}
   noAnswer: {from: String}
   alreadyFollowing: {object: String}
@@ -74,7 +77,7 @@ sum Why:
   placeSilent: {}
 def refusal(w: Why) -> Card.Refusal:
   match w:
-    case notMine(n): {clause: "notMine", reading: "Only the avatar's own principal {n.doing}."}
+    case notMine(n): {clause: "notMine", reading: "Only {n.who} {n.doing}."}
     case notAThing(n): {clause: "notAThing", reading: "Only a thing can be {n.doing}."}
     case noAnswer(n): {clause: "noAnswer", reading: "No answer from {n.from}"}
     case alreadyFollowing(a): {clause: "alreadyFollowing", reading: "Already following {a.object}"}
@@ -111,7 +114,7 @@ def mailRefused(w: Why) -> Mailed:
 # The avatar's principal sends a line: it joins the outbox, and the host tells each follower
 # (their `mailed`).
 def send(state: State, input: {text: String}, context: Abi.Context) -> Activity<Mailed>:
-  if mine(context) == false then mailRefused(Why.notMine({doing: "sends from it"})) else posted(input.text, context, state)
+  if mine(context) == false then mailRefused(Why.notMine({who: owner(state, context), doing: "sends from it"})) else posted(input.text, context, state)
 def posted(text: String, context: Abi.Context, state: State) -> Activity<Mailed>:
   let written(_) = write {outbox: insert {handle: context.handle, text: text, at: context.height, n: Relations.count(state.outbox)}}
   Mailed.sent({n: Relations.count(state.outbox)})
@@ -126,7 +129,7 @@ def receiver(field: String) -> String:
 def follows(state: State, object: String, field: String) -> Bool:
   Lists.any(state.following, fn(f: Followed) -> Bool: f.object.object == object && f.field == field)
 def following(f: Followed, context: Abi.Context, state: State) -> Activity<Mailed>:
-  if mine(context) == false then mailRefused(Why.notMine({doing: "subscribes it"})) else if Lists.any(state.following, fn(g: Followed) -> Bool: Plans.same(g.object, f.object)) then mailRefused(Why.alreadyFollowing({object: f.object.object})) else if Lists.length(state.following) >= sendsPerTurn() then mailRefused(Why.followingFull({})) else subscribing(f)
+  if mine(context) == false then mailRefused(Why.notMine({who: owner(state, context), doing: "subscribes it"})) else if Lists.any(state.following, fn(g: Followed) -> Bool: Plans.same(g.object, f.object)) then mailRefused(Why.alreadyFollowing({object: f.object.object})) else if Lists.length(state.following) >= sendsPerTurn() then mailRefused(Why.followingFull({})) else subscribing(f)
 def subscribing(f: Followed) -> Activity<Mailed>:
   match world.subscribe({object: f.object, field: f.field, method: receiver(f.field)}):
     case subscribed(_): followedNow(f)
@@ -136,7 +139,7 @@ def followedNow(f: Followed) -> Activity<Mailed>:
   let written(_) = write {following: append f}
   Mailed.followed({object: f.object})
 def unsubscribe(state: State, input: {to: String}, context: Abi.Context) -> Activity<Mailed>:
-  if mine(context) == false then mailRefused(Why.notMine({doing: "unsubscribes it"})) else unfollowing(Lists.find(state.following, fn(f: Followed) -> Bool: f.object.object == input.to), input.to)
+  if mine(context) == false then mailRefused(Why.notMine({who: owner(state, context), doing: "unsubscribes it"})) else unfollowing(Lists.find(state.following, fn(f: Followed) -> Bool: f.object.object == input.to), input.to)
 def unfollowing(found: Lists.Maybe<Followed>, object: String) -> Activity<Mailed>:
   match found:
     case none(_): mailRefused(Why.notFollowing({object: object}))
@@ -181,7 +184,7 @@ def released(context: Abi.Context) -> Activity<Done>:
 # Accept what someone offered: the thing's transfer (judged by its own law) moves custody to
 # this avatar, and this avatar records it in its own holding, in the same turn.
 def accept(state: State, input: {thing: String}, context: Abi.Context) -> Activity<Done>:
-  if mine(context) == false then refused(Why.notMine({doing: "accepts for it"})) else accepting({world: context.world, object: input.thing})
+  if mine(context) == false then refused(Why.notMine({who: owner(state, context), doing: "accepts for it"})) else accepting({world: context.world, object: input.thing})
 def accepting(thing: Plans.Reference) -> Activity<Done>:
   match world.call::<Done>({object: thing, method: "transfer", argument: Plans.nothing()}):
     case returned(r): accepted(r.result, thing)
@@ -203,7 +206,7 @@ def moveRefused(w: Why) -> Moved:
 # record where we are. A refusal before any write leaves nothing changed; the calls into
 # places are the only things staged, and a place's refusal is answered as it gave it.
 def move(state: State, input: {exit: String}, context: Abi.Context) -> Activity<Moved>:
-  if mine(context) == false then moveRefused(Why.notMine({doing: "moves it"})) else looked(input.exit, state)
+  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else looked(input.exit, state)
 def looked(label: String, state: State) -> Activity<Moved>:
   match world.view::<Places.State>({object: state.at}):
     case viewed(v): through(label, Lists.find(v.state.exits, fn(e: Places.Exit) -> Bool: e.label == label), state)
@@ -259,7 +262,7 @@ def blurb() -> Card.Door:
 def lenses() -> Lists.List<Form.Field>:
   Lists.List.cons({head: {name: "handle", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.nil()})
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Done>:
-  if mine(context) == false then told(Why.notMine({doing: "changes it"})) else setHandle(Card.valueText(input.value))
+  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "changes it"})) else setHandle(Card.valueText(input.value))
 def setHandle(handle: String) -> Activity<Done>:
   let written(_) = write {handle: set handle}
   Card.tell(Done.done({}), Document.text("Set handle to {handle}.\n"))
@@ -350,7 +353,7 @@ def noteLine(item: Note) -> Document.Document:
   Document.text("{Card.shown(item.from, item.handle, Card.stranger())}: {item.text}\n")
 # Notes newest first; eight of each list, then a count.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat(Lists.concat(Document.Documents.cons({head: Document.text("{state.handle} is at {state.at.object}\n"), tail: Document.Documents.nil()}), Card.clipped(Lists.map(state.holding, holdingLine), 8n)), Lists.concat(mailFor(state, context), inboxFor(state, context)))})
+  Document.Document.sequence({items: Lists.concat(Lists.concat(Document.Documents.cons({head: Document.text("{state.handle}, at {state.at.object}.\n"), tail: Document.Documents.nil()}), Card.clipped(Lists.map(state.holding, holdingLine), 8n)), Lists.concat(mailFor(state, context), inboxFor(state, context)))})
 # What it sent is counted for everyone; what it follows is its principal's to see.
 def mailFor(state: State, context: Abi.Context) -> Document.Documents:
   Document.Documents.cons({head: Document.text("{natText(Relations.count(state.outbox))} sent, follows {natText(Lists.length(state.following))}\n"), tail: if Card.reads(context.object, context) then Card.clipped(Lists.map(state.following, fn(f: Followed) -> Document.Document: followLine(f, context)), 8n) else Document.Documents.nil()})

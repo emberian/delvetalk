@@ -96,8 +96,8 @@ class Resumed(test_chain.Chain):
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
         offers = [(o["to"], o["text"]) for o in missed["receipt"]["offers"]]
         self.assertEqual(offers, [("did:plc:operator4keeper", "glm said: plant something pretty; I could not fit it (garden).\n"),
-                                  ("glm", "✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: colour.\n")])
-        self.assertEqual(offers[-1], ("glm", "✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: colour.\n"))
+                                  ("glm", "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour.\n")])
+        self.assertEqual(offers[-1], ("glm", "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour.\n"))
         copy = [o["text"] for o in self.host.send(op="world-offers", principal="did:plc:operator4keeper")["offers"]]
         self.assertEqual(copy, ["glm said: plant something pretty; I could not fit it (garden).\n"])
 

@@ -385,7 +385,7 @@ class PolicyObject(Chain):
         self.assertEqual(self.interpret(self.planting("green", "a fern"))["status"], "suspended")
         green = self.interpret(self.planting("green", "a fern"))
         self.assertEqual(green["result"]["label"], "unclear")
-        self.assertEqual(green["offers"][0]["text"], "✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: colour is one of: amber, violet, silver (not green).\n")
+        self.assertEqual(green["offers"][0]["text"], "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour is one of: amber, violet, silver (not green).\n")
 
     def test_an_unclear_interpretation_offers_its_needs(self):
         self.policy()
@@ -393,7 +393,7 @@ class PolicyObject(Chain):
         self.say("plant something")
         unclear = self.interpret({"status": "failed", "reason": "rate", "detail": "429"})
         self.assertEqual(unclear["status"], "admitted", unclear)
-        self.assertIn("I did not quite get that. I still need: model: rate", unclear["offers"][0]["text"])
+        self.assertIn("I could not make a planting of that. I still need: model: rate", unclear["offers"][0]["text"])
 
     # --- The model's own text, fitted by the garden (rehearsal finding 2) -----------------
 

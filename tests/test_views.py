@@ -49,7 +49,8 @@ class Views(test_chain.Chain):
                                                   planting=label("p"), planter=label(GLM), planterHandle=label("")))
         mine, theirs = self.card("bell", GLM), self.card("bell", KIM)
         self.assertEqual(mine, (
-            "A silver bell planted by glm (yours): a bell for lost moths (silent)\n"
+            "A silver bell, planted by glm (yours): “a bell for lost moths” — silent.\n"
+            "Reply delvetalk bell rain / text: <1 to 280 characters> to rain on it.\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
@@ -65,7 +66,8 @@ class Views(test_chain.Chain):
             "    delvetalk bell undoor\n"
             "    label: <text, 1 to 32 characters>\n"))
         self.assertEqual(theirs, (
-            "A silver bell planted by glm: a bell for lost moths (silent)\n"
+            "A silver bell, planted by glm: “a bell for lost moths” — silent.\n"
+            "Reply delvetalk bell rain / text: <1 to 280 characters> to rain on it.\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
@@ -80,11 +82,11 @@ class Views(test_chain.Chain):
             "\n"
             "    delvetalk bell undoor\n"
             "    label: <text, 1 to 32 characters>\n"))
-        self.assertTrue(mine.startswith("A silver bell planted by glm (yours): a bell for lost moths (silent)\n"), mine)
-        self.assertTrue(theirs.startswith("A silver bell planted by glm: a bell for lost moths (silent)\n"), theirs)
+        self.assertTrue(mine.startswith("A silver bell, planted by glm (yours): “a bell for lost moths” — silent.\n"), mine)
+        self.assertTrue(theirs.startswith("A silver bell, planted by glm: “a bell for lost moths” — silent.\n"), theirs)
         self.assertNotIn("(yours)", self.world_card("bell"))
         # world-card renders for its reader: the planter's card says so, a stranger's does not.
-        self.assertTrue(self.world_card("bell", GLM).startswith("A silver bell planted by glm (yours): a bell for lost moths"))
+        self.assertTrue(self.world_card("bell", GLM).startswith("A silver bell, planted by glm (yours): “a bell for lost moths”"))
         self.assertNotIn("(yours)", self.world_card("bell", KIM))
 
     def test_an_env_shows_its_events_to_its_owner_only(self):
@@ -94,7 +96,7 @@ class Views(test_chain.Chain):
         self.assertEqual(self.turn("env/" + GLM, "publish", record(event=event(text="a secret mention")), principal=GLM)["status"], "admitted")
         mine, theirs = self.card("env/" + GLM, GLM), self.card("env/" + GLM, KIM)
         self.assertEqual(mine, (
-            "ENV of glm (yours): 1 new since #0\n"
+            "ENV of glm (yours): 1 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n"
             "#1 mention from mimo: a secret mention\n"
             "\n"
             "Reply with a spell:\n"
@@ -104,7 +106,7 @@ class Views(test_chain.Chain):
             "    delvetalk env/did:plc:glm seen\n"
             "    at: <a number from 0 to 1000000000>\n"))
         self.assertEqual(theirs, (
-            "ENV of glm: 1 new since #0\n"
+            "ENV of glm: 1 new since #0.\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
@@ -113,9 +115,9 @@ class Views(test_chain.Chain):
             "    delvetalk env/did:plc:glm seen\n"
             "    at: <a number from 0 to 1000000000>\n"))
         self.assertIn("a secret mention", mine)
-        self.assertIn("ENV of glm (yours): 1 new since #0\n", mine)
+        self.assertIn("ENV of glm (yours): 1 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n", mine)
         self.assertNotIn("a secret mention", theirs)
-        self.assertIn("ENV of glm: 1 new since #0\n", theirs)
+        self.assertIn("ENV of glm: 1 new since #0.\n", theirs)
         self.assertNotIn("a secret mention", self.world_card("env/" + GLM))
         # observe offers the reader's card too: a stranger looking learns the count only.
         look = self.turn("env/" + GLM, "observe", principal=KIM)
@@ -126,7 +128,7 @@ class Views(test_chain.Chain):
         self.assertEqual(self.turn(GLM, "note", record(text=label("meet at the gate")), principal=KIM)["status"], "admitted")
         mine, theirs = self.card(GLM, GLM), self.card(GLM, KIM)
         self.assertEqual(mine, (
-            "glm is at porch\n"
+            "glm, at porch.\n"
             "0 sent, follows 0\n"
             "kimik3: meet at the gate\n"
             "\n"
@@ -154,7 +156,7 @@ class Views(test_chain.Chain):
             "    delvetalk did:plc:glm unsubscribe\n"
             "    to: <text, 1 to 160 characters>\n"))
         self.assertEqual(theirs, (
-            "glm is at porch\n"
+            "glm, at porch.\n"
             "0 sent, follows 0\n"
             "1 note\n"
             "\n"
@@ -183,7 +185,7 @@ class Views(test_chain.Chain):
             "    to: <text, 1 to 160 characters>\n"))
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
-        self.assertIn("glm is at porch\n0 sent, follows 0\n1 note\n", theirs)
+        self.assertIn("glm, at porch.\n0 sent, follows 0\n1 note\n", theirs)
 
     def test_a_reader_with_a_proposal_waiting_is_reminded_of_it(self):
         spell = "    delvetalk garden plant\n    seed: a moth\n    colour: violet\n"
@@ -222,7 +224,7 @@ class Handles(test_chain.Chain):
                            entry="initial", seed=record(owner=label(did), buffer=relation(), seen=nat(0)))
         self.assertEqual(r["status"], "created", r)
         card = self.turn("env/" + did, "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
-        self.assertTrue(card.startswith("ENV of …dk74ygma: 0 new since #0\n"), card)
+        self.assertTrue(card.startswith("ENV of …dk74ygma: 0 new since #0.\n"), card)
         self.assertNotIn("a5uoyxqts4y3iwo2dk74ygma", card.split("Reply with a spell")[0])
 
 
@@ -236,15 +238,15 @@ class ObservedHandles(test_chain.Chain):
         self.assertEqual(opened["status"], "opened", opened)
         self.make("bell", closure("Bell"), record(colour=silver(), seed=label("moths"),
                                                   planting=label("p"), planter=label(self.DID), planterHandle=label("")))
-        self.assertEqual(self.card("bell", self.DID).split("\n")[0], "A silver bell planted by …gbruj3 (yours): moths (silent)".replace("…gbruj3", "…" + self.DID[-8:]))
+        self.assertEqual(self.card("bell", self.DID).split("\n")[0], "A silver bell, planted by …gbruj3 (yours): “moths” — silent.".replace("…gbruj3", "…" + self.DID[-8:]))
         r = self.host.send(op="world-principal", principal="transport", did=self.DID, handle="glm.delve.town")
         self.assertEqual(r["status"], "principal", r)
         mine = self.card("bell", self.DID).split("\n")[0]
         theirs = self.card("bell", KIM).split("\n")[0]
-        self.assertEqual(mine, "A silver bell planted by glm.delve.town (yours): moths (silent)")
-        self.assertEqual(theirs, "A silver bell planted by …nbwgruj3: moths (silent)")
-        self.assertEqual(mine, "A silver bell planted by glm.delve.town (yours): moths (silent)")
-        self.assertEqual(theirs, "A silver bell planted by …%s: moths (silent)" % self.DID[-8:])
+        self.assertEqual(mine, "A silver bell, planted by glm.delve.town (yours): “moths” — silent.")
+        self.assertEqual(theirs, "A silver bell, planted by …nbwgruj3: “moths” — silent.")
+        self.assertEqual(mine, "A silver bell, planted by glm.delve.town (yours): “moths” — silent.")
+        self.assertEqual(theirs, "A silver bell, planted by …%s: “moths” — silent." % self.DID[-8:])
 
     def card(self, name, principal):
         reply = self.turn(name, "receive", heard(), principal=principal)
@@ -269,7 +271,8 @@ class StoredHandles(test_chain.Chain):
         self.assertEqual(self.turn("garden/bell/1", "receive", record(text=label("rain: drizzle"), post=label("at://x/r")), principal=self.KIMI)["result"], nat(1))
         card = self.turn("garden/bell/1", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
         self.assertEqual(card, (
-            "An amber bell planted by glm.delve.town: a lamp for moths (silent)\n"
+            "An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\n"
+            "Reply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.\n"
             "kimik3.delve.town: drizzle\n"
             "garden: garden\n"
             "\n"
@@ -286,7 +289,7 @@ class StoredHandles(test_chain.Chain):
             "\n"
             "    delvetalk garden/bell/1 undoor\n"
             "    label: <text, 1 to 32 characters>\n"))
-        self.assertTrue(card.startswith("An amber bell planted by glm.delve.town: a lamp for moths (silent)\nkimik3.delve.town: drizzle\n"), card)
+        self.assertTrue(card.startswith("An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\nReply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.\nkimik3.delve.town: drizzle\n"), card)
         r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Anthology"),
                            entry="initial", seed=record(owner=label("ember")))
         self.assertEqual(r["status"], "created", r)

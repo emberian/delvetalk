@@ -320,7 +320,7 @@ class Objects(unittest.TestCase):
     def test_lines_split_the_rendered_document(self):
         reply = run_pure("Bell", "lineCount", nat(2), probe=BELL_PROBE)
         self.assertEqual(reply["status"], "finished", reply)
-        self.assertEqual(reply["value"]["value"], "3")
+        self.assertEqual(reply["value"]["value"], "4")
         reply = run_pure("Document", "joined", nat(0), probe=LINES_PROBE)
         self.assertEqual(reply["value"]["value"], "alpha|beta gamma|delta|")
 
@@ -332,7 +332,7 @@ class Objects(unittest.TestCase):
         self.assertEqual(full["status"], "finished", full)
         text = full["value"]["value"]
         print("247 rains: card %s ticks, %d characters" % (full["ticksUsed"], len(text)))
-        self.assertTrue(text.startswith("A silver bell planted by glm: a bell for lost moths (silent)\n"), text)
+        self.assertTrue(text.startswith("A silver bell, planted by glm: “a bell for lost moths” — silent.\n"), text)
         self.assertEqual(text.count("author: a line of rain\n"), 8)
         self.assertTrue(text.endswith("… and 239 more\n"), text)
         self.assertLess(len(text), 1400)

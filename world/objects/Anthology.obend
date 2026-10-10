@@ -79,4 +79,5 @@ def entry(context: Abi.Context) -> Proposal -> Document.Document:
   fn(proposal: Proposal) -> Document.Document: Document.text("[{Rows.statusName(proposal.status)}] {Card.shown(proposal.author, proposal.handle, context)}{Card.mine(proposal.author, context)}: {proposal.line}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Anthology, admitted by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}\n"), tail: Card.clipped(numbered(context, Relations.rows(state.proposals), 1n), 8n)})})
+  let id = Card.called(context, "anthology")
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("THE ANTHOLOGY, kept by {Card.shown(state.owner, state.ownerHandle, context)}{Card.mine(state.owner, context)}. Submit a line: delvetalk {id} submit / line: <1 to 280 characters>. The keeper admits by number.\n"), tail: Card.clipped(numbered(context, Relations.rows(state.proposals), 1n), 8n)})})

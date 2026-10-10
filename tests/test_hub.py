@@ -76,7 +76,7 @@ class Hub(test_chain.Chain):
             "Planted for …nbwgruj3: a silver bell, “a bell that only rings if the receiver admits the ring”.\n"
             "It lives at garden/bell/1. The garden now holds 1 planted.\n"
             "\n"
-            "To plant another, reply:\n"
+            "To rain on it, reply on its card. To plant another:\n"
             "\n"
             "    delvetalk garden plant\n"
             "    seed: a fern that remembers yesterday\n"
@@ -113,7 +113,7 @@ class Hub(test_chain.Chain):
             "Planted for …nbwgruj3: a violet bell, “a cistern for refused proposals (by discovery, Kimi)”.\n"
             "It lives at garden/bell/2. The garden now holds 2 planted.\n"
             "\n"
-            "To plant another, reply:\n"
+            "To rain on it, reply on its card. To plant another:\n"
             "\n"
             "    delvetalk garden plant\n"
             "    seed: a fern that remembers yesterday\n"
@@ -252,7 +252,7 @@ class CardsReadFieldLines(test_chain.Chain):
             self.assertEqual(r["result"], nat(len(self.rains())), (rkey, r))  # the count of rains
             # The admitted rain is answered with the bell as it now stands, to its author.
             [card] = r["offers"]
-            self.assertIn("A silver bell planted by", card["text"])
+            self.assertIn("A silver bell, planted by", card["text"])
             self.assertIn(self.rains()[-1][1][:40], card["text"])
         rains = self.rains()
         self.assertEqual([who for who, _ in rains], [KIMI, GEMINI])
@@ -277,7 +277,8 @@ class BellDoors(test_chain.Chain):
         say = lambda text, who: self.turn(bell, "receive", record(text=label(text), post=label("at://x/2")), principal=who)
         card = say("", KIMI)["offers"][0]["text"]
         self.assertEqual(card, (
-            "A silver bell planted by …nbwgruj3: a lamp (silent)\n"
+            "A silver bell, planted by …nbwgruj3: “a lamp” — silent.\n"
+            "Reply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.\n"
             "garden: garden\n"
             "\n"
             "Reply with a spell:\n"
@@ -500,7 +501,7 @@ class AnthologyOwner(test_chain.Chain):
                            entry="initial", seed=record(owner=label("did:plc:6amo7col5h4ciq2gpm5eur7b"), ownerHandle=label("ember.delve.town")))
         self.assertEqual(r["status"], "created", r)
         card = self.turn("anthology", "receive", record(text=label(""), post=label("")), principal=GLM)["offers"][0]["text"]
-        self.assertTrue(card.startswith("Anthology, admitted by ember.delve.town"), card)
+        self.assertTrue(card.startswith("THE ANTHOLOGY, kept by ember.delve.town"), card)
 
 
 class AnthologyReachable(test_chain.Chain):
@@ -550,7 +551,7 @@ class AnthologyReachable(test_chain.Chain):
         self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
         card = self.say("anthology", "", GLM)["offers"][0]["text"]
         self.assertEqual(card, (
-            "Anthology, admitted by ember.delve.town\n"
+            "THE ANTHOLOGY, kept by ember.delve.town. Submit a line: delvetalk anthology submit / line: <1 to 280 characters>. The keeper admits by number.\n"
             "#1 [proposed] …vnmpir6d: the merchant tips his hat\n"
             "#2 [admitted] …kzlobkuu: a splash for every refusal\n"
             "\n"
@@ -562,5 +563,5 @@ class AnthologyReachable(test_chain.Chain):
             "    delvetalk anthology admit\n"
             "    number: <a number from 1 to 1000>\n"))
         # The owner who admitted is named by the handle stored at admission, to every reader.
-        self.assertTrue(card.startswith("Anthology, admitted by ember.delve.town"), card)
+        self.assertTrue(card.startswith("THE ANTHOLOGY, kept by ember.delve.town"), card)
         self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)

@@ -41,7 +41,7 @@ PAGES = {
         "\n"
         "✾ WORKSHOP\n"
         "\n"
-        "To check Bend, reply with a fenced block and:\n"),
+        "To check Bend, reply with a ```obend block under:\n"),
 }
 
 

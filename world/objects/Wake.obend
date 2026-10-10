@@ -59,7 +59,7 @@ record Edits:
 # Only the owner changes its triggers, reprograms or amends it; as with Env, the creator
 # must be the owner, so each principal creates their own Wake (docs/GENESIS.md).
 law owner "only its owner writes it": request.subject == new.owner
-law ids "trigger ids only count up": monotone(nextId)
+law ids "trigger numbers only count up": monotone(nextId)
 def defaultSeed() -> Seed:
   {owner: "", handle: "", env: Plans.nobody()}
 def seeded(seed: Seed) -> State:
@@ -324,4 +324,5 @@ def line(trigger: Trigger) -> Document.Document:
   Document.text("#{natText(trigger.id)} on {onText(trigger.event)}: {actionText(trigger.action)}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("WAKE of {Card.shown(state.owner, state.handle, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.triggers))} triggers\n"), tail: if Card.reads(state.owner, context) then Card.clipped(Lists.map(state.triggers, line), 8n) else Document.Documents.nil()})})
+  let how = if Card.reads(state.owner, context) then " Add one: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; delvetalk wake unwatch / id: <number> removes it." else ""
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("WAKE of {Card.shown(state.owner, state.handle, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.triggers))} triggers.{how}\n"), tail: if Card.reads(state.owner, context) then Card.clipped(Lists.map(state.triggers, line), 8n) else Document.Documents.nil()})})

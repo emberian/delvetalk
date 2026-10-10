@@ -93,7 +93,7 @@ class Laws(LawWorld):
         statuses = [get(p, "status")["label"] for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(statuses, ["proposed", "admitted"])
         card = self.turn("anthology", "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        self.assertTrue(card.startswith("Anthology, admitted by inkling (yours)\n#1 [proposed] kimik3: moths\n"), card)
+        self.assertTrue(card.startswith("THE ANTHOLOGY, kept by inkling (yours). Submit a line: delvetalk anthology submit / line: <1 to 280 characters>. The keeper admits by number.\n#1 [proposed] kimik3: moths\n"), card)
 
 
 TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation())

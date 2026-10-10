@@ -143,6 +143,8 @@ def methods() -> Lists.List<String>:
   Text.words("enter leave take put")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: sayForm(), tail: Card.Forms.cons({head: emoteForm(), tail: Card.Forms.cons({head: whisperForm(), tail: Card.Forms.nil()})})})
+def placeWord() -> String:
+  "<place>"
 def line(prefix: String, suffix: String) -> Document.Document:
   Document.text("{prefix}{suffix}\n")
 def reference(prefix: String) -> Plans.Reference -> Document.Document:
@@ -150,9 +152,9 @@ def reference(prefix: String) -> Plans.Reference -> Document.Document:
 def exit(item: Exit) -> Document.Document:
   line("Exit ", "{item.label} to {item.to.object}")
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat(Lists.concat(Lists.concat(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map(Relations.rows(state.present), reference("Here: ")), 8n)), Card.clipped(Lists.map(Relations.rows(state.things), reference("Lying here: ")), 8n)), Lists.concat(Lists.concat(Lists.map(state.exits, exit), hereLine(state, context)), traceLines(state)))})
+  Document.Document.sequence({items: Lists.concat(Lists.concat(Lists.concat(Document.Documents.cons({head: line(state.name, ""), tail: Document.Documents.cons({head: line(state.description, ""), tail: Document.Documents.nil()})}), Card.clipped(Lists.map(Relations.rows(state.present), reference("Here: ")), 8n)), Card.clipped(Lists.map(Relations.rows(state.things), reference("Lying here: ")), 8n)), Lists.concat(Lists.concat(Lists.concat(Lists.map(state.exits, exit), Document.Documents.cons({head: line("Say: delvetalk {Card.called(context, placeWord())} say / line: <text>. Leave: delvetalk <your avatar> move / exit: <label>.", ""), tail: Document.Documents.nil()})), hereLine(state, context)), traceLines(state)))})
 def traceLines(state: State) -> Document.Documents:
-  if Relations.count(state.traces) == 0n then Document.Documents.nil() else Document.Documents.cons({head: line("Traces:", ""), tail: Lists.map(Lists.take(Lists.reverse(Relations.rows(state.traces)), 8n), fn(t: Trace) -> Document.Document: line("  {Card.shown(t.who, t.handle, Card.stranger())} {t.action}", if t.clause == "" then "" else ": refused {t.clause}"))})
+  if Relations.count(state.traces) == 0n then Document.Documents.nil() else Document.Documents.cons({head: line("Traces (the last eight, refusals too):", ""), tail: Lists.map(Lists.take(Lists.reverse(Relations.rows(state.traces)), 8n), fn(t: Trace) -> Document.Document: line("  {Card.shown(t.who, t.handle, Card.stranger())} {t.action}", if t.clause == "" then "" else ": refused {t.clause}"))})
 # A reader whose avatar is here is told so.
 def hereLine(state: State, context: Abi.Context) -> Document.Documents:
   if here(context, state) then Document.Documents.cons({head: line("You are here.", ""), tail: Document.Documents.nil()}) else Document.Documents.nil()

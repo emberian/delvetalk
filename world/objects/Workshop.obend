@@ -78,7 +78,7 @@ def checkedCard(diagnostics: Form.Names) -> Document.Document:
 def reprogrammedCard(target: String, version: Nat) -> Document.Document:
   Document.text("✾ WORKSHOP\n\nReprogrammed {target}.\nWas: {target} v{natText(version)}\nNow: {target} v{natText(version + 1n)}\n")
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a fenced block and:\n\n    delvetalk workshop check\n\n```obend\n…your Objective Bend…\n```\n\nor a block field:\n\n    delvetalk workshop check\n    source: <<BEND\n    …your Objective Bend…\n    BEND\n\nTo check what an object runs now:\n\n    delvetalk workshop check\n    target: bell-1\n\nTo reprogram it with a checked block:\n\n    delvetalk workshop propose\n    target: bell-1\n    migration: how the old state becomes the new\n\nTo have a copy of a thing made (unless its owner forbids it):\n\n    delvetalk workshop create\n    like: stone\n")
+  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a ```obend block under:\n\n    delvetalk workshop check\n\nor as a block field (source: <<BEND … BEND). To read what a card runs now:\n\n    delvetalk workshop check\n    target: garden/bell/1\n\nTo offer a checked block to a card; its owner's law decides, and a refusal is held for the owner to adopt:\n\n    delvetalk workshop propose\n    target: garden/bell/1\n    migration: how the old state becomes the new, or blank\n\nTo copy a thing, unless its owner said no:\n\n    delvetalk workshop create\n    like: stone\n")
 def verdictOf(diagnostics: Form.Names) -> Verdict:
   match diagnostics:
     case nil(_): Verdict.clean({})
@@ -120,7 +120,7 @@ def reprogramming(target: String, was: Nat, package: String, migration: String, 
 # sixteen are held, the host drops the oldest as this one comes, and the card says which.
 def holding(held: Held, clause: String, state: State) -> Activity<Verdict>:
   let written(_) = write {held: insert held, next: add 1n}
-  Card.tell(Verdict.held({n: held.n, clause: clause}), Document.text("Not done: {clause}\nHeld as #{natText(held.n)} for the owner of {held.target} to adopt:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n{dropping(state)}"))
+  Card.tell(Verdict.held({n: held.n, clause: clause}), Document.text("refused {clause}: held as #{natText(held.n)} for the owner of {held.target} to adopt:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n{dropping(state)}"))
 def dropping(state: State) -> String:
   match Relations.rows(state.held):
     case cons(c): if Relations.count(state.held) >= 16n then "The oldest held proposal, #{natText(c.head.n)}, was dropped.\n" else ""

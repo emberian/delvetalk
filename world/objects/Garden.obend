@@ -64,7 +64,7 @@ record Planting:
 # Anyone plants, rains and replies; only the owner changes who owns it, its stance, its
 # policy or its page checkpoint (a set or a merge from anyone else is refused in Bend
 # first, by name; this law refuses the same write proposed any other way).
-law owner "only the owner changes who owns it, its stance, its policy or its page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
+law owner "only the owner changes the owner, what asks first, the policy or the page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
 def defaultSeed() -> Seed:
   {owner: "", policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty()}
 def seeded(seed: Seed) -> State:
@@ -125,12 +125,15 @@ record Tally:
   count: Nat
 def byColour(state: State, context: Abi.Context) -> Relations.Relation<Tally>:
   Relations.Relation.rows({items: Lists.map(Relations.group(state.children, fn(c: Child) -> Bell.Colour: c.colour), fn(g: Relations.Group<Child, Bell.Colour>) -> Tally: {colour: Relations.groupKey(g), count: Lists.length(Relations.groupRows(g))})})
+# Words are read only with a policy, and shown back first only when planting asks first.
+def inWords(state: State) -> String:
+  if Plans.isNobody(state.policy) then "" else if asks(state.confirmFor, "plant") then "Or say it in words; I show you the spell before it grows.\n\n" else "Or say it in words; the interpreter plants what it understands.\n\n"
 # The garden card: how to plant first (readers clip near 1,400 characters), then the
 # bells, newest first, eight of them and a count of the rest.
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let card = if context.object == "" then "garden" else context.object
-  let head = Document.text("✾ THE NIGHT GARDEN\n\n{waiting(context, state)}To plant, reply:\n\n    delvetalk {card} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n{Card.checkpointLine(state.pageCheckpoint)}{natText(state.planted)} planted, newest first:\n")
+  let card = Card.called(context, "garden")
+  let head = Document.text("✾ THE NIGHT GARDEN\n\n{waiting(context, state)}To plant, reply:\n\n    delvetalk {card} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n{inWords(state)}{Card.checkpointLine(state.pageCheckpoint)}{natText(state.planted)} planted, newest first:\n")
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map(Lists.reverse(Relations.rows(state.children)), childLine), 8n)})})
 # The garden's page: its card, how to reply, then one section per bell, newest first,
 # sixteen of them; the card section counts the rest.
@@ -166,7 +169,7 @@ def plantedCard(context: Abi.Context, reference: Plans.Reference, colour: String
   let what = "Planted for {Card.name(context.principal, context)}: {article} {colour} bell, “{seed}”."
   let where = "It lives at {reference.object}. The garden now holds {natText(count)} planted."
   let another = spell(context.object, "a fern that remembers yesterday", "silver")
-  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo plant another, reply:\n\n{another}")
+  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply on its card. To plant another:\n\n{another}")
 def unclearCard(context: Abi.Context, needs: Form.Names, colour: String, seed: String) -> Document.Document:
   let again = spell(context.object, if seed == "" then "<what might grow here, 1 to 80 characters>" else seed, if colour == "" then "<amber, violet or silver>" else colour)
   Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Text.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
@@ -358,7 +361,7 @@ def quietly(edit: Plans.Entries<Pending, Pending>) -> Activity<Reply>:
   let written(_) = world.write(extend(keep(), {pending: edit}))
   Reply.silent({})
 def needsCard(needs: Form.Names) -> Document.Document:
-  Document.text("✾ THE NIGHT GARDEN\n\nI did not quite get that. I still need: {Text.joined(needs)}.\n")
+  Document.text("✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: {Text.joined(needs)}.\n")
 def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.Document:
   Document.text("✾ THE NIGHT GARDEN\n\n{Card.name(context.principal, context)}, I understood this:\n\n{spell(context.object, seed, colour)}\nReply yes or correct it.\n")
 # A planting either waits for the speaker's yes (an understood one the garden or the policy

@@ -40,7 +40,7 @@ class Genesis(unittest.TestCase):
         self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + [o, 'env/' + o, 'wake/' + o]))
         # the opener arrived first: another reader sees their handle, not a DID fragment
         avatar = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': o})
-        self.assertIn('ember.delve.town is at', json.dumps(avatar))
+        self.assertIn('ember.delve.town, at', json.dumps(avatar))
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)

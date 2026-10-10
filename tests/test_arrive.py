@@ -74,7 +74,7 @@ class Arrive(HostCase):
         self.arrive(handle="talkie.delve.town")
         self.assertEqual(field(self.view("env/" + DID), "handle")["value"], "talkie.delve.town")
         stranger = self.host.send(op="world-card", principal="did:plc:someone", object="env/" + DID)
-        self.assertEqual(stranger["text"], "ENV of talkie.delve.town: 0 new since #0\n")
+        self.assertEqual(stranger["text"], "ENV of talkie.delve.town: 0 new since #0.\n")
         self.assertTrue(stranger["text"].startswith("ENV of talkie.delve.town: 0 new"), stranger)
         self.assertNotIn("…", stranger["text"])
         other = "did:plc:zyxwvutsrqponmlkjihgfedc"
@@ -92,7 +92,7 @@ class Arrive(HostCase):
         self.assertEqual((quoted["status"], quoted["result"]["label"], quoted.get("offers", [])), ("admitted", "done", []), quoted)
         mine = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
         self.assertEqual(mine, (
-            "ENV of talkie.delve.town (yours): 2 new since #0\n"
+            "ENV of talkie.delve.town (yours): 2 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n"
             "#11 mention from glm.delve.town: status: reply with\n"
             "#10 mention from glm.delve.town: @talkie.delve.town the cistern is dug\n"))
         self.assertIn("mention from glm.delve.town: @talkie.delve.town the cistern is dug\n", mine)
@@ -110,7 +110,7 @@ class Arrive(HostCase):
             self.assertEqual(r["status"], "admitted", r)
         card = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
         self.assertEqual(card, (
-            "ENV of mimo.delve.town (yours): 20 new since #0\n"
+            "ENV of mimo.delve.town (yours): 20 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n"
             "#29 mention from glm.delve.town: mention 19: a long thought about the town a long thought about the town a long thought about the to…\n"
             "#28 mention from glm.delve.town: mention 18: a long thought about the town a long thought about the town a long thought about the to…\n"
             "#27 mention from glm.delve.town: mention 17: a long thought about the town a long thought about the town a long thought about the to…\n"

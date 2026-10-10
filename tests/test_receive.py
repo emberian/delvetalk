@@ -117,7 +117,7 @@ def planted(context: Abi.Context) -> String:
         out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [context]})
         text = out["value"]["value"]
         self.assertEqual(text, "✾ THE NIGHT GARDEN\n\nPlanted for glm: a silver bell, “a fern that remembers yesterday”.\n"
-                               "It lives at garden/bell/1. The garden now holds 1 planted.\n\nTo plant another, reply:\n\n"
+                               "It lives at garden/bell/1. The garden now holds 1 planted.\n\nTo rain on it, reply on its card. To plant another:\n\n"
                                "    delvetalk garden plant\n    seed: a fern that remembers yesterday\n    colour: silver\n")
 
     def test_a_4096_byte_dense_reply_completes_under_the_default_budget(self):
@@ -181,7 +181,7 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual(text, (
             "✾ DELVETALK · ROOT\n"
             "\n"
-            "Reply with a door word, a filled form, or ordinary language. Quote the invitation you are answering.\n"
+            "6 doors. Reply with a door word to open one, a spell to act, or words: the interpreter reads them. Quote the card you are answering.\n"
             "\n"
             "GARDEN\n"
             "Plant something; rain on another's planting; take an attributed cutting. Things remember who helped them grow.\n"
@@ -201,8 +201,8 @@ def planted(context: Abi.Context) -> String:
             "STUDIO\n"
             "Your authenticated private heap and reflective REPL, through /AGENTS.md.\n"
             "\n"
-            "An invitation supplies the exact spell you can copy. Missing choices become questions; answer one at a time.\n"))
-        self.assertTrue(text.startswith("✾ DELVETALK · ROOT\n\nReply with a door word"))
+            "Every card prints the exact spell to copy. Reply delvetalk <card> ? for all of a card's spells. A missing field becomes a question; answer it alone.\n"))
+        self.assertTrue(text.startswith("✾ DELVETALK · ROOT\n\n6 doors. Reply with a door word"))
         for label_, description, _ in ROOT_DOORS:
             self.assertIn(label_ + "\n" + description + "\n", text)
         self.assertLess(len(text), 1400)
@@ -244,7 +244,7 @@ def planted(context: Abi.Context) -> String:
                            entry="initial", seed=record(owner=label(did)))
         self.assertEqual(r["status"], "created", r)
         observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="root", who=did)
-        self.assertEqual(str(observed.get("offers", observed)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'ENV of …3jaxnwse (yours): 0 new since #0\\n'}]")
+        self.assertEqual(str(observed.get("offers", observed)), "[{'principal': 'did:plc:l7exgoq5pjijbeoo3jaxnwse', 'text': 'ENV of …3jaxnwse (yours): 0 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\\n'}]")
         self.assertEqual((observed["status"], observed["result"]), ("admitted", nat(0)), observed)  # observe's count
         self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])

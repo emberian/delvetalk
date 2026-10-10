@@ -173,13 +173,12 @@ class Workshop(Chain):
         # "Reprogrammed", and holds the proposal for the owner.
         held = self.card(reply)
         self.assertEqual(held, (
-            "Not done: owner\n"
-            "Held as #1 for the owner of bell-1 to adopt:\n"
+            "refused owner: held as #1 for the owner of bell-1 to adopt:\n"
             "\n"
             "    delvetalk workshop adopt\n"
             "    n: 1\n"
             "\n"))
-        self.assertTrue(held.startswith("Not done: owner\nHeld as #1 for the owner of bell-1 to adopt:\n"), held)
+        self.assertTrue(held.startswith("refused owner: held as #1 for the owner of bell-1 to adopt:\n"), held)
         self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell-1")["pin"], before)
         listing = self.say("")["offers"][0]["text"]
         self.assertIn("#1 for bell-1 from kimik3\n", listing)
