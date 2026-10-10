@@ -15,26 +15,26 @@ type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {}
 def seeded(seed: Seed) -> State:
-  {entries: Lists.List::<Plans.Receipt>.nil()}
+  {entries: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 # Retains a refusal (or any) receipt in the order it was offered.
 def retain(state: State, input: {receipt: Plans.Receipt}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {entries: Plans.Entries::<Plans.Receipt, {}>.append({item: input.receipt})}})):
-    case _: Lists.length::<Plans.Receipt>(state.entries) + 1n
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {entries: Plans.Entries.append({item: input.receipt})}}))
+  Lists.length(state.entries) + 1n
 # A receipt is structured data, not a spell: the card offers no form.
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def door() -> Card.Door:
   {word: "cistern", blurb: "Keeps receipts, refusals first."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  Card.answer::<Edits, State, {}>(Card.route(input.text, context, forms()), context, forms(), render(state, context))
+  Card.answer(Card.route(input.text, context, forms()), context, forms(), render(state, context))
 def outcomeName(outcome: Plans.Outcome) -> String:
   match outcome:
     case admitted(_): "admitted"
-    case refused(r): textConcat("refused ", r.class)
+    case refused(r): "refused {r.class}"
 def line(receipt: Plans.Receipt) -> Document.Document:
-  Document.text(textConcat("#", textConcat(natText(receipt.height), textConcat(" ", textConcat(Card.handle(receipt.slot.principal), textConcat(": ", textConcat(outcomeName(receipt.outcome), "\n")))))))
+  Document.text("#{natText(receipt.height)} {Card.handle(receipt.slot.principal)}: {outcomeName(receipt.outcome)}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Cistern\n"), tail: Card.clipped(Lists.map::<Plans.Receipt, Document.Document>(state.entries, line), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Cistern\n"), tail: Card.clipped(Lists.map(state.entries, line), 8n)})})
