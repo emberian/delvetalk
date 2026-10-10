@@ -601,37 +601,41 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
   forms a choice (probed on hbox with `test_sum_words`'s garden); declared forms (5.69) cover the rest.
 - `tests/test_bridge.py`'s stale `expectedFailure` is gone (foundation).
 
-### Queue for the next host lane, in order (from lane/host10)
+### Queue for the next host lane, in order (from lane/host11)
 
-host10 landed 5.62 to 5.70, one commit each (plus the world `methods()` lines, 9c85454, and two
-foundation merges): declared methods (the public-method hole); called and delivered `receive` read
-as spells; an interpretation's proposal names its card; `receiveArgument` and the old item labels
-deleted; the on-disk compile cache; a Bend law's reading; the host's default page; a card's own form
-bounds and the `source` kind; suspension fields by block. Full `tests.run` on hbox at lane/host10's
-last code commit (load ~18): 1063 tests in 262 classes, one failed class (`test_pages`, the
-garden's and tide's declared bounds), fixed in the commit that rewrote this section.
+host11 landed 5.71 to 5.74, one commit each (plus foundation merges): `inputOrigin.post` and the
+forged-field rule for spells; suspensions that journal what they do not already say; handlers over a
+run's whole extent; `insertOnly` under retention.
+`tests/test_form_bounds.py` `WorkshopSource` is the Workshop's case (a 6 KB `source` block checked,
+20 KB refused `badValue` naming `source`), declaring `form check`/`form propose` with `source:
+source` over the on-disk Workshop until Workshop.obend declares them. It is an `expectedFailure`
+until foundation has lane/kernel8's `name: source` form line (a977d64) and the library has
+`Form.Kind.source` with its `case source` arms (Spell.obend `judge` and `typed`, Card.obend's
+template, Policy.obend's kind text); probed on hbox with those overlaid, it passes. Then drop the
+marker.
 
 1. **WORLD-REVIEW finding 22**, waiting on the review lane: when its commit deletes the seven unused
    variants (`quote`, `reference`, `offer`, `fields`, `source`, `result`, `continuation`) and
    Phrasebook from `world/lib/document/Document.obend`, delete the same cases from
    `spec/Delvetalk/Document.lean` and the kinds from `tests/test_document.py`'s generator, one commit.
-2. **Suspension size to under 7 KB** (5.70): the host's fields are now ~3 KB of a 7.6 KB median; the
-   rest is the kernel's checkpoint blocks (median 4.7 KB fresh) and the `tokenTree` root names (~1 KB,
-   up to 16 CIDs). Ask the kernel lane, or fold the roots into one inner block only if that block
-   recurs (it does not today).
-3. **Handlers over nested frames** (above).
-4. **Rows as roots** (WHOLENESS §3a): blocked on the kernel's lazy cells (KERNEL-HANDOFF §15): when
-   `fetch` lands, record `{object, field, key}` there and judge it with `keysChangedSince`.
-5. **Rehearsal wall**: 23.0 s and 32.6 s on hbox at load ~17 (two runs of 5.70's binary); the 50 s
-   target holds. Measure on a quiet box before quoting a number.
+2. **Suspension size** (5.72): one speaker's median is 5.1 KB, nine speakers' 7.5 KB. The host's
+   remaining share is ~0.5 KB (`slot` beside an interpretation, ~100 B, read in five places:
+   `turnReply`, `settle`'s waiting lookup, `record`; the argument). The kernel's fresh checkpoint
+   blocks (3 KB and up) and the `tokenTree` roots (~900 B) are the rest: the kernel lane's queue
+   (KERNEL-HANDOFF §16, `lane/kernel7`'s environment trimming).
+3. **Rows as roots** (WHOLENESS §3a): still blocked on the kernel's lazy cells (KERNEL-HANDOFF §15 is a
+   design note): when `fetch` lands, record `{object, field, key}` there and judge it with
+   `keysChangedSince`.
+4. **Rehearsal wall**: not measured by host11; hbox's load stayed 19 to 37 through the lane. host10's
+   two runs were 23.0 s and 32.6 s at load ~17 against the 50 s target. Measure on a quiet box.
+5. **A delivery's post** (5.71): a delivered turn sees only its own `receive` argument's post, not the
+   sending turn's; `sends` journal none. Add it only when an object needs it (none does).
 
 Requests to other lanes (not the host's files):
-- Objects: `Form.obend`'s `Kind` gains `source: {}`, and the Workshop declares forms whose `source`
-  fields are of that kind (then a 6 KB block is admitted and a 20 KB one refused `badValue` by name;
-  `tests/test_form_bounds.py` shows it with a fixture). `Abi.Verdict.refused` may carry `reading`
-  (5.67). The five pasted `publishPage` methods may go (5.68). Fixtures the rule touched declare their
-  methods with `tests.test_turn_world.declared`; world objects declare theirs with `methods()`
-  (Card.wordList).
-- Kernel: the `form` block grammar (`ObjectiveBendParse.lean`) gains `name: source` for
-  `Form.Kind.source`. `Package.lawShape` was widened by host10 to accept `refused {clause, reading}`
-  (two lines in the kernel's file, at the coordinator's request).
+- Objects: the Garden reads `context.inputOrigin.post` for its planting post and drops `context.intent`
+  and the two `expectedFailure`s (test_replay test_1, test_principal's planting case; probed passing).
+  The Directory's Bend 4,096 `greeted` check may become `insertOnly(greeted)` (5.74). `Form.obend`'s
+  `Kind` gains `source: {}` and the Workshop declares its `source` fields with the kernel's
+  `name: source` form line.
+- Review: WORLD-REVIEW finding 10's trap ("insertOnly with a limit refuses every insert past the
+  limit") is fixed by 5.74.
