@@ -33,7 +33,7 @@ type Response = Plans.Response<State, Nat>
 %s
 def initial() -> State:
   {seen: 5n}
-def receive(state: State, input: {text: String, post: String, slot: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 %s
 """
 OFFERING = """  match perform(Plan.offer({to: "", document: Document.text(textConcat("hello ", context.principal))})):
@@ -238,7 +238,7 @@ class Routing(BridgeCase):
         r = bridge.run(self.state, stub)
         turns = {t['identity'][-6:]: t for t in stub.ops if t['op'] == 'world-turn'}
         self.assertEqual({k: v['object'] for k, v in turns.items()}, {'000001': 'directory', '000002': 'directory', '000004': 'directory'})
-        self.assertEqual([f['name'] for f in turns['000001']['argument']['fields']], ['text', 'post'])  # the host fills slot
+        self.assertEqual([f['name'] for f in turns['000001']['argument']['fields']], ['text', 'post'])  # the host owns the slot
         self.assertEqual(turns['000001']['replyTo'], parent)
         self.assertNotIn('replyTo', turns['000004'])  # a top-level summon answers no post
         self.assertEqual(len(r['turns']), 3)
