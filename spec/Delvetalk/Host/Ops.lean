@@ -210,6 +210,8 @@ structure Proposal where
   /-- Subscriptions the turn makes and ends (WHOLENESS §3); they take effect with the commit. -/
   subscribes : List Subscription := []
   unsubscribes : List Subscription := []
+  /-- Fields of objects the turn read alone (`viewField`), at the version it read. -/
+  fieldRoots : List (String × String × Nat) := []
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
       moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
   rebaseOwn : Option String := none
@@ -262,6 +264,19 @@ def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
 def rootsJson (roots : List (String × Nat)) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj [("object", toJson o), ("version", toJson v)])
 
+/-- Field roots (WHOLENESS §3a): a turn that read one field of an object (`viewField`) conflicts only
+    with later writes of that field. Journaled in `roots` beside the object roots as `{object, field,
+    key: "*", version}`; the `key` is `*` because the host does not see which rows a turn's code read
+    (that waits on lazy state cells, KERNEL-HANDOFF §15). -/
+def fieldRootsJson (roots : List (String × String × Nat)) : Array Json :=
+  roots.toArray.map fun (o, f, v) => Json.mkObj [("object", toJson o), ("field", toJson f), ("key", toJson "*"), ("version", toJson v)]
+
+/-- An entry's `roots`: the object roots, then the field roots. -/
+def allRootsJson (roots : List (String × Nat)) (fieldRoots : List (String × String × Nat)) : Json :=
+  match rootsJson roots with
+  | .arr a => .arr (a ++ fieldRootsJson fieldRoots)
+  | other => other
+
 /-- The fields recording who made each change: parallel arrays of steps, callers, kinds. -/
 def writtenFields (ws : List Written) : List (String × Json) :=
   [("edits", stepsJson (ws.map (·.edits))), ("callers", toJson (ws.map (·.caller))),
@@ -279,9 +294,22 @@ def parseRoots (j : Json) : Except String (List (String × Nat)) := do
   if raw.size > Limits.maxRoots then throw "too many roots"
   let mut out : List (String × Nat) := []
   for r in raw do
+    if (r.getObjVal? "field").toOption.isSome then continue
     let object ← boundedText "object id" Limits.maxObjectIdBytes (← r.getObjValAs? String "object")
     if out.any (·.1 == object) then throw "duplicate root"
     out := out ++ [(object, ← natField r "version")]
+  return out
+
+/-- The field roots among an entry's `roots` (`fieldRootsJson`). -/
+def parseFieldRoots (j : Json) : Except String (List (String × String × Nat)) := do
+  let raw ← j.getArr?
+  let mut out : List (String × String × Nat) := []
+  for r in raw do
+    let some field := (r.getObjValAs? String "field").toOption | continue
+    unless (r.getObjValAs? String "key").toOption == some "*" do throw "a field root's key is *"
+    let object ← boundedText "object id" Limits.maxObjectIdBytes (← r.getObjValAs? String "object")
+    if out.any (fun (o, f, _) => o == object && f == field) then throw "duplicate root"
+    out := out ++ [(object, field, ← natField r "version")]
   return out
 
 /-- Writes as a client sends them: direct, so every step has the empty caller. A client
@@ -348,6 +376,7 @@ def Proposal.digest (p : Proposal) : String :=
     [("object", toJson id), ("source", toJson (Journal.bodyHash src)), ("migration", toJson mig)]
   let laws := p.laws.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)]
   Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots), ("writes", writesJson p.allWrites)] ++
+    (if p.fieldRoots.isEmpty then [] else [("fieldRoots", Json.arr (fieldRootsJson p.fieldRoots))]) ++
     (if programs.isEmpty then [] else [("programs", Json.arr programs.toArray)]) ++
     (if p.layered.isEmpty then [] else [("extends", toJson p.layered)]) ++
     (if laws.isEmpty then [] else [("laws", Json.arr laws.toArray)]) ++
@@ -1574,6 +1603,11 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       if o.version != seen && !(seen < o.version &&
           movedRootAdmits w writes id seen (p.rebaseOwn == some id)) then
         throw { cls := "staleRoot", object := id }
+  -- A field root is current while no write since the turn read touched that field.
+  for (id, field, seen) in p.fieldRoots do
+    let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
+    if o.version != seen && !(seen < o.version && ((fieldsChangedSince w id seen).map (!·.contains field)).getD false) then
+      throw { cls := "staleRoot", object := id }
   -- A write to the running object needs no view; its version is the first root. A
   -- proposal that writes what it never named as a root is malformed.
   for (id, _) in writes do
@@ -1899,7 +1933,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     -- The turn number is the host's: the height of the entry about to be written.
     let p := { p with turn := w.height + 1 }
     let key := identityKey p.principal p.intent
-    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots),
+    let base := [("identity", identityJson p.principal p.intent), ("roots", allRootsJson p.roots p.fieldRoots),
       ("turn", toJson p.turn), ("request", toJson p.digest)] ++
       (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++ extra
     let verdict : Except Refusal Judged :=
@@ -2602,12 +2636,13 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       unless g.id == grantId principal intent i && g.grantor == principal do throw "a grant is not its turn's"
     let spent ← parseSpent (outcome.getObjVal? "spent").toOption
     let roots ← parseRoots (← entry.getObjVal? "roots")
+    let fieldRoots ← parseFieldRoots (← entry.getObjVal? "roots")
     let rebaseOwn := if (entry.getObjVal? "resumes").toOption.isSome then roots.head?.map (·.1) else none
     let subs := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Subscription.ofJson
     let subscribes ← subs "subscribes"
     let unsubscribes ← subs "unsubscribes"
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes }
+                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, fieldRoots }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))

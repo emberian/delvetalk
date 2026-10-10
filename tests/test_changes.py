@@ -73,6 +73,25 @@ def changed(state: State, input: {object: Plans.Reference, field: String, versio
   state.seen + 1n
 """
 
+READER = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  got: Nat
+record Edits:
+  got: Plans.Edit<Nat, Nat>
+def initial() -> State:
+  {got: 0n}
+def later(state: State, input: {other: String, slot: String}, context: Abi.Context) -> Activity<Nat>:
+  let viewed(v) = world.viewField::<Nat>({object: {world: "", object: input.other}, field: "rung"})
+  match world.await({slot: {principal: "ann", intent: input.slot}, patience: 50n}):
+    case reply(_):
+      let written(_) = world.write::<Edits>({got: Plans.Edit.set({value: v.state + 100n})})
+      v.state
+    case _: 0n
+"""
+
 
 class Changes(Reflection):
     def setUp(self):
@@ -158,6 +177,23 @@ class Changes(Reflection):
         entry = [e for e in self.entries() if e["identity"]["intent"] == rung["receipt"]["identity"]["intent"]][0]
         self.assertEqual((len(entry["changes"]), len(entry["unserved"])), (32, 32))
         self.assertEqual(entry["unserved"][0], "w32")
+
+    def test_a_field_root_is_stale_only_when_its_field_moved(self):
+        # WHOLENESS §3a: a turn that read one field (`viewField`) and waited commits after a write of
+        # another field of that object, and is stale (re-run) after a write of the field it read.
+        self.make2("r", READER)
+        self.assertEqual(self.turn("r", "later", record(other=label("bell"), slot=label("go1")), identity="w1")["status"], "suspended")
+        [resumed] = self.turn("bell", "name", record(who=label("kim")), principal="ann", identity="go1")["resumed"]
+        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", nat(0)), resumed)
+        self.assertNotIn("rerunOf", resumed)
+        self.assertIn({"object": "bell", "field": "rung", "key": "*", "version": 0}, resumed["receipt"]["roots"])
+        self.make2("r2", READER)
+        self.assertEqual(self.turn("r2", "later", record(other=label("bell"), slot=label("go2")), identity="w2")["status"], "suspended")
+        [stale] = self.turn("bell", "ring", record(), principal="ann", identity="go2")["resumed"]
+        self.assertIn("rerunOf", stale)
+        self.assertEqual(stale["result"], nat(1), stale)
+        self.reopen()
+        self.assertEqual((self.get("r", "got"), self.get("r2", "got")), (nat(100), nat(101)))
 
 
 if __name__ == "__main__":

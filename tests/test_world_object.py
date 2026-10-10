@@ -134,7 +134,7 @@ class WorldObject(Reflection):
         self.thing("b", 9)
         r = self.turn("a", "field", record(other=label("b"), field=label("count")))
         self.assertEqual(r["result"], nat(9), r)
-        self.assertIn({"object": "b", "version": 0}, r["receipt"]["roots"])
+        self.assertIn({"object": "b", "field": "count", "key": "*", "version": 0}, r["receipt"]["roots"])
         self.assertEqual(self.turn("a", "field", record(other=label("b"), field=label("nope")))["result"], nat(777777))
         self.assertEqual(self.turn("a", "fieldText", record(other=label("b")))["result"], label("typeMismatch"))
 

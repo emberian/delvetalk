@@ -93,6 +93,8 @@ structure TurnState where
   world : World
   roots : List (String × Nat) := []
   writes : List (String × List Written) := []
+  /-- Fields read alone (`viewField`): object, field, version (`recordFieldRoot`). -/
+  fieldRoots : List (String × String × Nat) := []
   /-- The turn's identity principal: it names the entry and derives send and grant ids. -/
   principal : String
   intent : String
@@ -157,8 +159,16 @@ def liftEval {α : Type} (r : Except String α) : M α :=
 def recordRoot (id : String) (version : Nat) : M Unit := do
   let s ← get
   unless s.roots.any (·.1 == id) do
-    if s.roots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
+    if s.roots.length + s.fieldRoots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
     set { s with roots := s.roots ++ [(id, version)] }
+
+/-- A root on one field of an object (`viewField`, WHOLENESS §3a): none when the whole object is
+    already a root, which covers it. -/
+def recordFieldRoot (id field : String) (version : Nat) : M Unit := do
+  let s ← get
+  unless s.roots.any (·.1 == id) || s.fieldRoots.any (fun (o, f, _) => o == id && f == field) do
+    if s.roots.length + s.fieldRoots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
+    set { s with fieldRoots := s.fieldRoots ++ [(id, field, version)] }
 
 def field? (fields : List (String × Data)) (name : String) : Option Data := fields.lookup name
 
@@ -872,7 +882,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let p : Proposal := { principal := s.principal, intent := s.intent, roots := s.roots, writes,
                           programs := s.programs, layered := s.layered, laws := s.laws, absent := s.absent,
                           creates := s.creates, grants := s.grants, revokes := s.revokes, spent := s.spent,
-                          subscribes := s.subscribes, unsubscribes := s.unsubscribes, turn := w.height + 1 }
+                          subscribes := s.subscribes, unsubscribes := s.unsubscribes, fieldRoots := s.fieldRoots,
+                          turn := w.height + 1 }
     let p := withLawReads w p
     let (admitted, clause) := match judge w (w.height + 1) p with
       | .ok _ => (true, "")
@@ -971,7 +982,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | none => respond bounds responseType "denied" [emptyRecord]
     | some (id, o) =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
-      recordRoot id o.version
+      -- The turn read this field alone: only a later write of it makes the turn stale.
+      recordFieldRoot id name o.version
       match o.state with
       | .record fields => match fields.lookup name with
         | some value =>
@@ -1296,7 +1308,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       revokes := st.revokes
       spent := st.spent
       subscribes := st.subscribes
-      unsubscribes := st.unsubscribes }
+      unsubscribes := st.unsubscribes
+      fieldRoots := st.fieldRoots }
   let base := entryBase ctx used
   -- An activity of a supervised object that ends broken, out of budget, or after its await
   -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
@@ -1327,7 +1340,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
       ("checkpoint", journaledCheckpoint.1),
-      ("roots", rootsJson st.roots), ("absent", toJson st.absent),
+      ("roots", allRootsJson st.roots st.fieldRoots), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
       ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
       ("extends", toJson st.layered),
@@ -1348,7 +1361,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("deadline", toJson (w.clock + patience)), ("activity", activity)] ++
       (interpretation.map fun i => [("interpretation", i)]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
-      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots),
+      ([("identity", identityJson ctx.principal ctx.intent), ("roots", allRootsJson st.roots st.fieldRoots),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
         newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ journaledCheckpoint.2) []
     return (w', turnReply w' (reply entry))
@@ -1623,6 +1636,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let method ← act.getObjValAs? String "method"
   let argument ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
   let roots ← parseRoots (← act.getObjVal? "roots")
+  let fieldRoots ← parseFieldRoots (← act.getObjVal? "roots")
   let absent := strings (act.getObjVal? "absent").toOption
   let ticks ← natField act "ticks"
   let ledger ← ledgerOf (← sus.getObjVal? "ledger")
@@ -1652,7 +1666,10 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let stale? := (roots.find? fun (id, v) => match (w.objects[id]?).map (·.version) with
       | some now => now != v && !(v < now && ((staged.lookup id).isNone || movedRootAdmits w staged id v (id == object)))
       | none => true).map (·.1)
-    <|> absent.find? fun id => w.objects.contains id
+    <|> (absent.find? fun id => w.objects.contains id)
+    <|> (fieldRoots.find? fun (id, field, v) => match (w.objects[id]?).map (·.version) with
+      | some now => now != v && !(v < now && ((fieldsChangedSince w id v).map (!·.contains field)).getD false)
+      | none => true).map (·.1)
   if let some id := stale? then
     let stalled : Proposal :=
       { principal := principal
@@ -1681,6 +1698,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let init : TurnState :=
     { world := w
       roots := roots
+      fieldRoots := fieldRoots
       writes := writes
       principal := principal
       intent := intent

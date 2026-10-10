@@ -294,6 +294,17 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    equal, so it is checked, not trusted. `deliverOne` refuses a `changed` whose principal may no longer view
    the object (`lawRefused`, clause `denied`) and `record` drops that subscription. Test: `tests/test_changes.py`.
 
+51. **Field roots (host8; WHOLENESS §3a, the part the host can see).** `viewField` records a field root
+   (`recordFieldRoot`; none when the whole object is already a root): `{object, field, key: "*", version}` in
+   the entry's `roots` beside the object roots (`allRootsJson`; `parseRoots` skips them, `parseFieldRoots`
+   reads them; in the request digest as `fieldRoots`). `judge` and `resumeOne` hold a moved field root
+   current while no write since its version touched the field (`fieldsChangedSince`, from the per-object
+   index). Both count against `maxRoots`. Not done, and not doable from the host alone: per-row roots
+   (`{object, field, key}` for the rows a turn's code read). The host sees the whole state go into a turn
+   and cannot tell which rows `lookup`/`where` touched; that needs the kernel's lazy state cells
+   (KERNEL-HANDOFF §15), whose `fetch` would call `recordRows`. Test: `tests/test_changes.py`
+   `test_a_field_root_is_stale_only_when_its_field_moved`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
