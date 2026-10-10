@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,7 +18,11 @@ class Genesis(unittest.TestCase):
                 made, refusal = genesis.run(host)
                 self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
                                  (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)]), made)
-                self.assertEqual(sorted(genesis.existing(host, genesis.OPENER)), sorted(n for n, _, _ in genesis.seeds(genesis.OPENER)))
+                o = genesis.OPENER
+                self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + [o, 'env/' + o, 'wake/' + o]))
+                # the opener arrived first: another reader sees their handle, not a DID fragment
+                avatar = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': o})
+                self.assertIn('ember.delve.town is at', json.dumps(avatar))
                 again, refusal = genesis.run(host)
                 self.assertEqual(again, [])
                 self.assertIn('already run', refusal)
