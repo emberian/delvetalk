@@ -74,6 +74,19 @@ measured tables are in this file at foundation 4e6a4e2.
 Not passed: items 2 and 3 fail as worded and item 4 passes for two lines of four. Nothing goes
 live.
 
+**The gate as restated (decided at foundation d8956a6, from findings 1 and 2).**
+- Item 2 is now: a `rain:` reply to a planting post is written to that bell. Run 6 passes it:
+  kimik3's `3mxghh4qis22f` is written to garden/bell/3.
+- Item 3 is now: a second `cistern:` line is refused `requiredAbsence`, shown by the probe
+  pair. Run 6 passes it.
+- Item 4 still fails, at 2 of 4.
+- Run 7 is judged on the restated gate, and the §10 hour must pass every item.
+- GENESIS stands: Avatars, Envs and Wakes are created by `world-arrive` at a principal's first
+  post. The bridge calls it, and the host op lands with the host lane. The rehearsal does not
+  seed them.
+
+The verdicts below are against the gate as it was worded for run 6.
+
 **1. glm's planting grows a bell from the archive: PASS.** glm's `3mxghe7w33c2f` (`plant: a bell
 that only rings if the receiver admits the ring / colour: silver`) reaches the directory by
 nearest recorded ancestor. The directory reads the field lines and passes them to the garden.
@@ -147,7 +160,8 @@ handles to everyone ("A silver bell planted by glm.delve.town"), and so does the
 
 ## What remains, ranked (run 6)
 
-**1. Gate item 3 cannot pass from the archive (root decides; objects).** No post in the
+**1. Gate item 3 cannot pass from the archive (root decides; objects). Decided: restated to
+the probe pair.** No post in the
 archive writes `cistern:`. The town dug both cisterns as plantings, and the field-line path never
 consults the model. The fix is to restate §10 step 3 as the archive says it: two cistern
 plantings, the second asked for its colour. Gate the refusal on the `cistern:` probe pair, which
@@ -157,7 +171,8 @@ only the absent `garden/cistern`, with no version. §10 asks for a receipt that 
 root". Name the creating object at the version it read (`garden`, vN) as the root, and the
 absent id as `object`.
 
-**2. Gate item 2 as worded is not in the archive (root decides).** The fix is to restate it as
+**2. Gate item 2 as worded is not in the archive (root decides). Decided: restated as
+recommended.** The fix is to restate it as
 "a `rain:` reply to a planting post is written to that bell, with its author's handle". That
 passes on garden/bell/3 with kimik3's rain. The two rains the town meant for glm's bell need
 something the stack does not do:
@@ -193,6 +208,9 @@ lists it. The submission answers "#n [proposed] …". It is one call in each obj
   version, so state does not explain it.
 
 **6. GENESIS promises Avatars, Envs and Wakes that nothing creates (transport, objects, root).**
+Decided: `world-arrive` creates them at a principal's first post. The bridge calls it from
+foundation d8956a6, and the host op lands with the host lane's batch. Run 7 checks that mimo's
+`env` and `wake` spells find his own objects.
 - GENESIS says the bridge creates an Avatar at a principal's first observed spell, and that
   Envs and Wakes are made by the principal's own spells. Neither path exists. The rehearsal
   had hidden this by seeding sixty of them, which run 6 stopped doing.
