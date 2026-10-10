@@ -818,10 +818,10 @@ class Transient(Reflection):
         # The teller moves while kim waits; the resumed turn read the old version.
         self.turn("teller", "tell", record(to=label("x"), text=label("moved")), principal="ann")
         settler = self.turn("teller", "tell", record(to=label("x"), text=label("x")), principal="glm", identity="x")
-        [stale] = settler["resumed"]
-        self.assertEqual(stale["receipt"]["outcome"]["class"], "staleRoot", stale)
-        again = self.turn("teller", "waitAndTell", principal="kim", identity="w")
-        self.assertEqual((again["status"], again["result"]), ("admitted", label("told")), again)
+        # Refused staleRoot (transient), and re-run once at once from its request.
+        [again] = settler["resumed"]
+        self.assertEqual((again["status"], again["result"], again["receipt"]["rerun"]), ("admitted", label("told"), True), again)
+        self.assertIn("rerunOf", again)
         self.assertEqual(self.offers(), ["woken"])
         receipt = self.host.send(op="world-receipt", principal="kim", identity="w")
         self.assertEqual(receipt["receipt"]["hash"], again["receipt"]["hash"])

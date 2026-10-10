@@ -320,6 +320,30 @@ class PolicyObject(Chain):
             [resumed] = settled["resumed"]
             self.assertEqual(resumed["status"], "admitted", resumed)
 
+    def test_a_resumed_interpretation_whose_directory_moved_meanwhile_still_admits(self):
+        """Rehearsal run 5, finding 6: inkling's prose resumed after another principal's greeting
+        had moved the directory, was refused staleRoot, and nobody retried it."""
+        self.policy()
+        made = self.host.send(op="world-create", principal="ember", identity="mk-dir", object="directory",
+                              modules=closure("Directory"), entry="initial",
+                              seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(made["status"], "created", made)
+        prose = lambda who, text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://" + ident)),
+                                                   principal=who, identity=ident)
+        self.assertEqual(prose("inkling", "hello, town", "i-1")["status"], "admitted")     # greeted once
+        waiting = prose("inkling", "an env interface card, perhaps?", "i-2")
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        moved = prose("zero", "what is this portal", "z-1")                                # greets zero: the directory moves
+        self.assertEqual(moved["status"], "admitted", moved)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=item["id"],
+                                 reply={"status": "replied", "json": None, "raw": "unclear: not addressed", "model": "m"})
+        [resumed] = settled["resumed"]
+        self.assertEqual(resumed["status"], "admitted", resumed)
+        self.assertNotIn("rerunOf", resumed)
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-receipt", principal="inkling", identity="i-2")["receipt"]["outcome"]["tag"], "admitted")
+
     def test_interpretations_have_their_own_capacity_apart_from_awaits(self):
         """The rehearsal rerun: the ninth prose reply in a batch was refused at the await cap."""
         self.policy()

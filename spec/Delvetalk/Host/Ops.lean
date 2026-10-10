@@ -171,6 +171,9 @@ structure Proposal where
   revokes : List String := []
   /-- Uses the turn spends of limited grants: grant id and count. -/
   spent : List (String × Nat) := []
+  /-- A resumed turn's own object: it may be re-based on the object's current state when it
+      moved while the turn waited (`rebasable`). An entry with `resumes` sets it on replay. -/
+  rebaseOwn : Option String := none
 
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
     amendment that no write of the proposal already names. -/
@@ -1112,6 +1115,42 @@ def commutesAt (writes : List (String × List Written)) (id : String) : Bool :=
   | some changes => !changes.isEmpty && changes.all fun c => c.kind == 0 && c.edits.all (·.kind.commutes)
   | none => false
 
+/-- The fields of `id` its ordinary admitted writes changed after version `seen` (edits other
+    than `keep`), from the journal; none when one of its later changes was not an ordinary write
+    (a reprogram or an amendment) or does not decode. -/
+def fieldsChangedSince (w : World) (id : String) (seen : Nat) : Option (List String) := Id.run do
+  let mut fields : List String := []
+  for i in w.touched.getD id #[] do
+    let e := w.entries[i]!
+    if ((e.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "tag" |>.toOption)) != some "admitted" then continue
+    let ws := ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
+      |>.bind (·.getArr? |>.toOption)).getD #[]
+    for x in ws do
+      unless (x.getObjValAs? String "object").toOption == some id do continue
+      unless (x.getObjValAs? Nat "version").toOption.getD 0 > seen do continue
+      let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+      if kinds.any (fun k => k.getNat?.toOption != some 0) then return none
+      for step in ((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[] do
+        match decodeData Limits.dataDepth step with
+        | .ok (.record fs) =>
+          for (f, k) in fs do
+            match k with
+            | .variant "keep" _ => pure ()
+            | _ => fields := f :: fields
+        | _ => return none
+  return some fields.eraseDups
+
+/-- A resumed turn's own object that moved while it waited may commit on the current state when
+    nothing but ordinary writes moved it and each of the turn's own edits of it commutes or is to
+    a field those writes left alone (a turn that only read it qualifies). -/
+def rebasable (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat) : Bool :=
+  match fieldsChangedSince w id seen with
+  | none => false
+  | some changed =>
+    match writes.lookup id with
+    | none => true
+    | some changes => changes.all fun c => c.kind == 0 && c.edits.all fun e => e.kind.commutes || !changed.contains e.field
+
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
 def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := do
@@ -1122,7 +1161,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   -- version the object had: its changes re-apply on the state as it is now and are judged there.
   for (id, seen) in p.roots do
     if let some o := w.objects[id]? then
-      if o.version != seen && !(seen < o.version && commutesAt writes id) then
+      if o.version != seen && !(seen < o.version &&
+          (commutesAt writes id || (p.rebaseOwn == some id && rebasable w writes id seen))) then
         throw { cls := "staleRoot", object := id }
   -- A write to the running object needs no view; its version is the first root. A
   -- proposal that writes what it never named as a root is malformed.
@@ -1970,7 +2010,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     for (g, i) in grants.zipIdx do
       unless g.id == grantId principal intent i && g.grantor == principal do throw "a grant is not its turn's"
     let spent ← parseSpent (outcome.getObjVal? "spent").toOption
-    let p : Proposal := { principal, intent, roots := ← parseRoots (← entry.getObjVal? "roots"), writes, turn, programs, laws,
+    let roots ← parseRoots (← entry.getObjVal? "roots")
+    let rebaseOwn := if (entry.getObjVal? "resumes").toOption.isSome then roots.head?.map (·.1) else none
+    let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
                           absent, creates, grants, revokes, spent, layered }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"

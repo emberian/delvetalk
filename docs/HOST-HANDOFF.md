@@ -506,6 +506,14 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    top-level `blocks [{cid, items}]` item once per journal (`World.blocks`, derived by `record`);
    `expandCheckpoint` reassembles the tokens for replay's digest check and for resumption. Garden prose: the
    first suspension 272,621 bytes (was 225,719), the next 10,948.
+26. **Stale resumptions (host6).** A resumed turn's own object (`Proposal.rebaseOwn`, set when the segment
+   `resumes`; replay sets it from the entry's `resumes` and first root) may have moved while it waited: `judge` and
+   `resumeOne`'s early check accept it when `rebasable` holds (every later change of it was an ordinary write, by
+   `fieldsChangedSince` from the journal, and each of the turn's edits of it commutes or touches a field those left
+   alone; a turn that only read it qualifies), and the writes apply to the current state. Otherwise the resumption is
+   refused `staleRoot` (transient) and `resumeOne` re-runs the direct turn once, at once, from its journaled request
+   (`TurnMeta.rerun`, journaled `rerun: true`; the reply carries `rerunOf` = the refusal's hash); a re-run's own
+   stale resumption is final. Deliveries are not re-run.
 
 ## 6. Gotchas
 
