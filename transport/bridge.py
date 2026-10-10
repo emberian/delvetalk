@@ -75,7 +75,8 @@ def cite(object_, version, origin=None):
 def receipt_line(receipt, origin=None):
     root = (receipt.get('roots') or [{}])[0]
     text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
-    return f"receipt: {text} at height {receipt.get('height')}{link}\n"
+    name = f"receipt {receipt['slug']}" if receipt.get('slug') else 'receipt'  # the slug is the name people and posts use
+    return f"{name}: {text} at height {receipt.get('height')}{link}\n"
 
 
 def draft_text(reply, origin=None):
@@ -89,6 +90,7 @@ def draft_text(reply, origin=None):
             text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('none', '')
             lines = [f"reason: {public.get('class', 'unknown')}", f'root: {text}{link}']
             lines += [f'{k}: {public[k]}' for k in ('object', 'hint') if public.get(k)]
+            lines += [f"receipt {receipt['slug']}"] if receipt.get('slug') else []
             return 'proposal observed, not committed\n' + '\n'.join(lines) + '\n'
         return f"proposal observed, not committed\nreason: {outcome.get('class', 'unknown')}\n" + receipt_line(receipt, origin)
     offers = [o['text'] for o in reply.get('offers') or []]
