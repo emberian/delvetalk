@@ -636,3 +636,9 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   otherwise; `Package.fixedFields`), for the host's actions, inspect and the Workshop's `set`.
   Pins: 0 recompiled. Tests: `test_sugar.FixedFields` (the packet equals the module whose
   hand-written pair omits the fixed fields; both refusals).
+- `declares` (for the host, which scanned the entry source for `def forms(` and so never saw a
+  derived `forms()`): every artifact lists which of `Package.conventionalNames` (forms, methods,
+  relations, views, lenses, law, lawReads, initial, render, receive, blurb, page, publishPage,
+  set) the entry module declares, derived declarations included (`declaredNames` over the
+  generics pass's decoded modules), in that order. The host lane switches `declaredForms` and
+  `packageDeclares` to it. Test: `test_sugar.Declares`.

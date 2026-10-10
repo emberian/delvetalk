@@ -931,3 +931,16 @@ class FixedFields(unittest.TestCase):
         source = DERIVED_HEAD.replace("  text: String\n", "  text: fixed String\n") + DERIVED_REST
         reply = self.send("check-package", source, "plant")
         self.assertIn("refused (fixed): only a State field is fixed; text is a field of Row", reply["diagnostic"]["message"])
+
+
+class Declares(unittest.TestCase):
+    """The artifact names the entry module's conventional declarations, derived ones included."""
+
+    def test_declares_lists_derived_and_written_conventions(self):
+        h = Host()
+        self.addCleanup(h.close)
+        derived = h.compile(FORM_STATE + FORM_BLOCKS + "def initial() -> State:\n  {planted: 0n}\n", "plant", ("List", "Form"))
+        self.assertEqual(derived["declares"], ["forms", "initial"])
+        plain = h.compile(FORM_STATE.replace("PlantInput", "{count: Nat}").replace("WaterInput", "{note: String}"),
+                          "plant", ("List", "Form"))
+        self.assertEqual(plain["declares"], [])
