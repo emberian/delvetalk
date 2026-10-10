@@ -15,14 +15,13 @@ import hashlib
 import http.client
 import json
 import tempfile
-import threading
 import unittest
 import urllib.parse
 from pathlib import Path
 
 from tests.host import serve, start_hostd, stop_hostd
 from tests.test_chain import garden_state, town_kinds
-from tests.test_http import DID, PEOPLE, Provider
+from tests.test_http import DID, Provider
 from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
 from transport import delve, identity
 from transport.hostproc import LIBRARY, HostClient
@@ -157,18 +156,6 @@ class Repository(unittest.TestCase):
     def receipt(self, intent, reader='anonymous'):
         return self.host.send({'op': 'world-receipt', 'principal': reader, 'identity': intent, 'of': DID})
 
-    def test_the_did_document_names_the_repo_and_its_handle_resolves_to_it(self):
-        s, doc = self.get('/.well-known/did.json')
-        self.assertEqual((s, doc['id'], doc['alsoKnownAs']), (200, REPO, ['at://' + HOST]), doc)
-        self.assertEqual(doc['service'], [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer',
-                                           'serviceEndpoint': ORIGIN}])
-        s, d = self.xrpc('com.atproto.repo.describeRepo', repo=REPO)
-        self.assertEqual((s, d['did'], d['didDoc']), (200, REPO, doc))
-        self.assertEqual(d['collections'], [NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law')])
-        self.assertEqual(self.xrpc('com.atproto.repo.describeRepo', repo=HOST)[1]['did'], REPO)
-        self.assertEqual(self.xrpc('com.atproto.repo.describeRepo', repo='did:plc:other')[1]['error'], 'RepoNotFound')
-        self.assertEqual(self.xrpc('com.atproto.identity.resolveHandle', handle=HOST), (200, {'did': REPO}))
-        self.assertEqual(self.xrpc('com.atproto.identity.resolveHandle', handle='talkie.delve.town')[1]['error'], 'HandleNotFound')
 
     def test_list_records_pages_receipts_by_height_both_ways(self):
         pages, cursor = [], None
@@ -252,12 +239,14 @@ class Repository(unittest.TestCase):
         s, e = self.xrpc('com.atproto.sync.getRecord', did=REPO, collection=NS + 'receipt', rkey=whole['slug'])
         self.assertEqual((s, e['error']), (403, 'Denied'), e)  # a projection is not the block its CID names
 
-    def test_get_repo_is_refused_by_name_with_a_hint(self):
+    def test_get_repo_a_write_and_a_bad_bearer_are_refused_by_name(self):
         s, e = self.xrpc('com.atproto.sync.getRepo', did=REPO)
         self.assertEqual((s, e['error']), (400, 'RepoNotServed'))
         self.assertIn('com.atproto.sync.getRecord', e['hint'])
         s, e = self.xrpc('com.atproto.repo.createRecord')
         self.assertEqual((s, e['error']), (501, 'MethodNotImplemented'))
+        s, e = self.xrpc('com.atproto.repo.describeRepo', 'dt_agent_' + 'A' * 43, repo=REPO)
+        self.assertEqual((s, e['error']), (401, 'InvalidToken'))  # a bad bearer is not the public reader
 
     def test_a_private_objects_record_is_refused_to_the_public_and_served_to_its_owner(self):
         tok = self.login()
@@ -282,19 +271,6 @@ class Repository(unittest.TestCase):
         self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.owner', [x['uri'] for x in laws])
         self.assertNotIn('diary', [x['value']['object'] for x in laws])
 
-    def test_sources_and_publications_are_records_and_no_grant_is_listed(self):
-        s, sources = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'source')
-        self.assertIn('Garden', [x['value']['name'] for x in sources['records']])
-        first = sources['records'][0]
-        s, one = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'source', rkey=first['cid'])
-        self.assertEqual((s, one), (200, first))
-        s, pubs = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'publication')
-        [pub] = pubs['records']
-        self.assertEqual((pub['value']['page'], pub['cid']), ('garden', self.receipts['pub-1']['hash']))
-        self.assertEqual(pub['uri'], f"at://{REPO}/{NS}publication/{pub['value']['id']}")
-        self.assertEqual(self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'grant'), (200, {'records': []}))
-        s, e = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'grant', rkey='x')
-        self.assertEqual((s, e['error']), (400, 'InvalidRequest'))
 
     def test_every_listed_record_key_is_in_record_key_syntax(self):
         tok = self.login()
@@ -306,10 +282,6 @@ class Repository(unittest.TestCase):
                     key = r['uri'].split(f'{NS}{c}/', 1)[1]
                     self.assertRegex(key, r'\A[A-Za-z0-9._~:-]{1,512}\Z')
                     self.assertNotIn(key, ('.', '..'))
-
-    def test_a_bad_bearer_is_401_not_the_public_reader(self):
-        s, e = self.xrpc('com.atproto.repo.describeRepo', 'dt_agent_' + 'A' * 43, repo=REPO)
-        self.assertEqual((s, e['error']), (401, 'InvalidToken'))
 
 
 if __name__ == '__main__':

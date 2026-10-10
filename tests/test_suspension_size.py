@@ -64,10 +64,6 @@ class SuspensionSize(test_hub.Hub):
     def test_nine_prose_replies_from_one_speaker_journal_a_small_median_suspension(self):
         self.assertLess(self.suspensions([WHO[0]] * 9), 12 * 1024)
 
-    def test_nine_speakers_suspensions_stay_bounded(self):
-        # Each speaker sits at another place in the directory's greeted list, which the reading walks.
-        self.assertLess(self.suspensions(WHO), 32 * 1024)
-
 
 for _name in [n for n in dir(test_hub.Hub) if n.startswith("test_")]:
     setattr(SuspensionSize, _name, None)

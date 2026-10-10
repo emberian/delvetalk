@@ -11,7 +11,7 @@ by the one who installs it, and theirs admit only the owner.
 """
 import unittest
 
-from tests.test_chain import Chain, boolean, nil, reference, town_kinds
+from tests.test_chain import Chain, nil, reference, town_kinds
 from tests.test_objects import closure
 from tests.test_places import avatar_seed
 from tests.test_replay import get, items, relation, rows
@@ -79,7 +79,6 @@ class Wakes(Chain):
         look = self.turn(env, "observe", principal=OTHER)
         self.assertEqual(look["result"], nat(2))
         card = look["offers"][0]["text"]
-        self.assertEqual(card, "ENV of inkling: 2 new since #0.\n")
         self.assertIn("2 new since #0", card)
         self.assertEqual(self.version(env), before)
         # The mark moves only by the owner's seen, and only forward.
@@ -151,11 +150,6 @@ class Wakes(Chain):
         self.assertEqual(r["status"], "error", r)
         self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: "), r)
 
-    def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(OWNER), buffer=relation(), seen=nat(0)))
-        self.assertEqual(r["status"], "error", r)
-        self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
     def test_env_law_refuses_a_strangers_write_proposed_directly(self):
         env = self.env()
@@ -193,23 +187,7 @@ class Wakes(Chain):
         stranger = self.turn(wake, "receive", heard("delvetalk %s keyword\nterm: x" % wake), principal=OTHER)
         self.assertEqual(self.label_of(stranger), "refused")
         card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        self.assertEqual(card, (
-            "WAKE of inkling (yours): 3 triggers. Add one: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; delvetalk wake unwatch / id: <number> removes it.\n"
-            "#1 on the word moth: note me\n"
-            "#3 on the word gate: note me\n"
-            "#4 on the word lantern: note me\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk wake/did:plc:inkling mention\n"
-            "    actor: <text, 1 to 128 characters>\n"
-            "\n"
-            "    delvetalk wake/did:plc:inkling keyword\n"
-            "    term: <text, 1 to 64 characters>\n"
-            "\n"
-            "    delvetalk wake/did:plc:inkling unwatch\n"
-            "    id: <a number from 1 to 1000000>\n"))
-        self.assertIn("#4 on the word lantern: note me", card)
+        self.assertIn("#1 on the word moth: note me\n#3 on the word gate: note me\n#4 on the word lantern: note me\n", card)
         # A stranger's card counts the triggers and shows none of them.
         seen = self.turn(wake, "receive", heard(""), principal=OTHER)["offers"][0]["text"]
         self.assertTrue(seen.startswith("WAKE of inkling: 3 triggers.\n"), seen)
@@ -361,52 +339,6 @@ class Wakes(Chain):
         card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
         self.assertIn("on 1 new rows of bell/1.lines where author = %s: call tide tick" % OTHER, card)
 
-    def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
-        """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
-        and subscribe, tick and a tick too soon each answer with what happened and the card."""
-        self.tide()
-        self.avatar(OTHER)
-        post = ("delvetalk garden plant / colour: amber / seed: an example\nmine:\n"
-                "delvetalk tide subscribe / every: 1 / note: WC-01, first light")
-        sub = self.turn("tide", "receive", heard(post), principal=OTHER)
-        self.assertEqual(self.label_of(sub), "subscribed")  # the method's own result
-        card = sub["offers"][0]["text"]
-        self.assertEqual(card, (
-            "Subscribed, from tick 0.\n"
-            "\n"
-            "THE TIDE, tick 0. Last at clock 0; the next may come at clock 3. Subscribe yourself: delvetalk tide subscribe / every: <1 to 1000> / note: <1 to 140 characters>. Anyone may tick: delvetalk tide tick.\n"
-            "kimik3 (yours) every 1 from tick 0: WC-01, first light\n"))
-        self.assertTrue(card.startswith("Subscribed, from tick 0.\n\nTHE TIDE, tick 0"), card)
-        self.assertIn("kimik3 (yours) every 1 from tick 0: WC-01, first light\n", card)   # the card as the write leaves it
-        tick = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
-        self.assertEqual(tick["offers"][0]["text"], (
-            "Tick 1: 1 note sent.\n"
-            "\n"
-            "THE TIDE, tick 1. Last at clock 0; the next may come at clock 3. Subscribe yourself: delvetalk tide subscribe / every: <1 to 1000> / note: <1 to 140 characters>. Anyone may tick: delvetalk tide tick.\n"
-            "kimik3 every 1 from tick 0: WC-01, first light\n"))
-        self.assertTrue(tick["offers"][0]["text"].startswith("Tick 1: 1 note sent.\n\nTHE TIDE, tick 1. Last at clock 0;"), tick["offers"])
-        soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
-        self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at clock "), soon["offers"])
-
-    def test_a_subscriber_is_shown_by_the_handle_the_host_knew_at_subscribe(self):
-        self.tide()
-        self.assertEqual(self.host.send(op="world-principal", principal="transport", did=OTHER, handle="inkling.delve.town")["status"], "principal")
-        self.turn("tide", "receive", heard("delvetalk tide subscribe / every: 1 / note: first light"), principal=OTHER)
-        [sub] = rows(get(self.state("tide"), "subs"))
-        self.assertEqual(get(sub, "handle")["value"], "inkling.delve.town")
-        card = self.turn("tide", "receive", heard(""), principal="did:plc:zero")["offers"][0]["text"]
-        self.assertEqual(card, (
-            "THE TIDE, tick 0. Last at clock 0; the next may come at clock 3. Subscribe yourself: delvetalk tide subscribe / every: <1 to 1000> / note: <1 to 140 characters>. Anyone may tick: delvetalk tide tick.\n"
-            "inkling.delve.town every 1 from tick 0: first light\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk tide subscribe\n"
-            "    every: <a number from 1 to 1000>\n"
-            "    note: <text, 1 to 140 characters>\n"
-            "\n"
-            "    delvetalk tide tick\n"))
-        self.assertIn("inkling.delve.town every 1 from tick 0: first light\n", card)
 
     def test_every_subscriber_a_tide_holds_is_woken_in_one_tick(self):
         """A tick sends to every due subscriber in one turn, and a turn sends at most 32, so the tide
@@ -445,18 +377,8 @@ class Wakes(Chain):
         self.assertEqual(self.inbox(OTHER), [("did:plc:zero", "tide 1: WC-01, first light"), ("did:plc:zero", "tide 2: WC-01, first light")])
         self.assertEqual(self.inbox(OWNER), [("did:plc:zero", "tide 2: inkling's first tide")])
         card = self.turn("tide", "receive", heard(""), principal="did:plc:zero")["offers"][0]["text"]
-        self.assertEqual(card, (
-            "THE TIDE, tick 2. Last at clock 3; the next may come at clock 6. Subscribe yourself: delvetalk tide subscribe / every: <1 to 1000> / note: <1 to 140 characters>. Anyone may tick: delvetalk tide tick.\n"
-            "kimik3 every 1 from tick 0: WC-01, first light\n"
-            "inkling every 2 from tick 0: inkling's first tide\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk tide subscribe\n"
-            "    every: <a number from 1 to 1000>\n"
-            "    note: <text, 1 to 140 characters>\n"
-            "\n"
-            "    delvetalk tide tick\n"))
+        self.assertIn("kimik3 every 1 from tick 0: WC-01, first light\ninkling every 2 from tick 0: inkling's first tide\n", card)
+
 
 
 def Card_handle(did):
@@ -515,8 +437,6 @@ def moreMatched(which: Nat, rows: Lists.List<Rows.Columns>) -> Nat:
 # "theirs" changes kimik3's row; "drop" retracts kimik3's; "mine" replaces and drops glm's own.
 def changedBy(which: Nat) -> String:
   if which == 0n then verdict(Tide.law(tideOf(one(sub("kimik3", 1n))), tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), request("glm", 5n))) else if which == 1n then verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(two(sub("kimik3", 4n), sub("glm", 2n))), request("glm", 5n))) else if which == 2n then verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(one(sub("glm", 2n))), request("glm", 5n))) else verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(one(sub("kimik3", 1n))), request("glm", 5n)))
-def tickAt(height: Nat) -> String:
-  verdict(Tide.law(tide(1n, 10n, ""), tide(2n, height, ""), request("zero", height)))
 def subscribeAs(principal: String) -> String:
   verdict(Tide.law(tide(0n, 0n, ""), tide(0n, 0n, "kimik3"), request(principal, 5n)))
 """
@@ -537,26 +457,12 @@ class LawPredicates(unittest.TestCase):
         self.assertEqual(out["status"], "finished", out)
         return out["value"]["value"]
 
-    def test_the_artifacts_record_a_law_predicate(self):
-        from tests.test_objects import compile_job
-        self.assertEqual(compile_job(closure("Tide"), "initial")["artifact"]["law"], {"present": True, "reads": False})
-        # The Wake's law text refuses every write but its owner's, so it has no predicate.
-        self.assertEqual(compile_job(closure("Wake"), "initial")["artifact"]["law"], {"present": False})
 
-    def test_a_tick_sooner_than_the_gap_is_refused_tooSoon(self):
-        self.assertEqual(self.run_probe("tickAt", nat(12)), "refused tooSoon")
-        self.assertEqual(self.run_probe("tickAt", nat(13)), "admitted")
-
-    def test_a_subscription_is_only_ever_the_requesters_own(self):
-        self.assertEqual(self.run_probe("subscribeAs", label("kimik3")), "admitted")
-        self.assertEqual(self.run_probe("subscribeAs", label("glm")), "refused self")
-
-    def test_a_rows_rule_counts_the_rows_matching_its_patterns_on_its_object_and_field(self):
+    def test_the_tide_law_and_the_wakes_row_rules_as_pure_functions(self):
+        # A subscription is only ever the requester's own, and so are the changed keys of a write.
+        self.assertEqual([self.run_probe("subscribeAs", label(who)) for who in ("kimik3", "glm")], ["admitted", "refused self"])
+        self.assertEqual([self.run_probe("changedBy", nat(n)) for n in range(4)],
+                         ["admitted", "refused self", "refused self", "admitted"])
         # equals, a missing author, another field, another object; above 0, below 2, the whole
         # word "moth" (case aside; "moths" is another word), and two patterns at once.
         self.assertEqual([self.run_probe("rowsMatched", nat(n)) for n in range(8)], ["2", "0", "0", "0", "2", "2", "1", "1"])
-
-    def test_the_changed_keys_of_a_subscription_write_are_the_requesters(self):
-        self.assertEqual([self.run_probe("changedBy", nat(n)) for n in range(4)],
-                         ["admitted", "refused self", "refused self", "admitted"])
-

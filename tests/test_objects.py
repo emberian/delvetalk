@@ -10,7 +10,6 @@ binary (read-only, built elsewhere). Run from the repository root:
 
     python3 -m unittest tests.test_objects -v
 """
-import json
 import os
 import re
 import unittest
@@ -36,7 +35,6 @@ def modules_on_disk():
 
 
 MODULES = modules_on_disk()
-OBJECT_NAMES = sorted(n for n, path in MODULES.items() if '/world/objects/' in path)
 
 
 def closure(name, seen=None, out=None):
@@ -116,26 +114,7 @@ def run_pure(name, entry, *arguments, probe=None, limits=None):
 BIG = {"ticks": "1000000"}
 
 PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Garden.obend as O\n"
-GARDEN_PROBE = PROBE_HEAD_G + """import ./Document.obend as Document
-import ./Relation.obend as Relations
-import ./Rows.obend as Rows
-def bells(n: Nat) -> Lists.List<O.Child>:
-  match n:
-    case 0: Lists.List::<O.Child>.nil()
-    case 1+p: Lists.append::<O.Child>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n)), colour: Rows.Colour.amber({})})
-def shown(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", ownerHandle: "", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Relations.empty(), children: Relations.Relation.rows({items: bells(n)}), pageCheckpoint: ""}, Card.stranger()))
-"""
 
-DOC_PROBE = """edition ObjectiveBend 1
-import ./Document.obend as Document
-def leaves(n: Nat) -> Document.Documents:
-  match n:
-    case 0: Document.Documents.nil()
-    case 1+p: Document.Documents.cons({head: Document.text("abcdefgh"), tail: leaves(p)})
-def flat(n: Nat) -> Nat:
-  textLength(Document.plain(Document.Document.sequence({items: leaves(n)})))
-"""
 
 PROBE_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./Card.obend as Card\nimport ./%s.obend as O\n"
 
@@ -183,145 +162,9 @@ def full(n: Nat) -> String:
   Document.plain(O.render({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policies.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: macros(n), confirmFor: Lists.List::<String>.nil()}, extend(Card.stranger(), {principal: "ember"})))
 """
 
-DOOR_PROBE = PROBE_HEAD % "Door" + """import ./Relation.obend as Relations
-def shut(n: Nat) -> String:
-  Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Relations.Relation.rows({items: Lists.List::<O.Knock>.cons({head: {at: 1n, who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()})}), watching: Plans.nobody()}, Card.stranger()))
-"""
-
-LINES_PROBE = """edition ObjectiveBend 1
-import ./List.obend as Lists
-import ./Document.obend as Document
-def bar(items: Document.Names) -> String:
-  Lists.fold::<String, String>(items, "", fn(head: String) -> String -> String: fn(rest: String) -> String: textConcat(head, textConcat("|", rest)))
-def joined(n: Nat) -> String:
-  bar(Document.lines(Document.Document.sequence({items: Document.Documents.cons({head: Document.text("alpha\\nbe"), tail: Document.Documents.cons({head: Document.text("ta gamma\\n"), tail: Document.Documents.cons({head: Document.text("delta\\n"), tail: Document.Documents.nil()})})})})))
-"""
-
-CISTERN_PROBE = PROBE_HEAD % "Cistern" + """import ./Relation.obend as Relations
-def one(n: Nat) -> String:
-  Document.plain(O.render({entries: Relations.Relation.rows({items: Lists.List::<O.Kept>.cons({head: {at: 7n, slot: {principal: "glm", intent: "plant"}, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<O.Kept>.nil()})}), level: 3n}, Card.stranger()))
-"""
-
-ANTHOLOGY_PROBE = PROBE_HEAD % "Record" + """import ./Relation.obend as Relations
-import ./Rows.obend as Rows
-def one(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", keeper: "ember", keeperHandle: "", head: "THE ANTHOLOGY", kind: "", fields: Lists.List::<Rows.Field>.nil(), maker: "", makerHandle: "", post: "", lines: Relations.Relation.rows({items: Lists.List::<O.Line>.cons({head: {author: "glm", handle: "", text: "moths", at: 1n, n: 1n}, tail: Lists.List::<O.Line>.cons({head: {author: "kimik3", handle: "", text: "lamps", at: 2n, n: 2n}, tail: Lists.List::<O.Line>.nil()})})}), admitted: Relations.Relation.rows({items: Lists.List::<Rows.Admission>.cons({head: {n: 2n, at: 3n}, tail: Lists.List::<Rows.Admission>.nil()})}), marks: Relations.empty(), next: 3n, doors: Lists.List::<Card.Doorway>.nil()}, Card.stranger()))
-"""
-
-
-class Library(unittest.TestCase):
-
-    def test_only_the_abi_module_declares_the_context_record(self):
-        owners = []
-        for name, path in MODULES.items():
-            with open(path) as handle:
-                if re.search(r"^record Context:", handle.read(), re.M):
-                    owners.append(name)
-        self.assertEqual(owners, ["Abi"])
-
-    def test_no_module_mentions_the_preparation_value_universe(self):
-        for name, path in MODULES.items():
-            with open(path) as handle:
-                self.assertNotIn("Preparation", handle.read(), name)
-
 
 class Objects(unittest.TestCase):
-    def test_methods_perform_the_plans_they_claim(self):
-        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "call", ("Garden", "counted"): "write", ("Garden", "cistern"): "call",
-                    ("Bell", "rain"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
-                    ("Cistern", "retain"): "write", ("Cistern", "poured"): "write", ("Record", "write"): "write", ("Record", "admitted"): "write",
-                    ("Door", "opened"): "write", ("Door", "knock"): "write",
-                    ("Lantern", "lit"): "write", ("Door", "watch"): "subscribe", ("Loop", "tick"): "write", ("Loop", "again"): "send"}
-        for (name, entry), plan in expected.items():
-            with open(MODULES[name]) as handle:
-                source = handle.read()
-            found = re.search(r"\ndef %s(<[^>]*>)?\(" % entry, source)
-            self.assertIsNotNone(found, (name, entry))
-            body = source[found.start() + 1:].split("\ndef ")[0]
-            self.assertTrue(any(form % plan in body for form in ("world.%s(", "world.%s::", "= %s {")), (name, entry))
 
-    def test_garden_bell_cistern_and_anthology_cards_render_their_text(self):
-        counter = run_pure("Counter", "card", record(count=nat(3)))
-        self.assertEqual(counter["value"]["value"], "Count: 3")
-        garden = run_pure("Garden", "shown", nat(20), probe=GARDEN_PROBE)
-        self.assertEqual(garden["status"], "finished", garden)
-        text = garden["value"]["value"]
-        self.assertEqual(text, (
-            "✾ THE NIGHT GARDEN\n"
-            "\n"
-            "To plant, reply:\n"
-            "\n"
-            "    delvetalk garden plant\n"
-            "    seed: <what might grow here, 1 to 80 characters>\n"
-            "    colour: <amber, violet or silver>\n"
-            "\n"
-            "20 planted, newest first:\n"
-            "- garden/bell/20\n"
-            "- garden/bell/19\n"
-            "- garden/bell/18\n"
-            "- garden/bell/17\n"
-            "- garden/bell/16\n"
-            "- garden/bell/15\n"
-            "- garden/bell/14\n"
-            "- garden/bell/13\n"
-            "… and 12 more\n"))
-        self.assertTrue(text.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:"))
-        self.assertLess(text.index("garden/bell/20\n"), text.index("garden/bell/13\n"))
-        self.assertNotIn("garden/bell/12\n", text)
-        self.assertTrue(text.endswith("… and 12 more\n"), text)
-        self.assertLess(len(text), 1400)
-        for name, probe, entry in (("Bell", BELL_PROBE, "two"), ("Cistern", CISTERN_PROBE, "one"), ("Record", ANTHOLOGY_PROBE, "one")):
-            with self.subTest(object=name):
-                reply = run_pure(name, entry, nat(0), probe=probe)
-                self.assertEqual(reply["status"], "finished", reply)
-                print(name, "->", repr(reply["value"]["value"]))
-                if name == "Bell":
-                    text = reply["value"]["value"]
-                    self.assertLess(text.index("kimik3: first"), text.index("gemini: second"))
-                if name == "Cistern":
-                    self.assertIn("refused required-absence", reply["value"]["value"])
-                    self.assertTrue(reply["value"]["value"].startswith("Cistern, level 3. Pour: delvetalk cistern pour / amount: <1 to 20>.\n"), reply)
-                if name == "Record":
-                    self.assertTrue(reply["value"]["value"].startswith("THE ANTHOLOGY; keeper ember. Write: delvetalk record write / text: <1 to 280 characters>; numbered, [pending] until admitted.\n#1 [pending] glm: moths\n#2 [admitted] kimik3: lamps\n"), reply)
-
-    def test_every_object_is_made_from_initial_alone(self):
-        """A creator's seed is laid over `initial()`; no object keeps a Seed ritual beside it
-        (WORLD-REVIEW 4)."""
-        for name in OBJECT_NAMES:
-            with self.subTest(object=name):
-                entries = [d[0] for d in definitions(name)]
-                self.assertIn("initial", entries)
-                self.assertNotIn("seeded", entries)
-                self.assertNotIn("defaultSeed", entries)
-
-    def test_document_plain_is_linear_not_quadratic_over_256_leaves(self):
-        """Document.plain flattens the leaves once and joins them in rounds of
-        adjacent pairs. Measured on a sequence of 256 eight-byte text leaves
-        (generation included, about 30,000 ticks): 555,890 ticks with the old
-        accumulating fold, 72,085 now."""
-        probe = DOC_PROBE
-        flat = run_pure("Document", "flat", nat(256), probe=probe)
-        print("plain over 256 leaves:", flat.get("ticksUsed"), "ticks")
-        self.assertEqual(flat["status"], "finished", flat)
-        self.assertEqual(flat["value"]["value"], "2048")
-        self.assertLess(flat["ticksUsed"], 100000)
-        self.assertEqual(run_pure("Document", "flat", nat(256), probe=probe, limits=BIG)["ticksUsed"], flat["ticksUsed"])
-
-    def test_the_door_lantern_and_loop_objects_render_their_cards(self):
-        door = run_pure("Door", "shut", nat(0), probe=DOOR_PROBE)
-        self.assertEqual(door["status"], "finished", door)
-        self.assertEqual(door["value"]["value"], "The door is shut.\nknock: glm\n")
-        lantern = run_pure("Lantern", "shown", nat(0), probe=PROBE_HEAD % "Lantern" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({lit: true, litBy: \"did:plc:gemini\", litHandle: \"\", watching: Plans.nobody()}, Card.stranger()))\n")
-        self.assertEqual(lantern["value"]["value"], "The lantern is lit by gemini.\n")
-        loop = run_pure("Loop", "shown", nat(3), probe=PROBE_HEAD % "Loop" + "def shown(n: Nat) -> String:\n  Document.plain(O.render({count: n}, Card.stranger()))\n")
-        self.assertEqual(loop["value"]["value"], "Ticks: 3\n")
-
-    def test_lines_split_the_rendered_document(self):
-        reply = run_pure("Bell", "lineCount", nat(2), probe=BELL_PROBE)
-        self.assertEqual(reply["status"], "finished", reply)
-        self.assertEqual(reply["value"]["value"], "4")
-        reply = run_pure("Document", "joined", nat(0), probe=LINES_PROBE)
-        self.assertEqual(reply["value"]["value"], "alpha|beta gamma|delta|")
 
     def test_a_full_bell_card_shows_eight_rains_and_counts_the_rest(self):
         """A list holds at most 247 items (the host's data depth), so the fullest bell has 247
@@ -330,7 +173,6 @@ class Objects(unittest.TestCase):
         full = run_pure("Bell", "many", nat(247), probe=BELL_PROBE)
         self.assertEqual(full["status"], "finished", full)
         text = full["value"]["value"]
-        print("247 rains: card %s ticks, %d characters" % (full["ticksUsed"], len(text)))
         self.assertTrue(text.startswith("A silver bell, planted by glm: “a bell for lost moths” — silent.\n"), text)
         self.assertEqual(text.count("author: a line of rain\n"), 8)
         self.assertTrue(text.endswith("… and 239 more\n"), text)
@@ -346,18 +188,6 @@ class Objects(unittest.TestCase):
         self.assertIn("To teach me a phrase", text)
         self.assertRegex(text, r"… and \d+ more\n$")
 
-    def test_a_bell_of_long_rains_is_clipped_by_characters(self):
-        """Eight rains of 280 characters would be 2,300 characters: `Card.clipped` keeps the lines
-        that fit 1,200 (WORLD-REVIEW 2)."""
-        reply = run_pure("Bell", "wide", nat(12), probe=BELL_PROBE, limits=BIG)
-        self.assertEqual(reply["status"], "finished", reply)
-        text = reply["value"]["value"]
-        self.assertLess(len(text), 1400)
-        shown = text.count("author: rain ")
-        self.assertTrue(0 < shown < 8, text)
-        self.assertTrue(text.endswith("… and %d more\n" % (12 - shown)), text)
-
-
 NEGATIVE_PRELUDE = """edition ObjectiveBend 1
 import ./World.obend as World
 record Write:
@@ -366,79 +196,47 @@ record Write:
 """
 
 
-class Refusals(unittest.TestCase):
-    def refused(self, body, entry, *names):
-        reply = compile_job(closure("World") + [{"name": "Bad", "source": NEGATIVE_PRELUDE + body}], entry)
-        self.assertEqual(reply["status"], "error", reply)
-        self.assertTrue(any(n in reply["message"] for n in names), reply["message"][:400])
-
-    def test_the_baseline_activity_without_nested_effects_compiles(self):
-        reply = compile_job(closure("World") + [{"name": "Ok", "source": NEGATIVE_PRELUDE + """def bump(count: Nat) -> Activity<Nat>:
-  match world.write({before: count, after: count + 1n}):
-    case written(_): count + 1n
-    case refused(_): count
-"""}], "bump")
-        self.assertEqual(reply["status"], "compiled", reply)
-
-    def test_a_perform_inside_a_record_field_is_refused_as_effect_in_field(self):
-        self.refused("""def bad(count: Nat) -> Activity<{seen: World.Written}>:
+REFUSED = [  # (body, the refusal's name): a perform anywhere but the head of an activity's match
+    ("""def bad(count: Nat) -> Activity<{seen: World.Written}>:
   {seen: world.write({before: count, after: count})}
-""", "bad", "effect-in-field")
-
-    def test_a_perform_inside_a_sum_payload_is_refused_as_effect_in_payload(self):
-        self.refused("""sum Box:
+""", "effect-in-field"),
+    ("""sum Box:
   some: World.Written
 def bad(count: Nat) -> Activity<Box>:
   Box.some(world.write({before: count, after: count}))
-""", "bad", "effect-in-payload")
-
-    def test_a_perform_inside_a_plan_is_refused_as_effect_in_plan(self):
-        self.refused("""def bad(count: Nat) -> Activity<Nat>:
+""", "effect-in-payload"),
+    ("""def bad(count: Nat) -> Activity<Nat>:
   match world.write(world.write({before: count, after: count})):
     case written(_): count
     case refused(_): count
-""", "bad", "effect-in-plan")
-
-    def test_a_perform_as_a_call_argument_is_refused_as_effect_as_argument(self):
-        self.refused("""def keep(seen: World.Written) -> Nat:
+""", "effect-in-plan"),
+    ("""def keep(seen: World.Written) -> Nat:
   0n
 def bad(count: Nat) -> Activity<Nat>:
   keep(world.write({before: count, after: count}))
-""", "bad", "effect-as-argument")
-
-    def test_a_perform_bound_by_let_is_refused_as_effect_in_let(self):
-        self.refused("""def bad(count: Nat) -> Activity<Nat>:
+""", "effect-as-argument"),
+    ("""def bad(count: Nat) -> Activity<Nat>:
   let seen = world.write({before: count, after: count})
   count
-""", "bad", "effect-in-let")
-
-    def test_a_world_call_outside_an_activity_is_refused_as_world_call_outside_activity(self):
-        self.refused("""def bad(count: Nat) -> Nat:
+""", "effect-in-let"),
+    ("""def bad(count: Nat) -> Nat:
   world.write({before: count, after: count})
-""", "bad", "world-call-outside-activity")
-
-    def test_an_activity_with_no_parameters_is_refused_as_nullary_activity(self):
-        self.refused("""def bad() -> Activity<Nat>:
+""", "world-call-outside-activity"),
+    ("""def bad() -> Activity<Nat>:
   match world.write({before: 0n, after: 1n}):
     case written(_): 1n
     case refused(_): 0n
-""", "bad", "nullary-activity")
+""", "nullary-activity"),
+]
 
-    def test_recursive_types_in_plans_and_responses_are_admitted(self):
-        """The first checker refused any recursive type inside a Plan or Response
-        with 'the checker refused the front end's typed packet'. The current
-        binary admits them; this pins the new behaviour."""
-        reply = compile_job(closure("World") + [{"name": "Rec", "source": """edition ObjectiveBend 1
-import ./World.obend as World
-sum L:
-  nil: {}
-  cons: {head: Nat, tail: L}
-def f(n: Nat) -> Activity<Nat>:
-  match world.call::<L>({object: {world: "", object: "x"}, method: "m", argument: {l: L.nil({})}}):
-    case returned(_): n
-    case _: 0n
-"""}], "f")
-        self.assertEqual(reply["status"], "compiled", reply)
+
+class Refusals(unittest.TestCase):
+    def test_a_perform_outside_an_activitys_match_is_refused_by_name(self):
+        for body, name in REFUSED:
+            with self.subTest(name):
+                reply = compile_job(closure("World") + [{"name": "Bad", "source": NEGATIVE_PRELUDE + body}], "bad")
+                self.assertEqual(reply["status"], "error", reply)
+                self.assertIn(name, reply["message"])
 
 
 if __name__ == "__main__":

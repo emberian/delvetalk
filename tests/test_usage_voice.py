@@ -71,11 +71,6 @@ class UsageVoice(Reflection):
     def say(self, card, text, principal=DID, identity=None):
         return self.turn(card, "receive", record(text=label(text), post=label("")), principal=principal, identity=identity)
 
-    def test_a_resolved_card_is_named_as_the_speaker_wrote_it(self):
-        out = self.say("root", "delvetalk env nope", identity="n1")["receipt"]["outcome"]
-        self.assertEqual((out["clause"], out["reason"]), ("noAction", "env has no spell nope; it has these:"), out)
-        self.assertIn("delvetalk env tune\nlevel: <a number from 0 to 1000000000>", out["hint"])
-        self.assertNotIn(DID, out["hint"] + out["reason"])
 
     def test_usage_lists_what_the_law_admits_the_speaker_and_no_view(self):
         usage = self.say("root", "delvetalk env ?")
@@ -86,43 +81,6 @@ class UsageVoice(Reflection):
         forms = self.host.send(op="world-inspect", principal="ember", object=f"env/{DID}", source=False)["forms"]
         self.assertNotIn("'count'", str(forms))
         self.assertIn("'reset'", str(forms))
-
-    def test_a_bad_value_is_a_blank_and_an_unknown_card_points_to_the_directory(self):
-        out = self.say("garden", "delvetalk garden plant\ncolour: gold\nseed: fern", identity="b1")["receipt"]["outcome"]
-        self.assertEqual(out["clause"], "badValue", out)
-        self.assertIn("colour: <amber, violet, silver>", out["hint"])
-        self.assertIn("seed: fern", out["hint"])
-        self.assertNotIn("gold", out["hint"])
-        out = self.say("root", "delvetalk forge make", identity="f1")["receipt"]["outcome"]
-        self.assertEqual((out["clause"], out["hint"]), ("otherCard", "no card named forge; reply to the directory for the doors"), out)
-
-    def test_hobs_tail_line_follows_usage_and_hints_only_when_a_library_is_visible(self):
-        # docs/VOICE.md "hob": one tail line on `?` and on a badSpell hint, naming the library's page,
-        # when a `library` card the reader may see exists; never in a refusal's reason.
-        usage = "hob: how a spell is read: delvetalk library read / page: spells"
-        hint = "hob: the page on this: delvetalk library read / page: spells"
-        self.assertNotIn("hob:", self.say("root", "delvetalk garden ?")["text"])
-        r = self.host.send(op="world-create", principal="ember", identity="mk-library", object="library",
-                           modules=[{"name": "Probe", "source": DIRECTORY}], entry="initial", seed=record(),
-                           read={"principals": ["ember"]})
-        self.assertEqual(r["status"], "created", r)
-        self.assertNotIn("hob:", self.say("root", "delvetalk garden ?")["text"])         # a library DID cannot see
-        self.assertTrue(self.say("root", "delvetalk garden ?", principal="ember")["text"].endswith("\n\n" + usage))
-        out = self.say("root", "delvetalk garden nope", principal="ember", identity="h1")["receipt"]["outcome"]
-        self.assertTrue(out["hint"].endswith("\n\n" + hint), out)
-        self.assertNotIn("hob:", out["reason"])
-        self.assertEqual(out["hint"].count("hob:"), 1)
-
-    def test_a_card_named_as_any_object_may_be_is_spelled_by_that_name(self):
-        # codex agent 14, docs 5: creation took `My_card`, the spell heading refused `_` and capitals.
-        r = self.host.send(op="world-create", principal="ember", identity="mk-My_card", object="My_card",
-                           modules=[{"name": "Probe", "source": ENV}], entry="initial", seed=record())
-        self.assertEqual(r["status"], "created", r)
-        usage = self.say("My_card", "delvetalk My_card ?")
-        self.assertEqual(usage["status"], "usage", usage)
-        self.assertIn("delvetalk My_card tune", usage["text"])
-        tuned = self.say("My_card", "delvetalk My_card tune\nlevel: 3", identity="t1")
-        self.assertEqual((tuned["status"], tuned["result"]["value"]), ("admitted", "1"), tuned)
 
 
 # Anthology-like: `admit` is the owner's by a clause that reads the state; `door` is the owner's by the

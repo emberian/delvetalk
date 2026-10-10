@@ -78,15 +78,6 @@ def joined(n: Nat) -> String:
 def pairText(j: Relations.Joined<Row, Pet>) -> String:
   match j:
     case pair(p): "{p.left.who}-{p.right.kind}"
-def numbered(n: Nat) -> Lists.List<Row>:
-  if n == 0n then Lists.List.nil({}) else Lists.List.cons({head: row("w", n, "x"), tail: numbered(n - 1n)})
-# Rows already in key order, as the host stores a relation.
-def stored(n: Nat) -> Relations.Relation<Row>:
-  Relations.Relation.rows({items: Lists.reverse(numbered(n))})
-def bigJoin(n: Nat) -> Nat:
-  Lists.length(Relations.joinOn(stored(n), stored(n), key, key))
-def bigSort(n: Nat) -> Nat:
-  Relations.count(Relations.fromList(numbered(n), key))
 def edited(n: Nat) -> String:
   let r = rel()
   let a = shown(Relations.rows(Relations.insert(r, row("al", 5n, "new"), key)))
@@ -98,60 +89,42 @@ def edited(n: Nat) -> String:
 """
 
 
-def run(entry, n=0, limits=None):
+def run(entry, n=0):
     compiled = compile_job(closure("Relation") + [{"name": "Probe", "source": PROBE}], entry)
     assert compiled["status"] == "compiled", compiled
     request = {"op": "run", "artifact": compiled["artifact"], "arguments": [{"tag": "natural", "value": str(n)}]}
-    if limits:
-        request["limits"] = limits
     out = check(request)
     assert out["status"] == "finished", out
     return out
 
 
+# (entry, what the probe prints)
+CASES = [
+    # 9 < 10; {n, who} decides on n first; a shorter text first; 'B' (0x42) before 'b'; equal;
+    # '…' (three bytes) is longer than 'z'; equal keys whatever the rest of the row.
+    ("cmp", "0,0,0,2,1,2,1"),
+    # key {n, who}: (2,c) (2,al) (2,bo) (10,al) (a shorter text first); the second (2,bo) is dropped.
+    ("fromListed", "c2w,al2z,bo2x,al10y"),
+    ("queried", "c2w,al2z,bo2x|c,al,bo,al|4|yesno"),       # where, project, count, exists
+    ("looked", "y,none,none"),                               # lookup finds by key and stops past it
+    ("ordered", "c2w,al2z,al10y,bo2x"),                      # order and group by another key
+    ("grouped", "1:c2w;2:al2z,al10y;1:bo2x"),
+    ("joined", "al-cat,al-eel,bo-owl"),                      # pets {who, kind}, people {who}: al two, c none, dee no person
+    ("edited", "|".join([
+        "c2w,al2z,bo2x,al5new,al10y",   # insert of an absent key: placed in key order
+        "c2w,al2z,bo2x,al10y",          # insert of a present key: unchanged
+        "c2w,al2z,bo2x,al10other",      # upsert replaces
+        "c2w,al2z,al10y",               # retract removes
+        "c2w,al2z,bo2x,al10y",          # retract of an absent key: unchanged
+    ])),
+]
+
+
 class RelationLibrary(unittest.TestCase):
-    def value(self, entry, n=0):
-        return run(entry, n)["value"]["value"]
-
-    def test_keys_compare_as_canonical_bytes(self):
-        # 9 < 10; {n, who} decides on n first; a shorter text first; 'B' (0x42) before 'b';
-        # equal; '…' (three bytes) is longer than 'z'; equal keys whatever the rest of the row.
-        self.assertEqual(self.value("cmp"), "0,0,0,2,1,2,1")
-
-    def test_from_list_sorts_by_key_and_keeps_the_first_of_a_key(self):
-        # key {n, who}: (2,c) (2,al) (2,bo) (10,al) (a shorter text first); the second (2,bo) is dropped.
-        self.assertEqual(self.value("fromListed"), "c2w,al2z,bo2x,al10y")
-
-    def test_where_project_count_exists(self):
-        self.assertEqual(self.value("queried"), "c2w,al2z,bo2x|c,al,bo,al|4|yesno")
-
-    def test_lookup_finds_by_key_and_stops_past_it(self):
-        self.assertEqual(self.value("looked"), "y,none,none")
-
-    def test_order_and_group_by_another_key(self):
-        self.assertEqual(self.value("ordered"), "c2w,al2z,al10y,bo2x")
-        self.assertEqual(self.value("grouped"), "1:c2w;2:al2z,al10y;1:bo2x")
-
-    def test_join_on_merges_two_relations(self):
-        # pets keyed {who, kind}; people keyed {who}: al has two pets, c none, dee no person.
-        self.assertEqual(self.value("joined"), "al-cat,al-eel,bo-owl")
-
-    def test_insert_upsert_retract_mirror_the_host_table(self):
-        self.assertEqual(self.value("edited"), "|".join([
-            "c2w,al2z,bo2x,al5new,al10y",   # insert of an absent key: placed in key order
-            "c2w,al2z,bo2x,al10y",          # insert of a present key: unchanged
-            "c2w,al2z,bo2x,al10other",      # upsert replaces
-            "c2w,al2z,al10y",               # retract removes
-            "c2w,al2z,bo2x,al10y",          # retract of an absent key: unchanged
-        ]))
-
-    def test_a_merge_join_of_two_stored_relations_is_linear(self):
-        sort = run("bigSort", 64, limits={"ticks": "1000000", "heap": "1000000"})
-        join = run("bigJoin", 200, limits={"ticks": "1000000", "heap": "1000000"})
-        print("\n  fromList of 64 rows in reverse order: %s ticks; joinOn of two stored 200-row relations: %s ticks"
-              % (sort.get("ticksUsed"), join.get("ticksUsed")))
-        self.assertEqual(sort["value"]["value"], "64")
-        self.assertEqual(join["value"]["value"], "200")
+    def test_each_query_and_edit_answers_in_key_order_as_the_host_table_says(self):
+        for entry, expected in CASES:
+            with self.subTest(entry=entry):
+                self.assertEqual(run(entry)["value"]["value"], expected)
 
 
 if __name__ == "__main__":

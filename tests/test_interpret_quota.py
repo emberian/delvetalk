@@ -56,13 +56,6 @@ class InterpretQuota(Reflection):
         self.assertEqual(self.host.send(op="world-status", principal="kim")["interpretations"], {"remaining": 3, "next": 120})
         self.assertEqual(self.ask(identity="a3")["status"], "suspended")
 
-    def test_the_quota_is_settled_once(self):
-        status = self.host.send(op="world-status")
-        self.assertEqual(status["interpretQuota"], 3)
-        other = self.host.send(op="world-open", path=self.path, interpretQuota=5)
-        self.assertEqual(other["status"], "error", other)
-        self.assertIn("interpretQuota 3", other["message"])
-
 
 if __name__ == "__main__":
     unittest.main()

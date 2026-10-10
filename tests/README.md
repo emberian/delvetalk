@@ -14,6 +14,13 @@ fixtures: `HostCase` (one process per class, a fresh unsynced journal per test),
 per class; test_http's `FrontCase` takes `fresh_world` for a hostd per test), `check` (the run's shared stateless process). [PROFILE.md](PROFILE.md) is the measurement
 that shaped them.
 
+## Properties and scenarios
+
+The town as `deploy/genesis.py` builds it (`tests/town.py`), driven by what it will meet. `DELVETALK_SEED=<n>` replays a property run; a failure names its seed.
+
+- `test_properties` (§8 invariants 4-7, 11, 12): `RandomHour`, two hundred moves drawn from the archive's posts and the rehearsal's model answers: every refusal classed, every retry the retained receipt, every card within the clip and without a DID or hash; reopening, and reopening from a snapshot, reproduce every state CID at every version, and the same requests make the same journal. `EveryMethod`: every public method of every object, as owner and stranger, with a well-typed value, one outside a form bound and a malformed one; undeclared names are `noMethod`.
+- `test_scenarios` (§5, §8): one scenario per arc through the spells a reply carries: a kind's bell watched, rained on and rung; a garden planting; a workshop proposal held for the owner and adopted; a scene entered and chosen.
+
 ## Kernel
 
 The compiler, the evaluator and the canonical codec, on one stateless process: what a package means before any world holds it.
@@ -68,7 +75,6 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_law` (§4): The two-tier law: the Bend predicate judges after the law text admits, reads the roots it declares, runs under its own budget, and can never seal out a reprogram or amendment.
 - `test_outbound` (§3, §5): What the world says to whom: posts recorded so a reply finds its object, cards under the reader's authority, offers to their addressees, publications, public projections, the clock.
 - `test_post_reserve` (§3 Time): Posting reservations and model retries are host facts: a delve.town post reserved against `postQuota`, Zulip uncounted, a transient model failure journaled `attempted` with a backoff.
-- `test_library` (LIBRARY): genesis shelves `capsules/pages/` as the opener; anyone reads a page by name or by a word of what they said, and a card's law with its readings; only the owner shelves.
 - `test_make` (§3): `make` creates an object from a resident's own source under the maker's authority and journals `madeFrom {object, pin, receipt}`; a compile failure is refused with the checker's reading.
 - `test_public_methods` (§2): A method is public only when its package declares it; a helper is `noMethod` to a direct turn, a call or a send.
 - `test_reads` (§2): The host's read ops behind the AT repository: one public reader, entries by hash and by page, an object as of a version, sources under read authority.
@@ -101,9 +107,7 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_laws` (§4): The world's objects carry their laws in source: only owners change directories and admit anthology lines, and Tide's and Wake's predicates refuse what their code would.
 - `test_lenses` (§5 Spell grammar): An object's exposed fields are lenses: `set` writes one through its kind and its owner, `?` lists every form and lens.
 - `test_mailbox` (§8 claims): An avatar subscribes to an object and is told of its news; its principal's send reaches up to 32 observers, and the inbox keeps the newest 64.
-- `test_merge` (§5): The owner's `merge` reply checkpoints the garden's page; anyone else's, or a forged write, is refused.
 - `test_objects` (§5): The library holds one Context and no dynamic universe; objects claim the Plans they perform; cards render in under 1,400 characters at their fullest.
-- `test_page` (§5): A garden publishes its page as an agentwiki post, one section per bell, newest first; a door object publishes its card under the door word.
 - `test_places` (§8 MUD floor): Places, things and avatars are ordinary objects: moving, taking, offering and accepting, scoped commands, talk, copies and traces, each refused by name where it should be.
 - `test_policy` (§6): The interpretation policy is an object its owner teaches; prose to the garden suspends on it, and the model's answer plants, asks first, or is refused by name.
 - `test_principal` (§3 Context): Who acted is the turn's principal: no argument can name another author, planter or sender.
@@ -145,3 +149,4 @@ The gate (FOUNDATION §11): the town's archived hour, replayed post by post. `re
 - `test_hub` (§11): The directory hears the gate's hour from the archived posts: field lines plant, rains and chatter get nothing, the model's spell reaches the door.
 - `test_replay` (§11): The hour of 2026-10-09, step by step on the host: planting, rain, the second cistern refused, the strike awaiting the planting post, the anthology.
 - `test_suspension_size` (§11, §12): A directory suspension journals only what changed: nine prose replies stay under a bounded median entry size.
+- `test_archive` (§11): `rehearsal/rehearse.py` over the whole archive: the section 10 hour and the recorded routing (43 interpretations).

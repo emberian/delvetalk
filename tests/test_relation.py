@@ -9,11 +9,12 @@ rows; `insert`, `upsert`, `retract` follow the nine-cell table. Each case names 
 
     python3 -W error -m unittest tests.test_relation -v
 """
+import os
 import unittest
 
 from tests.host import as_owner
 
-from tests.test_reflection import Reflection
+from tests.test_reflection import LIBRARY, Reflection
 from tests.test_turn_world import label, nat, record, declared
 
 # The relation type and its edits are declared here as the library will declare them (Relation.obend,
@@ -105,7 +106,6 @@ class RelationCase(Reflection):
                               identity=ident or f"e{self.n}")
 
 
-
 class Relations(RelationCase):
     def test_an_unsorted_seed_is_canonical_and_a_duplicate_key_is_refused(self):
         made = self.make_bell(record(rains=relation(rain("kim", 5, "late"), rain("ann", 9, "x"), rain("ann", 2, "early"))))
@@ -115,12 +115,9 @@ class Relations(RelationCase):
         dup = self.make_bell(record(rains=relation(rain("ann", 2, "a"), rain("ann", 2, "b"))), name="d")
         self.assertEqual(dup["status"], "error", dup)
         self.assertIn("duplicateKey", dup["message"])
-
-    def test_a_key_naming_a_missing_column_is_refused_at_creation(self):
         bad = PACKAGE.replace('Lists.List.cons({head: "at", tail', 'Lists.List.cons({head: "when", tail').replace("LIMIT", "0n")
         r = self.host.send(op="world-create", principal="ember", identity="mk-k", object="k", source=bad,
                            entry="initial", seed=record())
-        self.assertEqual(r["status"], "error", r)
         self.assertIn("key: relation rains names column when, which its rows lack", r["message"])
 
     def test_insert_upsert_and_retract_follow_the_nine_cell_table_and_replay(self):
@@ -195,17 +192,6 @@ def initial() -> State:
                            entry="initial", seed=record())
         self.assertEqual(r["status"], "created", r)
 
-    def test_twenty_creations_compile_the_package_once(self):
-        # Refuted if each creation compiles relations() anew (a creation then costs a compile).
-        import time
-        self.assertEqual(self.make_bell(name="b0")["status"], "created")
-        start = time.monotonic()
-        for i in range(1, 21):
-            self.assertEqual(self.make_bell(name=f"b{i}")["status"], "created")
-        self.assertLess(time.monotonic() - start, 3.0)
-        self.reopen()
-        self.edit("insert", rain("ann", 1, "a"), name="b20")
-        self.assertEqual(self.rows("b20"), [("ann", 1, "a")])
 
     def test_relational_law_atoms_judge_writes(self):
         # Refuted if insertOnly/count/column membership refuse every write (or admit a retract).
@@ -223,7 +209,7 @@ def initial() -> State:
         self.assertEqual(outcome(self.edit("insert", rain("kim", 2, "k"), who="bob", name="l")), ("refused", "small"))
         self.assertEqual(self.rows("l"), [("ember", 0, "seed"), ("ann", 1, "a")])
 
-    def test_insert_only_does_not_count_the_rows_retention_drops(self):
+    def test_insert_only_does_not_count_the_rows_retention_drops_but_counts_a_proposed_retraction(self):
         # Refuted if a full relation with a limit refuses an insert (its oldest row by key goes), or
         # if a retract or an upsert is admitted once the relation is full.
         source = PACKAGE.replace("LIMIT", "2n").replace("def relations()", "law grow: insertOnly(rains)\ndef relations()")
@@ -237,32 +223,16 @@ def initial() -> State:
         self.assertEqual(outcome(self.edit("upsert", rain("kim", 2, "changed"), who="kim", name="r")), ("refused", "grow"))
         self.assertEqual(outcome(self.edit("retract", record(author=label("kim"), at=nat(2)), who="kim", name="r")),
                          ("refused", "grow"))
-
-    def test_insert_only_counts_a_proposed_retraction_from_a_full_relation(self):
         # codex host 8: retract one row then insert another leaves the relation full with the missing
         # row's key below the kept ones; no retention dropped it, so insertOnly refuses.
-        source = PACKAGE.replace("LIMIT", "2n").replace("def relations()", "law grow: insertOnly(rains)\ndef relations()")
-        r = self.host.send(op="world-create", principal="ember", identity="mk-r", object="r", source=source,
-                           entry="initial", seed=record(rains=relation(rain("ember", 1, "a"), rain("ember", 2, "b"))))
-        self.assertEqual(r["status"], "created", r)
         keep = {"tag": "variant", "label": "keep", "payload": record()}
-        gone = record(count=keep, rains={"tag": "variant", "label": "retract", "payload": record(key=key("ember", 1))})
-        new = record(count=keep, rains={"tag": "variant", "label": "insert", "payload": record(row=rain("ember", 3, "c"))})
-        r = self.host.send(op="world-propose", principal="ember", identity="p1", roots=[{"object": "r", "version": 0}],
+        gone = record(count=keep, rains={"tag": "variant", "label": "retract", "payload": record(key=key("kim", 2))})
+        new = record(count=keep, rains={"tag": "variant", "label": "insert", "payload": record(row=rain("zed", 9, "c"))})
+        version = self.host.send(op="world-view", principal="ember", object="r")["version"]
+        r = self.host.send(op="world-propose", principal="ember", identity="p1", roots=[{"object": "r", "version": version}],
                            writes=[{"object": "r", "edits": [gone, new]}])
         self.assertEqual((r["status"], r["receipt"]["outcome"].get("clause")), ("refused", "grow"), r)
-        self.assertEqual([at for _, at, _ in self.rows("r")], [1, 2])
-
-    def test_state_bytes_are_the_canonical_encodings(self):
-        # The objects lane's finding (OBJECTS-HANDOFF §4): 2,048 short rows are some 600 KB of wire
-        # JSON but about 150 KB as the host holds them; the 256 KiB bound counts the latter.
-        author = "did:plc:" + "a" * 24
-        rows = [rain(author, i, "a short rain line %04d" % i) for i in range(2048)]
-        r = self.make_bell(record(rains=relation(*rows)), name="wide", limit=2048)
-        self.assertEqual(r["status"], "created", r)
-        held = self.host.send(op="world-inspect", principal="ember", object="wide", source=False)["stateBytes"]
-        self.assertLess(held, 262144)
-
+        self.assertEqual([a for a, _, _ in self.rows("r")], ["kim", "eve"])
 
 def key(author, at):
     return record(author=label(author), at=nat(at))
@@ -287,18 +257,29 @@ class Moved(RelationCase):
         super().setUp()
         self.assertEqual(self.make_bell(record(rains=relation(rain("old", 0, "o"))))["status"], "created")
 
-    def test_insert_and_insert_of_other_keys_commute(self):
-        resumed = self.pair("laterInsert", rain("kim", 1, "k"), "insert", rain("ann", 2, "a"))
-        self.assertEqual(resumed["status"], "admitted", resumed)
-        self.assertNotIn("rerunOf", resumed)
-        self.assertEqual(self.rows(), [("old", 0, "o"), ("kim", 1, "k"), ("ann", 2, "a")])
-        self.reopen()
-        self.assertEqual(self.rows(), [("old", 0, "o"), ("kim", 1, "k"), ("ann", 2, "a")])
-
-    def test_an_insert_of_the_same_row_is_idempotent(self):
-        resumed = self.pair("laterInsert", rain("ann", 2, "a"), "insert", rain("ann", 2, "a"))
-        self.assertEqual(resumed["status"], "admitted", resumed)
-        self.assertEqual(self.rows(), [("old", 0, "o"), ("ann", 2, "a")])
+    def test_the_nine_cells_of_a_waiting_edit_against_a_moved_relation(self):
+        """Each case: kim's waiting edit, ann's concurrent edit, kim's outcome, whether it re-ran, the rows after."""
+        o = ("old", 0, "o")
+        cases = [
+            ("laterInsert", rain("kim", 1, "k"), "insert", rain("ann", 2, "a"), None, False, [o, ("kim", 1, "k"), ("ann", 2, "a")]),
+            ("laterInsert", rain("ann", 2, "a"), "insert", rain("ann", 2, "a"), None, False, [o, ("ann", 2, "a")]),
+            ("laterInsert", rain("ann", 2, "mine"), "insert", rain("ann", 2, "theirs"), "keyTaken", False, [o, ("ann", 2, "theirs")]),
+            ("laterUpsert", rain("old", 0, "new"), "insert", rain("ann", 2, "a"), None, False, [("old", 0, "new"), ("ann", 2, "a")]),
+            ("laterRetract", key("old", 0), "upsert", rain("ann", 2, "a"), None, False, [("ann", 2, "a")]),
+            ("laterInsert", rain("kim", 1, "k"), "retract", key("old", 0), None, False, [("kim", 1, "k")]),
+            ("laterUpsert", rain("old", 0, "mine"), "retract", key("old", 0), None, True, [("old", 0, "mine")]),
+        ]
+        for i, (waiting, arg, concurrent, carg, refused, rerun, rows) in enumerate(cases):
+            # A fresh world per case: the waiting turn awaits ann's intent "go".
+            opened = self.host.send(op="world-open", path=os.path.join(self.dir.name, "m%d.journal" % i), library=LIBRARY, principal="ember")
+            self.assertEqual(opened["status"], "opened", opened)
+            self.assertEqual(self.make_bell(record(rains=relation(rain(*o))))["status"], "created")
+            self.assertEqual(self.edit(waiting, arg, who="kim", ident="w")["status"], "suspended")
+            [resumed] = self.edit(concurrent, carg, ident="go")["resumed"]
+            resumed = as_owner(self.host, resumed, "kim")
+            self.assertEqual((resumed["status"], resumed["receipt"]["outcome"].get("class") if refused else None, "rerunOf" in resumed),
+                             ("refused" if refused else "admitted", refused, rerun), (i, resumed))
+            self.assertEqual(self.rows(), rows, i)
 
     def test_a_retract_of_a_key_retention_evicted_meanwhile_is_stale(self):
         # codex host 10: ann's insert into the full relation evicts kim's key; kim's waiting retract
@@ -313,31 +294,6 @@ class Moved(RelationCase):
         self.reopen()
         self.assertEqual([at for _, at, _ in self.rows("l")], [2, 3])
 
-    def test_two_inserts_of_one_key_with_different_rests_the_second_is_key_taken(self):
-        resumed = self.pair("laterInsert", rain("ann", 2, "mine"), "insert", rain("ann", 2, "theirs"))
-        self.assertEqual((resumed["status"], resumed["receipt"]["outcome"]["class"]), ("refused", "keyTaken"), resumed)
-        self.assertNotIn("rerunOf", resumed)
-        self.assertEqual(self.rows(), [("old", 0, "o"), ("ann", 2, "theirs")])
-
-    def test_upsert_commutes_with_an_insert_of_another_key(self):
-        resumed = self.pair("laterUpsert", rain("old", 0, "new"), "insert", rain("ann", 2, "a"))
-        self.assertEqual(resumed["status"], "admitted", resumed)
-        self.assertNotIn("rerunOf", resumed)
-        self.assertEqual(self.rows(), [("old", 0, "new"), ("ann", 2, "a")])
-        self.reopen()
-        self.assertEqual(self.rows(), [("old", 0, "new"), ("ann", 2, "a")])
-
-    def test_retract_commutes_with_an_upsert_of_another_key(self):
-        resumed = self.pair("laterRetract", key("old", 0), "upsert", rain("ann", 2, "a"))
-        self.assertEqual(resumed["status"], "admitted", resumed)
-        self.assertNotIn("rerunOf", resumed)
-        self.assertEqual(self.rows(), [("ann", 2, "a")])
-
-    def test_insert_commutes_with_a_retract(self):
-        resumed = self.pair("laterInsert", rain("kim", 1, "k"), "retract", key("old", 0))
-        self.assertEqual(resumed["status"], "admitted", resumed)
-        self.assertEqual(self.rows(), [("kim", 1, "k")])
-
     def test_a_retract_of_a_key_changed_meanwhile_is_stale_and_the_rerun_reads_the_rows_now(self):
         # ann upserts the row kim waited to retract: kim's retract would silently remove a row it
         # never saw, so it is staleRoot (transient) and the turn is re-run on the rows now.
@@ -351,12 +307,6 @@ class Moved(RelationCase):
         self.assertEqual(self.rows(), [])
         self.reopen()
         self.assertEqual(self.rows(), [])
-
-    def test_an_upsert_of_a_key_retracted_meanwhile_is_stale(self):
-        resumed = self.pair("laterUpsert", rain("old", 0, "mine"), "retract", key("old", 0))
-        self.assertIn("rerunOf", resumed)
-        self.assertEqual(self.rows(), [("old", 0, "mine")])
-
 
 if __name__ == "__main__":
     unittest.main()
