@@ -226,7 +226,7 @@ class Suspend(Await):
         self.release()
         with open(self.path) as f:
             text = f.read()
-        i = text.index('"tokens"')
+        i = text.index('"items"')  # the checkpoint's tokens are journaled as blocks
         with open(self.path, "w") as f:
             f.write(text[:i] + text[i:].replace('"n":"', '"n":"9', 1))
         h = self.spawn()

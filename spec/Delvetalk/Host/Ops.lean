@@ -775,6 +775,86 @@ def newSources (w : World) (sources : List String) : List (String × Json) :=
   if fresh.isEmpty then [] else
     [("sources", Json.arr (fresh.toArray.map fun (cid, src) => Json.mkObj [("cid", toJson cid), ("source", toJson src)]))]
 
+/-! ## Checkpoint blocks
+
+A checkpoint's tokens are mostly the program's own terms, the same in every suspension of a
+package. The journal stores them as a tree of content-defined blocks: the token array is cut
+where a token's hash says so (so equal runs cut alike in every checkpoint), each block is
+named by its CID and journaled once (`blocks [{cid, items}]` on the first entry that needs it),
+and the list of block CIDs is cut the same way until at most `treeFanout` names remain
+(`tokenTree {depth, roots}`). The checkpoint's digest still covers the whole token array, which
+replay and resumption reassemble from the blocks. -/
+
+/-- A cheap, fixed hash of an item (FNV-1a over its compressed JSON) that decides block cuts. -/
+def cutHash (item : Json) : Nat :=
+  item.compress.toUTF8.foldl (fun h b => ((h ^^^ b.toNat) * 16777619) % 4294967296) 2166136261
+
+/-- Cut items into blocks: after at least `low` items, where the hash of the last four items
+    together is 0 mod `every` (a window, so runs of common tokens still vary), never past `high`. -/
+def cutBlocks (items : Array Json) (low high every : Nat) : Array (Array Json) := Id.run do
+  let mut out : Array (Array Json) := #[]
+  let mut cur : Array Json := #[]
+  let mut window : List Nat := []
+  for item in items do
+    cur := cur.push item
+    window := (cutHash item :: window).take 4
+    let mixed := window.foldl (fun h x => ((h ^^^ x) * 16777619) % 4294967296) 2166136261
+    if (cur.size ≥ low && mixed % every == 0) || cur.size ≥ high then
+      out := out.push cur
+      cur := #[]
+  if !cur.isEmpty then out := out.push cur
+  return out
+
+def treeFanout : Nat := 16
+
+/-- The tree of a token array: its depth, its root names, and every block it uses. -/
+partial def blockTree (items : Array Json) (depth : Nat := 0) (acc : Array (String × Array Json) := #[]) :
+    Nat × Array Json × Array (String × Array Json) :=
+  let (low, high, every) := if depth == 0 then (32, 1024, 64) else (4, 64, 16)
+  let blocks := cutBlocks items low high every
+  let named := blocks.map fun b => (Journal.bodyHash (Json.arr b), b)
+  let names := named.map fun (c, _) => toJson c
+  if names.size ≤ treeFanout then (depth + 1, names, acc ++ named)
+  else blockTree names (depth + 1) (acc ++ named)
+
+/-- A checkpoint as journaled: `tokens` replaced by `tokenTree`, and the blocks the world does
+    not hold yet (each once). -/
+def compactCheckpoint (w : World) (checkpoint : Json) : Json × List (String × Json) :=
+  match (checkpoint.getObjVal? "tokens").toOption.bind (·.getArr?.toOption) with
+  | none => (checkpoint, [])
+  | some tokens =>
+    let (depth, roots, used) := blockTree tokens
+    let fresh := used.foldl (fun (acc : Array (String × Array Json)) (c, b) =>
+      if w.blocks.contains c || acc.any (·.1 == c) then acc else acc.push (c, b)) #[]
+    let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokens")
+    (Json.mkObj (fields ++ [("tokenTree", Json.mkObj [("depth", toJson depth), ("roots", Json.arr roots)])]),
+     if fresh.isEmpty then [] else
+       [("blocks", Json.arr (fresh.map fun (c, b) => Json.mkObj [("cid", toJson c), ("items", Json.arr b)]))])
+
+/-- The blocks an entry carries, checked against their CIDs. -/
+def entryBlocks (entry : Json) : Except String (List (String × Array Json)) := do
+  let some raw := (entry.getObjVal? "blocks").toOption | return []
+  (← raw.getArr?).toList.mapM fun b => do
+    let cid ← b.getObjValAs? String "cid"
+    let items ← (← b.getObjVal? "items").getArr?
+    unless Journal.bodyHash (Json.arr items) == cid do throw "a journaled block is not its CID's"
+    return (cid, items)
+
+/-- A journaled checkpoint with its token array reassembled from the world's blocks. -/
+partial def expandCheckpoint (w : World) (checkpoint : Json) : Except String Json := do
+  let some tree := (checkpoint.getObjVal? "tokenTree").toOption | return checkpoint
+  let rec expand (depth : Nat) (names : Array Json) : Except String (Array Json) := do
+    if depth == 0 then return names
+    let mut out : Array Json := #[]
+    for n in names do
+      let cid ← n.getStr?
+      let some items := w.blocks[cid]? | throw s!"checkpoint block {cid} is not journaled"
+      out := out ++ items
+    expand (depth - 1) out
+  let tokens ← expand (← tree.getObjValAs? Nat "depth") (← (← tree.getObjVal? "roots").getArr?)
+  let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokenTree")
+  return Json.mkObj (fields ++ [("tokens", Json.arr tokens)])
+
 /-- The sources an entry carries, checked against their CIDs. -/
 def entrySources (entry : Json) : Except String (List (String × String)) := do
   let some raw := (entry.getObjVal? "sources").toOption | return []
@@ -1200,6 +1280,7 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
     published := w.published ++ publications
     outbox := offered.foldl (fun box (to, i) => box.insert to ((box.getD to #[]).push (index, i))) w.outbox
     modules := sources.foldl (fun m (cid, src) => m.insert cid src) w.modules
+    blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (cid, b) => m.insert cid b) w.blocks
     pending := (match delivered with
       | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
       | none => w.pending) ++ sent ++
@@ -1776,6 +1857,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   for (cid, _) in introduced do
     if w.modules.contains cid then throw "a source is journaled twice"
   let w := { w with modules := introduced.foldl (fun m (cid, src) => m.insert cid src) w.modules }
+  let blocks ← entryBlocks entry
+  let w := { w with blocks := blocks.foldl (fun m (cid, b) => m.insert cid b) w.blocks }
   checkDelivery w entry principal intent outcome
   checkSends w entry principal intent
   checkRootCids w entry
@@ -1816,7 +1899,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     return record (postIndex w uri { object, slot, page, part, height := ← natField entry "height" }) entry key [object]
   | "suspended" =>
     let activity ← outcome.getObjVal? "activity"
-    let checkpoint ← activity.getObjVal? "checkpoint"
+    let checkpoint ← expandCheckpoint w (← activity.getObjVal? "checkpoint")
     let tokens ← Delvetalk.Turn.tokensOfJson (← checkpoint.getObjVal? "tokens")
     unless (← checkpoint.getObjValAs? String "digest") == Delvetalk.Turn.checkpointDigest
         (← checkpoint.getObjValAs? String "packetSha256") (← checkpoint.getObjValAs? String "object")

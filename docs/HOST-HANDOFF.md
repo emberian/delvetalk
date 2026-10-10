@@ -499,6 +499,13 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    not held by an object, this turn's creates, or a suspended turn's `absent`. Every creation of an id of that
    shape, named or minted, raises its parent's counter (`noteMinted`, at commit, world-create and replay);
    snapshots keep `minted`. A named `requireAbsent` behaves as before.
+25. **Checkpoint blocks (host6).** The kernel already collects before encoding (`Turn.conclude`:
+   `checkpoint = collect (settle state)`); what remained was the program's own terms in every checkpoint. A
+   suspended entry's `checkpoint.tokens` is journaled as `tokenTree {depth, roots}` over content-defined blocks
+   (`cutBlocks`: windowed FNV cut, leaves 32..1024 tokens, inner 4..64 names, at most 16 roots), each block a
+   top-level `blocks [{cid, items}]` item once per journal (`World.blocks`, derived by `record`);
+   `expandCheckpoint` reassembles the tokens for replay's digest check and for resumption. Garden prose: the
+   first suspension 272,621 bytes (was 225,719), the next 10,948.
 
 ## 6. Gotchas
 

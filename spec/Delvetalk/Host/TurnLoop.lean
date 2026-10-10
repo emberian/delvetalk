@@ -1080,9 +1080,10 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (some { cls, reason := some reason, object := some ctx.object }) (onEnd := endedIfLate)
     return (w', turnReply w' r)
   | .error (.suspend sp si patience checkpoint interpretation post) =>
+    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
-      ("checkpoint", checkpoint.toJson),
+      ("checkpoint", journaledCheckpoint.1),
       ("roots", rootsJson st.roots st.rootCids), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
       ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson w.binary id c)),
@@ -1105,7 +1106,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
       ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.rootCids),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
-        newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs)) []
+        newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ journaledCheckpoint.2) []
     return (w', turnReply w' (reply entry))
   | .ok value =>
     match st.violation with
@@ -1286,7 +1287,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration")))
   let laws ← ((← (← act.getObjVal? "laws").getArr?).toList.mapM fun r => do
     return (← r.getObjValAs? String "object", ← r.getObjValAs? String "law"))
-  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← act.getObjVal? "checkpoint")
+  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← expandCheckpoint w (← act.getObjVal? "checkpoint"))
   let init : TurnState :=
     { world := w
       roots := roots
