@@ -69,8 +69,8 @@ class Library(unittest.TestCase):
 
     def test_a_cards_law_is_shown_with_its_readings(self):
         law = self.offer(self.spell('delvetalk library laws / card: anthology'))
-        self.assertTrue(law.startswith('LAW of anthology\n  owner: '), law)
-        self.assertIn('request.method == "submit"', law)
+        self.assertTrue(law.startswith('LAW of anthology\n  owner\n'), law)
+        self.assertIn('  kept\n    insertOnly(lines) and insertOnly(admitted)', law)
         self.assertIn('no card', self.offer(self.spell('delvetalk library laws / card: nowhere')).lower())
         # A law given at creation has no readings in the host's form: the clauses and expressions.
         self.assertIn('  level\n    monotone(level)\n', self.offer(self.spell('delvetalk library laws / card: cistern')))

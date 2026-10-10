@@ -47,8 +47,8 @@ DOORS = [
     ('TIDE', 'Subscribe yourself to a cadence; anyone may tick; too soon is refused by name.', 'tide', 'ticks',
      [('delvetalk tide subscribe / every: 3 / note: first light', ''),
       ('delvetalk tide tick', 'sooner than the gap: refused tooSoon; a due tick notes your avatar')]),
-    ('ANTHOLOGY', 'Submit a line; the keeper admits; the card numbers them.', 'anthology', 'proposals',
-     [('delvetalk anthology submit / line: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
+    ('ANTHOLOGY', 'Write a line; the keeper admits; the card numbers them.', 'anthology', 'lines',
+     [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
     # A link door: no object (the empty reference); its description is its line.
     ('STUDIO', f'your heap and REPL: {ORIGIN}/AGENTS.md', '', '', []),
 ]
@@ -102,6 +102,18 @@ def cistern_law(opener):
             'law level "the level only rises": monotone(level)')
 
 
+# Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
+# package it makes; its creator passes it (tests/test_genesis.py compares the two).
+RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the doors or the code; anyone else only by its spells": '
+              'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(doors)))\n'
+              'law kept "a line is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
+              'and (unchanged(admitted) or request.subject == new.keeper)')
+
+
+# The law each package's objects are created with, where its source declares none.
+LAWS = {'Cistern': cistern_law, 'Record': lambda _: RECORD_LAW}
+
+
 def seeds(opener):
     """(object, package, partial seed), in the order GENESIS.md creates them."""
     return [('policy', 'Policy', rec(owner=lab(opener), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
@@ -111,7 +123,7 @@ def seeds(opener):
             ('garden', 'Garden', rec(owner=lab(opener), ownerHandle=lab(HANDLE), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
-            ('anthology', 'Anthology', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
+            ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
             ('cistern', 'Cistern', rec(level=nat(0))),  # created with cistern_law(opener)
             ('rooms', 'Scene', moss_gate(opener))]
@@ -140,7 +152,7 @@ def run(host, opener=OPENER):
         return [], 'the opener could not arrive: ' + str(arrived.get('message'))
     made = []
     for name, package, seed in seeds(opener):
-        reply = create(host, opener, name, package, 'genesis-' + name, seed, cistern_law(opener) if name == 'cistern' else None)
+        reply = create(host, opener, name, package, 'genesis-' + name, seed, LAWS.get(package, lambda _: None)(opener))
         made.append({'object': name, 'module': package, 'status': reply.get('status'),
                      'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal'), 'reply': reply})
         if reply.get('status') != 'created':

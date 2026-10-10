@@ -18,7 +18,7 @@ record Example:
 type Examples = Lists.List<Example>
 # A door: its word, its object (nobody for a link door, whose description is its line), the
 # spells the menu prints under it, and `watch`, the field of its object whose changes the menu
-# counts (`children`, `ticks`, `proposals`, `held`, `presence`; "" for none). A door whose object
+# counts (`children`, `ticks`, `lines`, `held`, `presence`; "" for none). A door whose object
 # is a card under another door's (`garden/bell/1`) is an arc: the menu prints its spells under
 # that door, until the owner removes it.
 record Door:
@@ -52,10 +52,10 @@ def visitKey(visit: Visit) -> {principal: String}:
   {principal: visit.principal}
 # The receiver for a watched field's rows ("" for a field the menu does not count).
 def receiverOf(field: String) -> String:
-  if field == "children" then "changedChildren" else if field == "ticks" then "changedNat" else if field == "proposals" then "changedProposals" else if field == "held" then "changedHeld" else if field == "presence" then "changedPresence" else ""
+  if field == "children" then "changedChildren" else if field == "ticks" then "changedNat" else if field == "lines" then "changedLines" else if field == "held" then "changedHeld" else if field == "presence" then "changedPresence" else ""
 # The count as the door line says it.
 def counted(field: String, count: Nat) -> String:
-  if field == "ticks" then "tick {natText(count)}" else if field == "children" then "{natText(count)} planted" else if field == "proposals" then "{natText(count)} lines" else if field == "held" then "{natText(count)} held" else if field == "presence" then "{natText(count)} here" else natText(count)
+  if field == "ticks" then "tick {natText(count)}" else if field == "children" then "{natText(count)} planted" else if field == "lines" then "{natText(count)} lines" else if field == "held" then "{natText(count)} held" else if field == "presence" then "{natText(count)} here" else natText(count)
 def newestOf(names: Lists.List<String>) -> String:
   Lists.fold(names, "", fn(name: String) -> String -> String: fn(later: String) -> String: if later == "" then name else later)
 # "Six doors.": the count in words to twelve, as the voice writes it (docs/VOICE.md).

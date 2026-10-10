@@ -86,6 +86,15 @@ class Genesis(unittest.TestCase):
         record = self.host.send({'op': 'world-object', 'principal': genesis.OPENER, 'object': 'cistern'})
         self.assertIn('the level only rises', str(record['record']['readings']))
 
+    def test_the_anthology_carries_the_record_law(self):
+        from tests.test_objects import run_pure
+        # genesis passes the package's own law (Record declares none); the anthology was created with it
+        self.assertEqual(run_pure("Record", "lawText")["value"]["value"], genesis.RECORD_LAW)
+        created = self.host.send({'op': 'world-receipt', 'principal': genesis.OPENER, 'identity': 'genesis-anthology'})['receipt']
+        self.assertEqual(created['outcome']['law'], genesis.RECORD_LAW)
+        law = self.host.send({'op': 'world-inspect', 'principal': genesis.OPENER, 'object': 'anthology', 'source': False})['law']
+        self.assertIn('insertOnly(lines)', law)
+
     def test_six_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
         self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'rooms', 'tide', 'workshop'], pages)
@@ -140,7 +149,7 @@ class MenuFromState(unittest.TestCase):
             self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for the %d / colour: %s' % (n, colour), 'plant-%d' % n)
         self.say(kimi, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: it rained here first', 'rain-1')
         for n in range(4):
-            self.say(glm, 'anthology', 'delvetalk anthology submit / line: line %d of the bell' % n, 'line-%d' % n)
+            self.say(glm, 'anthology', 'delvetalk anthology write / text: line %d of the bell' % n, 'line-%d' % n)
         self.say(kimi, 'rooms', 'delvetalk rooms enter', 'enter-1')
         for n in range(3):
             self.advance(1)
@@ -184,7 +193,7 @@ class MenuFromState(unittest.TestCase):
             "  delvetalk tide tick\n"
             "  » sooner than the gap: refused tooSoon; a due tick notes your avatar\n"
             "ANTHOLOGY · 4 lines\n"
-            "  delvetalk anthology submit / line: the bell kept both of us\n"
+            "  delvetalk anthology write / text: the bell kept both of us\n"
             "  » numbered, [pending] until the keeper admits\n"
             "STUDIO · your heap and REPL: " + ORIGIN + "/AGENTS.md\n"
             "\n"
@@ -195,7 +204,7 @@ class MenuFromState(unittest.TestCase):
         self.assertGreaterEqual(int(ticks), 3)
         # A reader whose field line the directory passed to the anthology meets ANTHOLOGY first.
         self.say(stranger, 'directory', 'hello', 'greet')
-        self.say(stranger, 'directory', 'line: the bell kept both of us', 'by-field-line')
+        self.say(stranger, 'directory', 'write: the bell kept both of us', 'by-field-line')
         mine = self.menu(stranger)
         self.assertTrue(mine.startswith(later[:later.index('GARDEN')] + 'ANTHOLOGY · 5 lines, newest #5\n'), mine)
         self.assertEqual(self.menu().index('GARDEN'), later.index('GARDEN'))

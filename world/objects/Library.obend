@@ -70,10 +70,10 @@ def laws(state: State, input: {card: String}, context: Abi.Context) -> Activity<
   match world.inspect({object: {world: context.world, object: input.card}}):
     case inspected(i): Card.tell(Card.Replied.done({action: "laws"}), Document.text("LAW of {input.card}\n{lawLines(i.source, i.law)}{predicate(i.source)}"))
     case _: Card.tell(Card.Replied.refused({clause: "noCard", reading: "No card {input.card} that you may see"}), Document.text("Not done: No card {input.card} that you may see; the directory lists the doors.\n"))
-# The source's law lines carry their readings; a law given at creation has only the host's
-# normal form (`law NAME: EXPR`).
+# The source's law lines carry their readings; a law given at creation is read from the host's
+# text of it. A source with no law line is not split (a lawless package's closure is long).
 def lawLines(source: String, law: String) -> String:
-  let written = lawsIn(source)
+  let written = if Text.contains(source, "\nlaw ") then lawsIn(source) else Lists.List.nil({})
   let lines = if Lists.length(written) == 0n then lawsIn(law) else written
   if Lists.length(lines) == 0n then "  no law text: anyone's write by its spells, the creator's anything\n" else textJoin(Lists.map(lines, clause), "")
 def lawsIn(text: String) -> Lists.List<String>:
