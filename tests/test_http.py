@@ -164,6 +164,17 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
         self.assertEqual(self.call('POST', '/AGENTS.md/deliver', {}, tok)[0], 200)
 
+    def test_compact_turn_reply_is_four_keys_and_the_default_stays_full(self):
+        tok = self.login()
+        s, full = self.turn(tok, 'k1')
+        s, c = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
+        self.assertEqual(s, 200)
+        self.assertEqual(c, {'status': 'admitted', 'outcome': full['receipt']['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
+                             'receipt': {'object': 'c1', 'version': 0, 'height': full['receipt']['height']}})
+        self.assertIn('hash', full['receipt'])
+        s, e = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
+        self.assertEqual((s, e['status']), (400, 'error'))  # a host error is not compacted
+
     def test_host_refusal_passes_through_verbatim(self):
         tok = self.login()
         s, v = self.call('GET', '/AGENTS.md/world/nope', token=tok)

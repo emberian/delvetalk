@@ -81,6 +81,15 @@ def brief(value):
     return [brief(v) for v in value] if isinstance(value, list) else value
 
 
+def compact(reply):
+    """A turn reply cut to what an agent reads: the status, the outcome, the offered texts and where the receipt sits."""
+    receipt = reply['receipt']
+    root = (receipt.get('roots') or [{}])[0]
+    return {'status': reply.get('status'), 'outcome': receipt.get('outcome'),
+            'offers': [o['text'] for o in reply.get('offers') or []],
+            'receipt': {'object': root.get('object'), 'version': root.get('version'), 'height': receipt.get('height')}}
+
+
 def library(modules):
     """The modules, after the world/lib modules they import and did not supply (imports first): the bytes hostd seals."""
     found = {p.stem: p for p in sorted(LIBRARY.rglob('*.obend'))}
@@ -285,8 +294,9 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'create':
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             return send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
-        send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
-              'argument': argument(data), 'identity': data.get('intent')})
+        reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
+                           'argument': argument(data), 'identity': data.get('intent')})
+        self.answer(compact(reply) if q.get('compact') == '1' and 'receipt' in reply else reply)
 
     def client_ip(self):
         forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[-1].strip()
