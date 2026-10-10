@@ -137,6 +137,9 @@ form subscribe:
 form tick:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})})
+# The card as a public page under the door word (genesis publishes one page per door).
+def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
+  Card.publishPage(Card.pageName(input.page, door().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def door() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def doneReply(done: Done) -> Card.Reply:
