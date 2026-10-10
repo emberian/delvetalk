@@ -56,15 +56,10 @@ record Seed:
 record Edits:
   triggers: Plans.Entries<Trigger, {}>
   nextId: Plans.Edit<Nat, Nat>
-# Every send carries a line of text: a note's text, or what woke the trigger.
 # Only the owner changes its triggers, reprograms or amends it; as with Env, the creator
 # must be the owner, so each principal creates their own Wake (docs/GENESIS.md).
 law owner "only its owner writes it": request.subject == new.owner
 law ids "trigger ids only count up": monotone(nextId)
-# The two-tier law, in Bend (stubbed against Abi.Request until the host runs it): the
-# triggers change only by the owner's request.
-def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if new.nextId == old.nextId && Lists.length(new.triggers) == Lists.length(old.triggers) || request.context.principal == old.owner then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "owner", reading: "Only its owner changes its triggers."})
 def defaultSeed() -> Seed:
   {owner: "", handle: "", env: Plans.nobody()}
 def seeded(seed: Seed) -> State:
@@ -77,7 +72,7 @@ sum Done:
   watching: {id: Nat}
   fired: {count: Nat}
   refused: Card.Refusal
-# Why a wake refuses: each arm a clause, `why` its reading.
+# Why a wake refuses: each arm a clause and its reading.
 sum Why:
   notOwner: {owner: String}
   full: {}
@@ -85,26 +80,16 @@ sum Why:
   early: {}
   noRows: {field: String}
   unwatched: {object: String, field: String, clause: String}
-def why(w: Why) -> String:
+def refusal(w: Why) -> Card.Refusal:
   match w:
-    case notOwner(n): "Only its owner sets these triggers; that is {n.owner}"
-    case full(_): "Thirty-two triggers is the most a wake holds."
-    case noTrigger(n): "No trigger {natText(n.id)}"
-    case early(_): "The schedule was answered before its time."
-    case noRows(n): "A wake reads no rows called {n.field} (it reads rains, buffer, greeted, proposals, traces and subs)."
-    case unwatched(u): "{u.object}.{u.field} cannot be watched ({u.clause})."
-def clause(w: Why) -> String:
-  match w:
-    case notOwner(_): "notOwner"
-    case full(_): "full"
-    case noTrigger(_): "noTrigger"
-    case early(_): "early"
-    case noRows(_): "noRows"
-    case unwatched(_): "unwatched"
+    case notOwner(n): {clause: "notOwner", reading: "Only its owner sets these triggers; that is {n.owner}"}
+    case full(_): {clause: "full", reading: "Thirty-two triggers is the most a wake holds."}
+    case noTrigger(n): {clause: "noTrigger", reading: "No trigger {natText(n.id)}"}
+    case early(_): {clause: "early", reading: "The schedule was answered before its time."}
+    case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads rains, buffer, greeted, proposals, traces and subs)."}
+    case unwatched(u): {clause: "unwatched", reading: "{u.object}.{u.field} cannot be watched ({u.clause})."}
 def refused(w: Why) -> Done:
-  Done.refused({clause: clause(w), reading: why(w)})
-# The helpers take the State after their own inputs: a definition whose first parameter is
-# the State is a method any turn may run.
+  Done.refused(refusal(w))
 def notOwner(state: State) -> Done:
   refused(Why.notOwner({owner: Card.handle(state.owner)}))
 # The receiver a subscription to a field names: the type of what the field holds.
@@ -135,7 +120,7 @@ def watchedField(object: String, field: String, receiver: String, event: On, act
     case denied(_): refused(Why.unwatched({object: object, field: field, clause: "denied"}))
     case refused(r): refused(Why.unwatched({object: object, field: field, clause: r.clause}))
 def added(event: On, action: Action, state: State) -> Activity<Done>:
-  let written(_) = world.write::<Edits>({triggers: Plans.Entries.append({item: {id: state.nextId, event: event, action: action}}), nextId: Plans.Edit.add({delta: 1n})})
+  let written(_) = write {triggers: append {id: state.nextId, event: event, action: action}, nextId: add 1n}
   Done.watching({id: state.nextId})
 # What the host delivers after a watched scalar's write: its new value and its old. A trigger
 # on that object and field fires when the value passes `above` (it was at most `above`
@@ -262,15 +247,10 @@ def waited(every: Nat, action: Action, context: Abi.Context, state: State) -> Ac
 # The event that woke a trigger, as a line.
 def woke(event: Rows.Sensed) -> String:
   "{event.kind} from {Card.handle(event.actor)}: {event.text}"
-def contains(text: String, term: String) -> Bool:
-  if term == "" then false else found(text, term, textTake(term, 1n))
-def found(text: String, term: String, first: String) -> Bool:
-  let rest = textDrop(text, textBreak(text, first))
-  if textLength(rest) < textLength(term) then false else if textTake(rest, textLength(term)) == term then true else found(textDrop(rest, 1n), term, first)
 def matches(on: On, event: Rows.Sensed) -> Bool:
   match on:
     case mention(m): event.kind == "mention" && event.actor == m.actor
-    case keyword(k): contains(event.text, k.term)
+    case keyword(k): Text.contains(event.text, k.term)
     case reply(r): event.kind == "reply" && event.replyTo == r.card
     case schedule(_): false
     case writes(_): false
@@ -284,6 +264,7 @@ def fire(triggers: Lists.List<Trigger>, event: Rows.Sensed, events: Lists.List<R
 def acted(action: Action, rest: Lists.List<Trigger>, event: Rows.Sensed, events: Lists.List<Rows.Sensed>, object: String, field: String, rows: Lists.List<Rows.Columns>, count: Nat, state: State) -> Activity<Done>:
   match world.send({object: target(action, state), method: method(action), argument: {text: woke(event)}}):
     case _: fire(rest, event, events, object, field, rows, count + 1n, state)
+# Every send carries a line of text: a note's text, or what woke the trigger.
 def act(action: Action, text: String, state: State) -> Activity<Done>:
   match world.send({object: target(action, state), method: method(action), argument: {text: text}}):
     case _: Done.fired({count: 1n})
@@ -299,7 +280,7 @@ def method(action: Action) -> String:
     case call(c): c.method
 # The owner, in a direct turn, tells the wake what happened.
 def sense(state: State, input: {event: Events.Event}, context: Abi.Context) -> Activity<Done>:
-  if context.principal != state.owner then notOwner(state) else fire(state.triggers, {kind: input.event.kind, actor: input.event.actor, handle: input.event.handle, uri: input.event.uri, cid: input.event.cid, text: input.event.text, replyTo: input.event.replyTo, at: input.event.at, n: 0n}, Lists.List.nil(), "", "", Lists.List.nil(), 0n, state)
+  if context.principal != state.owner then notOwner(state) else fire(state.triggers, extend(input.event, {n: 0n}), Lists.List.nil(), "", "", Lists.List.nil(), 0n, state)
 form mention:
   actor: text 1..128
 form keyword:
@@ -309,7 +290,7 @@ form unwatch:
 def methods() -> Lists.List<String>:
   Text.words("watch sense schedule")
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: mentionForm(), tail: Card.Forms.cons({head: keywordForm(), tail: Card.Forms.cons({head: unwatchForm(), tail: Card.Forms.nil()})})})
+  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), mentionForm()), keywordForm()), unwatchForm())
 def blurb() -> Card.Door:
   {word: "wake", blurb: "Choose what wakes you: mentions, words, replies, a schedule."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

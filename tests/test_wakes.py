@@ -100,7 +100,8 @@ class Wakes(Chain):
         # An env made at any other id takes nothing in.
         self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0)), by=OWNER)
         r = self.turn("env/elsewhere", "publish", record(event=event()), principal=OWNER)
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("An env lives at env/did:plc:inkling"))
+        fields = {f["name"]: f["value"] for f in r["result"]["payload"]["fields"]}
+        self.assertEqual(fields, {"clause": label("misplaced"), "reading": label("An env lives at env/did:plc:inkling")})
         self.assertEqual(self.version("env/elsewhere"), 0)
 
     def test_a_wake_seeded_without_an_env_watches_env_slash_its_owner(self):
@@ -435,14 +436,11 @@ def tickAt(height: Nat) -> String:
   verdict(Tide.law(tide(1n, 10n, ""), tide(2n, height, ""), request("zero", height)))
 def subscribeAs(principal: String) -> String:
   verdict(Tide.law(tide(0n, 0n, ""), tide(0n, 0n, "kimik3"), request(principal, 5n)))
-def wakeBy(principal: String) -> String:
-  verdict(Wake.law({owner: "inkling", handle: "", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.nil(), nextId: 1n}, {owner: "inkling", handle: "", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.cons({head: {id: 1n, event: Wake.On.keyword({term: "moth"}), action: Wake.Action.notify({})}, tail: Lists.List::<Wake.Trigger>.nil()}), nextId: 2n}, request(principal, 5n)))
 """
 
 
 class LawPredicates(unittest.TestCase):
-    """Tide's and Wake's Bend law predicates, run as pure functions; the host records their
-    presence in the artifact and has not yet run them on a turn."""
+    """Tide's Bend law predicate and the Wake's row rules, run as pure functions."""
 
     def run_probe(self, entry, argument):
         from tests.test_objects import check, compile_job
@@ -458,8 +456,9 @@ class LawPredicates(unittest.TestCase):
 
     def test_the_artifacts_record_a_law_predicate(self):
         from tests.test_objects import compile_job
-        for name in ("Tide", "Wake"):
-            self.assertEqual(compile_job(closure(name), "initial")["artifact"]["law"], {"present": True, "reads": False})
+        self.assertEqual(compile_job(closure("Tide"), "initial")["artifact"]["law"], {"present": True, "reads": False})
+        # The Wake's law text refuses every write but its owner's, so it has no predicate.
+        self.assertEqual(compile_job(closure("Wake"), "initial")["artifact"]["law"], {"present": False})
 
     def test_a_tick_sooner_than_the_gap_is_refused_tooSoon(self):
         self.assertEqual(self.run_probe("tickAt", nat(12)), "refused tooSoon")
@@ -478,6 +477,3 @@ class LawPredicates(unittest.TestCase):
         self.assertEqual([self.run_probe("changedBy", nat(n)) for n in range(4)],
                          ["admitted", "refused self", "refused self", "admitted"])
 
-    def test_wake_triggers_change_only_by_the_owner(self):
-        self.assertEqual(self.run_probe("wakeBy", label("inkling")), "admitted")
-        self.assertEqual(self.run_probe("wakeBy", label("mimo")), "refused owner")
