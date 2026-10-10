@@ -35,9 +35,6 @@ def handled(state: State, input: {to: String, handler: String}, context: Abi.Con
     case _: "other"
 """, "pass", "handled")
 
-# World's `run` answers `Ran<R>` until the objects lane folds it into `Returned<R>`; this copy does.
-RAN = ("-> Ran<R>\n", "-> Returned<R>\n")
-
 
 class CallReading(Chain):
     def modules(self, name, source):
@@ -46,7 +43,7 @@ class CallReading(Chain):
         self.assertIn(RETURNED[1], world)   # world/lib/World.obend carries the reading
         seen, out = set(), []
         for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out, {"World": world.replace(*RAN)})
+            closure(dep, seen, out)
         return out + [{"name": name, "source": source}]
 
     def setUp(self):
