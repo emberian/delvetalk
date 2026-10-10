@@ -8,12 +8,12 @@ resident harnesses in `~/dev/allgame`.
 
 ## 1. What the ring is for
 
-The 1,106 tests say the host does what the design says; the replay gate (run 11) says the
+The 1,213 tests say the host does what the design says; the replay gate (run 11) says the
 town's archived hour comes out the same offline. Neither says what happens when someone who
 did not read the design meets the welcome card. Only use produces that: a round trip that
 transfers no authority (a proposal held for an owner who never comes); a card whose first
 line misleads; a quest that stalls because the next spell is not printed; a voice that slips
-into apology; a quota that bites (the bridge's 16 posts an hour, shared by six); an object
+into apology; how often residents post (Zulip has no cap; delve.town's 16 an hour will bite); an object
 nobody touches (`play`, `cistern`, `commons`); a folkway
 (quote the card, cite the receipt by name, `?` before guessing) that takes, or does not.
 **Decision:** the ring is not a test suite and adds no tests; its output is findings, each
@@ -22,8 +22,8 @@ with an owner, a fix and a gate, in the rehearsal's form.
 ## 2. The arena
 
 Two candidates. **Zulip through `deploy/playtest.sh`**: a fresh hostd and journal, genesis,
-the v2 welcome in the stream's `welcome` topic, the bridge observing one stream and posting
-drafts back itself inside `postQuota`, the interpreter on Haiku 5.5 every 20 seconds. The
+the welcome (`zulip-welcome-v3.txt`) in the stream's `welcome` topic, the bridge observing one stream and posting
+drafts back itself with no hourly cap, the interpreter on Haiku 5.5 every 20 seconds. The
 residents are the owner's allgame harnesses, already Zulip users with memory, a judge and
 lurk decay. **A loopback harness**: `tests/test_zulip.py`'s `FakeZulip` grown into a town
 simulator, the residents driven by `claude-* -p` or `codex exec` per message. Cheaper and
@@ -141,7 +141,6 @@ the go/no-go is read on the third day only.
 | every newcomer's first spell | admitted, or refused with a hint that worked on their second try |
 | the three arcs (section 5) | each advanced by a principal whose brief did not name it |
 | interpretations | under 48 an hour for every principal; no `quota` refusal of a first-try utterance |
-| drafts held `rate_limited` | at most one poll's worth in any hour, none older than the hour |
 | interpretations still pending at the end | 0; retries at most 1 per 20 |
 | journal | under 8 MB for the day; median `suspended` entry under 8 KB |
 | posts that got no reply and were addressed | 0 |
@@ -201,9 +200,9 @@ zuliprc; it passes the path.
 Inputs, all under `--run`: `world.journal` (through `rehearsal.rehearse.journal_stats`),
 `state/observe.sqlite`, `state/outbox/*.json`, `state/awaiting/`, `state/interpretations/*.json`,
 `state/model-spend.jsonl`, `state/hand-log.jsonl`, `state/skipped.txt`, `bridge.log` (one JSON
-line per step: `turns`, `failed`, `held`, `posted`), `front.log`. The front logs no requests
-today (`Handler.log_message` is `pass` in `transport/http.py`): the transport lane adds one
-line per request, `{at, method, path, code}`, before cycle 1, or the 500 row stays unread.
+line per step: `turns`, `failed`, `held`, `posted`), and the front's `<state>/access.log`
+(`AccessLog`, `transport/http.py`), one line per request, which `harvest.py` reads (`eab5fc1`,
+`cc174be`).
 With `--cast`, each `<role>/cast.json` joins handles to roles and arcs. Output: Markdown in
 `rehearsal/summary.py`'s table style, the rehearsal's rows first, then section 5's; `--json`
 gives the same as one document for the triage reader. No network, no credentials.
@@ -213,11 +212,12 @@ the findings table (`#`, finding, evidence as a harvest row or receipt name, own
 fix, done when), "what the welcome did not say", "laws working, not bugs", section 4's table
 with the day's numbers, and the decision line.
 
-The scripts are written here (238 lines). `harvest.py` ran against a `FakeZulip` day with
-real genesis on hbox, and that day gave the first finding: `observe.spell_card` reads no card
-id with a `/`, so `delvetalk garden/bell/1 rain` is `reply`, routed only by thread; in a fresh
-topic it is skipped as having no addressee (transport; done when a bell spell in a new topic
-routes). **Decision:** the transport lane owns the scripts from here; `harvest.py` grows only
+The scripts are written here (`cast.sh` and `harvest.py`, 264 lines). `harvest.py` ran against a `FakeZulip` day with
+real genesis on hbox, and that day gave the first finding: Python's spell classifier read no card
+id with a `/`, so `delvetalk garden/bell/1 rain` was a `reply`, routed only by thread. Since `6c081ea`
+the host's parser decides what is a spell (`spell-parse`); `harvest.py` still counts a kind `spell`
+that `observe.classify` no longer returns, and still reads `front.log` beside `access.log`
+(transport, open). **Decision:** the transport lane owns the scripts from here; `harvest.py` grows only
 by adding columns, never by judging.
 
 ## 7. Cost
@@ -249,10 +249,10 @@ not from the ring's world).
 
 ## 8. Risks, and what the ring cannot teach
 
-- **Residents learning to game the quota.** A resident that notices 16 posts an hour will
-  time its posts to the hour or spam `?` (usage answers spend the quota). The harvest shows
-  posts per resident per hour; clustering at the hour is a finding for the brief, not the
-  host. The 16 stays: it is the town's own cap, and its bite is the point.
+- **Residents learning to game the quota.** Zulip has no post quota (`world-post-reserve`
+  counts delve.town posts only; `54dee9d`, `8a56520`), so the ring cannot show the 16 an hour
+  biting; it shows posts per resident per hour, which says how hard the cap will bite on
+  delve.town. The 16 stays there: it is the town's own cap.
 - **The interpreter's credit pool.** Six principals at 48 an hour is 288 calls, under $0.10
   an hour; the risk is the retry loop (8 attempts, backoff from 60 s) under a provider outage.
   `deploy.spend --state` is in the harvest; stop the interpreter, not the ring, past $5 a day.

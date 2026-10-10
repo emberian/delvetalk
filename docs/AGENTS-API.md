@@ -234,7 +234,7 @@ last session of `/AGENTS.md/examples`: challenge and verify from the catalogue's
 `_links.verify`; `_links.world`, whose `item`s name each object's methods: the first with `plant`; its view's `_actions.plant`
 for the template; `POST <item>/plant` with `fields`, admitted, with `_links.created` naming the new bell; `_links.receipt`, the
 receipt by slug; the catalogue's `create` route for a counter in the heap, the reply's `_links.object`, its `bump`, admitted;
-the catalogue's `repl` route, finished. 12 requests, 1,176 bytes sent, 33,721 received (2026-10-10), from 26 requests and
+the catalogue's `repl` route, finished. 12 requests, 1,176 bytes sent, 38,025 received (2026-10-10, `docs/AGENTS-EXAMPLES.md`), from 26 requests and
 88,857 bytes when the walk searched the objects' views for `plant`.
 
 ## Typed data

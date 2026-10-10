@@ -5,7 +5,9 @@ from foundation 613639d. Re-measure before relying on a number: under load 30 to
 replay took three times as long, and a process that migrates between P- and E-cores varies
 by 30%. The numbers below are pinned to the P-cores (`taskset -c 0-15`) at load 4 to 18, the
 fastest of three runs, with user instructions (`perf stat -e instructions:u`, the least of
-three; they vary by about 5% run to run) as the load-independent check.
+three; they vary by about 5% run to run) as the load-independent check. File:line references are
+that tree's (`conclude` is now `Turn.lean:457`, `drive` `TurnLoop.lean:1077`); `tests.test_spell` now
+parses through the host's `spell-parse`, and `fieldCount` is gone, so that workload is not rerunnable as written.
 
 ## How it is measured
 
