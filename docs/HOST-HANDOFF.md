@@ -626,6 +626,17 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    0.03-0.04 s; 200 activity bumps 0.17 s either way (already held). A first measurement of 0.45 s / 0.15 s was the
    box's load (about 9.5), not the code.
 
+37. **The interpretation's model (host7).** `Plan.interpret` carries `model` (Plan.obend: "" for the policy's own; a card's
+   second attempt names the Policy's `escalate`). `interpretPlan` journals it on the suspension's `interpretation` when
+   non-empty (at most 128 bytes), and `interpretationsReply` puts it in the pending item's `policy.model` in place of the
+   Policy's, so transport calls that model. Test: `test_interpret_text` (the second attempt shows `claude-opus`).
+
+38. **Law text takes readings (host7).** `parseLawTextReadings` reads the compiler's grammar, `law NAME: EXPR` or
+   `law NAME "reading": EXPR` (the reading a JSON string literal, so it may hold `:`), for `world-amend`, the `amend`
+   Plan, a create's law text and snapshots alike (`parseLawText` is its law half). The law text is kept as given (readings
+   included), and an amendment's readings replace the object's for those clauses; a clause it leaves as it was without a
+   reading keeps the old one (5.32). A malformed reading is `law syntax`. Tests: `test_law.Readings`.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

@@ -88,6 +88,8 @@ class Resumed(test_chain.Chain):
         [item] = self.host.send(op="world-interpretations")["pending"]
         self.assertNotEqual(item["id"], first["id"])
         self.assertEqual(item["utterance"], "plant something pretty\n\nmissing: colour")
+        # The second attempt asks the policy's escalate model; the first asked its own.
+        self.assertEqual((first["policy"]["model"], item["policy"]["model"]), ("claude-haiku", "claude-opus"), item)
         _, planted = self.settle(SPELL)
         self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "planted"), planted)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])

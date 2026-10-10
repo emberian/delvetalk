@@ -648,21 +648,45 @@ def isAmendmentRefusal (message : String) : Bool :=
 def renderLaw (law : Law) : String :=
   "\n".intercalate (law.map fun (name, clause) => s!"law {name}: {clause.render}")
 
-/-- Law text: one `law NAME: EXPR` per line, as at the top of a package. -/
-def parseLawText (text : String) : Except String Law := do
+/-- The `"reading"` after a law's name, as the compiler's grammar has it (`law NAME "reading": EXPR`,
+    a JSON string literal): the reading and the rest after it, or none when the line has none. -/
+def lawReading (rest : String) : Except String (Option (String × String)) := do
+  let chars := rest.toList
+  unless chars.head? == some '"' do return none
+  let rec close : List Char → Nat → Option Nat
+    | [], _ => none
+    | '\\' :: _ :: more, n => close more (n + 2)
+    | '"' :: _, n => some n
+    | _ :: more, n => close more (n + 1)
+  let some n := close (chars.drop 1) 1 | throw "a law reading is an unterminated string"
+  let literal := String.ofList (chars.take (n + 1))
+  let reading ← (Lean.Json.parse literal >>= (·.getStr?)).mapError fun _ => s!"a law reading must be a JSON string, found {literal}"
+  return some (reading, String.ofList (chars.drop (n + 1)))
+
+/-- Law text: one `law NAME: EXPR` or `law NAME "reading": EXPR` per line, the grammar the compiler
+    accepts at the top of a package; the readings beside the law, by clause name. -/
+def parseLawTextReadings (text : String) : Except String (Law × List (String × String)) := do
   if text.utf8ByteSize > Limits.maxLawBytes then throw "law text exceeds its byte capacity"
   let lines := (text.splitOn "\n").map String.trimAscii |>.filter (!·.isEmpty) |>.map (·.toString)
   if lines.length > Limits.maxLawClauses then throw "law has too many clauses"
-  let law ← lines.mapM fun line => do
+  let parsed ← lines.mapM fun line => do
     let some rest := line.dropPrefix? "law " | throw s!"expected `law NAME: EXPR`, found `{line}`"
-    match (rest.toString).splitOn ":" with
-    | name :: more@(_ :: _) =>
-      let name := name.trimAscii.toString
-      unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name `{name}`"
-      pure (name, ← Minidregg.Compiler.ObjectiveBendLaw.parse (":".intercalate more))
-    | _ => throw s!"expected `law NAME: EXPR`, found `{line}`"
+    let rest := rest.toString
+    let name := (rest.takeWhile fun c => c.isAlphanum || c == '_').toString
+    unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name in `{line}`"
+    let after := (rest.drop name.length).toString.trimAsciiStart.toString
+    let (reading, after) ← match ← lawReading after with
+      | some (r, more) => pure (some r, more.trimAsciiStart.toString)
+      | none => pure (none, after)
+    let some expr := after.dropPrefix? ":" | throw s!"expected `law NAME: EXPR`, found `{line}`"
+    pure ((name, ← Minidregg.Compiler.ObjectiveBendLaw.parse expr.toString), reading.map (name, ·))
+  let law := parsed.map (·.1)
   Minidregg.Compiler.ObjectiveBendLaw.checkNames law
-  return law
+  return (law, parsed.filterMap (·.2) |>.filter (!·.2.isEmpty))
+
+/-- Law text: one `law NAME: EXPR` per line (a reading after the name allowed), as at the top of a package. -/
+def parseLawText (text : String) : Except String Law := do
+  return (← parseLawTextReadings text).1
 
 /-- The rule against a self-sealing law: a law is only accepted if it admits an
     amendment (the state unchanged) by the principal who proposes it. None when it does,
@@ -1428,8 +1452,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let amender := ((changes.find? (·.kind == 2)).map (·.caller)).getD ""
       if let some message := amendable law p.principal amender height p.turn next.pin state then throw (refuse message)
       -- A reading stays with its clause only while the amendment leaves that clause as it was.
-      next := { next with law, lawText := text,
-                          readings := o.readings.filter fun (n, _) => law.lookup n == o.law.lookup n }
+      -- The amendment's own readings; a clause it leaves as it was without one keeps its reading.
+      let given := ((parseLawTextReadings text).toOption.map (·.2)).getD []
+      let kept := o.readings.filter fun (n, _) => law.lookup n == o.law.lookup n && (given.lookup n).isNone
+      next := { next with law, lawText := text, readings := given ++ kept }
       amendments := amendments ++ [Json.mkObj [("object", toJson id), ("old", toJson o.lawText), ("new", toJson text)]]
     out := out ++ [(id, { next with version := o.version + 1, state })]
   return { updates := out, reprograms, amendments,
@@ -1719,8 +1745,9 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
   if let some message := amendable laws creator "" height 0 pin state then throw message
   let (methods, predicate, predicateReads) := artifactShape b.artifact
   -- Readings belong to the package's clauses; a law given at creation keeps those it left alone.
-  let readings := (artifactReadings b.artifact).filter fun (n, _) =>
-    (laws.lookup n).isSome && laws.lookup n == b.laws.lookup n
+  let given := (lawText.bind fun t => (parseLawTextReadings t).toOption.map (·.2)).getD []
+  let readings := given ++ (artifactReadings b.artifact).filter fun (n, _) =>
+    (laws.lookup n).isSome && laws.lookup n == b.laws.lookup n && (given.lookup n).isNone
   return ({ pin, law := laws, lawText := renderLaw laws, version := 0, state, stateType := b.ty, readings,
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet }, sources)
