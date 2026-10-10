@@ -67,11 +67,13 @@ packages by snapshot, elan and the Lean tarball by SHA-256).
 On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` in `.env`:
 
     docker compose up -d --wait delvetalk-hostd
-    docker compose run --rm delvetalk-ops python3 -m deploy.seed --host-socket /data/state/host.sock \
-      --principal <owner DID> --object garden --module Garden --intent genesis-garden \
-      --seed '{"tag":"record","fields":[{"name":"planted","value":{"tag":"natural","value":"0"}},
-              {"name":"policy","value":{"tag":"record","fields":[{"name":"world","value":{"tag":"label","value":""}},
-              {"name":"object","value":{"tag":"label","value":""}}]}}]}'
+    docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
+
+`deploy.genesis` is docs/GENESIS.md as one command: as the opener it creates `policy`, `directory`, `garden`
+(`confirm: false`), `tide`, `workshop`, `anthology`, `cistern` and `commons`, in that order, and refuses to run a second
+time if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the same way.
+`deploy.seed` creates one further object by hand.
+
     docker compose up -d --wait --remove-orphans
     docker compose ps
 

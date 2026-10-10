@@ -41,6 +41,13 @@ def closure(name, found, seen=None, out=None):
     return out
 
 
+def create(host, principal, obj, module, intent, seed, law=None, owner=None):
+    """world-create one object from a module in world/ and its imports; the host's reply."""
+    req = {'op': 'world-create', 'principal': principal, 'identity': intent, 'object': obj,
+           'modules': closure(module, modules_on_disk()), 'entry': 'initial', 'seed': seed}
+    return host.send({**req, **({'law': law} if law else {}), **({'owner': owner} if owner else {})})
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='seed.py')
     ap.add_argument('--host-socket', required=True, help='hostd socket')
@@ -49,15 +56,9 @@ def main(argv=None):
     ap.add_argument('--law', help='law text; default: the host default law')
     ap.add_argument('--owner', help="the object's owner, when the opener creates it for another principal")
     a = ap.parse_args(argv)
-    req = {'op': 'world-create', 'principal': a.principal, 'identity': a.intent, 'object': a.object,
-           'modules': closure(a.module, modules_on_disk()), 'entry': 'initial', 'seed': json.loads(a.seed)}
-    if a.law:
-        req['law'] = a.law
-    if a.owner:
-        req['owner'] = a.owner
     host = HostClient(a.host_socket)
     try:
-        reply = host.send(req)
+        reply = create(host, a.principal, a.object, a.module, a.intent, json.loads(a.seed), a.law, a.owner)
     finally:
         host.close()
     print(json.dumps(reply, sort_keys=True))
