@@ -760,3 +760,32 @@ directly below (equivalent today: imports form a chain); and the surface form of
 layer list (request field vs source line). The objects lane should say which reads
 better to an author.
 
+**Implemented (approved as written; lane/kernel5 after foundation 7d6c958).**
+- Surface: `layer over ./X.obend` must be the module's first line (else refused "...is the
+  module's first line"); it sets `Surface.Module.layerOver` and imports `X` as `Super`
+  (an explicit identical `import ./X.obend as Super`, as the host still adds, is kept
+  once). The elaborator's `Module.layerOver` is the module `Super` names.
+- `ObjectiveBendElaborate.context` finds the stack (top: the last layer no other layer is
+  over, since the generics pass appends its module after the entry) and
+  `Ctx.overrides` (each overridden `B.f` to its nearest override). `emitDecl` writes
+  `B.f` as `self.L.f` and the body as `B.f#below` (its type registered as `B.f`'s);
+  `Ctx.resolve` sends a reference from a layer to a lower module's `f` to the topmost
+  definition at that module's level, through `#below` when overridden (expression and
+  `synth` both). `checkOverrides` refuses "refused (layer-override): L.f is ..., but it
+  overrides B.f, which is ...", located at `L.f`'s body, with `expected`/`found` and a
+  hint. `Elaborated.select` takes an entry the top layer lacks from the topmost layer
+  defining it, so `delegate` is no longer needed for correctness.
+- `Package.stackMethodTable`: a layered artifact's `methods` lists every layer's
+  methods, top first, one row per name (the definition every call reaches).
+- Tests: `tests/test_layers.py` (Base/Top/Topmost: `hello` in Base sees `greet`'s
+  override, `Super.greet` the version below, three levels compose; Louder over Bell:
+  `render` changes and Bell's own `rainedCard` offers Louder's card; the method table;
+  a retyped `render` refused at Retyped line 6; the layer line's position).
+  `tests.test_artifact_pins`: 0 recompiled differently (unlayered packets byte-identical).
+  Full suite: 880 tests, 0 failed. Garden compile (fresh process, three entries, hbox at
+  load 16-20): foundation binary 332-524 ms, this lane 199-473 ms; no difference
+  measurable under that load.
+- For the host lane: `extendInputs` can write `layer over ./<below>.obend` as the layer's
+  first line instead of inserting the `Super` import, and drop `delegate`; until then
+  layers without the line behave exactly as before.
+

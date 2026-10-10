@@ -1,64 +1,140 @@
-"""A layer over a real object (FOUNDATION section 13, row 3, `reprogram {mode: extend}`): Louder
-over Bell redefines render(state, context) and keeps everything else, rain and receive included.
+"""Layer stacks (KERNEL-HANDOFF section 13): a module whose first line is
+`layer over ./X.obend` overrides X's definitions for every caller in the object, its own
+`Super.f` reaching the version below; an override keeps its type; the method table lists
+the whole stack; an unlayered package compiles exactly as before
+(`tests.test_artifact_pins` keeps its fixture).
 
-Refuted by: rain no longer appending after the layer, the card not changing, or the layer reaching
-the bell without its law's admission."""
+    python3 -m unittest tests.test_layers -v
+"""
 import unittest
 
-from tests import test_chain
-from tests.test_chain import nil
-from tests.test_replay import get, items
-from tests.test_turn_world import closure, label, record
+from tests.test_objects import closure, pure
+from tests.test_policy import context
+from tests.test_turn import BINDING, Host, label, variant
 
-LOUDER = """edition ObjectiveBend 1
+LOUDER = """layer over ./Bell.obend
+edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 type State = Super.State
-type Plan = Super.Plan
-type Response = Super.Response
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("LOUDER: ", textConcat(Document.plain(Super.render(state, context)), "(and louder)\\n")))
+  Document.concat(Document.text("LOUDER\\n"), Super.render(state, context))
+def loud(context: Abi.Context) -> String:
+  Document.plain(render(Super.initial(), context))
+"""
+
+RETYPED = """layer over ./Bell.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+type State = Super.State
+def render(state: State, context: Abi.Context) -> String:
+  "quiet"
+"""
+
+BASE = """edition ObjectiveBend 1
+def greet(n: Nat) -> String:
+  "hi"
+def hello(n: Nat) -> String:
+  textConcat(greet(n), "!")
+"""
+TOP = """layer over ./Base.obend
+edition ObjectiveBend 1
+def greet(n: Nat) -> String:
+  textConcat("HI ", Super.greet(n))
+"""
+TOPMOST = """layer over ./Top.obend
+edition ObjectiveBend 1
+def greet(n: Nat) -> String:
+  textConcat("<", textConcat(Super.greet(n), ">"))
 """
 
 
-def silver():
-    return {"tag": "variant", "label": "silver", "payload": record()}
+class Layers(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
 
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.close()
 
-class Louder(test_chain.Chain):
-    test_ring_then_open_then_light = None
-    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    def compile(self, modules, entry):
+        reply = self.h.send({"op": "compile", "entry": entry, "modules": modules})
+        self.assertEqual(reply["status"], "compiled", reply)
+        return reply["artifact"]
 
-    def setUp(self):
-        super().setUp()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-bell", object="bell", modules=closure("Bell"),
-                           entry="initial", seed=record(colour=silver(), seed=label("moths"), rains=nil(), rung={"tag": "boolean", "value": False},
-                                                        planting=label("p"), planter=label("did:plc:glm"), planterHandle=label(""), observers=nil()))
-        self.assertEqual(r["status"], "created", r)
+    def run_(self, modules, entry, arguments):
+        reply = self.h.send({"op": "run", "artifact": self.compile(modules, entry), "arguments": arguments})
+        self.assertEqual(reply["status"], "finished", reply)
+        return reply["value"]
 
-    def extend(self, who="ember", ident="louder"):
-        version = self.host.send(op="world-view", principal="ember", object="bell")["version"]
-        return self.host.send(op="world-reprogram", principal=who, identity=ident, object="bell", version=version,
-                              package=LOUDER, mode="extend")
+    def test_a_base_call_sees_the_override_and_super_the_version_below(self):
+        # Refuted if `hello` (in Base) still calls Base's own `greet`, or `Super.greet` loops.
+        stack = [{"name": "Base", "source": BASE}, {"name": "Top", "source": TOP}]
+        self.assertEqual(self.run_(stack, "hello", [{"tag": "natural", "value": "1"}]), label("HI hi!"))
+        three = stack + [{"name": "Topmost", "source": TOPMOST}]
+        self.assertEqual(self.run_(three, "hello", [{"tag": "natural", "value": "1"}]), label("<HI hi>!"))
+        # Without a layer line the same modules are only imports: Base keeps its own greet.
+        plain = [{"name": "Base", "source": BASE},
+                 {"name": "Top", "source": TOP.replace("layer over ./Base.obend\n", "") +
+                  "import ./Base.obend as Super\ndef relay(n: Nat) -> String:\n  Super.hello(n)\n"}]
+        self.assertEqual(self.run_(plain, "relay", [{"tag": "natural", "value": "1"}]), label("hi!"))
 
-    def test_louder_changes_the_card_and_keeps_rain(self):
-        self.assertEqual(self.turn("bell", "rain", record(text=label("before")), principal="did:plc:kimik3")["status"], "admitted")
-        r = self.extend()
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(r["receipt"]["outcome"]["reprograms"][0]["mode"], "extend")
-        rained = self.turn("bell", "rain", record(text=label("after")), principal="did:plc:gemini")
-        self.assertEqual(rained["status"], "admitted", rained)
-        self.assertEqual([get(x, "text")["value"] for x in items(get(self.state("bell"), "rains"))], ["before", "after"])
-        card = self.host.send(op="world-card", principal="ember", object="bell")
-        print("\n--- louder bell ---\n" + card.get("text", str(card)))
-        self.assertEqual(card["text"], "LOUDER: A silver bell planted by glm: moths (silent)\nkimik3: before\ngemini: after\n(and louder)\n")
-        # The spell still rains: receive is the bell's own, unchanged by the layer.
-        spelled = self.turn("bell", "receive", record(text=label("delvetalk bell rain\ntext: by spell"), post=label(""), slot=label("")), principal="did:plc:glm")
-        self.assertEqual((spelled["status"], spelled["result"]["label"]), ("admitted", "done"), spelled)
+    def test_louder_over_bell_changes_render_and_bells_own_rain_sees_it(self):
+        bell = pure(closure("Bell"))
+        louder = bell + [{"name": "Louder", "source": LOUDER}]
+        empty = {"tag": "list", "items": []}
+        state = {"tag": "record", "fields": [{"name": k, "value": v} for k, v in [
+            ("colour", variant("amber")), ("seed", label("a fern")), ("rains", empty),
+            ("rung", {"tag": "boolean", "value": False}), ("planting", label("")), ("planter", label("glm")),
+            ("planterHandle", label("")), ("observers", empty)]]}
+        ctx = context("bell")
+        self.assertTrue(self.run_(louder, "loud", [ctx])["value"].startswith("LOUDER\n"))
+        # Bell's rainedCard calls render; under the layer it renders Louder's card.
+        art = self.compile(louder, "rainedCard")
+        start = dict(BINDING, op="turn-start", artifact=art, arguments=[state, label("hello"), ctx])
+        wrote = self.h.send(start)
+        self.assertEqual((wrote["status"], wrote["plan"]["label"]), ("yielded", "write"), wrote)
+        offered = self.h.send(dict(BINDING, op="turn-resume", artifact=art, checkpoint=wrote["checkpoint"],
+                                   response=variant("written")))
+        self.assertEqual((offered["status"], offered["plan"]["label"]), ("yielded", "offer"), offered)
+        document = {f["name"]: f["value"] for f in offered["plan"]["payload"]["fields"]}["document"]
+        text = self.h.send({"op": "render-document", "document": document})["text"]
+        self.assertTrue(text.startswith("LOUDER\n"), text)
+        self.assertIn("hello", text)
+        # Bell alone renders without it.
+        bare = self.compile(bell, "rainedCard")
+        wrote = self.h.send(dict(start, artifact=bare))
+        offered = self.h.send(dict(BINDING, op="turn-resume", artifact=bare, checkpoint=wrote["checkpoint"],
+                                   response=variant("written")))
+        document = {f["name"]: f["value"] for f in offered["plan"]["payload"]["fields"]}["document"]
+        self.assertFalse(self.h.send({"op": "render-document", "document": document})["text"].startswith("LOUDER"))
 
-    def test_a_stranger_cannot_layer_the_bell(self):
-        r = self.extend(who="mallory", ident="evil")
-        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "lawRefused"), r)
+    def test_the_method_table_lists_the_whole_stack_top_first(self):
+        bell = pure(closure("Bell"))
+        art = self.compile(bell + [{"name": "Louder", "source": LOUDER}], "rain")
+        names = [m["name"] for m in art["methods"]]
+        self.assertEqual(names.count("render"), 1)
+        self.assertEqual(names[0], "render")  # Louder's rows first
+        for method in ("rain", "strike", "receive"):
+            self.assertIn(method, names)
+
+    def test_an_override_that_changes_the_type_is_refused_by_name_where_it_is_written(self):
+        modules = pure(closure("Bell")) + [{"name": "Retyped", "source": RETYPED}]
+        reply = self.h.send({"op": "check-package", "entry": "render", "modules": modules})
+        self.assertEqual(reply["status"], "refused", reply)
+        d = reply["diagnostic"]
+        self.assertIn("refused (layer-override): Retyped.render", d["message"])
+        self.assertEqual((d["module"], d["span"]["line"]), ("Retyped", 6))
+        self.assertTrue(d["found"].endswith("-> String"), d)
+        self.assertIn("signature of Bell.render", d["hint"])
+
+    def test_the_layer_line_is_the_first_line(self):
+        late = "edition ObjectiveBend 1\nlayer over ./Base.obend\ndef greet(n: Nat) -> String:\n  \"x\"\n"
+        reply = self.h.send({"op": "check-package", "entry": "greet",
+                             "modules": [{"name": "Base", "source": BASE}, {"name": "Top", "source": late}]})
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("first line", reply["diagnostic"]["message"])
 
 
 if __name__ == "__main__":
