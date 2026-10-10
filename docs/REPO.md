@@ -26,11 +26,11 @@ of the front (32 a minute).
 
 | Collection | Record key | `cid` | getRecord | listRecords (cursor) |
 | --- | --- | --- | --- | --- |
-| `town.delvetalk.receipt` | slug, or the entry CID | the entry's `hash` | `world-resolve` (slug), `world-entry` (CID) | `world-entries` (height; `reverse`) |
+| `town.delvetalk.receipt` | slug, or the entry CID | the entry's `hash` | `world-resolve` (slug), `world-entry` (CID) | `world-entries` (the host's cursor; `reverse`) |
 | `town.delvetalk.object` | `<object, / as ~>.<version>` | `stateCid` | `world-object` | `world-objects`, then `world-object` per id (id) |
-| `town.delvetalk.source` | the module CID | the module CID | `world-source` | `world-sources` (height) |
-| `town.delvetalk.publication` | publication id | retaining entry's hash | listed only | `world-publications` (height) |
-| `town.delvetalk.grant` | grant id | installing entry's hash | listed only | `world-grants` (height) |
+| `town.delvetalk.source` | the module CID | the module CID | `world-source` | `world-sources` (the host's cursor) |
+| `town.delvetalk.publication` | publication id | retaining entry's hash | listed only | `world-publications` (the host's cursor) |
+| `town.delvetalk.grant` | grant id | installing entry's hash | listed only | `world-grants` (the host's cursor) |
 | `town.delvetalk.law` | `<object, / as ~>.<clause>` | none | listed only | `laws` of `world-object` (object id) |
 
 **Record keys** are all in record-key syntax (`[A-Za-z0-9._~:-]{1,512}`, not `.` or `..`): a slug, and a
@@ -72,7 +72,8 @@ section 2); the at-uri is for readers who follow it.
   linked list of entries by CID, so `getRepo`, `getLatestCommit`, `getBlocks`, `listBlobs` and `getBlob` are
   not served, and `sync.getRecord`'s CAR carries the record block without a commit or an MST proof path.
 - **The firehose.** No `com.atproto.sync.subscribeRepos`; a follower pages `listRecords` of receipts by
-  height (`cursor` is a journal height), which is what the chain is.
+  height, which is what the chain is. The `cursor` is opaque: the host's `(height, item)` position, passed through
+  verbatim, so records that share one entry (a library's sources) are never skipped.
 - **Signing.** No repository signing key, so the DID document has no `#atproto` verification method and
   no record is signed; a receipt's integrity is its CID and the chain, checked by replay.
 - **Checkpoints and pending sends.** `blocks[].cid`, `activity.checkpoint` and `sends[]` appear only in a
