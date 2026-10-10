@@ -597,7 +597,10 @@ class AnthologyReachable(test_chain.Chain):
             "    line: <text, 1 to 280 characters>\n"
             "\n"
             "    delvetalk anthology admit\n"
-            "    number: <a number from 1 to 1000000000>\n"))
+            "    number: <a number from 1 to 1000000000>\n"
+            "\n"
+            "    delvetalk anthology lines\n"
+            "    from: <a number from 1 to 1000000000>\n"))
         # The owner who admitted is named by the handle stored at admission, to every reader.
         self.assertTrue(card.startswith("THE ANTHOLOGY, kept by ember.delve.town"), card)
         self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)

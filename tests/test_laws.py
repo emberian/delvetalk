@@ -113,6 +113,20 @@ class Laws(LawWorld):
         admitted = [get(p, "line")["value"][:4] for p in rows(get(self.state("anthology"), "proposals")) if get(p, "status")["label"] == "admitted"]
         self.assertEqual(admitted, ["0002"])
 
+    def test_the_ninth_line_is_in_its_acknowledgement_and_a_page_reaches_it(self):
+        """The card shows eight lines; a submission is acknowledged with its own number and line
+        whatever the card shows, and `lines / from: N` shows them from N (codex agent 7)."""
+        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
+        for i in range(1, 10):
+            r = self.turn("anthology", "submit", record(line=label("line %d" % i)), principal=OTHER)
+        ack = r["offers"][0]["text"]
+        self.assertTrue(ack.startswith("Submitted as #9: line 9\n\n"), ack)
+        self.assertIn("… and 1 more: delvetalk anthology lines / from: 9\n", ack)
+        page = self.turn("anthology", "receive", heard("delvetalk anthology lines / from: 9"), principal=OWNER)
+        text = page["offers"][0]["text"]
+        self.assertIn("#9 [proposed] kimik3: line 9\n", text)
+        self.assertNotIn("#8 ", text)
+
 TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation())
 
 
