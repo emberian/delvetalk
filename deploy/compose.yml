@@ -129,9 +129,10 @@ services:
   delvetalk-interpret:
     <<: *service
     profiles: ["town"]
-    command: ["python3", "-m", "transport.interpret", "run", "--state", "/data/state", "--journal", "/data/world.journal", "--poll", "60"]
+    command: ["python3", "-m", "transport.interpret", "run", "--state", "/data/state", "--poll", "60"]
     environment:
       DELVETALK_ANTHROPIC_KEY_FILE: /run/secrets/anthropic_key
+      DELVETALK_MODEL_THINKING: "off"  # cheap deterministic JSON calls (docs/GENESIS.md)
     secrets: [anthropic_key]
     mem_limit: 1g
     cpus: 0.5

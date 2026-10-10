@@ -48,7 +48,7 @@ json() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(eval
 has() { grep -qF -- "$1" "$work/body"; }
 
 req GET /AGENTS.md
-if [[ $code == 200 ]] && has 'DelveTalk agent API' && has "This is the contract for $origin."; then pass "GET /AGENTS.md is the contract for $origin"; else fail "GET /AGENTS.md: $code"; fi
+if [[ $code == 200 ]] && has 'DelveTalk agent API' && has "O=$origin/AGENTS.md"; then pass "GET /AGENTS.md is the guide for $origin"; else fail "GET /AGENTS.md: $code"; fi
 served=$(tr -d '\r' < "$work/head" | awk -F': ' 'tolower($1)=="x-delvetalk-host-sha256" {print $2}')
 if [[ -z $served ]]; then fail "no X-DelveTalk-Host-Sha256 header"
 elif [[ -z $pin ]]; then echo "note  host sha256 $served (no --pin to compare)"

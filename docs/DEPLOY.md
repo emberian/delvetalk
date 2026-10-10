@@ -15,8 +15,8 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
 
 The world's opener is ember's DID, `did:plc:6amo7col5h4ciq2gpm5eur7b`, set as
-`DELVETALK_OPENER` on the hostd service; only the opener may create objects with
-a named owner at genesis.
+`DELVETALK_OPENER` on the hostd service (hostd's `--opener` takes it from there); only the opener may create objects with
+a named owner at genesis, change the library, and make the newcomers' objects that `world-arrive` creates.
 
 ## One writer
 
@@ -25,13 +25,12 @@ the chain ("journal broken at height N: height out of sequence"). So exactly one
 program, `delvetalk-hostd`, spawns the host and opens the journal. It holds
 `/data/journal.lock` for its life (exit 75 if taken), restarts the host on death
 by replaying the journal, and serves the front, the bridge, the interpreter,
-`post --record` and `deploy.seed` over `/data/state/host.sock` (mode 0600). Private
+`post --object` and `deploy.seed` over `/data/state/host.sock` (mode 0600). Private
 heaps live in the same daemon, addressed by a `heap: <did>` field. At a journal's first open hostd seals
 `world/lib` into it as the library (`--library`; the opener may change it, each heap's owner theirs),
 so packages import `./Plan.obend` and the rest by name. hostd seals `world/lib` together with `world/objects/{Avatar,Env,Wake,Place}.obend` (the packages `world-arrive` creates from; copied to `<state>/library` at each start), or arrival creates nothing. Those programs
 are clients: stop, start or run them at any time without touching the world.
-`--standalone --journal J` still opens a journal in-process; use it only with the
-stack stopped. The lock holds where one kernel sees the file: a local Linux
+The lock holds where one kernel sees the file: a local Linux
 filesystem (measured on ext4). Docker Desktop's file sharing on a Mac does not
 enforce it across containers (measured), so test the stack there on a named volume.
 
