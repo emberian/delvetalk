@@ -140,6 +140,52 @@ def digest (message : ByteArray) : Array UInt32 := Id.run do
   return state
 end ShaRef
 
+open Minidregg.Theory.ObjectiveBendOpenRecursion in
+/-- Per subterm of `t`, in the preorder `Dictionary.ofProgram` numbers them: its constructor
+and its free de Bruijn indices (for checkpoint liveness analysis). -/
+partial def freeRows (t : Term) : Array (String × List Nat) :=
+  let rec go (acc : Array (String × List Nat)) (t : Term) : Array (String × List Nat) × List Nat :=
+    let index := acc.size
+    let acc := acc.push ("", [])
+    let down (xs : List Nat) := xs.filterMap fun i => if i == 0 then none else some (i - 1)
+    let union (a b : List Nat) := (a ++ b).eraseDups
+    let (acc, tag, free) : Array (String × List Nat) × String × List Nat := match t with
+      | .bound i => (acc, "bound", [i])
+      | .lam b => let (acc, x) := go acc b; (acc, "lam", down x)
+      | .app a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "app", union x y)
+      | .mix a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "mix", union x y)
+      | .fix a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "fix", union x y)
+      | .specification a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "specification", union x y)
+      | .prototype a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "prototype", union x y)
+      | .reflect a => let (acc, x) := go acc a; (acc, "reflect", x)
+      | .metadata a => let (acc, x) := go acc a; (acc, "metadata", x)
+      | .project a => let (acc, x) := go acc a; (acc, "project", x)
+      | .nat _ => (acc, "nat", []) | .boolean _ => (acc, "boolean", []) | .label _ => (acc, "label", [])
+      | .binary _ a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "binary", union x y)
+      | .unary _ a => let (acc, x) := go acc a; (acc, "unary", x)
+      | .extend a fs => let (acc, x) := go acc a
+          let (acc, y) := fs.foldl (fun (acc, y) (_, f) => let (acc, z) := go acc f; (acc, union y z)) (acc, [])
+          (acc, "extend", union x y)
+      | .record fs =>
+          let (acc, y) := fs.foldl (fun (acc, y) (_, f) => let (acc, z) := go acc f; (acc, union y z)) (acc, [])
+          (acc, "record", y)
+      | .get a n => let (acc, x) := go acc a; (acc, "get " ++ n, x)
+      | .ifZero a b c => let (acc, x) := go acc a; let (acc, y) := go acc b; let (acc, z) := go acc c
+          (acc, "ifZero", union (union x y) (down z))
+      | .inject l a => let (acc, x) := go acc a; (acc, "inject " ++ l, x)
+      | .case a fs => let (acc, x) := go acc a
+          let (acc, y) := fs.foldl (fun (acc, y) (_, f) => let (acc, z) := go acc f; (acc, union y (down z))) (acc, [])
+          (acc, "case", union x y)
+      | .ifBool a b c => let (acc, x) := go acc a; let (acc, y) := go acc b; let (acc, z) := go acc c
+          (acc, "ifBool", union (union x y) z)
+      | .perform a => let (acc, x) := go acc a; (acc, "perform", x)
+      | .done a => let (acc, x) := go acc a; (acc, "done", x)
+      | .toData a => let (acc, x) := go acc a; (acc, "toData", x)
+      | .textJoin a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "textJoin", union x y)
+      | .refuse _ => (acc, "refuse", [])
+    (acc.set! index (tag, free), free)
+  (go #[] t).1
+
 def main (args : List String) : IO Unit := do
   if args[0]! == "replay" then
     let lines := (← IO.FS.lines args[1]!)
@@ -225,6 +271,12 @@ def main (args : List String) : IO Unit := do
     return
   let req ← IO.ofExcept (Json.parse (← IO.FS.readFile args[0]!))
   let entries := args.drop 1
+  if entries.head? == some "dictionary" then
+    let request ← IO.ofExcept ((Delvetalk.Package.prepareRequest req).mapError (·.message))
+    let compiled ← IO.ofExcept ((Delvetalk.Package.compileEntryFrom request entries[1]!).mapError (·.message))
+    let rows := freeRows compiled.entry.source.term
+    IO.println (toJson (rows.map fun (tag, free) => toJson [toJson tag, toJson free])).compress
+    return
   if entries.head? == some "loop" then
     let stage := entries[1]!
     let n := entries[2]!.toNat!

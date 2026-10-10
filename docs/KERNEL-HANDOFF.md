@@ -351,25 +351,8 @@ coordinator's order; each its own commit, measured with `compile-profile replay`
 rehearsal capture (rebuild it: a wrapper `tee $CAP/$$.jsonl | delvetalk-obend` given to
 `rehearsal/rehearse.py --binary`; the 3.5 MB stream is the shared world host's).
 
-1. **Rehearsal run 10 finding 1: checkpoint blocks do not deduplicate** (median suspension
-   46.4 KB, target run 8's 9.5 KB). Measured on lane/kernel6 at 8a4b141 (`rehearse.py` in a
-   private scratch, the journal's 56 suspensions, all the directory's `interpret`): v3 *is*
-   journaled (the report's "no v3" is wrong: the first token is
-   `dregg.objective-bend.checkpoint.v3`); a suspension is about 19K tokens, of which the
-   local string table is ~105, the environment table ~1,000 and the body ~17K (about 2,000
-   heap cells). Between consecutive suspensions about 10% of tokens change, but in ~600
-   scattered runs (SequenceMatcher), so most 32-256-token blocks change. The turn's
-   arguments are NOT the bulk: carrying them as a Data prefix and extending the dictionary
-   by their quoted terms (tried, not committed) made the state literal 386 tokens and moved
-   the median from 46.4 to 47.6 KB. What scatters the edits: the canonical order numbers the
-   yielded Plan's cells and the stack's per-turn values before and among the long-lived
-   ones, so relative offsets of edges that cross a per-turn region shift (e.g. every
-   `823, 778, 759 ...` becomes `503, 458, 439`, all by 320); the string table reorders when a
-   new DID or reply lands among the vocabulary. Next: number the long-lived region first and
-   per-turn regions last (the roots' order in `rootAddresses`/`orderRounds`, collector
-   files), measure the scatter again; and find why ~2,000 cells are live at an `interpret`
-   yield (environments capturing every let of `receive`?). The §15 state-by-reference design
-   removes only the argument literal, which is small here.
+1. Done on lane/kernel7 (§19): checkpoints trim unread environment slots; rehearsal median
+   suspension 46.4 KB -> 10.1 KB, of which the kernel's blocks are 5.7 KB.
 2. **Checker quadratic** (PERF item 4, and the host's 57 ms insert into a 1,000-row relation,
    75% in `CheckedEntry.apply`): `infer` builds `position ++ [i]` and every annotation lookup
    walks a whole path (`AnnotationTree.lookup`, the packet's `HashMap (List Nat)`), so a
@@ -389,6 +372,13 @@ rehearsal capture (rebuild it: a wrapper `tee $CAP/$$.jsonl | delvetalk-obend` g
    arguments), the checkpoint v1/v2 decoders and their round-trip theorems (with lane perf2),
    `isPlanUnder`'s sum case; pins re-recorded once.
 7. `textWords`, only if an object asks.
+8. After day 4 (coordinator, from WORLD-REVIEW's "make the State the schema"): derive `Edits`
+   and `keep()` from an object's `State` declaration (so `write {…}` needs no hand-mirrored edit
+   record); `initial()` the only constructor (the `Seed`/`defaultSeed`/`seeded` ritual goes; the
+   host already lays a partial seed over `initial()`); a method's `form` block IS its input type
+   with its bounds (the method table carries them, the host enforces them on spells and direct
+   turns, `forms()` derived). Lowering only; pins move for objects that change; a test per
+   claim. Write the exact surface here and report it BEFORE implementing (three lanes read it).
 
 Host lane (not a kernel item, but blocked on): `drive` (TurnLoop.lean) takes a `Turn.Step`
 from `startEntryStep`, passes `suspension.checkpoint` only to the `await*`/`interpret`
@@ -476,3 +466,36 @@ seven one-line substitutions. The pins fixture at foundation records `Abi`, `For
   past 2^64, every CBOR head width and non-ASCII text. Not a theorem: `writeJson` is
   `partial`. Measured as above with the host unchanged: whole replay 322 G to 286 G user
   instructions; directory `receive` 5.9-6.3 s to 4.9-5.1 s.
+
+## 19. Checkpoint trimming (lane/kernel7, §16 item 1)
+
+- Why ~2,000 cells were live at a directory `interpret` yield: closures keep whole lexical
+  environments, so every `let` of `receive` stayed live through every thunk built under it.
+  Measured on the run 10 rehearsal journal with an offline decoder of journaled v3 tokens and
+  the entry's free variables (`compile-profile REQUEST dictionary ENTRY` prints, per subterm in
+  `Dictionary.ofProgram` preorder, its constructor and free de Bruijn indices): tracing only
+  free slots leaves ~860 of ~1,900 cells. The rest of the scatter (env-table indices,
+  local-string indices, long relative edges into later rounds) was mostly edges into that dead
+  half. Simulated alternatives that did not pay: pure DFS numbering (worse), roots reversed
+  (±2%), the arguments-as-prefix change kernel6 tried. Inline local strings would cut the
+  blocks a further 6% median, 26% total; not done.
+- `checkpoint s = collect (trim (collect (settle s)))`. `trim` points every environment slot
+  a cell's closures do not read (`Term.freeIn`; a closure value `λ.body` reads `i` when `body`
+  reads `i + 1`) at the cell itself; the first collect bounds trimming's work by the live
+  cells. Compiled through `trimCellFast` (one `Term.markFree` traversal per closure,
+  `@[csimp] trimCell_eq_fast`); without it the rehearsal took 55 s instead of 30 s, since
+  the host still checkpoints every in-process yield (the host lane's `drive` change in §16).
+- Proof: the settle relation is extended rather than a new one. `eraseState` now also
+  replaces unread slots by 0 in cells, control and frames; `erase_stepRaw` (every transition
+  copies an environment only into a closure over a subterm or a body under one more binder;
+  `freeIn_rename` covers the renamed bodies of `fix` and `mix`), `agree_forceHostedFrom`,
+  `agree_materializeWith` (values equal up to erasure), `agree_completeWith`,
+  `agree_yieldedPlanWith`, `agree_trim`, and `agree_resume_segment` with `settle_` and
+  `trim_resume_segment` as instances. `checkpoint_resume_segment` composes four stages,
+  statement unchanged. The collector, codecs, machine and Fast proofs are untouched.
+- Measured (hbox, `rehearsal/rehearse.py`, same fixtures): journal 4,719,653 -> 2,813,175
+  bytes; suspensions 2,706,683 -> 800,205; median suspension 46,390 -> 10,077 bytes; new
+  blocks per suspension median 74 -> 6; wall 31.8 s -> 30.2 s. Of a median suspension now,
+  5.7 KB is blocks and 4.4 KB the host's fields (`activity.argument` 1.2 KB,
+  `interpretation.utterance` 1.0 KB, inline per entry): run 8's 9.5 KB median is within reach
+  only by moving those into blocks, which is the host's file. Packets do not move (pins: 0).

@@ -1693,7 +1693,7 @@ theorem collect_resume_segment {state resumed : State} {response : Term}
     exact ⟨_, r', rfl, completed', resultRel⟩
 
 /-- **The checkpoint a turn stores resumes as the yielded state itself.** A yield stores
-`checkpoint state = collect (settle state)`; resuming it under `limitsPast` of its own
+`checkpoint state = collect (trim (collect (settle state)))`; resuming it under `limitsPast` of its own
 heap (what `Turn.resumeActivity` does) decides the same outcome, spends exactly the same
 ticks, and a Plan or result that extracts from the uncollected run extracts from the
 checkpoint's run as the same Data with the same remaining budget. -/
@@ -1717,24 +1717,37 @@ theorem checkpoint_resume_segment {state resumed : State} {response : Term}
           complete (limitsPast limits (checkpoint state)) budget y' = .ok r' ∧
           r'.value = r.value ∧ r'.remaining = r.remaining) := by
   unfold checkpoint
-  have sameLimits : limitsPast limits (settle state) = limitsPast limits state := by
+  have sameS : limitsPast limits (settle state) = limitsPast limits state := by
+    simp [limitsPast]
+  have sameT : limitsPast limits (trim (collect (settle state))) = limitsPast limits (collect (settle state)) := by
     simp [limitsPast]
   obtain ⟨settled, againS, agreeS, ticksS, plansS, resultsS⟩ :=
     settle_resume_segment yielded (limitsPast limits state) bytes ticks budget
   obtain ⟨collected, againC, relC, ticksC, plansC, resultsC⟩ :=
     collect_resume_segment againS limits bytes ticks budget
-  rw [sameLimits] at relC ticksC plansC resultsC
-  refine ⟨collected, againC, ?_, ?_, ?_, ?_⟩
-  · rw [OutcomeRel.verdict relC, OutcomeAgree.verdict agreeS]
-  · rw [ticksC, ticksS]
+  rw [sameS] at relC ticksC plansC resultsC
+  obtain ⟨trimmed, againT, agreeT, ticksT, plansT, resultsT⟩ :=
+    trim_resume_segment againC (limitsPast limits (collect (settle state))) bytes ticks budget
+  obtain ⟨final, againF, relF, ticksF, plansF, resultsF⟩ :=
+    collect_resume_segment againT limits bytes ticks budget
+  rw [sameT] at relF ticksF plansF resultsF
+  refine ⟨final, againF, ?_, ?_, ?_, ?_⟩
+  · rw [OutcomeRel.verdict relF, OutcomeAgree.verdict agreeT, OutcomeRel.verdict relC, OutcomeAgree.verdict agreeS]
+  · rw [ticksF, ticksT, ticksC, ticksS]
   · intro plan y r run extracted
     obtain ⟨yS, rS, runS, _, extractedS, valueS, remainingS, _⟩ := plansS plan y r run extracted
     obtain ⟨yC, rC, runC, extractedC, valueC, remainingC, _⟩ := plansC plan yS rS runS extractedS
-    exact ⟨_, yC, rC, runC, extractedC, by rw [valueC, valueS], by rw [remainingC, remainingS]⟩
+    obtain ⟨yT, rT, runT, _, extractedT, valueT, remainingT, _⟩ := plansT _ yC rC runC extractedC
+    obtain ⟨yF, rF, runF, extractedF, valueF, remainingF, _⟩ := plansF _ yT rT runT extractedT
+    exact ⟨_, yF, rF, runF, extractedF, by rw [valueF, valueT, valueC, valueS],
+      by rw [remainingF, remainingT, remainingC, remainingS]⟩
   · intro value y r run completed
-    obtain ⟨yS, rS, runS, completedS, valueS, remainingS, _⟩ := resultsS value y r run completed
-    obtain ⟨yC, rC, runC, completedC, valueC, remainingC, _⟩ := resultsC value yS rS runS completedS
-    exact ⟨_, yC, rC, runC, completedC, by rw [valueC, valueS], by rw [remainingC, remainingS]⟩
+    obtain ⟨valueS', yS, rS, runS, completedS, valueS, remainingS, _⟩ := resultsS value y r run completed
+    obtain ⟨yC, rC, runC, completedC, valueC, remainingC, _⟩ := resultsC valueS' yS rS runS completedS
+    obtain ⟨valueT', yT, rT, runT, completedT, valueT, remainingT, _⟩ := resultsT _ yC rC runC completedC
+    obtain ⟨yF, rF, runF, completedF, valueF, remainingF, _⟩ := resultsF valueT' yT rT runT completedT
+    exact ⟨_, yF, rF, runF, completedF, by rw [valueF, valueT, valueC, valueS],
+      by rw [remainingF, remainingT, remainingC, remainingS]⟩
 
 #assert_axioms related_collect related_stepRaw related_forceHostedFrom related_materializeWith
 #assert_axioms collect_resume_segment checkpoint_resume_segment
