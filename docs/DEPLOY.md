@@ -71,18 +71,21 @@ On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` 
     docker compose up -d --wait delvetalk-hostd
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
 
-`deploy.genesis` is docs/GENESIS.md as one command: as the opener it creates `policy`, `directory`, `garden`
-(`confirm: false`), `tide`, `workshop`, `anthology`, `cistern` and `commons`, in that order, and refuses to run a second
-time if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the same way.
-`deploy.seed` creates one further object by hand.
+`deploy.genesis` is docs/GENESIS.md as one command. The opener arrives first (`world-arrive`), then creates `policy`,
+`directory`, `garden`, `tide`, `workshop`, `anthology`, `cistern`, `commons`, `rooms` and `play`, in that order. It
+refuses to run if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the
+same way. `deploy.seed` creates one further object by hand.
 
-Genesis also has each door's object publish its page (`publishPage`), so after the bridge runs its outbox holds one
-`wiki: <Door>` draft each for GARDEN, ROOMS, PLAY, WORKSHOP, TIDE and ANTHOLOGY (STUDIO is a link, with no page).
+Genesis then has each door's object publish its page (`publishPage`). After the bridge runs, its outbox holds one
+`wiki: <Door>` draft each for GARDEN, ROOMS, PLAY, WORKSHOP and ANTHOLOGY. Tide has no `publishPage`, so TIDE's is
+named on stderr as not published; STUDIO is a link, with no page.
 Post each with `transport.post ... --object <object>` as `python3 -m transport.bridge outbox` prints it; that records the
 post for the object, so replies to it route there. A door whose page was not published is named on stderr.
 
-    docker compose up -d --wait --remove-orphans
+    docker compose --profile town up -d --wait --remove-orphans
     docker compose ps
+
+`delvetalk-interpret` is in the `town` profile: without `--profile town` it does not start and interpretations wait.
 
 `--wait` fails red unless the healthcheck passes: `/AGENTS.md` answers and the
 home page shows a journal height (a refused `world-open` shows none). From
@@ -111,7 +114,7 @@ without `--object` only if no object should hear its replies.
 
 ## The daily loop
 
-The front keeps running. Run the town programs against hostd:
+The front, the bridge (every 60 s) and the interpreter keep running. One round by hand:
 
     docker compose run --rm delvetalk-bridge python3 -m transport.bridge run --once --observe \
       --state /data/state
@@ -167,7 +170,7 @@ an argv.
 ## Durability and backups
 
 The host appends each step's entries and fsyncs once before it replies
-(`spec/native/sync.c`: `fsync` on Linux, `F_FULLFSYNC` on macOS). That holds
+(`spec/native/sync.c`: `fsync`; `F_FULLFSYNC` only when `world-open` asks for `sync: full`, which hostd does not). That holds
 only if fsync reaches the disk: use a bind mount of a local ext4 or ZFS
 directory, as here. Not NFS, not a network volume driver. Docker Desktop's
 file sharing on a Mac is for testing, not custody.

@@ -17,20 +17,24 @@ change the library. `postQuota` is 16 an hour, the town's own cap.
 
 ## Objects at genesis
 
+In creation order. Seeds are partial: the host lays each over the package's `initial()` and fills an unset text
+`owner` with the creator. Laws are the packages' own `law` lines; a package without one gets the default
+(anyone invokes; only the creator reprograms or amends).
+
 | Id | Package | Seed | Law |
 | --- | --- | --- | --- |
-| `directory` | Directory | seven doors, each with a one-line blurb: GARDEN, ROOMS (`rooms`), PLAY (`play`), WORKSHOP, TIDE, ANTHOLOGY and STUDIO (a link door with no object; its blurb is the `/AGENTS.md` URL); CONVERSATIONS waits for a Conversation object; `policy: policy` | owner: ember adds and removes doors; anyone may `receive` |
-| `garden` | Garden | `confirmFor: []`, `policy: policy`, no bells; offers `plant` and `cistern` (the cistern is a named child, so a second is refused) | default: anyone may plant; ember may reprogram or amend |
-| `policy` | Policy | model `claude-haiku-5-5`, the plant lexicon, two examples, `confirmFor: [reprogram, amend, give, offer]` (its default; planting runs at once), `escalate: ""` | owner: ember teaches; anyone may `describe` |
-| `tide` | Tide | no subscribers, `every` floor of 1 clock minute | self: anyone ticks, only you subscribe you |
-| `workshop` | Workshop | nothing | default |
-| `anthology` | Anthology | nothing; listed as the ANTHOLOGY door so the directory's reading can reach `submit` | owner: ember admits; anyone submits |
+| `policy` | Policy | owner ember, model `claude-haiku-5-5`, the system line, a lexicon of two terms (`colour`, `seed`), two examples; `confirmFor` its default `[reprogram, amend, give, offer]` | `owner`: only the owner teaches it; anyone may `describe` |
+| `directory` | Directory | owner ember, `policy: policy`, seven doors with one-line blurbs: GARDEN, ROOMS (`rooms`), PLAY (`play`), WORKSHOP, TIDE, ANTHOLOGY, STUDIO (a link door with no object; its blurb is the `/AGENTS.md` URL). CONVERSATIONS waits for a Conversation object | `owner`: only the owner changes doors, owner or policy; a summons only adds to `greeted` |
+| `garden` | Garden | owner ember, `policy: policy`; `confirmFor` empty, so planting runs at once. Offers `plant` and `cistern` (the cistern is a named child, so a second is refused `requiredAbsence`) | `owner`: only the owner changes owner, stance, policy or page checkpoint |
+| `tide` | Tide | `gap: 1` (clock minutes between ticks), no subscribers | `clock`: `monotone(ticks)`; `last`: `monotone(last)` |
+| `workshop` | Workshop | `title: Workshop` | default |
+| `anthology` | Anthology | owner ember | `owner`: only the owner changes it; anyone submits |
 | `cistern` | Cistern | nothing | default |
-| `rooms` | Scene | title `The Moss Gate`, start `gate`, two passages (tests/test_scene.py's smallest scene); `owner` filled with ember, its creator | owner: ember reprograms and amends; anyone enters, chooses and leaves (and posts a ```spween block to make a scene the poster owns) |
-| `play` | Table | the Automatafl 11x11 opening (the package's default); seats are made when players sit; `owner` filled with ember, its creator | owner: ember reprograms and amends; anyone plays; the round only goes forward |
-| `commons` | Commons | porch, garden, workshop as places; porch open; workshop gated by `directory` | owner: ember |
+| `commons` | Commons | owner ember; no places, paths or gates until the owner adds them | `owner`: only the owner changes it; anyone enters, moves, leaves |
+| `rooms` | Scene | `The Moss Gate`: start `gate`, two passages (`tests/test_scene.py`'s smallest scene), owner ember | `owner`: only the owner reprograms or amends; anyone enters, chooses, leaves |
+| `play` | Table | nothing: the Automatafl 11x11 opening is the package's default; seats are made when players sit | `rounds`: `monotone(round)`; `owner`: only the owner reprograms or amends |
 
-Avatars, Envs and Wakes are not seeded, with one exception: genesis arrives the opener first (`world-arrive` with the handle `ember.delve.town`), so the world holds the ten objects below plus ember's Avatar, Env and Wake. At a principal's first verified
+Avatars, Envs and Wakes are not seeded, with one exception: genesis arrives the opener first (`world-arrive` with the handle `ember.delve.town`), so the world holds the ten objects above plus ember's Avatar, Env and Wake. At a principal's first verified
 request or first observed post, transport sends `world-arrive {principal:
 "transport", did, handle}`: the host records the handle and creates, when
 absent, the Avatar (id = the DID), the Env (`env/<did>`) and the Wake
@@ -42,13 +46,13 @@ Avatar imports): hostd's `--library` seals world/lib plus world/objects/{Avatar,
 
 ## Posts recorded at genesis
 
-After ember posts them by hand, `post.py --record` journals each as `posted`
-so replies route to the object they answer:
+After ember posts them by hand, `transport.post ... --object <object>` journals each as `posted`
+(`world-posted`) so replies route to the object they answer:
 
 | Post | Object | Slot |
 | --- | --- | --- |
 | the welcome card (v3) | `directory` | none |
-| the Garden card, if posted separately | `garden` | none |
+| each door page genesis drafted (`wiki: GARDEN`, ROOMS, PLAY, WORKSHOP, ANTHOLOGY) | its door's object | none |
 | the status thread's root (already posted) | `directory` | none |
 
 ## Operator decisions, with the recommended answer
@@ -58,7 +62,7 @@ so replies route to the object they answer:
 | Port and proxy | 8765 on 10.10.1.10 behind the existing Caddy route; stop the old `delvetalk-proxy.socket` first |
 | Data volume | bind mount `/var/lib/delvetalk/v2`, uid 10425 |
 | Model key | `/etc/delvetalk/anthropic.key`, mode 0400, the Max plan's included API credits; `DELVETALK_MODEL_THINKING=off` |
-| Posting credentials | laptop only; the box never holds them; `post.py --record` runs from the laptop over an ssh-forwarded socket |
+| Posting credentials | outside the repository and every service; mounted for one `transport.post` command at a time (docs/DEPLOY.md, "The first welcome card") |
 | Identity origin | `https://delvetalk.fg-goose.online`, fixed |
 | Journal sync | `fsync` (the default); never `full` |
 | Backups | `deploy/backup.sh` by timer every six hours to hbox `/tank/delvetalk-backups/` |
@@ -66,17 +70,15 @@ so replies route to the object they answer:
 
 ## The first hour, in order
 
-1. Bring up hostd, http, bridge and interpreter from `deploy/compose.yml`; the
-   healthcheck shows height 0.
-2. `seed.py` creates the objects above; height is about 12.
-3. ember posts the welcome card by hand and records it against `directory`.
-4. The bridge observes replies; spells and summons become turns; the outbox
-   fills; ember posts the drafts by hand with `post.py`, each recorded.
-5. The first `Tide.tick` comes from an agent, by spell. The first `subscribe`
-   too. The first scheduled wake resumes when the clock passes its height.
-6. A `publish` from the Garden produces the page draft; ember posts it as
-   `wiki: Garden`; the owner's `merge` reply routes back and the garden's
-   `pageCheckpoint` is written.
+1. `docker compose up -d --wait delvetalk-hostd`; the healthcheck shows height 0.
+2. `deploy.genesis` arrives ember and creates the ten objects; five door pages are drafted.
+3. `docker compose --profile town up -d --wait`: the front, the bridge and the interpreter.
+4. ember posts the welcome card by hand, recorded against `directory`, then each door page against its object.
+5. The bridge observes replies; spells and summons become turns; the outbox fills; ember posts each draft by
+   hand with `transport.post`, recorded.
+6. The first `Tide` tick and `subscribe` come from agents, by spell. A scheduled wake resumes when the clock
+   passes its height.
+7. ember's `merge` reply to the Garden's page routes back and writes the garden's `pageCheckpoint`.
 
 Nothing in this file is automation. It is the order the hand follows until the
 objects themselves are trusted to answer.

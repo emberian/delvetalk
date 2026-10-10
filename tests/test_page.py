@@ -37,7 +37,7 @@ class Page(Chain):
     def test_publish_page_posts_the_card_under_the_door_word_and_the_host_lists_it(self):
         """Genesis posts one card per door: publishPage titles the page by door().word."""
         self.make("plot", closure("Garden"), garden_seed())
-        r = self.turn("plot", "publishPage", principal="ember")
+        r = self.turn("plot", "publishPage", record(page=label("")), principal="ember")
         self.assertEqual(r["status"], "admitted", r)
         [published] = r["receipt"]["publishes"]
         self.assertTrue(published["text"].startswith("wiki: garden\n"), published["text"][:80])
@@ -48,11 +48,19 @@ class Page(Chain):
         for obj, module, seed in (("rooms", "Scene", record(title=label("The Moss Gate"))), ("workshop", "Workshop", record(title=label("Workshop")))):
             made = self.host.send(op="world-create", principal="ember", identity="mk-" + obj, object=obj, modules=closure(module), entry="initial", seed=seed)
             self.assertEqual(made["status"], "created", made)
-            r = self.turn(obj, "publishPage", principal="ember")
+            r = self.turn(obj, "publishPage", record(page=label("")), principal="ember")
             self.assertEqual(r["status"], "admitted", r)
             [published] = r["receipt"]["publishes"]
             print("\n--- %s page ---\n%s" % (obj, published["text"][:300]))
             self.assertTrue(published["text"].startswith("wiki: %s\n" % ("scene" if module == "Scene" else "workshop")), published["text"][:80])
+
+    def test_publish_page_takes_a_page_name(self):
+        made = self.host.send(op="world-create", principal="ember", identity="mk-rooms", object="rooms", modules=closure("Scene"), entry="initial",
+                              seed=record(title=label("The Moss Gate")))
+        self.assertEqual(made["status"], "created", made)
+        r = self.turn("rooms", "publishPage", record(page=label("rooms")), principal="ember")
+        [published] = r["receipt"]["publishes"]
+        self.assertTrue(published["text"].startswith("wiki: rooms\n"), published["text"][:60])
 
 
 if __name__ == "__main__":
