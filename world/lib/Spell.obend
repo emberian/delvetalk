@@ -36,7 +36,7 @@ record Binding:
 type Bindings = Lists.List<Binding>
 sum Parsed:
   spell: {card: String, action: String, fields: Bindings}
-  notASpell: {reason: String}
+  notASpell: {reason: String, fielded: Bool}
 type Value = Form.Value
 record Entry:
   name: String
@@ -81,10 +81,17 @@ sum Fields2:
 sum Candidate:
   none: {}
   at: {card: String, action: String, tail: String, rest: String}
+# A reply that is not a spell says whether some line of it might be a `name: value` field
+# line (`fielded`), noticed in the same walk, so a reader asks Spell.bare only then.
 def parse(text: String) -> Parsed:
-  seek(text, Candidate.none({}), "The reply has no delvetalk line.")
-def seek(text: String, quoted: Candidate, reason: String) -> Parsed:
-  if text == "" then fallback(quoted, reason) else seekLine(text, textSpan(text, " \t"), textBreak(text, "\n"), quoted, reason)
+  seek(text, Candidate.none({}), "The reply has no delvetalk line.", false)
+def seek(text: String, quoted: Candidate, reason: String, fielded: Bool) -> Parsed:
+  if text == "" then fallback(quoted, reason, fielded) else seekLine(text, textSpan(text, " \t"), textBreak(text, "\n"), quoted, reason, fielded)
+# Whether a line's first 17 scalars (past its indent) begin `name:`: the walk notices a
+# field name of up to 16 letters (every form field and action in world/ is shorter), and
+# a reader asks Spell.bare, which reads any name, only when one was noticed.
+def fieldHead(text: String, indent: Nat, stop: Nat) -> Bool:
+  stop > indent && looksLikeField(textTake(textDrop(text, indent), if stop - indent < 17n then stop - indent else 17n))
 def isSpellAt(text: String, indent: Nat) -> Bool:
   textTake(textDrop(text, indent), 10n) == "delvetalk " || textTake(textDrop(text, indent), 10n) == "delvetalk\t"
 def isQuote(text: String) -> Bool:
@@ -97,18 +104,18 @@ def pastFence(text: String) -> String:
   if text == "" then text else pastFenceLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
 def pastFenceLine(text: String, indent: Nat, stop: Nat) -> String:
   if textTake(textDrop(text, indent), 3n) == "```" then textDrop(text, stop + 1n) else pastFence(textDrop(text, stop + 1n))
-def seekLine(text: String, indent: Nat, stop: Nat, quoted: Candidate, reason: String) -> Parsed:
-  if tagged(text, indent, stop) then seek(pastFence(textDrop(text, stop + 1n)), quoted, reason) else if indent < stop && isSpellAt(text, indent) then found(headingAt(text, indent, stop), isQuote(text), textDrop(text, stop + 1n), quoted, reason) else seek(textDrop(text, stop + 1n), quoted, reason)
+def seekLine(text: String, indent: Nat, stop: Nat, quoted: Candidate, reason: String, fielded: Bool) -> Parsed:
+  if tagged(text, indent, stop) then seek(pastFence(textDrop(text, stop + 1n)), quoted, reason, fielded) else if indent < stop && isSpellAt(text, indent) then found(headingAt(text, indent, stop), isQuote(text), textDrop(text, stop + 1n), quoted, reason, fielded) else seek(textDrop(text, stop + 1n), quoted, reason, fielded || fieldHead(text, indent, stop))
 def headingAt(text: String, indent: Nat, stop: Nat) -> Candidate:
   heading(trimEnd(textDrop(textTake(text, stop), indent + 9n)), textDrop(text, stop + 1n))
-def found(candidate: Candidate, quote: Bool, rest: String, quoted: Candidate, reason: String) -> Parsed:
+def found(candidate: Candidate, quote: Bool, rest: String, quoted: Candidate, reason: String, fielded: Bool) -> Parsed:
   match candidate:
-    case none(_): seek(rest, quoted, reason)
-    case at(a): if quote then seek(rest, candidate, reason) else spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
-def fallback(quoted: Candidate, reason: String) -> Parsed:
+    case none(_): seek(rest, quoted, reason, fielded)
+    case at(a): if quote then seek(rest, candidate, reason, fielded) else spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
+def fallback(quoted: Candidate, reason: String, fielded: Bool) -> Parsed:
   match quoted:
     case at(a): spelled(a.card, a.action, both(inline(a.tail), fieldLines(a.rest)))
-    case none(_): Parsed.notASpell({reason: reason})
+    case none(_): Parsed.notASpell({reason: reason, fielded: fielded})
 def heading(line: String, rest: String) -> Candidate:
   let afterBlanks = trimStart(line)
   let cardEnd = textBreak(afterBlanks, " \t")
@@ -157,7 +164,7 @@ def sequenced(bindings: Bindings, second: Fields2) -> Fields2:
 def spelled(card: String, action: String, parsed: Fields2) -> Parsed:
   match parsed:
     case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})
-    case bad(b): Parsed.notASpell({reason: b.reason})
+    case bad(b): Parsed.notASpell({reason: b.reason, fielded: true})
     case again(a): parse(a.text)
     case stray(r): seekAfter(r.rest, Parsed.spell({card: card, action: action, fields: r.bindings}))
 # After a line that is not a field: a later unquoted spell line takes over; without one,

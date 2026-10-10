@@ -323,6 +323,25 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.assertEqual(self.say("What a lovely evening it is; thank you for this.", "c1"), 0)
         self.assertEqual(self.say("anthology: a line about the merchant's hat", "c2"), 1)
 
+    def test_glms_long_reply_under_a_bell_is_cheap_to_hand_on_and_to_judge(self):
+        """Run 8: glm's 1,788-character `3mxgtb2dklk2f` under a bell burned 999,861 ticks (a walk
+        of the text for every town word) and was refused budget. The bell's turn now parses the
+        reply once (Spell.parse notes whether any line might be a field line, so Spell.bare runs
+        only then) and hands it on: under 20,000 ticks."""
+        self.add("ANTHOLOGY", "anthology")
+        text = post("3mxgtb2dklk2f")
+        self.assertEqual(len(text), 1788)
+        r = self.turn("bell", "receive", record(text=label(text), post=label("at://x/long")), principal=GLM, identity="long")
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "silent"), r)
+        # The settling pass after the turn runs the delivery to the directory.
+        delivered = r.get("delivered", []) + [d for reply in self.deliver_all() for d in reply.get("delivered", []) + reply.get("receipts", [])]
+        ticks = [d.get("ticksUsed") if "ticksUsed" in d else d.get("receipt", {}).get("ticksUsed") for d in delivered]
+        print("\n  glm's 1,788 characters: bell turn %d ticks, directory's judgement %s ticks" % (r["ticksUsed"], ticks))
+        self.assertLess(r["ticksUsed"], 20000)
+        # The directory's reading is bounded by interpretation overhead per word (about 200,000
+        # ticks here); a word-set builtin in the kernel would take it to the scan's own cost.
+        self.assertTrue(ticks and all(t is not None and t < 250000 for t in ticks), (ticks, delivered[:1]))
+
     def test_a_new_door_makes_chatter_naming_it_handed_on(self):
         self.make("lantern", closure("Lantern"), record())
         self.add("ANTHOLOGY", "anthology")

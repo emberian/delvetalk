@@ -124,6 +124,14 @@ the library).
   (Workshop views its target, its Response's state type being Data, and says "Was: bell-1
   v1 / Now: bell-1 v2"); `tests/host.py` fails any host reply whose card or offer text
   contains `bafy`, in every suite.
+* **What prose costs** (objects5, run 8). Spell.parse's one walk notes whether any line
+  might be a `name:` field line (`notASpell {reason, fielded}`; a name of up to 16
+  letters); Card and Directory call Spell.bare only then. `Card.blank` replaces
+  `textSpan == textLength` (textLength costs the whole text). glm's 1,788-character reply
+  costs a bell 19,601 ticks (was 999,861); the directory's reading of it about 200,000, all
+  interpretation overhead of a per-word loop (`Card.mentions`: split at blanks once, words
+  by length, a first-letter filter); a kernel word-set builtin would remove it. The newline
+  scan is the floor: 6 ticks a scalar.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for
