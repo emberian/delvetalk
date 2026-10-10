@@ -628,6 +628,13 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    included), and an amendment's readings replace the object's for those clauses; a clause it leaves as it was without a
    reading keeps the old one (5.32). A malformed reading is `law syntax`. Tests: `test_law.Readings`.
 
+39. **Offers name the turn they answer (host7, rehearsal run 7 finding 1).** `world-offers` gives each offer
+   `from {post, principal, intent}` (`originOf`): the entry's own identity, or for a delivered turn the direct turn it
+   descends from, followed through `delivery.from` and `world.receipts` up to the ledger depth; `post` is that turn's
+   `replyTo` when it answered a recorded post, else its intent (the bridge's identity for an observed post). A reply a
+   bell handed to the directory by `send` is drafted against the post the author replied to. Tests:
+   `test_hub.HandedToTheDirectory`, `test_bridge` (end to end, no longer an expected failure).
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

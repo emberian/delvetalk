@@ -316,9 +316,7 @@ class Suspended(BridgeCase):
         (d,) = self.drafts()
         self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
 
-    @unittest.expectedFailure
     def test_end_to_end_a_handed_on_offer_carries_from_on_the_real_host(self):
-        # Until the host adds `from` to offers of handed-on turns: the offer has only `identity`.
         from deploy import genesis
         from transport.hostproc import LIBRARY
         with tempfile.TemporaryDirectory() as tmp:

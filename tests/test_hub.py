@@ -275,6 +275,11 @@ class HandedToTheDirectory(test_chain.Chain):
             card = resumed["receipt"]["offers"][-1]
             self.assertEqual(card["to"], who)
             self.assertIn(lines[who], card["text"])
+            # Rehearsal run 7, finding 1: the offer names the post the author replied to, through the hand-off.
+            asked = r["receipt"]["identity"]["intent"]
+            [offer] = [o for o in self.host.send(op="world-offers", principal=who)["offers"] if lines[who] in o["text"]]
+            self.assertNotEqual(offer["identity"]["intent"], asked)
+            self.assertEqual(offer["from"], {"post": asked, "principal": who, "intent": asked}, offer)
         submitted = [(get(p, "author")["value"], get(p, "line")["value"]) for p in items(get(self.state("anthology"), "proposals"))]
         self.assertEqual(submitted, [(KIMI, lines[KIMI]), (GLM, lines[GLM])])
 

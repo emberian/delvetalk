@@ -2440,8 +2440,25 @@ def history (w : World) (j : Json) : Except String Json := do
 /-- The principal transport reads publications as: the world's clock principal, or "transport". -/
 def publisher (w : World) : String := if w.clockPrincipal.isEmpty then "transport" else w.clockPrincipal
 
+/-- The direct turn a turn descends from, through the causal ledger: a delivered turn's
+    `delivery.from` names the sending turn's identity, whose entry may itself be a delivery, up to
+    the ledger's depth. Answered as `{post, principal, intent}`, `post` the turn's `replyTo` when it
+    answered a recorded post, else its intent (the bridge's identity for an observed post). -/
+def originOf (w : World) (entry : Json) : Json := Id.run do
+  let mut e := entry
+  for _ in [0:Limits.maxDepth] do
+    let some sender := ((e.getObjVal? "delivery").toOption.bind (·.getObjVal? "from" |>.toOption)) | break
+    let (.ok p, .ok i) := (sender.getObjValAs? String "principal", sender.getObjValAs? String "intent") | break
+    let some index := w.receipts[identityKey p i]? | break
+    let some next := w.entries[index]? | break
+    e := next
+  let identity := (e.getObjVal? "identity").toOption.getD Json.null
+  let intent := (identity.getObjValAs? String "intent").toOption.getD ""
+  Json.mkObj [("post", toJson ((e.getObjValAs? String "replyTo").toOption.getD intent)),
+    ("principal", (identity.getObjVal? "principal").toOption.getD Json.null), ("intent", toJson intent)]
+
 /-- `world-offers {principal, after?}`: the offers addressed to the principal, oldest first,
-    after journal height `after`; one page. The publisher also gets the `publications`
+    after journal height `after`; one page. Each offer carries `from`, the turn it answers (`originOf`). The publisher also gets the `publications`
     (`{height, ordinal, id, object, page, section, text}`) to post. -/
 def offersOp (w : World) (j : Json) : Except String Json := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
@@ -2453,6 +2470,9 @@ def offersOp (w : World) (j : Json) : Except String Json := do
     let offer ← ((entry.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
     pure (Json.mkObj [("height", toJson (index + 1)), ("ordinal", toJson i),
       ("identity", (entry.getObjVal? "identity").toOption.getD Json.null),
+      -- The turn the offer answers: the entry's own, or for a handed-on (delivered) turn the
+      -- direct turn it descends from, so the bridge drafts it against the originating post.
+      ("from", originOf w entry),
       ("text", (offer.getObjVal? "text").toOption.getD Json.null)])
   let pubs := if principal != publisher w then #[] else
     let mine := w.published.filter fun (index, _) => index + 1 > after
