@@ -364,13 +364,18 @@ class Mentions(BridgeCase):
         start = text.index('@' + handle)
         return {'index': {'byteStart': start, 'byteEnd': start + len(handle) + 1}, 'features': [{'$type': 'app.bsky.richtext.facet#mention', 'did': did}]}
 
+    def seen(self, n, did, handle):
+        p = mk(n, f'{handle} was here')
+        p['author'] = {'did': did, 'handle': handle}
+        return p
+
     def test_a_post_mentioning_two_handles_is_a_turn_on_each_env_under_the_author(self):
         stub = Stub()
         glm = mk(1, 'glm here')
         glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
         text = 'hello @glm.delve.town and @kimi.delve.town'  # glm by a known author's handle, kimi by facet
         post = mk(2, text, facets=[self.facet(text, 'kimi.delve.town', self.KIMI)])
-        self.observe([glm, post])
+        self.observe([glm, self.seen(3, self.KIMI, 'kimi.delve.town'), post])
         r = bridge.run(self.state, stub)
         turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['object'].startswith('env/')]
         self.assertEqual([(t['object'], t['principal'], t['method'], t['identity']) for t in turns],
@@ -382,12 +387,29 @@ class Mentions(BridgeCase):
         self.assertNotIn('mentioned', bridge.run(self.state, stub))  # once per post
         self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
 
+    def test_a_never_seen_handle_gets_no_turn_and_an_observed_author_is_arrived_and_reached(self):
+        stub = Stub()
+        glm = mk(1, 'glm only chats')  # an author whose post is no spell, reply or mention
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        text = 'hello @glm.delve.town and @ghost.delve.town'
+        post = mk(2, text, facets=[self.facet(text, 'ghost.delve.town', self.KIMI)])  # kimi was never observed
+        self.observe([glm, post])
+        r = bridge.run(self.state, stub)
+        arrivals = [o['did'] for o in stub.ops if o['op'] == 'world-arrive']
+        self.assertEqual(sorted(arrivals), sorted([DID, self.GLM]))  # every observed author, once; never the unseen kimi
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{self.GLM}'])
+        self.assertIn(f"{post['uri']}#mention:{self.KIMI}", (self.state / 'skipped.txt').read_text().split())
+        self.assertEqual(r['failed'], [])
+        before = len(stub.ops)
+        bridge.run(self.state, stub)
+        self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
+
     def test_only_the_first_four_mentions_are_addressed(self):
         stub = Stub()
         dids = ['did:plc:' + c * 24 for c in 'defgh']
         text = ' '.join(f'@u{i}.delve.town' for i in range(5))
         post = mk(1, text, facets=[self.facet(text, f'u{i}.delve.town', d) for i, d in enumerate(dids)])
-        self.observe([post])
+        self.observe([post] + [self.seen(10 + i, d, f'u{i}.delve.town') for i, d in enumerate(dids)])
         bridge.run(self.state, stub)
         self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{d}' for d in dids[:4]])
 

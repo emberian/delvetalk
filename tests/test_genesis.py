@@ -27,6 +27,10 @@ class Genesis(unittest.TestCase):
                 self.assertEqual(again, [])
                 self.assertIn('already run', refusal)
                 self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (7, 10))
+                made_names = {m['object'] for m in made}
+                self.assertEqual([l for l, _, to in genesis.DOORS if to and to not in made_names], [])  # every door with an object resolves
+                self.assertEqual([l for l, _, to in genesis.DOORS if not to], ['STUDIO'])
+                self.assertEqual([l for l, _, _ in genesis.DOORS], ['GARDEN', 'ROOMS', 'PLAY', 'WORKSHOP', 'TIDE', 'ANTHOLOGY', 'STUDIO'])
                 said = {}
                 for word in ('ROOMS', 'PLAY', 'STUDIO'):
                     got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'directory', 'method': 'receive',
@@ -40,6 +44,25 @@ class Genesis(unittest.TestCase):
                 # "The door to  opens on nothing yet."), so only the menu carries its URL.
                 menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
                 self.assertIn('https://delvetalk.fg-goose.online/AGENTS.md', menu)
+            finally:
+                stop_hostd(d)
+
+    @unittest.expectedFailure
+    def test_every_door_publishes_its_page_and_the_outbox_holds_a_wiki_draft_each(self):
+        # Until the objects lane lands Card.publishPage: the turn is refused as an unknown method.
+        from transport import bridge
+        with tempfile.TemporaryDirectory() as tmp:
+            d = start_hostd(tmp, BINARY, opener=genesis.OPENER, library=LIBRARY)
+            try:
+                host = HostClient(Path(tmp) / 'host.sock')
+                made, _ = genesis.run(host)
+                pages = {m['object']: m['page']['status'] for m in made if 'page' in m}
+                self.assertEqual(pages, {to: 'admitted' for _, _, to in genesis.DOORS if to}, pages)
+                drafted, problem = bridge.publication_drafts(tmp, host)
+                self.assertIsNone(problem)
+                texts = [json.loads(p.read_text())['text'] for p in sorted((Path(tmp) / 'outbox').glob('*.json'))]
+                self.assertEqual(len(texts), len([1 for _, _, to in genesis.DOORS if to]))
+                self.assertTrue(all(t.startswith('wiki: ') for t in texts), texts)
             finally:
                 stop_hostd(d)
 
