@@ -29,7 +29,8 @@ class Host:
     """One host subprocess, one request at a time; respawned and reopened if it dies.
     With journal=None it is a stateless compile/run process."""
 
-    def __init__(self, journal, binary=BINARY, clock=None, opener=None, library=None, librarian=None, preload=None):
+    def __init__(self, journal, binary=BINARY, clock=None, opener=None, library=None, librarian=None, preload=None, sync='fsync'):
+        self.sync = sync  # world-open {sync}: "none" flushes, "fsync" (the default) asks the OS to write the bytes out, "full" forces the disk
         self.preload, self.pin = preload, None  # a stateless process loads this library at each spawn; pin is its answer
         self.journal, self.binary, self.proc, self.clock, self.opener = journal, binary, None, clock, opener
         # A library directory is sealed into the journal at its first open, as `librarian` (who may change it).
@@ -40,7 +41,7 @@ class Host:
         self.proc = subprocess.Popen([self.binary], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         if self.journal:
             reply = self._exchange({'op': 'world-open', 'path': self.journal, **({'clock': self.clock} if self.clock else {}),
-                                     **({'opener': self.opener} if self.opener else {}), **self.library})
+                                     **({'opener': self.opener} if self.opener else {}), **self.library, 'sync': self.sync})
             if reply.get('status') != 'opened':
                 raise HostDied('world-open refused: ' + json.dumps(reply))
         elif self.preload:
