@@ -342,3 +342,82 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
+## 16. Queue for the successor (lane/kernel5 at 9a29080, after foundation b47046b)
+
+Done on this lane and committed (each green on hbox, details in §14 and §15): typed views
+(9c5af54), protocols (b1fe9f8), `textHasAny` (d8929d9), checkpoint v3 relative addresses
+(e6b6b86), relational grammar atoms + `write` insert/upsert/retract + `relations` in the
+artifact (b05234d), the lazy-state note §15 (b00b32d), `canonicalCompare` (5994055).
+Nothing of the Wholeness kernel work is started; the tree is clean. Run in this order:
+
+1. **`textWords(s) -> List<String>`** (not done). Needs a list-producing term form: on a
+   label value the machine allocates one native cell holding the words' Data list and
+   enters it; typed by its annotation's codomain (`isTextList`), like `refuse`; checkpoint
+   tag in v1 and v2/v3 codecs, `related_stepRaw` case (a native allocation, as
+   `forceNative`), Fast `sizesAfter`, the three evaluators (`["textWords", x]` steps to a
+   list literal), the generator. Words as `textWordsOf` (OpenRecursion). Only if the
+   objects lane still needs it after switching to `textHasAny`.
+2. **Wholeness kernel day 1** (WHOLENESS §1, §4). Fixed shapes and what the contract gets
+   wrong or leaves open, as found reading the code:
+   - `Ty.isPlanUnder` admits a record row of data (`.field`/`.emptyRow`, or a variable
+     bound to one) beside a variant.
+   - `PartialTyping.perform` concludes `computation planType (performResponse planType T) T`
+     with `performResponse` = `.data` when the plan type is a row (message dialect), else
+     `T` (old dialect: `T` is the activity's `R`, so every old packet and the decided
+     examples at Typing ~1550-1600 are unchanged). The checker's perform case already takes
+     `T` from the annotation's codomain; only the conclusion's middle type changes.
+   - Surface `Activity<A>` = `computation Message .data A`, `Message` resolved as the record
+     `Message` of the module named `World` (refuse by name when the closure has none).
+     `St.effect` is then `(Message, .data)`.
+   - World calls: lower in the generics pass (it is the only place type arguments
+     instantiate): `world.X::<T>(arg)` / `world.X(arg)` → a NEW Surface/core Expr
+     `typedPerform (resultType : String) (plan : Expr)` with plan
+     `{object: {world: "", object: "world"}, method: "X", argument: Data.of::<Input[T]>(arg)}`
+     and `resultType` the rendered `Result[T]`; the elaborator emits
+     `ATerm.perform Message ResultT planTerm` (its `response` field becomes the site type,
+     `annotate` already writes it as the codomain). `isPerform` must accept it (for
+     `let label(x) =` and `noActivity`). Infer `T` only when the method's input is exactly
+     the type parameter (`write<E>`, `judge<E>`); otherwise require `::<T>`.
+   - The `protocol world:` lines are SIGNATURE form `name<Ps>(INPUT) -> RESULT`, unlike
+     this lane's `name: TYPE` protocol lines: extend `Surface.Decl.protocol` with per-method
+     type parameters, parse both line forms, and in `Generics.rewriteDecl` bind each
+     method's parameters (and State/Plan/Response) as atoms. `implements` (this lane)
+     stays for the `name: TYPE` form.
+   - `write {…}` relowering to `world.write(extend(keep(), {...}))`: decide by dialect (the
+     parser does not know it); suggested: the parser emits a marker callee and the generics
+     pass picks `Plan.write` when the module has a `Plan` type alias, else `world.write`.
+   - Surface `perform(...)` inside an `Activity<A>` body: refuse by name ("an Activity<A>
+     yields only world calls"); keep it for the old dialect until day 4.
+3. **Wholeness kernel day 2.** Site types at a yield and a resume (the contract's
+   "annotation at the preorder index of the yielded perform"): at a yield the plan cell
+   holds the perform's argument subterm, but `settle` replaces every cached origin with a
+   self origin, so the term is gone in the checkpoint. Fix found: make `settleCell` keep,
+   for the yielded plan cell only, `⟨planTerm, []⟩` (environment emptied, so collection
+   retains nothing); `settle_heap_erased`/`agree_settle` hold unchanged because `Agree` is
+   equality up to cached origins (`eraseCell`). Then `Turn.conclude` and
+   `resumeActivity`/`resumeEntry` find the site: plan cell origin term → its index by
+   `Dictionary.findTerm` → a map index → `T` built once per entry by walking the entry
+   term in `Dictionary.addTerm`'s preorder with the checker's positions (`lam [0]`, `app
+   [0][1]`, record field `i`, `extend`/`case` `[1, i]`, …) and reading each `perform`'s
+   annotation codomain. Report it as the yield's `responseType` and check the response
+   against it (message dialect only; old dialect keeps `R`).
+   Artifact: `dialect: "message"` when the entry's activity is `computation Message …`
+   (absent otherwise, so old artifacts are byte-identical), `world: [method names]` the
+   entry's packet performs (scan its `ATerm.perform` plans for the `method` label), and
+   the World module's source sha256 as `worldProtocol`. Tests: `test_sugar` (world-call
+   lowering against the explicit `typedPerform` spelling is impossible in source, so
+   compare packets of `world.view::<S>` with a hand-built expected plan JSON), new
+   `test_world_calls` (turn-start yields the Message; `responseType` is `Viewed<S>`;
+   turn-resume with `viewed {version, state}` finishes; a non-conforming response is
+   refused). Re-record `tests/fixtures/pins/artifacts.json` only if a world packet moves
+   (it should not until objects migrate). KERNEL-HANDOFF gets the section.
+4. **Day 4 (after the objects lane):** refuse `Activity<P, R, A>` and variant Plans by
+   name; delete the old perform dialect.
+
+Contract notes. `canonicalCompare` was asked as `(Data, Data)`; it is `(T, T)` for one
+first-order `T` (Data has no shape Bend can read; generic `Relation<T>` is monomorphised).
+RELATIONAL §5's atoms compile to `Pred.any []`; the host's `Law.lean` fails closed on them
+until it denotes them. The rehearsal's large suspensions come mostly from the directory's
+word walk leaving every suffix of the reply in the heap (§14), which `textHasAny` removes
+once the objects lane switches.
+
