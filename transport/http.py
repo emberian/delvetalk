@@ -722,7 +722,7 @@ class Handler(BaseHTTPRequestHandler):
             if r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
                 said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
             else:
-                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), line=html.escape(turn_line(r)),
+                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r)),
                                               offers=''.join(pages.T['offer'].format(text=html.escape(t)) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it

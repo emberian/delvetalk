@@ -12,6 +12,13 @@ def page(title, who, body):
     return T['shell'].format(title=e(title), who=e(who or 'not logged in'), body=body)
 
 
+STAMPS = {'admitted': '●', 'refused': '§', 'suspended': '…', 'quiet': '—'}  # a receipt's stamp: an icon beside its word, never colour alone
+
+
+def stamp(fate, word=True):
+    return f"{STAMPS.get(fate, '◦')} {fate}" if word else STAMPS.get(fate, '◦')
+
+
 def yours(text, did):
     return T['yours'] if did and did in str(text) else ''
 
@@ -32,10 +39,10 @@ def doors_of(links):
 
 
 def slip(x, did=None):
-    """A receipt as a library slip: the slug in small caps, the height as a shelf mark, a refusal's clause in the margin."""
+    """A receipt as a stamped ticket: its stamp's icon and word, the slug in small caps, the height as a shelf mark, a refusal's clause."""
     out, ident = x.get('outcome') or {}, x.get('identity') or {}
     clause = out.get('reason') or ' '.join(str(out[k]) for k in ('clause', 'object') if out.get(k))
-    return T['slip'].format(fate=e(str(out.get('tag'))), height=e(str(x.get('height'))), name=e(str(x.get('slug') or '')),
+    return T['slip'].format(fate=e(str(out.get('tag'))), stamp=e(stamp(str(out.get('tag')))), height=e(str(x.get('height'))), name=e(str(x.get('slug') or '')),
                             intent=e(str(ident.get('intent'))), who=e(str(ident.get('principal'))), yours=yours(ident.get('principal'), did),
                             note=T['note'].format(clause=e(f"{out.get('class')}: {clause}" if clause else str(out.get('class')))) if out.get('tag') == 'refused' else '')
 

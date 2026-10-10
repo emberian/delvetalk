@@ -80,12 +80,12 @@ class Pages(FrontCase):
         self.page('/AGENTS.md/world/garden/source', 'class="action"')
 
     def test_an_action_form_runs_the_turn_the_play_page_runs_and_its_receipt_is_a_page(self):
-        text = self.page('/play/garden', 'class="slip admitted', method='POST', form={'method': 'plant', 'colour': 'violet', 'seed': 'a form-grown fern'})
+        text = self.page('/play/garden', 'class="slip admitted', '<span class="stamp">●</span><span class="line">admitted garden', method='POST', form={'method': 'plant', 'colour': 'violet', 'seed': 'a form-grown fern'})
         slug = re.search(r'admitted garden v\d+ at height \d+, receipt ([a-z-]+)', text)[1]
-        receipt = self.page(f'/AGENTS.md/receipt/{slug}', 'class="slip admitted"', f'<span class="name">{slug}</span>', '<dl>')
+        receipt = self.page(f'/AGENTS.md/receipt/{slug}', 'class="slip admitted"', '<span class="stamp">● admitted</span>', f'<span class="name">{slug}</span>', '<dl>')
         self.assertIn('href="/o/garden"', receipt)  # the roots as shelf marks
         self.page('/o/garden', f'<span class="name">{slug}</span>')  # and in the object's ledger
-        self.page('/AGENTS.md/offers', 'class="frame offer"', 'class="slip admitted"')
+        self.page('/AGENTS.md/offers', 'class="frame offer"', 'class="slip admitted"', '<span class="stamp">↳ offered</span>')
 
     def test_the_rest_of_the_agent_routes_render_as_definition_lists(self):
         for path in ('/AGENTS.md/me', '/AGENTS.md/pending'):

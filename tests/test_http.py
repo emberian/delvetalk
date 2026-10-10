@@ -683,15 +683,15 @@ class Play(FrontCase):
     def test_prose_the_interpreter_never_answers_is_stated_as_no_reply(self):
         self.front.sleep = lambda seconds: None
         s, _, page = self.play('/play/garden', 'something green perhaps')
-        self.assertIn(b'suspended at height', page)
-        self.assertIn(b'no reply', page)
+        self.assertIn('<span class="stamp">…</span><span class="line">suspended at height'.encode(), page)
+        self.assertIn('<span class="stamp">— quiet</span>(no reply)'.encode(), page)  # silence is a state: a stamp and its word
 
     def test_the_49th_prose_reply_in_an_hour_is_refused_by_quota_with_its_next_at(self):
         self.front.sleep = lambda seconds: None
         for i in range(48):
             self.play('/play/garden', f'something green, number {i}')
         s, _, page = self.play('/play/garden', 'one more')
-        self.assertIn(b'refused quota', page)
+        self.assertIn('<span class="stamp">§</span><span class="line">refused quota'.encode(), page)
         self.assertIn(b'next at', page)
 
 
