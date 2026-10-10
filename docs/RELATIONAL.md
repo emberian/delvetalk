@@ -166,3 +166,23 @@ Risks, named:
 Before or after launch. Land §2 and §3 before launch: `Relation<T>` canonical, the three edits, `insert` commuting, the row-rebase rule, `insertOnly`, and the objects whose lists are plainly keyed (Bell, Tide, Directory, Anthology, Garden.pending, Deal). Reason: these change the wire shape of state and every pin, and after launch each would be a per-object migration with two dialects of `writes[].edits` in the journal for good (Plan.obend already carries one "for one release" compatibility, the index forms). Everything in §6 to §8 is additive, a new Plan, a library sum, a lens kind, and moves no state shape; it can follow at the pace of the objects that want it, and `viewField` and `On.rows` are the first two. Four days against a green gate, the gate itself unchanged, is the cost; the alternative is carrying the list-and-index model into the journal of the world that launches.
 
 Unresolved from the brief: I could not place "Fafnir" as a named system in the incremental-view literature or in this tree; Materialize carries that point.
+
+## 11. Scale, decided 2026-10-10
+
+The unit of load is the object: a turn materialises the whole state, and a
+relation left to grow costs every turn on that object a linear load before any
+work. Four mitigations, the first three landing with the slice:
+
+1. Every relation declares `limit: Nat` in its `Decl` (0 means the host default
+   of 4,096 rows) with `dropOldest` retention by key order, enforced by
+   `Relation.canonical` after every write; growth is a stated decision.
+2. The host trusts its own stored state and does not re-run `conformsUnder` on
+   it per turn; only arguments arriving from outside are checked.
+3. An unbounded collection is a sequence of child objects (`anthology/page/n`),
+   the current one small and the rest closed; never one relation.
+4. After launch: lazy state cells, so a method that reads a count never
+   materialises the rows.
+
+Bounds that go with them: subscribers per object 64, `changed` deliveries
+under the per-turn send bound, a per-object index of height to keys touched so
+`keysChangedSince` is constant.

@@ -23,6 +23,7 @@ from tests.test_objects import closure
 from tests.test_receive import ROOT_DOORS, door
 from tests.test_replay import get, items
 from tests.test_turn_world import label, record
+from transport.identity import ORIGIN
 
 POSTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rehearsal", "fixtures", "posts.json")
 GLM, GEMINI, KIMI = "did:plc:nmjdxe6fex23zslnnbwgruj3", "did:plc:ubtqb43nq7u6jlibkzlobkuu", "did:plc:j2hnfjwlnm2mau24vnmpir6d"
@@ -251,7 +252,7 @@ class BellsAreQuiet(test_chain.Chain):
 class LinkDoors(test_chain.Chain):
     """The deploy pass: genesis's STUDIO door names no object; a stranger's "STUDIO" got "The
     door to  opens on nothing yet.". A link door answers with its description (its URL)."""
-    STUDIO = ("STUDIO", "Your authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md", "")
+    STUDIO = ("STUDIO", "Your authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md", "")
 
     def test_studio_answers_with_its_url_and_field_lines_pass_it_by(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
@@ -264,7 +265,7 @@ class LinkDoors(test_chain.Chain):
         self.assertEqual(say("hello")["result"]["label"], "menu")
         studio = say("STUDIO")
         print("\n--- STUDIO ---\n" + studio["offers"][0]["text"])
-        self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md\n")
+        self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md\n")
         planted = say("plant: a lamp for moths\ncolour: amber")
         self.assertEqual(planted["result"]["label"], "passed", planted)
 

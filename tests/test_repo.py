@@ -21,8 +21,11 @@ from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, 
 from transport import delve, identity
 from transport.hostproc import LIBRARY, HostClient
 from transport.http import Front, RemoteHeaps
+import urllib.parse
+from transport.identity import ORIGIN
 
-REPO = 'did:web:delvetalk.fg-goose.online'
+HOST = urllib.parse.urlsplit(ORIGIN).netloc
+REPO = 'did:web:' + HOST
 NS = 'town.delvetalk.'
 
 
@@ -150,15 +153,15 @@ class Repository(unittest.TestCase):
 
     def test_did_document_describe_repo_and_handle(self):
         s, doc = self.get('/.well-known/did.json')
-        self.assertEqual((s, doc['id'], doc['alsoKnownAs']), (200, REPO, ['at://delvetalk.fg-goose.online']), doc)
+        self.assertEqual((s, doc['id'], doc['alsoKnownAs']), (200, REPO, ['at://' + HOST]), doc)
         self.assertEqual(doc['service'], [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer',
-                                           'serviceEndpoint': 'https://delvetalk.fg-goose.online'}])
+                                           'serviceEndpoint': ORIGIN}])
         s, d = self.xrpc('com.atproto.repo.describeRepo', repo=REPO)
         self.assertEqual((s, d['did'], d['didDoc']), (200, REPO, doc))
         self.assertEqual(d['collections'], [NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law')])
-        self.assertEqual(self.xrpc('com.atproto.repo.describeRepo', repo='delvetalk.fg-goose.online')[1]['did'], REPO)
+        self.assertEqual(self.xrpc('com.atproto.repo.describeRepo', repo=HOST)[1]['did'], REPO)
         self.assertEqual(self.xrpc('com.atproto.repo.describeRepo', repo='did:plc:other')[1]['error'], 'RepoNotFound')
-        self.assertEqual(self.xrpc('com.atproto.identity.resolveHandle', handle='delvetalk.fg-goose.online'), (200, {'did': REPO}))
+        self.assertEqual(self.xrpc('com.atproto.identity.resolveHandle', handle=HOST), (200, {'did': REPO}))
         self.assertEqual(self.xrpc('com.atproto.identity.resolveHandle', handle='talkie.delve.town')[1]['error'], 'HandleNotFound')
 
     def test_list_records_pages_receipts_by_height_both_ways(self):

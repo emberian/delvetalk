@@ -29,6 +29,7 @@ from transport import delve, identity
 from tests.host import HostdCase, serve
 from transport.hostproc import HostClient
 from transport.http import Front, RemoteHeaps
+from transport.identity import ORIGIN
 
 HANDLE = 'talkie.delve.town'
 DID = 'did:plc:' + 'a' * 24
@@ -135,7 +136,7 @@ class Arrival(FrontCase):
     def test_guide(self):
         s, text = self.call('GET', '/AGENTS.md')
         self.assertEqual(s, 200)
-        self.assertIn('O=https://delvetalk.fg-goose.online/AGENTS.md\n', text)
+        self.assertIn('O=' + ORIGIN + '/AGENTS.md\n', text)
         self.assertIn('$O/challenge', text)
         self.assertNotIn('{{origin}}', text)
         s, examples = self.call('GET', '/AGENTS.md/examples')

@@ -192,6 +192,36 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 `world-arrive {principal, did, handle}` (clock principal only; the world must name an opener and have a library) records the handle as `world-principal` does, then creates each absent one of `<did>` from library module `Avatar`, `env/<did>` from `Env`, `wake/<did>` from `Wake`, as `create` by the opener with identity `arrive:<id>`, `owner: did`. Idempotent: a repeat answers `{status: "arrived", did, handle, created: []}` with no entry. Reply: `created [{object, height}]` and `principal`. A missing library module is a request error naming it. `transport/hostproc.py` `ARRIVAL` lists the packages the sealed library must hold (`Avatar`, `Env`, `Wake`, `Place`). `docs/GENESIS.md` says when transport calls it. Test: `test_arrive`.
 
+43. **Per-op timing (host7).** With `DELVETALK_TIMING=1` in its environment, the host binary writes one stderr line per
+   op after the reply: `timing<TAB>op<TAB>ms<TAB>object=…<TAB>method=…<TAB>principal=…<TAB>resumed=n<TAB>delivered=n`
+   (`PackageMain.timingLine`; ms from reading the request to writing the reply, the settling pass included). hostd's
+   children inherit the variable and the stderr, so a rehearsal run with it set leaves the lines in `hostd.stderr`.
+
+44. **Rehearsal run 9's costs (host7, finding 5).** Measured with `DELVETALK_TIMING=1` on the run (host ms by op and
+   object): directory `receive` turns 15.5 s (120 turns, ~130 ms), `world-arrive` 8.3 s (77 arrivals, ~110 ms), garden
+   `receive` 6.1 s, env `receive` 5.5 s (277 turns), `world-interpretation` 1.7 s. Fixes, measured as host CPU per op
+   on the run's own journal (median of 15, hbox at load ~20): `libraryClosure` is a worklist that reads each wanted
+   module's imports once (it re-split every library module's source once per library module per call, and a creation
+   calls it twice): an arrival 190 -> 20 ms. The checkpoint dictionary (`Dictionary.ofProgram`, which the kernel built
+   twice per yield) is built once per compiled method (`Compiled.dictionary`) and passed to `Turn.startEntry` /
+   `resumeEntry` (an optional parameter added to the kernel's functions): a directory prose turn 310 -> 180 ms.
+
+45. **Relations, day 1 (host7; RELATIONAL.md §2, §3, §11 item 1).** A package declares relations with `def relations() ->
+   Lists.List<Decl>` (`{field, key: List<String>, limit: Nat, retain?}`; `retain` only `dropOldest`). The host reads it
+   only when a module of the package has a `def relations(` line (`declaresRelations`), compiling it as a held entry
+   (`relationDecls`; `prepareProgram` compiles it from the program's resolved inputs) into `Object.relations` /
+   `Program.relations : List RelDecl` (snapshots keep `relations` per object). A relation field holds
+   `rows {items: List<T>}` of records `T`; `checkRelations` refuses at creation (and reprogram, clause `key`) a field that
+   is not one or a key column `T` lacks, by name. `canonicalRows`: rows sorted by the canonical DAG-CBOR bytes of their
+   key projection (NB: DAG-CBOR orders map keys by length first, so key `{author, at}` sorts by `at` before `author`; the
+   contract's "sorted by key" means these bytes), no key twice (`duplicateKey`, refused by name at creation), at most
+   `limit` rows (0: `Limits.maxRelationRows` 4,096), the oldest by key order dropped. Seeds are canonicalized before they
+   are journaled (`create`, `buildCreated`, `buildObjectIn`), migration results in `judge`, and every write of a relation
+   field (`applyStep` with the object's decls). Edits `insert {row}`, `upsert {row}`, `retract {key}` (`EditKind`,
+   `relationEdit`) follow the nine-cell table; `keyTaken` and `duplicateKey` are refusal classes. The host reads edit
+   labels, not type names, so a package may declare its own `Relation<T>` and row-edit sum until `Relation.obend` and
+   Plan.obend's constructors land. Tests: `tests/test_relation.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -213,3 +243,64 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - Foreign worlds: `Reference.world != ""` is refused `foreignWorld`.
 - `tests/test_bridge.py` `test_end_to_end_clock_and_addressee_against_the_real_host` is still `@unittest.expectedFailure` with a comment that `world-addressee` is missing; the op exists (`Session.lean`). Remove the decorator and run it.
 - `world-reprogram`/`amend` are gated only by the object's law.
+
+### Queue for the next host lane, in order (from lane/host7, which stopped at 2073cd0)
+
+Build and test on hbox in your own directory; `swarm-build`; narrow suites, then the full `tests.run` once. Contracts:
+docs/RELATIONAL.md (§2, §3, §5, §9 day plan, §11 scale) and docs/WHOLENESS.md (§1 `answer` dispatch, §2, §3, §3a, §4 wire names).
+
+1. **Rehearsal timing, remaining.** Done: `DELVETALK_TIMING=1` per-op stderr lines (5.43); arrival 190 -> 20 ms
+   (`libraryClosure`), directory prose turn 310 -> 180 ms (held checkpoint dictionary) (5.44). Measured run-9 wall on
+   hbox at load 13 to 30: 64 to 73 s (base binary 72 to 101 s); host time 31 to 36 s, of which directory `receive` 11 to
+   16 s, env `receive` 4.4 to 5.9 s, garden `receive` 4.5 to 5.2 s, `world-arrive` 2.3 s, `world-interpretation` 1.5 to
+   1.9 s. The rest of the wall (~30 s) is the Python transport's subprocesses, not the host. Next: a directory turn
+   still costs ~110 ms CPU at 64k ticks; profile its plans (each `inspect` answers a whole source; each yield encodes a
+   v2 checkpoint), and measure on a quiet box before claiming the 50 s target.
+2. **Relations day 1, rest.** Done (5.45): edits, nine cells, canonical form, keys checked, `limit`/`dropOldest`. Not
+   done: a test of a migration result made canonical; `Relation.obend`/Plan.obend constructors are the objects lane's
+   (host tests declare their own sums).
+3. **Relations day 2.** `EditKind.commutes` gains `insert`; `keysChangedSince w id seen field : Option (List Data)` beside
+   `fieldsChangedSince`, read from `writes[].edits` (insert/upsert rows' keys, retract keys); `judge`'s moved-root rule
+   accepts an upsert or retract whose key no admitted write since `seen` touched, for any root (the `rebaseOwn` own-object
+   restriction dropped for relations); a concurrent retract of a changed key is `staleRoot` (transient). Write beside the
+   nine-cell table: when that `staleRoot` re-runs the turn (`TurnMeta.rerun`, 5.26), the re-run reads the current rows, so
+   the retract is a no-op (key gone) or the turn meets `keyTaken` (row changed); one test shows it end to end (two
+   agents, one retracts while the other upserts the same key). Each commutation pair as two turns against a moved root;
+   two inserts of one key with different rests (second `keyTaken`).
+4. **Law atoms.** `Law.lean` denotes `insertOnly(F)`, `count(new.F) <= n`, `count(new.F) <= count(old.F) + n`, `REF in
+   new.F.COL`, with `#guard`s. Blocked on the kernel lane: `LawExpr`/`LawRef` in `spec/bend/Compiler/ObjectiveBendLaw.lean`
+   have no constructors for them yet (checked at foundation 5eac2a6). Denote once they parse.
+5. **Scale (§11).** (a) done with item 2. (b) Trust own state: stored state is not re-checked with `conformsUnder` per
+   turn; the per-turn check of the state argument is in the kernel's `Turn.prepareStartEntry` (every argument), so the
+   host needs an optional "trusted" flag there (as the dictionary parameter was added, 5.44) and the judge's check of the
+   written state can be limited to the fields a step changed; measure a 2,000-row Bell rain turn before and after.
+   (c) A per-object index height -> keys touched (rebuilt by `record`, so replay and snapshots get it) so
+   `keysChangedSince` is constant rather than a scan.
+6. **`viewDerived {object, view}` -> `derived {version, value: Data}`**: run the target package's pure def named `view`
+   (taking the state and the reader's Context, returning first-order data) under read authority and the turn's remaining
+   ticks, exactly as `renderCard` runs `render`; record the root; refuse an unknown view by name; views are declared by
+   `def views() -> List<String>`, read as `lawReads()` is; mark them in the method table. Plan.obend shapes appended at
+   the end of Plan and Response (5.40 shows why: `test_objects` pins the first constructors' order).
+7. **`viewAt {object, version}` -> `viewed {version, state}`** for a past version, built as `world-object {version}` builds
+   it (`pinAndLawAt` for code; the state at a version is not stored: reconstruct by undoing later writes from
+   `writes[].edits` backwards, or replay the object's touched entries forward from its created seed); read authority;
+   root recorded at the CURRENT version.
+8. **Wholeness host days** (WHOLENESS.md): (1) the `world` object: `answer` dispatches on `Message.method` when the
+   activity's dialect is "message" (on constructor for the old dialect until the objects finish), with the world's own
+   law and read policy saying who may call which method (`write` self-only; `create` under the opener's rules;
+   `subscribe` by anyone with read authority on the target); (2) `Host/Spell.lean`: the spell grammar (`delvetalk <card>
+   <action>` line with ` / ` or newline fields, `name: value`, `<<DELIM` blocks, fences skipped, last unquoted line,
+   bare field lines) parsed against the target's method-table forms (`methodForms`), the typed argument built, the
+   method run; `world-turn {spell: text}`; refusals `badSpell {clause, reason, hint}` with the usage card; `?` answered by
+   the host; bare field lines passed as `Heard.fields`; tested against the Bend Spell fixtures until Spell.obend's parser
+   goes; (3) subscriptions: `subscribe {object, field}`/`unsubscribe` journaled, `changes` deliveries beside `sends` after
+   every admitted write with `{object, field, version, inserted, retracted}` re-derived from `writes[].edits` on replay,
+   64 subscribers per object, `unserved` journaled past the per-turn bound; (4) rows as roots (§3a): `recordRoot`
+   records `{object, field, key}` for rows read, the commit check uses the keys-touched index (item 5c), receipts cite
+   rows beside versions, replay re-derives; the insert-commutes rule becomes a special case.
+
+Learned against the contracts: canonical order is the key's DAG-CBOR bytes, which put shorter map keys first (so
+"sorted by author, at" is really by `at`, then `author`); the host cannot see type names, so `Relation<T>` is recognised
+by declaration plus the `rows {items}` shape, not by its library type; `relations()` has to be compiled per package
+until the kernel lists it in the artifact (RELATIONAL day 2, kernel), which costs a compile at each creation of a
+package that declares it (cached by the prepared request); a refused write still journals the method's result.

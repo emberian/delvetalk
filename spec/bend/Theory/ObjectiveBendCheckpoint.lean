@@ -29,12 +29,13 @@ def primitiveCode : Primitive → Nat
   | .add => 0 | .multiply => 1 | .equal => 2 | .conjunction => 3 | .labelEqual => 4
   | .subtract => 5 | .divide => 6 | .less => 7 | .lessEqual => 8 | .modulo => 10
   | .textConcat => 11 | .textTake => 12 | .textDrop => 13 | .textSpan => 14 | .textBreak => 15
+  | .textHasAny => 16 | .textCanonicalCompare => 17
 def primitiveOf : Nat → Option Primitive
   | 0 => some .add | 1 => some .multiply | 2 => some .equal | 3 => some .conjunction
   | 4 => some .labelEqual | 5 => some .subtract | 6 => some .divide | 7 => some .less
   | 8 => some .lessEqual | 10 => some .modulo
   | 11 => some .textConcat | 12 => some .textTake | 13 => some .textDrop
-  | 14 => some .textSpan | 15 => some .textBreak | _ => none
+  | 14 => some .textSpan | 15 => some .textBreak | 16 => some .textHasAny | 17 => some .textCanonicalCompare | _ => none
 def unaryCode : UnaryPrimitive → Nat
   | .natText => 0 | .textLength => 1 | .sha256Text => 2
 def unaryOf : Nat → Option UnaryPrimitive

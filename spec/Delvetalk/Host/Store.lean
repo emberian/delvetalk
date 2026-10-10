@@ -3,6 +3,7 @@
    writer. Nothing here depends on an evaluator. -/
 import Delvetalk.Package
 import Delvetalk.Entry
+import Theory.ObjectiveBendCheckpointV2
 import Std.Data.HashMap
 
 namespace Delvetalk.Host
@@ -17,6 +18,8 @@ namespace Limits
 -- Shared kernel bounds (ticks, heap, stack, nodes, bytes, data depth, documents, offers) live in Delvetalk/Limits.lean; this host will read them from there.
 def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
+/-- Rows a relation holds when its declaration names no limit (`Decl.limit` 0). -/
+def maxRelationRows : Nat := 4096
 def maxPrincipalBytes : Nat := 128
 def maxIntentBytes : Nat := 256
 def maxRoots : Nat := 64
@@ -119,6 +122,17 @@ end Limits
 /-- A parsed `law NAME: EXPR` list; empty is "no law". -/
 abbrev Law := List (String × LawExpr)
 
+/-- A relation an object's package declares (`def relations() -> Lists.List<Relation.Decl>`): the
+    state field holding it, its key columns in order, and the most rows it keeps (0: the default
+    `Limits.maxRelationRows`); past it the oldest by key order are dropped (`retain: dropOldest`). -/
+structure RelDecl where
+  field : String
+  key : List String
+  limit : Nat := 0
+  deriving BEq, Repr
+
+def RelDecl.cap (d : RelDecl) : Nat := if d.limit == 0 then Limits.maxRelationRows else d.limit
+
 /-- A compiled method of an object's package: its checked packet and entry type. -/
 structure Compiled where
   packet : Json
@@ -130,6 +144,9 @@ structure Compiled where
   /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntry`,
       `Turn.resumeEntry`, `Package.executeDataEntry`), never from the packet JSON. -/
   entry : Option Delvetalk.CheckedEntry := none
+  /-- The checkpoint dictionary of the entry's program (`Dictionary.ofProgram`), built once with it:
+      every yield encodes against it and every resumption decodes against it. -/
+  dictionary : Option Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary := none
 
 /-- Causal budget carried by a turn and inherited, decremented, by its sends. -/
 structure Ledger where
@@ -174,6 +191,8 @@ structure Program where
   predicateReads : Bool := false
   /-- The compiled packet's digest, observed beside the source pin. -/
   packet : String := ""
+  /-- The relations the new code declares. -/
+  relations : List RelDecl := []
 
 structure Object where
   /-- The object's pin: the CID of its sealed source closure (the artifact's `sourcesSha256`, the
@@ -212,6 +231,8 @@ structure Object where
   /-- The reading of each law clause the package gave one (`law NAME "reading": EXPR`), kept
       while the clause is the package's: a refusal by it says `refused NAME: reading`. -/
   readings : List (String × String) := []
+  /-- The relations its package declares (`relations()`); their fields are kept canonical. -/
+  relations : List RelDecl := []
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

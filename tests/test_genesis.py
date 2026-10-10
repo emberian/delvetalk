@@ -7,6 +7,7 @@ from deploy import genesis
 from tests.host import start_hostd, stop_hostd
 from tests.test_turn_world import BINARY
 from transport.hostproc import LIBRARY, HostClient
+from transport.identity import ORIGIN
 
 
 class Genesis(unittest.TestCase):
@@ -51,21 +52,13 @@ class Genesis(unittest.TestCase):
         # The link door has no object: naming it reaches Plan.card on the empty reference (the Directory answers
         # "The door to  opens on nothing yet."), so only the menu carries its URL.
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
-        self.assertIn('https://delvetalk.fg-goose.online/AGENTS.md', menu)
+        self.assertIn(ORIGIN + '/AGENTS.md', menu)
 
-    @unittest.expectedFailure
-    def test_every_door_publishes_its_page_and_the_outbox_holds_a_wiki_draft_each(self):
-        # Tide has no publishPage method (Card.publishPage is generic; Tide never instantiates it), so the
-        # TIDE door's page is refused "method publishPage does not compile: missing selected entry".
-        from transport import bridge
-        host, made, tmp = self.host, self.made, self.tmp.name
-        pages = {m['object']: m['page']['status'] for m in made if 'page' in m}
-        self.assertEqual(pages, {to: 'admitted' for _, _, to in genesis.DOORS if to}, pages)
-        drafted, problem = bridge.publication_drafts(tmp, host)
-        self.assertIsNone(problem)
-        texts = [json.loads(p.read_text())['text'] for p in sorted((Path(tmp) / 'outbox').glob('*.json'))]
-        self.assertEqual(len(texts), len([1 for _, _, to in genesis.DOORS if to]))
-        self.assertTrue(all(t.startswith('wiki: ') for t in texts), texts)
+    def test_five_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
+        pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
+        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'play', 'rooms', 'workshop'], pages)
+        card = json.dumps(self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'anthology'}))
+        self.assertIn('ember.delve.town', card)
 
 
 if __name__ == '__main__':

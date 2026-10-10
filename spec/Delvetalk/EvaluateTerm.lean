@@ -19,7 +19,8 @@ def primitiveOfName : String → Except String Primitive
   | "subtract" => pure .subtract | "divide" => pure .divide | "less" => pure .less
   | "lessEqual" => pure .lessEqual | "modulo" => pure .modulo
   | "textConcat" => pure .textConcat | "textTake" => pure .textTake | "textDrop" => pure .textDrop
-  | "textSpan" => pure .textSpan | "textBreak" => pure .textBreak
+  | "textSpan" => pure .textSpan | "textBreak" => pure .textBreak | "textHasAny" => pure .textHasAny
+  | "textCanonicalCompare" => pure .textCanonicalCompare
   | other => throw s!"unknown primitive {other}"
 
 def unaryOfName : String → Except String UnaryPrimitive

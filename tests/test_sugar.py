@@ -471,7 +471,56 @@ class Writes(unittest.TestCase):
         reply = self.h.send({"op": "check-package", "entry": "plant",
                              "modules": library_modules("Abi", "List", "Plan") + [{"name": "Package", "source": source}]})
         self.assertEqual(reply["status"], "refused", reply)
-        self.assertIn("takes add, set, append, remove or removeItem, not bump", reply["diagnostic"]["message"])
+        self.assertIn("takes add, set, append, remove, removeItem, insert, upsert or retract, not bump", reply["diagnostic"]["message"])
+
+
+    def test_relation_edits_are_their_plans(self):
+        # RELATIONAL section 3: insert/upsert/retract, against a Plan library that has them.
+        plan = [m for m in library_modules("Abi", "List", "Plan") if m["name"] == "Plan"][0]["source"]
+        plan = plan.replace("  removeItem: {item: D}\n",
+                            "  removeItem: {item: D}\n  insert: {row: D}\n  upsert: {row: D}\n  retract: {key: Data}\n")
+        modules = [m if m["name"] != "Plan" else {"name": "Plan", "source": plan}
+                   for m in library_modules("Abi", "List", "Plan")]
+        for op, ctor, payload, value in [("insert", "insert", "row", "input.child"),
+                                         ("upsert", "upsert", "row", "input.child"),
+                                         ("retract", "retract", "key", "{object: input.note}")]:
+            with self.subTest(op=op):
+                sugared = GARDEN + "  let written(_) = perform(write {children: %s %s})\n  state.planted\n" % (op, value)
+                explicit = GARDEN + ("  let written(_) = perform(Plan.write({object: P.self(context), edits: extend(keep(), "
+                                     "{children: P.Entries::<P.Reference, {}>.%s({%s: %s})})}))\n  state.planted\n" % (ctor, payload, value))
+                packets = []
+                for source in (sugared, explicit):
+                    reply = self.h.send({"op": "compile", "entry": "plant",
+                                         "modules": modules + [{"name": "Package", "source": source}]})
+                    self.assertEqual(reply["status"], "compiled", reply)
+                    packets.append(core(reply["artifact"]))
+                self.assertEqual(packets[0], packets[1])
+
+
+RELATIONS = HEAD + """import ./List.obend as Lists
+record Decl:
+  field: String
+  key: Lists.List<String>
+record State:
+  rains: Lists.List<{author: String, at: Nat, text: String}>
+def relations() -> Lists.List<Decl>:
+  Lists.List.cons({head: {field: "rains", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.nil({})})})}, tail: Lists.List.nil({})})
+def initial() -> State:
+  {rains: Lists.List.nil({})}
+"""
+
+
+class Relations(unittest.TestCase):
+    """RELATIONAL section 2: a package's `relations()` is listed in its artifacts, so the host
+    reads the keys without compiling a definition per object."""
+
+    def test_relations_are_listed_in_every_entry_artifact(self):
+        h = Host()
+        self.addCleanup(h.close)
+        art = h.compile(RELATIONS, "initial", ("List",))
+        self.assertEqual(art["relations"], [{"field": "rains", "key": ["author", "at"]}])
+        plain = h.compile(RELATIONS.replace("def relations()", "def declared()"), "initial", ("List",))
+        self.assertNotIn("relations", plain)
 
 
 class LawReading(TurnWorld):

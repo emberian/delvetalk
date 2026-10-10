@@ -63,7 +63,7 @@ After ember posts them by hand, `transport.post ... --object <object>` journals 
 | Data volume | bind mount `/var/lib/delvetalk/v2`, uid 10425 |
 | Model key | `/etc/delvetalk/anthropic.key`, mode 0400, the Max plan's included API credits; `DELVETALK_MODEL_THINKING=off` |
 | Posting credentials | outside the repository and every service; mounted for one `transport.post` command at a time (docs/DEPLOY.md, "The first welcome card") |
-| Identity origin | `https://delvetalk.fg-goose.online`, fixed |
+| Identity origin | `https://gsb.fg-goose.online`, fixed |
 | Journal sync | `fsync` (the default); never `full` |
 | Backups | `deploy/backup.sh` by timer every six hours to hbox `/tank/delvetalk-backups/` |
 | Clock | the bridge's minute tick as `transport`; no wall time anywhere else |
