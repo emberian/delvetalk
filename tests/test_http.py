@@ -69,13 +69,18 @@ PEOPLE = {HANDLE: DID, 'glm.delve.town': 'did:plc:' + 'b' * 24, 'mimo.delve.town
 class Provider:
     """Mocked PDS: resolves known handles, serves whatever proof text the test sets per DID."""
     def __init__(self):
-        self.texts = {}
+        self.texts, self.hidden, self.older = {}, set(), {}
 
     def __call__(self, method, url, headers, body):
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
         if 'resolveHandle' in url:
             return 200, json.dumps({'did': PEOPLE[q['handle'][0]]}).encode()
         repo = q['repo'][0]
+        if 'listRecords' in url:  # the account's newest posts first: any older ones a test set, then the word if it has been posted
+            if repo in self.hidden:
+                return 403, b'{"error":"Forbidden"}'
+            word = [{'uri': f'at://{repo}/town.delve.feed.post/3abc', 'cid': 'bafyx', 'value': {'text': self.texts[repo]}}] if repo in self.texts else []
+            return 200, json.dumps({'records': word + self.older.get(repo, [])}).encode()
         return 200, json.dumps({'uri': f'at://{repo}/town.delve.feed.post/3abc', 'cid': 'bafyx',
                                 'value': {'text': self.texts[repo]}}).encode()
 
@@ -248,6 +253,70 @@ class Arrival(FrontCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
 
 
+class Claim(FrontCase):
+    """Claiming a handle in a browser: the word, then one button."""
+    def word_page(self):
+        s, headers, page = self.request('POST', '/AGENTS.md/challenge', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Accept': 'text/html'})
+        self.assertEqual(s, 200)
+        return [v for k, v in headers if k == 'Set-Cookie'][0].split(';')[0], page.decode()
+
+    def press(self, cookie):
+        return self.request('POST', '/AGENTS.md/verify', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Cookie': cookie, 'Accept': 'text/html'})
+
+    def test_the_home_offers_two_steps_and_the_word_page_one_button(self):
+        s, _, home = self.request('GET', '/')
+        self.assertIn(b'Claim your handle', home)
+        self.assertIn(b'Type your delve.town handle and we give you one word.', home)
+        self.assertIn(b'Give me a word', home)
+        self.assertNotIn(b'name="uri"', home)
+        cookie, page = self.word_page()
+        word = self.front.identity.pending(HANDLE)['text']
+        self.assertRegex(word, r'^[a-z]{5}-[a-z]{5}$')
+        self.assertIn(f'<pre class="card">{word}</pre>', page)
+        self.assertIn('Post this one word', page)
+        self.assertIn('as a public post from talkie.delve.town, within 15 minutes; it is harmless in public', page)
+        self.assertIn('I posted it', page)
+        self.assertNotIn('name="uri"', page)
+        self.assertEqual(page.count('name="handle"'), 1)  # one hidden field: no second handle to type
+
+    def test_pressing_before_posting_says_so_and_pressing_after_logs_the_browser_in(self):
+        cookie, _ = self.word_page()
+        s, _, page = self.press(cookie)
+        self.assertEqual(s, 200)
+        self.assertIn(f'No post with that word from {HANDLE} yet. Post it, then press I posted it.', html.unescape(page.decode()))
+        self.assertIn('I posted it', page.decode())  # the word and the button are still there
+        self.provider.older[PEOPLE[HANDLE]] = [{'uri': f'at://{PEOPLE[HANDLE]}/town.delve.feed.post/2old', 'cid': 'bafyo', 'value': {'text': 'good morning'}}]
+        self.provider.texts[PEOPLE[HANDLE]] = self.front.identity.pending(HANDLE)['text']
+        s, headers, page = self.press(cookie)
+        self.assertEqual(s, 200)
+        self.assertIn(b'Claimed', page)
+        self.assertIn(f'{HANDLE}: this browser is you'.encode(), page)
+        self.assertNotIn(b'did:plc', page)
+        self.assertIn(b'ENTER THE WORLD', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
+        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=cookie.split('=', 1)[1])[1]['handle'], HANDLE)
+
+    def test_posts_we_cannot_read_and_a_lapsed_word_have_their_lines(self):
+        cookie, _ = self.word_page()
+        self.provider.hidden.add(PEOPLE[HANDLE])
+        s, _, page = self.press(cookie)
+        self.assertIn('We cannot see the newest posts of talkie.delve.town. Make them public, then press I posted it.', page.decode())
+        self.now[0] += 1000
+        s, _, page = self.press(cookie)
+        self.assertEqual(s, 400)
+        self.assertIn('That word is older than 15 minutes. Ask for a new one.', page.decode())
+
+    def test_the_agent_route_still_takes_an_explicit_uri_and_a_bare_handle_claims(self):
+        s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})
+        did = PEOPLE[HANDLE]
+        self.provider.texts[did] = ch['text']
+        s, v = self.call('POST', '/AGENTS.md/verify', {'handle': HANDLE, 'uri': f'at://{did}/town.delve.feed.post/3abc'})
+        self.assertEqual((s, v['status']), (200, 'verified'))
+        self.now[0] += 5
+        s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})
+        s, e = self.call('POST', '/AGENTS.md/verify', {'handle': HANDLE})  # the old word is still posted, the new one is not
+        self.assertEqual((s, e['message']), (400, f'No post with that word from {HANDLE} yet. Post it, then press I posted it.'))
+
+
 class Head(FrontCase):
     def test_head_answers_like_get_without_a_body(self):
         for path in ('/', '/AGENTS.md/api', '/static/style.css'):
@@ -272,8 +341,8 @@ class Access(FrontCase):
             if len(lines) >= 5:
                 break
             time.sleep(0.02)
-        self.assertEqual([(l[1], l[2], l[3]) for l in lines[:1]], [('GET', '/AGENTS.md/api', '200')])
-        self.assertEqual(lines[0][5], '-')
+        api = [l for l in lines if l[2] == '/AGENTS.md/api']  # a line is written after its reply, so two requests may swap
+        self.assertEqual([(l[1], l[3], l[5]) for l in api], [('GET', '200', '-')])
         me = [l for l in lines if l[2] == '/AGENTS.md/me'][0]
         self.assertEqual((me[3], me[5]), ('200', DID))
         self.assertGreater(int(me[4]), 50)
@@ -596,7 +665,7 @@ class Pages(FrontCase):
         self.assertEqual(r['status'], 'created', r)
         s, headers, body = self.request('GET', '/')
         self.assertEqual(s, 200)
-        self.assertIn(b'Log in', body)
+        self.assertIn(b'Claim your handle', body)
         cookie = browser_login(self)
         s, _, page = self.request('GET', '/o/plot', headers={'Cookie': cookie})
         self.assertEqual(s, 200)
@@ -627,7 +696,7 @@ class Pages(FrontCase):
         self.assertEqual(s, 200)
         self.assertIn(('CARD for ' + DID).encode(), page)
         self.assertEqual(real({'op': 'world-status'})['height'], before)  # no describe/present turn journaled
-        heights = [int(x) for x in __import__('re').findall(rb'<span class="code">ht.(\d+)</span>', page)]
+        heights = [int(x) for x in __import__('re').findall(rb'<span class="code">entry (\d+)</span>', page)]
         self.assertEqual(len(heights), 20)
         self.assertEqual(heights, sorted(heights, reverse=True))
         self.assertEqual(heights[0], newest)
@@ -643,8 +712,7 @@ def browser_login(case, handle=HANDLE):
     case.assertTrue(cookie.startswith('dt_credential=dt_agent_'))
     did = PEOPLE[handle]
     case.provider.texts[did] = case.front.identity.db.execute('SELECT text FROM challenges WHERE handle = ? ORDER BY created DESC', (handle,)).fetchone()['text']
-    s, headers, _ = case.request('POST', '/AGENTS.md/verify', raw=f'handle={handle}&uri={urllib.parse.quote(f"at://{did}/town.delve.feed.post/3abc")}',
-                                 headers={'Content-Type': FORM, 'Cookie': cookie})
+    s, headers, _ = case.request('POST', '/AGENTS.md/verify', raw=f'handle={handle}', headers={'Content-Type': FORM, 'Cookie': cookie})
     case.assertEqual(s, 200)
     case.assertIn(cookie, [v for k, v in headers if k == 'Set-Cookie'][0])
     return cookie
@@ -688,8 +756,29 @@ class Play(FrontCase):
             s, headers, _ = self.play('/play/', method_text, cookie=False)
             self.assertEqual((s, dict(headers)['Location']), (303, '/'))
         s, _, page = self.request('GET', '/')
-        self.assertIn(b'Log in', page)
+        self.assertIn(b'Claim your handle', page)
         self.assertIn(b'action="/AGENTS.md/challenge"', page)
+
+    BANNED = re.compile(r'at://|proof|ledger|chain|hash|\\bpins?\\b|\\bht\\.', re.I)
+
+    def words(self, page):
+        """What a person reads of a page: no markup, script, style or comment, and no card or code listing (those are the world's text)."""
+        text = page.decode() if isinstance(page, bytes) else page
+        text = re.sub(r'<(script|style|pre)\b.*?</\1>|<!--.*?-->', ' ', text, flags=re.S)
+        return html.unescape(re.sub(r'<[^>]+>', ' ', text))
+
+    def test_no_page_a_person_reads_sounds_like_a_cryptocurrency(self):
+        pages = {'home': self.request('GET', '/')[2], 'home, logged in': self.request('GET', '/', headers={'Cookie': self.cookie})[2],
+                 'object': self.request('GET', '/o/garden', headers={'Cookie': self.cookie})[2], 'play': self.play('/play/garden')[2],
+                 'directory': self.play('/play/')[2], 'style': self.request('GET', '/style/')[2],
+                 'the word': self.request('POST', '/AGENTS.md/challenge', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Accept': 'text/html'})[2],
+                 'a refusal': self.request('GET', '/o/nowhere', headers={'Accept': 'text/html'})[2]}
+        for name, page in pages.items():
+            self.assertIsNone(self.BANNED.search(self.words(page)), (name, self.BANNED.search(self.words(page))))
+        self.assertIn('every thing a card, every reply a receipt', self.words(pages['home']))
+        self.assertRegex(self.words(pages['home, logged in']), r'entry \d+')  # the shelf mark
+        self.assertRegex(self.words(pages['home, logged in']), r'\d+ cards')
+        self.assertIn('Receipts', self.words(pages['object']))
 
     def test_the_directory_is_its_card_as_world_card_renders_it_with_its_doors(self):
         s, _, page = self.play('/play/')

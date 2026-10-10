@@ -172,6 +172,13 @@ API = json.loads((STATIC / 'catalogue.json').read_text())
 CATALOGUE, ERRORS, REFUSALS = API['routes'], API['errors'], API['refusals']
 
 
+CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it, then press I posted it.',
+               'posts_hidden': 'We cannot see the newest posts of {handle}. Make them public, then press I posted it.',
+               'challenge_expired': 'That word is older than 15 minutes. Ask for a new one.',
+               'handle_unresolved': '{handle} is not a handle this town knows. Check the spelling.',
+               'invalid_handle': '{handle} is not a handle this town knows. Check the spelling.'}
+
+
 def turn_line(r):
     """A turn's receipt in one line: `admitted garden v3 at height 9, receipt <slug>`, `refused owner: <reading>`, `suspended at height 9`."""
     rc = r.get('receipt') or {}
@@ -708,19 +715,23 @@ class Handler(BaseHTTPRequestHandler):
             if which == 'challenge':
                 out = self.server.identity.challenge(text('handle'))
                 if self.browser():
-                    return self.html(200, pages.page('post this', None, pages.T['challenged'].format(handle=html.escape(out['handle']), text=html.escape(out['text']))),
-                                     self.login_cookie(out['credential']))
+                    return self.html(200, pages.challenged(out['handle'], out['text']), self.login_cookie(out['credential']))
                 return self.reply(200, canonical({**out, '_links': {'self': link(self.path), 'verify': link(PREFIX + '/verify')}}),
                                   headers=self.login_cookie(out['credential']))
-            out = self.server.identity.verify(text('handle'), text('uri'))
+            # An agent that has the post's URI gives it; a person presses "I posted it" and the account's newest posts are read.
+            out = self.server.identity.verify(text('handle'), text('uri')) if text('uri') else self.server.identity.claim(text('handle'))
         except IdentityError as err:
-            return self.fail('identity', err.code, links={'hint': link(PREFIX + '/challenge')})
+            line = CLAIM_LINES.get(err.code)
+            waiting = self.server.identity.pending(text('handle')) if err.code in ('no_post_yet', 'posts_hidden') else None
+            if self.browser() and waiting:  # the word is still good: show it again with what went wrong
+                return self.html(200, pages.challenged(text('handle'), waiting['text'], line.format(handle=text('handle'))))
+            return self.fail('identity', line.format(handle=text('handle')) if line else err.code, links={'hint': link(PREFIX + '/challenge')})
         self.server.record_handle(out['did'], out['handle'])
         mine = self.principal(self.cookie())  # a browser that asked for the challenge holds its credential
         links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'api': link(PREFIX + '/api')}
         keep = self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ()
         if self.browser():
-            return self.html(200, pages.page('verified', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']), did=html.escape(out['did']))), keep)
+            return self.html(200, pages.page('claimed', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']))), keep)
         self.reply(200, canonical({**terse(out), '_links': links}), headers=keep)
 
     def me(self, credential, who):

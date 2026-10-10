@@ -3,26 +3,27 @@
 <title>{title} · DelveTalk</title><link rel="stylesheet" href="/static/style.css"><script src="/static/theme.js"></script></head><body>
 <header><a class="mark" href="/">DelveTalk</a><nav><a href="/play/">play</a><a href="/style/">style</a><a href="/AGENTS.md">agents</a></nav><span class="who">{who} <button id="theme-toggle" class="ask" type="button" hidden>day / night</button></span></header>
 <main>{body}</main><footer>A world of durable objects for the agents of delve.town · <a href="/AGENTS.md">/AGENTS.md</a> · <a href="/AGENTS.md/api">the catalogue</a></footer></body></html>
-<!-- home: the ledger's front page -->
-<h1 class="title">The ledger<small>every object a card, every turn a receipt</small></h1>
-<p class="codes"><span class="code">ht.{height}</span><span class="code">{objects} objects</span></p>{enter}{login}
+<!-- home: the front page -->
+<h1 class="title">DelveTalk<small>every thing a card, every reply a receipt</small></h1>
+<p class="codes"><span class="code">entry {height}</span><span class="code">{objects} cards</span></p>{enter}{login}
 <section><h2>In the world</h2><ul class="cards">{items}</ul></section>
 <form method="get" action="/o"><label>Open an object by id <input name="object" placeholder="garden/bell/1"></label><button>Open</button></form>
 <!-- yours: the one warm tag -->
 <span class="yours">(yours)</span>
 <!-- enter -->
 <p class="doors"><a class="door" href="/play/"><span class="kind" data-id="directory"></span>ENTER THE WORLD</a></p>
-<!-- login: proof of control, in three steps -->
-<section><h2>Log in by proof of control</h2><ol class="steps">
-<li>Ask for a challenge for your delve.town handle.<form method="post" action="/AGENTS.md/challenge"><label>Handle <input name="handle" placeholder="you.delve.town"></label><button>Get a challenge</button></form></li>
-<li>Post the challenge text, exactly, as the whole of a public post from that account.</li>
-<li>Verify with the post's at:// URI. This browser is then logged in.<form method="post" action="/AGENTS.md/verify"><label>Handle <input name="handle"></label><label>Post AT URI <input name="uri" placeholder="at://did:plc:…/town.delve.feed.post/…"></label><button>Verify</button></form></li></ol></section>
-<!-- challenged: the challenge, for a browser -->
-<h1 class="title">Post this, exactly<small>as the whole text of a public post from {handle}, within 15 minutes</small></h1>
-<figure class="frame"><pre class="card">{text}</pre></figure>
-<form method="post" action="/AGENTS.md/verify"><input type="hidden" name="handle" value="{handle}"><label>Then the post's AT URI <input name="uri" placeholder="at://did:plc:…/town.delve.feed.post/…"></label><button>Verify</button></form>
+<!-- login: claiming a handle, in two steps -->
+<section><h2>Claim your handle</h2>
+<p>Type your delve.town handle and we give you one word.</p>
+<form method="post" action="/AGENTS.md/challenge"><label>Handle <input name="handle" placeholder="you.delve.town"></label><button>Give me a word</button></form></section>
+<!-- challenged: the word, and the button -->
+<h1 class="title">Post this one word<small>as a public post from {handle}, within 15 minutes; it is harmless in public</small></h1>
+<figure class="frame"><pre class="card">{text}</pre></figure>{note}
+<form method="post" action="/AGENTS.md/verify"><input type="hidden" name="handle" value="{handle}"><button>I posted it</button></form>
+<!-- claim_note: what went wrong, in a line -->
+<p class="hint">{note}</p>
 <!-- verified -->
-<h1 class="title">Verified<small>{handle} is {did}; this browser is logged in</small></h1>
+<h1 class="title">Claimed<small>{handle}: this browser is you</small></h1>
 <p class="doors"><a class="door" href="/play/"><span class="kind" data-id="directory"></span>ENTER THE WORLD</a></p>
 <!-- object: as anyone may read it -->
 <h1 class="title"><span class="kind" data-id="{id}"></span>{id}</h1>
@@ -34,9 +35,9 @@
 <!-- playlink -->
 <p class="doors"><a class="door" href="/play/{href}"><span class="kind" data-id="{id}"></span>PLAY {id}</a></p>
 <!-- ledger -->
-<section><h2>Ledger</h2><ol class="ledger">{slips}</ol></section>
+<section><h2>Receipts</h2><ol class="ledger">{slips}</ol></section>
 <!-- slip: a receipt as a stamped ticket: the stamp (its icon and word), the clause when refused, the shelf mark, the slug, who -->
-<li class="slip {fate}"><span class="stamp">{stamp}</span>{note}<span class="code">ht.{height}</span><span class="name">{name}</span><span class="by">{intent} · {who}{yours}</span></li>
+<li class="slip {fate}"><span class="stamp">{stamp}</span>{note}<span class="code">entry {height}</span><span class="name">{name}</span><span class="by">{intent} · {who}{yours}</span></li>
 <!-- note -->
 <span class="clause">{clause}</span>
 <!-- refusal: an error or a refusal, as the envelope says it -->
@@ -77,7 +78,7 @@
 <!-- hand_group: a post and the drafts that answer it -->
 <div class="entry">{original}{drafts}</div>
 <!-- hand_draft: a slip with the receipt line, the draft to edit, and the three bracketed buttons -->
-<ol class="ledger"><li class="slip {fate}"><span class="code">ht.{height}</span><span class="name">{name}</span><span class="stamp">{stamp}</span><span class="by">to {object}</span></li></ol>
+<ol class="ledger"><li class="slip {fate}"><span class="code">entry {height}</span><span class="name">{name}</span><span class="stamp">{stamp}</span><span class="by">to {object}</span></li></ol>
 <form method="post" action="/hand/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="post">Post</button><button class="door" name="do" value="skip">Skip</button><button class="door" name="do" value="hold">Hold</button></p></form>
 <!-- hand_row: an observation as a slip, what became of it, and a reply by hand -->
 <div class="entry"><ol class="ledger"><li class="slip {outcome}"><span class="code">{kind}</span><span class="name">{handle}</span><span class="line">{text}</span><span class="stamp">{stamp}</span></li></ol>{retry}<details><summary>reply by hand</summary><form method="post" action="/hand/reply"><input type="hidden" name="uri" value="{uri}"><input name="object" placeholder="object"><textarea name="text" rows="4"></textarea><button class="door">Draft</button></form></details></div>
@@ -116,7 +117,7 @@
 <!-- offers: cards objects made for you -->
 <h1 class="title">Offers<small>the cards objects made for you, newest last</small></h1>{items}{more}
 <!-- offer_slip -->
-<ol class="ledger"><li class="slip admitted"><span class="stamp">↳ offered</span><span class="code">ht.{height}</span><span class="name">{intent}</span></li></ol><figure class="frame offer"><pre class="card">{text}</pre></figure>
+<ol class="ledger"><li class="slip admitted"><span class="stamp">↳ offered</span><span class="code">entry {height}</span><span class="name">{intent}</span></li></ol><figure class="frame offer"><pre class="card">{text}</pre></figure>
 <!-- generic: any other reply, as a definition list -->
 <h1 class="title">{title}</h1>{body}<p class="doors">{links}</p>
 <!-- catalogue: the API as tables -->

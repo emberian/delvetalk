@@ -24,6 +24,7 @@ READS = {
     'town.delve.feed.searchPosts': (APPVIEW, {'q', 'limit', 'cursor'}),
     'town.delve.feed.getPostThread': (APPVIEW, {'uri', 'depth', 'parentHeight'}),
     'com.atproto.repo.getRecord': (PDS, {'repo', 'collection', 'rkey'}),
+    'com.atproto.repo.listRecords': (PDS, {'repo', 'collection', 'limit', 'cursor', 'reverse'}),
     'com.atproto.identity.resolveHandle': (PDS, {'handle'}),
     'com.atproto.repo.describeRepo': (PDS, {'repo'}),
 }

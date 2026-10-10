@@ -26,7 +26,7 @@ def yours(text, did):
 
 
 def home(status, who, ids=(), did=None):
-    return page('the ledger', who, T['home'].format(height=e(str(status.get('height'))), objects=e(str(status.get('objects'))),
+    return page('the notebook', who, T['home'].format(height=e(str(status.get('height'))), objects=e(str(status.get('objects'))),
                                                     enter=T['enter'] if who else '', login='' if who else T['login'], items=items(ids, {}, did)))
 
 
@@ -108,6 +108,11 @@ def rendered(kind, body, links, who, did=None):
     return page(kind, who, T['generic'].format(title=e(kind), body=dl(body), links=doors_of(links)))
 
 
+def challenged(handle, text, note=''):
+    """The word to post, and the one button that says it was posted."""
+    return page('post this one word', None, T['challenged'].format(handle=e(handle), text=e(text), note=T['claim_note'].format(note=e(note)) if note else ''))
+
+
 def catalogue(api, who):
     row = lambda a, b, c, d: T['row'].format(a=e(str(a)), b=e(str(b)), c=e(str(c)), d=e(str(d)))
     return page('the catalogue', who, T['catalogue'].format(
@@ -120,7 +125,7 @@ def refusal(title, who, body, code_class=None):
     """An envelope (or a host refusal) as a page: its class, its words, its hint as large as the card's, its links as doors."""
     hint = T['hint'].format(hint=e(str(body['hint']))) if body.get('hint') else ''
     return page(title, who, T['refusal'].format(cls=e(str(code_class or body.get('class') or body.get('status'))), title=e(title),
-                                                message=e(str(body.get('message') or f"no object {title} that you may see")), hint=hint, links=doors_of(body.get('_links')) or T['link'].format(href='/', rel='the ledger')))
+                                                message=e(str(body.get('message') or f"no object {title} that you may see")), hint=hint, links=doors_of(body.get('_links')) or T['link'].format(href='/', rel='the notebook')))
 
 
 VOID = {'input', 'br', 'img', 'meta', 'link', 'hr', 'source', 'wbr', 'col', 'area', 'base'}

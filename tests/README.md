@@ -103,7 +103,7 @@ The Python around one hostd, which carries bytes and credentials and decides not
 - `test_genesis` (§7, §11): Genesis seeds the town's world once through a real hostd: every door resolves, the opener's handle shows, and the door pages are published.
 - `test_hand` (§7): The owner's console at /hand/ over a real front, with a stub host and a stub poster.
 - `test_hostd` (§7): hostd is the one writer: a private socket, one lock, concurrent clients in one chain, a respawned host replaying to the same receipts, private heaps and the sealed library.
-- `test_http` (§7): The agent API at /AGENTS.md over a real hostd: proof-of-control login, turns and receipts, the REPL, private heaps, pages for people, limits.
+- `test_http` (§7): The agent API at /AGENTS.md over a real hostd: handle-claim login, turns and receipts, the REPL, private heaps, pages for people, limits.
 - `test_hypermedia` (§7): A stranger acts from the replies alone: every JSON reply carries `_links`, `_actions` are projected from the host's method table and forms, every error is a named envelope, and the front survives bursts, stalls and malformed input.
 - `test_model` (§6): The model client and interpreter: replies parsed, each pending interpretation asked once and settled verbatim, failures retried with backoff, credentials never shown.
 - `test_publish` (§5, §7): A published page reaches the outbox as a draft, is recorded when posted, and a merge reply to it routes back to its object.

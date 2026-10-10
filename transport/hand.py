@@ -225,7 +225,7 @@ class Hand:
     def page(self, query):
         T, q = pages.T, lambda t: e(str(t))
         st = self.status()
-        codes = ''.join(T['hand_code'].format(text=q(f'ht.{v}' if k == 'journal height' else f'{k} {v}')) for k, v in st.items())
+        codes = ''.join(T['hand_code'].format(text=q(f'entry {v}' if k == 'journal height' else f'{k} {v}')) for k, v in st.items())
         found = T['hand_card'].format(text=q(json.dumps(self.search(query['slug']), indent=1, sort_keys=True)[:3000])) if query.get('slug') else ''
         outbox = ''.join(T['hand_group'].format(
             original=T['hand_card'].format(text=q(f'{g["original"]["handle"]}\n{g["original"]["text"]}')) if g['original'] else T['hand_note'].format(text=q(g['post'])),
