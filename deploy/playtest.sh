@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
 # Playtest DelveTalk in the owner's own Zulip, before it goes to delve.town. No Delve credential is read.
 #
-#   deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--poll 20] [--port 8765] [--dir DIR]
+#   deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20] [--port 8765] [--dir DIR]
 #   deploy/playtest.sh --stop [--dir DIR]
 #
 # Starts hostd on a FRESH journal (DIR/run-<stamp>/, DIR/current points at it; older runs are left in place),
-# runs genesis, posts docs/previews/zulip-welcome-v2.txt (STUDIO pointing at the local front on --port) to the stream's `welcome` topic and records it against
+# runs genesis, posts docs/previews/zulip-welcome-v2.txt (STUDIO pointing at the local front on --port) to the stream's `welcome` topic (or --topic NAME, the only topic then observed and answered in) and records it against
 # `directory`, then runs the local front, the bridge (--source zulip: observe, turn, post drafts back automatically) and the
 # interpreter, each every --poll seconds. The bot is the .zuliprc's user; it must be subscribed to the stream.
 # DELVETALK_OBEND names the host binary; the interpreter needs the model credentials docs/DEPLOY.md describes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-stream=delvetalk poll=20 port=8765 dir=${DELVETALK_PLAYTEST_DIR:-$HOME/.delvetalk-playtest} rc= stop=
+stream=delvetalk topic= poll=20 port=8765 dir=${DELVETALK_PLAYTEST_DIR:-$HOME/.delvetalk-playtest} rc= stop=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --zuliprc) rc=$2; shift 2;;
     --stream) stream=$2; shift 2;;
+    --topic) topic=$2; shift 2;;
     --poll) poll=$2; shift 2;;
     --port) port=$2; shift 2;;
     --dir) dir=$2; shift 2;;
     --stop) stop=1; shift;;
-    *) sed -n '2,13p' "$0" >&2; exit 64;;
+    *) sed -n '2,12p' "$0" >&2; exit 64;;
   esac
 done
 
@@ -53,11 +54,11 @@ for _ in $(seq 100); do [[ -S $state/host.sock ]] && break; sleep 0.2; done
 
 python3 -m deploy.genesis --host-socket "$state/host.sock"
 sed "s#http://127.0.0.1:8765#http://127.0.0.1:$port#" docs/previews/zulip-welcome-v2.txt >"$run/welcome.txt"
-python3 -m transport.zulip post --state "$state" --zuliprc "$rc" --stream "$stream" --topic welcome \
+python3 -m transport.zulip post --state "$state" --zuliprc "$rc" --stream "$stream" --topic "${topic:-welcome}" \
   --text-file "$run/welcome.txt" --object directory --host-socket "$state/host.sock"
 
-nohup python3 -m transport.bridge run --state "$state" --source zulip --zuliprc "$rc" --stream "$stream" --poll "$poll" --origin "http://127.0.0.1:$port" >"$(log bridge)" 2>&1 &
+nohup python3 -m transport.bridge run --state "$state" --source zulip --zuliprc "$rc" --stream "$stream" ${topic:+--topic "$topic"} --poll "$poll" --origin "http://127.0.0.1:$port" >"$(log bridge)" 2>&1 &
 nohup python3 -m transport.http --state "$state" --port "$port" --origin "http://127.0.0.1:$port" >"$(log front)" 2>&1 &
 echo $! >"$state/front.pid"
 nohup python3 -m transport.interpret run --state "$state" --poll "$poll" >"$(log interpret)" 2>&1 &
-echo "playtest: running in #$stream; state $state; logs $run/*.log; stop with: deploy/playtest.sh --stop"
+echo "playtest: running in #$stream${topic:+ > $topic}; state $state; logs $run/*.log; stop with: deploy/playtest.sh --stop"
