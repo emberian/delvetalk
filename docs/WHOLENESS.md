@@ -162,3 +162,21 @@ and belongs in Bend. The yes-waiting pending stays too. The relational slice
 (RELATIONAL.md) lands first in each lane; the kernel accepts both `Activity`
 dialects and the host dispatches on plan shape until the last object is
 rewritten, so no object's rewrite waits on another's.
+
+## Root decisions for the object migration (2026-10-10, second set)
+
+1. The Directory's `door()` blurb accessor is renamed `blurb()`; `door {label,
+   to}` is the action the host runs for the spell `door`.
+2. Lens `set` and the fitting of model replies land in the host first; the
+   lens objects (Policy, Avatar, Place, Thing, Garden) and the two
+   interpreting objects (Garden, Directory) migrate last, after that.
+3. A subscriber names a typed receiver at `subscribe {object, field, method}`;
+   the host delivers `changed` to that method with `inserted` and `retracted`
+   checked against the method's declared row type, as `call` payloads are
+   checked. Shared row types (`Rain`, `Sensed`, `Greeting`, `Proposal`,
+   `Trace`, `Subscription`) live in `world/lib/Rows.obend` so a Wake can import
+   them.
+4. The message-dialect `receive` takes `Reply {text, post, fields}`; `Heard`
+   stays for unmigrated cards until the last one moves.
+5. `spell` is not in the World protocol until the host answers it; the host's
+   spell path runs methods directly, which is the facility the contract wanted.

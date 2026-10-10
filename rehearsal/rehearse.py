@@ -61,6 +61,13 @@ FIX = ROOT / 'rehearsal' / 'fixtures'
 lab, nat, boo, lst, rec, ref = genesis.lab, genesis.nat, genesis.boo, genesis.lst, genesis.rec, genesis.ref
 
 
+def rows(value):
+    """The items of a list field, or of a relation field (a `rows` variant holding `items`)."""
+    if value.get('tag') == 'variant' and value.get('label') == 'rows':
+        value = next((f['value'] for f in value['payload']['fields'] if f['name'] == 'items'), {'items': []})
+    return value.get('items', [])
+
+
 def epoch(ts):
     return datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp()
 
@@ -161,7 +168,7 @@ class Run:
     def children(self, obj='garden'):
         v = self.host.send({'op': 'world-view', 'principal': OWNER, 'object': obj})
         f = next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'children'), {'items': []})
-        return [next(x['value']['value'] for x in c['fields'] if x['name'] == 'object') for c in f.get('items', [])]
+        return [next(x['value']['value'] for x in c['fields'] if x['name'] == 'object') for c in rows(f)]
 
     def record_plantings(self, posts, before):
         """Every bell grown since `before` has its planting post (the bell's own `planting` field) recorded for
@@ -391,7 +398,7 @@ def main(argv=None):
         for h, d in top:
             v = r.host.send({'op': 'world-view', 'principal': OWNER, 'object': 'env/' + d})
             buf = next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'buffer'), {'items': []})
-            envs.append((len(buf.get('items', [])), 'env/' + d, h))
+            envs.append((len(rows(buf)), 'env/' + d, h))
         envs.sort(key=lambda e: -e[0])
         results['envs'] = envs
         views = {}
