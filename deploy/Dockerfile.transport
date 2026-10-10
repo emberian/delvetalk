@@ -9,7 +9,7 @@ RUN groupadd -g 10425 delvetalk && useradd -u 10425 -g 10425 -d /nonexistent -M 
 COPY --from=host /usr/local/bin/delvetalk-obend /usr/local/bin/delvetalk-obend
 WORKDIR /app
 COPY transport ./transport
-COPY docs/AGENTS-API.md ./docs/AGENTS-API.md
+COPY docs/AGENTS-API.md docs/AGENTS-EXAMPLES.md ./docs/
 COPY world ./world
 COPY deploy/seed.py ./deploy/seed.py
 ENV DELVETALK_OBEND=/usr/local/bin/delvetalk-obend HOME=/tmp \

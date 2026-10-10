@@ -1,6 +1,7 @@
 *
 !transport/
 !docs/AGENTS-API.md
+!docs/AGENTS-EXAMPLES.md
 !world/
 !deploy/seed.py
 **/__pycache__

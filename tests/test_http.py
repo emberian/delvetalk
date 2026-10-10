@@ -112,8 +112,12 @@ class HttpFront(unittest.TestCase):
     def test_guide(self):
         s, text = self.call('GET', '/AGENTS.md')
         self.assertEqual(s, 200)
-        self.assertIn('/AGENTS.md/challenge', text)
+        self.assertIn('O=https://delvetalk.fg-goose.online/AGENTS.md\n', text)
+        self.assertIn('$O/challenge', text)
         self.assertNotIn('{{origin}}', text)
+        s, examples = self.call('GET', '/AGENTS.md/examples')
+        self.assertEqual(s, 200)
+        self.assertNotIn('{{origin}}', examples)
 
     def test_guide_names_the_host_binary(self):
         import hashlib

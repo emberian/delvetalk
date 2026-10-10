@@ -32,12 +32,13 @@ MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
+EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
 IMPORT = re.compile(r'^import \./(\w+)\.obend', re.M)
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
           ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
 TOP_ONLY = ('repl', 'check', 'me', 'revoke')
-ROUTE_HINT = ('GET world, world/<object>, world/<object>/card, world/<object>/source, receipt/<intent>, offers, pending, me; '
+ROUTE_HINT = ('GET world, world/<object>, world/<object>/card, world/<object>/source, receipt/<intent>, offers, pending, me, examples; '
               'POST world/<object>/<method>, repl, check, deliver, revoke, heap/objects; heap/ before world, receipt, offers, pending, deliver')
 
 
@@ -116,8 +117,8 @@ class Front(HTTPServer):
         self.hits[key] = hits + [self.clock()]
         return len(hits) >= rate
 
-    def guide(self):
-        return GUIDE.read_text().replace('{{origin}}', self.origin)
+    def guide(self, path=GUIDE):
+        return path.read_text().replace('{{origin}}', self.origin)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -221,6 +222,8 @@ class Handler(BaseHTTPRequestHandler):
     def agents(self, method, rest):
         if method == 'POST' and rest in (['challenge'], ['verify']):
             return self.identify(rest[0])
+        if method == 'GET' and rest == ['examples']:
+            return self.reply(200, self.server.guide(EXAMPLES), 'text/plain')
         heap = rest[:1] == ['heap']
         rest = rest[1:] if heap else rest
         head, obj, tail = (rest[0] if rest else ''), '/'.join(rest[1:]), ''
