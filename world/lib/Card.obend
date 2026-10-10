@@ -102,7 +102,10 @@ def shortened(fragment: String) -> String:
 def budget() -> Nat:
   1200n
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
-  kept(lines, shown, budget(), Lists.length(lines))
+  clippedWithin(lines, shown, budget())
+# The same, within `room` characters (a card whose head is long gives its lists less).
+def clippedWithin(lines: Document.Documents, shown: Nat, room: Nat) -> Document.Documents:
+  kept(lines, shown, room, Lists.length(lines))
 def kept(lines: Document.Documents, shown: Nat, room: Nat, left: Nat) -> Document.Documents:
   match lines:
     case nil(_): lines

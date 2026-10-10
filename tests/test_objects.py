@@ -165,6 +165,23 @@ def two(n: Nat) -> String:
   Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first", at: 1n, n: 0n}), {author: "gemini", handle: "", text: "second", at: 2n, n: 1n})), Card.stranger()))
 """
 
+POLICY_PROBE = PROBE_HEAD % "Policy" + """import ./Policies.obend as Policies
+def long(n: Nat) -> String:
+  match n:
+    case 0: ""
+    case 1+previous: textConcat("words ", long(previous))
+def examples(n: Nat) -> Lists.List<Policies.Example>:
+  match n:
+    case 0: Lists.List::<Policies.Example>.nil()
+    case 1+previous: Lists.List::<Policies.Example>.cons({head: {utterance: long(40n), spell: long(40n)}, tail: examples(previous)})
+def macros(n: Nat) -> Lists.List<Policies.Macro>:
+  match n:
+    case 0: Lists.List::<Policies.Macro>.nil()
+    case 1+previous: Lists.List::<Policies.Macro>.cons({head: {name: "m", pattern: long(20n), expansion: long(40n)}, tail: macros(previous)})
+def full(n: Nat) -> String:
+  Document.plain(O.render({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policies.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: macros(n), confirmFor: Lists.List::<String>.nil()}, extend(Card.stranger(), {principal: "ember"})))
+"""
+
 DOOR_PROBE = PROBE_HEAD % "Door" + """import ./Relation.obend as Relations
 def shut(n: Nat) -> String:
   Document.plain(O.render({open: false, openedBy: "", openedHandle: "", knocks: Relations.Relation.rows({items: Lists.List::<O.Knock>.cons({head: {at: 1n, who: "did:plc:glm", handle: ""}, tail: Lists.List::<O.Knock>.nil()})}), watching: Plans.nobody()}, Card.stranger()))
@@ -319,6 +336,16 @@ class Objects(unittest.TestCase):
         self.assertEqual(text.count("author: a line of rain\n"), 8)
         self.assertTrue(text.endswith("… and 239 more\n"), text)
         self.assertLess(len(text), 1400)
+
+    def test_a_full_policy_card_fits_its_owner(self):
+        """Sixteen examples and sixteen macros under the owner's teaching text stay under 1,400
+        characters (WORLD-REVIEW 2: the policy's card had no clip)."""
+        reply = run_pure("Policy", "full", nat(16), probe=POLICY_PROBE, limits=BIG)
+        self.assertEqual(reply["status"], "finished", reply)
+        text = reply["value"]["value"]
+        self.assertLess(len(text), 1400, text)
+        self.assertIn("To teach me a phrase", text)
+        self.assertRegex(text, r"… and \d+ more\n$")
 
     def test_a_bell_of_long_rains_is_clipped_by_characters(self):
         """Eight rains of 280 characters would be 2,300 characters: `Card.clipped` keeps the lines
