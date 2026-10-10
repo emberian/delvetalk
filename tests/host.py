@@ -17,6 +17,14 @@ import unittest
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The host's relation edits (docs/RELATIONAL.md section 3: insert, upsert, retract in applyStep)
+# land in the host lane. Until then a turn whose write holds one is refused, class evaluation,
+# "malformed write plan" (measured on foundation 7cf698d's binary). A test that writes a
+# relation end to end wears `awaiting_relations`; the lane that lands the edits deletes it.
+# DELVETALK_SHOW_AWAITING=1 runs them as ordinary tests, to see where each one stops.
+AWAITING_RELATIONS = "malformed write plan"
+awaiting_relations = (lambda test: test) if os.environ.get("DELVETALK_SHOW_AWAITING") else unittest.expectedFailure
 FOUNDATION = "/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend"
 _copy = None
 

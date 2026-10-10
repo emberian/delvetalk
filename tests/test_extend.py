@@ -6,6 +6,7 @@
 """
 import unittest
 
+from tests.host import awaiting_relations
 from tests.test_chain import field
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
@@ -96,10 +97,11 @@ class LouderBell(Reflection):
             bell = handle.read()
         empty = {"tag": "list", "items": []}
         self.make("bell", bell, record(colour={"tag": "variant", "label": "amber", "payload": record()}, seed=label("a fern"),
-                                       rains=empty, rung={"tag": "boolean", "value": False}, planting=label(""),
+                                       rains={"tag": "variant", "label": "rows", "payload": record(items=empty)}, rung={"tag": "boolean", "value": False}, planting=label(""),
                                        planter=label("glm"), planterHandle=label(""), observers=empty))
         self.make("forge", FORGE, record(note=label("")))
 
+    @awaiting_relations
     def test_a_rain_reply_after_the_graft_shows_louders_card(self):
         graft = self.turn("forge", "graft", record(target=label("bell"), package=label(LOUDER)))
         self.assertEqual((graft["status"], graft["result"]), ("admitted", label("grafted")), graft)
@@ -228,6 +230,7 @@ class LateBinding(Extend):
         self.assertEqual(r["status"], "admitted", r)
         return r["offers"][-1]["text"]
 
+    @awaiting_relations
     def test_a_louder_layer_changes_the_card_bells_own_rain_reply_renders(self):
         from tests.test_objects import closure
         amber = {"tag": "variant", "label": "amber", "payload": record()}

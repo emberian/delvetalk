@@ -8,10 +8,11 @@ Mini type checker'}); a method without one never sees it, and records the princi
 """
 import unittest
 
+from tests.host import awaiting_relations
 from tests.test_chain import Chain, garden_seed, reference
 from tests.test_objects import closure
 from tests.test_places import avatar_seed, names, place_seed
-from tests.test_replay import bell_seed, get, items
+from tests.test_replay import bell_seed, get, items, rows
 from tests.test_turn_world import label, record
 
 ACTOR, CLAIMED = "kimik3", "glm"
@@ -40,12 +41,13 @@ class Principal(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
+    @awaiting_relations
     def test_a_rain_is_authored_by_the_turns_principal(self):
         self.make("bell", closure("Bell"), bell_seed())
         argument = record(text=label("the moths know the way"))
         print("\n  forged rain:", self.forged("bell", "rain", argument, "author"))
         self.acted("bell", "rain", argument)
-        self.assertEqual([get(r, "author") for r in items(get(self.state("bell"), "rains"))], [label(ACTOR)])
+        self.assertEqual([get(r, "author") for r in rows(get(self.state("bell"), "rains"))], [label(ACTOR)])
 
     def test_a_submission_is_authored_by_the_turns_principal(self):
         # Anthology declares a law, so it is made with world-create (whole state) by its owner.

@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 
+from tests.host import awaiting_relations
 from tests import host
 from tests.host import Host, HostCase
 from tests.wire import cid_of
@@ -399,12 +400,14 @@ class ListEdits(TurnWorld):
 
 
 class BellList(TurnWorld):
+    @awaiting_relations
     def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
         modules = closure("Bell")
         empty = {"tag": "record", "fields": []}
         nil = {"tag": "list", "items": []}
+        rows = {"tag": "variant", "label": "rows", "payload": record(items=nil)}
         seed = record(colour={"tag": "variant", "label": "silver", "payload": empty},
-                      seed=label("s"), rains=nil, rung={"tag": "boolean", "value": False},
+                      seed=label("s"), rains=rows, rung={"tag": "boolean", "value": False},
                       planting=label(""), planter=label("glm"), planterHandle=label(""), observers=nil)
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="bell",
                            modules=modules, entry="initial", seed=seed)
@@ -416,7 +419,8 @@ class BellList(TurnWorld):
 
         def authors(state):
             rains = [f["value"] for f in state["fields"] if f["name"] == "rains"][0]
-            return [{x["name"]: x["value"]["value"] for x in item["fields"]}["author"] for item in rains["items"]]
+            rows = rains["payload"]["fields"][0]["value"]
+            return [{x["name"]: x["value"]["value"] for x in item["fields"]}["author"] for item in rows["items"]]
         self.assertEqual(authors(before), ["kimik3", "gemini"])
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["state"], before)

@@ -5,6 +5,7 @@ planting turn's receipt. Authors and planters are the turns' principals.
 """
 import unittest
 
+from tests.host import awaiting_relations
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_places import listing
@@ -24,6 +25,12 @@ def bell_seed():
 
 def items(wire):
     return wire["items"]
+
+
+def rows(wire):
+    """The rows of a relation on the wire (`Relation.rows {items}`), in key order."""
+    assert wire["tag"] == "variant" and wire["label"] == "rows", wire
+    return get(wire["payload"], "items")["items"]
 
 
 def get(record_wire, name):
@@ -48,12 +55,13 @@ class Replay(Chain):
         self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
         self.assertEqual(items(self.state_field("garden", "children")), [reference("garden/bell/1")])
 
+    @awaiting_relations
     def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):
         self.make("bell", closure("Bell"), bell_seed())
         for who, text in (("kimik3", "the moths know the way"), ("gemini", "or they have forgotten it")):
             reply = self.turn("bell", "rain", record(text=label(text)), principal=who)
             self.assertEqual(reply["status"], "admitted", reply)
-        rains = items(self.state_field("bell", "rains"))
+        rains = rows(self.state_field("bell", "rains"))
         self.assertEqual([get(r, "author")["value"] for r in rains], ["kimik3", "gemini"])
         self.assertEqual(self.state_field("bell", "planter"), label("glm"))
 

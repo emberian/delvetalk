@@ -131,12 +131,13 @@ def flat(n: Nat) -> Nat:
 
 PROBE_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./Card.obend as Card\nimport ./%s.obend as O\n"
 
-BELL_PROBE = PROBE_HEAD % "Bell" + """def rains(n: Nat) -> Lists.List<O.Rain>:
+BELL_PROBE = PROBE_HEAD % "Bell" + """import ./Relation.obend as Relations
+def rains(n: Nat) -> Lists.List<O.Rain>:
   match n:
     case 0: Lists.List::<O.Rain>.nil()
-    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: "a line of rain"}, tail: rains(previous)})
+    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: "a line of rain", at: 1n, n: previous}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
-  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: rains, rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", observers: Lists.List::<Card.Observer>.nil(), doors: Lists.List::<Card.Doorway>.nil()}
+  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: Relations.Relation.rows({items: rains}), rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", observers: Lists.List::<Card.Observer>.nil(), doors: Lists.List::<Card.Doorway>.nil()}
 def many(n: Nat) -> String:
   Document.plain(O.render(sample(rains(n)), Card.stranger()))
 def weight(n: Nat) -> Nat:
@@ -144,7 +145,7 @@ def weight(n: Nat) -> Nat:
 def lineCount(n: Nat) -> Nat:
   Lists.length::<String>(Document.lines(O.render(sample(rains(n)), Card.stranger())))
 def two(n: Nat) -> String:
-  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first"}), {author: "gemini", handle: "", text: "second"})), Card.stranger()))
+  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first", at: 1n, n: 0n}), {author: "gemini", handle: "", text: "second", at: 2n, n: 1n})), Card.stranger()))
 """
 
 DOOR_PROBE = PROBE_HEAD % "Door" + """def shut(n: Nat) -> String:

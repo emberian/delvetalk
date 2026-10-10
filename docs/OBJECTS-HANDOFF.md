@@ -275,6 +275,29 @@ the library).
   projection as a record) beside the six; the kernel's `write {field: insert row}` sugar is
   the kernel lane's, so until it lands a relation write is spelled
   `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: Plans.Entries.insert({row: r})})})`.
+* **Declaring.** `def relations() -> Relations.Decls`, each `{field, key, limit}`; past
+  `limit` rows the host drops the first in key order (0 is its default, 4,096). A relation is
+  bounded: an unbounded collection is a sequence of child objects (`anthology/page/n`),
+  never one relation. Limits: Bell rains 2,048, Env buffer 256, Place traces 64, Directory
+  greeted 4,096, Anthology proposals 1,024, Tide subs 1,024.
+* **Ordinals.** A row an author may add twice at one height carries `n`, the relation's count
+  at the turn's read (`Relations.count`), in its key: `{author, at, n}`. Since `n` sorts
+  first (one letter) and only grows while nothing is retracted, key order is the order
+  of falling, and a card that listed the old list in append order lists the relation the
+  same. Two concurrent turns that read one root give two rows one `n`; their authors or
+  heights differ, so the keys do. Only one author's two writes at one read height and
+  count collide (keyTaken), which no current object does.
+* **Migrated / records.** Migrated: Bell (`rains`). Still lists (to migrate, RELATIONAL §9):
+  Tide subs, Directory greeted and doors, Anthology proposals, Deal signatures, Garden
+  pending and children, Env buffer, Place present, things, traces; observers and doors on
+  every card. Records by design: see RELATIONAL §9 "Stays a record".
+* **Until the host lands** (`tests/host.py`): the host refuses a write holding an insert,
+  upsert or retract "malformed write plan" (class evaluation); every test that writes a
+  relation end to end wears `@awaiting_relations` (expectedFailure);
+  `DELVETALK_SHOW_AWAITING=1` runs them plainly to see where each stops (all at that
+  refusal now). The lane landing the edits deletes the decorator. Wire: a relation is
+  `{"tag": "variant", "label": "rows", "payload": {items: [...]}}`; `tests.test_replay.rows`
+  reads one.
 * **Costs** (hbox, `tests/test_relation_lib.py`): a compare of two equal two-cell keys about
   450 ticks, one deciding on its first cell about 200 (about 30 ticks a call, which is the
   machine's); `joinOn` of two stored 200-row relations 278,301 ticks with building them
@@ -286,7 +309,7 @@ the library).
 
 * The closure cap is gone; Counter with Card runs 200 HTTP turns in 0.50 s on hbox
   (0.39 s bare). The REPL's `MAX_BODY` refuses Counter's closure with Card (413).
-* Ticks: Bell card of 1,025 rains 76,106 (76,476 before its head was interpolated); spell parse of 64 fields 75,412 (dense 4,057 bytes 83,238); an Avatar send
+* Ticks: Bell card of 1,025 rains 76,511 (76,485 before the rains were a relation; 76,476 before its head was interpolated); spell parse of 64 fields 75,412 (dense 4,057 bytes 83,238); an Avatar send
   to 32 observers 5,213.
 * An await only proves that some turn with that identity was admitted. A turn suspended
   on an object resumes refused `staleRoot` if anything wrote that object meanwhile,

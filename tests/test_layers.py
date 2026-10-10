@@ -85,7 +85,7 @@ class Layers(unittest.TestCase):
         louder = bell + [{"name": "Louder", "source": LOUDER}]
         empty = {"tag": "list", "items": []}
         state = {"tag": "record", "fields": [{"name": k, "value": v} for k, v in [
-            ("colour", variant("amber")), ("seed", label("a fern")), ("rains", empty),
+            ("colour", variant("amber")), ("seed", label("a fern")), ("rains", {"tag": "variant", "label": "rows", "payload": {"tag": "record", "fields": [{"name": "items", "value": empty}]}}),
             ("rung", {"tag": "boolean", "value": False}), ("planting", label("")), ("planter", label("glm")),
             ("planterHandle", label("")), ("observers", empty), ("doors", empty)]]}
         ctx = context("bell")

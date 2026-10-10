@@ -8,10 +8,14 @@ import ./List.obend as Lists
 # do not parse, so the relation is the one constructor of a generic sum.
 sum Relation<T>:
   rows: {items: Lists.List<T>}
-# One relation field and its key columns, as `relations()` declares them.
+# One relation field, its key columns and its limit, as `relations()` declares them: past
+# `limit` rows the host drops the first rows in key order (0 is the host's default, 4,096).
+# A relation is bounded; an unbounded collection is a sequence of child objects
+# (`anthology/page/n`), never one relation.
 record Decl:
   field: String
   key: Lists.List<String>
+  limit: Nat
 type Decls = Lists.List<Decl>
 # A key as Bend compares it: the key columns' values in the canonical column order (the
 # order DAG-CBOR writes a map's keys: shorter names first, then by bytes; {author, at, n}

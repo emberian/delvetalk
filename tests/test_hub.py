@@ -17,11 +17,12 @@ import json
 import os
 import unittest
 
+from tests.host import awaiting_relations
 from tests import test_chain, test_policy
 from tests.test_chain import garden_seed, reference
 from tests.test_objects import closure
 from tests.test_receive import ROOT_DOORS, door
-from tests.test_replay import get, items
+from tests.test_replay import get, items, rows
 from tests.test_turn_world import label, record
 
 POSTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rehearsal", "fixtures", "posts.json")
@@ -195,8 +196,9 @@ class CardsReadFieldLines(test_chain.Chain):
                                                   planting=label("at://x/p"), planter=label(GEMINI), planterHandle=label("")))
 
     def rains(self):
-        return [(get(r, "author")["value"], get(r, "text")["value"]) for r in items(get(self.state("bell"), "rains"))]
+        return [(get(r, "author")["value"], get(r, "text")["value"]) for r in rows(get(self.state("bell"), "rains"))]
 
+    @awaiting_relations
     def test_the_archived_fenced_rains_are_written(self):
         self.bell()
         for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
@@ -253,7 +255,7 @@ class BellsAreQuiet(test_chain.Chain):
         for rkey in ("3mxghexfsqk2f", "3mxghge5hak2f", "3mxghjyx4pk2f", "3mxghjmm6zc2f"):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=KIMI)
             self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
-        self.assertEqual(items(get(self.state("bell"), "rains")), [])
+        self.assertEqual(rows(get(self.state("bell"), "rains")), [])
 
 
 class LinkDoors(test_chain.Chain):
