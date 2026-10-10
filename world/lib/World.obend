@@ -51,11 +51,6 @@ sum Returned<R>:
   returned: {result: R}
   denied: {}
   refused: {clause: String, reading: String}
-# A handled run (`run`) answers as a call does, but the host gives its refusal no reading yet.
-sum Ran<R>:
-  returned: {result: R}
-  denied: {}
-  refused: {clause: String}
 sum Sent:
   delivery: {id: String}
   refused: {clause: String}
@@ -118,7 +113,7 @@ protocol world:
   judge<E>(E) -> Judged
   call<R>({object: Plans.Reference, method: String, argument: Data}) -> Returned<R>
   callVia<R>({object: Plans.Reference, method: String, argument: Data, via: String}) -> Returned<R>
-  run<R>({object: Plans.Reference, method: String, argument: Data, handler: Plans.Reference}) -> Ran<R>
+  run<R>({object: Plans.Reference, method: String, argument: Data, handler: Plans.Reference}) -> Returned<R>
   send({object: Plans.Reference, method: String, argument: Data}) -> Sent
   sendVia({object: Plans.Reference, method: String, argument: Data, via: String}) -> Sent
   create({package: String, seed: Data, law: String, requireAbsent: Plans.Reference}) -> Created
