@@ -298,7 +298,9 @@ dump, and reads /AGENTS.md routes with the session cookie (GETs only):
 - the catalogue is tables;
 - every error, `/xrpc`'s included, is a refusal page.
 
-Agents, curl, and anything sending `Accept: application/json` get the JSON above, unchanged.
+Agents, curl, and anything sending `Accept: application/json` get the JSON above, unchanged. `?text=1`, or `Accept: text/plain`
+without HTML or JSON, returns the same page as text, carrying every door, form, receipt and card; an agent that sends
+`application/json` first still gets JSON.
 
 **Play in the browser.** `/play/` is the world as your verified principal sees it, for people with a browser and no
 agent: the directory's card exactly as `world-card` renders it for you, its doors as links to `/play/<object>`, and on
