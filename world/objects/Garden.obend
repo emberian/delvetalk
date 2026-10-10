@@ -72,20 +72,24 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "pending", key: Lists.List.cons({head: "principal", tail: Lists.List.nil({})}), limit: 64n}, tail: Relations.Decls.cons({head: {field: "children", key: Lists.List.cons({head: "object", tail: Lists.List.nil({})}), limit: 4096n}, tail: Relations.Decls.nil({})})})
+  Lists.append(Lists.append(Relations.Decls.nil(), {field: "pending", key: Text.words("principal"), limit: pendingMax()}), {field: "children", key: Text.words("object"), limit: 4096n})
+# Principals with a planting held at once: the Bend check refuses one more by name, since past
+# the limit the host would drop someone else's.
+def pendingMax() -> Nat:
+  64n
 def keep() -> Edits:
   {planted: Plans.Edit.keep({}), confirmFor: Plans.Entries.keep({}), pageCheckpoint: Plans.Edit.keep({}), pending: Plans.Entries.keep({}), children: Plans.Entries.keep({})}
 # Bells are minted: an empty requireAbsent lets the host choose <garden>/bell/<n>, and the
 # garden records the reference created {object} answers. The cistern has a chosen name,
-# <garden>/cistern, so a second is refused requiredAbsence (the §10 refusal).
+# <garden>/cistern, so a second is refused requiredAbsence.
 def minted() -> Plans.Reference:
   {world: "", object: ""}
 def chosen(context: Abi.Context, name: String) -> Plans.Reference:
   {world: "", object: "{context.object}/{name}"}
 # The post that plants is what the bell's strike later awaits (awaitPost): the reply a spell
-# came in (`inputOrigin.post`); planting directly leaves the bell nothing to await. The planter is the turn's principal,
-# never anything the caller wrote. A typed planting plants (it settles whatever the speaker
-# had waiting).
+# came in (`inputOrigin.post`); planting directly leaves the bell nothing to await. The planter
+# is the turn's principal, never anything the caller wrote. A typed planting plants (it
+# settles whatever the speaker had waiting).
 def plant(state: State, input: Planting, context: Abi.Context) -> Activity<Reply>:
   settled(input.colour, input.seed, context.inputOrigin.post, false, heldBy(context.principal, state), context, state)
 # One cistern per garden: the second create finds garden/cistern occupied. Its name is what
@@ -104,8 +108,6 @@ form cistern as digging:
   name: text 0..120
 def forms() -> Card.Forms:
   Card.Forms.cons({head: planting(), tail: Card.Forms.cons({head: digging(), tail: Card.Forms.nil()})})
-# The helpers take the State after their own inputs: a definition whose first parameter is
-# the State is a method any turn may run.
 # A reader with a proposal waiting is reminded of it, first.
 def waiting(context: Abi.Context, state: State) -> String:
   match heldBy(context.principal, state):
@@ -140,13 +142,6 @@ def page(state: State, context: Abi.Context) -> Card.Page:
 # Publishes the page under the door word (genesis posts one card per door).
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
   Card.publishPage(Card.pageName(input.page, blurb().word), page(state, Card.public(context)))
-# Publishes the page as one agentwiki post (`wiki: <id>` and its sections).
-def publish(state: State, context: Abi.Context) -> Activity<String>:
-  match world.publish({page: "", section: "", body: Card.pageText(page(state, context))}):
-    case published(p): p.post
-    case refused(r): r.clause
-def methods() -> Lists.List<String>:
-  Text.words("publish")
 def blurb() -> Card.Door:
   {word: "garden", blurb: "Plant something; rain on another's planting. Things remember who helped them grow."}
 sum Reply:
@@ -175,11 +170,12 @@ def plantedCard(context: Abi.Context, reference: Plans.Reference, colour: String
 def unclearCard(context: Abi.Context, needs: Form.Names, colour: String, seed: String) -> Document.Document:
   let again = spell(context.object, if seed == "" then "<what might grow here, 1 to 80 characters>" else seed, if colour == "" then "<amber, violet or silver>" else colour)
   Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Text.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
-# Why the garden refuses: each arm a clause, `why` its reading; a refusal the world gave
-# (a create refused requiredAbsence) keeps the world's clause.
+# Why the garden refuses: each arm a clause and its reading; a refusal the world gave (a
+# create refused requiredAbsence) keeps the world's clause.
 sum Why:
   world: {clause: String}
   policyHidden: {}
+  policy: {}
   noMacroSpell: {}
   senseless: {}
   badColour: {}
@@ -188,32 +184,19 @@ sum Why:
   notOwner: {owner: String}
   noField: {field: String}
   noPost: {}
-def why(w: Why) -> String:
-  match w:
-    case world(r): "The world refused it ({r.clause})."
-    case policyHidden(_): "The garden's policy is not visible to you."
-    case noMacroSpell(_): "The macro expands to no planting."
-    case senseless(_): "I could not make sense of that."
-    case badColour(_): "colour is one of: amber, violet, silver"
-    case tooManyWaiting(_): "Too many proposals are waiting."
-    case nothingWaiting(_): "Nothing of yours waits for a yes or no here."
-    case notOwner(n): "Only the garden's owner sets it; that is {n.owner}"
-    case noField(n): "No field called {n.field} can be set here."
-    case noPost(_): "A merge names the post it answers."
-def clause(w: Why) -> String:
-  match w:
-    case world(r): r.clause
-    case policyHidden(_): "policyHidden"
-    case noMacroSpell(_): "noMacroSpell"
-    case senseless(_): "senseless"
-    case badColour(_): "badColour"
-    case tooManyWaiting(_): "tooManyWaiting"
-    case nothingWaiting(_): "nothingWaiting"
-    case notOwner(_): "notOwner"
-    case noField(_): "noField"
-    case noPost(_): "noPost"
 def refusal(w: Why) -> Card.Refusal:
-  {clause: clause(w), reading: why(w)}
+  match w:
+    case world(r): {clause: r.clause, reading: "The world refused it ({r.clause})."}
+    case policyHidden(_): {clause: "policyHidden", reading: "The garden's policy is not visible to you."}
+    case policy(_): {clause: "policy", reading: "The policy is not visible to you."}
+    case noMacroSpell(_): {clause: "noMacroSpell", reading: "The macro expands to no planting."}
+    case senseless(_): {clause: "senseless", reading: "I could not make sense of that."}
+    case badColour(_): {clause: "badColour", reading: "colour is one of: amber, violet, silver"}
+    case tooManyWaiting(_): {clause: "tooManyWaiting", reading: "Too many proposals are waiting."}
+    case nothingWaiting(_): {clause: "nothingWaiting", reading: "Nothing of yours waits for a yes or no here."}
+    case notOwner(n): {clause: "notOwner", reading: "Only the garden's owner sets it; that is {n.owner}"}
+    case noField(n): {clause: "noField", reading: "No field called {n.field} can be set here."}
+    case noPost(_): {clause: "noPost", reading: "A merge names the post it answers."}
 def refusedCard(refusal: Card.Refusal) -> Document.Document:
   Document.text("Not planted, refused {refusal.clause}: {refusal.reading}\n")
 # Answers a refusal with its card, first dropping the waiting proposal it superseded.
@@ -299,7 +282,9 @@ def fromCard(reply: Card.Replied) -> Reply:
 def lenses() -> Lists.List<Form.Field>:
   Lists.List.cons({head: {name: "confirm", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})}, tail: Lists.List.nil()})
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Reply>:
-  if context.principal != state.owner then Card.tell(Reply.refused(refusal(Why.notOwner({owner: Card.name(state.owner, context)}))), Document.text("Not done: {why(Why.notOwner({owner: Card.name(state.owner, context)}))}\n")) else if input.field != "confirm" then Card.tell(Reply.refused(refusal(Why.noField({field: input.field}))), Document.text("Not done: {why(Why.noField({field: input.field}))}\n")) else confirming(Card.valueText(input.value) == "yes", state)
+  if context.principal != state.owner then setRefused(Why.notOwner({owner: Card.name(state.owner, context)})) else if input.field != "confirm" then setRefused(Why.noField({field: input.field})) else confirming(Card.valueText(input.value) == "yes", state)
+def setRefused(w: Why) -> Activity<Reply>:
+  Card.tell(Reply.refused(refusal(w)), Document.text("Not done: {refusal(w).reading}\n"))
 def confirming(ask: Bool, state: State) -> Activity<Reply>:
   let written(_) = world.write(extend(keep(), {confirmFor: if ask == asks(state.confirmFor, "plant") then Plans.Entries.keep({}) else if ask then Plans.Entries.append({item: "plant"}) else Plans.Entries.removeItem({item: "plant"})}))
   Card.tell(Reply.changed({}), Document.text("Set confirm to {if ask then \"yes\" else \"no\"}.\n"))
@@ -347,7 +332,7 @@ def interpreted(input: Card.Reply, policy: Policies.State, attempt: Nat, needs: 
     case unclear(u): if Card.silentNeeds(u.needs) then silent(found) else if failed(u.needs) then told(Reply.unclear({needs: u.needs}), needsCard(u.needs), found) else readBack(input, policy, attempt, Card.Fitted.miss({needs: u.needs}), found, context, state)
     case replied(r): readBack(input, policy, attempt, Card.prose(r.text), found, context, state)
     case timedOut(_): refused(Why.senseless({}), found)
-    case denied(_): told(Reply.refused({clause: "policy", reading: "The policy is not visible to you."}), refusedCard({clause: "policy", reading: "The policy is not visible to you."}), found)
+    case denied(_): refused(Why.policy({}), found)
     case refused(_): refused(Why.senseless({}), found)
 # The model could not be asked (`model: <reason>`): answered at once, never asked again.
 def failed(needs: Form.Names) -> Bool:
@@ -380,13 +365,13 @@ def confirmCard(context: Abi.Context, colour: String, seed: String) -> Document.
 # confirms first) or grows.
 def settled(colour: Bell.Colour, seed: String, post: String, confirm: Bool, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   if confirm then held({principal: context.principal, colour: Bell.colourName(colour), seed: seed, needs: Lists.List.nil()}, confirmCard(context, Bell.colourName(colour), seed), found, state) else grow(colour, seed, post, found, context, state)
-# What the garden holds, one per principal: a new one replaces the old; sixty-four
+# What the garden holds, one per principal: a new one replaces the old; `pendingMax`
 # principals at most. A held planting waiting for yes answers `confirming`, one missing
 # fields `unclear`.
 def held(entry: Pending, card: Document.Document, found: Held, state: State) -> Activity<Reply>:
   match found:
     case some(_): holding(entry, card)
-    case none(_): if Relations.count(state.pending) < 64n then holding(entry, card) else Card.tell(Reply.refused(refusal(Why.tooManyWaiting({}))), refusedCard(refusal(Why.tooManyWaiting({}))))
+    case none(_): if Relations.count(state.pending) < pendingMax() then holding(entry, card) else Card.tell(Reply.refused(refusal(Why.tooManyWaiting({}))), refusedCard(refusal(Why.tooManyWaiting({}))))
 def holding(entry: Pending, card: Document.Document) -> Activity<Reply>:
   let written(_) = write {pending: upsert entry}
   Card.tellTo(if Lists.length(entry.needs) == 0n then Reply.confirming({spell: spell("", entry.seed, entry.colour)}) else Reply.unclear({needs: entry.needs}), entry.principal, card)

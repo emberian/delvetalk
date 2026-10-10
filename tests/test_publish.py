@@ -28,8 +28,8 @@ class Publishing(BridgeCase):
             r = self.host.send({'op': 'world-turn', 'principal': 'glm', 'object': 'garden', 'method': 'plant',
                                 'argument': record(colour=label('silver'), seed=label('bell %02d' % i)), 'identity': f'plant-{i}'})
             self.assertEqual(r['result']['label'], 'planted', r)
-        r = self.host.send({'op': 'world-turn', 'principal': 'glm', 'object': 'garden', 'method': 'publish',
-                            'argument': record(), 'identity': 'publish-1'})
+        r = self.host.send({'op': 'world-turn', 'principal': 'glm', 'object': 'garden', 'method': 'publishPage',
+                            'argument': record(page=label('')), 'identity': 'publish-1'})
         self.assertEqual(r['status'], 'admitted', r)
         ran = self.run_bridge()
         self.assertEqual(ran['published'], [r['result']['value']], ran)

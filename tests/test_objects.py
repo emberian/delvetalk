@@ -178,8 +178,9 @@ def joined(n: Nat) -> String:
   bar(Document.lines(Document.Document.sequence({items: Document.Documents.cons({head: Document.text("alpha\\nbe"), tail: Document.Documents.cons({head: Document.text("ta gamma\\n"), tail: Document.Documents.cons({head: Document.text("delta\\n"), tail: Document.Documents.nil()})})})})))
 """
 
-CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
-  Document.plain(O.render({entries: Lists.List::<Plans.Receipt>.cons({head: {slot: {principal: "glm", intent: "plant"}, height: 7n, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<Plans.Receipt>.nil()})}, Card.stranger()))
+CISTERN_PROBE = PROBE_HEAD % "Cistern" + """import ./Relation.obend as Relations
+def one(n: Nat) -> String:
+  Document.plain(O.render({entries: Relations.Relation.rows({items: Lists.List::<O.Kept>.cons({head: {at: 7n, slot: {principal: "glm", intent: "plant"}, outcome: Plans.Outcome.refused({class: "required-absence", root: "r1"})}, tail: Lists.List::<O.Kept>.nil()})})}, Card.stranger()))
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """import ./Relation.obend as Relations

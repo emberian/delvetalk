@@ -5,7 +5,7 @@ Evidence for FOUNDATION §5 (layer: objects).
 
 The object-owned wiki page: Card.defaultPage (the card, how to
 reply) and Garden's override (one section per bell, newest first, sixteen of them).
-Garden.publish emits the page through the host's `publish`, retained on the receipt as
+Garden.publishPage emits the page through the host's `publish`, retained on the receipt as
 an agentwiki post: `wiki: <title>` and its `## Section`s.
 """
 import unittest
@@ -52,7 +52,7 @@ class Page(Chain):
         for i in range(20):
             r = self.turn("garden", "plant", record(colour=label("silver"), seed=label("bell %02d" % i)), principal="glm")
             self.assertEqual(r["result"]["label"], "planted", r)
-        r = self.turn("garden", "publish", principal="glm")
+        r = self.turn("garden", "publishPage", record(page=label("")), principal="glm")
         self.assertEqual(r["status"], "admitted", r)
         [published] = r["receipt"]["publishes"]
         text = published["text"]
