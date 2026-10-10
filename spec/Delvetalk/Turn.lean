@@ -752,9 +752,28 @@ def start (packet arguments limits request : Json) : Except String Json := do
   let (source, _) ← prepareStart packet values
   return reply.setObjVal! "profile" (Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (initial source.term))
 
+/-- A store over a state's own rows, for the JSON ops: `stored: [{field, key}]` names the state's
+relation fields to hold as stored cells (the host builds its `Store` from its own store). -/
+def storeOfState (state : Data) (stored : Json) : Except String Store := do
+  let .record fields := state | throw "a stored turn's state is a record"
+  let relations ← (← stored.getArr?).toList.mapM fun decl => do
+    let field ← decl.getObjValAs? String "field"
+    let key ← decl.getObjValAs? (List String) "key"
+    let some (.variant "rows" (.record [("items", items)])) := fields.lookup field
+      | throw s!"stored field {field} is not a relation"
+    let some rows := listItems? items | throw s!"stored field {field} holds no list"
+    pure (({ field, size := rows.size, key } : StoredRelation), rows)
+  return ⟨relations.map (·.1), fun field position => ((relations.find? (·.1.field == field)).map (·.2)).bind (·[position]?)⟩
+
+def stepJson (step : Step) (reads : Reads) : Json := step.outcome.toJson.setObjVal! "reads" reads.toJson
+
 def startEntryJson (entry : Delvetalk.CheckedEntry) (arguments limits request : Json) : Except String Json := do
   let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
   let b ← budgets limits
+  if let .ok stored := request.getObjVal? "stored" then
+    let store ← storeOfState (values.headD (.record [])) stored
+    let (step, reads) ← startEntryStored entry values store (← Binding.ofJson request) b
+    return stepJson step reads
   let reply := (← startEntry entry values (← Binding.ofJson request) b).toJson
   if !wantsProfile request then return reply
   let (applied, _) ← prepareStartEntry entry values
@@ -772,6 +791,10 @@ def resumeEntryJson (entry : Delvetalk.CheckedEntry) (issued : String → Bool) 
   let value ← decodeData Bounds.dataWireDepth responseJson
   let b ← budgets limits
   let binding ← Binding.ofJson request
+  if let .ok stored := request.getObjVal? "stored" then
+    let store ← storeOfState (← decodeData Bounds.dataWireDepth (← request.getObjVal? "state")) stored
+    let (step, reads) ← resumeEntryStepStored entry checkpoint checkpoint.digest binding value b store
+    return stepJson step reads
   let reply := (← resumeEntry entry checkpoint checkpoint.digest binding value b).toJson
   if !wantsProfile request then return reply
   let (_, _, _, _, state, resumed) ← prepareResumeEntry entry checkpoint checkpoint.digest binding value

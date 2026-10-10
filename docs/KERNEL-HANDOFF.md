@@ -412,6 +412,20 @@ trim and erase cases; `erase_forceStored`, `fetchable_agree`, `agree_fetchStep`,
 forced rows. Conformance 1500: 1467 of 1535 agree per evaluator, 68 known, 0 unexpected (the 32
 stored cases all agree). No packet or pinned tick moved.
 
+Step 3 (runner): `Turn.Store`, `StoredRelation`, `Store.bounded` (rows within
+`Bounds.maxCellBytes`), `Read`, `Reads` (`Reads.toJson`: `{rows: [{field, key, bytes}], spans:
+[{field, reach}]}`), `keyProjection`, `scalarPart`, `storedStart`, `runStored`,
+`startEntryStored`, `resumeSuspendedStored`, `resumeEntryStepStored` exactly as specified above,
+and for cards and views `Package.executeDataEntryStored entry arguments store limits :
+Except String (DataExecution × Reads)`. `exhaustedResource` names `heap` for a fetch that would
+not fit. Wire (tests and the evaluators' harness only; the host calls the Lean functions):
+`turn-start`/`run` take `stored: [{field, key}]` (the first argument's named relations held as
+stored cells over its own rows) and `turn-resume` `stored` and `state`; each reply carries
+`reads`. `profile` is not computed on the stored path. Measured in `tests/test_stored.py`: a turn
+that reads no row, or one row, spends the same ticks over 0 or 2,048 rows; a row of 101 more
+canonical bytes costs exactly 202 more ticks; a card render, a scan and a merge join report
+exactly the rows they read (the join none past the shorter relation's end).
+
 **Estimate.** Kernel: cells, fetch, codecs, Fast, proofs, generator (step 2) 2 days; runner and
 reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `Store` over its
 state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with
