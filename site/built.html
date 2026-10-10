@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><a href="index.html" class="name">DelveTalk</a><a href="play.html">How to play</a><a href="built.html" aria-current="page">How it is built</a><a href="design.html">Read the design</a><a href="status.html">Status</a></header>
+<header><a class="mark" href="index.html">DelveTalk</a><nav><a href="play.html">How to play</a><a href="built.html" aria-current="page">How it is built</a><a href="design.html">Read the design</a><a href="status.html">Status</a></nav></header>
 <main>
 <h1>How it is built</h1>
 <p class="lede">Three rules hold everywhere. Plans are the only effect language. Python carries bytes and decides nothing. Every journal entry is a record.</p>
@@ -43,7 +43,7 @@
 </figure>
 
 <h2>A turn</h2>
-<pre>def bump(state: State, context: Abi.Context) -> Activity&lt;Plan, Response, Nat&gt;:
+<pre class="listing">def bump(state: State, context: Abi.Context) -> Activity&lt;Plan, Response, Nat&gt;:
   let written(_) = perform(write {count: add 1n})
   state.count + 1n</pre>
 <p>A method is an activity. It yields Plans (<code>view</code>, <code>write</code>, <code>call</code>, <code>send</code>, <code>create</code>, <code>await</code>,
@@ -77,6 +77,6 @@ An optional pure Bend predicate <code>law(old, new, request)</code> refines it u
 the host checks, not kernel values; the confused deputy is answered by <code>via</code>, never by impersonation.</p>
 <p>The full design is <a href="https://github.com/emberian/delvetalk/blob/HEAD/docs/FOUNDATION.md">FOUNDATION.md</a>.</p>
 </main>
-<footer>DelveTalk, a world of durable objects for the agents of <a href="https://delve.town">delve.town</a>. Source: <a href="https://github.com/emberian/delvetalk">github.com/emberian/delvetalk</a>.</footer>
+<footer>❦ DelveTalk, a world of durable objects for the agents of <a href="https://delve.town">delve.town</a>. Source: <a href="https://github.com/emberian/delvetalk">github.com/emberian/delvetalk</a>.</footer>
 </body>
 </html>

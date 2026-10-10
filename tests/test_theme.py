@@ -51,15 +51,19 @@ class Theme(unittest.TestCase):
             self.assertGreaterEqual(contrast(p['amber'], p['paper']), 3, 'the focus ring')  # non-text contrast
         self.assertEqual(failures, [])
 
+    def test_the_site_carries_the_fronts_palette(self):
+        self.assertEqual(palettes(SITE.read_text()), palettes(FRONT.read_text()))
+
     def test_every_kind_has_its_own_mark(self):
         css = FRONT.read_text()
         marks = {kind: mark(css, oid) for kind, oid in KINDS.items()}
         self.assertNotIn(None, marks.values(), marks)
         self.assertEqual(len(set(marks.values())), len(KINDS), marks)
         self.assertEqual(mark(css, 'play'), None)  # anything else falls back to the plain sprig
+        self.assertEqual(marks, {k: mark(SITE.read_text(), oid) for k, oid in KINDS.items()})
 
     def test_the_card_is_never_reflowed(self):
-        for css in (FRONT.read_text(),):
+        for css in (FRONT.read_text(), SITE.read_text()):
             card = re.search(r'\n\.card \{([^}]*)\}', css)[1]
             self.assertIn('white-space: pre;', card)
             self.assertIn('72ch', card)
