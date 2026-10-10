@@ -6,7 +6,7 @@
     "main": {
       "type": "record",
       "key": "any",
-      "description": "Record key: `<object>/<clause name>`. A law clause is state on the object, not content-named; the record carries no cid of its own.",
+      "description": "Record key: the object id with each `/` as `~`, a dot, the clause name (`garden~bell~1.owner`). A law clause is state on the object, not content-named; the record carries no cid of its own.",
       "record": {
         "type": "object",
         "required": ["object", "pin", "name", "clause"],

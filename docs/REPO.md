@@ -27,11 +27,20 @@ of the front (32 a minute).
 | Collection | Record key | `cid` | getRecord | listRecords (cursor) |
 | --- | --- | --- | --- | --- |
 | `town.delvetalk.receipt` | slug, or the entry CID | the entry's `hash` | `world-resolve` (slug), `world-entry` (CID) | `world-entries` (height; `reverse`) |
-| `town.delvetalk.object` | `<object>/<version>` | `stateCid` | `world-object` | `world-objects`, then `world-object` per id (id) |
+| `town.delvetalk.object` | `<object, / as ~>.<version>` | `stateCid` | `world-object` | `world-objects`, then `world-object` per id (id) |
 | `town.delvetalk.source` | the module CID | the module CID | `world-source` | `world-sources` (height) |
 | `town.delvetalk.publication` | publication id | retaining entry's hash | listed only | `world-publications` (height) |
 | `town.delvetalk.grant` | grant id | installing entry's hash | listed only | `world-grants` (height) |
-| `town.delvetalk.law` | `<object>/<clause>` | none | listed only | `laws` of `world-object` (object id) |
+| `town.delvetalk.law` | `<object, / as ~>.<clause>` | none | listed only | `laws` of `world-object` (object id) |
+
+**Record keys** are all in record-key syntax (`[A-Za-z0-9._~:-]{1,512}`, not `.` or `..`): a slug, and a
+CID (an entry's, a module's, a publication or grant id, all base32 CIDs) as they are; an object's key is
+its id with each `/` written `~`, a dot, and the version (`garden/bell/1` at version 2 is `garden~bell~1.2`), a
+law's the same with the clause name in place of the version (`garden~bell~1.owner`). The key reads back by
+the last dot and `~` to `/`. The host takes any id of 1..128 bytes, so an id holding `~` (which would read
+back as `/`) or a character record keys forbid has no key: `listRecords` of objects and laws leaves it out
+and names it in `unkeyable: [ids]`. getRecord also accepts the old `<object>/<version>` for one release
+(any key holding `/`) and answers with the new key in `uri`.
 
 Host statuses become XRPC errors carrying the host reply as `reply`: `unknown` is 400 `RecordNotFound`,
 `denied` 403 `Denied`, `ambiguous` 400 `AmbiguousSlug`, anything else 400 `InvalidRequest`.
@@ -48,7 +57,7 @@ is a projection beside it, not that state.
 `at://did:web:delvetalk.fg-goose.online/town.delvetalk.receipt/<slug>`, e.g. `…/receipt/tulun-huzif`: a slug
 is what a post already carries, and getRecord resolves it. A slug is 32 bits, so two receipts can share
 one; the host then answers `ambiguous` and the citation must use the CID as its key
-(`…/town.delvetalk.receipt/bafyrei…`), which is exact. An object version: `…/town.delvetalk.object/garden/3`;
+(`…/town.delvetalk.receipt/bafyrei…`), which is exact. An object version: `…/town.delvetalk.object/garden.3` (`garden/bell/1` at 0: `…/garden~bell~1.0`);
 a module: `…/town.delvetalk.source/<cid>`. A post still carries the slug and never the hash (FOUNDATION
 section 2); the at-uri is for readers who follow it.
 
@@ -67,8 +76,7 @@ section 2); the at-uri is for readers who follow it.
 - **Checkpoints and pending sends.** `blocks[].cid`, `activity.checkpoint` and `sends[]` appear only in a
   whole receipt; there is no collection for them.
 
-Divergences a real PDS would reject: an object's key `<object>/<version>` (and a law's) holds `/`, which
-record-key syntax forbids (`[A-Za-z0-9._~:-]`); CIDs inside records are strings, as the journal stores them,
+Divergences a real PDS would reject: CIDs inside records are strings, as the journal stores them,
 not DAG-CBOR links (tag 42); an entry block has no `$type` (the JSON `value` adds it, the bytes cannot
 without changing the CID).
 
@@ -106,7 +114,8 @@ land. In every op `principal` is the reader, and `anonymous` reads as the public
 7. **`world-publications`** for every reader (a publication is posted publicly), with `hash` (the retaining
    entry's) on each item, and `limit`, `before`, `reverse` as above. Today it answers only the publisher.
 
-One ask beyond ops: a single name for the public reader. `world-history` and `world-receipt` take `""`,
+Two asks beyond ops. Object ids within a keyable alphabet (no `~`; `[A-Za-z0-9._:/-]`), so every object has
+a record key and `unkeyable` stays empty. A single name for the public reader. `world-history` and `world-receipt` take `""`,
 `world-objects`, `world-inspect` and `world-view` require 1..128 bytes, and the front reads as `anonymous`;
 the façade uses `anonymous`, which works with every op now.
 
@@ -114,8 +123,7 @@ the façade uses `anonymous`, which works with every op now.
 
 A signing key in the DID document and a signed commit per height (the head entry as `data`'s root, or an
 MST keyed by collection and rkey over these records); `getRepo`, `getLatestCommit` and `subscribeRepos`
-(a firehose of `#commit` events, one per entry, `seq` = height); record keys within the record-key syntax
-(objects keyed e.g. `<object with / as ~>:<version>`); CIDs inside records as links, which changes every
+(a firehose of `#commit` events, one per entry, `seq` = height); CIDs inside records as links, which changes every
 entry's bytes and so every CID, a journal format change the hash pass would have to carry; and records whose
 bytes are their value, so a projected record is its own block with its own CID rather than a view of an
 entry's.
