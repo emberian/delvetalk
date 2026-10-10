@@ -72,6 +72,8 @@ def lineHint (source line : String) : Option String :=
     some "definitions are `def name(x: T) -> U:`; parameter and result types are required"
   else if ((parenthesized trimmed "fn(").map untypedParameters).getD false then
     some "closures are `fn(x: T) -> U: body`; parameter and result types are required"
+  else if has line "${" || has line "f\"" then
+    some "text interpolation is `\"SCENE {state.title} ({natText(n)} here)\"`: an expression between braces inside an ordinary string (`{{` and `}}` for literal braces)"
   else if has line "halt(" then
     some "there is no halt; to go on only with the response you expect, write `let written(_) = perform(Plan.write({...}))` and continue the block (any other response refuses the turn by name); a refusal the caller should read is a sum arm you return (`Result.refused({...})`)"
   else if has line "Some(" || has line "None" then

@@ -563,12 +563,14 @@ def specClaimsName : String := "SpecClaims"
 /-- The built-in module: types every module resolves by bare name; no module may declare
 them, and it has no definitions (nothing of it is emitted). Not a legal source module name. -/
 def builtinModuleName : String := "$builtin"
-def builtinTypeNames : List String := [specMetaName, specClaimsName]
+def builtinTypeNames : List String := [specMetaName, specClaimsName, "TextPieces"]
 def builtinSource : String :=
   "edition ObjectiveBend 1\n" ++
   "sum SpecClaims:\n  none: {}\n  claim: {name: String, status: String, rest: SpecClaims}\n\n" ++
   "sum SpecMeta:\n  declared: {name: String, interface: String, claims: SpecClaims}\n" ++
-  "  composed: {inherited: SpecMeta, wrapping: SpecMeta}\n  extension: {}\n"
+  "  composed: {inherited: SpecMeta, wrapping: SpecMeta}\n  extension: {}\n" ++
+  -- The list an interpolated string of more than four pieces is joined over.
+  "sum TextPieces:\n  nil: {}\n  cons: {head: String, tail: TextPieces}\n"
 
 def lookupGlobal (c : Ctx) (name : String) (m : Module) : Option String :=
   let key := m.name ++ "." ++ name

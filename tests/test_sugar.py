@@ -308,6 +308,28 @@ class SugarTests(unittest.TestCase):
         self.assertIn("let written(_) = perform(Plan.write({...}))", reply["diagnostic"]["hint"])
 
 
+SCENE = HEAD + """record State:
+  title: String
+  count: Nat
+"""
+# (name, explicit, sugared, entry)
+TEXT_PAIRS = [
+    ("two pieces", SCENE + "def f(s: State) -> String:\n  textConcat(\"SCENE \", s.title)\n",
+     SCENE + "def f(s: State) -> String:\n  \"SCENE {s.title}\"\n", "f"),
+    ("four pieces, right-nested",
+     SCENE + "def f(s: State) -> String:\n  textConcat(\"SCENE \", textConcat(s.title, textConcat(\": \", natText(s.count))))\n",
+     SCENE + "def f(s: State) -> String:\n  \"SCENE {s.title}: {natText(s.count)}\"\n", "f"),
+    ("five pieces, joined",
+     SCENE + "def f(s: State) -> String:\n  textJoin(TextPieces.cons({head: \"SCENE \", tail: TextPieces.cons({head: s.title, tail: "
+     "TextPieces.cons({head: \" (\", tail: TextPieces.cons({head: natText(s.count), tail: TextPieces.cons({head: \" here)\", "
+     "tail: TextPieces.nil({})})})})})}), \"\")\n",
+     SCENE + "def f(s: State) -> String:\n  \"SCENE {s.title} ({natText(s.count)} here)\"\n", "f"),
+    ("doubled braces and an escaped literal inside",
+     SCENE + "def f(s: State) -> String:\n  textConcat(\"{{\", textConcat(textConcat(s.title, \"!\"), \"}}\"))\n",
+     SCENE + "def f(s: State) -> String:\n  \"{{{textConcat(s.title, \\\"!\\\")}}}\"\n", "f"),
+]
+
+
 COUNTER = HEAD + """import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 record State:
@@ -323,6 +345,44 @@ def bump(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan, 
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit.add({delta: input.n})}}))
   input.n
 """
+
+
+class Interpolation(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.h = Host()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.h.close()
+
+    def test_interpolation_is_its_explicit_spelling(self):
+        for name, explicit, sugared, entry in TEXT_PAIRS:
+            with self.subTest(form=name):
+                a = self.h.compile(explicit, entry)
+                b = self.h.compile(sugared, entry)
+                self.assertEqual(core(a), core(b))
+
+    def test_interpolation_runs(self):
+        artifact = self.h.compile(TEXT_PAIRS[2][2], "f")
+        state = {"tag": "record", "fields": [{"name": "title", "value": {"tag": "label", "value": "Moth"}},
+                                             {"name": "count", "value": nat(3)}]}
+        reply = self.h.send({"op": "run", "artifact": artifact, "arguments": [state]})
+        self.assertEqual(reply["value"], {"tag": "label", "value": "SCENE Moth (3 here)"}, reply)
+
+    def test_malformed_interpolations_are_refused_by_name(self):
+        for text, message in (("\"a {s.title\"", "is not closed"), ("\"a } b\"", "written }}"),
+                              ("\"a {s.title s.title}\"", "holds one expression")):
+            with self.subTest(text=text):
+                reply = self.h.send({"op": "check-package", "entry": "f", "modules": [
+                    {"name": "Package", "source": SCENE + "def f(s: State) -> String:\n  " + text + "\n"}]})
+                self.assertEqual(reply["status"], "refused", reply)
+                self.assertIn(message, reply["diagnostic"]["message"])
+
+    def test_template_habits_suggest_interpolation(self):
+        reply = self.h.send({"op": "check-package", "entry": "f", "modules": [
+            {"name": "Package", "source": SCENE + "def f(s: State) -> String:\n  `SCENE ${s.title}`\n"}]})
+        self.assertIn("text interpolation is", reply["diagnostic"].get("hint", ""), reply)
 
 
 class LawReading(TurnWorld):

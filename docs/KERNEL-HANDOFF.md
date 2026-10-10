@@ -553,3 +553,14 @@ fixture recorded by the foundation binary).
   refusal by law `n` can quote `reading` ("refused owner: only the owner ..."); the pure
   profile still refuses packages with laws, so the field is observable only through the
   host (`compileEntry`).
+- String interpolation (`ObjectiveBendParse.interpolationPieces`/`joinPieces`): a string
+  token with an unescaped `{` is text pieces and the expressions between braces; up to
+  four pieces lower to right-nested `textConcat`, more to `textJoin(TextPieces..., "")`
+  over the new built-in sum `TextPieces` (`nil | cons{head: String, tail}`, beside
+  SpecMeta; registering it moved no packet). `{{`/`}}` are literal braces; an
+  expression's own string literals are escaped inside the token (`{f(\"a\")}`); a lone
+  `}`, an unclosed `{` and two expressions in one pair of braces are refused by name.
+  Document templates now quote their text with braces as `{`/`}`, so expanded
+  templates never interpolate (same decoded strings, same packets). Parse fuel is now the
+  expression's characters plus tokens (nested interpolations parse their own tokens).
+  A `${`/`f"` line hints the form.

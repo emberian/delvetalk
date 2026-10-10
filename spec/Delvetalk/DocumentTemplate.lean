@@ -27,7 +27,11 @@ def advance (p : Position) (c : Char) : Position :=
 
 def advanceText (p : Position) (s : List Char) : Position := s.foldl advance p
 
-def quoted (s : List Char) : String := (toJson (String.ofList s)).compress
+/-- A JSON string literal of `s`, its braces escaped (`\u007b`, `\u007d`) so that the
+expanded text is never read as string interpolation. -/
+def quoted (s : List Char) : String :=
+  String.join (((toJson (String.ofList s)).compress.toList.map fun c =>
+    if c == '{' then "\\u007b" else if c == '}' then "\\u007d" else c.toString))
 
 structure Cursor where
   rest : List Char

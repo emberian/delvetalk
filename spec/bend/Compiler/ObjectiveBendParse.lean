@@ -387,6 +387,72 @@ def natValue (t : List Char) : String :=
   let stripped := digits.dropWhile (· == '0')
   String.ofList (if stripped.isEmpty then ['0'] else stripped)
 
+/-! ## String interpolation
+
+`"SCENE {state.title} ({natText(n)} here)"` is the text pieces and the expressions between
+braces, joined: up to four pieces by right-nested `textConcat`, more by `textJoin` over the
+built-in `TextPieces` list with separator "". `{{` and `}}` are literal braces; an
+expression's own string literals are escaped (`{f(\"a\")}`), as everything inside the
+token is. A token without an unescaped `{` is an ordinary string. -/
+
+inductive Piece where
+  | text (raw : List Char)
+  /-- An expression's source text (still escaped) and its character offset in the token. -/
+  | code (raw : List Char) (offset : Nat)
+
+def interpolationPieces (token : List Char) : Except String (List Piece) := do
+  let inner := (token.drop 1).dropLast.toArray
+  let mut pieces : Array Piece := #[]
+  let mut literal : Array Char := #[]
+  let mut i := 0
+  for _ in [0:inner.size + 1] do
+    if i ≥ inner.size then break
+    let c := inner[i]!
+    if c == '\\' then
+      literal := (literal.push c).push (inner[i + 1]?.getD c)
+      i := i + 2
+    else if c == '{' && inner[i + 1]? == some '{' then
+      literal := literal.push '{'; i := i + 2
+    else if c == '}' && inner[i + 1]? == some '}' then
+      literal := literal.push '}'; i := i + 2
+    else if c == '}' then
+      throw "Error: a lone } in a string literal is written }}"
+    else if c == '{' then
+      let mut depth := 1
+      let mut j := i + 1
+      for _ in [0:inner.size + 1] do
+        if j ≥ inner.size || depth == 0 then break
+        let d := inner[j]!
+        if d == '\\' then j := j + 2
+        else
+          if d == '{' then depth := depth + 1
+          if d == '}' then depth := depth - 1
+          j := j + 1
+      if depth != 0 then throw "Error: an interpolation { in a string literal is not closed"
+      if !literal.isEmpty then pieces := pieces.push (.text literal.toList)
+      literal := #[]
+      pieces := pieces.push (.code (inner.extract (i + 1) (j - 1)).toList (i + 2))
+      i := j
+    else
+      literal := literal.push c; i := i + 1
+  if !literal.isEmpty then pieces := pieces.push (.text literal.toList)
+  return pieces.toList
+
+def builtinTextPieces : String := "TextPieces"
+
+/-- The pieces joined: one piece is itself, up to four a right-nested `textConcat`, more a
+`textJoin` over `TextPieces` with separator "". -/
+def joinPieces (pieces : List Expr) (span : Span) : Expr :=
+  if pieces.length ≤ 4 then
+    match pieces.reverse with
+    | [] => .str "" span
+    | last :: earlier => earlier.foldl (fun acc p => .call (.var "textConcat" span) [p, acc] span) last
+  else
+    let ctor := fun (label : String) => Expr.member (.var builtinTextPieces span) label span
+    let list := pieces.foldr (fun p acc => Expr.call (ctor "cons") [.record [("head", p), ("tail", acc)] span] span)
+      (.call (ctor "nil") [.record [] span] span)
+    .call (.var "textJoin" span) [list, .str "" span] span
+
 /-- `parse(minimum)`: an atom, its postfix member/call chain, then binary operators of at
 least `minimum` precedence (left-associative). -/
 def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
@@ -478,8 +544,27 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
       result := (.nat (natValue first.text) span, span)
     else if first.text.head? == some '"' then
       let span := env.location first.start first.stop
-      let value ← StateT.lift (jsonStringLiteral first.text)
-      result := (.str value span, span)
+      let pieces ← StateT.lift (interpolationPieces first.text)
+      if pieces.all (fun p => match p with | .text _ => true | _ => false) then
+        let raw := pieces.flatMap fun p => match p with | .text r => r | _ => []
+        let value ← StateT.lift (jsonStringLiteral ('"' :: raw ++ ['"']))
+        result := (.str value span, span)
+      else
+        let mut parts : List Expr := []
+        for piece in pieces do
+          match piece with
+          | .text raw => parts := parts ++ [.str (← StateT.lift (jsonStringLiteral ('"' :: raw ++ ['"']))) span]
+          | .code raw offset =>
+            let code ← StateT.lift (unescape (raw.length + 1) raw)
+            let tokens ← StateT.lift (tokenize code)
+            let base := env.byteAt[first.start + offset]!
+            let byteAt := (code.foldl (fun (acc : Array Nat × Nat) c => (acc.1.push acc.2, acc.2 + c.utf8Size))
+              (#[], base)) |> fun (acc, last) => acc.push last
+            let inner : ExprEnv := ⟨code, tokens, byteAt, env.line⟩
+            let ((e, _), cursor) ← StateT.lift ((parseExpr inner fuel 0).run 0)
+            if cursor != tokens.size then throw "Error: an interpolation in a string literal holds one expression"
+            parts := parts ++ [e]
+        result := (joinPieces parts span, span)
     else if isIdent first.text then
       let span := env.location first.start first.stop
       result := (.var firstText span, span)
@@ -550,7 +635,7 @@ def expression (text : List Char) (start line : Nat) : Except String Expr := do
   let byteAt := (text.foldl (fun (acc : Array Nat × Nat) c => (acc.1.push acc.2, acc.2 + c.utf8Size))
     (#[], start)) |> fun (acc, last) => acc.push last
   let env : ExprEnv := ⟨text, tokens, byteAt, line⟩
-  let ((expr, _), cursor) ← (parseExpr env (tokens.size + 1) 0).run 0
+  let ((expr, _), cursor) ← (parseExpr env (text.length + tokens.size + 1) 0).run 0
   if cursor != tokens.size then throw "Error: unexpected trailing expression token"
   return expr
 
