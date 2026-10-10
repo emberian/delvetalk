@@ -458,7 +458,12 @@ a 3.3 MB journal with its first snapshot. Still found: the hand-on check lets
 through chatter that names "garden" or matches inside a word, so the model
 call count did not fall; mentions of principals who never arrived are lost;
 Env cards are unclipped; a long reply can exhaust its tick budget on a
-per-word character walk. The gate stands: the §10 hour must plant, rain, refuse the
+per-word character walk. Run 9 (foundation 5434fa7): the gate holds, no
+mention is refused, every handed-on reply is drafted, interpretations down to
+77 from 131 with 44 reachable once the directory's words come from the offered
+forms alone; but the journal doubled to 6.1 MB because checkpoint blocks
+stopped deduplicating (absolute heap addresses shift between suspensions) and
+the wall time tripled, unattributed. The gate stands: the §10 hour must plant, rain, refuse the
 duplicate cistern and admit the anthology lines from the archive itself.
 
 ## 15. Backlog after the gate (2026-10-09 night, from the old tree and the transcripts)
