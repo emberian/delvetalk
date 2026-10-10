@@ -540,3 +540,12 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   with the objects lane's deletion pass; 44 modules, 1,207 -> 1,132 defs (Card, Deal,
   Directory and Spell lost defs in that pass), every def compiles.
 
+
+## 22. Relations in the artifact (lane/kernel8, §16 items 3-5)
+
+- `relationsOf` once per package: `PreparedRequest.relations` is a `Thunk` that
+  `prepareRequest` sets (`prepareCore` is the closure without it), so the package session's
+  front cache and the host's prepared-closure cache evaluate `relations()` at most once per
+  package and every later entry's artifact reads it. Measured on hbox (load ~12, interleaved,
+  best of 8 rounds of every Cistern entry in one session): 126-130 ms -> 101-102 ms for 13
+  entries.

@@ -199,13 +199,18 @@ structure PreparedRequest where
   limits : Json
   /-- `sourcesSha256` of every artifact compiled from it (the CID of `sources`). -/
   sourcesCid : String
+  /-- The package's declared relations (`relationsOf`), evaluated at most once per prepared
+  package, when an entry's artifact first asks (`compileEntryFrom`); a cached prepared request
+  answers every later entry from it. -/
+  relations : Thunk (Except Diagnostic (Option Json)) := Thunk.pure (.ok none)
 
-def prepareRequest (j : Json) : Except Diagnostic PreparedRequest :=
+/-- The closure prepared, without its relations (`prepareRequest` adds them). -/
+def prepareCore (j : Json) : Except Diagnostic PreparedRequest :=
   (bare j).mapError (withHint j)
 where bare (j : Json) : Except Diagnostic PreparedRequest := do
   let (modules, sources, asts) ← modulesAndAsts j
-  return ⟨← FrontEnd.prepareParsed modules asts (getLimits j), sources, getLimits j,
-    Delvetalk.Canonical.cidJson sources⟩
+  return { prepared := ← FrontEnd.prepareParsed modules asts (getLimits j), sources, limits := getLimits j,
+            sourcesCid := Delvetalk.Canonical.cidJson sources }
 
 /-- One compiled entry: the artifact, the entry decoded and checked (no re-decoding needed
 to run it), its type and the entry module's laws. -/
@@ -309,7 +314,7 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
 
 /-- Compile the request's entry: prepare its closure, then the entry. -/
 def compileEntry (j : Json) : Except Diagnostic EntryCompiled := do
-  let request ← prepareRequest j
+  let request ← prepareCore j
   (compileEntryCore request (← lift (j.getObjValAs? String "entry"))).mapError (withHint j)
 
 -- A law without a reading is in the artifact's table with reading "", beside one with a
@@ -644,11 +649,16 @@ def relationsOf (request : PreparedRequest) : Except Diagnostic (Option Json) :=
       return Json.mkObj [("field", toJson field), ("key", toJson columns)]
     return some (Json.arr decls.toArray)
 
+/-- Prepare a request's closure, its relations evaluated on first use and kept with it. -/
+def prepareRequest (j : Json) : Except Diagnostic PreparedRequest := do
+  let request ← prepareCore j
+  return { request with relations := Thunk.mk fun _ => relationsOf request }
+
 /-- Compile `entry` from a prepared closure; the artifact lists the package's `relations`
-when it declares them. -/
+when it declares them (computed once per prepared request). -/
 def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagnostic EntryCompiled := do
   let compiled ← compileEntryCore request entry
-  match ← relationsOf request with
+  match ← request.relations.get with
   | none => return compiled
   | some relations => return { compiled with artifact := compiled.artifact.setObjVal! "relations" relations }
 
