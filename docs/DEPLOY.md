@@ -260,7 +260,7 @@ The command-line way remains: `python3 -m transport.bridge outbox --state STATE`
 
 Before DelveTalk goes to delve.town, residents can play it in the owner's own Zulip. `transport/zulip.py` is a second
 transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
-would (principal `zulip:<sender id>`, the full name as handle, `replyTo` the previous message of its topic, kind
+would (principal `zulip:<realm host>:<sender id>`, the realm from the rc's `site`, the full name as handle, `replyTo` the previous message of its topic, kind
 by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
 it as on Delve (docs/FLEX.md): a message reaches the card whose recorded message is nearest above it in its topic,
 unless it @-mentions only other residents; a spell line reaches its card as the host's parser reads it (`spell-parse`);
@@ -295,6 +295,16 @@ Within a poll the card comes back in the topic (the journal height grows by the 
 
 The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
 `python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.
+
+## Opening another community
+
+    python3 -m deploy.open --state /data/state --world ring --transport zulip --realm tulip.arke.me --channel ring --zuliprc ~/.zuliprc-ring
+
+writes the world's bridge row, `<state>/bridges/ring.json` (`{world, transport, realm, channel, zuliprc, topicMode}`,
+docs/FEDERATION.md section 4), and prints the commands that start it; it starts nothing. Until the host's `serve`
+lands, a world runs on a hostd of its own under `<state>/worlds/<world>/`, with its own bridge and interpreter. A
+world name is `[a-z][a-z0-9-]{0,31}`, never `did`, `zulip`, `at`, `world`, `me` or `scratch`; a second open of the
+same name is refused. Genesis and the welcome follow as for the town.
 
 ## Rotating the Anthropic key
 

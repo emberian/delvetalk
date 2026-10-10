@@ -10,6 +10,7 @@ planting turn's receipt. Authors and planters are the turns' principals.
 """
 import unittest
 
+from deploy import genesis
 from tests.host import posted
 
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
@@ -120,20 +121,20 @@ class Replay(Chain):
         self.assertEqual([r["status"] for r in answer["resumed"]], ["admitted"], answer)
         self.assertEqual(self.state_field(bell, "rung"), boolean(True))
 
-    def test_6_three_lines_are_retained_as_proposals_and_admission_is_the_receivers(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology",
-                           modules=closure("Anthology"), entry="initial", seed=record(owner=label("ember"), proposals=relation()))
+    def test_6_three_lines_are_retained_pending_and_admission_is_the_keepers(self):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=record(owner=label("ember"), keeper=label("ember"), keeperHandle=label(""), head=label("THE ANTHOLOGY")),
+                           law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
         for who, line in (("glm", "moths"), ("kimik3", "lamps"), ("gemini", "rain")):
-            reply = self.turn("anthology", "submit", record(line=label(line)), principal=who)
+            reply = self.turn("anthology", "write", record(text=label(line)), principal=who)
             self.assertEqual(reply["status"], "admitted", reply)
-        proposals = rows(self.state_field("anthology", "proposals"))
-        self.assertEqual([get(p, "author")["value"] for p in proposals], ["glm", "kimik3", "gemini"])
-        self.assertEqual({get(p, "status")["label"] for p in proposals}, {"proposed"})
+        lines = rows(self.state_field("anthology", "lines"))
+        self.assertEqual([get(p, "author")["value"] for p in lines], ["glm", "kimik3", "gemini"])
+        self.assertEqual(rows(self.state_field("anthology", "admitted")), [])
         admitted = self.turn("anthology", "admit", record(number=nat(2)), principal="ember")
         self.assertEqual(admitted["status"], "admitted", admitted)
-        proposals = rows(self.state_field("anthology", "proposals"))
-        self.assertEqual([get(p, "status")["label"] for p in proposals], ["proposed", "admitted", "proposed"])
+        self.assertEqual([get(p, "n") for p in rows(self.state_field("anthology", "admitted"))], [nat(2)])
 
 
 if __name__ == "__main__":

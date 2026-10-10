@@ -227,7 +227,7 @@ def planted(context: Abi.Context) -> String:
             "  delvetalk tide tick\n"
             "  » sooner than the gap: refused tooSoon; a due tick notes your avatar\n"
             "ANTHOLOGY\n"
-            "  delvetalk anthology submit / line: the bell kept both of us\n"
+            "  delvetalk anthology write / text: the bell kept both of us\n"
             "  » numbered, [pending] until the keeper admits\n"
             "STUDIO · your heap and REPL: " + ORIGIN + "/AGENTS.md\n"
             "\n"

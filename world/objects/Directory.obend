@@ -104,8 +104,8 @@ def changedNat(state: State, input: {object: Plans.Reference, field: String, ver
   noted(input.object.object, input.field, Lists.fold(input.inserted, 0n, fn(n: Nat) -> Nat -> Nat: fn(_: Nat) -> Nat: n), "", context, state)
 def changedChildren(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Child>, retracted: Lists.List<Rows.Child>}, context: Abi.Context) -> Activity<Answer>:
   moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(c: Rows.Child) -> String: c.object)), context, state)
-def changedProposals(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Proposal>, retracted: Lists.List<Rows.Proposal>}, context: Abi.Context) -> Activity<Answer>:
-  moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(p: Rows.Proposal) -> String: "#{natText(p.n)}")), context, state)
+def changedLines(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Line>, retracted: Lists.List<Rows.Line>}, context: Abi.Context) -> Activity<Answer>:
+  moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(l: Rows.Line) -> String: "#{natText(l.n)}")), context, state)
 def changedHeld(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Held>, retracted: Lists.List<Rows.Held>}, context: Abi.Context) -> Activity<Answer>:
   moved(input.object.object, input.field, Lists.length(input.inserted), Lists.length(input.retracted), Menu.newestOf(Lists.map(input.inserted, fn(h: Rows.Held) -> String: "#{natText(h.n)} for {h.target}")), context, state)
 def changedPresence(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Presence>, retracted: Lists.List<Rows.Presence>}, context: Abi.Context) -> Activity<Answer>:

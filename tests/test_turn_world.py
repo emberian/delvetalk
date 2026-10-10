@@ -5,7 +5,7 @@ Evidence for FOUNDATION §2 Turn (layer: host).
 
 world-turn: activities run against the durable store and commit once.
 
-Counter and Bell are the real world/objects files (each exports `initial`); the other objects are fixtures that each isolate one rule.
+Counter (tests/fixtures/objects) and Bell (world/objects) are real files (each exports `initial`); the other objects are fixtures that each isolate one rule.
 """
 import json
 import os
@@ -25,7 +25,7 @@ IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 
 def modules_on_disk():
     found = {}
-    for root in (os.path.join(ROOT, "world", "lib"), os.path.join(ROOT, "world", "objects"), os.path.join(ROOT, "tests", "fixtures", "obend")):
+    for root in (os.path.join(ROOT, "world", "lib"), os.path.join(ROOT, "world", "objects"), os.path.join(ROOT, "tests", "fixtures", "objects"), os.path.join(ROOT, "examples", "automatafl")):
         for directory, _, files in os.walk(root):
             for name in files:
                 if name.endswith(".obend"):

@@ -30,6 +30,7 @@ from tests.test_objects import MODULES, WORLD, closure, definitions, pure, row_n
 
 FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "pins", "artifacts.json")
 SHARDS = 12
+WORLD_MODULES = {n: path for n, path in MODULES.items() if path.startswith(WORLD + os.sep)}
 
 
 def outcome(process, name, entry):
@@ -63,7 +64,7 @@ def module_record(process, name):
 def shard(index):
     """The modules of shard `index`: dealt by entry count, largest first, to the lightest shard."""
     loads, dealt = [0] * SHARDS, [[] for _ in range(SHARDS)]
-    for name in sorted(MODULES, key=lambda n: (-len(entries(n)), n)):
+    for name in sorted(WORLD_MODULES, key=lambda n: (-len(entries(n)), n)):
         lightest = loads.index(min(loads))
         loads[lightest] += len(entries(name))
         dealt[lightest].append(name)
@@ -76,7 +77,7 @@ def entries(name):
 
 def record():
     process = host.Host()
-    table = {name: module_record(process, name) for name in sorted(MODULES)}
+    table = {name: module_record(process, name) for name in sorted(WORLD_MODULES)}
     process.close()
     with open(FIXTURE, "w") as handle:
         json.dump(table, handle, indent=1, sort_keys=True)
@@ -106,7 +107,7 @@ class Pins:
                         if was["status"] == "compiled" and got["packet"] != was["packet"]:
                             recompiled += 1
                         rows = activity_rows(got["type"])
-                        if rows and MODULES[name].startswith(os.path.join(WORLD, "objects")):
+                        if rows and WORLD_MODULES[name].startswith(os.path.join(WORLD, "objects")):
                             # Every activity of an object yields over the Plan library and hears its silences.
                             self.assertEqual(rows[0][:3], ["view", "write", "call"], f"{name}.{entry}")
                             for silence in ("reply", "refused", "unknown", "timedOut", "broken"):

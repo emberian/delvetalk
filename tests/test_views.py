@@ -13,8 +13,10 @@ the planter's card lacking "(yours)"; a party's card lacking its countersign spe
 """
 import unittest
 
+from deploy import genesis
 from tests import test_chain, test_deal
 from tests.test_chain import boolean, nil, reference
+from tests.test_laws import anthology_seed
 from tests.test_objects import closure
 from tests.test_places import avatar_seed, listing
 from tests.test_turn_world import label, nat, record, relation
@@ -296,11 +298,11 @@ class StoredHandles(test_chain.Chain):
             "    delvetalk garden/bell/1 undoor\n"
             "    label: <text, 1 to 32 characters>\n"))
         self.assertTrue(card.startswith("An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\nReply delvetalk garden/bell/1 rain / text: <1 to 120 characters> to rain on it.\nkimik3.delve.town: drizzle\n"), card)
-        r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember")))
+        r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
-        self.turn("anthology", "receive", record(text=label("submit: moths"), post=label("at://x/s")), principal=self.KIMI)
-        self.assertIn("#1 [proposed] kimik3.delve.town: moths\n", self.turn("anthology", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"])
+        self.turn("anthology", "receive", record(text=label("write: moths"), post=label("at://x/s")), principal=self.KIMI)
+        self.assertIn("#1 [pending] kimik3.delve.town: moths\n", self.turn("anthology", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"])
 
 
 class PartyViews(test_chain.Chain):

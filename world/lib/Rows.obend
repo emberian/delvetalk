@@ -6,14 +6,30 @@ import ./Relation.obend as Relations
 # these, so a Wake imports this module rather than the object that keeps the rows. Each
 # relation's key and limit are its object's (`relations()`); RELATIONAL §12 has the ordering.
 #
-# A rain on a bell, keyed {author, at, n}: `at` the height its turn read, `n` the count of
-# rains then, so key order (n first) is the order they fell.
-record Rain:
+# A line in a record (Record.obend), keyed {author, n}: `n` the record's `next` when it was
+# written, so key order (n first) is the order of writing; `at` the height its turn read.
+record Line:
   author: String
   handle: String
   text: String
   at: Nat
   n: Nat
+# A record's keeper admitted line `n` at height `at`, keyed {n}.
+record Admission:
+  n: Nat
+  at: Nat
+# A record's named moment (a bell's `rung`), once each, keyed {name}.
+record Mark:
+  name: String
+  who: String
+  handle: String
+  at: Nat
+# A value a kind's form took when a thing was made, by name.
+record Field:
+  name: String
+  value: String
+# A rain on a bell is a line on it (keyed {author, at, n} while the Bell is its own package).
+type Rain = Line
 # An event an Env took in (world/lib/Event.obend's Event with `n`), keyed {at, actor, uri, n}.
 record Sensed:
   kind: String
@@ -46,18 +62,6 @@ record Held:
 # A principal the directory's menu has gone to once, keyed {principal}.
 record Greeting:
   principal: String
-# A line submitted to an anthology, keyed {n}, its number (which no later line reuses);
-# admission upserts it admitted.
-sum Status:
-  proposed: {}
-  admitted: {}
-record Proposal:
-  author: String
-  handle: String
-  line: String
-  status: Status
-  at: Nat
-  n: Nat
 # What happened in a place, admitted or refused (`clause` "" when admitted), keyed
 # {at, who, action, n}.
 record Trace:
@@ -81,7 +85,7 @@ record Subscription:
   note: String
   since: Nat
   handle: String
-# Who stands where in a scene or a commons (`at` a passage or a place), keyed {who}.
+# Who stands where in a scene (`at` a passage or a place), keyed {who}.
 record Presence:
   who: String
   at: String
@@ -109,18 +113,12 @@ def one(c: Column, rest: Columns) -> Columns:
   Lists.List.cons({head: c, tail: rest})
 def none() -> Columns:
   Lists.List.nil({})
-def rainColumns(r: Rain) -> Columns:
+def lineColumns(r: Line) -> Columns:
   one(text("author", r.author), one(text("handle", r.handle), one(text("text", r.text), one(nat("at", r.at), one(nat("n", r.n), none())))))
 def sensedColumns(s: Sensed) -> Columns:
   one(text("kind", s.kind), one(text("actor", s.actor), one(text("handle", s.handle), one(text("uri", s.uri), one(text("cid", s.cid), one(text("text", s.text), one(text("replyTo", s.replyTo), one(nat("at", s.at), one(nat("n", s.n), none())))))))))
 def greetingColumns(g: Greeting) -> Columns:
   one(text("principal", g.principal), none())
-def statusName(status: Status) -> String:
-  match status:
-    case proposed(_): "proposed"
-    case admitted(_): "admitted"
-def proposalColumns(p: Proposal) -> Columns:
-  one(text("author", p.author), one(text("handle", p.handle), one(text("line", p.line), one(text("status", statusName(p.status)), one(nat("at", p.at), one(nat("n", p.n), none()))))))
 def traceColumns(t: Trace) -> Columns:
   one(text("who", t.who), one(text("handle", t.handle), one(text("action", t.action), one(text("clause", t.clause), one(nat("at", t.at), one(nat("n", t.n), none()))))))
 def subscriptionColumns(s: Subscription) -> Columns:

@@ -37,14 +37,14 @@ class Genesis(unittest.TestCase):
         self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
                          (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)]), made)
         o = genesis.OPENER
-        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + [o, 'env/' + o, 'wake/' + o]))
+        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + [o, 'env/' + o, 'wake/' + o]))
         # the opener arrived first: another reader sees their handle, not a DID fragment
         avatar = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': o})
         self.assertIn('ember.delve.town, at', json.dumps(avatar))
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
-        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 11))
+        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 10))
         made_names = {m['object'] for m in made}
         self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if to and to not in made_names], [])  # every door with an object resolves
         self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if not to], ['STUDIO'])
@@ -57,8 +57,6 @@ class Genesis(unittest.TestCase):
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']
         self.assertTrue(said['ROOMS'].startswith('SCENE The Moss Gate'), said)
-        self.assertNotIn('PLAY', menu_words(host))
-        self.assertEqual(host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'play'})['status'], 'viewed')  # created, not a door
         # The link door has no object: naming it reaches Plan.card on the empty reference (the Directory answers
         # "The door to  opens on nothing yet."), so only the menu carries its URL.
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
@@ -87,6 +85,21 @@ class Genesis(unittest.TestCase):
         self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': genesis.OPENER, 'identity': 'genesis-cistern-law'}).get('status'), 'receipt')
         record = self.host.send({'op': 'world-object', 'principal': genesis.OPENER, 'object': 'cistern'})
         self.assertIn('the level only rises', str(record['record']['readings']))
+
+    def test_kinds_is_shaped_and_makes_the_root_and_town_kinds(self):
+        kinds = next(m for m in self.made if m['object'] == 'kinds')
+        self.assertEqual((kinds['shape'], kinds['made']), ('admitted', ['admitted'] * len(genesis.KINDS)), kinds)
+        for name, *_ in genesis.KINDS:
+            self.assertEqual(self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/' + name})['status'], 'viewed', name)
+
+    def test_the_anthology_carries_the_record_law(self):
+        from tests.test_objects import run_pure
+        # genesis passes the package's own law (Record declares none); the anthology was created with it
+        self.assertEqual(run_pure("Record", "lawText")["value"]["value"], genesis.RECORD_LAW)
+        created = self.host.send({'op': 'world-receipt', 'principal': genesis.OPENER, 'identity': 'genesis-anthology'})['receipt']
+        self.assertEqual(created['outcome']['law'], genesis.RECORD_LAW)
+        law = self.host.send({'op': 'world-inspect', 'principal': genesis.OPENER, 'object': 'anthology', 'source': False})['law']
+        self.assertIn('insertOnly(lines)', law)
 
     def test_six_door_pages_are_published_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
@@ -142,7 +155,7 @@ class MenuFromState(unittest.TestCase):
             self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for the %d / colour: %s' % (n, colour), 'plant-%d' % n)
         self.say(kimi, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: it rained here first', 'rain-1')
         for n in range(4):
-            self.say(glm, 'anthology', 'delvetalk anthology submit / line: line %d of the bell' % n, 'line-%d' % n)
+            self.say(glm, 'anthology', 'delvetalk anthology write / text: line %d of the bell' % n, 'line-%d' % n)
         self.say(kimi, 'rooms', 'delvetalk rooms enter', 'enter-1')
         for n in range(3):
             self.advance(1)
@@ -186,7 +199,7 @@ class MenuFromState(unittest.TestCase):
             "  delvetalk tide tick\n"
             "  » sooner than the gap: refused tooSoon; a due tick notes your avatar\n"
             "ANTHOLOGY · 4 lines\n"
-            "  delvetalk anthology submit / line: the bell kept both of us\n"
+            "  delvetalk anthology write / text: the bell kept both of us\n"
             "  » numbered, [pending] until the keeper admits\n"
             "STUDIO · your heap and REPL: " + ORIGIN + "/AGENTS.md\n"
             "\n"
@@ -197,7 +210,7 @@ class MenuFromState(unittest.TestCase):
         self.assertGreaterEqual(int(ticks), 3)
         # A reader whose field line the directory passed to the anthology meets ANTHOLOGY first.
         self.say(stranger, 'directory', 'hello', 'greet')
-        self.say(stranger, 'directory', 'line: the bell kept both of us', 'by-field-line')
+        self.say(stranger, 'directory', 'write: the bell kept both of us', 'by-field-line')
         mine = self.menu(stranger)
         self.assertTrue(mine.startswith(later[:later.index('GARDEN')] + 'ANTHOLOGY · 5 lines, newest #5\n'), mine)
         self.assertEqual(self.menu().index('GARDEN'), later.index('GARDEN'))

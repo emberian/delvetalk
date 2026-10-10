@@ -146,7 +146,7 @@ class Observing(ZulipCase):
         first, second, summon, post = self.observed()
         uri = lambda topic, n: f'zulip://delvetalk/{topic}/{n}'
         self.assertEqual((first['author'], first['uri'], first['replyTo'], first['root'], first['kind']),
-                         ({'did': 'zulip:1000', 'handle': 'Alice'}, uri('garden', a), None, None, 'post'))
+                         ({'did': 'zulip:127.0.0.1:1000', 'handle': 'Alice'}, uri('garden', a), None, None, 'post'))
         self.assertEqual((second['replyTo'], second['root'], second['kind']), (uri('garden', a), uri('garden', a), 'reply'))
         self.assertEqual((summon['kind'], summon['replyTo']), ('summon', None))
         self.assertEqual((post['kind'], post['text']), ('post', 'just talking'))
@@ -164,6 +164,16 @@ class Observing(ZulipCase):
         self.assertEqual([o['text'] for o in got], ['in the topic', 'and again'])
         self.assertEqual(self.zulip.narrows[-1], {'channel': 'delvetalk', 'topic': 'mobo'})
         self.assertEqual(got[1]['replyTo'], got[0]['uri'])
+
+    def test_a_principal_carries_its_realm_so_two_realms_never_collide(self):
+        self.zulip.say('t', 'Alice', 'hello')
+        here = self.observed()[0]['author']['did']
+        other = Path(self.tmp.name) / 'other-rc'
+        other.write_text(self.rc.read_text().replace('http://127.0.0.1', 'http://localhost'))
+        there = zulip.ZulipObserver(Path(self.tmp.name) / 'other-state', zulip.Client(other), since='1970-01-01T00:00:00Z')
+        there.poll()
+        them = json.loads(there.db.execute('SELECT json FROM observations').fetchone()[0])['author']['did']
+        self.assertEqual((here, them), ('zulip:127.0.0.1:1000', 'zulip:localhost:1000'))  # the same user id, two realms
 
     def test_a_bad_credential_is_a_failure_not_a_crash(self):
         self.rc.write_text(self.rc.read_text().replace(KEY, 'wrong'))
@@ -185,11 +195,11 @@ class Bridging(ZulipCase):
         self.assertEqual(len(got['posted']), 2, got)
         mine = self.zulip.mine()
         self.assertEqual(sorted(m['subject'] for m in mine), ['alice garden', 'bob garden'])
-        self.assertTrue(all(f"garden-1 says zulip:{ {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]}\nreceipt " in m['content'] for m in mine), mine)
+        self.assertTrue(all(f"garden-1 says zulip:127.0.0.1:{ {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]}\nreceipt " in m['content'] for m in mine), mine)
         self.assertTrue(mine[0]['content'].startswith('@**Alice**\n'))
         arrivals = self.host.send({'op': 'world-objects', 'principal': OPENER})['ids']
-        self.assertIn('env/zulip:1000', arrivals)
-        self.assertIn('env/zulip:1001', arrivals)
+        self.assertIn('env/zulip:127.0.0.1:1000', arrivals)
+        self.assertIn('env/zulip:127.0.0.1:1001', arrivals)
         for uri in got['posted']:  # every posted draft is recorded, so the host knows who it addresses
             self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': uri})['object'], 'garden-1')
         self.assertEqual(self.bridge()['posted'], [], 'nothing is posted twice')
@@ -251,8 +261,13 @@ class Bridging(ZulipCase):
         got = self.bridge()
         self.assertEqual(len(got['posted']), 1, got)
         self.assertIn('directory says', self.zulip.mine()[0]['content'])
-        self.zulip.say('new', 'Carol', 'and the moss too')  # in the topic the world answered: read
-        self.assertEqual(len(self.bridge()['turns']), 1)
+        self.zulip.say('new', 'Dana', '@**Carol** nice fern')  # to another resident only: not read
+        self.zulip.say('new', 'Carol', 'and the moss too')  # in the topic the world answered: read, as a reply to the world's message
+        from unittest import mock
+        real, turns = HostClient.send, []
+        with mock.patch.object(HostClient, 'send', lambda h, req: (turns.append(req) if req.get('method') == 'receive' else None) or real(h, req)):
+            self.assertEqual(len(self.bridge()['turns']), 1)
+        self.assertEqual(turns[0]['replyTo'], zulip.uri_of('delvetalk', 'new', self.zulip.mine()[0]['id']))
 
     def test_a_zulip_run_has_no_hourly_cap_so_the_seventeenth_draft_posts(self):
         self.assertEqual(self.host.send({'op': 'world-status'})['postQuota'], 16)  # the host has one; Zulip ignores it
