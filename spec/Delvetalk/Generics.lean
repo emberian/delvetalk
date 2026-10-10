@@ -886,6 +886,11 @@ def rewriteDecl : Nat → Site → List (String × M IType) → Decl → M Decl
       let cases ← cases.mapM fun c => do return { c with type := ← rewriteType fuel site c.type }
       return .sum name cases typeParameters span
     | .law .. | .typeAlias .. => return d
+    | .protocol name methods shown span =>
+      -- The implementer's State, Plan and Response stay names (the elaborator binds them).
+      let free := { site with bindings := ["State", "Plan", "Response"].map (fun n => (n, GType.atom n)) ++ site.bindings }
+      let methods ← methods.mapM fun f => do return { f with type := ← rewriteType fuel free f.type }
+      return .protocol name methods shown span
 end
 
 structure Output where
@@ -931,7 +936,7 @@ end
 def declGenerics (d : Decl) : Bool :=
   !d.typeParameters.isEmpty ||
   match d with
-  | .typeAlias .. => true
+  | .typeAlias .. | .protocol .. => true
   | .function _ _ b _ | .extension _ _ _ b _ _ => (bodyGenerics b)
   | .spec sp => sp.methods.any (fun m => bodyGenerics m.body) || sp.claims.any (fun c => exprGenerics c.body)
   | _ => false
@@ -1002,6 +1007,7 @@ def declStrings : Decl → List String
   | .record n methods fields _ => n :: methods.flatMap signatureStrings ++ fields.flatMap (fun f => [f.name, f.type])
   | .law n source reading _ => [n, source, reading]
   | .function sig ps b _ => signatureStrings sig ++ ps.getD [] ++ (bodyStrings b)
+  | .protocol n methods shown _ => n :: shown ++ methods.flatMap (fun f => [f.name, f.type])
 
 def moduleNames (m : ObjectiveBendSurface.Module) (names : Std.TreeSet String) : Std.TreeSet String :=
   let names := m.imports.foldl (fun acc i => addNames (addNames acc i.path) i.importAlias) names

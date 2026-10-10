@@ -807,4 +807,24 @@ better to an author.
   variant `as` {version, state}, `typeMismatch` when it does not conform (the kernel
   refuses a non-conforming response anyway: "response does not conform"). Test:
   `tests/test_typed_view.py`.
+- Protocols. `protocol P:` (a declaration, indented `name: TYPE` lines; `(A, B) -> R` is
+  read `A -> B -> R`, `() -> R` as `R`) and `implements P` (or `implements Alias.P`; `P`
+  alone is looked up in the module, the import aliased `P`, then any import). State, Plan
+  and Response in a protocol's types are the implementer's: the generics pass leaves them
+  as names, and `checkProtocols` (after every declaration is typed) resolves them as
+  placeholder variables that `matchProtocol` binds once per claim, so every method must
+  agree on them. Missing method: "refused (protocol): M implements P but defines no m",
+  at the `implements` line; mistyped: "refused (protocol): M.m is ..., but protocol P
+  declares m: ...", at the method's body, `expected` the declared text, `found` the
+  method's type; both hint the protocol. The artifact gains `protocols: [P]` and the
+  method rows of protocol methods `protocol: P`, only for a module that claims one
+  (others unchanged; pins: 0 recompiled). Surface `Decl.protocol` keeps the declared texts
+  (`shown`) for messages beside the rewritten ones. The objects lane writes `protocol
+  Card` into Card.obend and `implements Card` into objects (world/ is theirs); the host can
+  then refuse a door to a module whose artifact lacks `Card`. Test: `tests/test_protocols.py`.
+- Fixed on the way: `Surface.Module.mapSpans` (document-literal span remapping) rebuilt
+  the module from imports and decls only, dropping `layerOver`; it keeps every field now.
+  `tests.test_extend.LouderBell` (Louder grafted over Bell through the host, Bell's
+  `receive` rendering Louder's card) was marked an expected failure and now passes; the
+  marker is removed.
 

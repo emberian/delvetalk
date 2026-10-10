@@ -136,16 +136,20 @@ inductive Decl where
   /-- `typeParameters` is present (possibly empty) exactly when the source wrote `def f<...>`
   or the generics pass made the function an instance. -/
   | function (signature : Signature) (typeParameters : Option (List String)) (body : Body) (span : Span)
+  /-- `protocol NAME:` and its methods `name: TYPE` (the type curried: `(A, B) -> R` is
+  `A -> B -> R`, `() -> R` is `R`). `State`, `Plan` and `Response` in a method type are the
+  implementing module's. -/
+  | protocol (name : String) (methods : List Field) (shown : List String) (span : Span)
   deriving Inhabited, Repr, BEq
 
 def Decl.name : Decl → String
-  | .reexport n .. | .extension n .. | .typeAlias n .. | .sum n .. | .record n .. | .law n .. => n
+  | .reexport n .. | .extension n .. | .typeAlias n .. | .sum n .. | .record n .. | .law n .. | .protocol n .. => n
   | .spec s => s.name
   | .function s .. => s.name
 
 def Decl.span : Decl → Span
   | .reexport _ _ s | .extension _ _ _ _ _ s | .typeAlias _ _ s | .sum _ _ _ s | .record _ _ _ s
-  | .law _ _ _ s | .function _ _ _ s => s
+  | .law _ _ _ s | .function _ _ _ s | .protocol _ _ _ s => s
   | .spec s => s.span
 
 /-- The declaration's generic type parameters (`[]` for every non-generic declaration). -/
@@ -157,7 +161,7 @@ def Decl.typeParameters : Decl → List String
 def Decl.kind : Decl → String
   | .reexport .. => "reexport" | .spec .. => "spec" | .extension .. => "extension"
   | .typeAlias .. => "typeAlias" | .sum .. => "sum" | .record .. => "record" | .law .. => "law"
-  | .function .. => "function"
+  | .function .. => "function" | .protocol .. => "protocol"
 
 structure Import where
   path : String
@@ -171,6 +175,8 @@ structure Module where
   /-- `layer over ./X.obend` (the module's first line): the path of the module it layers
   over, which it also imports as `Super`. -/
   layerOver : Option String := none
+  /-- `implements NAME` lines: the protocols the module claims, with where it says so. -/
+  implements : List (String × Span) := []
   deriving Inhabited, Repr, BEq
 
 /-! ## The JSON rendering (`dregg.objective-bend.module.v1`) -/
@@ -275,6 +281,8 @@ def Decl.json : Decl → Json
   | .record n methods fields s => Json.mkObj [("kind", toJson "record"), ("name", toJson n),
       ("methods", Json.arr (methods.map Signature.json).toArray), ("fields", Json.arr (fields.map Field.json).toArray),
       ("span", s.json)]
+  | .protocol n methods _ s => Json.mkObj [("kind", toJson "protocol"), ("name", toJson n),
+      ("methods", Json.arr (methods.map Field.json).toArray), ("span", s.json)]
   | .law n source reading s => Json.mkObj ([("kind", toJson "law"), ("name", toJson n), ("source", toJson source)] ++
       (if reading.isEmpty then [] else [("reading", toJson reading)]) ++ [("span", s.json)])
   | .function sig ps b s => Json.mkObj ([("kind", toJson "function"), ("signature", sig.json)] ++
@@ -350,6 +358,7 @@ def Decl.mapSpans (f : Span → Span) : Decl → Decl
   | .record n methods fields s => .record n (methods.map (fun x => x.mapSpans f)) (fields.map (fun x => x.mapSpans f)) (f s)
   | .law n source reading s => .law n source reading (f s)
   | .function sig ps b s => .function (sig.mapSpans f) ps (b.mapSpans f) (f s)
+  | .protocol n methods shown s => .protocol n (methods.map (fun x => x.mapSpans f)) shown (f s)
 
 /-! ## Variable renaming (the parser's placeholders for import aliases) -/
 
@@ -398,6 +407,9 @@ def Decl.mapVars (f : String → String) : Decl → Decl
   | d => d
 
 def Module.mapSpans (f : Span → Span) (m : Module) : Module :=
-  { imports := m.imports.map fun i => { i with span := f i.span }, decls := m.decls.map (fun x => x.mapSpans f) }
+  let imports := m.imports.map fun i => { i with span := f i.span }
+  let decls := m.decls.map fun x => x.mapSpans f
+  let implements := m.implements.map fun (n, s) => (n, f s)
+  { m with imports, decls, implements }
 
 end Minidregg.Compiler.ObjectiveBendSurface

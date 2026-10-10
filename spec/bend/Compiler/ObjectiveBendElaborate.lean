@@ -135,6 +135,10 @@ structure Module where
   laws : List (String × ObjectiveBendLaw.LawExpr) := []
   /-- `layer over ./X.obend`: the module this one is a layer over (its `Super`). -/
   layerOver : Option String := none
+  /-- The module's protocols: name, then each method's name, type text and span. -/
+  protocols : List (String × List (String × String × String × ObjectiveBendSurface.Span)) := []
+  /-- `implements NAME` lines. -/
+  implements : List (String × ObjectiveBendSurface.Span) := []
   deriving Inhabited
 
 /-! ## Reading the parsed surface -/
@@ -205,13 +209,16 @@ def ofSurface (name : String) (imports : List (String × String)) (m : Objective
     Except String Module := do
   let mut decls : List Decl := []
   let mut laws : List (String × ObjectiveBendLaw.LawExpr) := []
+  let mut protocols : List (String × List (String × String × String × ObjectiveBendSurface.Span)) := []
   for d in m.decls do
     if let .law lawName source _ _ := d then
       laws := laws ++ [(lawName, ← ObjectiveBendLaw.parse source)]
+    else if let .protocol name methods shown _ := d then
+      protocols := protocols ++ [(name, (methods.zip (shown ++ methods.map (·.type))).map fun (f, s) => (f.name, f.type, s, f.span))]
     else decls := decls ++ [← Surface.decl d]
   ObjectiveBendLaw.checkNames laws
   let layerOver := m.layerOver.bind fun _ => (imports.find? (·.1 == "Super")).map (·.2)
-  return ⟨name, imports, decls, laws, layerOver⟩
+  return ⟨name, imports, decls, laws, layerOver, protocols, m.implements⟩
 
 /-! ## Proposal types (the `Ty` JSON wire of Theory.ObjectiveBendTyping.typeJson, plus `variant`) -/
 
@@ -2501,6 +2508,90 @@ def checkOverrides (c : Ctx) (fuel : Nat) : M Unit := do
         (some ("give " ++ over ++ " the signature of " ++ below ++ ", or name it differently to add a method"))
         (shown mine) (shown theirs)
 
+/-! ## Protocols
+
+`protocol P:` lists methods with their types; `State`, `Plan` and `Response` in them are the
+implementer's, so they are placeholders a claim binds consistently across the protocol's
+methods (`matchProtocol`). `implements P` is checked here, after every declaration's type
+is known: a missing method, or one whose type does not match, is refused by name. -/
+
+/-- The placeholder variable a protocol's free type name stands for. -/
+def protocolFree : List String := ["State", "Plan", "Response"]
+def protocolVariable (i : Nat) : Nat := 1099511627776 + i
+
+/-- Match a protocol type (placeholders free) against an implementation's, binding each
+placeholder once. -/
+partial def matchProtocol (pattern actual : PTy) (σ : List (Nat × PTy)) : Option (List (Nat × PTy)) :=
+  match pattern, actual with
+  | .variable i, t =>
+    if i ≥ protocolVariable 0 then
+      match σ.lookup i with
+      | some bound => if bound.canonical == t.canonical then some σ else none
+      | none => some ((i, t) :: σ)
+    else if t == .variable i then some σ else none
+  | .arrow r q d c, .arrow r' q' d' c' =>
+    if r == r' && q == q' then (matchProtocol d d' σ).bind (matchProtocol c c' ·) else none
+  | .field .., .field .. =>
+    let p := pattern.canonical
+    let a := actual.canonical
+    match p, a with
+    | .field n m t, .field n' m' t' => if n == n' then (matchProtocol m m' σ).bind (matchProtocol t t' ·) else none
+    | _, _ => none
+  | .specification a b, .specification a' b' | .prototype a b, .prototype a' b' =>
+    (matchProtocol a a' σ).bind (matchProtocol b b' ·)
+  | .variant r, .variant r' => matchProtocol r r' σ
+  | .computation p r a, .computation p' r' a' =>
+    ((matchProtocol p p' σ).bind (matchProtocol r r' ·)).bind (matchProtocol a a' ·)
+  | p, a => if p == a then some σ else none
+
+/-- The protocol `name` names from module `m`: `Alias.P`, a protocol of `m` itself, of the
+import aliased `P`, or of any import. -/
+def protocolOf (c : Ctx) (m : Module) (name : String) :
+    Option (Module × String × List (String × String × String × ObjectiveBendSurface.Span)) :=
+  let inModule := fun (module p : String) => (moduleNamed c module).bind fun pm => (pm.protocols.lookup p).map (pm, p, ·)
+  match name.splitOn "." with
+  | [alias, p] => (importOf m alias).bind (inModule · p)
+  | [p] => (inModule m.name p).orElse fun _ => ((importOf m p).bind (inModule · p)).orElse fun _ =>
+      m.imports.findSome? fun (_, module) => inModule module p
+  | _ => none
+
+/-- The protocols each module claims, checked. -/
+def checkProtocols (c : Ctx) (fuel : Nat) : M Unit := do
+  for m in c.modules do
+    for (name, span) in m.implements do
+      let claim : Option Loc := some ⟨m.name, m.name, span⟩
+      let some (pm, pname, methods) := protocolOf c m name
+        | failAt claim ("refused (protocol): " ++ m.name ++ " implements " ++ name ++ ", which no module it imports declares")
+            (some "a protocol is declared `protocol NAME:` with `name: TYPE` lines, in a module the implementer imports")
+      let placeholders := protocolFree.zipIdx.map fun (n, i) => (n, PTy.variable (protocolVariable i))
+      let mut σ : List (Nat × PTy) := []
+      for (method, resolved, declared, _) in methods do
+        let key := m.name ++ "." ++ method
+        let some expected ← withTypes placeholders (sourceType c fuel resolved pm.name [])
+          | failAt claim ("refused (protocol): " ++ pname ++ "." ++ method ++ " has a type that does not resolve: " ++ declared)
+        match declOf c key with
+        | none =>
+          failAt claim ("refused (protocol): " ++ m.name ++ " implements " ++ pname ++ " but defines no " ++ method ++
+              "; " ++ pname ++ " declares " ++ method ++ ": " ++ declared)
+            (some ("add `def " ++ method ++ "` with the type protocol " ++ pname ++ " gives it: " ++ declared))
+            (some declared) (some "nothing")
+        | some (d, dm) =>
+          let found ← globalType c fuel key
+          let at_ : Option Loc := match d with
+            | .function _ _ _ body => some ⟨dm.name, key, body.span⟩
+            | _ => claim
+          match found.bind (matchProtocol expected · σ) with
+          | some σ' => σ := σ'
+          | none =>
+            failAt at_ ("refused (protocol): " ++ key ++ " is " ++ ((found.map typeText).getD "unresolved") ++
+                ", but protocol " ++ pname ++ " declares " ++ method ++ ": " ++ declared)
+              (some ("give " ++ method ++ " the type protocol " ++ pname ++ " declares (State, Plan and Response are this module's, the same in every method)"))
+              (some declared) (found.map typeText)
+
+/-- The protocols module `m` claims (each by its declared name) with their methods' names. -/
+def Ctx.claims (c : Ctx) (m : Module) : List (String × List String) :=
+  m.implements.filterMap fun (name, _) => (protocolOf c m name).map fun (_, p, methods) => (p, methods.map (·.1))
+
 def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × PTy) × List String) := do
   let fuel := 100000
   checkOverrides c fuel
@@ -2508,6 +2599,7 @@ def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × P
   for m in c.modules do
     for d in m.decls do
       fields ← emitDecl c fuel m d fields
+  checkProtocols c fuel
   let mut rowFields : List (String × PTy) := []
   let mut unresolved : List String := []
   for (name, _) in fields do

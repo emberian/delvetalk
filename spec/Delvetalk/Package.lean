@@ -260,6 +260,19 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
     ("packetSha256", toJson pin),
     ("type", typeJson accepted.typed.type),
     ("methods", methods), ("law", law)]
+  -- Protocols the entry module claims (checked at elaboration): listed, and each method row
+  -- names its protocol. Absent for a module that claims none (its artifact is unchanged).
+  let claims := match prepared.elaborated.ctx.modules.find? (·.name == entryModule.name) with
+    | some m => prepared.elaborated.ctx.claims m
+    | none => []
+  let artifact := if claims.isEmpty then artifact else
+    let tagged := match artifact.getObjVal? "methods" with
+      | .ok (.arr rows) => Json.arr (rows.map fun row =>
+          match (row.getObjValAs? String "name").toOption.bind fun n => claims.find? (·.2.contains n) with
+          | some (p, _) => row.setObjVal! "protocol" (toJson p)
+          | none => row)
+      | _ => artifact.getObjValD "methods"
+    (artifact.setObjVal! "methods" tagged).setObjVal! "protocols" (toJson (claims.map (·.1)))
   let readings := lawTable (lowered.laws.map (·.1)) (prepared.asts.getLastD default)
   let artifact := if readings.isEmpty then artifact else artifact.setObjVal! "laws"
     (Json.arr (readings.toArray.map fun (name, reading) =>
