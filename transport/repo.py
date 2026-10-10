@@ -20,6 +20,11 @@ SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]-(?:[bdfghj
 PAGED = {'receipt': ('world-entries', 'entries', 'slug', 'hash'), 'source': ('world-sources', 'sources', 'cid', 'cid'),
          'publication': ('world-publications', 'publications', 'id', 'hash'), 'grant': ('world-grants', 'grants', 'id', 'hash')}
 ERRORS = {'unknown': (400, 'RecordNotFound'), 'denied': (403, 'Denied'), 'ambiguous': (400, 'AmbiguousSlug')}
+XRPC_ERRORS = {'RecordNotFound': (400, 'the host knows no such record'), 'Denied': (403, 'the host says you may not read it'),
+               'AmbiguousSlug': (400, 'the slug names more than one receipt: use the CID'), 'InvalidRequest': (400, 'a parameter, or a write'),
+               'RepoNotFound': (400, 'this server holds one repository'), 'HandleNotFound': (400, 'this server resolves one handle'),
+               'RepoNotServed': (400, 'no MST, no signed commit'), 'InvalidToken': (401, 'unverified or revoked credential'),
+               'MethodNotImplemented': (501, 'not served here'), 'RateLimitExceeded': (429, 'over the rate limit')}
 NOT_SERVED = 'the chain is served entry by entry, not as a signed MST: page com.atproto.repo.listRecords?collection=' \
              'town.delvetalk.receipt, and fetch each entry\'s block with com.atproto.sync.getRecord'
 

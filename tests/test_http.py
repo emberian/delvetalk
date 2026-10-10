@@ -437,7 +437,7 @@ class HttpFront(FrontCase):
         self.assertEqual([o['identity']['intent'] for o in self.call('GET', f'/AGENTS.md/offers?after={after}', token=tok)[1]['offers']], ['p2'])
         s, e = self.call('GET', '/AGENTS.md/nope', token=tok)
         self.assertEqual(s, 404)
-        self.assertIn('world/<object>/source', e['hint'])
+        self.assertIn('/AGENTS.md/api', e['hint'])
 
     def test_a_checkpoints_tokens_are_counted_unless_full(self):
         tok = self.login()

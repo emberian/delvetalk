@@ -1,8 +1,15 @@
 """The front's controls: `_links` on every JSON reply, `_actions` projected from the host's method table and forms."""
+import http.client
+import json
+import re
+import tempfile
+import threading
 import unittest
 
 from tests.test_chain import garden_state
-from tests.test_http import DID, REPL_COUNTER, FrontCase
+from tests.test_http import DID, REPL_COUNTER, FrontCase, StubHost
+from transport import delve, identity
+from transport.http import CATALOGUE, ERRORS, GUIDE, REFUSALS, Front, resolve
 from tests.test_turn_world import closure
 
 LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 implies request.subject == "ember"\n'
@@ -109,6 +116,64 @@ class Controls(FrontCase):
                                                                                 'roots': [{'object': 'garden', 'version': 3}]}})
         self.assertEqual(links['offers']['href'], '/AGENTS.md/offers?after=12&wait=30')
         self.assertEqual(links['object']['href'], '/AGENTS.md/world/garden')
+
+
+class Catalogue(unittest.TestCase):
+    """The catalogue against a stub host: routes as data, and the router that answers them is the one that describes them."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.front = Front(('127.0.0.1', 0), StubHost(), identity.Identity(self.tmp.name, delve.Client(lambda *a: (404, b''))))
+        threading.Thread(target=self.front.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.front.shutdown()
+        self.front.server_close()
+        self.tmp.cleanup()
+
+    def call(self, method, path, headers=None, raw=None):
+        c = http.client.HTTPConnection('127.0.0.1', self.front.server_address[1], timeout=30)
+        c.request(method, path, raw, headers or {})
+        r = c.getresponse()
+        data = r.read()
+        c.close()
+        return r.status, dict(r.getheaders()), data
+
+    def test_every_route_resolves_from_its_template_to_its_own_entry(self):
+        names = [e['name'] for e in CATALOGUE]
+        self.assertEqual(len(names), len(set(names)))
+        fill = {'object': 'garden%2Fbell%2F1', 'method': 'plant', 'intent': 'plant-1', 'nsid': 'com.atproto.repo.describeRepo', 'file': 'style.css'}
+        for e in CATALOGUE:
+            for href in (e['href'], e.get('heap')):
+                if href:
+                    self.assertEqual(resolve(e['method'], re.sub(r'\{(\w+)\}', lambda m: fill[m[1]], href))[0], e['name'], href)
+                    if '/world/' in href:  # agents' routes also take an id's slashes as they are
+                        self.assertEqual(resolve(e['method'], href.replace('{object}', 'garden/bell/1').replace('{method}', 'plant'))[0], e['name'])
+
+    def test_the_catalogue_is_served_as_data_and_the_guide_links_to_it(self):
+        s, h, raw = self.call('GET', '/AGENTS.md/api')
+        api = json.loads(raw)
+        self.assertEqual((s, api['status'], [r['name'] for r in api['routes']]), (200, 'catalogue', [e['name'] for e in CATALOGUE]))
+        self.assertEqual(set(api['errors']), set(ERRORS))
+        self.assertEqual({k: v['transient'] for k, v in api['refusals'].items()}, {k: v[0] for k, v in REFUSALS.items()})
+        self.assertEqual(api['limits']['bodyBytes'], 65536)
+        s, h, raw = self.call('GET', '/AGENTS.md', {'Accept': 'application/json'})
+        self.assertEqual({**json.loads(raw), '_links': None}, {**api, '_links': None})
+        s, h, text = self.call('GET', '/AGENTS.md')
+        self.assertEqual(h['Content-Type'], 'text/plain; charset=utf-8')
+        self.assertIn(b'/api', text)
+
+    def test_the_guides_class_tables_are_the_catalogues(self):
+        guide = GUIDE.read_text()
+        rows = set(re.findall(r'^\| ([a-zA-Z, ]+?) \|', guide, re.M))
+        documented = {c.strip() for row in rows for c in row.split(',')}
+        self.assertLessEqual(set(REFUSALS) - {'duplicateIdentity'}, documented)
+
+    def test_options_answers_the_entries_of_a_path(self):
+        s, h, raw = self.call('OPTIONS', '/AGENTS.md/world/garden/bell/1')
+        self.assertEqual((s, [r['name'] for r in json.loads(raw)['routes']], h['Allow']), (200, ['object', 'action'], 'GET, POST, OPTIONS'))
+        s, h, raw = self.call('OPTIONS', '/AGENTS.md/heap/objects')
+        self.assertEqual([r['name'] for r in json.loads(raw)['routes']], ['create'])
+        self.assertEqual(self.call('OPTIONS', '/AGENTS.md/nowhere')[0], 404)
 
 
 if __name__ == '__main__':

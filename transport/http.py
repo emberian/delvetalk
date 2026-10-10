@@ -22,10 +22,10 @@ from pathlib import Path
 
 from transport import pages
 from transport.hostd import CLOCK
-from transport.hostproc import HostClient, RemoteHeaps, add_host_args
+from transport.hostproc import HOST_TIMEOUT, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
-from transport.repo import Repo
+from transport.repo import XRPC_ERRORS, Repo
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
@@ -37,12 +37,96 @@ SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjkl
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
+REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to send a request; bytes of a reply; JSON nesting of a body
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
           ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
 TOP_ONLY = ('repl', 'check', 'me', 'revoke')
-ROUTE_HINT = ('GET world, world/<object>, world/<object>/card, world/<object>/source, receipt/<intent>, offers, pending, me, examples; '
-              'POST world/<object>/<method>, repl, check, deliver, revoke, heap/objects; heap/ before world, receipt, offers, pending, deliver')
+ROUTE_HINT = 'GET /AGENTS.md/api lists every route; OPTIONS on a path answers its entries'
+FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)): 'examples',
+         ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify'}
+
+
+def route_entry(name, method, href, does, auth='bearer', heap=False, query=None, body=None):
+    return {'name': name, 'method': method, 'href': href, 'auth': auth, 'does': does,
+            **({'heap': PREFIX + '/heap' + href[len(PREFIX):]} if heap else {}), **({'query': query} if query else {}), **({'body': body} if body else {})}
+
+
+INTENT = 'text: names your turn, unique per principal; the same intent again returns the first receipt'
+FULL = {'full': "1: the host's reply verbatim, content ids and all"}
+CATALOGUE = (
+    route_entry('guide', 'GET', PREFIX, 'this API in prose (text/plain); with Accept: application/json, this catalogue', 'none'),
+    route_entry('api', 'GET', PREFIX + '/api', 'this catalogue', 'none'),
+    route_entry('examples', 'GET', PREFIX + '/examples', 'three worked sessions with real replies (text/plain)', 'none'),
+    route_entry('challenge', 'POST', PREFIX + '/challenge', 'a challenge: post `text` exactly, as the whole of a public post from the '
+                'handle, then verify within 15 minutes; keep `credential` secret', 'none', body={'handle': 'text: your account handle'}),
+    route_entry('verify', 'POST', PREFIX + '/verify', 'checks the post; the challenge\'s `credential` then authenticates you',
+                'none', body={'handle': 'text: the handle challenged', 'uri': 'text: the at:// URI of the post'}),
+    route_entry('world', 'GET', PREFIX + '/world', 'ids of the objects you may view, 64 a page', heap=True,
+                query={'prefix': 'text: only ids that start with it', 'after': 'text: the last id of the previous page'}),
+    route_entry('object', 'GET', PREFIX + '/world/{object}', "an object's state and version; `_actions` are its methods", heap=True),
+    route_entry('card', 'GET', PREFIX + '/world/{object}/card', "the object's card as you see it", heap=True),
+    route_entry('source', 'GET', PREFIX + '/world/{object}/source', 'law, source, pin, pinSlug and forms', heap=True, query=FULL),
+    route_entry('action', 'POST', PREFIX + '/world/{object}/{method}', 'a turn: runs the method; a refusal is a receipt, not an error',
+                heap=True, query={'compact': '1: status, outcome, offer texts, receipt position', **FULL},
+                body={'intent': INTENT, 'spell': 'text: a reply to the card, for `receive`', 'fields': 'object: a form as plain JSON',
+                      'argument': 'typed data; one of spell, fields, argument (default the empty record)'}),
+    route_entry('receipt', 'GET', PREFIX + '/receipt/{intent}', "a receipt by your intent, or any receipt's slug", heap=True, query=FULL),
+    route_entry('offers', 'GET', PREFIX + '/offers', 'cards objects made for you', heap=True,
+                query={'after': 'height: only newer', 'wait': f'seconds, at most {WAIT_MAX}: hold until one arrives',
+                       'compact': '1: {status, offers: [text], height}'}),
+    route_entry('pending', 'GET', PREFIX + '/pending', 'queued sends', heap=True),
+    route_entry('deliver', 'POST', PREFIX + '/deliver', f'run up to {DELIVER_LIMIT} queued sends (the host runs them after every turn)', heap=True),
+    route_entry('create', 'POST', PREFIX + '/heap/objects', 'create an object in your private heap',
+                body={'intent': INTENT, 'object': 'text: its id', 'source': 'text: one module', 'modules': '[{name, source}]',
+                      'entry': 'text: `initial`', 'seed': 'object: a partial state over initial(), plain or typed', 'law': 'text'}),
+    route_entry('repl', 'POST', PREFIX + '/repl', 'compile and run an entry; an Activity yields its first plan and a checkpoint',
+                body={'source': 'text: one module', 'modules': '[{name, source}]', 'entry': 'text', 'arguments': '[typed data]',
+                      'object': 'text: binds an activity', 'intent': 'text', 'roots': '[{object, version}]',
+                      'checkpoint': 'as returned, to resume', 'response': 'typed data: the answer to the plan', 'limits': 'object'}),
+    route_entry('check', 'POST', PREFIX + '/check', "check modules against the world's library; a refusal names stage, line and span",
+                body={'source': 'text', 'modules': '[{name, source}]', 'entry': 'text'}, query=FULL),
+    route_entry('me', 'GET', PREFIX + '/me', 'your principal, handle and remaining rate'),
+    route_entry('revoke', 'POST', PREFIX + '/revoke', 'this credential answers 401 from now on'),
+    route_entry('xrpc', 'GET', '/xrpc/{nsid}', 'the journal as AT Protocol records, read only (docs/REPO.md)', 'optional'),
+    route_entry('did', 'GET', '/.well-known/did.json', "the repository's DID document", 'none'),
+    route_entry('home', 'GET', '/', 'HTML for people', 'cookie'),
+    route_entry('find', 'GET', '/o', 'redirects ?object=<id> to its page', 'none', query={'object': 'text'}),
+    route_entry('page', 'GET', '/o/{object}', "HTML: an object's state, card and last 20 receipts; a / in the id is %2F", 'cookie'),
+    route_entry('spell', 'POST', '/o/{object}/spell', 'HTML form: sends `text` to receive', 'cookie', body={'text': 'text: a spell'}),
+    route_entry('static', 'GET', '/static/{file}', 'style.css, theme.js', 'none'))
+
+
+def resolve(method, path):
+    """-> (catalogue name, parameters) or (None, None). The one router: requests are answered and OPTIONS described by it."""
+    parts = [urllib.parse.unquote(p) for p in path.split('/')[1:]]
+    if parts[:1] == ['AGENTS.md']:
+        rest = parts[1:]
+        if (method, tuple(rest)) in FIXED:
+            return FIXED[method, tuple(rest)], {}
+        heap = rest[:1] == ['heap']
+        rest = rest[1:] if heap else rest
+        head, obj, tail = (rest[0] if rest else ''), '/'.join(rest[1:]), ''
+        if head == 'world':  # an object id may hold slashes: the last segment names the method, or card/source
+            if method == 'POST' or (len(rest) > 2 and rest[-1] in ('card', 'source')):
+                obj, tail = '/'.join(rest[1:-1]), rest[-1]
+            name = 'action' if method == 'POST' else tail or ('object' if obj else 'world')
+            name = name if (obj or name == 'world') and method in ('GET', 'POST') else None
+        else:
+            name = ROUTES.get((method, head, bool(obj)))
+            name = None if name in (('create',) if not heap else TOP_ONLY) else name
+        return (name, {'heap': heap, 'object': obj, 'method': tail}) if name else (None, None)
+    if parts[:1] == ['xrpc'] and len(parts) == 2:
+        return 'xrpc', {'nsid': parts[1]}  # the repository answers every method (405 for a write)
+    get = {('',): 'home', ('o',): 'find', ('.well-known', 'did.json'): 'did'}.get(tuple(parts))
+    if method == 'GET' and get:
+        return get, {}
+    if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
+        return 'static', {'file': parts[1]}
+    if parts[:1] == ['o'] and len(parts) == 2 + (method == 'POST') and (method == 'GET' or parts[2] == 'spell'):
+        return ('page' if method == 'GET' else 'spell'), {'object': parts[1]}
+    return None, None
+
 
 
 def plain(data):
@@ -128,6 +212,31 @@ REFUSALS = {'staleRoot': (True, 'self', 'something the turn read moved before it
             'budgetExhausted': (False, 'receipt', 'a chain of sends spent its ledger (`depth`, `work` or `storage`)'),
             'duplicateIdentity': (False, 'receipt', 'the same intent with a different request: not a receipt; `original` is the first')}
 
+# Every error the front answers: class -> (HTTP code, envelope status, when). `refused` is the host saying no.
+ERRORS = {'badRequest': (400, 'error', 'the request line or a header is malformed, or Content-Length is not a number'),
+          'badJson': (400, 'error', f'the body is not a JSON object, or nests deeper than {MAX_DEPTH}'),
+          'badModules': (400, 'error', f'`modules` is not a list of at most {MAX_MODULES} objects'),
+          'identity': (400, 'error', 'a challenge or verification failed; `message` is the reason'),
+          'hostRequest': (400, 'error', "the host refused the request as malformed; `message` (and a compile error's stage, module, span, hint) are the host's"),
+          'unauthenticated': (401, 'error', 'the credential is missing, unverified or revoked'),
+          'denied': (403, 'refused', 'the host says you may not read it'),
+          'unknown': (404, 'refused', 'the host knows nothing by that name that you may see'),
+          'unknownRoute': (404, 'error', 'no route here; the catalogue lists them'),
+          'methodNotAllowed': (405, 'error', 'the route takes another method; `Allow` names it'),
+          'requestTimeout': (408, 'error', f'the request did not arrive within {REQUEST_TIMEOUT} seconds'),
+          'ambiguous': (409, 'refused', 'a slug names more than one receipt; cite it by CID'),
+          'bodyTooLarge': (413, 'error', f'the body is over {MAX_BODY} bytes'),
+          'moduleTooLarge': (413, 'error', f'a module sent is over {MAX_SOURCE} bytes (the library is not sent)'),
+          'uriTooLong': (414, 'error', 'the request line is over 65536 bytes'),
+          'rateLimited': (429, 'error', 'over a rate limit; `Retry-After` says when to come back'),
+          'headersTooLarge': (431, 'error', 'a header line is over 65536 bytes, or there are over 100'),
+          'internal': (500, 'error', 'the front failed; nothing was decided'),
+          'notImplemented': (501, 'error', 'an HTTP method no route takes'),
+          'replyTooLarge': (502, 'error', f'the reply would be over {MAX_REPLY} bytes; ask for less (compact, a page)'),
+          'hostUnavailable': (503, 'error', 'hostd is not answering connections'),
+          'hostTimeout': (504, 'error', 'hostd accepted the request and did not answer in time'),
+          'httpVersion': (505, 'error', 'the HTTP version is not 1.0 or 1.1')}
+
 
 def link(href, **more):
     return {'href': href, **more}
@@ -209,6 +318,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         info = {} if hasattr(host, 'binary') else host.send({'op': 'hostd-info'})
         self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
+        self.host_timeout = getattr(host, "timeout", HOST_TIMEOUT + 30)
         self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library hostd sealed; the REPL compiles against it by name
 
     def sync_library(self, force=False):
@@ -235,6 +345,30 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         """Tell the host a verified account has arrived (the clock principal alone may), so cards name them by handle.
         Idempotent at the host; a refusal leaves the verification standing."""
         return self.host.send({'op': 'world-arrive', 'principal': CLOCK, 'did': did, 'handle': handle})
+
+    def catalogue(self, here):
+        """Every route, the error envelope, the error and refusal classes and the limits, as data."""
+        return {'status': 'catalogue', 'origin': self.origin, 'routes': list(CATALOGUE),
+                'conventions': {'auth': 'Authorization: Bearer <credential>, from challenge then verify; your DID is your principal',
+                                'heap': "a route with `heap` also runs in your private heap at that href",
+                                'links': '_links: relation -> {href} or [{href, name}], on every JSON reply; relations are route names',
+                                'actions': '_actions on object, card and source replies: {name, method, href, fields: [{name, kind, bounds}], '
+                                           'body, spell?, input?}, one per method of the host\'s method table a turn can run',
+                                'typedData': '{tag: natural|label|boolean, value} {tag: record, fields: [{name, value}]} '
+                                             '{tag: list, items} {tag: variant, label, payload}',
+                                'hashes': 'replies omit content ids except a receipt\'s own hash and a source\'s pin; ?full=1 shows them'},
+                'envelope': {'status': 'error | refused', 'class': 'a key of errors', 'message': 'text', 'hint': 'text, optional',
+                             '_links': '{self, api, hint?}', 'more': "a host's reply keeps its own fields (object, stage, module, span, diagnostic)"},
+                'errors': {k: {'code': c, 'status': st, 'when': w} for k, (c, st, w) in ERRORS.items()},
+                'xrpcErrors': {k: {'code': c, 'when': w} for k, (c, w) in XRPC_ERRORS.items()},
+                'refusals': {k: {'transient': t, 'hint': h, 'means': m} for k, (t, h, m) in REFUSALS.items()},
+                'limits': {'bodyBytes': MAX_BODY, 'moduleBytes': MAX_SOURCE, 'modules': MAX_MODULES, 'bodyDepth': MAX_DEPTH,
+                           'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'hostSeconds': self.host_timeout,
+                           'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
+                           'ratePerCredential': [RATE, WINDOW], 'ratePerAddressOnChallengeAndVerify': [OPEN_RATE, WINDOW],
+                           'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'idsPerPage': 64, 'deliverPerCall': DELIVER_LIMIT},
+                '_links': {'self': link(here), 'guide': link(PREFIX), 'examples': link(PREFIX + '/examples'),
+                           'challenge': link(PREFIX + '/challenge')}}
 
     def guide(self, path=GUIDE):
         return path.read_text().replace('{{origin}}', self.origin)
@@ -320,46 +454,44 @@ class Handler(BaseHTTPRequestHandler):
 
     def route(self, method):
         path = urllib.parse.urlsplit(self.path).path
-        parts = [urllib.parse.unquote(p) for p in path.split('/')[1:]]
-        if method == 'GET' and path == PREFIX:
+        name, p = resolve(method, path)
+        if name is None:
+            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}/api', ROUTE_HINT)
+        if name == 'guide' and 'application/json' not in (self.headers.get('Accept') or ''):
             return self.reply(200, self.server.guide(), 'text/plain', [('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
-        if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
-            return self.reply(200, (STATIC / parts[1]).read_bytes(), 'text/css' if parts[1].endswith('css') else 'text/javascript')
-        if parts[:1] == ['AGENTS.md']:
-            return self.agents(method, parts[1:])
-        if (parts[:1] == ['xrpc'] and len(parts) == 2) or path == '/.well-known/did.json':
-            return self.xrpc(method, parts[-1])
-        if method == 'GET' and path == '/':
+        if name in ('guide', 'api'):
+            return self.reply(200, canonical(self.server.catalogue(self.path)), headers=[('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
+        if name == 'examples':
+            return self.reply(200, self.server.guide(EXAMPLES), 'text/plain')
+        if name in ('challenge', 'verify'):
+            return self.identify(name)
+        if name == 'static':
+            return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
+        if name in ('xrpc', 'did'):
+            return self.xrpc(method, p.get('nsid', 'did.json'))
+        if name == 'home':
             return self.home()
-        if method == 'GET' and parts == ['o']:
-            name = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('object', [''])[0]
-            return self.reply(302, '', 'text/plain', [('Location', '/o/' + urllib.parse.quote(name, safe=''))])
-        if parts[:1] == ['o'] and method == 'GET' and len(parts) == 2:
-            return self.object_page(parts[1])
-        if parts[:1] == ['o'] and method == 'POST' and len(parts) == 3 and parts[2] == 'spell':
-            return self.object_page(parts[1], spell=True)
-        self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}')
+        if name == 'find':
+            found = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('object', [''])[0]
+            return self.reply(302, '', 'text/plain', [('Location', '/o/' + urllib.parse.quote(found, safe=''))])
+        if name in ('page', 'spell'):
+            return self.object_page(p['object'], spell=name == 'spell')
+        return self.agents(name, p['heap'], p['object'], p['method'])
+
+    def do_OPTIONS(self):
+        """The catalogue entries of the routes at this path, one per method."""
+        path = urllib.parse.urlsplit(self.path).path
+        names = [n for n in (resolve(m, path)[0] for m in ('GET', 'POST')) if n]
+        if not names:
+            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}/api')
+        entries = [e for n in names for e in CATALOGUE if e['name'] == n]
+        allow = ', '.join(sorted({e['method'] for e in entries}) + ['OPTIONS'])
+        self.reply(200, canonical({'status': 'route', 'routes': entries, '_links': {'self': link(self.path), 'api': link(PREFIX + '/api')}}),
+                   headers=[('Allow', allow)])
 
     # ---- agents
 
-    def agents(self, method, rest):
-        if method == 'POST' and rest in (['challenge'], ['verify']):
-            return self.identify(rest[0])
-        if method == 'GET' and rest == ['examples']:
-            return self.reply(200, self.server.guide(EXAMPLES), 'text/plain')
-        heap = rest[:1] == ['heap']
-        rest = rest[1:] if heap else rest
-        head, obj, tail = (rest[0] if rest else ''), '/'.join(rest[1:]), ''
-        if head == 'world':  # an object id may hold slashes: the last segment names the method, or card/source
-            if method == 'POST' or (len(rest) > 2 and rest[-1] in ('card', 'source')):
-                obj, tail = '/'.join(rest[1:-1]), rest[-1]
-            kind = 'turn' if method == 'POST' else tail or ('view' if obj else 'objects')
-            kind = kind if obj or kind == 'objects' else None
-        else:
-            kind = ROUTES.get((method, head, bool(obj)))
-            kind = None if kind in (('create',) if not heap else TOP_ONLY) else kind
-        if kind is None:
-            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}', ROUTE_HINT)
+    def agents(self, kind, heap, obj, tail):
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else ''
         who = self.principal(credential)
@@ -383,19 +515,19 @@ class Handler(BaseHTTPRequestHandler):
         send = lambda req, links=None: self.answer(host.send(req), links=links)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
         after = {'after': int(q['after']) if q['after'].isdigit() else q['after']} if 'after' in q else {}
-        if kind == 'objects':
+        if kind == 'world':
             reply = host.send({'op': 'world-objects', 'principal': principal, **{k: q[k] for k in ('prefix', 'after') if k in q}})
             ids = reply.get('ids') or []
             nxt = urllib.parse.urlencode({**({'prefix': q['prefix']} if 'prefix' in q else {}), 'after': ids[-1]}) if ids and reply.get('more') else ''
             return self.answer(reply, links={'item': [link(f'{base}/world/{oid(i)}', name=i) for i in ids],
                                              **({'next': link(f'{base}/world?{nxt}')} if nxt else {}), 'offers': link(base + '/offers')})
-        if kind in ('view', 'card', 'source'):
-            op = {'view': 'world-view', 'card': 'world-card', 'source': 'world-inspect'}[kind]
+        if kind in ('object', 'card', 'source'):
+            op = {'object': 'world-view', 'card': 'world-card', 'source': 'world-inspect'}[kind]
             r = host.send({'op': op, 'principal': principal, 'object': obj})
             seen = r if kind == 'source' else host.send({'op': 'world-inspect', 'principal': principal, 'object': obj}) \
                 if r.get('status') in ('viewed', 'card') else {}
             acts = actions(base, obj, seen) if seen.get('status') == 'inspected' else None
-            if kind != 'view' and 'full' not in q:  # the readable part; ?full=1 is the host's reply verbatim
+            if kind != 'object' and 'full' not in q:  # the readable part; ?full=1 is the host's reply verbatim
                 r = {k: plain(v) if k == 'forms' else v for k, v in r.items() if k not in ('document', 'methods')}
             links = {**at(obj), 'world': link(base + '/world'), 'offers': link(base + '/offers')}
             return self.answer(r, keep=('pin',) if kind == 'source' else (), links=links if r.get('status') != 'unknown' else

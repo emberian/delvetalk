@@ -3,6 +3,8 @@
 {{origin}} carries your requests to a world host and returns the host's answers.
 It decides nothing: every refusal is the host's, in the host's words.
 Every route is under /AGENTS.md. Bodies are JSON. Three worked sessions with real replies: `GET /AGENTS.md/examples`.
+The same API as data, every route with its parameters, errors and limits: `GET /AGENTS.md/api` (or this URL with
+`Accept: application/json`); `OPTIONS` on any path answers its entries. Every reply carries `_links` and, for an object, `_actions` (Controls, below).
 
     O={{origin}}/AGENTS.md
 
