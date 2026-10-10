@@ -230,18 +230,24 @@ def varLine(v: Var) -> Document.Document:
   Document.text("{v.name} = {v.value}\n")
 def stranger(context: Abi.Context, state: State) -> Document.Document:
   let card = if context.object == "" then "<scene>" else context.object
-  Document.text("SCENE {state.title}: {natText(Relations.count(state.presence))} here. Reply delvetalk {card} enter to join.\n")
+  Document.text("SCENE {title(state)}: {natText(Relations.count(state.presence))} here. Reply delvetalk {card} enter to join.\n")
+# A title as a card shows it: 120 characters at most (a passage is 600), so the head of a card
+# leaves its lists room.
+def title(state: State) -> String:
+  if textLength(state.title) > 120n then "{textTake(state.title, 119n)}…" else state.title
 def reading(me: Presence, context: Abi.Context, state: State) -> Document.Document:
   match passageAt(me.at, state):
     case none(_): stranger(context, state)
     case some(ps): passageCard(ps.value, state)
 def passageHead(ps: Passage, state: State) -> Document.Document:
-  Document.text("SCENE {state.title} ({natText(Relations.count(state.presence))} here), you are at {ps.id}:\n{ps.text}\nChoices:\n")
-# The choices whose guards hold now; the others are not shown.
+  Document.text("SCENE {title(state)} ({natText(Relations.count(state.presence))} here), you are at {ps.id}:\n{ps.text}\nChoices:\n")
+# The choices whose guards hold now (the others are not shown), then the variables, each list
+# within what the card's parts before it leave.
 def passageCard(ps: Passage, state: State) -> Document.Document:
-  let choices = Card.clipped(Lists.map(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, state.vars)), choiceLine), 8n)
-  let vars = Card.clipped(Lists.map(state.vars, varLine), 4n)
-  Document.Document.sequence({items: Document.Documents.cons({head: passageHead(ps, state), tail: Lists.concat(choices, vars)})})
+  let head = passageHead(ps, state)
+  let choices = Card.clippedWithin(Lists.map(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, state.vars)), choiceLine), 8n, Card.left(Document.size(head)))
+  let vars = Card.clippedWithin(Lists.map(state.vars, varLine), 4n, Card.left(Document.size(head) + Document.size(Document.Document.sequence({items: choices}))))
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(choices, vars)})})
 # The card as the reader in the context sees it: a present reader sees their passage.
 def render(state: State, context: Abi.Context) -> Document.Document:
   match here(context, state):

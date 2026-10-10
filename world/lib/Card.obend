@@ -106,6 +106,12 @@ def shortened(fragment: String) -> String:
 # lines are.
 def budget() -> Nat:
   1200n
+# What readers see of a card: a renderer gives its lists what its fixed parts leave of this,
+# one budget across the whole card (`left`).
+def limit() -> Nat:
+  1400n
+def left(used: Nat) -> Nat:
+  if used >= limit() then 0n else limit() - used
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
   clippedWithin(lines, shown, budget())
 # The same, within `room` characters (a card whose head is long gives its lists less).

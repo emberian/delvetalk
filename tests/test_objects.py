@@ -494,13 +494,11 @@ class Budgets(unittest.TestCase):
         self.assertLessEqual(len(text), 1200, text[-80:])
         self.assertTrue(text.endswith(" more\n"), text[-80:])
 
-    @unittest.expectedFailure  # codex objects 14, the next commit
     def test_a_bell_with_eight_long_doors_and_long_rains_stays_under_1400(self):
         text = self.text("Bell", BELL_BUDGET_PROBE)
         self.assertLessEqual(len(text), 1400, (len(text), text[-200:]))
         self.assertIn("Doors: ", text)
 
-    @unittest.expectedFailure  # codex objects 14, the next commit
     def test_a_scene_passage_with_long_choices_and_vars_stays_under_1400(self):
         text = self.text("Scene", SCENE_BUDGET_PROBE)
         self.assertLessEqual(len(text), 1400, (len(text), text[-200:]))
