@@ -63,6 +63,12 @@ sum Edit<T, D>:
 # address the first item whose canonical bytes equal `item` (refused absentItem
 # when none does); the index forms go after one release. A write of only keep,
 # add and append commits even if its object moved since the turn read it.
+# A relation field (Relation.obend, declared in the object's `relations()`) is edited by
+# key (docs/RELATIONAL.md section 3): insert adds a row whose key is absent (the same row
+# again changes nothing; another row of that key is refused keyTaken), upsert adds or
+# replaces the row of its key, retract removes the row whose key projection, a record of
+# the key columns, is `key` (none: no change). An insert commits against a moved root; an
+# upsert or retract does when no admitted write since touched its key.
 sum Entries<D, U>:
   keep: {}
   append: {item: D}
@@ -70,6 +76,9 @@ sum Entries<D, U>:
   remove: {index: Nat}
   amendItem: {item: D, change: U}
   removeItem: {item: D}
+  insert: {row: D}
+  upsert: {row: D}
+  retract: {key: Data}
 # The identity of a turn, (principal, intent): what an await names.
 record Slot:
   principal: String

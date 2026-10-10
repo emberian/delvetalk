@@ -271,6 +271,10 @@ the library).
   U+2010..U+2027; two scalars outside it compare equal). So Bend's order is the host's for
   such keys. TODO(canonicalCompare): when the builtin lands, a key is the key projection as
   Data and Cell goes; every object's `keyOf` changes then, nothing else.
+* **Edits** (`Plans.Entries`): `insert {row}`, `upsert {row}`, `retract {key: Data}` (the key
+  projection as a record) beside the six; the kernel's `write {field: insert row}` sugar is
+  the kernel lane's, so until it lands a relation write is spelled
+  `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: Plans.Entries.insert({row: r})})})`.
 * **Costs** (hbox, `tests/test_relation_lib.py`): a compare of two equal two-cell keys about
   450 ticks, one deciding on its first cell about 200 (about 30 ticks a call, which is the
   machine's); `joinOn` of two stored 200-row relations 278,301 ticks with building them
