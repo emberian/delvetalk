@@ -106,9 +106,10 @@ class Controls(FrontCase):
         self.assertEqual(sorted(acts), sorted(m['name'] for m in methods if m['context']))
         plant = acts['plant']
         self.assertEqual((plant['method'], plant['href']), ('POST', '/AGENTS.md/world/garden/plant'))
+        # The garden's own form (forms()) names the bounds; the input type alone would say text 0..1400.
         self.assertEqual(plant['fields'], [{'name': 'colour', 'kind': 'choice', 'bounds': {'options': ['amber', 'violet', 'silver']}},
-                                           {'name': 'seed', 'kind': 'text', 'bounds': {'min': 0, 'max': 1400}}])
-        self.assertEqual(plant['spell'], 'delvetalk garden plant\ncolour: <amber|violet|silver>\nseed: <text 0..1400>\n')
+                                           {'name': 'seed', 'kind': 'text', 'bounds': {'min': 1, 'max': 80}}])
+        self.assertEqual(plant['spell'], 'delvetalk garden plant\ncolour: <amber | violet | silver>\nseed: <text 1..80>\n')
         self.assertEqual(acts['receive']['body'], {'intent': 'text', 'spell': "text: any action's spell, or prose"})
         self.assertIn('input', acts['set'])  # no form for a sum with payloads: the host's type, and typed data
         for route in ('card', 'source'):

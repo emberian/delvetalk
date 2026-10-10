@@ -174,7 +174,7 @@ def interpretStatus (w : World) (r : Json) (principal : Option String) : Json :=
     r.setObjVal! "interpretations" (Json.mkObj [("remaining", toJson (w.interpretQuota - used)),
       ("next", toJson ((hour + 1) * 60))])
 
-def stepWorld (session : Session) (request : Json) : IO (Session × Except String Json) := do
+def stepWorldCore (session : Session) (request : Json) : IO (Session × Except String Json) := do
   let op ← match request.getObjValAs? String "op" with
     | .ok op => pure op
     | .error _ => return (session, .error "missing op")
@@ -313,5 +313,22 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
         | .ok (w, r) => return (some { s with world := w }, .ok r)
         | .error e => return (session, .error e)
       | _ => return (session, .error s!"unknown world operation {op}")
+
+/-- Write what this process compiled and the disk cache lacks (`DiskCache`, when
+    `DELVETALK_COMPILE_CACHE` names a directory): packages by build key, definitions by object
+    inputs and name. Each key is written once per process; an existing file is left alone. -/
+def persistCaches (w : World) : IO Unit := do
+  if (← DiskCache.dir).isNone then return
+  for (key, b) in w.builds.toList do DiskCache.write "build" key (builtJson key b)
+  for (key, c) in w.compiled.toList do DiskCache.write "def" key (compiledJson key c)
+
+/-- One op (`stepWorldCore`), then the compile cache written to disk; `world-status` reports it as
+    `compileCache {dir, hits, known}` (null when off). -/
+def stepWorld (session : Session) (request : Json) : IO (Session × Except String Json) := do
+  let (session, r) ← stepWorldCore session request
+  if let some s := session then persistCaches s.world
+  if (request.getObjValAs? String "op").toOption == some "world-status" then
+    if let .ok j := r then return (session, .ok (j.setObjVal! "compileCache" (← DiskCache.status)))
+  return (session, r)
 
 end Delvetalk.Host

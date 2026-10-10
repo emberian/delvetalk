@@ -125,6 +125,7 @@ class SumWords(Reflection):
         return self.host.send(op="world-interpretation", id=item["id"],
                               reply={"status": "replied", "model": "m", "json": {"method": "plant", "argument": argument}})
 
+    # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF 5.64).
     def test_a_proposals_word_is_the_case(self):
         settled = self.interpret({"colour": "violet", "seed": "rue"})
         verdict = settled["receipt"]["outcome"]["verdict"]

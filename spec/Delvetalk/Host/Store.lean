@@ -116,6 +116,8 @@ def maxUriBytes : Nat := 512
     reader shows. A natural field: at most this. -/
 def formTextMax : Nat := 1400
 def formNaturalMax : Nat := 1000000000
+/-- The longest value of a declared `source` form field (Bend source; `Form.Kind.source`). -/
+def formSourceMax : Nat := 16384
 /-- Journal entries between snapshots, and bytes of one snapshot file. -/
 def snapshotEvery : Nat := 1000
 def maxSnapshotBytes : Nat := 268435456

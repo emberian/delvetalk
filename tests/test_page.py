@@ -31,7 +31,7 @@ PAGES = {
         "delvetalk rooms enter\n"
         "\n"
         "delvetalk rooms choose\n"
-        "choice: <text, 0 to 1400 characters>\n"
+        "choice: <text, 1 to 64 characters>\n"
         "\n"
         "delvetalk rooms leave\n"),
     "workshop": (

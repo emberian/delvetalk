@@ -258,6 +258,7 @@ class Interpreted(Reflection):
                                  reply={"status": "replied", "model": "m", "json": None, "raw": raw})
         return settled["receipt"]["outcome"]["verdict"], settled["resumed"][0]["result"]
 
+    # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF 5.64).
     def test_a_fitting_spell_is_a_proposal(self):
         verdict, result = self.interpret("Sure.\ndelvetalk garden plant\ncolour: violet\nseed: rue")
         self.assertEqual((verdict["tag"], verdict["method"]), ("proposal", "plant"), verdict)

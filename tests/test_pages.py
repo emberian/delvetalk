@@ -66,9 +66,9 @@ class Pages(FrontCase):
 
     def test_an_object_is_its_card_doors_actions_source_and_slips(self):
         text = self.page('/o/garden', 'class="frame"', 'class="card"', 'class="action"', 'class="listing law"', 'class="listing"')
-        self.assertIn('<input name="seed" minlength="0" maxlength="1400">', text)  # the method table's form: plant takes text
+        self.assertIn('<input name="seed" minlength="1" maxlength="80">', text)  # the garden's own form (forms()) bounds the seed
         self.assertIn('action="/play/garden"', text)
-        self.assertIn('<input type="number" name="n:every" min="0" max="1000000000"', self.page('/o/tide'))
+        self.assertIn('<input type="number" name="n:every" min="1" max="1000"', self.page('/o/tide'))  # the tide's form
         picker = self.page('/o/picker', 'class="action"')
         self.assertIn('<select name="c:colour"><option>amber</option><option>violet</option></select>', picker)
         done = self.page('/play/picker', method='POST', form={'method': 'pick', 'c:colour': 'violet'})

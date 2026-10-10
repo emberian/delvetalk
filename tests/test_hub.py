@@ -149,7 +149,7 @@ class Hub(test_chain.Chain):
         self.assertEqual((public["object"], public["root"]["object"], public["root"]["version"]),
                          ("garden/cistern", "garden", garden["version"]), public)
         usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)
-        self.assertIn("delvetalk garden cistern\nname: <text, 0 to 1400 characters>\n", usage["text"])
+        self.assertIn("delvetalk garden cistern\nname: <text, 0 to 120 characters>\n", usage["text"])
 
     def interpret(self, raw):
         [pending] = self.host.send(op="world-interpretations")["pending"]
@@ -159,6 +159,8 @@ class Hub(test_chain.Chain):
         [resumed] = settled["resumed"]
         return resumed
 
+    # The host fits the model's spell against the offered forms and answers `proposal {object,
+    # method, argument}` for the door it names (HOST-HANDOFF 5.64).
     def test_with_a_policy_the_models_spell_runs_on_the_door_it_names(self):
         self.policy()
         self.directory("policy")
@@ -223,7 +225,7 @@ class Hub(test_chain.Chain):
             "\n"
             "    delvetalk garden plant\n"
             "    colour: <amber, violet, silver>\n"
-            "    seed: <text, 0 to 1400 characters>\n"))
+            "    seed: <text, 1 to 80 characters>\n"))
         self.assertEqual(self.children(), [])
 
 if __name__ == "__main__":
@@ -359,6 +361,8 @@ class HandedToTheDirectory(test_chain.Chain):
     against every door's forms, and the model's submit spell reaches the anthology."""
     policy = test_policy.PolicyObject.policy
 
+    # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which the
+    # host reads as a spell (SpellsPassedOn).
     def test_two_anthology_lines_under_glms_planting_are_submitted(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
@@ -511,6 +515,8 @@ class AnthologyReachable(test_chain.Chain):
     def say(self, obj, text, who):
         return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who)
 
+    # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which
+    # the host reads as a spell (SpellsPassedOn).
     def test_lines_are_submitted_by_field_line_and_by_the_model_and_the_owner_admits(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),

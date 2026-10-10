@@ -71,6 +71,11 @@ def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
 PLAIN = declared(GUARD[:GUARD.index("def opened")], "bump", "poke")
 
 
+READING = PLAIN.replace("law small: new.count <= 100\n", "law small: new.count <= 100\nsum Verdict:\n  admitted: {}\n  refused: {clause: String, reading: String}\n") + """def law(old: State, new: State, request: Abi.Request) -> Verdict:
+  if new.count > old.count + 2n then Verdict.refused({clause: "tooMuch", reading: "at most two at a time"}) else Verdict.refused({clause: "quiet", reading: ""})
+"""
+
+
 class TwoTier(Reflection):
     def setUp(self):
         super().setUp()
@@ -103,6 +108,17 @@ class TwoTier(Reflection):
         self.reopen()
         self.assertEqual(self.count(), "2")
         self.assertEqual(self.bump(1)["status"], "admitted")
+
+    def test_a_bend_laws_reading_is_the_refusals_reason(self):
+        # WORLD-REVIEW finding 8: `refused {clause, reading}` reaches the receipt and the public projection.
+        self.make("r", READING, record(count=nat(0)))
+        r = self.turn("r", "bump", record(n=nat(3)), principal="mallory")
+        outcome = r["receipt"]["outcome"]
+        self.assertEqual((outcome["clause"], outcome["reason"]), ("tooMuch", "refused tooMuch: at most two at a time"), r)
+        public = self.host.send(op="world-receipt", principal="ember", identity=r["receipt"]["identity"]["intent"], of="mallory")
+        self.assertIn("at most two at a time", str(public), public)
+        quiet = self.turn("r", "bump", record(n=nat(1)))["receipt"]["outcome"]
+        self.assertEqual((quiet["clause"], quiet.get("reason")), ("quiet", None), quiet)
 
     def test_an_exhausted_law_refuses_budget(self):
         self.make("s", SPIN, record(count=nat(0)))

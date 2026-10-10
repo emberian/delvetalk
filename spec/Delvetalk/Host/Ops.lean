@@ -5,6 +5,7 @@ import Delvetalk.Host.Store
 import Delvetalk.Host.Journal
 import Delvetalk.Host.Law
 import Delvetalk.Host.Slug
+import Delvetalk.Host.DiskCache
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
@@ -75,11 +76,10 @@ inductive EditKind where
   | set (value : Data)
   | add (delta : Nat)
   | append (item : Data)
-  /-- The first item whose canonical bytes are `item`'s, replaced by `change` or removed. The
-      label is the constructor the object used (`amendItem`/`removeItem` in Plan.obend, or
-      `amend`/`remove` with an `item` payload), kept so the journal records what was written. -/
-  | amendBy (label : String) (item change : Data)
-  | removeBy (label : String) (item : Data)
+  /-- The first item whose canonical bytes are `item`'s, replaced by `change` (`amendItem`) or
+      removed (`removeItem`). -/
+  | amendItem (item change : Data)
+  | removeItem (item : Data)
   /-- Relation edits (RELATIONAL.md §3), on a field the package declares a relation: a row added
       under its key (`insert` refuses a taken key with another row, `upsert` replaces it), or the row
       of a key removed (`retract`; an absent key is no change). -/
@@ -100,8 +100,8 @@ def EditKind.data : EditKind → Data
   | .set v => .variant "set" (.record [("value", v)])
   | .add n => .variant "add" (.record [("delta", .natural n)])
   | .append v => .variant "append" (.record [("item", v)])
-  | .amendBy l item c => .variant l (.record [("item", item), ("change", c)])
-  | .removeBy l item => .variant l (.record [("item", item)])
+  | .amendItem item c => .variant "amendItem" (.record [("item", item), ("change", c)])
+  | .removeItem item => .variant "removeItem" (.record [("item", item)])
   | .insert row => .variant "insert" (.record [("row", row)])
   | .upsert row => .variant "upsert" (.record [("row", row)])
   | .retract key => .variant "retract" (.record [("key", key)])
@@ -123,16 +123,12 @@ def parseKind : Data → Option EditKind
       | some (.natural n) => some (.add n)
       | _ => none
   | .variant "append" (.record f) => (f.lookup "item").map .append
-  | .variant "remove" (.record f) => (f.lookup "item").map (.removeBy "remove")
-  | .variant "amend" (.record f) => match f.lookup "item", f.lookup "change" with
-      | some item, some c => some (.amendBy "amend" item c)
-      | _, _ => none
-  | .variant "removeItem" (.record f) => (f.lookup "item").map (.removeBy "removeItem")
+  | .variant "removeItem" (.record f) => (f.lookup "item").map .removeItem
   | .variant "insert" (.record f) => (f.lookup "row").map .insert
   | .variant "upsert" (.record f) => (f.lookup "row").map .upsert
   | .variant "retract" (.record f) => (f.lookup "key").map .retract
   | .variant "amendItem" (.record f) => match f.lookup "item", f.lookup "change" with
-      | some item, some c => some (.amendBy "amendItem" item c)
+      | some item, some c => some (.amendItem item c)
       | _, _ => none
   | _ => none
 
@@ -542,8 +538,8 @@ def applyStep (decls : List RelDecl) (fields : List (String × Data)) (step : St
         | .natural m => put (.natural (m + n))
         | _ => throw "typeMismatch"
     | .append item => put (← appendItem item old)
-    | .amendBy _ item c => put (← editByItem item (some c) old)
-    | .removeBy _ item => put (← editByItem item none old)
+    | .amendItem item c => put (← editByItem item (some c) old)
+    | .removeItem item => put (← editByItem item none old)
     | .insert _ | .upsert _ | .retract _ => match decl with
       | some d => pure (replaceField acc e.field (← relationEdit d old e.kind))
       | none => throw "typeMismatch"
@@ -1271,22 +1267,104 @@ def compactCheckpoint (w : World) (checkpoint : Json)
 /-- The CID a one-item block of `item` is journaled under. -/
 def blockCid (item : Json) : String := Journal.bodyHash (Json.arr #[item])
 
-/-- An interpretation as journaled: its `offers` (the same forms in every reading of one card) are a
-    one-item block named by CID (`offersBlock`), so a reading costs only what is new in it. The
-    blocks to journal with it are the second component. -/
-def compactInterpretation (i : Json) : Json × Array (Array Json) :=
-  match i.getObjVal? "offers" with
-  | .ok offers =>
-    let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "offers")
-    (Json.mkObj (rest ++ [("offersBlock", toJson (blockCid offers))]), #[#[offers]])
-  | .error _ => (i, #[])
+/-- A field this long (compact JSON bytes) or longer is journaled as a block (`blockField`); a
+    shorter one costs less inline than its CID. -/
+def blockThreshold : Nat := 256
 
-/-- An interpretation with its `offers` restored from the world's blocks. -/
-def expandInterpretation (w : World) (i : Json) : Option Json := do
-  let some cid := (i.getObjValAs? String "offersBlock").toOption | return i
-  let offers ← (w.blocks[cid]?).bind (·[0]?)
-  let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) => k != "offersBlock"
-  return Json.mkObj (rest ++ [("offers", offers)])
+/-- `field` of `j` as a one-item block named by CID (`<field>Block`) when it is at least `least`
+    bytes, so a value that recurs (the forms of every reading of one card, the utterance of one post
+    read again, a retried argument) is journaled once; the blocks to journal are the second part. -/
+def blockField (j : Json) (field : String) (least : Nat := blockThreshold) : Json × Array (Array Json) :=
+  match j.getObjVal? field with
+  | .ok v =>
+    if v.compress.utf8ByteSize < least then (j, #[]) else
+    let rest := ((j.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != field)
+    (Json.mkObj (rest ++ [(field ++ "Block", toJson (blockCid v))]), #[#[v]])
+  | .error _ => (j, #[])
+
+/-- `j` with `field` restored from the world's blocks (`blockField`); none when the block is not
+    journaled. -/
+def unblockField (w : World) (j : Json) (field : String) : Option Json := do
+  let some cid := (j.getObjValAs? String (field ++ "Block")).toOption | return j
+  let v ← (w.blocks[cid]?).bind (·[0]?)
+  let rest := ((j.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) => k != field ++ "Block"
+  return Json.mkObj (rest ++ [(field, v)])
+
+/-- Data wire JSON with every text of at least `blockThreshold` bytes journaled as a one-item block of
+    the string (`{tag: "labelBlock", cid}`): the same block the checkpoint's leaf for that text is, so
+    a reply's text is journaled once whether the argument or the machine holds it. -/
+partial def hoistLabels (j : Json) : Json × Array (Array Json) :=
+  match j with
+  | .obj _ =>
+    if (j.getObjValAs? String "tag").toOption == some "label" then
+      match j.getObjValAs? String "value" with
+      | .ok v => if v.utf8ByteSize < blockThreshold then (j, #[]) else
+          (Json.mkObj [("tag", toJson "labelBlock"), ("cid", toJson (blockCid (toJson v)))], #[#[toJson v]])
+      | .error _ => (j, #[])
+    else
+      let fields := (j.getObj?.toOption.map (·.toList)).getD []
+      let (out, blocks) := fields.foldl (fun (acc : List (String × Json) × Array (Array Json)) (k, v) =>
+        let (v', bs) := hoistLabels v; (acc.1 ++ [(k, v')], acc.2 ++ bs)) ([], #[])
+      (Json.mkObj out, blocks)
+  | .arr items =>
+    let (out, blocks) := items.foldl (fun (acc : Array Json × Array (Array Json)) v =>
+      let (v', bs) := hoistLabels v; (acc.1.push v', acc.2 ++ bs)) (#[], #[])
+    (.arr out, blocks)
+  | other => (other, #[])
+
+/-- `hoistLabels` undone from the world's blocks. -/
+partial def lowerLabels (w : World) (j : Json) : Except String Json :=
+  match j with
+  | .obj _ =>
+    if (j.getObjValAs? String "tag").toOption == some "labelBlock" then do
+      let cid ← j.getObjValAs? String "cid"
+      let some item := (w.blocks[cid]?).bind (·[0]?) | throw s!"text block {cid} is not journaled"
+      return Json.mkObj [("tag", toJson "label"), ("value", ← item.getStr?)]
+    else do
+      let fields := (j.getObj?.toOption.map (·.toList)).getD []
+      return Json.mkObj (← fields.mapM fun (k, v) => do return (k, ← lowerLabels w v))
+  | .arr items => return .arr (← items.mapM (lowerLabels w))
+  | other => return other
+
+/-- A suspended activity's `argument`, its long texts restored from the world's blocks (`hoistLabels`;
+    an older entry's whole `argumentBlock` too). -/
+def activityArgument (w : World) (act : Json) : Except String Json := do
+  match unblockField w act "argument" with
+  | some a => lowerLabels w (← a.getObjVal? "argument")
+  | none => throw "a suspended activity's argument block is not journaled"
+
+/-- An interpretation as journaled: its `offers` (the same forms in every reading of one card) are a
+    one-item block (`offersBlock`), and so is a long `utterance` (`utteranceBlock`; the directory reads
+    one post's text more than once), so a reading costs only what is new in it. The blocks to
+    journal with it are the second component. -/
+def compactInterpretation (i : Json) (argument : Data) : Json × Array (Array Json) :=
+  let (i, offers) := blockField i "offers" 0
+  -- A card reading its reply hands the model the reply's own text: then it is not journaled twice.
+  let text := match argument with
+    | .record fs => match fs.lookup "text" with
+      | some (.label t) => some t
+      | _ => none
+    | _ => none
+  if (i.getObjValAs? String "utterance").toOption == text && text.isSome then
+    let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "utterance")
+    (Json.mkObj (rest ++ [("utteranceIsText", toJson true)]), offers)
+  else
+    let (i, utterance) := blockField i "utterance"
+    (i, offers ++ utterance)
+
+/-- The interpretation of a suspended entry's `outcome`, with its `offers` and `utterance` restored
+    from the world's blocks, or the utterance from the activity's argument's `text`. -/
+def expandInterpretation (w : World) (outcome : Json) : Option Json := do
+  let i ← (outcome.getObjVal? "interpretation").toOption
+  let i ← unblockField w (← unblockField w i "offers") "utterance"
+  if (i.getObjValAs? Bool "utteranceIsText").toOption != some true then return i
+  let act ← (outcome.getObjVal? "activity").toOption
+  let argument ← (activityArgument w act).toOption
+  let text ← ((argument.getObjVal? "fields").toOption.bind (·.getArr?.toOption)).bind fun fs =>
+    fs.findSome? fun f => if (f.getObjValAs? String "name").toOption == some "text" then
+      ((f.getObjVal? "value").toOption.bind (·.getObjValAs? String "value" |>.toOption)) else none
+  let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "utteranceIsText")
+  return Json.mkObj (rest ++ [("utterance", toJson text)])
 
 /-- The blocks an entry carries, checked against their CIDs. -/
 def entryBlocks (entry : Json) : Except String (List (String × Array Json)) := do
@@ -1426,12 +1504,27 @@ def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
     c.entry.source.assumptions.rigid, some c.entry,
     some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
 
+/-- A compiled definition from its packet: decoded and re-checked by Mini (`CheckedEntry.ofPacket`). -/
+def compiledOfPacket (packet : Json) : Option Compiled := do
+  let e ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
+  return ⟨packet, e.type, e.source.assumptions.bounds, e.source.assumptions.rigid, some e,
+    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram e.source.term)⟩
+
+/-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`. -/
+def diskCompiled (key : String) : Option Compiled :=
+  (DiskCache.read "def" key).bind fun j => ((j.getObjVal? "packet").toOption.bind compiledOfPacket).map DiskCache.hit
+
+/-- The on-disk form of a compiled definition. -/
+def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJson key), ("packet", c.packet)]
+
 /-- The cache key of an object's compiled definition (`compiledMethod` uses the same). -/
 def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 
-/-- An object's definition `name`, compiled and prepared (from the world's cache when warm). -/
+/-- An object's definition `name`, compiled and prepared (from the world's cache when warm, else
+    the disk's). -/
 def compileDef (w : World) (o : Object) (name : String) : Except String (Compiled × World) := do
   if let some c := w.compiled[defKey o name]? then return (c, w)
+  if let some c := diskCompiled (defKey o name) then return (c, w)
   let (c, w) ← compileEntryIn w o.inputs name
   return (← compiledOf c, w)
 
@@ -1570,9 +1663,13 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   match (runPure entry [o.state, new, request] Delvetalk.Bounds.lawTicks).1 with
   | .ok (.variant "admitted" _) => return none
   | .ok (.variant "refused" (.record f)) =>
-    match f.lookup "clause" with
-    | some (.label clause) => return refuse clause
-    | _ => return refuse "law"
+    match f.lookup "clause", f.lookup "reading" with
+    -- A reading is copied into the reason as a law text clause's is (`readingOf`).
+    | some (.label clause), some (.label reading) =>
+      if reading.isEmpty then return refuse clause
+      else return some { cls := "lawRefused", clause := some clause, object := some id, reason := some s!"refused {clause}: {reading}" }
+    | some (.label clause), _ => return refuse clause
+    | _, _ => return refuse "law"
   | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
   | _ => return refuse "law"
 
@@ -2098,8 +2195,34 @@ def defaultLaw (creator : String) : Except String Law := do
 
 def buildKey (inputs : Json) : String := Journal.bodyHash inputs
 
+/-- The on-disk form of a compiled package: its artifact (with the packet), its laws as text, its
+    relations and the methods it declares public. -/
+def builtJson (key : String) (b : Built) : Json :=
+  Json.mkObj [("key", toJson key), ("artifact", b.artifact), ("laws", toJson (renderLaw b.laws)),
+    ("relations", Json.arr (b.relations.toArray.map fun d =>
+      Json.mkObj [("field", toJson d.field), ("key", toJson d.key), ("limit", toJson d.limit)])),
+    ("exposed", toJson b.exposed)]
+
+/-- A compiled package from its on-disk form; the packet is decoded and re-checked by Mini. -/
+def builtOf (j : Json) : Option Built := do
+  let artifact ← (j.getObjVal? "artifact").toOption
+  let packet ← (artifact.getObjVal? "packet").toOption
+  let entry ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
+  let decoded ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).toOption
+  let laws ← match (j.getObjValAs? String "laws").toOption with
+    | some "" => some []
+    | some text => (parseLawText text).toOption
+    | none => none
+  let relations ← ((j.getObjVal? "relations").toOption.bind (·.getArr?.toOption)).map fun ds => ds.toList.filterMap fun d =>
+    match d.getObjValAs? String "field", d.getObjValAs? (List String) "key", d.getObjValAs? Nat "limit" with
+    | .ok field, .ok key, .ok limit => some ({ field, key, limit } : RelDecl)
+    | _, _, _ => none
+  let exposed ← (j.getObjValAs? (List String) "exposed").toOption
+  return { artifact, ty := entry.type, laws, assumptions := decoded.source.assumptions, relations, exposed }
+
 def compileObject (w : World) (inputs : Json) : Except String Built := do
   if let some b := w.builds[buildKey inputs]? then return b
+  if let some b := ((DiskCache.read "build" (buildKey inputs)).bind builtOf).map DiskCache.hit then return b
   let resolved ← resolveInputs w inputs
   -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
   let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render

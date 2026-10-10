@@ -356,6 +356,8 @@ class Scoped(Chain):
         r = self.turn("glm2", "receive", record(text=label("acquire the stone"), post=label("at://x/2")), principal="glm2")
         self.assertEqual(r["offers"][0]["text"], "Which one: pebble, stone?\n")
 
+    # The avatar sends the spell as `receive {text, post}`; the host reads a delivered `receive` to a
+    # message-dialect card (Counter) as a spell (HOST-HANDOFF 5.63).
     def test_an_object_named_by_a_word_takes_the_form_as_a_spell(self):
         self.make("counter", closure("Counter"), record())
         self.assertEqual(self.say("bump counter")["result"]["label"], "done")

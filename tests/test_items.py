@@ -85,7 +85,7 @@ class ObjectsWriteByItem(TurnWorld):
     def labels(self, reply):
         import json
         text = json.dumps(reply["receipt"]["outcome"]["writes"])
-        return {l for l in ("removeItem", "amendItem", "remove", "amend", "insert", "upsert", "retract") if '"label": "%s"' % l in text}
+        return {l for l in ("removeItem", "amendItem", "insert", "upsert", "retract") if '"label": "%s"' % l in text}
 
     def test_a_place_retracts_who_leaves_by_key(self):
         from tests.test_chain import Chain
