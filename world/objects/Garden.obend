@@ -144,12 +144,14 @@ def colourNamed(name: String) -> Lists.Maybe<Bell.Colour>:
   if name == "amber" then Lists.Maybe.some({value: Bell.Colour.amber({})}) else if name == "violet" then Lists.Maybe.some({value: Bell.Colour.violet({})}) else if name == "silver" then Lists.Maybe.some({value: Bell.Colour.silver({})}) else Lists.Maybe.none({})
 def spell(card: String, seed: String, colour: String) -> String:
   "    delvetalk {card} plant\n    seed: {seed}\n    colour: {colour}\n"
+# The acknowledgement is posted where the planting was, so it prints the new bell's whole rain
+# spell (a reply naming the bell reaches it from here).
 def plantedCard(context: Abi.Context, reference: Plans.Reference, colour: String, seed: String, count: Nat) -> Document.Document:
   let article = if colour == "amber" then "an" else "a"
   let what = "Planted for {Card.name(context.principal, context)}: {article} {colour} bell, “{seed}”."
   let where = "It lives at {reference.object}. The garden now holds {natText(count)} planted."
   let another = spell(context.object, "a fern that remembers yesterday", "silver")
-  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply on its card. To plant another:\n\n{another}")
+  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply:\n\n    delvetalk {reference.object} rain\n    text: <1 to 280 characters>\n\nTo plant another:\n\n{another}")
 def unclearCard(context: Abi.Context, needs: Form.Names, colour: String, seed: String) -> Document.Document:
   let again = spell(context.object, if seed == "" then "<what might grow here, 1 to 80 characters>" else seed, if colour == "" then "<amber, violet or silver>" else colour)
   Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Text.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")
