@@ -144,7 +144,7 @@ def rains(n: Nat) -> Lists.List<O.Rain>:
     case 0: Lists.List::<O.Rain>.nil()
     case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: "a line of rain", at: 1n, n: previous}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
-  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: Relations.Relation.rows({items: rains}), rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", observers: Lists.List::<Card.Observer>.nil(), doors: Lists.List::<Card.Doorway>.nil()}
+  {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: Relations.Relation.rows({items: rains}), rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", doors: Lists.List::<Card.Doorway>.nil()}
 def many(n: Nat) -> String:
   Document.plain(O.render(sample(rains(n)), Card.stranger()))
 def weight(n: Nat) -> Nat:
@@ -198,7 +198,7 @@ class Library(unittest.TestCase):
 class Objects(unittest.TestCase):
     def test_methods_perform_the_plans_they_claim(self):
         expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
-                    ("Bell", "rained"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
+                    ("Bell", "rain"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
                     ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admitted"): "write",
                     ("Card", "notified"): "send", ("Door", "opened"): "write", ("Door", "knock"): "write",
                     ("Lantern", "lit"): "write", ("Door", "watch"): "subscribe", ("Loop", "tick"): "write", ("Loop", "again"): "send"}

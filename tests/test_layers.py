@@ -54,6 +54,11 @@ def greet(n: Nat) -> String:
 """
 
 
+def message(plan):
+    """A world call's fields (World.Message: object, method, argument)."""
+    return {f["name"]: f["value"] for f in plan["fields"]}
+
+
 class Layers(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -92,27 +97,27 @@ class Layers(unittest.TestCase):
         state = {"tag": "record", "fields": [{"name": k, "value": v} for k, v in [
             ("colour", variant("amber")), ("seed", label("a fern")), ("rains", {"tag": "variant", "label": "rows", "payload": {"tag": "record", "fields": [{"name": "items", "value": empty}]}}),
             ("rung", {"tag": "boolean", "value": False}), ("planting", label("")), ("planter", label("glm")),
-            ("planterHandle", label("")), ("observers", empty), ("doors", empty)]]}
+            ("planterHandle", label("")), ("doors", empty)]]}
         ctx = context("bell")
         self.assertTrue(self.run_(louder, "loud", [ctx])["value"].startswith("LOUDER\n"))
-        # Bell's rainedCard calls render; under the layer it renders Louder's card.
-        art = self.compile(louder, "rainedCard")
-        start = dict(BINDING, op="turn-start", artifact=art, arguments=[state, label("hello"), ctx])
+        # Bell's rain offers its card, which calls render; under the layer it renders Louder's card.
+        art = self.compile(louder, "rain")
+        start = dict(BINDING, op="turn-start", artifact=art, arguments=[state, {"tag": "record", "fields": [{"name": "text", "value": label("hello")}]}, ctx])
         wrote = self.h.send(start)
-        self.assertEqual((wrote["status"], wrote["plan"]["label"]), ("yielded", "write"), wrote)
+        self.assertEqual((wrote["status"], message(wrote["plan"])["method"]), ("yielded", label("write")), wrote)
         offered = self.h.send(dict(BINDING, op="turn-resume", artifact=art, checkpoint=wrote["checkpoint"],
                                    response=variant("written")))
-        self.assertEqual((offered["status"], offered["plan"]["label"]), ("yielded", "offer"), offered)
-        document = {f["name"]: f["value"] for f in offered["plan"]["payload"]["fields"]}["document"]
+        self.assertEqual((offered["status"], message(offered["plan"])["method"]), ("yielded", label("offer")), offered)
+        document = {f["name"]: f["value"] for f in message(offered["plan"])["argument"]["fields"]}["document"]
         text = self.h.send({"op": "render-document", "document": document})["text"]
         self.assertTrue(text.startswith("LOUDER\n"), text)
         self.assertIn("hello", text)
         # Bell alone renders without it.
-        bare = self.compile(bell, "rainedCard")
+        bare = self.compile(bell, "rain")
         wrote = self.h.send(dict(start, artifact=bare))
         offered = self.h.send(dict(BINDING, op="turn-resume", artifact=bare, checkpoint=wrote["checkpoint"],
                                    response=variant("written")))
-        document = {f["name"]: f["value"] for f in offered["plan"]["payload"]["fields"]}["document"]
+        document = {f["name"]: f["value"] for f in message(offered["plan"])["argument"]["fields"]}["document"]
         self.assertFalse(self.h.send({"op": "render-document", "document": document})["text"].startswith("LOUDER"))
 
     def test_the_method_table_lists_the_whole_stack_top_first(self):

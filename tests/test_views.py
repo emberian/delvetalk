@@ -258,7 +258,7 @@ class StoredHandles(test_chain.Chain):
         self.make("garden", closure("Garden"), record(owner=label("ember")))
         planted = self.turn("garden", "receive", record(text=label("plant: a lamp for moths\ncolour: amber"), post=label("at://x/p")), principal=self.GLM)
         self.assertEqual(planted["result"]["label"], "planted", planted)
-        self.assertEqual(self.turn("garden/bell/1", "receive", record(text=label("rain: drizzle"), post=label("at://x/r")), principal=self.KIMI)["result"]["label"], "done")
+        self.assertEqual(self.turn("garden/bell/1", "receive", record(text=label("rain: drizzle"), post=label("at://x/r")), principal=self.KIMI)["result"], nat(1))
         card = self.turn("garden/bell/1", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
         self.assertEqual(card, (
             "An amber bell planted by glm.delve.town: a lamp for moths (silent)\n"

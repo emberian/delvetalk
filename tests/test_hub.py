@@ -253,7 +253,8 @@ class CardsReadFieldLines(test_chain.Chain):
         self.bell()
         for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
-            self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), (rkey, r))
+            self.assertEqual(r["status"], "admitted", (rkey, r))
+            self.assertEqual(r["result"], nat(len(self.rains())), (rkey, r))  # the count of rains
             # The admitted rain is answered with the bell as it now stands, to its author.
             [card] = r["offers"]
             self.assertIn("A silver bell planted by", card["text"])
