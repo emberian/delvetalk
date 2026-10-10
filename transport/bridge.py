@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Observed town posts -> host turns -> reply drafts for a human to post.
 
-Never posts: post.py is the only writer. Principals here are the observed authors' DIDs,
+Never posts: post.py is the only writer (with `--source zulip`, the owner's own Zulip, transport/zulip.py posts drafts itself). Principals here are the observed authors' DIDs,
 which are UNVERIFIED (this path serves ember's manual posting).
 Run as `python3 -m transport.bridge`.
 """
@@ -280,7 +280,7 @@ def run(state, host, poll=None, rounds=DELIVER_ROUNDS, now=None, origin=None):
     outbox = state / 'outbox'
     outbox.mkdir(parents=True, exist_ok=True, mode=0o700)
     if poll:
-        poll(Observer(state, poll.client))
+        poll(getattr(poll, 'observer', Observer)(state, poll.client))
     tick(host, now)
     done, failed, skip = [], [], skipped(state)
     rows = all_observations(state)
@@ -386,6 +386,9 @@ def main(argv=None, out=None):
     r.add_argument('--poll', type=int, metavar='SECONDS', help='daemon: observe, turn, draft every SECONDS')
     r.add_argument('--observe', action='store_true', help='read-only: observe the town before bridging (implied by --poll)')
     r.add_argument('--mock', metavar='DIR')
+    r.add_argument('--source', choices=('delve', 'zulip'), default='delve', help='zulip: observe a stream of the owner\'s own Zulip and post drafts back automatically')
+    r.add_argument('--zuliprc', metavar='PATH', help='--source zulip: the bot\'s .zuliprc')
+    r.add_argument('--stream', default='delvetalk', help='--source zulip: the stream to observe')
     r.add_argument('--origin', default=ORIGIN, help='the front\'s origin, for the short links drafts cite')
     r.add_argument('--now', type=float, metavar='UNIX_SECONDS', help='the clock for an offline replay (default: the wall clock)')
     o = sub.add_parser('outbox')
@@ -413,14 +416,22 @@ def main(argv=None, out=None):
             ap.error('give exactly one of --once and --poll SECONDS')
         host = connect(a)
         try:
-            poll = None
-            if a.observe or a.poll or a.mock:
+            poll, after = None, lambda: {}
+            if a.source == 'zulip':
+                from transport import zulip
+                if not a.zuliprc:
+                    ap.error('--source zulip needs --zuliprc')
+                client = zulip.Client(a.zuliprc)
+                poll = lambda ob: ob.poll()
+                poll.client, poll.observer = client, lambda state, c: zulip.ZulipObserver(state, c, a.stream)
+                after = lambda: zulip.post_drafts(a.state, host, client, a.stream)
+            elif a.observe or a.poll or a.mock:
                 poll = lambda ob: ob.poll()
                 poll.client = Client(FixtureTransport(a.mock) if a.mock else http_transport)
             if a.once:
-                out.write(canonical(run(a.state, host, poll, now=a.now, origin=a.origin)) + '\n')
+                out.write(canonical({**run(a.state, host, poll, now=a.now, origin=a.origin), **after()}) + '\n')
             else:
-                daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical(run(a.state, host, poll, origin=a.origin)) + '\n') and out.flush())
+                daemon(a.state, 'bridge', a.poll, lambda: out.write(canonical({**run(a.state, host, poll, origin=a.origin), **after()}) + '\n') and out.flush())
         finally:
             host.close()
     return 0
