@@ -29,11 +29,6 @@ import ./World.obend as World
 record State:
   count: Nat
   rains: Lists.List<String>
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  rains: Plans.Entries<String, String>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({}), rains: Plans.Entries.keep({})}
 law cap: new.count <= 3
 def initial() -> State:
   {count: 0n, rains: Lists.List::<String>.nil({})}

@@ -26,8 +26,6 @@ record Arg:
   n: Nat
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<String>:
@@ -84,10 +82,6 @@ record State:
   count: Nat
   by: String
   from: String
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  by: Plans.Edit<String, {}>
-  from: Plans.Edit<String, {}>
 law registrar: request.kind == 0 implies request.subject == "registrar"
 def initial() -> State:
   {count: 0n, by: "", from: ""}
@@ -105,9 +99,6 @@ import ./World.obend as World
 record State:
   count: Nat
   members: Lists.List<String>
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  members: Plans.Entries<String, String>
 law members: request.kind == 0 implies (request.subject in new.members or request.subject == "ember")
 law rings: request.kind == 0 implies (request.method == "ring" or request.method == "admit")
 def initial() -> State:
@@ -286,10 +277,6 @@ record State:
   colour: String
   level: Nat
   by: String
-record Edits:
-  colour: Plans.Edit<String, {}>
-  level: Plans.Edit<Nat, Nat>
-  by: Plans.Edit<String, {}>
 law owner: request.kind == 0 implies request.subject == "owner"
 def initial() -> State:
   {colour: "", level: 0n, by: ""}
@@ -304,8 +291,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 record Fix:
   colour: String
 record Level:

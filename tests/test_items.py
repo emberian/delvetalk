@@ -27,10 +27,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   names: Lists.List<String>
-record Edits:
-  names: Plans.Entries<String, String>
-def keep() -> Edits:
-  {names: Plans.Entries.keep({})}
 def initial() -> State:
   {names: Lists.List::<String>.nil()}
 def write(context: Abi.Context, edit: Plans.Entries<String, String>) -> Activity<Nat>:

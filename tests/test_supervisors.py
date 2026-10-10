@@ -25,11 +25,6 @@ record State:
   how: String
   class: String
   who: String
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  how: Plans.Edit<String, {}>
-  class: Plans.Edit<String, {}>
-  who: Plans.Edit<String, {}>
 def initial() -> State:
   {count: 0n, how: "", class: "", who: ""}
 def classOf(outcome: Plans.Outcome) -> String:
@@ -47,8 +42,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
 def initial() -> State:
   {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Nat>:

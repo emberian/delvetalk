@@ -56,10 +56,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   crossings: Nat
-record Edits:
-  crossings: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {crossings: Plans.Edit.keep({})}
 sum Done:
   moved: {from: String, to: String}
   refused: {clause: String, reading: String}

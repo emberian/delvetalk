@@ -22,10 +22,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
 def add(context: Abi.Context, n: Nat) -> Activity<Nat>:
@@ -63,10 +59,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
-def keep() -> Edits:
-  {note: Plans.Edit.keep({})}
 def initial() -> State:
   {note: ""}
 def graft(state: State, input: {target: String, package: String}, context: Abi.Context) -> Activity<String>:

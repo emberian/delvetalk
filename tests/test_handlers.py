@@ -26,10 +26,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 law small: new.count <= 3
 def initial() -> State:
   {count: 0n}
@@ -50,10 +46,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
 sum Handled:
@@ -85,10 +77,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   note: Nat
-record Edits:
-  note: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {note: Plans.Edit.keep({})}
 def initial() -> State:
   {note: 0n}
 def go(state: State, input: {target: String, handler: String}, context: Abi.Context) -> Activity<Nat>:
@@ -126,10 +114,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Nat>:

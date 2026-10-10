@@ -16,10 +16,6 @@ import ./World.obend as World
 import ./List.obend as Lists
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
 def bump(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:

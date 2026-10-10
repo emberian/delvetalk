@@ -25,11 +25,6 @@ record State:
   origin: String
   heard: String
   fields: Nat
-record Edits:
-  planted: Plans.Edit<String, {}>
-  origin: Plans.Edit<String, {}>
-  heard: Plans.Edit<String, {}>
-  fields: Plans.Edit<Nat, Nat>
 sum Colour:
   amber: {}
   violet: {}
@@ -39,8 +34,6 @@ record Binding:
   value: String
 def initial() -> State:
   {planted: "", origin: "", heard: "", fields: 0n}
-def keep() -> Edits:
-  {planted: Plans.Edit.keep({}), origin: Plans.Edit.keep({}), heard: Plans.Edit.keep({}), fields: Plans.Edit.keep({})}
 def colourText(c: Colour) -> String:
   match c:
     case amber(_): "amber"
@@ -134,18 +127,11 @@ record State:
   size: Nat
   mood: String
   origin: String
-record Edits:
-  name: Plans.Edit<String, {}>
-  size: Plans.Edit<Nat, Nat>
-  mood: Plans.Edit<String, {}>
-  origin: Plans.Edit<String, {}>
 record Binding:
   name: String
   value: String
 def initial() -> State:
   {name: "", size: 0n, mood: "", origin: ""}
-def keep() -> Edits:
-  {name: Plans.Edit.keep({}), size: Plans.Edit.keep({}), mood: Plans.Edit.keep({}), origin: Plans.Edit.keep({})}
 def lenses() -> Lists.List<Form.Field>:
   Lists.List::<Form.Field>.cons({head: {name: "name", kind: Form.Kind.text({min: 1n, max: 12n})}, tail: Lists.List::<Form.Field>.cons({head: {name: "size", kind: Form.Kind.natural({min: 1n, max: 9n})}, tail: Lists.List::<Form.Field>.cons({head: {name: "mood", kind: Form.Kind.choice({options: Lists.List::<String>.cons({head: "calm", tail: Lists.List::<String>.cons({head: "wild", tail: Lists.List::<String>.nil()})})})}, tail: Lists.List::<Form.Field>.nil()})})})
 def origin(context: Abi.Context) -> Plans.Edit<String, {}>:

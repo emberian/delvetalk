@@ -66,10 +66,6 @@ sum Colour:
   violet: {}
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
 def pick(state: State, input: {colour: Colour}, context: Abi.Context) -> Activity<Nat>:

@@ -179,10 +179,6 @@ record State:
   count: Nat
   payload: Data
   copy: Data
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  payload: Plans.Edit<Data, Data>
-  copy: Plans.Edit<Data, Data>
 record Tagged:
   name: String
   n: Nat

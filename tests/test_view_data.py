@@ -21,10 +21,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
-def keep() -> Edits:
-  {note: Plans.Edit.keep({})}
 def initial() -> State:
   {note: ""}
 def field(state: State, input: {target: String, field: String}, context: Abi.Context) -> Activity<Data>:

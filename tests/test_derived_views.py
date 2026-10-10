@@ -68,10 +68,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   n: Nat
-record Edits:
-  n: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {n: Plans.Edit.keep({})}
 def initial() -> State:
   {n: 0n}
 def ask(state: State, context: Abi.Context) -> Activity<Data>:

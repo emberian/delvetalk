@@ -31,13 +31,8 @@ import ./World.obend as World
 record State:
   rung: Nat
   names: Lists.List<String>
-record Edits:
-  rung: Plans.Edit<Nat, Nat>
-  names: Plans.Entries<String, String>
 def initial() -> State:
   {rung: 0n, names: Lists.List::<String>.nil({})}
-def keep() -> Edits:
-  {rung: Plans.Edit.keep({}), names: Plans.Entries.keep({})}
 def ring(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {rung: add 1n}
   state.rung + 1n
@@ -53,9 +48,6 @@ import ./World.obend as World
 record State:
   seen: Nat
   last: Nat
-record Edits:
-  seen: Plans.Edit<Nat, Nat>
-  last: Plans.Edit<Nat, Nat>
 def initial() -> State:
   {seen: 0n, last: 0n}
 def watch(state: State, input: {target: String, field: String}, context: Abi.Context) -> Activity<String>:
@@ -79,8 +71,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   got: Nat
-record Edits:
-  got: Plans.Edit<Nat, Nat>
 def initial() -> State:
   {got: 0n}
 def later(state: State, input: {other: String, slot: String}, context: Abi.Context) -> Activity<Nat>:
@@ -208,10 +198,6 @@ record State:
   heard: Nat
   wrong: Nat
   plain: Nat
-record Edits:
-  heard: Plans.Edit<Nat, Nat>
-  wrong: Plans.Edit<Nat, Nat>
-  plain: Plans.Edit<Nat, Nat>
 def initial() -> State:
   {heard: 0n, wrong: 0n, plain: 0n}
 def watch(state: State, input: {target: String, field: String, method: String}, context: Abi.Context) -> Activity<String>:

@@ -23,10 +23,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 law small: new.count <= 100
 def initial() -> State:
   {count: 0n}
@@ -53,10 +49,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   open: Nat
-record Edits:
-  open: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {open: Plans.Edit.keep({})}
 def initial() -> State:
   {open: 0n}
 def open(state: State, context: Abi.Context) -> Activity<Nat>:
@@ -148,11 +140,6 @@ import ./World.obend as World
 record State:
   owner: String
   count: Nat
-record Edits:
-  owner: Plans.Edit<String, {}>
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {owner: Plans.Edit.keep({}), count: Plans.Edit.keep({})}
 law owner "only the owner may count": not (request.kind == 0) or request.subject == new.owner
 law small: new.count <= 100
 def initial() -> State:
