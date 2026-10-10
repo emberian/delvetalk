@@ -148,7 +148,7 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
     def test_an_existing_object_makes_the_create_fail_even_if_made_by_world_create(self):
         self.make("garden", closure("Garden"), garden_seed())
         self.make("garden/cistern", closure("Cistern"), record())
-        r = self.turn("garden", "cistern", record(), principal="glm")
+        r = self.turn("garden", "cistern", record(name=label("")), principal="glm")
         self.assertEqual(r["receipt"]["outcome"]["class"], "requiredAbsence")
 
 

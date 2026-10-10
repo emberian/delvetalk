@@ -13,7 +13,7 @@ import unittest
 from tests.test_chain import Chain
 from tests.test_objects import closure
 from tests.test_places import avatar_seed
-from tests.test_replay import get, items
+from tests.test_replay import get, rows
 from tests.test_turn_world import label, nat, record
 
 KIM = "did:plc:kimik3"
@@ -27,7 +27,7 @@ class Appointments(Chain):
         self.make(KIM, closure("Avatar"), avatar_seed("kimik3", "porch"))
 
     def inbox(self):
-        return [(get(n, "from")["value"], get(n, "text")["value"]) for n in items(get(self.state(KIM), "inbox"))]
+        return [(get(n, "from")["value"], get(n, "text")["value"]) for n in rows(get(self.state(KIM), "inbox"))]
 
     def book(self, topic="tea", after=5, who="glm"):
         r = self.turn("book", "receive", record(text=label("delvetalk book book\ntopic: %s\nto: %s\nafter: %d" % (topic, KIM, after)),

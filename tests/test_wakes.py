@@ -41,7 +41,7 @@ class Wakes(Chain):
         self.assertEqual(r["status"], "created", r)
 
     def env(self):
-        self.create("env/" + OWNER, "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()), by=OWNER)
+        self.create("env/" + OWNER, "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0)), by=OWNER)
         return "env/" + OWNER
 
     def wake(self):
@@ -53,7 +53,7 @@ class Wakes(Chain):
         self.make(did, closure("Avatar"), avatar_seed(Card_handle(did), "porch"))
 
     def inbox(self, did):
-        return [(get(n, "from")["value"], get(n, "text")["value"]) for n in items(get(self.state(did), "inbox"))]
+        return [(get(n, "from")["value"], get(n, "text")["value"]) for n in rows(get(self.state(did), "inbox"))]
 
     def label_of(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
@@ -98,7 +98,7 @@ class Wakes(Chain):
         self.assertEqual(get(self.state(env), "seen"), nat(at))
         self.assertIn("    delvetalk env/did:plc:inkling seen\n", self.turn(env, "receive", heard(""), principal=OTHER)["offers"][0]["text"])
         # An env made at any other id takes nothing in.
-        self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()), by=OWNER)
+        self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0)), by=OWNER)
         r = self.turn("env/elsewhere", "publish", record(event=event()), principal=OWNER)
         self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("An env lives at env/did:plc:inkling"))
         self.assertEqual(self.version("env/elsewhere"), 0)
@@ -113,7 +113,7 @@ class Wakes(Chain):
     def test_the_opener_creates_an_env_for_its_owner_who_alone_may_amend_it(self):
         """Rehearsal finding 10: genesis seeds each principal's Env as the world's opener."""
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="ember")["status"], "opened")
-        seed = record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil())
+        seed = record(owner=label(OWNER), buffer=relation(), seen=nat(0))
         create = lambda by, ident: self.host.send(op="world-create", principal=by, identity=ident, object="env/" + OWNER,
                                                   modules=closure("Env"), entry="initial", seed=seed, owner=OWNER)
         stranger = create("mallory", "mk-m")
@@ -157,7 +157,7 @@ class Wakes(Chain):
 
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()))
+                           entry="initial", seed=record(owner=label(OWNER), buffer=relation(), seen=nat(0)))
         self.assertEqual(r["status"], "error", r)
         self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
@@ -165,15 +165,14 @@ class Wakes(Chain):
         env = self.env()
         keep = lambda: variant("keep")
         r = self.host.send(op="world-propose", principal=OTHER, identity="forged", roots=[{"object": env, "version": 0}],
-                           writes=[{"object": env, "edits": [record(buffer=keep(), seen=variant("set", value=nat(9)), subscribers=keep())]}])
+                           writes=[{"object": env, "edits": [record(buffer=keep(), seen=variant("set", value=nat(9)))]}])
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")),
                          ("refused", "lawRefused", "owner"), r)
 
     def test_env_publishes_to_wake_and_a_mention_notes_the_owners_avatar(self):
         env, wake = self.env(), self.wake()
         self.avatar(OWNER)
-        self.assertEqual(self.label_of(self.turn(env, "subscribe", record(object=reference(wake), method=label("sense")), principal=OTHER)), "refused")
-        self.assertEqual(self.label_of(self.turn(env, "subscribe", record(object=reference(wake), method=label("sense")), principal=OWNER)), "done")
+        # A trigger on an event subscribes the wake to its env's buffer.
         watch = self.turn(wake, "watch", record(event=variant("mention", actor=label("did:plc:mimo")), action=variant("notify")), principal=OWNER)
         self.assertEqual((self.label_of(watch), get(watch["result"]["payload"], "id")), ("watching", nat(1)))
         self.turn(env, "publish", record(event=event(actor="did:plc:mimo", text="are you awake?")), principal=OWNER)
@@ -194,7 +193,7 @@ class Wakes(Chain):
         self.assertEqual(ids, [nat(1), nat(3)])
         self.assertEqual(self.label_of(self.turn(wake, "unwatch", record(id=nat(2)), principal=OWNER)), "refused")
         # From a post: the owner's spell adds a trigger; a stranger's is refused.
-        self.assertEqual(self.label_of(self.turn(wake, "receive", heard("delvetalk %s keyword\nterm: lantern" % wake), principal=OWNER)), "done")
+        self.assertEqual(self.label_of(self.turn(wake, "receive", heard("delvetalk %s keyword\nterm: lantern" % wake), principal=OWNER)), "watching")
         stranger = self.turn(wake, "receive", heard("delvetalk %s keyword\nterm: x" % wake), principal=OTHER)
         self.assertEqual(self.label_of(stranger), "refused")
         card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
@@ -249,8 +248,8 @@ class Wakes(Chain):
         self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=relation()))
 
     def test_when_garden_planted_passes_10_the_wake_ticks_the_tide(self):
-        """A Wake watches another object's writes: the garden tells its observers its count
-        after each planting, and the trigger fires once, as the count passes 10."""
+        """A Wake watches another object's writes: it subscribes to the garden's count, and the
+        trigger fires once, as the count passes 10."""
         from tests.test_chain import garden_state
         self.tide()
         self.create("garden", "Garden", garden_state(planted=9))
@@ -260,8 +259,6 @@ class Wakes(Chain):
         r = self.turn(wake, "watch", record(event=writes, action=call), principal=OWNER)
         self.assertEqual(self.label_of(r), "watching")
         self.deliver_all()
-        observers = items(get(self.state("garden"), "observers"))
-        self.assertEqual([get(get(o, "object"), "object")["value"] for o in observers], [wake])
         ticks = lambda: int(get(self.state("tide"), "ticks")["value"])
         for i in range(3):
             planted = self.turn("garden", "plant", record(colour=label("amber"), seed=label("bell %d" % i)), principal=OTHER)
@@ -270,12 +267,9 @@ class Wakes(Chain):
             # 10 does not pass 10; 11 does, once; 12 does not fire again.
             self.assertEqual(ticks(), [0, 1, 1][i], i)
 
-    # The bell no longer keeps observers (it is subscribed to); expected to fail until the Wake
-    # subscribes to `rains` with a typed receiver (the next commit of lane/objects8).
-    @unittest.expectedFailure
     def test_a_rows_rule_on_a_bells_rains_ticks_the_tide_when_its_author_rains(self):
         """A Wake as a rule: When a row inserted into bell's rains has author OTHER, Wish a tick.
-        The bell tells its observers of rows each rain (Card.notifyRows)."""
+        The wake subscribes to the bell's rains; the host delivers each rain to its typed receiver."""
         from tests.test_replay import bell_seed
         self.tide()
         self.make("bell", closure("Bell"), bell_seed())
@@ -285,8 +279,6 @@ class Wakes(Chain):
         call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
         self.assertEqual(self.label_of(self.turn(wake, "watch", record(event=rule, action=call), principal=OWNER)), "watching")
         self.deliver_all()
-        observers = items(get(self.state("bell"), "observers"))
-        self.assertEqual([(get(get(o, "object"), "object")["value"], get(o, "method")["value"]) for o in observers], [(wake, "rows")])
         ticks = lambda: int(get(self.state("tide"), "ticks")["value"])
         for who, expected in ((OWNER, 0), (OTHER, 1)):
             r = self.turn("bell", "rain", record(text=label("a drizzle")), principal=who)
@@ -399,6 +391,7 @@ import ./Tide.obend as Tide
 import ./Wake.obend as Wake
 import ./Relation.obend as Relations
 import ./Card.obend as Card
+import ./Rows.obend as Rows
 def request(principal: String, clock: Nat) -> Abi.Request:
   {context: {world: "", object: "tide", principal: principal, handle: "", caller: "", intent: "t", height: 0n, clock: clock, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
 def verdict(v: Abi.Verdict) -> String:
@@ -419,8 +412,8 @@ def one(a: Tide.Sub) -> Lists.List<Tide.Sub>:
   Lists.List.cons({head: a, tail: Lists.List.nil({})})
 def cell(text: String) -> Relations.Cell:
   Relations.text(text)
-def row(author: String, n: Nat, text: String) -> Card.Row:
-  Card.Row.cons({head: Card.column("author", cell(author)), tail: Card.Row.cons({head: Card.column("n", Relations.nat(n)), tail: Card.Row.cons({head: Card.column("text", cell(text)), tail: Card.Row.nil({})})})})
+def row(author: String, n: Nat, text: String) -> Rows.Columns:
+  Rows.one(Rows.text("author", author), Rows.one(Rows.nat("n", n), Rows.one(Rows.text("text", text), Rows.none())))
 def by(author: String) -> Wake.Where:
   Wake.Where.equals({column: "author", equals: cell(author)})
 def only(w: Wake.Where) -> Lists.List<Wake.Where>:
@@ -430,9 +423,9 @@ def rule(field: String, where: Lists.List<Wake.Where>) -> Wake.On:
 # Rows (kimik3 0 "a Moth drizzle", glm 1 "dry", kimik3 2 "moths") on bell.rains: how many
 # match each rule.
 def rowsMatched(which: Nat) -> Nat:
-  let rows = Card.Rows.cons({head: row("kimik3", 0n, "a Moth drizzle"), tail: Card.Rows.cons({head: row("glm", 1n, "dry"), tail: Card.Rows.cons({head: row("kimik3", 2n, "moths"), tail: Card.Rows.nil({})})})})
+  let rows = Lists.List::<Rows.Columns>.cons({head: row("kimik3", 0n, "a Moth drizzle"), tail: Lists.List::<Rows.Columns>.cons({head: row("glm", 1n, "dry"), tail: Lists.List::<Rows.Columns>.cons({head: row("kimik3", 2n, "moths"), tail: Lists.List::<Rows.Columns>.nil()})})})
   if which == 0n then Wake.matched(rule("rains", only(by("kimik3"))), "bell", "rains", rows) else if which == 1n then Wake.matched(rule("rains", only(by("zero"))), "bell", "rains", rows) else if which == 2n then Wake.matched(rule("doors", only(by("kimik3"))), "bell", "rains", rows) else if which == 3n then Wake.matched(rule("rains", only(by("kimik3"))), "garden", "rains", rows) else moreMatched(which, rows)
-def moreMatched(which: Nat, rows: Card.Rows) -> Nat:
+def moreMatched(which: Nat, rows: Lists.List<Rows.Columns>) -> Nat:
   if which == 4n then Wake.matched(rule("rains", only(Wake.Where.above({column: "n", above: 0n}))), "bell", "rains", rows) else if which == 5n then Wake.matched(rule("rains", only(Wake.Where.below({column: "n", below: 2n}))), "bell", "rains", rows) else if which == 6n then Wake.matched(rule("rains", only(Wake.Where.contains({column: "text", contains: "moth"}))), "bell", "rains", rows) else Wake.matched(rule("rains", Lists.List.cons({head: by("kimik3"), tail: only(Wake.Where.above({column: "n", above: 0n}))})), "bell", "rains", rows)
 # Each case: old subs, new subs, requester glm. "own" adds glm beside an unchanged kimik3;
 # "theirs" changes kimik3's row; "drop" retracts kimik3's; "mine" replaces and drops glm's own.

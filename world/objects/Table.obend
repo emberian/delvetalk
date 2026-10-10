@@ -66,14 +66,11 @@ def advanced(result: Game.Result, state: State) -> Activity<Done>:
 def advancedSouth(result: Game.Result, state: State) -> Activity<Done>:
   match world.call::<Seats.Done>({object: state.south, method: "next", argument: Plans.nothing()}):
     case _: Done.resolved({round: state.round + 1n, status: result.status, winner: result.winner})
-# Actions without a form: anyone resolves a round; genesis publishes the page.
+# An action without a form: anyone resolves a round.
 def methods() -> Lists.List<String>:
-  Card.wordList("resolve publishPage")
+  Card.wordList("resolve")
 def forms() -> Card.Forms:
   Card.Forms.nil()
-# The card as a public page under the door word (genesis posts one card per door).
-def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
-  Card.publishPage(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def blurb() -> Card.Door:
   {word: "play", blurb: "The original two-player, 11x11 Automatafl: seal, open, resolve."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

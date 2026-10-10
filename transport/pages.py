@@ -50,7 +50,7 @@ def obj(name, who, view, card, entries, did=None, doors=(), seen=None, acts=()):
                                 lines=len((seen.get('source') or '').splitlines())) if seen else ''
     forms = ''.join(form(name, a) for a in acts if a['name'] != 'receive')
     return page(name, who, T['object'].format(id=e(name), version=e(str(view.get('version'))), yours=yours(name, did), shown=shown, play=play,
-                                              doors=door_nav(doors), actions=T['actions'].format(forms=forms) if forms else '', source=source,
+                                              doors=door_nav(doors), actions=T['actions'].format(forms=forms, href=e(quote(name, safe='/:')), id=e(name)) if forms else '', source=source,
                                               ledger=T['ledger'].format(slips=''.join(slip(x, did) for x in entries)) if entries else ''))
 
 
@@ -65,7 +65,8 @@ def form(name, act):
         return T['f_typed'].format(method=e(act['name']), id=e(name))
     inputs = ''.join(T['f_' + f['kind']].format(name=e(f['name']), min=e(str(f['bounds'].get('min', ''))), max=e(str(f['bounds'].get('max', ''))),
                                                 options=''.join(f'<option>{e(o)}</option>' for o in f['bounds'].get('options', []))) for f in act['fields'])
-    return T['action'].format(href=e(quote(name, safe='/:')), method=e(act['name']), inputs=inputs)
+    return T['action'].format(href=e(quote(name, safe='/:')), method=e(act['name']), inputs=inputs,
+                              spell=T['spell'].format(spell=e(act['spell'])) if act.get('spell') else '')
 
 
 def dl(v):

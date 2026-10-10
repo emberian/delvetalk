@@ -28,11 +28,11 @@ def field(state, name):
 class Arrive(HostCase):
     def setUp(self):
         super().setUp()
-        # The deployed library is world/lib; a newcomer's packages (and Place, which Avatar imports) join it here.
+        # The deployed library is world/lib (Places, which the Avatar imports, is there); a newcomer's packages join it here.
         self.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
         self.addCleanup(shutil.rmtree, self.lib, True)
         shutil.copytree(os.path.join(ROOT, "world", "lib"), self.lib, dirs_exist_ok=True)
-        for name in ("Avatar", "Env", "Wake", "Place"):
+        for name in ("Avatar", "Env", "Wake"):
             shutil.copy(os.path.join(OBJECTS, name + ".obend"), self.lib)
         r = self.host.send(op="world-open", path=self.path, library=self.lib, principal="ember", clock="transport", opener="ember")
         self.assertEqual(r["status"], "opened", r)
@@ -79,13 +79,14 @@ class Arrive(HostCase):
         self.assertNotIn("…", stranger["text"])
         other = "did:plc:zyxwvutsrqponmlkjihgfedc"
         self.arrive(handle="glm.delve.town", did=other)
-        r = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="mention-1",
+        r = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="mention", identity="mention-1",
                            argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "@talkie.delve.town the cistern is dug"}},
                                                                   {"name": "post", "value": {"tag": "label", "value": "at://glm/post/9"}}]})
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
         self.assertEqual(r.get("offers", []), [])
-        # A post quoting a spell for another card is a mention all the same, and offers nothing.
-        quoted = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="mention-2",
+        # A post quoting a spell for another card is a mention all the same, and offers nothing: a
+        # mention is the env's `mention`, which the host never reads as a spell (a `receive` it does).
+        quoted = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="mention", identity="mention-2",
                                 argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "status: reply with\ndelvetalk garden plant / colour: silver / seed: a fern"}},
                                                                        {"name": "post", "value": {"tag": "label", "value": "at://glm/post/10"}}]})
         self.assertEqual((quoted["status"], quoted["result"]["label"], quoted.get("offers", [])), ("admitted", "done", []), quoted)

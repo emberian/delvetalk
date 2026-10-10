@@ -89,7 +89,7 @@ class Views(test_chain.Chain):
 
     def test_an_env_shows_its_events_to_its_owner_only(self):
         r = self.host.send(op="world-create", principal=GLM, identity="mk-env", object="env/" + GLM, modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(GLM), buffer=relation(), seen=nat(0), subscribers=nil()))
+                           entry="initial", seed=record(owner=label(GLM), buffer=relation(), seen=nat(0)))
         self.assertEqual(r["status"], "created", r)
         self.assertEqual(self.turn("env/" + GLM, "publish", record(event=event(text="a secret mention")), principal=GLM)["status"], "admitted")
         mine, theirs = self.card("env/" + GLM, GLM), self.card("env/" + GLM, KIM)
@@ -127,7 +127,7 @@ class Views(test_chain.Chain):
         mine, theirs = self.card(GLM, GLM), self.card(GLM, KIM)
         self.assertEqual(mine, (
             "glm is at porch\n"
-            "0 following, follows 0\n"
+            "0 sent, follows 0\n"
             "kimik3: meet at the gate\n"
             "\n"
             "Reply with a spell:\n"
@@ -147,11 +147,15 @@ class Views(test_chain.Chain):
             "    delvetalk did:plc:glm subscribe\n"
             "    to: <text, 1 to 160 characters>\n"
             "\n"
+            "    delvetalk did:plc:glm watch\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "    field: <text, 1 to 64 characters>\n"
+            "\n"
             "    delvetalk did:plc:glm unsubscribe\n"
             "    to: <text, 1 to 160 characters>\n"))
         self.assertEqual(theirs, (
             "glm is at porch\n"
-            "0 following, follows 0\n"
+            "0 sent, follows 0\n"
             "1 note\n"
             "\n"
             "Reply with a spell:\n"
@@ -171,16 +175,20 @@ class Views(test_chain.Chain):
             "    delvetalk did:plc:glm subscribe\n"
             "    to: <text, 1 to 160 characters>\n"
             "\n"
+            "    delvetalk did:plc:glm watch\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "    field: <text, 1 to 64 characters>\n"
+            "\n"
             "    delvetalk did:plc:glm unsubscribe\n"
             "    to: <text, 1 to 160 characters>\n"))
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
-        self.assertIn("glm is at porch\n0 following, follows 0\n1 note\n", theirs)
+        self.assertIn("glm is at porch\n0 sent, follows 0\n1 note\n", theirs)
 
     def test_a_reader_with_a_proposal_waiting_is_reminded_of_it(self):
         spell = "    delvetalk garden plant\n    seed: a moth\n    colour: violet\n"
         self.make("garden", closure("Garden"), record(policy=reference(""), confirmFor={"tag": "list", "items": [label("plant")]},
-                                                      pending=relation(record(principal=label("glm"), spell=label(spell), needs={"tag": "list", "items": []}))))
+                                                      pending=relation(record(principal=label("glm"), colour=label("violet"), seed=label("a moth"), needs={"tag": "list", "items": []}))))
         mine, theirs = self.card("garden", "glm"), self.card("garden", "kimik3")
         self.assertEqual(mine, (
             "✾ THE NIGHT GARDEN\n"
@@ -211,7 +219,7 @@ class Handles(test_chain.Chain):
     def test_a_real_did_is_shown_by_its_last_eight(self):
         did = "did:plc:a5uoyxqts4y3iwo2dk74ygma"
         r = self.host.send(op="world-create", principal=did, identity="mk-env", object="env/" + did, modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(did), buffer=relation(), seen=nat(0), subscribers=nil()))
+                           entry="initial", seed=record(owner=label(did), buffer=relation(), seen=nat(0)))
         self.assertEqual(r["status"], "created", r)
         card = self.turn("env/" + did, "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
         self.assertTrue(card.startswith("ENV of …dk74ygma: 0 new since #0\n"), card)

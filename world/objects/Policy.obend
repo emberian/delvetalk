@@ -5,6 +5,7 @@ import ./Document.obend as Document
 import ./Plan.obend as Plans
 import ./Spell.obend as Spell
 import ./Form.obend as Form
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Policies.obend as Policies
 type Term = Policies.Term
@@ -31,8 +32,6 @@ record Edits:
   examples: Plans.Entries<Example, {}>
   macros: Plans.Entries<Macro, Macro>
   confirmFor: Plans.Entries<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
 def defaultSeed() -> Seed:
   {owner: "", model: "", system: "You turn what a participant says into one spell for the card they are answering. You never act; you only propose.", escalate: "", escalateTo: "", confirmFor: asking()}
 # What waits for a yes by default: changing an object's program or law, and giving
@@ -58,7 +57,6 @@ sum Why:
   examplesFull: {}
   lexiconFull: {}
   macrosFull: {}
-  macroIncomplete: {}
   macroHole: {}
   macroTooLong: {}
 def why(w: Why) -> String:
@@ -67,7 +65,6 @@ def why(w: Why) -> String:
     case examplesFull(_): "The policy holds sixteen examples, the most a model call carries."
     case lexiconFull(_): "The lexicon holds sixteen words."
     case macrosFull(_): "The policy holds sixteen macros."
-    case macroIncomplete(_): "A macro needs a name, a pattern and an expansion."
     case macroHole(_): "A macro's pattern starts with a word, not a hole."
     case macroTooLong(_): "A macro's name takes 64 characters, its pattern 280 and its expansion 560."
 def clause(w: Why) -> String:
@@ -76,100 +73,82 @@ def clause(w: Why) -> String:
     case examplesFull(_): "examplesFull"
     case lexiconFull(_): "lexiconFull"
     case macrosFull(_): "macrosFull"
-    case macroIncomplete(_): "macroIncomplete"
     case macroHole(_): "macroHole"
     case macroTooLong(_): "macroTooLong"
-def refusal(w: Why) -> Card.Refusal:
-  {clause: clause(w), reading: why(w)}
+# A refusal offers its one line and writes nothing.
+def refused(w: Why) -> Activity<Taught>:
+  Card.tell(Taught.refused({clause: clause(w), reading: why(w)}), Document.text("refused {clause(w)}: {why(w)}\n"))
 # At most this many examples go into every model call.
 def exampleCap() -> Nat:
   16n
-def edited<T>(state: State, edits: Edits, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
-  if context.principal != state.owner then then(Taught.refused(refusal(Why.notOwner({owner: Card.name(state.owner, context)})))) else written(state, edits, context, then)
-def written<T>(state: State, edits: Edits, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: edits}))
-  then(Taught.taught({count: Lists.length(state.examples)}))
-def same(taught: Taught) -> Taught:
-  taught
-def taught<T>(state: State, example: Example, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
-  if Lists.length(state.examples) < exampleCap() then edited(state, extend(keep(), {examples: Plans.Entries.append({item: example})}), context, then) else then(Taught.refused(refusal(Why.examplesFull({}))))
-def defined<T>(state: State, term: Term, context: Abi.Context, then: Taught -> T) -> Activity<Plan, Response, T>:
-  if Lists.length(state.lexicon) < exampleCap() then edited(state, extend(keep(), {lexicon: Plans.Entries.append({item: term})}), context, then) else then(Taught.refused(refusal(Why.lexiconFull({}))))
+# The helpers take the State after their own inputs: a definition whose first parameter is
+# the State is a method any turn may run. Every write is the owner's (refused by name first).
+def edited(edits: Edits, context: Abi.Context, state: State) -> Activity<Taught>:
+  if context.principal != state.owner then refused(Why.notOwner({owner: Card.name(state.owner, context)})) else written(edits, state)
+def written(edits: Edits, state: State) -> Activity<Taught>:
+  let written(_) = world.write(edits)
+  Taught.taught({count: Lists.length(state.examples)})
 # Teach it a phrase and the spell that phrase means.
-def teach(state: State, input: {example: Example}, context: Abi.Context) -> Activity<Plan, Response, Taught>:
-  taught(state, input.example, context, same)
+def teach(state: State, input: {utterance: String, spell: String}, context: Abi.Context) -> Activity<Taught>:
+  if Lists.length(state.examples) < exampleCap() then edited(extend(keep(), {examples: Plans.Entries.append({item: {utterance: input.utterance, spell: input.spell}})}), context, state) else refused(Why.examplesFull({}))
 # Define a word of the lexicon.
-def define(state: State, input: {term: Term}, context: Abi.Context) -> Activity<Plan, Response, Taught>:
-  defined(state, input.term, context, same)
-# The model, the stronger one a second attempt names ("" for the same), the principal a
-# card tells what it could not fit after two attempts (`escalate-to`, a DID, "" for nobody) and the
-# system instruction are set through lenses: `delvetalk <policy> set` and `model: ...`.
-def lenses() -> Lists.List<Form.Lens<Edits>>:
-  Lists.List.cons({head: Form.Lens.lens({field: "model", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {model: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "escalate", form: Form.Kind.text({min: 0n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {escalate: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "escalate-to", form: Form.Kind.text({min: 0n, max: 160n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {escalateTo: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "system", form: Form.Kind.text({min: 1n, max: 1000n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {system: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})})})
-# Who may set a lens: the owner; anyone else is refused by name before the law is asked.
-def guard(state: State, context: Abi.Context) -> String:
-  if context.principal == state.owner then "" else "Only the policy's owner may teach it; that is {Card.name(state.owner, context)}"
+def define(state: State, input: {word: String, meaning: String}, context: Abi.Context) -> Activity<Taught>:
+  if Lists.length(state.lexicon) < exampleCap() then edited(extend(keep(), {lexicon: Plans.Entries.append({item: {word: input.word, meaning: input.meaning}})}), context, state) else refused(Why.lexiconFull({}))
+# `delvetalk policy confirm / action: plant / ask: yes` makes an interpreted plant wait for
+# the speaker's yes; `ask: no` lets it run at once.
+sum Ask:
+  yes: {}
+  no: {}
+def confirm(state: State, input: {action: String, ask: Ask}, context: Abi.Context) -> Activity<Taught>:
+  edited(extend(keep(), {confirmFor: asked(input.action, asks(input.ask), state)}), context, state)
+def asks(ask: Ask) -> Bool:
+  match ask:
+    case yes(_): true
+    case no(_): false
+def asked(action: String, ask: Bool, state: State) -> Plans.Entries<String, {}>:
+  if ask == Lists.any(state.confirmFor, fn(a: String) -> Bool: a == action) then Plans.Entries.keep({}) else if ask then Plans.Entries.append({item: action}) else Plans.Entries.removeItem({item: action})
+# Teach a macro: its name, a pattern of words and `{holes}`, and the spell it expands to, one
+# field line (`expansion: garden plant / colour: violet / seed: a bell for {who}`: a field line
+# keeps its slashes). A macro of the same name is replaced; the pattern must start with a
+# literal word (a pattern of holes alone would take all prose).
+def macro(state: State, input: {name: String, pattern: String, expansion: String}, context: Abi.Context) -> Activity<Taught>:
+  if textTake(Spell.trimStart(input.pattern), 1n) == "{{" then refused(Why.macroHole({})) else if textLength(input.expansion) > 560n || textLength(input.pattern) > 280n || textLength(input.name) > 64n then refused(Why.macroTooLong({})) else macroPlaced(input, Lists.find(state.macros, fn(m: Macro) -> Bool: m.name == input.name), context, state)
+def macroPlaced(macro: Macro, found: Lists.Maybe<Macro>, context: Abi.Context, state: State) -> Activity<Taught>:
+  match found:
+    case some(f): edited(extend(keep(), {macros: Plans.Entries.amendItem({item: f.value, change: macro})}), context, state)
+    case none(_): if Lists.length(state.macros) < exampleCap() then edited(extend(keep(), {macros: Plans.Entries.append({item: macro})}), context, state) else refused(Why.macrosFull({}))
 form teach:
   utterance: text 1..280
   spell: text 1..280
 form define:
   word: text 1..64
   meaning: text 1..280
+form macro:
+  name: text 1..64
+  pattern: text 1..280
+  expansion: text 1..560
 form confirm:
   action: text 1..64
   ask: yes | no
 def forms() -> Card.Forms:
   Card.Forms.cons({head: teachForm(), tail: Card.Forms.cons({head: defineForm(), tail: Card.Forms.cons({head: macroForm(), tail: Card.Forms.cons({head: confirmForm(), tail: Card.Forms.nil()})})})})
-# `delvetalk policy confirm / action: plant / ask: yes` makes an interpreted plant wait for
-# the speaker's yes; `ask: no` lets it run at once. The owner's, as all teaching.
-def confirming(state: State, action: String, ask: Bool, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  edited(state, extend(keep(), {confirmFor: asked(state, action, ask)}), context, fn(t: Taught) -> Card.Replied: confirmReply(t))
-def asked(state: State, action: String, ask: Bool) -> Plans.Entries<String, {}>:
-  if ask == Lists.any(state.confirmFor, fn(a: String) -> Bool: a == action) then Plans.Entries.keep({}) else if ask then Plans.Entries.append({item: action}) else Plans.Entries.removeItem({item: action})
-def confirmReply(taught: Taught) -> Card.Replied:
-  match taught:
-    case taught(_): Card.Replied.done({action: "confirm"})
-    case refused(r): Card.Replied.refused(r)
-# The macro form, for the usage card: the spell's fields after these three (` / colour:
-# violet / seed: a bell for {who}`) belong to the expansion, so receive reads it before route.
-form macro as macroForm:
-  name: text 1..64
-  pattern: text 1..280
-  expansion: text 1..280
+# The model, the stronger one a second attempt names ("" for the same), the principal a card
+# tells what it could not fit after two attempts (`escalate-to`, a DID, "" for nobody) and the
+# system instruction are set through lenses: `delvetalk <policy> set` and `model: ...`.
+def lenses() -> Lists.List<Form.Field>:
+  Lists.List.cons({head: {name: "model", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.cons({head: {name: "escalate", kind: Form.Kind.text({min: 0n, max: 64n})}, tail: Lists.List.cons({head: {name: "escalate-to", kind: Form.Kind.text({min: 0n, max: 160n})}, tail: Lists.List.cons({head: {name: "system", kind: Form.Kind.text({min: 1n, max: 1000n})}, tail: Lists.List.nil()})})})})
+def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Card.Replied>:
+  if context.principal != state.owner then Card.answerRefused({clause: "notOwner", reading: why(Why.notOwner({owner: Card.name(state.owner, context)}))}, context, forms(), render(state, context), fn(r: Card.Replied) -> Card.Replied: r) else setting(input.field, Card.valueText(input.value))
+# The host judged the value against the lens's kind; an unlensed field never reaches here.
+def lensEdits(field: String, value: String) -> Edits:
+  if field == "model" then extend(keep(), {model: Plans.Edit.set({value: value})}) else if field == "escalate" then extend(keep(), {escalate: Plans.Edit.set({value: value})}) else if field == "escalate-to" then extend(keep(), {escalateTo: Plans.Edit.set({value: value})}) else extend(keep(), {system: Plans.Edit.set({value: value})})
+def setting(field: String, value: String) -> Activity<Card.Replied>:
+  let written(_) = world.write(lensEdits(field, value))
+  Card.tell(Card.Replied.done({action: "set"}), Document.text("Set {field} to {value}.\n"))
 def blurb() -> Card.Door:
   {word: "policy", blurb: "How a card understands prose: its examples and words."}
-def taughtReply(taught: Taught) -> Card.Replied:
-  match taught:
-    case taught(_): Card.Replied.done({action: "teach"})
-    case refused(r): Card.Replied.refused(r)
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match Spell.parse(input.text):
-    case spell(s): if s.action == "macro" && Card.names(s.card, context) then macroTaught(state, s.fields, context) else heard(state, Card.routeHeard(input, context, forms()), context)
-    case notASpell(_): heard(state, Card.routeHeard(input, context, forms()), context)
-# Teach a macro: `delvetalk policy macro / name: moth-bell / pattern: moth for {who} /
-# expansion: garden plant / colour: violet / seed: a bell for {who}`. Every field after the
-# expansion line joins it as ` / field: value`. A macro of the same name is replaced; the
-# pattern must start with a literal word (a pattern of holes alone would take all prose).
-def macroTaught(state: State, fields: Spell.Bindings, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  if Spell.valueOf(fields, "expansion") == "" then macroRefused(state, Why.macroIncomplete({}), context) else macroWith(state, {name: Spell.valueOf(fields, "name"), pattern: Spell.valueOf(fields, "pattern"), expansion: expansionOf(fields)}, context)
-def expansionOf(fields: Spell.Bindings) -> String:
-  textJoin(Lists.List.cons({head: Spell.valueOf(fields, "expansion"), tail: Lists.map(Lists.filter(fields, fn(b: Spell.Binding) -> Bool: b.name != "name" && b.name != "pattern" && b.name != "expansion"), fn(b: Spell.Binding) -> String: "{b.name}: {b.value}")}), " / ")
-def macroWith(state: State, macro: Macro, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  if macro.name == "" || macro.pattern == "" then macroRefused(state, Why.macroIncomplete({}), context) else if textTake(Spell.trimStart(macro.pattern), 1n) == "{{" then macroRefused(state, Why.macroHole({}), context) else if textLength(macro.expansion) > 560n || textLength(macro.pattern) > 280n || textLength(macro.name) > 64n then macroRefused(state, Why.macroTooLong({}), context) else macroPlaced(state, macro, Lists.find(state.macros, fn(m: Macro) -> Bool: m.name == macro.name), context)
-def macroPlaced(state: State, macro: Macro, found: Lists.Maybe<Macro>, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match found:
-    case some(f): edited(state, extend(keep(), {macros: Plans.Entries.amendItem({item: f.value, change: macro})}), context, macroReply)
-    case none(_): if Lists.length(state.macros) < exampleCap() then edited(state, extend(keep(), {macros: Plans.Entries.append({item: macro})}), context, macroReply) else macroRefused(state, Why.macrosFull({}), context)
-def macroReply(taught: Taught) -> Card.Replied:
-  match taught:
-    case taught(_): Card.Replied.done({action: "macro"})
-    case refused(r): Card.Replied.refused(r)
-def macroRefused(state: State, w: Why, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  Card.answerPlan(Card.Routed.refused(refusal(w)), context, forms(), render(state, context))
-def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  match routed:
-    case act(a): if a.action == "confirm" then confirming(state, Card.text(a.fields, "action"), Card.text(a.fields, "ask") == "yes", context) else if a.action == "teach" then taught(state, {utterance: Card.text(a.fields, "utterance"), spell: Card.text(a.fields, "spell")}, context, taughtReply) else defined(state, {word: Card.text(a.fields, "word"), meaning: Card.text(a.fields, "meaning")}, context, taughtReply)
-    case _: Card.answerLensed(routed, context, forms(), lenses(), guard(state, context), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 def kindText(kind: Form.Kind) -> String:
   match kind:
     case text(t): "text of {natText(t.min)} to {natText(t.max)} characters"
@@ -196,18 +175,18 @@ def prompt(state: State, offers: Lists.List<Form.Form>, utterance: String) -> St
   Document.joinAll(Lists.concat(Lists.concat(Lists.concat(Lists.concat(Lists.concat(part("{state.system}\n\nLexicon:\n"), Lists.map(state.lexicon, termLine)), part("\nExamples:\n")), Lists.map(state.examples, exampleLine)), part("Offered forms (a spell is the delvetalk line, then one field: value line per field):\n\n")), Lists.concat(many(offers), part("\nAnswer with one spell in exactly that grammar, or with unclear: <what is missing>, and nothing else.\n\nParticipant: {utterance}"))))
 def exampleCard(example: Example) -> Document.Document:
   Document.text(exampleLine(example))
-def stance(state: State, context: Abi.Context) -> String:
+def stance(context: Abi.Context, state: State) -> String:
   let escalation = if state.escalate == "" then "" else "When unsure I escalate to {state.escalate}.\n"
   let told = if state.escalateTo == "" then "" else "What a card cannot fit twice goes to {Card.name(state.escalateTo, context)}.\n"
   let first = if Lists.length(state.confirmFor) == 0n then "nothing" else Spell.joined(state.confirmFor)
   "I only propose. A card asks the speaker first before: {first}.\n{escalation}{told}"
 def teaching() -> String:
-  "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nTo teach a shortcut no model is asked about:\n\n    delvetalk policy macro\n    name: moth-bell\n    pattern: moth for {{who}}\n    expansion: garden plant\n    colour: violet\n    seed: a bell for {{who}}\n\nWhat I know:\n"
+  "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nTo teach a shortcut no model is asked about:\n\n    delvetalk policy macro\n    name: moth-bell\n    pattern: moth for {{who}}\n    expansion: garden plant / colour: violet / seed: a bell for {{who}}\n\nWhat I know:\n"
 # The policy as a card, including how to teach it.
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let how = if Card.reads(state.owner, context) then teaching() else "\nOnly its owner, {Card.name(state.owner, context)}, teaches it.\n\nWhat I know:\n"
-  let head = Document.text("✾ INTERPRETATION POLICY\n\nModel: {state.model}\n{stance(state, context)}{how}")
+  let head = Document.text("✾ INTERPRETATION POLICY\n\nModel: {state.model}\n{stance(context, state)}{how}")
   let terms = Lists.map(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map(state.examples, exampleCard)
   let macros = Lists.map(state.macros, fn(m: Macro) -> Document.Document: Document.text("Macro {m.name}: {m.pattern}\n  means: delvetalk {m.expansion}\n"))

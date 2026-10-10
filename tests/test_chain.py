@@ -9,7 +9,7 @@ Both tests drive the host's `send` machinery: `world-turn` answers a send with a
 delivery id, and the settling pass after every durable op runs pending deliveries
 (up to 64 per op; the reply carries them as `delivered`). `world-deliver {limit}`
 runs any that remain; `world-pending` lists them. The chain is wired with
-Card's observers.
+subscriptions.
 """
 import json
 import unittest
@@ -49,7 +49,7 @@ def garden_seed(policy="", pending=(), confirm=True, owner="ember"):
 def garden_state(planted=0, owner="ember"):
     """A whole Garden State, for world-create (which takes a whole state, not a Seed)."""
     return record(owner=label(owner), planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirmFor=asking(True),
-                  pending=relation(), children=relation(), pageCheckpoint=label(""), observers=nil())
+                  pending=relation(), children=relation(), pageCheckpoint=label(""))
 
 
 def field(state, name):

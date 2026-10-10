@@ -62,39 +62,41 @@ class Lenses(test_chain.Chain):
         self.policy()
         self.assertEqual(self.say("delvetalk policy set\nsystem: " + "s" * 1000)["result"]["label"], "done")
         self.assertEqual(len(self.field("system")), 1000)
-        over = self.say("delvetalk policy set\nsystem: " + "s" * 1001)
-        self.assertEqual((over["result"]["label"], why(over)), ("refused", "system takes 1 to 1000 characters."))
+        # The host judges the value against the lens's kind (HOST-HANDOFF 5.54).
+        over = self.turn("policy", "receive", record(text=label("delvetalk policy set\nsystem: " + "s" * 1001), post=label("")), principal="ember")
+        out = over["receipt"]["outcome"]
+        self.assertEqual((over["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "badValue", "system takes 1 to 1000 characters."), over)
         self.assertEqual(self.version(), 1)
 
     def test_a_stranger_a_bad_value_two_fields_and_an_unlensed_field_change_nothing(self):
         self.policy()
+        # The owner's guard is the policy's; the value's kind and the lens's name are the host's.
+        r = self.say("delvetalk policy set\nmodel: evil", principal="glm")
+        self.assertEqual((r["result"]["label"], why(r)), ("refused", "Only the policy's owner may teach it; that is ember"))
+        self.assertIn("refused notOwner: Only the policy's owner may teach it; that is ember", r["offers"][0]["text"])
         cases = [
-            ("delvetalk policy set\nmodel: evil", "glm", "notOwner", "Only the policy's owner may teach it; that is ember"),
-            ("delvetalk policy set\nmodel: " + "m" * 65, "ember", "badValue", "model takes 1 to 64 characters."),
-            ("delvetalk policy set\nmodel: a\nescalate: b", "ember", "oneField", "set takes one field: value line."),
-            ("delvetalk policy set\nowner: glm", "ember", "noField", "No field called owner can be set here."),
-            ("delvetalk policy set", "ember", "oneField", "set takes one field: value line."),
+            ("delvetalk policy set\nmodel: " + "m" * 65, "badValue"),
+            ("delvetalk policy set\nmodel: a\nescalate: b", "unknownField"),
+            ("delvetalk policy set\nowner: glm", "unknownField"),
         ]
-        for text, who, clause, reason in cases:
+        for text, clause in cases:
             with self.subTest(text=text[:40]):
-                r = self.say(text, principal=who)
-                self.assertEqual((r["result"]["label"], why(r)), ("refused", reason))
-                self.assertIn("refused %s: %s" % (clause, reason), r["offers"][0]["text"])
+                r = self.turn("policy", "receive", record(text=label(text), post=label("")), principal="ember")
+                self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]), ("refused", "badSpell", clause), r)
+        # No field line: the reply reaches receive, which answers with the card.
+        self.assertEqual(self.say("delvetalk policy set", principal="ember")["result"]["label"], "usage")
         self.assertEqual((self.version(), self.field("model"), self.field("owner")), (0, "claude-haiku", "ember"))
 
     def test_the_usage_card_lists_every_form_and_every_lens(self):
         self.policy()
-        r = self.say("delvetalk policy ?", principal="glm")
-        text = r["offers"][0]["text"]
-        self.assertEqual(r["result"]["label"], "usage")
-        self.assertEqual(text, "\nReply with a spell:\n\n    delvetalk policy teach\n    utterance: <text, 1 to 280 characters>\n"
-                               "    spell: <text, 1 to 280 characters>\n\n    delvetalk policy define\n    word: <text, 1 to 64 characters>\n"
-                               "    meaning: <text, 1 to 280 characters>\n\n    delvetalk policy macro\n    name: <text, 1 to 64 characters>\n"
-                               "    pattern: <text, 1 to 280 characters>\n    expansion: <text, 1 to 280 characters>\n\n"
-                               "    delvetalk policy confirm\n    action: <text, 1 to 64 characters>\n    ask: <yes, no>\n\nTo change a field, reply (one field a spell):\n\n"
-                               "    delvetalk policy set\n    model: <text, 1 to 64 characters>\n\n    delvetalk policy set\n"
-                               "    escalate: <text, 0 to 64 characters>\n\n    delvetalk policy set\n    escalate-to: <text, 0 to 160 characters>\n\n"
-                               "    delvetalk policy set\n    system: <text, 1 to 1000 characters>\n")
+        # `?` is the host's usage: every form, then every lens (HOST-HANDOFF 5.54).
+        r = self.turn("policy", "receive", record(text=label("delvetalk policy ?"), post=label("")), principal="glm")
+        self.assertEqual(r["status"], "usage", r)
+        text = r["text"]
+        for spell in ("delvetalk policy teach\nutterance:", "delvetalk policy macro\nname:", "delvetalk policy confirm\naction:",
+                      "delvetalk policy set\nmodel: <text, 1 to 64 characters>", "delvetalk policy set\nescalate-to: <text, 0 to 160 characters>",
+                      "delvetalk policy set\nsystem: <text, 1 to 1000 characters>"):
+            self.assertIn(spell, text)
         self.assertEqual(self.version(), 0)
 
     def test_an_object_without_lenses_answers_set_and_question_by_its_forms(self):
@@ -126,9 +128,8 @@ if __name__ == "__main__":
 
 class OwnedLenses(test_chain.Chain):
     """Lenses on the objects that had no owner: Garden (confirm), Place and Thing (name,
-    description); Workshop has nothing to set and says so. Garden and Thing declare a law that
-    refuses the same write from anyone but the owner; Place is imported by Thing and Avatar, so
-    its guard is its code's alone."""
+    description); Workshop has nothing to set and says so. Garden, Place and Thing declare a law
+    that refuses the same write from anyone but the owner."""
 
     def say(self, obj, text, who):
         r = self.turn(obj, "receive", heard(text), principal=who)
@@ -152,8 +153,9 @@ class OwnedLenses(test_chain.Chain):
     def test_the_gardens_owner_sets_confirm(self):
         from tests.test_chain import garden_seed
         self.make("garden", closure("Garden"), garden_seed())
-        usage = self.say("garden", "delvetalk garden ?", "glm")["offers"][0]["text"]
-        self.assertIn("    delvetalk garden set\n    confirm: <yes, no>\n", usage)
+        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal="glm")
+        self.assertEqual(usage["status"], "usage", usage)
+        self.assertIn("delvetalk garden set\nconfirm: <yes, no>\n", usage["text"])
         r = self.say("garden", "delvetalk garden set\nconfirm: no", "glm")
         self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the garden's owner sets it; that is ember"))
         r = self.say("garden", "delvetalk garden set\nconfirm: no", "ember")
@@ -162,7 +164,7 @@ class OwnedLenses(test_chain.Chain):
         r = self.say("garden", "delvetalk garden set\nconfirm: yes", "ember")
         self.assertEqual(self.listed("garden", "confirmFor"), ["plant"])
         append = {"tag": "variant", "label": "append", "payload": record(item=label("give"))}
-        r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint", "observers"], {"confirmFor": append}))
+        r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint"], {"confirmFor": append}))
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
     def test_a_rooms_owner_renames_it(self):
@@ -173,6 +175,9 @@ class OwnedLenses(test_chain.Chain):
         self.assertEqual(self.say("porch", "delvetalk porch set\ndescription: moths at the lamp", "ember")["result"]["label"], "done")
         self.assertEqual(self.say("porch", "delvetalk porch set\nname: Back Porch", "ember")["result"]["label"], "done")
         self.assertEqual((self.field("porch", "name"), self.field("porch", "description")), ("Back Porch", "moths at the lamp"))
+        set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
+        r = self.forged("porch", (["name", "description", "present", "things", "traces"], {"name": set_}))
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
     def test_a_things_owner_redescribes_it_and_the_law_keeps_others_out(self):
         from tests.test_places import thing_seed

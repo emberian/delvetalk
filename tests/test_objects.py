@@ -123,7 +123,7 @@ def bells(n: Nat) -> Lists.List<O.Child>:
     case 0: Lists.List::<O.Child>.nil()
     case 1+p: Lists.append::<O.Child>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n)), colour: Bell.Colour.amber({})})
 def shown(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Relations.empty(), children: Relations.Relation.rows({items: bells(n)}), pageCheckpoint: "", observers: Card.Observers.nil()}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Relations.empty(), children: Relations.Relation.rows({items: bells(n)}), pageCheckpoint: ""}, Card.stranger()))
 """
 
 DOC_PROBE = """edition ObjectiveBend 1

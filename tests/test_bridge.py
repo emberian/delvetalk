@@ -361,7 +361,7 @@ class Mentions(BridgeCase):
         r = bridge.run(self.state, stub)
         turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['object'].startswith('env/')]
         self.assertEqual([(t['object'], t['principal'], t['method'], t['identity']) for t in turns],
-                         [(f'env/{d}', DID, 'receive', f"{post['uri']}#env:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
+                         [(f'env/{d}', DID, 'mention', f"{post['uri']}#env:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
         fields = {f['name']: f['value']['value'] for f in turns[0]['argument']['fields']}
         self.assertEqual(fields, {'text': text, 'post': post['uri']})
         self.assertEqual(r['mentioned'], [post['uri']])

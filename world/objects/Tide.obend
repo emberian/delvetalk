@@ -34,7 +34,7 @@ law last "the last tick only moves forward": monotone(last)
 # The two-tier law, in Bend: a tick sooner than gap after the last is tooSoon; every key
 # the write changed (a row added, replaced or retracted) is the requesting principal's.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if new.ticks > old.ticks && old.ticks > 0n && request.context.clock < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon"}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self"})
+  if new.ticks > old.ticks && old.ticks > 0n && request.context.clock < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon", reading: "A tick may not come sooner than the gap after the last."}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self", reading: "A subscription changes only by its own principal."})
 def ownSubs(old: Relations.Relation<Sub>, new: Relations.Relation<Sub>, principal: String) -> Bool:
   ownRows(Relations.rows(old), Relations.rows(new), principal)
 # One merge of the old and new rows in key order: a key on one side only, or a row that
@@ -128,16 +128,10 @@ form subscribe:
 form tick:
 def forms() -> Card.Forms:
   Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})})
-# The card as a public page under the door word (genesis publishes one page per door).
-def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
-  Card.publishPage(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def blurb() -> Card.Door:
   {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-# An action without a form: genesis publishes the page.
-def methods() -> Lists.List<String>:
-  Card.wordList("publishPage")
 def line(context: Abi.Context) -> Sub -> Document.Document:
   fn(sub: Sub) -> Document.Document: Document.text("{Card.shown(sub.who, sub.handle, context)}{Card.mine(sub.who, context)} every {natText(sub.every)} from tick {natText(sub.since)}: {sub.note}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).

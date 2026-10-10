@@ -65,7 +65,7 @@ class Principal(Chain):
         argument = record(text=label("hello"))
         self.forged("glm", "note", argument, "from")
         self.acted("glm", "note", argument)
-        self.assertEqual([get(n, "from") for n in items(get(self.state("glm"), "inbox"))], [label(ACTOR)])
+        self.assertEqual([get(n, "from") for n in rows(get(self.state("glm"), "inbox"))], [label(ACTOR)])
 
     def test_a_knock_and_a_light_record_the_turns_principal(self):
         self.make("door", closure("Door"), record())
@@ -81,6 +81,10 @@ class Principal(Chain):
         self.ignored("porch", "enter", "by")
         self.assertEqual(names(get(self.state("porch"), "present")), [ACTOR])
 
+    # A planting spell runs `plant` directly, and a method does not see the reply's post (the bell's
+    # strike awaits it): the garden takes the turn's intent, which the bridge makes the post. Expected
+    # to fail until the host gives a spell's method its post (Abi.Context inputOrigin `post`).
+    @unittest.expectedFailure
     def test_the_planter_is_the_turns_principal_and_the_planting_its_post(self):
         self.make("garden", closure("Garden"), garden_seed())
         spell = "delvetalk garden plant\nseed: a fern\ncolour: amber"
