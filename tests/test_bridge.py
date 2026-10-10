@@ -163,7 +163,7 @@ class Bridging(BridgeCase):
             self.assertFalse(d['posted'])
             self.assertFalse(d['principalVerified'])
             self.assertEqual((d['principal'], d['replyHandle']), (DID, 'talkie.delve.town'))
-            self.assertEqual(d['text'], 'hello ' + DID)
+            self.assertEqual(d['text'], f"hello {DID}\n{bridge.receipt_line(d['receipt'])}")
         self.assertEqual(self.run_bridge(), {'turns': [], 'failed': []})
         self.assertEqual(len(self.drafts()), 3)
 
@@ -231,7 +231,9 @@ class Bridging(BridgeCase):
         self.assertEqual(r['status'], 'created', r)
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(self.run_bridge()['failed'], [])
-        self.assertIn('planted', self.drafts()[0]['text'])
+        (d,) = self.drafts()
+        self.assertIn('planted', d['text'])
+        self.assertTrue(d['text'].endswith(f"receipt {d['receipt']['slug']}: garden-1 v1 at height {d['receipt']['height']}\n"), d['text'])
 
     def test_smoke_bound_two_hundred_observations_bridge_in_under_a_minute(self):
         """The transport's one wall-clock smoke bound, generous: measured about 3 s on hbox."""
@@ -241,6 +243,28 @@ class Bridging(BridgeCase):
         self.assertEqual(len(self.run_bridge()['turns']), 200)
         self.assertLess(time.time() - t0, 60)
         self.assertEqual(len(self.drafts()), 200)
+
+
+class HostParses(BridgeCase):
+    """Whether a post is a spell, and to which card, is the host's parser's answer (`spell-parse`), never Python's."""
+    def test_a_standalone_question_mark_spell_reaches_the_card_and_is_answered_with_its_usage(self):
+        self.make('garden-1')
+        post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        post['record']['text'] = 'delvetalk garden-1 ?'
+        self.observe([post])
+        got = self.run_bridge()
+        self.assertEqual(got['turns'], [post['uri']], got)
+        (d,) = self.drafts()
+        self.assertTrue(d['usage'], d)
+        self.assertIn('delvetalk garden-1', d['text'])
+
+    def test_a_line_the_host_does_not_read_as_a_spell_is_not_routed_by_its_second_word(self):
+        self.make('garden-1')
+        post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        post['record']['text'] = 'delvetalk Garden-1 plant\nseed: a\ncolour: amber'  # the card alphabet is lowercase
+        self.observe([post])
+        got = self.run_bridge()
+        self.assertEqual((got['turns'], self.drafts()), ([], []), got)
 
 
 class Stub:
@@ -260,6 +284,9 @@ class Stub:
         if op == 'world-turn':
             return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
                     **({} if req['object'] in self.silent else {'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]})}
+        if op == 'spell-parse':  # the host's parser, reduced to these tests' spells: the last `delvetalk <card> <action>` line
+            lines = [l.split() for l in req['text'].split('\n') if l.startswith('delvetalk ') and len(l.split()) > 2]
+            return {'status': 'parsed', **({'spell': {'card': lines[-1][1], 'action': lines[-1][2], 'fields': []}} if lines else {'notASpell': {}})}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
@@ -461,30 +488,27 @@ class Mentions(BridgeCase):
 
 
 class Unaddressed(BridgeCase):
-    def run_refused(self, post):
+    """Whether a refusal is drafted is the host's fact: its `public` projection. The post's wording is never read for it."""
+    def run_refused(self, post, public=True):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
         stub = Stub({parent: {'status': 'addressee', 'object': 'directory', 'slot': 'welcome'}})
         real = stub.send
-        stub.send = lambda req: ({'status': 'refused', 'receipt': {'hash': 'h', 'height': 5, 'outcome': {'tag': 'refused', 'class': 'budget'}}}
+        outcome = {'tag': 'refused', 'class': 'quota', 'reason': 'the interpreter has read 48 this hour; reply with the spell itself, or wait.', 'next': 600}
+        stub.send = lambda req: ({'status': 'refused', 'receipt': {'hash': 'h', 'height': 5, 'slug': 'bofab-lukid', 'outcome': outcome},
+                                  **({'public': {'status': 'refused', 'class': 'quota', 'reason': outcome['reason'], 'next': 600}} if public else {})}
                                  if req['op'] == 'world-turn' else real(req))
         self.observe([post])
         bridge.run(self.state, stub)
         return self.drafts()
 
-    def test_a_plain_reply_refused_budget_gets_no_draft_but_a_spell_does(self):
+    def test_a_plain_prose_reply_refused_by_quota_is_drafted_with_the_hosts_explanation(self):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
         (chatter,) = self.run_refused(mk(1, 'lovely thread, thanks all', parent=parent))
-        self.assertEqual(chatter['text'], '')  # journaled, listed by `outbox --all`, never drafted
-        self.assertEqual(chatter['receipt']['outcome']['class'], 'budget')
+        self.assertEqual(chatter['text'], 'refused quota: the interpreter has read 48 this hour; reply with the spell itself, or wait.\nreceipt bofab-lukid\n')
 
-    def test_a_spell_refused_budget_is_drafted(self):
-        (spell,) = self.run_refused(spell_post(2, 'garden-1', '2026-10-09T10:00:00Z'))
-        self.assertEqual(spell['text'], 'refused budget\n')
-
-    def test_field_lines_in_a_reply_count_as_addressed(self):
-        parent = f'at://{DID}/town.delve.feed.post/welcome'
-        (fields,) = self.run_refused(mk(3, 'plant: a fern\ncolour: silver', parent=parent))
-        self.assertEqual(fields['text'], 'refused budget\n')
+    def test_a_refusal_the_host_gives_no_public_projection_is_journaled_not_drafted(self):
+        (spell,) = self.run_refused(spell_post(2, 'garden-1', '2026-10-09T10:00:00Z'), public=False)
+        self.assertEqual((spell['text'], spell['receipt']['outcome']['class']), ('', 'quota'))
 
 
 class Silence(BridgeCase):
@@ -516,7 +540,8 @@ class RealOffers(test_outbound.TellerWorld):
                     return outer.host.send(**req)
             self.assertEqual(bridge.offer_drafts(d, H()), ["t-1"])
             (draft,) = list((Path(d) / "outbox").glob("*.json"))
-            self.assertEqual(json.loads(draft.read_text())["text"], "hello")
+            slug = self.host.send(op="world-receipt", principal="ann", identity="t-1")["receipt"]["slug"]
+            self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\nreceipt {slug}: teller v\d+ at height \d+\n$")
             self.assertEqual(bridge.offer_drafts(d, H()), [])
 
 
@@ -539,7 +564,7 @@ class Projection(unittest.TestCase):
         h = 'bafyrei' + 'a' * 52
         receipt = {'hash': h, 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}
         texts = [bridge.draft_text({'receipt': receipt}, 'https://x.example'),
-                 bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}}, 'https://x.example'),
+                 bridge.draft_text({'status': 'refused', 'receipt': {**receipt, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}, 'public': {}}, 'https://x.example'),
                  bridge.draft_text({'status': 'refused', 'receipt': receipt, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
         self.assertIn('receipt: garden v3 at height 9\nhttps://x.example/o/garden#v3', texts[0])
         for t in texts:
@@ -557,7 +582,7 @@ class Principals(BridgeCase):
         self.assertEqual(regs, [{'op': 'world-arrive', 'principal': 'transport', 'did': DID, 'handle': 'talkie.delve.town'},
                                 {'op': 'world-arrive', 'principal': 'transport', 'did': 'did:plc:' + 'b' * 24, 'handle': 'glm.delve.town'}])
         first_turn = next(i for i, o in enumerate(stub.ops) if o['op'] == 'world-turn')
-        self.assertEqual(stub.ops[first_turn - 1]['op'], 'world-arrive')
+        self.assertLess(max(i for i, o in enumerate(stub.ops) if o['op'] == 'world-arrive'), first_turn)
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-arrive']), 2)
 

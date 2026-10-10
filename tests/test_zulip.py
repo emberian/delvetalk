@@ -35,7 +35,7 @@ class FakeZulip:
     """The three endpoints the transport uses, over real HTTP with basic auth, holding one list of messages."""
 
     def __init__(self):
-        self.messages, self.calls, self.ids, self.narrows = [], [], {}, []
+        self.messages, self.calls, self.ids, self.lose, self.narrows = [], [], {}, 0, []
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -60,16 +60,23 @@ class FakeZulip:
                 if (method, url.path) == ('GET', '/api/v1/users/me'):
                     return self.reply(200, {'result': 'success', **BOT})
                 if (method, url.path) == ('GET', '/api/v1/messages'):
+                    key = {'channel': 'display_recipient', 'topic': 'subject', 'sender': 'sender_email'}
                     narrow = json.loads(p['narrow'])
-                    wanted = {n['operator']: n['operand'] for n in narrow}
-                    fake.narrows.append(wanted)
-                    inside = [m for m in fake.messages if m['display_recipient'] == wanted['channel'] and wanted.get('topic', m['subject']) == m['subject']]
+                    fake.narrows.append({n['operator']: n['operand'] for n in narrow})
+                    inside = [m for m in fake.messages if all(m[key[n['operator']]] == n['operand'] for n in narrow)]
+                    if p['anchor'] == 'newest':
+                        page = inside[-int(p['num_before']):] if int(p['num_before']) else []
+                        return self.reply(200, {'result': 'success', 'messages': page, 'found_newest': True})
                     if p['anchor'] != 'oldest':
                         inside = [m for m in inside if m['id'] > int(p['anchor'])]
                     page = inside[:int(p['num_after'])]
                     return self.reply(200, {'result': 'success', 'messages': page, 'found_newest': len(page) == len(inside)})
                 if (method, url.path) == ('POST', '/api/v1/messages'):
-                    return self.reply(200, {'result': 'success', 'id': fake.add(p['topic'], BOT['email'], BOT['full_name'], p['content'], p['to'], BOT['user_id'])})
+                    mid = fake.add(p['topic'], BOT['email'], BOT['full_name'], p['content'], p['to'], BOT['user_id'])
+                    if fake.lose:  # the message lands; its reply does not
+                        fake.lose -= 1
+                        return self.reply(502, {'result': 'error', 'msg': 'bad gateway'})
+                    return self.reply(200, {'result': 'success', 'id': mid})
                 return self.reply(404, {'result': 'error', 'msg': 'no such endpoint'})
 
             do_GET = lambda self: self.handle_any('GET')
@@ -138,8 +145,8 @@ class Observing(ZulipCase):
         self.zulip.add('garden', BOT['email'], BOT['full_name'], 'planted', 'delvetalk', BOT['user_id'])
         first, second, summon, post = self.observed()
         uri = lambda topic, n: f'zulip://delvetalk/{topic}/{n}'
-        self.assertEqual((first['author'], first['uri'], first['replyTo'], first['root'], first['kind'], first['spell']),
-                         ({'did': 'zulip:1000', 'handle': 'Alice'}, uri('garden', a), None, None, 'spell', {'card': 'garden-1'}))
+        self.assertEqual((first['author'], first['uri'], first['replyTo'], first['root'], first['kind']),
+                         ({'did': 'zulip:1000', 'handle': 'Alice'}, uri('garden', a), None, None, 'post'))
         self.assertEqual((second['replyTo'], second['root'], second['kind']), (uri('garden', a), uri('garden', a), 'reply'))
         self.assertEqual((summon['kind'], summon['replyTo']), ('summon', None))
         self.assertEqual((post['kind'], post['text']), ('post', 'just talking'))
@@ -178,7 +185,7 @@ class Bridging(ZulipCase):
         self.assertEqual(len(got['posted']), 2, got)
         mine = self.zulip.mine()
         self.assertEqual(sorted(m['subject'] for m in mine), ['alice garden', 'bob garden'])
-        self.assertTrue(all(m['content'].endswith('garden-1 says zulip:' + {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]) for m in mine), mine)
+        self.assertTrue(all(f"garden-1 says zulip:{ {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]}\nreceipt " in m['content'] for m in mine), mine)
         self.assertTrue(mine[0]['content'].startswith('@**Alice**\n'))
         arrivals = self.host.send({'op': 'world-objects', 'principal': OPENER})['ids']
         self.assertIn('env/zulip:1000', arrivals)
@@ -219,10 +226,10 @@ class Bridging(ZulipCase):
         self.assertEqual([m['subject'] for m in self.zulip.mine()], ['mobo'])
 
     def test_with_a_topic_a_page_publication_goes_to_the_topic_not_a_topic_named_for_the_page(self):
-        import transport.bridge as b
         d = {'text': 'a page', 'page': 'Garden', 'section': '', 'publication': {'object': None}, 'posted': False, 'replyTo': None}
         sent = []
-        client = type('C', (), {'send': lambda self, st, t, c: sent.append((st, t)) or {'id': 7}})()
+        client = type('C', (), {'send': lambda self, st, t, c: sent.append((st, t)) or {'id': 7},
+                                'newest': lambda self, st: 0, 'sent_after': lambda self, *a: None})()
         orig = zulip.unposted
         zulip.unposted = lambda state: [(Path(self.tmp.name) / 'x.json', d)]
         self.addCleanup(setattr, zulip, 'unposted', orig)
@@ -246,6 +253,17 @@ class Bridging(ZulipCase):
         later = zulip.post_drafts(self.state, self.host, self.client(), 'delvetalk', now=time.time() + 3601)
         self.assertEqual((len(later['posted']), 'held' in later), (1, False), later)
         self.assertEqual(len(self.zulip.mine()), 17)
+
+    def test_a_send_whose_reply_was_lost_is_found_in_its_topic_not_sent_again(self):
+        self.zulip.say('t', 'Alice', SPELL)
+        self.zulip.lose = 1
+        got = self.bridge()
+        self.assertEqual((got['posted'], [h['reason'] for h in got['held']]), ([], ['zulip_refused']), got)
+        self.assertEqual(len(self.zulip.mine()), 1)
+        again = zulip.post_drafts(self.state, self.host, self.client(), 'delvetalk')
+        self.assertEqual(len(self.zulip.mine()), 1, 'the lost send is adopted, never repeated')
+        self.assertEqual(again['posted'], [zulip.uri_of('delvetalk', 't', self.zulip.mine()[0]['id'])])
+        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': again['posted'][0]})['object'], 'garden-1')
 
     def test_the_welcome_is_posted_and_recorded_so_replies_to_it_reach_the_directory(self):
         welcome = Path(__file__).resolve().parent.parent / 'docs' / 'previews' / 'zulip-welcome-v2.txt'

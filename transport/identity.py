@@ -4,21 +4,16 @@ own account, and we read that post from the fixed PDS (by URI when given, else t
 account; grants nothing. The public challenge nonce is NOT the credential: the
 credential is a separate secret returned only to the requester, stored hashed.
 """
-import argparse
 import hashlib
 import os
 import re
 import secrets
 import sqlite3
-import sys
 import threading
 import time
 from pathlib import Path
 
-try:
-    from transport.delve import Client, Failure, FixtureTransport, canonical, http_transport
-except ImportError:
-    from delve import Client, Failure, FixtureTransport, canonical, http_transport
+from transport.delve import Failure
 
 ORIGIN = os.environ.get('DELVETALK_ORIGIN') or 'https://gsb.fg-goose.online'  # the one place the portal's origin is named
 COLLECTION = 'town.delve.feed.post'
@@ -85,25 +80,32 @@ class Identity:
                             (nonce, handle, did, text, digest(credential), now, now + TTL, 'pending'))
         return {'handle': handle, 'did': did, 'text': text, 'expires': now + TTL, 'credential': credential}
 
-    def _begin(self, handle):
-        """The handle's latest challenge, if it can still be answered. Attempts are counted before any network read; the 9th is refused outright."""
+    def _rows(self, handle, credential):
+        """The handle's challenges newest first; only the requester's own when its credential names one."""
+        rows = self.db.execute('SELECT * FROM challenges WHERE handle=? ORDER BY created DESC', (handle,)).fetchall()
+        mine = hashlib.sha256(credential.encode()).hexdigest() if isinstance(credential, str) and CREDENTIAL.fullmatch(credential) else None
+        return [r for r in rows if r['credential'] == mine] or rows
+
+    def _begin(self, handle, credential=None):
+        """The challenges a proof may answer: the requester's own (its credential), else every live one of the handle, so a
+        newer challenge someone else asked for never displaces it. One attempt is counted, on the first, before any
+        network read; the 9th is refused outright."""
         now = self.clock()
         with self.lock:
             self.db.execute('BEGIN IMMEDIATE')
             try:
-                row = self.db.execute("SELECT * FROM challenges WHERE handle=? ORDER BY created DESC LIMIT 1", (handle,)).fetchone()
-                if row is None:
+                rows = self._rows(handle, credential)
+                if not rows:
                     raise IdentityError('no_challenge')
-                if row['state'] != 'pending':
-                    raise IdentityError('challenge_consumed' if row['state'] == 'verified' else 'challenge_revoked')
-                if now >= row['expires']:
-                    raise IdentityError('challenge_expired')
-                if row['attempts'] >= MAX_ATTEMPTS:
-                    raise IdentityError('too_many_attempts')
-                self.db.execute('UPDATE challenges SET attempts=attempts+1 WHERE nonce=?', (row['nonce'],))
+                live = [r for r in rows if r['state'] == 'pending' and now < r['expires'] and r['attempts'] < MAX_ATTEMPTS]
+                if not live:
+                    row = rows[0]
+                    raise IdentityError('challenge_consumed' if row['state'] == 'verified' else 'challenge_revoked' if row['state'] != 'pending'
+                                        else 'challenge_expired' if now >= row['expires'] else 'too_many_attempts')
+                self.db.execute('UPDATE challenges SET attempts=attempts+1 WHERE nonce=?', (live[0]['nonce'],))
             finally:
                 self.db.execute('COMMIT')
-        return row
+        return live
 
     def _finish(self, row, at_uri, cid):
         with self.lock:
@@ -117,11 +119,11 @@ class Identity:
                 self.db.execute('COMMIT')
         return {'status': 'verified', 'did': row['did'], 'handle': row['handle'], 'uri': at_uri, 'cid': cid}
 
-    def verify(self, handle, at_uri):
-        """The agent's way: the post's URI is given and its record read."""
-        row = self._begin(handle)
+    def verify(self, handle, at_uri, credential=None):
+        """The agent's way: the post's URI is given and its record read; its text names the challenge it answers."""
+        rows = self._begin(handle, credential)
         repo, rkey = self._parse(at_uri)
-        if repo != row['did']:
+        if repo != rows[0]['did']:
             raise IdentityError('wrong_author')
         try:
             got = self.client.get('com.atproto.repo.getRecord', repo=repo, collection=COLLECTION, rkey=rkey)
@@ -130,16 +132,17 @@ class Identity:
         value, cid = got.get('value'), got.get('cid')
         if got.get('uri') != at_uri or not isinstance(cid, str) or not isinstance(value, dict):
             raise IdentityError('proof_mismatch')
-        if value.get('text') != row['text']:
+        row = next((r for r in rows if value.get('text') == r['text'] and repo == r['did']), None)
+        if row is None:
             raise IdentityError('proof_text_mismatch')
         return self._finish(row, at_uri, cid)
 
-    def claim(self, handle):
-        """The person's way: no URI. The account's newest public posts are listed and the one whose whole text is the
-        challenge word is the claim. A listing we cannot read is `posts_hidden`; one without the word, `no_post_yet`."""
-        row = self._begin(handle)
+    def claim(self, handle, credential=None):
+        """The person's way: no URI. The account's newest public posts are listed and one whose whole text is the word of a
+        challenge it may answer is the claim. A listing we cannot read is `posts_hidden`; one without the word, `no_post_yet`."""
+        rows = self._begin(handle, credential)
         try:
-            got = self.client.get('com.atproto.repo.listRecords', repo=row['did'], collection=COLLECTION, limit=NEWEST)
+            got = self.client.get('com.atproto.repo.listRecords', repo=rows[0]['did'], collection=COLLECTION, limit=NEWEST)
         except Failure:
             raise IdentityError('posts_hidden') from None
         records = got.get('records')
@@ -147,16 +150,18 @@ class Identity:
             raise IdentityError('posts_hidden')
         for rec in records[:NEWEST]:
             uri, cid, value = (rec.get('uri'), rec.get('cid'), rec.get('value')) if isinstance(rec, dict) else (None, None, None)
-            if isinstance(value, dict) and isinstance(value.get('text'), str) and value['text'].strip() == row['text'] and isinstance(cid, str):
-                repo, _ = self._parse(uri)
-                if repo == row['did']:
-                    return self._finish(row, uri, cid)
+            text = value.get('text').strip() if isinstance(value, dict) and isinstance(value.get('text'), str) else None
+            row = next((r for r in rows if r['text'] == text), None)
+            if row and isinstance(cid, str) and self._parse(uri)[0] == row['did']:
+                return self._finish(row, uri, cid)
         raise IdentityError('no_post_yet')
 
-    def pending(self, handle):
-        """The word the handle's latest challenge is waiting for, and when it lapses; None once answered or lapsed."""
+    def pending(self, handle, credential=None):
+        """The word the requester's challenge (its credential's, else the handle's latest) waits for, and when it lapses;
+        None once answered or lapsed."""
         with self.lock:
-            row = self.db.execute("SELECT text,expires,state FROM challenges WHERE handle=? ORDER BY created DESC LIMIT 1", (handle,)).fetchone()
+            rows = self._rows(handle, credential)
+        row = rows[0] if rows else None
         return {'text': row['text'], 'expires': row['expires']} if row and row['state'] == 'pending' and self.clock() < row['expires'] else None
 
     @staticmethod
@@ -181,32 +186,3 @@ class Identity:
         if cur.rowcount != 1:
             raise IdentityError('invalid_credential')
         return {'status': 'revoked'}
-
-
-def main(argv=None, transport=None, out=None, clock=time.time):
-    out = out or sys.stdout
-    ap = argparse.ArgumentParser(prog='identity.py')
-    ap.add_argument('--state', required=True)
-    ap.add_argument('--mock', metavar='DIR')
-    ap.add_argument('--origin', default=ORIGIN)
-    sub = ap.add_subparsers(dest='cmd', required=True)
-    sub.add_parser('challenge').add_argument('handle')
-    v = sub.add_parser('verify')
-    v.add_argument('handle')
-    v.add_argument('at_uri')
-    sub.add_parser('revoke').add_argument('token', help='the credential returned by challenge')
-    a = ap.parse_args(argv)
-    t = transport or (FixtureTransport(a.mock) if a.mock else http_transport)
-    ident = Identity(a.state, Client(t), a.origin, clock)
-    try:
-        result = (ident.challenge(a.handle) if a.cmd == 'challenge' else
-                  ident.verify(a.handle, a.at_uri) if a.cmd == 'verify' else ident.revoke(a.token))
-    except IdentityError as e:
-        print(canonical({'error': e.code}), file=sys.stderr)
-        return 1
-    out.write(canonical(result) + '\n')
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

@@ -242,6 +242,17 @@ class Arrival(FrontCase):
         self.now[0] += 61
         self.assertNotEqual(self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[0], 429)
 
+    def test_anonymous_pages_are_limited_per_address_before_any_host_request(self):
+        real, asked = self.host.send, []
+        self.host.send = lambda req: asked.append(req['op']) or real(req)
+        codes = [self.request('GET', p)[0] for p in [f'/o/{self.c}'] * 20 + ['/'] * 13]
+        self.assertEqual(codes, [200] * 32 + [429])
+        before = len(asked)
+        self.assertEqual(self.request('GET', f'/o/{self.c}')[0], 429)
+        self.assertEqual(len(asked), before, 'a limited page asks the host nothing')
+        self.now[0] += 61
+        self.assertEqual(self.request('GET', f'/o/{self.c}')[0], 200)
+
     def test_me_reports_principal_and_rate_limit_and_revoke_ends_the_credential(self):
         tok = self.login()
         self.heap_create(tok)
@@ -294,6 +305,16 @@ class Claim(FrontCase):
         self.assertNotIn(b'did:plc', page)
         self.assertIn(b'ENTER THE WORLD', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=cookie.split('=', 1)[1])[1]['handle'], HANDLE)
+
+    def test_someone_elses_newer_challenge_neither_shows_its_word_nor_displaces_mine(self):
+        cookie, _ = self.word_page()
+        word = self.front.identity.pending(HANDLE)['text']
+        self.now[0] += 1
+        theirs = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[1]
+        self.assertIn(f'<pre class="card">{word}</pre>', self.press(cookie)[2].decode())  # my word again, not theirs
+        self.provider.texts[PEOPLE[HANDLE]] = word
+        self.assertIn(b'Claimed', self.press(cookie)[2])
+        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=theirs['credential'])[0], 401)
 
     def test_posts_we_cannot_read_and_a_lapsed_word_have_their_lines(self):
         cookie, _ = self.word_page()
@@ -361,6 +382,30 @@ class Access(FrontCase):
         self.assertTrue(log.with_name('rot.log.1').exists())
         self.assertLessEqual(log.stat().st_size, 100)
         self.assertIn('/p5', log.read_text())
+
+
+class Bearer(FrontCase):
+    def test_html_and_text_reads_keep_the_bearer_principal_whatever_cookie_comes_with_them(self):
+        tok, other = self.login(), self.login('glm.delve.town')
+        real, seen = self.host.send, []
+        self.host.send = lambda req: (seen.append(req.get('principal')) if req['op'] == 'world-view' else None) or real(req)
+        for path, headers in ((f'/AGENTS.md/world/{self.c}', {'Accept': 'text/html'}), (f'/AGENTS.md/world/{self.c}?text=1', {}),
+                              (f'/AGENTS.md/world/{self.c}', {'Accept': 'text/html', 'Cookie': f'dt_credential={other}'})):
+            seen.clear()
+            s, _, page = self.request('GET', path, token=tok, headers=headers)
+            self.assertEqual((s, set(seen)), (200, {DID}), (path, headers))
+            self.assertIn(HANDLE, page.decode())
+
+
+class Forms(FrontCase):
+    def test_a_browser_form_keeps_a_deliberately_blank_field_for_the_host(self):
+        tok = self.login()
+        real, sent = self.host.send, []
+        self.host.send = lambda req: (sent.append(req) if req['op'] == 'world-turn' else None) or real(req)
+        self.request('POST', f'/play/{self.c}', raw=b'method=bump&migration=&note=x',
+                     headers={'Cookie': f'dt_credential={tok}', 'Content-Type': 'application/x-www-form-urlencoded'})
+        (turn,) = sent
+        self.assertEqual({f['name']: f['value']['value'] for f in turn['argument']['fields']}, {'migration': '', 'note': 'x'})
 
 
 class Turns(FrontCase):
@@ -579,6 +624,14 @@ class Heaps(FrontCase):
         s, v = self.call('GET', '/AGENTS.md/heap/world/hash1', token=tok)
         self.assertNotIn('pin', v)
         self.assertIn('pin', self.call('GET', '/AGENTS.md/heap/world/hash1/source', token=tok)[1])
+
+    def test_a_heap_object_no_spell_can_address_is_refused_before_it_is_created(self):
+        tok = self.login()
+        s, e = self.heap_create(tok, 'Coin_box')  # creation's alphabet takes it; the spell grammar's card name does not
+        self.assertEqual((s, e['class']), (400, 'unspellable'), e)
+        self.assertIn('delvetalk Coin_box ?', e['message'])
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/Coin_box', token=tok)[0], 404)
+        self.assertEqual(self.heap_create(tok, 'coin-box')[0], 200)
 
     def test_a_heap_object_is_one_module_importing_the_library(self):
         tok = self.login()
@@ -923,6 +976,56 @@ class Concurrent(unittest.TestCase):
             self.assertEqual(host.ops.count('world-arrive'), self.N)
             self.assertEqual(host.ops.count('world-view'), self.N)
             self.assertEqual(sorted(ident.authenticate(c)['did'] for c in creds.values()), sorted(did(i) for i in range(self.N)))
+
+
+class Slow(unittest.TestCase):
+    """A client that keeps a worker by sending slowly is cut at an absolute deadline; workers are bounded."""
+    def front(self, **kw):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        front = serve(Front(('127.0.0.1', 0), StubHost(), identity.Identity(tmp.name, delve.Client(None)), **kw))
+        self.addCleanup(front.server_close)
+        self.addCleanup(front.shutdown)
+        return front
+
+    def test_a_client_dribbling_headers_is_cut_at_the_absolute_deadline(self):
+        import socket
+        front = self.front()
+        front.request_timeout = 2
+        s = socket.create_connection(front.server_address, timeout=0.5)
+        self.addCleanup(s.close)
+        s.sendall(b'GET /AGENTS.md HTTP/1.1\r\n')
+        start, cut = time.monotonic(), None
+        while time.monotonic() - start < 8 and cut is None:
+            try:
+                s.sendall(b'X-a: b\r\n')  # a line well inside every per-read timeout
+                s.recv(4096)  # returns only once the front answers or closes
+                cut = time.monotonic()
+            except socket.timeout:
+                continue
+            except OSError:
+                cut = time.monotonic()
+        self.assertIsNotNone(cut, 'still holding a worker after 8 seconds')
+        self.assertLess(cut - start, 4.5)
+
+    def test_workers_are_bounded_and_one_more_connection_is_told_busy(self):
+        import socket
+        front = self.front(workers=2)
+        idle = [socket.create_connection(front.server_address) for _ in range(2)]
+        for s in idle:
+            self.addCleanup(s.close)
+            s.sendall(b'GET / HTTP/1.1\r\n')
+        time.sleep(0.3)
+        c = http.client.HTTPConnection('127.0.0.1', front.server_address[1], timeout=5)
+        c.request('GET', '/AGENTS.md')
+        r = c.getresponse()
+        self.assertEqual((r.status, json.loads(r.read())['class'], r.getheader('Retry-After')), (503, 'busy', '1'))
+        for s in idle:
+            s.close()
+        time.sleep(0.3)
+        c = http.client.HTTPConnection('127.0.0.1', front.server_address[1], timeout=5)
+        c.request('GET', '/AGENTS.md')
+        self.assertEqual(c.getresponse().status, 200)
 
 
 if __name__ == '__main__':

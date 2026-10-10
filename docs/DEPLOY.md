@@ -60,8 +60,8 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   has moved; then the old one goes. The installed config is `/etc/caddy/Caddyfile` on the anchor (native Caddy, no
   checkout there; dregg-infra's `edge/anchor/Caddyfile` is its source and had drifted from it on 2026-10-10). Install as
   that file's header says: write `Caddyfile.new`, `caddy validate`, `mv`, `systemctl reload caddy`. Both names answer
-  `respond @hand 404` for `path /hand /hand/*`: the front serves the owner's console on the same port Caddy makes
-  public, and the hand is for an ssh forward only. The gsb route as installed:
+  `respond @hand 404` for `path /hand /hand/*`, a belt only: the port Caddy proxies never serves the owner's console,
+  which has its own listener on workhorse's loopback (below). The gsb route as installed:
 
       gsb.fg-goose.online {
       	import baseline_headers
@@ -184,21 +184,25 @@ the hand's: the hourly quota is counted in `<state>/post-log.json`, so every pos
 read it, then add the flag. `--object` names the object the card addresses: after a
 confirmed post, post.py calls the host's `world-posted` for it, so every card posted
 is recorded in the same step (replies to it then route to that object). Post a card
-without `--object` only if no object should hear its replies.
+without `--object` only if no object should hear its replies. An intent posts once: `<state>/posting/` keeps, per
+intent, the record key chosen before the first send (Zulip: the stream's newest id) and the post that came back, so a
+rerun after a crash adopts the post instead of writing again. A draft whose `world-posted` failed keeps `sent` and is
+recorded by the bridge's next run, never posted twice.
 
 ## Open the hand
 
 The front keeps running, and the bridge and interpreter run against hostd (`bridge run --poll`, `interpret run --poll`, or
 `--once` by hand as in "First start"). The owner works the town from the hand, a console the front serves at `/hand/`
-only when it is started with a secret:
+only when it is started with a secret, and only on a listener of its own (`--hand-bind`, default 127.0.0.1, and
+`--hand-port`, default 8766), which serves nothing else; the public port never serves `/hand/`:
 
     python3 -m transport.http --state /data/state --hand-token <secret> --credentials /run/delve.json
 
 (in compose that is `deploy/compose.hand.yml`, named by `COMPOSE_FILE` in `.env` with `DELVETALK_HAND_TOKEN`; it mounts
 `/etc/delvetalk/delve/` (owner 10425, mode 0700) read-only, where the owner puts `credentials.json`, read only at a
-Post. Caddy answers 404 for `/hand/` on the public names, so reach it by a forward):
+Post, and publishes the hand's port on workhorse's loopback only, `127.0.0.1:8766`, so reach it by a forward):
 
-    ssh -L 8765:10.10.1.10:8765 root@workhorse     # then open http://127.0.0.1:8765/hand/?token=<secret>
+    ssh -L 8766:127.0.0.1:8766 root@workhorse     # then open http://127.0.0.1:8766/hand/?token=<secret>
 
 The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. The page
 has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
@@ -213,7 +217,8 @@ The same operations have a command-line face for the owner's assistant over ssh:
 --state /data/state [--credentials FILE] [--json]` (`DELVETALK_STATE` and `DELVETALK_CREDENTIALS` stand in for the
 flags; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):
 
-- `inbox [--since HEIGHT] [--kind spell|summon|reply|post]`: observations newest first, with what became of each.
+- `inbox [--since HEIGHT] [--kind summon|reply|post|wiki-page|wiki-edit|wiki-merge]`: observations newest first, with
+  what became of each (whether a post is a spell is the host's reading, shown in its fate).
 - `outbox [--all]`: drafts grouped by the post they answer (`--all` includes posted and skipped).
 - `show DRAFT`: the post, the draft text and its receipt line.
 - `edit DRAFT --text-file F | --stdin`: replace the draft text, keeping the original.
@@ -235,7 +240,8 @@ Before DelveTalk goes to delve.town, residents can play it in the owner's own Zu
 transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
 would (principal `zulip:<sender id>`, the full name as handle, `replyTo` the previous message of its topic, kind
 by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
-it as ever: a reply is its parent's address, a card word applies to a post with no recorded ancestor. Because this is
+it as ever: a reply is its parent's address, and a post with no recorded ancestor goes to the card of its spell as the
+host's parser reads it (`spell-parse`; Python only skips text without the word `delvetalk`). Because this is
 the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
 inside the host's `postQuota` per hour (a draft over it waits for the next round), and records each post with
 `world-posted`, so a reply to it routes. The delve.town rule against automatic posting does not apply here and nothing
