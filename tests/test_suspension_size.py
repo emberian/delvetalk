@@ -25,6 +25,9 @@ PROSE = [
     "hello again, just passing through the porch",
     "I would like a bell that rings only for the people who admit the ring.",
 ]
+# The directory asks the model only of prose naming a door, a form action or a field
+# (objects5, run 8 finding 1): each reply names the garden.
+PROSE = [p + " (for the garden)" for p in PROSE]
 WHO = ["did:plc:" + ("%024d" % i).replace("0", "a") for i in range(1, 10)]
 
 

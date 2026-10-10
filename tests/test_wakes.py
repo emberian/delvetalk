@@ -101,7 +101,7 @@ class Wakes(Chain):
 
     def test_a_wake_seeded_without_an_env_watches_env_slash_its_owner(self):
         from tests.test_objects import PROBE_HEAD, run_pure
-        probe = PROBE_HEAD % "Wake" + "def home(owner: String, env: String) -> String:\n  O.seeded({owner: owner, env: {world: \"\", object: env}}).env.object\n"
+        probe = PROBE_HEAD % "Wake" + "def home(owner: String, env: String) -> String:\n  O.seeded({owner: owner, handle: \"\", env: {world: \"\", object: env}}).env.object\n"
         out = run_pure("Wake", "home", label(OWNER), label(""), probe=probe)
         self.assertEqual(out["value"], label("env/" + OWNER), out)
         self.assertEqual(run_pure("Wake", "home", label(OWNER), label("env/other"), probe=probe)["value"], label("env/other"))
@@ -229,6 +229,28 @@ class Wakes(Chain):
     def tide(self, gap=3):
         self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=nil()))
 
+    def test_when_garden_planted_passes_10_the_wake_ticks_the_tide(self):
+        """A Wake watches another object's writes: the garden tells its observers its count
+        after each planting, and the trigger fires once, as the count passes 10."""
+        from tests.test_chain import garden_state
+        self.tide()
+        self.create("garden", "Garden", garden_state(planted=9))
+        wake = self.wake()
+        writes = {"tag": "variant", "label": "writes", "payload": record(object=label("garden"), field=label("planted"), above=nat(10))}
+        call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
+        r = self.turn(wake, "watch", record(event=writes, action=call), principal=OWNER)
+        self.assertEqual(self.label_of(r), "watching")
+        self.deliver_all()
+        observers = items(get(self.state("garden"), "observers"))
+        self.assertEqual([get(get(o, "object"), "object")["value"] for o in observers], [wake])
+        ticks = lambda: int(get(self.state("tide"), "ticks")["value"])
+        for i in range(3):
+            planted = self.turn("garden", "plant", record(colour=label("amber"), seed=label("bell %d" % i)), principal=OTHER)
+            self.assertEqual(self.label_of(planted), "planted")
+            self.deliver_all()
+            # 10 does not pass 10; 11 does, once; 12 does not fire again.
+            self.assertEqual(ticks(), [0, 1, 1][i], i)
+
     def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
         """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
         and subscribe, tick and a tick too soon each answer with what happened and the card."""
@@ -316,7 +338,7 @@ def tickAt(height: Nat) -> String:
 def subscribeAs(principal: String) -> String:
   verdict(Tide.law(tide(0n, 0n, ""), tide(0n, 0n, "kimik3"), request(principal, 5n)))
 def wakeBy(principal: String) -> String:
-  verdict(Wake.law({owner: "inkling", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.nil(), nextId: 1n}, {owner: "inkling", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.cons({head: {id: 1n, event: Wake.On.keyword({term: "moth"}), action: Wake.Action.notify({})}, tail: Lists.List::<Wake.Trigger>.nil()}), nextId: 2n}, request(principal, 5n)))
+  verdict(Wake.law({owner: "inkling", handle: "", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.nil(), nextId: 1n}, {owner: "inkling", handle: "", env: Plans.nobody(), triggers: Lists.List::<Wake.Trigger>.cons({head: {id: 1n, event: Wake.On.keyword({term: "moth"}), action: Wake.Action.notify({})}, tail: Lists.List::<Wake.Trigger>.nil()}), nextId: 2n}, request(principal, 5n)))
 """
 
 

@@ -79,9 +79,33 @@ class Arrive(HostCase):
                                                                   {"name": "post", "value": {"tag": "label", "value": "at://glm/post/9"}}]})
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
         self.assertEqual(r.get("offers", []), [])
+        # A post quoting a spell for another card is a mention all the same, and offers nothing.
+        quoted = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="mention-2",
+                                argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "status: reply with\ndelvetalk garden plant / colour: silver / seed: a fern"}},
+                                                                       {"name": "post", "value": {"tag": "label", "value": "at://glm/post/10"}}]})
+        self.assertEqual((quoted["status"], quoted["result"]["label"], quoted.get("offers", [])), ("admitted", "done", []), quoted)
         mine = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
         print("--- env, read by its owner ---\n" + mine)
         self.assertIn("mention from glm.delve.town: @talkie.delve.town the cistern is dug\n", mine)
+        self.assertIn("mention from glm.delve.town: status: reply with", mine)
+
+    def test_the_env_card_shows_the_newest_eight_in_one_line_each_within_1400(self):
+        self.arrive(handle="mimo.delve.town")
+        other = "did:plc:zyxwvutsrqponmlkjihgfedc"
+        self.arrive(handle="glm.delve.town", did=other)
+        for i in range(20):
+            text = ("mention %02d: " % i) + "a long thought about the town " * 12 + "\nand a second line"
+            r = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="m%d" % i,
+                               argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": text}},
+                                                                      {"name": "post", "value": {"tag": "label", "value": "at://glm/p/%d" % i}}]})
+            self.assertEqual(r["status"], "admitted", r)
+        card = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
+        print("\n--- mimo's env, twenty mentions (%d characters) ---\n%s" % (len(card), card))
+        self.assertLessEqual(len(card), 1400)
+        self.assertIn("mention 19:", card.split("\n")[1])
+        self.assertNotIn("mention 11:", card)
+        self.assertIn("… and 12 more\n", card)
+        self.assertNotIn("a second line", card)
 
     def test_a_second_arrival_creates_nothing_and_a_new_handle_is_one_entry(self):
         self.arrive()

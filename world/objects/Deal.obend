@@ -11,21 +11,31 @@ import ./Card.obend as Card
 # before rest. An exhibition is a deal with a piece. The posts are the deal's roots.
 record Signature:
   principal: String
+  handle: String
   post: String
+# amendment: a law for another object that the deal applies when it comes to rest, by
+# `amend` with the deal as caller (the object's own law judges it); object "" for none.
+record Amendment:
+  object: String
+  law: String
 record State:
+  amendment: Amendment
   parties: Lists.List<String>
   terms: String
   piece: String
   signatures: Lists.List<Signature>
   withdrawn: String
+  withdrawnHandle: String
   closed: Nat
 record Seed:
+  amendment: Amendment
   parties: Lists.List<String>
   terms: String
   piece: String
 record Edits:
   signatures: Plans.Entries<Signature, {}>
   withdrawn: Plans.Edit<String, {}>
+  withdrawnHandle: Plans.Edit<String, {}>
   closed: Plans.Edit<Nat, {}>
 type Plan = Plans.Plan<Edits>
 type Response = Plans.Response<State, {}>
@@ -34,17 +44,17 @@ type Response = Plans.Response<State, {}>
 # writeOnce reads naturals only, and passes any text field unjudged). Bend refuses a
 # stranger by name first.
 law members "a write is a party's": request.kind == 0 implies request.subject in new.parties
-law fixed "the parties, the terms and the piece never change": unchanged(parties) and unchanged(terms) and unchanged(piece)
+law fixed "the parties, the terms and the piece never change": unchanged(parties) and unchanged(terms) and unchanged(piece) and unchanged(amendment)
 law signed "signatures are only added": appendOnly(signatures)
 law once "a deal closes once": writeOnce(closed)
 def defaultSeed() -> Seed:
-  {parties: Lists.List.nil(), terms: "", piece: ""}
+  {amendment: {object: "", law: ""}, parties: Lists.List.nil(), terms: "", piece: ""}
 def seeded(seed: Seed) -> State:
-  {parties: seed.parties, terms: seed.terms, piece: seed.piece, signatures: Lists.List.nil(), withdrawn: "", closed: 0n}
+  {amendment: seed.amendment, parties: seed.parties, terms: seed.terms, piece: seed.piece, signatures: Lists.List.nil(), withdrawn: "", withdrawnHandle: "", closed: 0n}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {signatures: Plans.Entries.keep({}), withdrawn: Plans.Edit.keep({}), closed: Plans.Edit.keep({})}
+  {signatures: Plans.Entries.keep({}), withdrawn: Plans.Edit.keep({}), withdrawnHandle: Plans.Edit.keep({}), closed: Plans.Edit.keep({})}
 sum Done:
   signed: {remaining: Nat}
   atRest: {}
@@ -80,17 +90,25 @@ def atRest(state: State) -> Bool:
   unsigned(state) == 0n && state.withdrawn == ""
 # A party countersigns once, citing its post; the last signature puts the deal at rest.
 def countersigned<T>(state: State, post: String, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else if party(state, context.principal) == false then then(refused(Why.notParty({act: "countersigns"}))) else if hasSigned(state, context.principal) then then(refused(Why.alreadySigned({}))) else signing(state, {principal: context.principal, post: post}, context, then)
+  if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else if party(state, context.principal) == false then then(refused(Why.notParty({act: "countersigns"}))) else if hasSigned(state, context.principal) then then(refused(Why.alreadySigned({}))) else signing(state, {principal: context.principal, handle: context.handle, post: post}, context, then)
 def signing<T>(state: State, signature: Signature, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   let written(_) = perform(write {signatures: append signature})
-  if unsigned(state) == 1n then then(Done.atRest({})) else then(Done.signed({remaining: unsigned(state) - 1n}))
+  if unsigned(state) == 1n then amending(state.amendment, context, then) else then(Done.signed({remaining: unsigned(state) - 1n}))
+# At rest, the deal's amendment (if any) is proposed to its object, the deal as caller.
+def amending<T>(amendment: Amendment, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  if amendment.object == "" then then(Done.atRest({})) else amended(amendment, context, then)
+def amended<T>(amendment: Amendment, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
+  match perform(Plan.amend({object: {world: context.world, object: amendment.object}, law: amendment.law})):
+    case amended(_): then(Done.atRest({}))
+    case refused(r): then(Done.refused({clause: "amendRefused", reading: "At rest, but {amendment.object} refused the amendment ({r.clause})."}))
+    case _: then(Done.refused({clause: "amendRefused", reading: "At rest, but {amendment.object} did not answer the amendment."}))
 def countersign(state: State, input: {post: String}, context: Abi.Context) -> Activity<Plan, Response, Done>:
   countersigned(state, input.post, context, fn(done: Done) -> Done: done)
 # A party withdraws before rest; the withdrawal names who withdrew.
 def withdrew<T>(state: State, context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
   if party(state, context.principal) == false then then(refused(Why.notParty({act: "withdraws"}))) else if atRest(state) then then(refused(Why.atRest({}))) else if state.withdrawn != "" then then(refused(Why.withdrawn({}))) else withdrawing(context, then)
 def withdrawing<T>(context: Abi.Context, then: Done -> T) -> Activity<Plan, Response, T>:
-  let written(_) = perform(write {withdrawn: set context.principal, closed: set 1n})
+  let written(_) = perform(write {withdrawn: set context.principal, withdrawnHandle: set context.handle, closed: set 1n})
   then(Done.withdrawn({}))
 def withdraw(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
   withdrew(state, context, fn(done: Done) -> Done: done)
@@ -113,13 +131,14 @@ def heard(state: State, post: String, routed: Card.Routed, context: Abi.Context)
     case act(a): if a.action == "withdraw" then withdrew(state, context, doneReply) else countersigned(state, post, context, doneReply)
     case _: Card.answer(routed, context, forms(), render(state, context))
 def signatureLine(signature: Signature) -> Document.Document:
-  Document.text("signed: {Card.handle(signature.principal)} at {signature.post}\n")
+  Document.text("signed: {Card.shown(signature.principal, signature.handle, Card.stranger())} at {signature.post}\n")
 def waitingLine(state: State) -> Document.Document:
-  Document.text(if state.withdrawn != "" then "Withdrawn by {Card.handle(state.withdrawn)}.\n" else if atRest(state) then "At rest: every party has countersigned.\n" else "Waiting for {natText(unsigned(state))} of the parties.\n")
+  Document.text(if state.withdrawn != "" then "Withdrawn by {Card.shown(state.withdrawn, state.withdrawnHandle, Card.stranger())}.\n" else if atRest(state) then "At rest: every party has countersigned.\n" else "Waiting for {natText(unsigned(state))} of the parties.\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   let piece = if state.piece == "" then "" else " for {state.piece}"
-  let head = Document.text("DEAL{piece}\n\nTerms: {state.terms}\n\n")
+  let amends = if state.amendment.object == "" then "" else "At rest it amends {state.amendment.object} to:\n    {state.amendment.law}\n\n"
+  let head = Document.text("DEAL{piece}\n\nTerms: {state.terms}\n\n{amends}")
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(Card.clipped(Lists.map(state.signatures, signatureLine), 8n), Document.Documents.cons({head: waitingLine(state), tail: Document.Documents.cons({head: Document.text(partyLine(state, context)), tail: Document.Documents.nil()})}))})})
 # A party reading the card sees where it stands and the spell to sign; nobody else does.
 def partyLine(state: State, context: Abi.Context) -> String:

@@ -373,10 +373,12 @@ class PolicyObject(Chain):
                               modules=closure("Directory"), entry="initial",
                               seed=record(owner=label("ember"), policy=reference("policy")))
         self.assertEqual(made["status"], "created", made)
+        door = record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"))
+        self.assertEqual(self.turn("directory", "add", record(door=door), principal="ember")["result"]["label"], "done")
         prose = lambda who, text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://" + ident)),
                                                    principal=who, identity=ident)
         self.assertEqual(prose("inkling", "hello, town", "i-1")["status"], "admitted")     # greeted once
-        waiting = prose("inkling", "an env interface card, perhaps?", "i-2")
+        waiting = prose("inkling", "an env interface card for the garden, perhaps?", "i-2")
         self.assertEqual(waiting["status"], "suspended", waiting)
         moved = prose("zero", "what is this portal", "z-1")                                # greets zero: the directory moves
         self.assertEqual(moved["status"], "admitted", moved)

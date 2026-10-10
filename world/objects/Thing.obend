@@ -17,8 +17,10 @@ record State:
   name: String
   description: String
   holder: Plans.Reference
+  holderHandle: String
   location: Plans.Reference
   offer: Offer
+  copyable: Bool
 # A creator supplies a Seed; seeded makes the child's State from it.
 record Seed:
   owner: String
@@ -30,8 +32,10 @@ record Edits:
   name: Plans.Edit<String, {}>
   description: Plans.Edit<String, {}>
   holder: Plans.Edit<Plans.Reference, {}>
+  holderHandle: Plans.Edit<String, {}>
   location: Plans.Edit<Plans.Reference, {}>
   offer: Plans.Edit<Offer, {}>
+  copyable: Plans.Edit<Bool, {}>
 # Its calls into places and avatars carry nothing: the place reads the thing from its
 # caller and the person from the principal.
 type Plan = Plans.Plan<Edits>
@@ -40,13 +44,13 @@ type Response = Plans.Response<Place.State, Place.Done>
 def defaultSeed() -> Seed:
   {owner: "", name: "", description: "", holder: Plans.nobody(), location: Plans.nobody()}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, name: seed.name, description: seed.description, holder: seed.holder, location: seed.location, offer: Offer.none({})}
+  {owner: seed.owner, name: seed.name, description: seed.description, holder: seed.holder, holderHandle: "", location: seed.location, offer: Offer.none({}), copyable: true}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
-  {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), holder: Plans.Edit.keep({}), location: Plans.Edit.keep({}), offer: Plans.Edit.keep({})}
+  {name: Plans.Edit.keep({}), description: Plans.Edit.keep({}), holder: Plans.Edit.keep({}), holderHandle: Plans.Edit.keep({}), location: Plans.Edit.keep({}), offer: Plans.Edit.keep({}), copyable: Plans.Edit.keep({})}
 # Anyone moves a thing (its own code checks who holds it); only its owner renames it.
-law owner "only the owner renames or redescribes it; anyone moves it": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description))
+law owner "only the owner renames or redescribes it; anyone moves it": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(name) and unchanged(description) and unchanged(copyable))
 # The second tier: custody moves from one holder to another only by an accepted offer:
 # the new holder is the offer's `to`, the turn is that avatar's own call (context.caller),
 # and the clock (context.clock) is before `until`. Picking up (from nobody) and putting down (to
@@ -102,7 +106,7 @@ def clause(w: Why) -> String:
 def refused(w: Why) -> Place.Done:
   Place.Done.refused({clause: clause(w), reading: why(w)})
 def held(context: Abi.Context, holder: Plans.Reference, location: Plans.Reference) -> Activity<Plan, Response, Place.Done>:
-  let written(_) = perform(write {holder: set holder, location: set location})
+  let written(_) = perform(write {holder: set holder, holderHandle: set if Plans.isNobody(holder) then "" else context.handle, location: set location})
   Place.Done.done({})
 # Pick the thing up from its place: view the place, have it release the thing,
 # then record the holder. Only an unheld thing can be acquired.
@@ -180,10 +184,22 @@ def releasing(state: State, to: Plans.Reference, context: Abi.Context) -> Activi
   match perform(Plan.call({object: state.holder, method: "release", argument: Plans.nothing()})):
     case _: transferred(to, context)
 def transferred(to: Plans.Reference, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  let written(_) = perform(write {holder: set to, offer: set Offer.none({})})
+  let written(_) = perform(write {holder: set to, holderHandle: set context.handle, offer: set Offer.none({})})
   Place.Done.done({})
+# Copy as a right: anyone may have a copy made (the Workshop's `create / like: <thing>` asks
+# for one) unless the owner switched copyable off; the copy is created from this thing's
+# own package, its seed this state without holder and offer (lying nowhere until put down),
+# owned by whoever asked (the host fills `owner` with the creating principal; the law must
+# admit its own owner's amendment).
+def copy(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  if state.copyable == false then Card.tellTo(Place.Done.refused({clause: "notCopyable", reading: "{state.name} is not copyable"}), context.principal, Document.text("Not copied: {state.name} is not copyable; its owner, {Card.name(state.owner, context)}, decides.\n")) else copying(state, context)
+def copying(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
+  match perform(Plan.create({package: "Thing", seed: {name: state.name, description: state.description, holder: Plans.nobody(), location: Plans.nobody(), copyable: state.copyable}, law: "", requireAbsent: Plans.nobody()})):
+    case created(c): Card.tellTo(Place.Done.done({}), context.principal, Document.text("Copied {state.name} as {c.object.object}.\n"))
+    case refused(r): Card.tellTo(Place.Done.refused({clause: r.clause, reading: "The world refused the copy ({r.clause})."}), context.principal, Document.text("Not copied: {r.clause}\n"))
+    case _: Place.Done.refused({clause: "noCreation", reading: "The copy was not made."})
 def holding(state: State, context: Abi.Context) -> String:
-  if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else "Held by {Card.name(state.holder.object, context)}."
+  if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else "Held by {Card.shown(state.holder.object, state.holderHandle, context)}."
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("{state.name}\n{state.description}\n{holding(state, context)}\n{offerLine(state.offer, context)}(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n")
@@ -220,4 +236,4 @@ def done(reply: Card.Reply) -> Place.Done:
     case usage(_): Place.Done.refused({clause: "usage", reading: "Reply with a spell."})
     case silent(_): Place.Done.refused({clause: "notAddressed", reading: "not addressed"})
 def lenses() -> Lists.List<Form.Lens<Edits>>:
-  Lists.List.cons({head: Form.Lens.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})
+  Lists.List.cons({head: Form.Lens.lens({field: "copyable", form: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")}), put: fn(v: Form.Value) -> Edits: extend(keep(), {copyable: Plans.Edit.set({value: Card.valueText(v) == "yes"})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "name", form: Form.Kind.text({min: 1n, max: 64n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {name: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.cons({head: Form.Lens.lens({field: "description", form: Form.Kind.text({min: 0n, max: 280n}), put: fn(v: Form.Value) -> Edits: extend(keep(), {description: Plans.Edit.set({value: Card.valueText(v)})})}), tail: Lists.List.nil()})})})

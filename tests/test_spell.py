@@ -205,6 +205,35 @@ class Parse(unittest.TestCase):
         self.assertEqual(parse("delvetalk a b\nnote: time: 12:30"), "spell a b note=time: 12:30;")
 
 
+class Blocks(unittest.TestCase):
+    """`field: <<DELIM` opens a block ending at a line that is exactly DELIM."""
+
+    def parsed(self, reply):
+        out = run("parse", text(reply))
+        self.assertEqual(out["status"], "finished", out)
+        return out["value"]["value"]
+
+    def test_a_block_value_is_its_lines_joined_without_a_trailing_newline(self):
+        reply = "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\n\ndef f(n: Nat) -> Nat:\n  n\nBEND\ntarget: bell-1\n"
+        self.assertEqual(self.parsed(reply), "spell workshop check source=edition ObjectiveBend 1\n\ndef f(n: Nat) -> Nat:\n  n;target=bell-1;")
+        # A line merely containing the delimiter does not close it; an empty block is "".
+        self.assertEqual(self.parsed("delvetalk w c\nnote: <<END_1\nnot END_1 yet\nEND_1\n"), "spell w c note=not END_1 yet;")
+        self.assertEqual(self.parsed("delvetalk w c\nnote: <<X\nX"), "spell w c note=;")
+        # Not a delimiter (lowercase, or too long): the value is as written.
+        self.assertEqual(self.parsed("delvetalk w c\nnote: <<end\nx: y\n"), "spell w c note=<<end;x=y;")
+
+    def test_an_unclosed_block_is_refused_by_name(self):
+        self.assertEqual(self.parsed("delvetalk w c\nsource: <<BEND\nline\n"),
+                         "not a spell: the block <<BEND for source is never closed by a line BEND")
+
+    def test_a_4_kb_block_costs(self):
+        body = "\n".join("  line %04d of a long block of Bend source text" % i for i in range(80))[:4096]
+        out = run("fieldCount", text("delvetalk workshop check\nsource: <<BEND\n%s\nBEND\n" % body), limits={"ticks": "1000000"})
+        print("\n  a 4 KB block: %d ticks" % out["ticksUsed"])
+        self.assertEqual(out["value"]["value"], "1")
+        self.assertLess(out["ticksUsed"], 100000)
+
+
 class Fit(unittest.TestCase):
     def test_a_missing_field_is_unclear_and_named(self):
         self.assertEqual(propose("delvetalk garden-1 plant\nseed: fern"), "unclear colour|")

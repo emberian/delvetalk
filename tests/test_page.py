@@ -34,6 +34,26 @@ class Page(Chain):
         self.assertIn("… and 4 more bells", sections[0])
         self.assertEqual(r["result"], label(published["id"]))
 
+    def test_publish_page_posts_the_card_under_the_door_word_and_the_host_lists_it(self):
+        """Genesis posts one card per door: publishPage titles the page by door().word."""
+        self.make("plot", closure("Garden"), garden_seed())
+        r = self.turn("plot", "publishPage", principal="ember")
+        self.assertEqual(r["status"], "admitted", r)
+        [published] = r["receipt"]["publishes"]
+        self.assertTrue(published["text"].startswith("wiki: garden\n"), published["text"][:80])
+        self.assertIn("    delvetalk plot plant\n", published["text"])
+        listed = self.host.send(op="world-publications", principal="transport")
+        self.assertEqual(listed["status"], "publications", listed)
+        self.assertEqual([(p["object"], p["page"]) for p in listed["publications"]], [("plot", "garden")])
+        for obj, module, seed in (("rooms", "Scene", record(title=label("The Moss Gate"))), ("workshop", "Workshop", record(title=label("Workshop")))):
+            made = self.host.send(op="world-create", principal="ember", identity="mk-" + obj, object=obj, modules=closure(module), entry="initial", seed=seed)
+            self.assertEqual(made["status"], "created", made)
+            r = self.turn(obj, "publishPage", principal="ember")
+            self.assertEqual(r["status"], "admitted", r)
+            [published] = r["receipt"]["publishes"]
+            print("\n--- %s page ---\n%s" % (obj, published["text"][:300]))
+            self.assertTrue(published["text"].startswith("wiki: %s\n" % ("scene" if module == "Scene" else "workshop")), published["text"][:80])
+
 
 if __name__ == "__main__":
     unittest.main()

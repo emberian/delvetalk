@@ -29,7 +29,10 @@ the library).
 * **Handles and the clock.** `Card.name(did, context)` shows the reader's own observed
   handle (`context.handle`, from the host's registry) and anyone else as `Card.handle`:
   never a raw DID, a long fragment is `…` and its last eight. A handle stored when the
-  host knew it (a bell's planter, a rain's author, a Tide subscriber) shows by `Card.shown`. Deadlines (Thing offers,
+  host knew it shows by `Card.shown`: a bell's planter, a rain's author, a Tide subscriber,
+  the Anthology's owner (stored at each admission), a lantern's lighter, a door's opener and
+  knockers, a Deal's signers and withdrawer, a Thing's holder, an Avatar note's author, and
+  an Env's and a Wake's owner (seeded at arrival). Deadlines (Thing offers,
   the Tide's gap) compare `context.clock`, which only world-advance moves.
 * **Reader-specific cards.** `Card.reads(principal, context)`, `Card.mine(principal,
   context)` (" (yours)"), `Card.stranger()`. A member sees more: an Env's events, a Wake's
@@ -66,8 +69,9 @@ the library).
   it: "<handle> said: <utterance>; I could not fit it (<card>).". A host `unclear {needs}`
   (a failed model call, a JSON proposal that does not fit) is not retried. An activity
   composes only in tail position, so the object owns the loop (Directory answers a miss
-  that says the action is not offered at once, with the nearest door's usage card, and
-  does not ask again; `interpreted`/`readBack` in
+  that says the action is not offered at once and does not ask again: with the usage card
+  of a door whose form has an action resembling the miss, else "A bell's card takes rain:
+  reply to the planting post" when a kind of card under a door takes it, else no door; `interpreted`/`readBack` in
   Garden, `interpreting`/`readBack` in Directory) and Card gives the Plans, the pure
   reading and `Card.unfit` for a card with no writes of its own. A read-only root that moves
   while the interpretation waits does not make the resumption stale.
@@ -102,7 +106,11 @@ the library).
   is the directory's: it keeps `words` (door labels and ids, form actions) and `fields`
   (form fields) learned by inspect when a door is added (every door is relearned) or by the
   first handed-on reply after a seeded genesis (writeOnce for anyone else), and reads with
-  the model only prose that `Card.mentions` (a word, or a field as `name:`). A card cannot
+  the model only prose that `Card.mentions` (a word, or a field as `name:`). The same check
+  guards the directory's own reading of hub prose. At judgement the directory also reads
+  the first object listed under each door (`objects {prefix}`, then inspect: a garden's
+  bell gives "rain"), and a handed-on reply does not count its caller's family: the
+  caller's own actions and fields, and the door it lives under with that door's. A card cannot
   `view directory` itself: a view answers in the card's own Response state type, which is
   not the directory's, so the hand-off costs a delivery turn but no model call. A door added
   before its object exists learns only its label and id. The directory reads a handed-on reply with
@@ -116,19 +124,82 @@ the library).
 * **Link doors** (objects5): a Directory door whose `to` is nobody (genesis's STUDIO) answers
   its word with `<label>\n<description>` (the URL is in the description) and is skipped
   when field lines and the model look for forms.
-* **Env fills** (objects5). `Env.receive {text, post}` from anyone but the owner, naming
-  no Env form, is taken in as `mention` (`Event` gained `handle`, the author's as the host
+* **Env fills** (objects5). `Env.receive {text, post}` from anyone but the owner (any
+  non-empty text, never read as a spell, nothing offered) is taken in as `mention` (`Event` gained `handle`, the author's as the host
   knew it); the law admits that receive (kind 0, method receive, owner/handle/seen/
-  subscribers unchanged). Arrival seeds `handle`, and the card reads "ENV of <handle>".
+  subscribers unchanged). Arrival seeds `handle`, and the card reads "ENV of <handle>":
+  the newest eight events, one line each (first line, 100 characters), "… and N more".
 * **No hash in a card** (objects5). A card or offer cites an object as `<object> v<n>`
   (Workshop views its target, its Response's state type being Data, and says "Was: bell-1
   v1 / Now: bell-1 v2"); `tests/host.py` fails any host reply whose card or offer text
   contains `bafy`, in every suite.
+* **What prose costs** (objects5, run 8). Spell.parse's one walk notes whether any line
+  might be a `name:` field line (`notASpell {reason, fielded}`; a name of up to 16
+  letters); Card and Directory call Spell.bare only then. `Card.blank` replaces
+  `textSpan == textLength` (textLength costs the whole text). glm's 1,788-character reply
+  costs a bell 19,601 ticks (was 999,861); the directory's reading of it about 200,000, all
+  interpretation overhead of a per-word loop (`Card.mentions`: split at blanks once, words
+  by length, a first-letter filter); a kernel word-set builtin would remove it. The newline
+  scan is the floor: 6 ticks a scalar.
+* **Block field values** (objects5): `field: <<DELIM` (1 to 32 of A-Z 0-9 _) takes the
+  following lines up to one that is exactly DELIM, joined by newlines, no trailing newline;
+  unclosed is refused by name ("the block <<BEND for source is never closed by a line
+  BEND"). Workshop reads `source:` as its code (the root menu's `source: <<BEND`). A 4 KB
+  block parses in 98,132 ticks (just under a bare run's 100,000); the 64-field parse went
+  75,421 -> 79,583.
+* **Held proposals** (objects5): a Workshop `propose` the target's law refuses is held as
+  `{n, target, package, migration, proposer, proposerHandle}` (sixteen; a seventeenth drops
+  the oldest with a card line); the card lists them; `adopt / n` runs the reprogram under
+  the adopter, so the target's law admits only its owner ("Only the owner of bell-1 adopts
+  #1 (refused owner)" otherwise); `withdraw / n` is the proposer's. Compile, program,
+  packageBytes and migration refusals are not held.
+* **Scoped resolution** (objects5): an Avatar's own principal's prose with no spell and no
+  field lines starting with an action word names its object by the first word that is a
+  thing lying in its place (its card's first line, then its id's last segment), else an
+  object of that id (the doors: garden, rooms, play); the avatar `send`s the object
+  `delvetalk <id> <action>` with the rest of the line in the form's first field (a send,
+  not a call: the callee's result would have to fit the avatar's Response R). Two of a name
+  are answered "Which one: …?"; `look` offers `Place.render` for the reader.
+* **Talk in a place** (objects5): Place forms `say {line}`, `emote {line}`, `whisper {to,
+  line}`; the line is offered under the speaker's name to every avatar present (newest
+  arrivals first, at most 32), a whisper to one; someone not present is refused by name.
+  The place card's "Here:" lines and the avatar card's "is at" line are the who and where.
+* **Copy as a right** (objects5): Thing `copyable` (default true; the owner's lens). The
+  Workshop's `create / like: <thing>` sends the thing `copy`; the thing creates a Thing from
+  its own package with its state minus holder, offer and owner (the copy is the asker's:
+  the host fills owner with the creating principal, and the law must admit its own owner),
+  lying nowhere; not copyable is refused by name to the asker.
+* **Doors on any card** (objects5): `Card.Doorway {label, to}`, `doors: Card.Doorways` in
+  state and Edits, `Card.doorForm()`/`undoorForm()`, `Card.dooring` (the owner's, refused by
+  name otherwise; eight at most) and `Card.doorLines` ("label: id"). Bell has them (its
+  planter's) and Garden plants each bell with `garden: <garden>`. (`door()` stays the
+  directory blurb, so the action is a form, not a method named door.)
+* **A Wake watches writes** (objects5): `On.writes {object, field, above}`; `watch` with it
+  sends the watched object `observe {object: wake, method: "written"}` (the observers
+  convention). Garden keeps observers and tells them `{field: "planted", value}` after each
+  planting; `Wake.written` fires a trigger when the value passes `above` (one step from at
+  most `above`), sending a call action nothing (`tick` takes no input), else the line.
+* **Traces in a place** (objects5): a Place records each enter, leave, take and put done
+  in it, admitted or refused, as `Trace {who, handle, action, clause}` (the principal, the
+  handle the host knew, the clause or ""), eight kept (the oldest dropped by its own
+  write); the card shows them newest first under "Traces:". A refusal therefore writes a
+  trace (the place's version moves). The Place records what it judges itself rather than
+  observing avatars: an avatar's own refusals elsewhere are not traced here.
+* **A Deal amends** (objects5): `amendment {object, law}` (fixed by the deal's law; object ""
+  for none). The countersignature that brings the deal to rest performs `amend {object,
+  law}` with the deal as caller, judged by the object's own law (which must admit the
+  deal, and the new law its proposer); a refusal is answered `amendRefused`, the signature
+  standing. The card shows the amendment.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for
   prose the model calls `not addressed`; it reads the model's text (`replied {text}`)
   with Spell. Tide answers subscribe and tick with its card.
+* **publishPage** (objects5): `Card.publishPage(door().word, page)` performs `publish {page:
+  <door word>, section: "", body}`; Garden (its own page), Scene, Table, Workshop and
+  Anthology (the default page, rendered for nobody at the object) expose `publishPage`,
+  and the host lists the publication (`world-publications`). The card and its usage name
+  the object's id; the page is titled by the door word.
 * **Pages.** An object with a page keeps `owner` and `pageCheckpoint`; `Card.isMerge`
   and `Card.merge` record the owner's `merge` reply (Garden does).
 * **Laws that guard fields** read `owner: request.subject == new.owner or (request.kind
@@ -173,10 +244,7 @@ the library).
   parenthesised. `law(old, new, request)` Bend predicates run after the text admits a
   kind-0 write (Tide: self, tooSoon; Wake: owner); `tests/test_laws.py` shows them biting.
 * **Layers through the host** (objects5): `tests/test_extend.py` LouderBell grafts
-  `layer over ./Bell.obend` by the extend Plan and expects a rain reply's card to start
-  LOUDER; it is an expectedFailure (today: programRefused/compile, "import must name an
-  earlier supplied module: ./Bell.obend") until the host lane drops `delegate`. Remove the
-  decorator then.
+  `layer over ./Bell.obend` by the extend Plan, and a rain reply's card starts LOUDER.
 * **Layers.** `world-reprogram {mode: extend}` with a module `type State = Super.State`
   overrides what it defines; `tests/test_layers.py` (Louder over Bell) keeps rain.
 
