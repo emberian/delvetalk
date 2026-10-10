@@ -60,6 +60,9 @@ def opened(by: String) -> Activity<Bool>:
   let written(_) = world.write(unlatched(by, ""))
   true
 form knock:
+# An action without a form: watching names an object.
+def methods() -> Lists.List<String>:
+  Card.wordList("watch")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: knockForm(), tail: Card.Forms.nil()})
 def blurb() -> Card.Door:
