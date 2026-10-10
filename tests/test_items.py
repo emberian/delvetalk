@@ -40,8 +40,6 @@ def drop(state: State, input: {name: String}, context: Abi.Context) -> Activity<
   write(context, Plans.Entries::<String, String>.removeItem({item: input.name}))
 def rename(state: State, input: {name: String, to: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   write(context, Plans.Entries::<String, String>.amendItem({item: input.name, change: input.to}))
-def dropAt(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  write(context, Plans.Entries::<String, String>.remove({index: input.index}))
 """
 
 
@@ -57,10 +55,6 @@ class Items(TurnWorld):
     def names(self):
         state = self.host.send(op="world-view", principal="ember", object="roster")["state"]
         return [n["value"] for n in items(get(state, "names"))]
-
-    def test_the_index_forms_still_work(self):
-        self.assertEqual(self.turn("roster", "dropAt", record(index={"tag": "natural", "value": "1"}))["status"], "admitted")
-        self.assertEqual(self.names(), ["glm", "glm", "gemini"])
 
     def test_remove_item_removes_the_first_equal_item_only(self):
         r = self.turn("roster", "drop", record(name=label("glm")))

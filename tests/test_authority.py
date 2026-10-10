@@ -56,10 +56,10 @@ def stamp(state: State, input: {who: String}, context: Abi.Context) -> Activity<
   commit(context, extend(keep(), {lastBy: Plans.Edit::<String, {}>.set({value: input.who})}), "stamped")
 def append(state: State, input: {item: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
   commit(context, extend(keep(), {entries: Plans.Entries::<String, String>.append({item: input.item})}), "appended")
-def amendAt(state: State, input: {index: Nat, item: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  commit(context, extend(keep(), {entries: Plans.Entries::<String, String>.amend({index: input.index, change: input.item})}), "amended")
-def removeAt(state: State, input: {index: Nat}, context: Abi.Context) -> Activity<Plan, Response, Out>:
-  commit(context, extend(keep(), {entries: Plans.Entries::<String, String>.remove({index: input.index})}), "removed")
+def amendOne(state: State, input: {old: String, item: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
+  commit(context, extend(keep(), {entries: Plans.Entries::<String, String>.amendItem({item: input.old, change: input.item})}), "amended")
+def removeOne(state: State, input: {item: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
+  commit(context, extend(keep(), {entries: Plans.Entries::<String, String>.removeItem({item: input.item})}), "removed")
 def plant(state: State, input: {value: String}, context: Abi.Context) -> Activity<Plan, Response, Out>:
   commit(context, extend(keep(), {planting: Plans.Edit::<String, {}>.set({value: input.value})}), "planted")
 def who(state: State, context: Abi.Context) -> Activity<Plan, Response, Out>:
@@ -222,9 +222,9 @@ class LawsOnWho(Authority):
     def test_append_only_admits_an_append_and_refuses_an_amend_and_a_remove(self):
         self.ledger("a", "law grow: appendOnly(entries)\n", entries=items("x"))
         self.assertEqual(self.turn("a", "append", record(item=label("y")))["status"], "admitted")
-        amend = self.turn("a", "amendAt", record(index=nat(0), item=label("z")))
+        amend = self.turn("a", "amendOne", record(old=label("x"), item=label("z")))
         self.assertEqual((amend["status"], self.outcome(amend)["clause"]), ("refused", "grow"))
-        remove = self.turn("a", "removeAt", record(index=nat(0)))
+        remove = self.turn("a", "removeOne", record(item=label("x")))
         self.assertEqual((remove["status"], self.outcome(remove)["clause"]), ("refused", "grow"))
         self.assertEqual(self.version("a"), 1)
         self.assertEqual(self.state("a")["fields"][2]["value"], items("x", "y"))
@@ -296,11 +296,11 @@ class Clauses(Authority):
                               roots=[{"object": "a", "version": self.version("a")}],
                               writes=[{"object": "a", "edits": edits}])
 
-    def test_an_index_past_the_end_is_outOfRange(self):
-        r = self.turn("a", "amendAt", record(index=nat(5), item=label("q")))
-        self.assertEqual((r["status"], self.outcome(r)["class"]), ("refused", "outOfRange"))
-        r = self.turn("a", "removeAt", record(index=nat(1)))
-        self.assertEqual(self.outcome(r)["class"], "outOfRange")
+    def test_an_absent_item_is_absentItem(self):
+        r = self.turn("a", "amendOne", record(old=label("nobody"), item=label("q")))
+        self.assertEqual((r["status"], self.outcome(r)["class"]), ("refused", "absentItem"))
+        r = self.turn("a", "removeOne", record(item=label("nobody")))
+        self.assertEqual(self.outcome(r)["class"], "absentItem")
         self.assertEqual(self.version("a"), 0)
 
     def test_state_beyond_its_byte_limit_is_capacity(self):

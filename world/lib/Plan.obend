@@ -46,8 +46,8 @@ import ./Form.obend as Form
 #
 # Recursive data (List, Document) may cross a Plan or Response: the first
 # checker refused it with "the checker refused the front end's typed packet",
-# the current one admits it. List fields are still edited by Entries (append,
-# amend or remove one item by index; remove is a variant the host must implement), never replaced whole, so the host judges one item.
+# the current one admits it. List fields are edited by Entries (one item at a time, by
+# its bytes), never replaced whole, so the host judges one item.
 # Generic records are replaced by inline sum payloads. The type arguments of keep and
 # append are inferred from the field's declared Edit or Entries type (`Plans.Edit.keep({})`
 # in a keep() record); `write {field: op value, ...}` builds a self-write from them.
@@ -58,12 +58,10 @@ sum Edit<T, D>:
   keep: {}
   set: {value: T}
   add: {delta: D}
-# A list-valued field: append an item, replace the item at an index by `change`
-# (the host stores the change as the item, so U is the item type), or remove
-# the item at an index (later items shift down by one). amendItem and removeItem
-# address the first item whose canonical bytes equal `item` (refused absentItem
-# when none does); the index forms go after one release. A write of only keep,
-# add and append commits even if its object moved since the turn read it.
+# A list-valued field: append an item; amendItem replaces, and removeItem removes, the
+# first item whose canonical bytes equal `item` (refused absentItem when none does; the
+# host stores `change` as the item, so U is the item type). A write of only keep, add and
+# append commits even if its object moved since the turn read it.
 # A relation field (Relation.obend, declared in the object's `relations()`) is edited by
 # key (docs/RELATIONAL.md section 3): insert adds a row whose key is absent (the same row
 # again changes nothing; another row of that key is refused keyTaken), upsert adds or
@@ -73,8 +71,6 @@ sum Edit<T, D>:
 sum Entries<D, U>:
   keep: {}
   append: {item: D}
-  amend: {index: Nat, change: U}
-  remove: {index: Nat}
   amendItem: {item: D, change: U}
   removeItem: {item: D}
   insert: {row: D}

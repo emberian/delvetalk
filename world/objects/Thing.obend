@@ -166,9 +166,6 @@ def offerWritten(offer: Offer, context: Abi.Context) -> Activity<Plan, Response,
   Place.Done.done({})
 def offer(state: State, input: {to: Plans.Reference, until: Nat}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   offered(state, input.to, input.until, context)
-# give is offer, open for 1,000 clock units, for one release.
-def give(state: State, input: {to: Plans.Reference}, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
-  offered(state, input.to, context.clock + 1000n, context)
 def withdraw(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   if Plans.same(state.holder, person(context)) == false then refused(Why.notHolder({})) else withdrawing(state, context)
 def withdrawing(state: State, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
@@ -205,7 +202,7 @@ def holding(state: State, context: Abi.Context) -> String:
   if Plans.isNobody(state.holder) then "Nobody holds it." else if Card.reads(state.holder.object, context) then "You hold it." else "Held by {Card.shown(state.holder.object, state.holderHandle, context)}."
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text("{state.name}\n{state.description}\n{holding(state, context)}\n{offerLine(state.offer, context)}(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n")
+  Document.text("{state.name}\n{state.description}\n{holding(state, context)}\n{offerLine(state.offer, context)}")
 def offerLine(offer: Offer, context: Abi.Context) -> String:
   match offer:
     case none(_): ""
@@ -218,10 +215,8 @@ form offer:
   to: text 1..128
   until: natural 1..1000000000
 form withdraw:
-form give:
-  to: text 1..128
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: acquireForm(), tail: Card.Forms.cons({head: offerForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.cons({head: giveForm(), tail: Card.Forms.nil()})})})})
+  Card.Forms.cons({head: acquireForm(), tail: Card.Forms.cons({head: offerForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.nil()})})})
 def door() -> Card.Door:
   {word: "thing", blurb: "Pick it up, put it down, offer it to someone who accepts."}
 # A spell's `to` names the recipient's avatar, which is the recipient's DID.
@@ -229,7 +224,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<P
   heard(state, Card.routeHeard(input, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Place.Done>:
   match routed:
-    case act(a): if a.action == "acquire" then acquire(state, context) else if a.action == "withdraw" then withdraw(state, context) else if a.action == "offer" then offered(state, {world: context.world, object: Card.text(a.fields, "to")}, Card.natural(a.fields, "until"), context) else give(state, {to: {world: context.world, object: Card.text(a.fields, "to")}}, context)
+    case act(a): if a.action == "acquire" then acquire(state, context) else if a.action == "withdraw" then withdraw(state, context) else offered(state, {world: context.world, object: Card.text(a.fields, "to")}, Card.natural(a.fields, "until"), context)
     case _: Card.answerLensedAs(routed, context, forms(), lenses(), if state.owner != "" && context.principal == state.owner then "" else "Only the thing's owner changes it; that is {Card.name(state.owner, context)}", render(state, context), done)
 def done(reply: Card.Reply) -> Place.Done:
   match reply:

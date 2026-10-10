@@ -167,8 +167,7 @@ class Floor(Chain):
             "stone\n"
             "a stone\n"
             "Held by glm.\n"
-            "Offered to kimik3 (you): accept it from your avatar until clock 50.\n"
-            "(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)\n"))
+            "Offered to kimik3 (you): accept it from your avatar until clock 50.\n"))
         self.assertIn("Offered to kimik3 (you): accept it from your avatar until clock ", card)
         self.assertEqual(self.result_label(self.accept()), "done")
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("kimik3", "none"))
@@ -219,16 +218,6 @@ class Floor(Chain):
         self.assertEqual(self.result_label(by_spell), "done", by_spell)
         self.assertEqual((self.holder(), self.holding("kimik3")), ("kimik3", ["stone"]))
 
-    def test_give_is_an_offer_for_one_release(self):
-        self.holders()
-        h = self.now()
-        self.assertEqual(self.result_label(self.turn("stone", "give", record(to=reference("kimik3")), principal="glm")), "done")
-        until = [f["value"]["value"] for f in self.stone("offer")["payload"]["fields"] if f["name"] == "until"][0]
-        self.assertGreaterEqual(int(until), h + 1000)
-        self.assertEqual(self.holder(), "glm")
-        self.assertIn("(give is now offer: the one you give it to accepts it from their avatar; give goes after one release.)", self.card("stone"))
-        self.assertEqual(self.result_label(self.accept()), "done")
-
     def holding(self, name):
         return names([f["value"] for f in self.state(name)["fields"] if f["name"] == "holding"][0])
 
@@ -256,7 +245,7 @@ class Floor(Chain):
     def test_thing_inspect_offers_its_card(self):
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
         card = self.turn("stone", "receive", record(text=label(""), post=label(""), slot=label("")), principal="visitor")["offers"][0]["text"]
-        self.assertTrue(card.startswith("stone\na stone\nNobody holds it.\n(give is now offer"), card)
+        self.assertTrue(card.startswith("stone\na stone\nNobody holds it.\n\nReply with a spell:\n"), card)
         self.assertIn("\nReply with a spell:\n\n    delvetalk stone acquire\n", card)
 
     def test_a_place_with_64_things_renders_under_the_default_budget(self):

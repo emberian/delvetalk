@@ -7,7 +7,7 @@ Supply these modules before the consumer in one compile job; imports are
   clock, inputOrigin}` the host fills for every turn, the law predicate's `Request` and
   `Verdict`, plus form field shapes.
 - `List.obend`: rank-1 generic `List<T>` and its traversals.
-- `Encounter.obend`, `EncounterPages.obend`: keyed child collections and their pages.
+- `Encounter.obend`: a keyed child (`Child`), the payload of `Document.reference`.
 - `../Plan.obend`: the Plan and Response vocabulary of docs/FOUNDATION.md section 3.
 - `../document/Document.obend`: the structured document objects render for cards.
 
