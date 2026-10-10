@@ -638,11 +638,12 @@ class Heaps(FrontCase):
 
     def test_a_heap_object_no_spell_can_address_is_refused_before_it_is_created(self):
         tok = self.login()
-        s, e = self.heap_create(tok, 'Coin_box')  # creation's alphabet takes it; the spell grammar's card name does not
-        self.assertEqual((s, e['class']), (400, 'unspellable'), e)
-        self.assertIn('delvetalk Coin_box ?', e['message'])
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/Coin_box', token=tok)[0], 404)
-        self.assertEqual(self.heap_create(tok, 'coin-box')[0], 200)
+        for name in ('coin box', 'c' * 129):  # a space splits the spell's card from its action; past 128 bytes no card is read
+            s, e = self.heap_create(tok, name)
+            self.assertEqual((s, e['class']), (400, 'unspellable'), e)
+            self.assertIn(f'delvetalk {name} ?', e['message'])
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/coin%20box', token=tok)[0], 404)
+        self.assertEqual(self.heap_create(tok, 'Coin_box')[0], 200)  # one rule names objects and spell cards
 
     def test_a_heap_object_is_one_module_importing_the_library(self):
         tok = self.login()
