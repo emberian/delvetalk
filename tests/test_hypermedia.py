@@ -268,7 +268,7 @@ class Envelope(FrontCase):
         self.front.repl.send = lambda req: {'status': 'error', 'message': 'checkpoint was not issued by this process'} if req['op'] == 'turn-resume' else repl(req)
         saw('replRestarted', post('/AGENTS.md/repl', {'modules': [{'name': 'Package', 'source': PURE}], 'entry': 'twice', 'checkpoint': {}, 'response': {}}))
         self.front.repl.send = repl
-        saw('unspellable', post('/AGENTS.md/heap/objects', {'object': 'Coin_box', 'intent': 'mk-cb'}))
+        saw('unspellable', post('/AGENTS.md/heap/objects', {'object': 'coin box', 'intent': 'mk-cb'}))
         saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 16385}]}))
         e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))
         self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': f'/AGENTS.md/world/{self.c}/source'}))

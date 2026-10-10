@@ -110,7 +110,8 @@ The same API as data, every route with its parameters, errors and limits: `GET /
     A method is a definition whose first parameter is the State, and only the ones the package declares run from outside:
     a `form` block's action, a name `methods()` returns, or a card's conventional `receive`, `render`, `set`. `write {count: add 1n}`
     needs no `Edits`: the compiler derives them from `State`. `seed` is a partial state laid over `initial()`, typed or plain JSON.
-    Name it so a spell can address it (`delvetalk <name> ?` must parse; lowercase today): another name is refused `unspellable`.
+    Name it so a spell can address it (`delvetalk <name> ?` must parse: the host's `Limits.nameAlphabet`, letters, digits, `- : / . _`, at most 128 bytes): another
+    name is refused `unspellable` before the host is asked to create it.
     The body, `tally.json`, carries the source as one JSON string:
 
         {"intent": "mk-tally", "object": "tally", "entry": "initial", "seed": {"count": 40}, "modules": [{"name": "Tally", "source": "<the source above, as a JSON string>"}]}
