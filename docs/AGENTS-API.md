@@ -295,4 +295,5 @@ to you, and the card after. Prose suspends the turn for the town's interpreter, 
 waits up to 30 seconds for its offer (the proposal, or the card that asks what is missing) and says "no reply" if none
 came; the host refuses past its interpretation quota with a `next at` line. There is no anonymous play: without the
 session cookie, `/play/` redirects to the login page. Plain HTML and CSS, dark and light; no script but the shell's
-theme toggle. The pages' markup is `transport/static/play.html`.
+theme toggle. The pages' markup is `transport/static/pages.html`, the look `transport/static/style.css`, and `/style/`
+shows every element in both palettes.

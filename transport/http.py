@@ -70,7 +70,7 @@ def resolve(method, path):
         return (name, {'heap': heap, 'object': obj, 'method': tail}) if name else (None, None)
     if parts[:1] == ['xrpc'] and len(parts) == 2:
         return 'xrpc', {'nsid': parts[1]}  # the repository answers every method (405 for a write)
-    get = {('',): 'home', ('o',): 'find', ('.well-known', 'did.json'): 'did'}.get(tuple(parts))
+    get = {('',): 'home', ('o',): 'find', ('.well-known', 'did.json'): 'did', ('style', ''): 'specimen', ('style',): 'specimen'}.get(tuple(parts))
     if method == 'GET' and get:
         return get, {}
     if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
@@ -155,7 +155,6 @@ def compact_offers(reply):
 # The catalogue's text, loaded once: routes, conventions, the envelope, the error, XRPC error and refusal classes.
 API = json.loads((STATIC / 'catalogue.json').read_text())
 CATALOGUE, ERRORS, REFUSALS = API['routes'], API['errors'], API['refusals']
-PLAY = dict(re.findall(r'<!-- (\w+)[^>]*-->\n(.*?)(?=\n<!--|\Z)', (STATIC / 'play.html').read_text(), re.S))
 
 
 def turn_line(r):
@@ -340,7 +339,12 @@ class Handler(BaseHTTPRequestHandler):
         code, status, when = ERRORS[cls]['code'], ERRORS[cls]['status'], ERRORS[cls]['when']
         body = {**(more or {}), 'status': status, 'class': cls, 'message': message or when, **({'hint': hint} if hint else {}),
                 '_links': {'self': link(self.path), 'api': link(PREFIX + '/api'), **(links or {})}, **({'_actions': acts} if acts else {})}
+        if self.browser():  # the same envelope, as a page: a person reads a refusal as easily as a card
+            return self.html(code, pages.refusal(f'{code} {cls}', None, body), headers)
         self.reply(code, canonical(body), headers=headers)
+
+    def browser(self):
+        return 'text/html' in (getattr(self, 'headers', None) or {}).get('Accept', '')
 
     def send_error(self, code, message=None, explain=None):
         """http.server's own refusals (a bad request line, a long URI or header, an unknown method), in the envelope."""
@@ -454,6 +458,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.xrpc(method, p.get('nsid', 'did.json'))
         if name == 'home':
             return self.home()
+        if name == 'specimen':
+            return self.html(200, pages.page('style', None, (STATIC / 'specimen.html').read_text()))
         if name == 'find':
             found = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('object', [''])[0]
             return self.reply(302, '', 'text/plain', [('Location', '/o/' + urllib.parse.quote(found, safe=''))])
@@ -603,6 +609,9 @@ class Handler(BaseHTTPRequestHandler):
             text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
             if which == 'challenge':
                 out = self.server.identity.challenge(text('handle'))
+                if self.browser():
+                    return self.html(200, pages.page('post this', None, pages.T['challenged'].format(handle=html.escape(out['handle']), text=html.escape(out['text']))),
+                                     self.login_cookie(out['credential']))
                 return self.reply(200, canonical({**out, '_links': {'self': link(self.path), 'verify': link(PREFIX + '/verify')}}),
                                   headers=self.login_cookie(out['credential']))
             out = self.server.identity.verify(text('handle'), text('uri'))
@@ -611,7 +620,10 @@ class Handler(BaseHTTPRequestHandler):
         self.server.record_handle(out['did'], out['handle'])
         mine = self.principal(self.cookie())  # a browser that asked for the challenge holds its credential
         links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'api': link(PREFIX + '/api')}
-        self.reply(200, canonical({**out, '_links': links}), headers=self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ())
+        keep = self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ()
+        if self.browser():
+            return self.html(200, pages.page('verified', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']), did=html.escape(out['did']))), keep)
+        self.reply(200, canonical({**out, '_links': links}), headers=keep)
 
     def me(self, credential, who):
         heap = self.server.heaps.get(who['did'], create=False)
@@ -686,35 +698,36 @@ class Handler(BaseHTTPRequestHandler):
                 if offers:
                     break
                 self.server.sleep(WAIT_STEP)
-            said = PLAY['said'].format(cls='refused' if r.get('status') in ('refused', 'error') else '', line=html.escape(turn_line(r)),
-                                       offers=''.join(PLAY['offer'].format(text=html.escape(t)) for t in offers or ['no reply']))
+            said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), line=html.escape(turn_line(r)),
+                                       offers=''.join(pages.T['offer'].format(text=html.escape(t)) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card':
             return self.html(404, pages.missing(name, who['handle'], card))
         state = plain(view.get('state') or {})
         doors = [d for d in (state.get('doors') if isinstance(state, dict) else None) or [] if (d.get('to') or {}).get('object')]
-        items = ''.join(PLAY['door'].format(href=html.escape(oid(d['to']['object'])), label=html.escape(d.get('label', '')),
+        items = ''.join(pages.T['door'].format(href=html.escape(oid(d['to']['object'])), id=html.escape(d['to']['object']), label=html.escape(d.get('label', '')),
                                             description=html.escape(d.get('description', ''))) for d in doors)
-        self.html(200, pages.page(name, who['handle'], PLAY['page'].format(
+        self.html(200, pages.page(name, who['handle'], pages.T['page'].format(
             name=html.escape(name), path=html.escape(oid(name)), said=said, card=html.escape(card.get('text', '')),
-            doors=PLAY['doors'].format(items=items) if doors else '')))
+            doors=pages.T['doors'].format(items=items) if doors else '')))
 
     def html(self, code, body, headers=()):
         self.reply(code, body, 'text/html', headers)
 
     def home(self):
-        who = self.principal(self.cookie())
-        self.html(200, pages.home(self.server.host.send({'op': 'world-status'}), who and who['handle']))
+        who, host = self.principal(self.cookie()), self.server.host
+        ids = host.send({'op': 'world-objects', 'principal': who['did'] if who else 'anonymous'}).get('ids') or []
+        self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did']))
 
     def object_page(self, name):
-        """An object as anyone may read it; logged in, its card and a link to play it (/play/<object>)."""
+        """An object as anyone may read it: its card as the reader sees it, its ledger; logged in, a link to play it."""
         who = self.principal(self.cookie())
         handle, principal, host = who and who['handle'], who and who['did'], self.server.host
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
             return self.html(404, pages.missing(name, handle, view))
-        card = self.card(host, principal, name) if principal else None
-        self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal)))
+        card = self.card(host, principal, name)  # as the public reader sees it, when not logged in
+        self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal), principal))
 
     def card(self, host, principal, name):
         """The object's card as this reader sees it, from the host's world-card (no journaled turn)."""

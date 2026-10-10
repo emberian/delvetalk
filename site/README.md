@@ -13,6 +13,11 @@ reader's system setting (`prefers-color-scheme`). "Read the design" links the do
 | `status.html` | tests, the gate, the rehearsal runs table |
 | `style.css` | the one stylesheet |
 
+**The palette.** Every colour is a token in the two blocks at the top of `style.css` (day: the seed catalogue; night: the
+herbarium and ledger). To adjust one, change it there and in `transport/static/style.css`, whose first half this file
+repeats word for word, then run `python3 -m unittest tests.test_theme`: it checks each text colour on each surface for WCAG
+AA in both palettes and that the site and the front agree. `/style/` on the host shows every element in both.
+
 ## Enabling Pages
 
 Pages serves a branch only from `/` or `/docs`, so `site/` is published by a workflow.
