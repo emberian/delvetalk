@@ -28,11 +28,11 @@ def field(state, name):
 class Arrive(HostCase):
     def setUp(self):
         super().setUp()
-        # The deployed library is world/lib; a newcomer's packages (and Place, which Avatar imports) join it here.
+        # The deployed library is world/lib (Places, which the Avatar imports, is there); a newcomer's packages join it here.
         self.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
         self.addCleanup(shutil.rmtree, self.lib, True)
         shutil.copytree(os.path.join(ROOT, "world", "lib"), self.lib, dirs_exist_ok=True)
-        for name in ("Avatar", "Env", "Wake", "Place"):
+        for name in ("Avatar", "Env", "Wake"):
             shutil.copy(os.path.join(OBJECTS, name + ".obend"), self.lib)
         r = self.host.send(op="world-open", path=self.path, library=self.lib, principal="ember", clock="transport", opener="ember")
         self.assertEqual(r["status"], "opened", r)

@@ -53,7 +53,7 @@ class Wakes(Chain):
         self.make(did, closure("Avatar"), avatar_seed(Card_handle(did), "porch"))
 
     def inbox(self, did):
-        return [(get(n, "from")["value"], get(n, "text")["value"]) for n in items(get(self.state(did), "inbox"))]
+        return [(get(n, "from")["value"], get(n, "text")["value"]) for n in rows(get(self.state(did), "inbox"))]
 
     def label_of(self, reply):
         self.assertEqual(reply["status"], "admitted", reply)
