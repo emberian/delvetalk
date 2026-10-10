@@ -80,7 +80,7 @@ class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
             if req.get('op') == 'hostd-info':
                 # the pin of the library the stateless process holds, which `library: <pin>` names to compile and check against it
                 pin = self.stateless.send({'op': 'library-load', 'path': str(self.library)}).get('pin') if self.library else None
-                return {'status': 'hostd', 'hostSha256': self.sha, **({'library': pin} if pin else {})}
+                return {'status': 'hostd', 'hostSha256': self.sha, 'pid': os.getpid(), **({'library': pin} if pin else {})}
             heap = req.pop('heap', None)
             if req.pop('stateless', False):
                 return self.stateless.send(req)

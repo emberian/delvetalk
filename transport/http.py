@@ -107,7 +107,15 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         info = {} if hasattr(host, 'binary') else host.send({'op': 'hostd-info'})
         self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
-        self.library = info.get('library')  # the pin of the library hostd sealed; the REPL compiles against it by name
+        self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library hostd sealed; the REPL compiles against it by name
+
+    def sync_library(self, force=False):
+        """Re-read hostd-info when hostd's pid changed (it restarted, maybe with a new library), or when forced."""
+        if hasattr(self.host, 'binary'):
+            return
+        info = self.host.send({'op': 'hostd-info'})
+        if force or info.get('pid') != self.hostd_pid:
+            self.library, self.hostd_pid = info.get('library'), info.get('pid')
 
     def used(self, credential):
         now = self.clock()
@@ -339,8 +347,13 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
             checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'})
-        repl, pin = self.server.repl, {'library': self.server.library} if self.server.library else {}
-        compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry'), **pin})
+        repl = self.server.repl
+        for retry in (False, True):  # once per request: an unknown pin means hostd restarted with another library
+            self.server.sync_library(force=retry)
+            pin = {'library': self.server.library} if self.server.library else {}
+            compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry'), **pin})
+            if retry or 'unknown library pin' not in str(compiled.get('message')):
+                break
         if compiled.get('status') != 'compiled':
             return self.answer(compiled)
         ty = compiled['artifact'].get('type') or {}
