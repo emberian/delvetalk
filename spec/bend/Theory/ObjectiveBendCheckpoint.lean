@@ -78,6 +78,77 @@ def encodeFields : List (String × Term) → Tokens
   | (name,body) :: rest => .nat 1 :: .text name :: (encodeTerm body ++ encodeFields rest)
 end
 
+/-! `encodeTerm` onto an accumulator: `encodeTerm` appends a child's encoding to its
+sibling's, so a term nested `d` deep copies its innermost encoding `d` times (a list
+literal of `n` items is quadratic). `encodeTermOnto t acc = encodeTerm t ++ acc` builds each
+token once; compiled code runs it (`@[csimp]`). -/
+mutual
+def encodeTermOnto : Term → Tokens → Tokens
+  | .bound index, acc => .nat 0 :: .nat index :: acc
+  | .lam body, acc => .nat 1 :: encodeTermOnto body acc
+  | .app function argument, acc => .nat 2 :: encodeTermOnto function (encodeTermOnto argument acc)
+  | .mix lower upper, acc => .nat 3 :: encodeTermOnto lower (encodeTermOnto upper acc)
+  | .fix spec inherited, acc => .nat 4 :: encodeTermOnto spec (encodeTermOnto inherited acc)
+  | .specification metadata extension, acc =>
+      .nat 5 :: encodeTermOnto metadata (encodeTermOnto extension acc)
+  | .prototype spec target, acc => .nat 6 :: encodeTermOnto spec (encodeTermOnto target acc)
+  | .reflect target, acc => .nat 7 :: encodeTermOnto target acc
+  | .metadata target, acc => .nat 8 :: encodeTermOnto target acc
+  | .project target, acc => .nat 9 :: encodeTermOnto target acc
+  | .nat value, acc => .nat 10 :: .nat value :: acc
+  | .boolean value, acc => .nat 11 :: .nat (if value then 1 else 0) :: acc
+  | .label value, acc => .nat 12 :: .text value :: acc
+  | .binary primitive left right, acc =>
+      .nat 13 :: .nat (primitiveCode primitive) :: encodeTermOnto left (encodeTermOnto right acc)
+  | .extend inherited fields, acc => .nat 14 :: encodeTermOnto inherited (encodeFieldsOnto fields acc)
+  | .record fields, acc => .nat 15 :: encodeFieldsOnto fields acc
+  | .get target name, acc => .nat 16 :: .text name :: encodeTermOnto target acc
+  | .ifZero value zero successorBody, acc =>
+      .nat 17 :: encodeTermOnto value (encodeTermOnto zero (encodeTermOnto successorBody acc))
+  | .inject label payload, acc => .nat 18 :: .text label :: encodeTermOnto payload acc
+  | .case scrutinee arms, acc => .nat 19 :: encodeTermOnto scrutinee (encodeFieldsOnto arms acc)
+  | .ifBool condition whenTrue whenFalse, acc =>
+      .nat 20 :: encodeTermOnto condition (encodeTermOnto whenTrue (encodeTermOnto whenFalse acc))
+  | .perform plan, acc => .nat 21 :: encodeTermOnto plan acc
+  | .done value, acc => .nat 22 :: encodeTermOnto value acc
+  | .unary primitive argument, acc => .nat 23 :: .nat (unaryCode primitive) :: encodeTermOnto argument acc
+  | .toData value, acc => .nat 24 :: encodeTermOnto value acc
+  | .textJoin list separator, acc => .nat 25 :: encodeTermOnto list (encodeTermOnto separator acc)
+  | .refuse reason, acc => .nat 26 :: .text reason :: acc
+def encodeFieldsOnto : List (String × Term) → Tokens → Tokens
+  | [], acc => .nat 0 :: acc
+  | (name,body) :: rest, acc => .nat 1 :: .text name :: encodeTermOnto body (encodeFieldsOnto rest acc)
+end
+
+mutual
+theorem encodeTermOnto_eq : (t : Term) → (acc : Tokens) → encodeTermOnto t acc = encodeTerm t ++ acc
+  | .bound _, _ | .nat _, _ | .boolean _, _ | .label _, _ | .refuse _, _ => by
+      simp [encodeTermOnto, encodeTerm]
+  | .lam a, acc | .reflect a, acc | .metadata a, acc | .project a, acc | .get a _, acc
+  | .inject _ a, acc | .perform a, acc | .done a, acc | .unary _ a, acc | .toData a, acc => by
+      simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a]
+  | .app a b, acc | .mix a b, acc | .fix a b, acc | .specification a b, acc | .prototype a b, acc
+  | .binary _ a b, acc | .textJoin a b, acc => by
+      simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a, encodeTermOnto_eq b]
+  | .ifZero a b c, acc | .ifBool a b c, acc => by
+      simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a, encodeTermOnto_eq b, encodeTermOnto_eq c]
+  | .extend a fs, acc | .case a fs, acc => by
+      simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a, encodeFieldsOnto_eq fs]
+  | .record fs, acc => by simp [encodeTermOnto, encodeTerm, encodeFieldsOnto_eq fs]
+theorem encodeFieldsOnto_eq : (fs : List (String × Term)) → (acc : Tokens) →
+    encodeFieldsOnto fs acc = encodeFields fs ++ acc
+  | [], _ => by simp [encodeFieldsOnto, encodeFields]
+  | (_, body) :: rest, acc => by
+      simp [encodeFieldsOnto, encodeFields, encodeTermOnto_eq body, encodeFieldsOnto_eq rest]
+end
+
+def encodeTermFast (t : Term) : Tokens := encodeTermOnto t []
+@[csimp] theorem encodeTerm_eq_onto : @encodeTerm = @encodeTermFast :=
+  funext fun t => by simp [encodeTermFast, encodeTermOnto_eq]
+def encodeFieldsFast (fs : List (String × Term)) : Tokens := encodeFieldsOnto fs []
+@[csimp] theorem encodeFields_eq_onto : @encodeFields = @encodeFieldsFast :=
+  funext fun fs => by simp [encodeFieldsFast, encodeFieldsOnto_eq]
+
 mutual
 def decodeTerm : Nat → Tokens → Option (Term × Tokens)
   | 0, _ => none
@@ -202,6 +273,40 @@ def encodeDataFields : List (String × Data) → Tokens
   | [] => []
   | (name, value) :: rest => .text name :: (encodeData value ++ encodeDataFields rest)
 end
+
+/-! `encodeData` onto an accumulator (linear in the data, as `encodeTermOnto`). -/
+mutual
+def encodeDataOnto : Data → Tokens → Tokens
+  | .natural value, acc => .nat 0 :: .nat value :: acc
+  | .boolean value, acc => .nat 1 :: .nat (if value then 1 else 0) :: acc
+  | .label value, acc => .nat 2 :: .text value :: acc
+  | .record fields, acc => .nat 3 :: .nat fields.length :: encodeDataFieldsOnto fields acc
+  | .variant label payload, acc => .nat 4 :: .text label :: encodeDataOnto payload acc
+def encodeDataFieldsOnto : List (String × Data) → Tokens → Tokens
+  | [], acc => acc
+  | (name, value) :: rest, acc => .text name :: encodeDataOnto value (encodeDataFieldsOnto rest acc)
+end
+
+mutual
+theorem encodeDataOnto_eq : (d : Data) → (acc : Tokens) → encodeDataOnto d acc = encodeData d ++ acc
+  | .natural _, _ | .boolean _, _ | .label _, _ => by simp [encodeDataOnto, encodeData]
+  | .record fs, acc => by simp [encodeDataOnto, encodeData, encodeDataFieldsOnto_eq fs]
+  | .variant _ p, acc => by simp [encodeDataOnto, encodeData, encodeDataOnto_eq p]
+theorem encodeDataFieldsOnto_eq : (fs : List (String × Data)) → (acc : Tokens) →
+    encodeDataFieldsOnto fs acc = encodeDataFields fs ++ acc
+  | [], _ => by simp [encodeDataFieldsOnto, encodeDataFields]
+  | (_, v) :: rest, acc => by
+      simp [encodeDataFieldsOnto, encodeDataFields, encodeDataOnto_eq v, encodeDataFieldsOnto_eq rest]
+end
+
+def encodeDataFast (d : Data) : Tokens := encodeDataOnto d []
+@[csimp] theorem encodeData_eq_onto : @encodeData = @encodeDataFast :=
+  funext fun d => by simp [encodeDataFast, encodeDataOnto_eq]
+def encodeDataFieldsFast (fs : List (String × Data)) : Tokens := encodeDataFieldsOnto fs []
+@[csimp] theorem encodeDataFields_eq_onto : @encodeDataFields = @encodeDataFieldsFast :=
+  funext fun fs => by simp [encodeDataFieldsFast, encodeDataFieldsOnto_eq]
+
+#assert_axioms encodeTerm_eq_onto encodeFields_eq_onto encodeData_eq_onto encodeDataFields_eq_onto
 
 mutual
 def decodeData : Nat → Tokens → Option (Data × Tokens)

@@ -7,9 +7,22 @@ with `lake build compile-profile`.
     compile-profile REQUEST.json loop STAGE N    one stage N times (parse, generics,
                                                  elaborate, lower, check), for perf
     compile-profile self-check                   tokenLength vs tokenRe and splitTop vs its
-                                                 List definition on 300,000 random strings each
-    compile-profile sha                          SHA-256 throughput on 1 MB -/
+                                                 List definition on 300,000 random strings each;
+                                                 SHA-256 on the FIPS 180-4 vectors and against
+                                                 the stored-schedule reference
+    compile-profile sha                          SHA-256 throughput on 1 MB
+    compile-profile replay LINES DIR FILTER R    host requests (one JSON per line, as the
+                                                 binary reads them) through
+                                                 `PackageSession.stepIO`, with `world-open`
+                                                 moved to DIR/world.journal (emptied first,
+                                                 `sync: none`); each request whose class
+                                                 (`op object method` or `op entry`) starts
+                                                 with FILTER runs R times from the same
+                                                 session. Prints per class: requests, the
+                                                 fastest run's wall summed, `ticksUsed`
+                                                 summed, ticks per second (docs/PERF.md) -/
 import Delvetalk.PackageSession
+import Std.Data.HashMap
 open Lean (Json toJson)
 open Minidregg.Compiler
 open Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -39,7 +52,99 @@ def splitTopRef (text : String) (sep : String) : List String :=
       else go fuel rest (some c) depth (c :: current) parts
   (go (chars.length + 1) chars none 0 [] []).reverse.map Minidregg.Compiler.ObjectiveBendElaborate.trimStr
 
+/-- `ticksUsed` of a reply, a number or a decimal string. -/
+def ticksOf (reply : Json) : Nat :=
+  match reply.getObjVal? "ticksUsed" with
+  | .ok (.num n) => n.mantissa.toNat
+  | .ok (.str s) => s.toNat?.getD 0
+  | _ => 0
+
+def requestClass (request : Json) : String :=
+  let text := fun (k : String) => (request.getObjValAs? String k).toOption.getD ""
+  let entry := ((request.getObjVal? "artifact").toOption.bind fun a => (a.getObjValAs? String "entry").toOption).getD ""
+  let object := text "object"
+  -- one class per kind of object, not per instance (`garden/bell/2`, `env/did:…`)
+  let kind := match object.splitOn "/" with | first :: _ :: _ => first ++ "/*" | _ => object
+  " ".intercalate ([text "op", kind, text "method", entry].filter (· != ""))
+
+def replay (lines : Array String) (dir : String) (filter : String) (repeats : Nat) : IO Unit := do
+  if ← System.FilePath.pathExists dir then IO.FS.removeDirAll dir
+  IO.FS.createDirAll dir
+  let mut session : Delvetalk.PackageSession.Session := {}
+  -- class -> (requests, fastest wall summed in ns, ticks summed)
+  let mut tally : Std.HashMap String (Nat × Nat × Nat) := {}
+  let mut order : Array String := #[]
+  for line in lines do
+    if line.isEmpty then continue
+    let request ← IO.ofExcept (Json.parse line)
+    let request := if (request.getObjValAs? String "op").toOption == some "world-open" then
+      (request.setObjVal! "path" (toJson s!"{dir}/world.journal")).setObjVal! "sync" (toJson "none")
+      else request
+    let cls := requestClass request
+    let runs := if cls.startsWith filter then repeats else 1
+    let mut best := 0
+    let mut next := session
+    let mut ticks := 0
+    for i in [0:runs] do
+      let t0 ← IO.monoNanosNow
+      let (after, result) ← Delvetalk.PackageSession.stepIO session request
+      let t1 ← IO.monoNanosNow
+      if i == 0 || t1 - t0 < best then best := t1 - t0
+      next := after
+      ticks := match result with | .ok reply => ticksOf reply | .error _ => 0
+    session := next
+    if runs > 1 then IO.println s!"  {cls}: {best / 1000} us, {ticks} ticks"
+    if !tally.contains cls then order := order.push cls
+    tally := tally.alter cls fun
+      | some (n, ns, t) => some (n + 1, ns + best, t + ticks)
+      | none => some (1, best, ticks)
+  IO.println "class\trequests\tms\tticks\tticks/s"
+  for cls in order do
+    let (n, ns, t) := tally.getD cls (0, 0, 0)
+    let rate := if ns == 0 then 0 else t * 1000000000 / ns
+    if cls.startsWith filter || ns > 100000000 then
+      IO.println s!"{cls}\t{n}\t{ns / 1000000}\t{t}\t{rate}"
+
+/-! SHA-256 as it was written before the unboxed-window rounds (the reference for
+`Sha256.digest` in `self-check`): the schedule stored in an `Array`. -/
+namespace ShaRef
+open Minidregg.Compiler.Sha256
+def schedule (bytes : ByteArray) (offset : Nat) : Array UInt32 := Id.run do
+  let mut w : Array UInt32 := Array.mkEmpty 64
+  for t in [0:16] do w := w.push (word bytes (offset + 4 * t))
+  for t in [16:64] do
+    let x := w[t - 15]!
+    let y := w[t - 2]!
+    let s0 := rotr x 7 ^^^ rotr x 18 ^^^ (x >>> 3)
+    let s1 := rotr y 17 ^^^ rotr y 19 ^^^ (y >>> 10)
+    w := w.push (w[t - 16]! + s0 + w[t - 7]! + s1)
+  return w
+def rounds (w : Array UInt32) (t : Nat) (a b c d e f g h : UInt32) : UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 :=
+  if t < 64 then
+    let t1 := h + (rotr e 6 ^^^ rotr e 11 ^^^ rotr e 25) + ((e &&& f) ^^^ (~~~e &&& g)) + k[t]! + w[t]!
+    let t2 := (rotr a 2 ^^^ rotr a 13 ^^^ rotr a 22) + ((a &&& b) ^^^ (a &&& c) ^^^ (b &&& c))
+    rounds w (t + 1) (t1 + t2) a b c (d + t1) e f g
+  else (a, b, c, d, e, f, g, h)
+termination_by 64 - t
+def compress (state : Array UInt32) (bytes : ByteArray) (offset : Nat) : Array UInt32 :=
+  let (a, b, c, d, e, f, g, h) := rounds (schedule bytes offset) 0
+    state[0]! state[1]! state[2]! state[3]! state[4]! state[5]! state[6]! state[7]!
+  #[state[0]! + a, state[1]! + b, state[2]! + c, state[3]! + d,
+    state[4]! + e, state[5]! + f, state[6]! + g, state[7]! + h]
+def digest (message : ByteArray) : Array UInt32 := Id.run do
+  let full := message.size / 64
+  let mut state := initial
+  for block in [0:full] do state := compress state message (64 * block)
+  let tail := padTail (message.extract (64 * full) message.size) message.size
+  for block in [0:tail.size / 64] do state := compress state tail (64 * block)
+  return state
+end ShaRef
+
 def main (args : List String) : IO Unit := do
+  if args[0]! == "replay" then
+    let lines := (← IO.FS.lines args[1]!)
+    replay lines args[2]! args[3]! args[4]!.toNat!
+    return
   if args[0]! == "self-check" then
     let alphabet := "ab ,:-><(){}w ith\té\n".toList.toArray
     let seps := #["->", ",", " with ", ":"]
@@ -76,7 +181,29 @@ def main (args : List String) : IO Unit := do
         bad := bad + 1
         if bad < 10 then IO.println s!"differ on {repr (String.ofList str)}: {viaRe} vs {Minidregg.Compiler.ObjectiveBendParse.tokenLength str}"
     IO.println s!"tokenLength mismatches {bad}"
-    if splitBad + bad > 0 then IO.Process.exit 1
+    let tokenBad := bad
+    -- SHA-256: FIPS 180-4 vectors, then the reference on every length 0..400 and 1 MB
+    bad := 0
+    for (text, expected) in [("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+        ("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+        ("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+          "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")] do
+      if Minidregg.Compiler.Sha256.hexString text != expected then
+        bad := bad + 1
+        IO.println s!"sha256 {repr text} is {Minidregg.Compiler.Sha256.hexString text}"
+    seed := 4242
+    for len in [0:401] do
+      let mut bytes := ByteArray.empty
+      for _ in [0:len] do
+        seed := (seed * 1103515245 + 12345) % 2147483648
+        bytes := bytes.push (UInt8.ofNat (seed % 256))
+      if Minidregg.Compiler.Sha256.digest bytes != ShaRef.digest bytes then
+        bad := bad + 1
+        if bad < 10 then IO.println s!"sha256 differs at length {len}"
+    let big := (String.ofList (List.replicate 1000000 'a')).toUTF8
+    if Minidregg.Compiler.Sha256.digest big != ShaRef.digest big then bad := bad + 1
+    IO.println s!"sha256 mismatches {bad}"
+    if splitBad + tokenBad + bad > 0 then IO.Process.exit 1
     return
   if args[0]! == "wire" then
     let line := (← IO.FS.readFile args[1]!).trimRight
