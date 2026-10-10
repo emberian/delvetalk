@@ -491,6 +491,6 @@ After launch, in the order the town will feel them:
 | a voice: `Policy.voice` renders a card as prose through `interpret`, cached per version | objects |
 | `edit: Title › Section` replies routed to the page's object as pending sections | transport, objects |
 | a quota object the host judges, replacing the cap in `post.py` | host, objects |
-| the host ops the repository façade calls (`docs/REPO.md`, "Host ops"); done when `tests/test_repo.py` passes with its `Proposed` stub deleted | host |
+| done: the host ops the repository façade calls (`docs/REPO.md`, "Host ops"); `tests/test_repo.py` passes against them with no stub | host |
 | a browser REPL and source pages behind the login cookie | transport |
 | Constellation Commons and ReviewableWork, two small town objects from the old protocols | objects |

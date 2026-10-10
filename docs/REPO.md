@@ -37,8 +37,9 @@ of the front (32 a minute).
 CID (an entry's, a module's, a publication or grant id, all base32 CIDs) as they are; an object's key is
 its id with each `/` written `~`, a dot, and the version (`garden/bell/1` at version 2 is `garden~bell~1.2`), a
 law's the same with the clause name in place of the version (`garden~bell~1.owner`). The key reads back by
-the last dot and `~` to `/`. The host takes any id of 1..128 bytes, so an id holding `~` (which would read
-back as `/`) or a character record keys forbid has no key: `listRecords` of objects and laws leaves it out
+the last dot and `~` to `/`. The host refuses at creation an id outside letters, digits and `. _ : / - @`, but
+replays any id a journal already holds; an id holding `~` (which would read back as `/`), `@`, or another
+character record keys forbid has no key: `listRecords` of objects and laws leaves it out
 and names it in `unkeyable: [ids]`. getRecord also accepts the old `<object>/<version>` for one release
 (any key holding `/`) and answers with the new key in `uri`.
 
@@ -80,29 +81,23 @@ Divergences a real PDS would reject: CIDs inside records are strings, as the jou
 not DAG-CBOR links (tag 42); an entry block has no `$type` (the JSON `value` adds it, the bytes cannot
 without changing the CID).
 
-## Host ops this calls (asked of the host lane)
+## Host ops this calls
 
-Existing and used as they are: `world-resolve`, `world-objects`. The façade calls the following, which the
-host does not have yet; until it does, every receipt by CID, every list but objects', every object, source,
-law, grant and publication record is a request error. `tests/test_repo.py`'s `Proposed` stubs each from the
-real host's replies (`world-receipt`, `world-inspect`, `world-view`, `world-state-cid`, the stateless
-`canonical-encode`) and the journal file, only while the host refuses it by name; delete the stub when they
-land. In every op `principal` is the reader, and `anonymous` reads as the public.
+`world-resolve` and `world-objects`, and these, which the host lane added for the façade (host7). In every
+op `principal` is the reader; `anonymous` is the public reader in every host read op.
 
 1. **`world-entry {principal, hash, bytes?}`** → `{status: "receipt", receipt, bytes?}`: the entry whose
    `hash` it is, projected as `projectEntry` (a public refusal with its `height` and `hash`, as there);
    `bytes` (with `bytes: true`) is the lowercase hex of the entry's canonical DAG-CBOR without `hash`,
    present only when the reader sees it whole (the identity's principal). `{status: "unknown", message}`
-   otherwise. This is the one the façade cannot answer at all without: receipts by CID and the sync CAR.
+   otherwise. Receipts by CID and the sync CAR rest on it.
 2. **`world-entries {principal, after?, before?, reverse?, limit?}`** → `{status: "entries", entries, more}`:
    every journal entry, each `projectEntry`'d, ascending after height `after` (exclusive), or with
    `reverse: true` descending below `before` (exclusive; from the head when absent); `limit` 1..100.
 3. **`world-object {principal, object, version?}`** → `{status: "object", record: {object, version, pin,
    pinSlug, law, readings [{name, reading}], laws [{object, version, pin, name, clause, reading?}], stateCid,
    library?}}`, everything as of `version` (default current): the pin and law in force at it, and the state
-   CID `world-state-cid` names. `denied` and `unknown` as `world-state-cid` answers them. `world-inspect`
-   gives the current pin and law text but neither readings, nor clauses split, nor the library pin, nor any
-   older version.
+   CID `world-state-cid` names. `denied` and `unknown` as `world-state-cid` answers them.
 4. **`world-source {principal, cid}`** → `{status: "source", record: {cid, name, text, height}}`: a module
    from `world.modules`, named as the compile inputs that introduced it name it, `height` the entry that
    carried it; `denied` unless some object the reader may view has it in its closure (or it is the library's).
@@ -112,12 +107,14 @@ land. In every op `principal` is the reader, and `anonymous` reads as the public
    grantor, holder, to, object, method, until, revoked, height, hash}], more}`: the grants of `world.grants`
    whose object the reader may view, paged by installing height.
 7. **`world-publications`** for every reader (a publication is posted publicly), with `hash` (the retaining
-   entry's) on each item, and `limit`, `before`, `reverse` as above. Today it answers only the publisher.
+   entry's) on each item, and `limit`, `before`, `reverse` as above.
 
-Two asks beyond ops. Object ids within a keyable alphabet (no `~`; `[A-Za-z0-9._:/-]`), so every object has
-a record key and `unkeyable` stays empty. A single name for the public reader. `world-history` and `world-receipt` take `""`,
-`world-objects`, `world-inspect` and `world-view` require 1..128 bytes, and the front reads as `anonymous`;
-the façade uses `anonymous`, which works with every op now.
+Open: an object id holding `@`. The host admits `.`, `_`, `:`, `/`, `-` and `@` beside letters and digits at
+creation (`validObjectId`), `@` for Zulip principals' `env/zulip:alice@host`. Record keys have no `@`, and with
+`/` already written `~` there is no character left to escape it with unambiguously, so such an object is
+`unkeyable`. Either transport renames those principals (no `@` in the ids it makes), or the key mapping
+changes to a prefix-free escape (`~` then a letter for each of `/`, `@`, `~`), which moves every slashed key
+once.
 
 ## What a real PDS would still need
 

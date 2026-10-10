@@ -15,7 +15,8 @@ not reshape it. Files sit at `town/delvetalk/<name>.json`, `defs.main` a `record
 
 Every key is in record-key syntax. An object id maps to a key by writing each `/` as `~` and appending
 `.` and the version (`garden/bell/1` v2: `garden~bell~1.2`); it reads back by the last dot and `~` to `/`.
-An id holding `~` or a character outside `[A-Za-z0-9._:/-]` has no key (`listRecords` names it in
+An id holding `~`, `@` (which the host admits for Zulip principals) or another character outside
+`[A-Za-z0-9._:/-]` has no key (`listRecords` names it in
 `unkeyable`). Slugs and CIDs (entries, modules, publication and grant ids) are keys as they are.
 
 What the table does not carry: request digests (`request`, `turnRequest`), checkpoint names
