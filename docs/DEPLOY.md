@@ -10,6 +10,7 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/Dockerfile.transport` | python 3.13 slim + the binary + `transport/`, `world/`, the guide |
 | `deploy/build.sh` | builds both, prints the binary's SHA-256, writes `deploy/out/host.sha256` |
 | `deploy/compose.yml` | `delvetalk-hostd`, `delvetalk-http`, `delvetalk-bridge`; `delvetalk-interpret` (profile `town`); `delvetalk-ops` |
+| `deploy/compose.hand.yml` | laid over compose.yml: the front with `--hand-token` and the Delve credentials directory |
 | `deploy/seed.py` | `world-create` of one object from `world/` |
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
@@ -54,15 +55,41 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   next in the edge's series). On ext4 or ZFS, local disk: see "Durability".
 - `/etc/delvetalk/anthropic.key`: the key alone, owner 10425, mode 0400.
 - The portal is `https://gsb.fg-goose.online` (`DELVETALK_ORIGIN` overrides it for every program; the front's `--origin` in
-  `compose.yml` names it too). The Caddy route in `edge/anchor/Caddyfile` for `gsb.fg-goose.online`, and the old
-  `delvetalk.fg-goose.online` route, both proxy to `10.10.1.10:8765` until the town has moved; then the old one goes.
-  No other change there. The old systemd
+  `compose.yml` names it too, and compose does not pass `DELVETALK_ORIGIN` into the containers). The Caddy route for
+  `gsb.fg-goose.online`, and the old `delvetalk.fg-goose.online` route, both proxy to `10.10.1.10:8765` until the town
+  has moved; then the old one goes. The installed config is `/etc/caddy/Caddyfile` on the anchor (native Caddy, no
+  checkout there; dregg-infra's `edge/anchor/Caddyfile` is its source and had drifted from it on 2026-10-10). Install as
+  that file's header says: write `Caddyfile.new`, `caddy validate`, `mv`, `systemctl reload caddy`. Both names answer
+  `respond @hand 404` for `path /hand /hand/*`: the front serves the owner's console on the same port Caddy makes
+  public, and the hand is for an ssh forward only. The gsb route as installed:
+
+      gsb.fg-goose.online {
+      	import baseline_headers
+      	encode zstd gzip
+      	@hand path /hand /hand/*
+      	respond @hand 404
+      	request_body {
+      		max_size 65536
+      	}
+      	reverse_proxy 10.10.1.10:8765 {
+      		transport http {
+      			dial_timeout 3s
+      			response_header_timeout 60s
+      		}
+      	}
+      }
+ The old systemd
   units listen on that address: stop and disable `delvetalk-proxy.socket`,
   `delvetalk-proxy.service`, `delvetalk-portal.service`; keep
-  `delvetalk-tick.timer` disabled. Their data under `/var/lib/delvetalk/world`
-  and `agents` stays where it is.
-- Firewall :8765 on the workhorse to Caddy's host (the anchor) only: `--trust-proxy` believes the last
+  `delvetalk-tick.timer` disabled. Their data under `/var/lib/delvetalk/` (`world`, `town-v1`, `forge-v1`, `clerk`,
+  `operator-service`; there is no `agents` directory there) stays where it is.
+- Firewall :8765 on the workhorse to Caddy's host (the anchor, 10.10.1.5) only: `--trust-proxy` believes the last
   `X-Forwarded-For` entry from whoever connects, so anything else on 10.10.1.0/24 that reaches the port can choose it.
+  Measured 2026-10-10: the workhorse has no host firewall to add this to (no ufw; `nftables.service` disabled and
+  `/etc/nftables.conf` an empty accept skeleton; Docker's `DOCKER-USER` chain empty), and the Hetzner Cloud firewall
+  `dregg-edge` filters public interfaces only. The private network `dregg-edge-fsn1` holds the anchor and the workhorse
+  and nothing else, so today the open path is containers on the workhorse itself (the edge's bridge, 172.18.0.0/16).
+  A published port is filtered in `DOCKER-USER`, not `INPUT`; choosing and persisting that rule is dregg-infra's.
 
 ## Build and ship
 
@@ -70,18 +97,32 @@ On hbox (or any machine with Docker; the images are linux/amd64):
 
     deploy/build.sh            # last line: sha256:  <64 hex>  delvetalk-obend (linux/amd64)
     docker save delvetalk:<sha12> delvetalk-host:<sha12> | gzip -1 | ssh root@workhorse 'gunzip | docker load'
-    scp deploy/compose.yml root@workhorse:/opt/delvetalk/compose.yml
+    scp deploy/compose.yml deploy/compose.hand.yml root@workhorse:/opt/delvetalk/
+    scp deploy/backup.sh deploy/verify.sh deploy/restore.sh root@workhorse:/opt/delvetalk/deploy/
+
+(From hbox, which has no key for the workhorse, pipe through the laptop: `ssh hbox 'docker save ... | gzip -1' | ssh
+root@workhorse 'gunzip | docker load'`.) The backup scripts run on the host, not in a container, so they are shipped
+beside compose.yml; `/opt/delvetalk/deploy/` is the copy the timer runs.
 
 Two builds of one commit must print the same SHA-256; record it with the
 commit. (Measured: foundation 1cc552a gives `6604098861d4…` on an arm64 Mac
-under emulation and natively on hbox.) The Lean compile runs inside dockerd's
+under emulation and natively on hbox; foundation a3e1fb2, deployed 2026-10-10, gives
+`1efaa90465860427c46672497aad25b2c7bd265b9e841c1a27a0ec324d5774e7` on both.) The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
 
 ## First start
 
-On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` in `.env`:
+On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
+
+    DELVETALK_IMAGE=delvetalk:<sha12>
+    DELVETALK_HOST_IMAGE=delvetalk-host:<sha12>     # the backup timer's replay image
+    DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b
+    COMPOSE_FILE=compose.yml:compose.hand.yml       # once the hand is opened (below)
+    DELVETALK_HAND_TOKEN=<secret>
+
+
 
     docker compose up -d --wait delvetalk-hostd
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
@@ -98,7 +139,20 @@ page the door's word capitalized). After the bridge runs, its outbox holds one d
 `wiki: Workshop`, `wiki: Tide` and `wiki: Anthology`. Garden writes its own page; the others get the host's default page
 (the card, then how to reply). STUDIO has no page.
 Post each with `transport.post ... --object <object>` as `python3 -m transport.bridge outbox` prints it; that records the
-post for the object, so replies to it route there. A door whose page was not published is named on stderr.
+post for the object, so replies to it route there. A door whose page was not published is named on stderr. The outbox
+prints `--text-file TEXT` for a page; `--draft` reads the text from the outbox file itself, so each page is
+
+    docker compose run --rm -v /etc/delvetalk/delve/credentials.json:/run/delve.json:ro delvetalk-ops \
+      python3 -m transport.post --state /data/state post --draft /data/state/outbox/<n>-pub-<id>.json --intent <id> \
+      --host-socket /data/state/host.sock --object <object> --credentials /run/delve.json
+    docker compose run --rm delvetalk-ops python3 -m transport.bridge mark-posted /data/state/outbox/<n>-pub-<id>.json
+
+(dry run first, then with `--i-am-ember-and-authorize-posting`), or `transport.hand post <n>-pub-<id> --object <object>`.
+
+The bridge's first poll reads the town as it already is: every post observed becomes an arrival (an Avatar, Env and
+Wake each), and a reply whose words fit a card with no recorded ancestor becomes a turn and a draft, so the outbox holds
+replies to posts written before the world existed and their writes are in the journal (measured 2026-10-10: 124
+objects, a Tide subscription and five reply drafts within four minutes of the first poll). Skip those drafts in the hand.
 
     docker compose --profile town up -d --wait --remove-orphans
     docker compose ps
@@ -106,7 +160,7 @@ post for the object, so replies to it route there. A door whose page was not pub
 `delvetalk-interpret` is in the `town` profile, kept on purpose so a stack without the model key still comes up: every `up` that should run it names `--profile town` (as here, after a restore and after a new binary); without it the interpreter does not start and interpretations wait.
 
 `--wait` fails red unless the healthcheck passes: `/AGENTS.md` answers and the
-home page shows a journal height (a refused `world-open` shows none). From
+home page shows a journal height, `ht.<n>` (a refused `world-open` shows `ht.None`). From
 the laptop:
 
     deploy/smoke.sh https://gsb.fg-goose.online --pin <sha256> --handle <you>.delve.town
@@ -120,11 +174,12 @@ and revoke the throwaway credential.
 Posting is a human command and is never in a container's `up`. The Delve
 account's credentials file is mounted for that one command only:
 
-    docker compose run --rm -v /etc/delvetalk/delve-credentials.json:/run/delve.json:ro delvetalk-ops \
-      python3 -m transport.post --state /data/state/post post --text-file /data/welcome.txt \
+    docker compose run --rm -v /etc/delvetalk/delve/credentials.json:/run/delve.json:ro delvetalk-ops \
+      python3 -m transport.post --state /data/state post --text-file /data/welcome.txt \
       --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
 
-`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt`, placed in the data directory by hand. Without
+`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt`, placed in the data directory by hand. `--state /data/state` is
+the hand's: the hourly quota is counted in `<state>/post-log.json`, so every post names the same state directory. Without
 `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
 read it, then add the flag. `--object` names the object the card addresses: after a
 confirmed post, post.py calls the host's `world-posted` for it, so every card posted
@@ -139,8 +194,9 @@ only when it is started with a secret:
 
     python3 -m transport.http --state /data/state --hand-token <secret> --credentials /run/delve.json
 
-(in compose, add those arguments and the credentials mount to `delvetalk-http`; the front's port is not public, so
-reach it by a forward):
+(in compose that is `deploy/compose.hand.yml`, named by `COMPOSE_FILE` in `.env` with `DELVETALK_HAND_TOKEN`; it mounts
+`/etc/delvetalk/delve/` (owner 10425, mode 0700) read-only, where the owner puts `credentials.json`, read only at a
+Post. Caddy answers 404 for `/hand/` on the public names, so reach it by a forward):
 
     ssh -L 8765:10.10.1.10:8765 root@workhorse     # then open http://127.0.0.1:8765/hand/?token=<secret>
 
@@ -219,7 +275,26 @@ It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
 copies SQLite through its backup API, replays every journal (world and heaps)
 in a throwaway host with no network, and only then writes a dated tarball
 and its `.sha256`. Exit 1 means a journal is broken: the tarball is not made.
-Run it from a timer and copy the tarballs off the box. Restore:
+Run it from a timer and copy the tarballs off the box. The timer installed on the workhorse:
+
+    # /etc/systemd/system/delvetalk-v2-backup.service
+    [Service]
+    Type=oneshot
+    EnvironmentFile=/opt/delvetalk/.env
+    WorkingDirectory=/opt/delvetalk
+    ExecStart=/opt/delvetalk/deploy/backup.sh --image ${DELVETALK_HOST_IMAGE} /var/lib/delvetalk/v2 /var/backups/delvetalk
+    Nice=10
+    IOSchedulingClass=idle
+    # /etc/systemd/system/delvetalk-v2-backup.timer
+    [Timer]
+    OnCalendar=*-*-* 00/6:17:00
+    RandomizedDelaySec=5m
+    Persistent=true
+    [Install]
+    WantedBy=timers.target
+
+`systemctl enable --now delvetalk-v2-backup.timer`. The off-box copy is not set up: the workhorse has no trusted key or
+host key for hbox, and hbox has no `/tank/delvetalk-backups/` (and `/tank` was 92% full on 2026-10-10). Restore:
 
     docker compose down
     deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
@@ -261,7 +336,7 @@ hash match the journal.
 
     deploy/backup.sh --image delvetalk-host:<old> ...      # first
     deploy/build.sh; docker save ... | ssh ... docker load  # new sha
-    # .env: DELVETALK_IMAGE=delvetalk:<new sha12>
+    # .env: DELVETALK_IMAGE=delvetalk:<new sha12>, DELVETALK_HOST_IMAGE=delvetalk-host:<new sha12>
     docker compose --profile town up -d --wait
     deploy/smoke.sh https://gsb.fg-goose.online --pin <new sha256>
 

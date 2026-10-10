@@ -56,7 +56,7 @@ elif [[ $served == "$pin" ]]; then pass "host sha256 $served equals the build's 
 else fail "host sha256 $served, build pin $pin"; fi
 
 req GET /
-if [[ $code == 200 ]] && has '<h1>DelveTalk</h1>' && has 'journal height'; then pass "GET / is the home page"; else fail "GET /: $code"; fi
+if [[ $code == 200 ]] && has '<title>the ledger · DelveTalk</title>' && grep -qE '<span class="code">ht[.][0-9]+<' "$work/body"; then pass "GET / is the ledger at $(grep -oE 'ht[.][0-9]+' "$work/body" | head -1)"; else fail "GET /: $code"; fi
 
 req GET "/o/$object"
 if [[ $code == 200 ]] && has "<!doctype html>" && has "$object"; then pass "GET /o/$object renders"; else fail "GET /o/$object: $code"; fi

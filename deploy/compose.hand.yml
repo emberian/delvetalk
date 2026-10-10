@@ -1,0 +1,31 @@
+# deploy/compose.hand.yml: the owner's console (docs/DEPLOY.md, "Open the hand") laid over compose.yml.
+# In /opt/delvetalk/.env (mode 0600):
+#
+#   COMPOSE_FILE=compose.yml:compose.hand.yml
+#   DELVETALK_HAND_TOKEN=<secret>
+#
+# The Delve credentials file goes in /etc/delvetalk/delve/credentials.json (directory owner 10425, mode 0700;
+# file mode 0400); the front reads it only when the owner clicks Post, so it may be placed after `up`.
+# Caddy answers 404 for /hand on every public name that proxies to :8765; reach it by an ssh forward.
+
+services:
+  delvetalk-http:
+    command:
+      - python3
+      - -m
+      - transport.http
+      - --state
+      - /data/state
+      - --bind
+      - 0.0.0.0
+      - --port
+      - "8765"
+      - --origin
+      - https://gsb.fg-goose.online
+      - --trust-proxy
+      - --hand-token
+      - ${DELVETALK_HAND_TOKEN:?set DELVETALK_HAND_TOKEN in .env}
+      - --credentials
+      - /run/delve/credentials.json
+    volumes:
+      - /etc/delvetalk/delve:/run/delve:ro
