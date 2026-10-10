@@ -135,6 +135,10 @@ structure Module where
   laws : List (String × ObjectiveBendLaw.LawExpr) := []
   /-- `layer over ./X.obend`: the module this one is a layer over (its `Super`). -/
   layerOver : Option String := none
+  /-- The module's protocols: name, then each method's name, type text and span. -/
+  protocols : List (String × List (String × String × String × ObjectiveBendSurface.Span)) := []
+  /-- `implements NAME` lines. -/
+  implements : List (String × ObjectiveBendSurface.Span) := []
   deriving Inhabited
 
 /-! ## Reading the parsed surface -/
@@ -205,13 +209,16 @@ def ofSurface (name : String) (imports : List (String × String)) (m : Objective
     Except String Module := do
   let mut decls : List Decl := []
   let mut laws : List (String × ObjectiveBendLaw.LawExpr) := []
+  let mut protocols : List (String × List (String × String × String × ObjectiveBendSurface.Span)) := []
   for d in m.decls do
     if let .law lawName source _ _ := d then
       laws := laws ++ [(lawName, ← ObjectiveBendLaw.parse source)]
+    else if let .protocol name methods shown _ := d then
+      protocols := protocols ++ [(name, (methods.zip (shown ++ methods.map (·.type))).map fun (f, s) => (f.name, f.type, s, f.span))]
     else decls := decls ++ [← Surface.decl d]
   ObjectiveBendLaw.checkNames laws
   let layerOver := m.layerOver.bind fun _ => (imports.find? (·.1 == "Super")).map (·.2)
-  return ⟨name, imports, decls, laws, layerOver⟩
+  return ⟨name, imports, decls, laws, layerOver, protocols, m.implements⟩
 
 /-! ## Proposal types (the `Ty` JSON wire of Theory.ObjectiveBendTyping.typeJson, plus `variant`) -/
 
@@ -393,7 +400,8 @@ def primitiveOf : String → Except String CorePrimitive
   | "subtract" => .ok .subtract | "divide" => .ok .divide | "less" => .ok .less | "lessEqual" => .ok .lessEqual
   | "modulo" => .ok .modulo
   | "textConcat" => .ok .textConcat | "textTake" => .ok .textTake | "textDrop" => .ok .textDrop
-  | "textSpan" => .ok .textSpan | "textBreak" => .ok .textBreak
+  | "textSpan" => .ok .textSpan | "textBreak" => .ok .textBreak | "textHasAny" => .ok .textHasAny
+  | "textCanonicalCompare" => .ok .textCanonicalCompare
   | other => .error ("primitive " ++ other ++ " is not a Core4 constructor yet")
 
 def unaryPrimitiveOf : String → Except String CoreUnaryPrimitive
@@ -1188,6 +1196,8 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
           if name == "textLength" && args.length == 1 then return some .natural
           if name == "textConcat" && args.length == 2 then return some .label
           if ["textSpan", "textBreak"].contains name && args.length == 2 then return some .natural
+          if name == "textHasAny" && args.length == 2 then return some .boolean
+          if name == "canonicalCompare" && args.length == 2 then return some .natural
           if ["textTake", "textDrop"].contains name && args.length == 2 then return some .label
           if name == "textSlice" && args.length == 3 then return some .label
           if name == "textJoin" && args.length == 2 then return some .label
@@ -1675,6 +1685,125 @@ def coerceArgs (c : Ctx) (fuel : Nat) (callee : Expr) (args : List Expr) (terms 
   unless changed do set saved
   return out
 
+/-! ## `canonicalCompare(a, b)`: the canonical (DAG-CBOR) order, as Bend
+
+The comparison of two values of one first-order type by the bytes of their canonical
+encoding (`Delvetalk.Canonical`), written out from the type as an ordinary Bend term: no new
+core form, so the machine, the codecs and the proofs are untouched. It mirrors the encoding:
+a natural compares as a number (shortest heads and big-endian bignums order numerically), a
+Bool `false` below `true`, a text by UTF-8 byte length then bytes (`textCanonicalCompare`), a
+record field by field in map-key order (byte length, then bytes), a sum by its label in that
+order and then its payload, and a list-shaped sum (`nil: {}`, `cons: {head, tail}`), which
+encodes as an array, by length first and then item by item. 0 less, 1 equal, 2 greater. -/
+
+def canonicalKeyLess (a b : String) : Bool :=
+  a.utf8ByteSize < b.utf8ByteSize || (a.utf8ByteSize == b.utf8ByteSize && decide (a < b))
+
+def sortCanonical (fields : List (String × PTy)) : List (String × PTy) :=
+  (fields.toArray.qsort fun x y => canonicalKeyLess x.1 y.1).toList
+
+/-- An operand of the comparison: its term at a given binder depth. -/
+abbrev Operand := Nat → ATerm
+
+def atLevel (level : Nat) : Operand := fun depth => .bound (depth - 1 - level)
+
+def cmpLam (domain codomain : PTy) (body : ATerm) : ATerm :=
+  .lam ⟨some domain, some codomain, "unrestricted", "reusable", none⟩ body
+
+/-- `first`, then `next` when `first` was equal (1): `(λr. if r == 1 then next else r) first`. -/
+def cmpThen (first : ATerm) (next : ATerm) : ATerm :=
+  .app (cmpLam .natural .natural (.ifBool (.binary "equal" (.bound 0) (.nat "1")) next (.bound 0))) first
+
+/-- A list-shaped sum's element type: `nil: {}` and `cons: {head: H, tail: itself}`. -/
+def listElement (k : Nat) (row : PTy) : Option PTy :=
+  match sortCanonical (rowFields row) with
+  | [("nil", .emptyRow), ("cons", payload)] | [("cons", payload), ("nil", .emptyRow)] =>
+    match sortCanonical (rowFields payload) with
+    | [("head", h), ("tail", .variable k')] | [("tail", .variable k'), ("head", h)] => if k' == k then some h else none
+    | _ => none
+  | _ => none
+
+/-- The comparison of `x` and `y` of type `t` at binder depth `depth`; `selfs` maps a
+recursive type's variable to the level of its comparator and whether it is a list's. -/
+partial def cmpTerm (t : PTy) (x y : Operand) (depth : Nat) (selfs : List (Nat × Nat × Bool)) : M ATerm := do
+  let refuse := fun (what : String) =>
+    (fail ("refused (canonical-compare): " ++ what ++ "; canonicalCompare takes two values of one first-order type") : M ATerm)
+  match t with
+  | .natural =>
+    return .ifBool (.binary "less" (x depth) (y depth)) (.nat "0")
+      (.ifBool (.binary "equal" (x depth) (y depth)) (.nat "1") (.nat "2"))
+  | .boolean =>
+    return .ifBool (x depth) (.ifBool (y depth) (.nat "1") (.nat "2")) (.ifBool (y depth) (.nat "0") (.nat "1"))
+  | .label => return .binary "textCanonicalCompare" (x depth) (y depth)
+  | .emptyRow => return .nat "1"
+  | .field .. =>
+    let rec fields : List (String × PTy) → Nat → M ATerm
+      | [], _ => pure (.nat "1")
+      | (name, ft) :: rest, d => do
+        let first ← cmpTerm ft (fun dd => .get (x dd) name) (fun dd => .get (y dd) name) d selfs
+        return cmpThen first (← fields rest (d + 1))
+    fields (sortCanonical (rowFields t)) depth
+  | .variant row =>
+    let labels := sortCanonical (rowFields row)
+    if labels.any (fun (l, _) => l == "nil" || l == "cons") then
+      return ← refuse "a sum with nil or cons beside other cases encodes some values as arrays"
+    let ranked := labels.zipIdx
+    let mut armsA : List (String × ATerm) := []
+    for ((la, pa), ia) in ranked do
+      let mut armsB : List (String × ATerm) := []
+      for ((lb, _), ib) in ranked do
+        let body ← if la == lb then
+            cmpTerm pa (atLevel depth) (atLevel (depth + 1)) (depth + 2) selfs
+          else pure (.nat (if ia < ib then "0" else "2"))
+        armsB := armsB ++ [(lb, body)]
+      armsA := armsA ++ [(la, .case (y (depth + 1)) armsB)]
+    return .case (x depth) armsA
+  | .variable k =>
+    if let some (level, list) := selfs.lookup k then
+      let call := ATerm.app (.app (.bound (depth - 1 - level)) (x depth)) (y depth)
+      return if list then .app call (.nat "1") else call
+    let some bound := (← get).sumBounds.lookup k | refuse "a type that does not resolve"
+    let fn : PTy := arrowTy t (arrowTy t .natural)
+    match bound with
+    | .variant row =>
+      if let some h := listElement k row then
+        -- go(a, b, acc): length first (the shorter list is less), else the first unequal item.
+        let goTy : PTy := arrowTy t (arrowTy t (arrowTy .natural .natural))
+        let d := depth
+        let acc := atLevel (d + 4)
+        let headCmp ← cmpTerm h (fun dd => .get (.bound (dd - 1 - (d + 5))) "head")
+          (fun dd => .get (.bound (dd - 1 - (d + 6))) "head") (d + 7) ((k, d, true) :: selfs)
+        let recur := ATerm.app (.app (.app (.bound (d + 7 - 1 - d)) (.get (.bound (d + 7 - 1 - (d + 5))) "tail"))
+            (.get (.bound 0) "tail"))
+          (.ifBool (.binary "equal" (acc (d + 7)) (.nat "1")) headCmp (acc (d + 7)))
+        let body := ATerm.case (.bound (d + 5 - 1 - (d + 2)))
+          [("nil", .case (.bound (d + 6 - 1 - (d + 3))) [("nil", acc (d + 7)), ("cons", .nat "0")]),
+           ("cons", .case (.bound (d + 6 - 1 - (d + 3))) [("nil", .nat "2"), ("cons", recur)])]
+        let go := ATerm.fix (cmpLam goTy (arrowTy .emptyRow goTy) (cmpLam .emptyRow goTy
+          (cmpLam t (arrowTy t (arrowTy .natural .natural)) (cmpLam t (arrowTy .natural .natural)
+            (cmpLam .natural .natural body))))) (.record [])
+        return .app (.app (.app go (x depth)) (y depth)) (.nat "1")
+      let _ := fn
+      let body ← cmpTerm bound (atLevel (depth + 2)) (atLevel (depth + 3)) (depth + 4) ((k, depth, false) :: selfs)
+      let fixed := ATerm.fix (cmpLam fn (arrowTy .emptyRow fn) (cmpLam .emptyRow fn
+        (cmpLam t (arrowTy t .natural) (cmpLam t .natural body)))) (.record [])
+      return .app (.app fixed (x depth)) (y depth)
+    | .field .. | .emptyRow =>
+      let body ← cmpTerm bound (atLevel (depth + 2)) (atLevel (depth + 3)) (depth + 4) ((k, depth, false) :: selfs)
+      let fixed := ATerm.fix (cmpLam fn (arrowTy .emptyRow fn) (cmpLam .emptyRow fn
+        (cmpLam t (arrowTy t .natural) (cmpLam t .natural body)))) (.record [])
+      return .app (.app fixed (x depth)) (y depth)
+    | _ => refuse "a type variable that is not a record or a sum"
+  | .data => refuse "a Data value (Bend cannot read its shape)"
+  | .arrow .. => refuse "a function"
+  | .computation .. => refuse "an Activity"
+  | _ => refuse "a specification or prototype"
+
+/-- `λa:T. λb:T. compare a b`, closed. -/
+def canonicalComparator (t : PTy) : M ATerm := do
+  let body ← cmpTerm t (atLevel 0) (atLevel 1) 2 []
+  return cmpLam t (arrowTy t .natural) (cmpLam t .natural body)
+
 mutual
 def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
   | 0, _, _, _ => fail "elaboration fuel"
@@ -1846,13 +1975,25 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         return .inject caseLabel type (if type.isSome then none else some ("sum " ++ key ++ " type unresolved")) payload
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
-          if ["natText", "textLength", "sha256Text", "textConcat", "textSlice", "textSpan", "textBreak", "textTake", "textDrop", "textJoin"].contains name then
+          if ["natText", "textLength", "sha256Text", "textConcat", "textSlice", "textSpan", "textBreak", "textHasAny", "canonicalCompare", "textTake", "textDrop", "textJoin"].contains name then
             for a in args do noActivity c fuel a env m "effect-in-text" "text operands are pure"
             match name, args with
             | "natText", [a] | "textLength", [a] | "sha256Text", [a] => return .unary name (← expression c fuel a env m)
             | "textConcat", [a,b] => return .binary "textConcat" (← expression c fuel a env m) (← expression c fuel b env m)
             | "textSpan", [a,b] | "textBreak", [a,b] | "textTake", [a,b] | "textDrop", [a,b] =>
               return .binary name (← expression c fuel a env m) (← expression c fuel b env m)
+            | "canonicalCompare", [a, b] =>
+              let ta ← synth c fuel a env m
+              let tb ← synth c fuel b env m
+              let some t := ta | fail "refused (canonical-compare): the first value's type does not resolve; annotate it"
+              unless sameTy ta tb do
+                fail "refused (canonical-compare): the two values are of different types; canonicalCompare orders values of one type"
+              let cmp ← canonicalComparator t
+              return .app (.app cmp (← expression c fuel a env m)) (← expression c fuel b env m)
+            | "textHasAny", [text, words] =>
+              -- The word list once, as text (`textJoin`, linear), then one pass over both.
+              return .binary "textHasAny" (← expression c fuel text env m)
+                (.textJoin (← expression c fuel words env m) (.label " "))
             | "textJoin", [list, separator] =>
               return .textJoin (← expression c fuel list env m) (← expression c fuel separator env m)
             | "textSlice", [a,start,count] =>
@@ -2501,6 +2642,90 @@ def checkOverrides (c : Ctx) (fuel : Nat) : M Unit := do
         (some ("give " ++ over ++ " the signature of " ++ below ++ ", or name it differently to add a method"))
         (shown mine) (shown theirs)
 
+/-! ## Protocols
+
+`protocol P:` lists methods with their types; `State`, `Plan` and `Response` in them are the
+implementer's, so they are placeholders a claim binds consistently across the protocol's
+methods (`matchProtocol`). `implements P` is checked here, after every declaration's type
+is known: a missing method, or one whose type does not match, is refused by name. -/
+
+/-- The placeholder variable a protocol's free type name stands for. -/
+def protocolFree : List String := ["State", "Plan", "Response"]
+def protocolVariable (i : Nat) : Nat := 1099511627776 + i
+
+/-- Match a protocol type (placeholders free) against an implementation's, binding each
+placeholder once. -/
+partial def matchProtocol (pattern actual : PTy) (σ : List (Nat × PTy)) : Option (List (Nat × PTy)) :=
+  match pattern, actual with
+  | .variable i, t =>
+    if i ≥ protocolVariable 0 then
+      match σ.lookup i with
+      | some bound => if bound.canonical == t.canonical then some σ else none
+      | none => some ((i, t) :: σ)
+    else if t == .variable i then some σ else none
+  | .arrow r q d c, .arrow r' q' d' c' =>
+    if r == r' && q == q' then (matchProtocol d d' σ).bind (matchProtocol c c' ·) else none
+  | .field .., .field .. =>
+    let p := pattern.canonical
+    let a := actual.canonical
+    match p, a with
+    | .field n m t, .field n' m' t' => if n == n' then (matchProtocol m m' σ).bind (matchProtocol t t' ·) else none
+    | _, _ => none
+  | .specification a b, .specification a' b' | .prototype a b, .prototype a' b' =>
+    (matchProtocol a a' σ).bind (matchProtocol b b' ·)
+  | .variant r, .variant r' => matchProtocol r r' σ
+  | .computation p r a, .computation p' r' a' =>
+    ((matchProtocol p p' σ).bind (matchProtocol r r' ·)).bind (matchProtocol a a' ·)
+  | p, a => if p == a then some σ else none
+
+/-- The protocol `name` names from module `m`: `Alias.P`, a protocol of `m` itself, of the
+import aliased `P`, or of any import. -/
+def protocolOf (c : Ctx) (m : Module) (name : String) :
+    Option (Module × String × List (String × String × String × ObjectiveBendSurface.Span)) :=
+  let inModule := fun (module p : String) => (moduleNamed c module).bind fun pm => (pm.protocols.lookup p).map (pm, p, ·)
+  match name.splitOn "." with
+  | [alias, p] => (importOf m alias).bind (inModule · p)
+  | [p] => (inModule m.name p).orElse fun _ => ((importOf m p).bind (inModule · p)).orElse fun _ =>
+      m.imports.findSome? fun (_, module) => inModule module p
+  | _ => none
+
+/-- The protocols each module claims, checked. -/
+def checkProtocols (c : Ctx) (fuel : Nat) : M Unit := do
+  for m in c.modules do
+    for (name, span) in m.implements do
+      let claim : Option Loc := some ⟨m.name, m.name, span⟩
+      let some (pm, pname, methods) := protocolOf c m name
+        | failAt claim ("refused (protocol): " ++ m.name ++ " implements " ++ name ++ ", which no module it imports declares")
+            (some "a protocol is declared `protocol NAME:` with `name: TYPE` lines, in a module the implementer imports")
+      let placeholders := protocolFree.zipIdx.map fun (n, i) => (n, PTy.variable (protocolVariable i))
+      let mut σ : List (Nat × PTy) := []
+      for (method, resolved, declared, _) in methods do
+        let key := m.name ++ "." ++ method
+        let some expected ← withTypes placeholders (sourceType c fuel resolved pm.name [])
+          | failAt claim ("refused (protocol): " ++ pname ++ "." ++ method ++ " has a type that does not resolve: " ++ declared)
+        match declOf c key with
+        | none =>
+          failAt claim ("refused (protocol): " ++ m.name ++ " implements " ++ pname ++ " but defines no " ++ method ++
+              "; " ++ pname ++ " declares " ++ method ++ ": " ++ declared)
+            (some ("add `def " ++ method ++ "` with the type protocol " ++ pname ++ " gives it: " ++ declared))
+            (some declared) (some "nothing")
+        | some (d, dm) =>
+          let found ← globalType c fuel key
+          let at_ : Option Loc := match d with
+            | .function _ _ _ body => some ⟨dm.name, key, body.span⟩
+            | _ => claim
+          match found.bind (matchProtocol expected · σ) with
+          | some σ' => σ := σ'
+          | none =>
+            failAt at_ ("refused (protocol): " ++ key ++ " is " ++ ((found.map typeText).getD "unresolved") ++
+                ", but protocol " ++ pname ++ " declares " ++ method ++ ": " ++ declared)
+              (some ("give " ++ method ++ " the type protocol " ++ pname ++ " declares (State, Plan and Response are this module's, the same in every method)"))
+              (some declared) (found.map typeText)
+
+/-- The protocols module `m` claims (each by its declared name) with their methods' names. -/
+def Ctx.claims (c : Ctx) (m : Module) : List (String × List String) :=
+  m.implements.filterMap fun (name, _) => (protocolOf c m name).map fun (_, p, methods) => (p, methods.map (·.1))
+
 def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × PTy) × List String) := do
   let fuel := 100000
   checkOverrides c fuel
@@ -2508,6 +2733,7 @@ def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × P
   for m in c.modules do
     for d in m.decls do
       fields ← emitDecl c fuel m d fields
+  checkProtocols c fuel
   let mut rowFields : List (String × PTy) := []
   let mut unresolved : List String := []
   for (name, _) in fields do
