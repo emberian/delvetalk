@@ -31,6 +31,43 @@ MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
+ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
+          ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
+          ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
+TOP_ONLY = ('repl', 'me', 'revoke')
+ROUTE_HINT = ('GET world, world/<object>, world/<object>/card, world/<object>/source, receipt/<intent>, offers, pending, me; '
+              'POST world/<object>/<method>, repl, deliver, revoke, heap/objects; heap/ before world, receipt, offers, pending, deliver')
+
+
+def plain(data):
+    """Typed data as plain JSON, for reading only (a form's fields); never sent back to the host."""
+    tag = data.get('tag') if isinstance(data, dict) else None
+    if tag == 'record':
+        return {f['name']: plain(f['value']) for f in data['fields']}
+    if tag == 'list':
+        return [plain(i) for i in data['items']]
+    if tag == 'variant':
+        inner = plain(data['payload'])
+        return {'tag': data['label'], **inner} if isinstance(inner, dict) else {'tag': data['label'], 'value': inner}
+    return int(data['value']) if tag == 'natural' else data.get('value') if tag else data
+
+
+def typed(value):
+    """Plain JSON as the host's typed data: text is a label, an integer a natural, an object a record."""
+    if isinstance(value, dict):
+        return value if 'tag' in value else {'tag': 'record', 'fields': [{'name': k, 'value': typed(v)} for k, v in value.items()]}
+    if isinstance(value, list):
+        return {'tag': 'list', 'items': [typed(v) for v in value]}
+    if isinstance(value, bool):
+        return {'tag': 'boolean', 'value': value}
+    return {'tag': 'natural', 'value': str(value)} if isinstance(value, int) else {'tag': 'label', 'value': str(value)}
+
+
+def argument(data):
+    """A turn's argument: `spell` is a reply's text as a card hears it, `fields` a plain record, else `argument` typed."""
+    if 'spell' in data:
+        return typed({'text': data['spell'], 'post': '', 'slot': ''})
+    return typed(data['fields']) if isinstance(data.get('fields'), dict) else data.get('argument', {'tag': 'record', 'fields': []})
 
 
 class Front(HTTPServer):
@@ -73,8 +110,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def fail(self, code, message):
-        self.reply(code, canonical({'status': 'error', 'message': message}))
+    def fail(self, code, message, hint=None):
+        self.reply(code, canonical({'status': 'error', 'message': message, **({'hint': hint} if hint else {})}))
 
     def body(self):
         """-> dict, or None after replying with the refusal. JSON, or a urlencoded form."""
@@ -147,22 +184,24 @@ class Handler(BaseHTTPRequestHandler):
     def agents(self, method, rest):
         if method == 'POST' and rest in (['challenge'], ['verify']):
             return self.identify(rest[0])
-        kind = {('GET', 'world', 2): 'view', ('POST', 'world', 3): 'turn', ('GET', 'receipt', 2): 'receipt',
-                ('POST', 'deliver', 1): 'deliver', ('GET', 'pending', 1): 'pending', ('POST', 'repl', 1): 'repl',
-                ('GET', 'me', 1): 'me', ('POST', 'revoke', 1): 'revoke'}.get((method, rest[0] if rest else '', len(rest)))
         heap = rest[:1] == ['heap']
-        if heap:
-            rest = rest[1:]
-            kind = {('POST', 'objects', 1): 'create', ('GET', 'world', 2): 'view', ('POST', 'world', 3): 'turn',
-                    ('GET', 'receipt', 2): 'receipt', ('POST', 'deliver', 1): 'deliver',
-                    ('GET', 'pending', 1): 'pending'}.get((method, rest[0] if rest else '', len(rest)))
+        rest = rest[1:] if heap else rest
+        head, obj, tail = (rest[0] if rest else ''), '/'.join(rest[1:]), ''
+        if head == 'world':  # an object id may hold slashes: the last segment names the method, or card/source
+            if method == 'POST' or (len(rest) > 2 and rest[-1] in ('card', 'source')):
+                obj, tail = '/'.join(rest[1:-1]), rest[-1]
+            kind = 'turn' if method == 'POST' else tail or ('view' if obj else 'objects')
+            kind = kind if obj or kind == 'objects' else None
+        else:
+            kind = ROUTES.get((method, head, bool(obj)))
+            kind = None if kind in (('create',) if not heap else TOP_ONLY) else kind
         if kind is None:
-            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}')
+            return self.fail(404, f'unknown route; read {self.server.origin}{PREFIX}', ROUTE_HINT)
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else ''
         who = self.principal(credential)
         if who is None:
-            return self.fail(401, 'missing, unverified or revoked credential')
+            return self.fail(401, 'missing, unverified or revoked credential', 'POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>')
         if self.server.limited(credential):
             return self.fail(429, f'more than {RATE} requests per {WINDOW} seconds')
         if kind == 'me':
@@ -172,16 +211,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, canonical({'status': 'revoked'}), headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
         if kind == 'repl':
             return self.run_repl(who['did'])
-        if heap:
-            host = self.server.heaps.get(who['did'])
-        else:
-            host = self.server.host
+        host = self.server.heaps.get(who['did']) if heap else self.server.host
         principal = who['did']  # the principal the host sees; the handle is display only
         send = lambda req: self.answer(host.send(req))
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        after = {'after': int(q['after']) if q['after'].isdigit() else q['after']} if 'after' in q else {}
+        if kind == 'objects':
+            return send({'op': 'world-objects', 'principal': principal, **{k: q[k] for k in ('prefix', 'after') if k in q}})
         if kind == 'view':
-            return send({'op': 'world-view', 'principal': principal, 'object': rest[1]})
+            return send({'op': 'world-view', 'principal': principal, 'object': obj})
+        if kind in ('card', 'source'):
+            r = host.send({'op': 'world-card' if kind == 'card' else 'world-inspect', 'principal': principal, 'object': obj})
+            if 'full' not in q:  # the readable part; ?full=1 is the host's reply verbatim
+                r = {k: plain(v) if k == 'forms' else v for k, v in r.items() if k not in ('document', 'methods')}
+            return self.answer(r)
         if kind == 'receipt':
-            return send({'op': 'world-receipt', 'principal': principal, 'identity': rest[1]})
+            return send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
+        if kind == 'offers':
+            return send({'op': 'world-offers', 'principal': principal, **after})
         if kind == 'pending':
             return send({'op': 'world-pending'})
         data = self.body()
@@ -190,10 +237,10 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'deliver':
             return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT})
         if kind == 'create':
-            made = {k: data[k] for k in CREATE_KEYS if k in data}
+            made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             return send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
-        send({'op': 'world-turn', 'principal': principal, 'object': rest[1], 'method': rest[2],
-              'argument': data.get('argument', {'tag': 'record', 'fields': []}), 'identity': data.get('intent')})
+        send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
+              'argument': argument(data), 'identity': data.get('intent')})
 
     def client_ip(self):
         forwarded = (self.headers.get('X-Forwarded-For') or '').split(',')[-1].strip()

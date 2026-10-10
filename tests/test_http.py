@@ -28,6 +28,7 @@ def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 from tests.test_turn import PLANS, variant
 from transport import delve, identity
 from tests.host import start_hostd, stop_hostd
+from transport.hostproc import LIBRARY
 from transport.http import Front, HostClient, RemoteHeaps
 
 HANDLE = 'talkie.delve.town'
@@ -58,7 +59,7 @@ class HttpFront(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.provider = Provider()
         self.now = [1000.0]
-        self.hostd = start_hostd(self.tmp.name, BINARY)
+        self.hostd = start_hostd(self.tmp.name, BINARY, library=LIBRARY)
         self.hostd.heaps.size = 2
         sock = Path(self.tmp.name) / 'host.sock'
         self.host = HostClient(sock)
@@ -243,11 +244,57 @@ class HttpFront(unittest.TestCase):
         s, done = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(4)), done)
 
+    def test_list_card_source_offers_and_ids_with_slashes(self):
+        tok = self.login()
+        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
+                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
+        self.assertEqual(r['status'], 'created', r)
+        s, listed = self.call('GET', '/AGENTS.md/world', token=tok)
+        self.assertEqual((s, listed['ids']), (200, ['c1', 'garden']), listed)
+        self.assertEqual(self.call('GET', '/AGENTS.md/world?prefix=g', token=tok)[1]['ids'], ['garden'])
+        s, card = self.call('GET', '/AGENTS.md/world/garden/card', token=tok)
+        self.assertEqual((s, card['status']), (200, 'card'), card)
+        self.assertIn('delvetalk garden plant', card['text'])
+        self.assertNotIn('document', card)
+        s, src = self.call('GET', '/AGENTS.md/world/garden/source', token=tok)
+        self.assertEqual((s, src['status']), (200, 'inspected'), src)
+        self.assertIn('def receive(', src['source'])
+        self.assertIn('law owner:', src['law'])
+        self.assertNotIn('methods', src)
+        plant = [f for f in src['forms'] if f['action'] == 'plant'][0]
+        self.assertEqual([f['name'] for f in plant['fields']], ['colour', 'seed'])
+        self.assertIn('methods', self.call('GET', '/AGENTS.md/world/garden/source?full=1', token=tok)[1])
+        # by spell, then by fields; the bell the garden makes has a slashed id, reached without escaping
+        s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'p1', 'spell': 'delvetalk garden plant\ncolour: amber\nseed: a moth bell'}, tok)
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        self.assertIn('garden/bell/1', t['offers'][0]['text'])
+        s, t = self.call('POST', '/AGENTS.md/world/garden/plant', {'intent': 'p2', 'fields': {'colour': 'silver', 'seed': 'a fern'}}, tok)
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        s, bell = self.call('GET', '/AGENTS.md/world/garden/bell/1', token=tok)
+        self.assertEqual((s, bell['status'], bell['object']), (200, 'viewed', 'garden/bell/1'), bell)
+        self.assertEqual(self.call('GET', '/AGENTS.md/world/garden%2Fbell%2F1', token=tok)[1]['object'], 'garden/bell/1')
+        self.assertEqual(self.call('GET', '/AGENTS.md/world/garden/bell/2/card', token=tok)[1]['status'], 'card')
+        s, offers = self.call('GET', '/AGENTS.md/offers', token=tok)
+        self.assertEqual((s, [o['identity']['intent'] for o in offers['offers']]), (200, ['p1', 'p2']), offers)
+        after = offers['offers'][0]['height']
+        self.assertEqual([o['identity']['intent'] for o in self.call('GET', f'/AGENTS.md/offers?after={after}', token=tok)[1]['offers']], ['p2'])
+        s, e = self.call('GET', '/AGENTS.md/nope', token=tok)
+        self.assertEqual(s, 404)
+        self.assertIn('world/<object>/source', e['hint'])
+
     # ---- heaps
 
     def heap_create(self, tok, name='h1'):
         return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': counter_modules(), 'entry': 'initial',
                                                              'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
+
+    def test_a_heap_object_is_one_module_importing_the_library(self):
+        tok = self.login()
+        s, r = self.call('POST', '/AGENTS.md/heap/objects', {'object': 'tally', 'modules': [{'name': 'Tally', 'source': REPL_COUNTER}],
+                                                             'entry': 'initial', 'seed': record(), 'intent': 'mk-tally'}, tok)
+        self.assertEqual((s, r['status']), (200, 'created'), r)
+        s, t = self.call('POST', '/AGENTS.md/heap/world/tally/bump', {'intent': 'b1'}, tok)
+        self.assertEqual((s, t['status'], t['result']), (200, 'admitted', nat(1)), t)
 
     def test_a_heap_is_private_and_missing_is_404_not_403(self):
         a, b = self.login(), self.login('glm.delve.town')
