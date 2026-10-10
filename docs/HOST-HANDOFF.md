@@ -672,6 +672,12 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    `test_a_settling_turn_sees_another_principals_resumption_only_as_its_projection`; the tests that read
    another's resumed `result` read it with `world-receipt` as its principal (`tests.host.whole`).
 
+88. **No default page of a private card (host12; codex host 2).** `defaultPublishPage` refuses a card
+   whose read policy is not public, class `noMethod` ("<id> is not public, so the host makes no page of
+   it; …"), whoever asks: the page goes to `world-publications`, which every reader lists. A package's own
+   `publishPage` decides for itself. Test: `tests/test_publish.py`
+   `test_a_card_only_some_may_read_gets_no_default_page`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

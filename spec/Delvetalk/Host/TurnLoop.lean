@@ -1815,10 +1815,13 @@ def blurbWord (o : Object) : M (Option String) := do
     finding 16): the host publishes the card's default page as `Card.defaultPage` wrote it, the card as
     a stranger sees it and how to reply (the host's usage of its forms and lenses), under `page`, else
     the door word `blurb()` gives, else the object's id. The result is the post id, as
-    `Card.publishPage`'s. -/
+    `Card.publishPage`'s. The page is public, so a card whose read policy names principals has none:
+    refused `noMethod` (codex host 2). -/
 def defaultPublishPage (id : String) (argument : Data) : M Data := do
   let s ← get
   let some o := s.world.objects[id]? | evaluation s!"unknown object {id}"
+  unless o.read matches .exposed do
+    throw (.refused "noMethod" s!"{id} is not public, so the host makes no page of it; only a card anyone may read has one.")
   recordRoot id o.version
   let given := match argument with
     | .record fs => ((fs.lookup "page").bind labelOf).getD ""

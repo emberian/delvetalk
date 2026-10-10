@@ -103,6 +103,18 @@ class DefaultPage(BridgeCase):
         self.assertEqual([p['page'] for p in self.host.send({'op': 'world-publications', 'principal': 'ember'})['publications']],
                          ['counter', 'Counter'])
 
+    def test_a_card_only_some_may_read_gets_no_default_page(self):
+        # codex host 2: the host's page is public, so a card whose read policy names principals has none.
+        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-counter', 'object': 'c',
+                            'modules': closure('Counter'), 'entry': 'initial', 'seed': record(),
+                            'read': {'principals': ['ember']}})
+        self.assertEqual(r['status'], 'created', r)
+        for who in ('mallory', 'ember'):
+            r = self.host.send({'op': 'world-turn', 'principal': who, 'object': 'c', 'method': 'publishPage',
+                                'argument': record(page=label('')), 'identity': 'page-' + who})
+            self.assertEqual((r['status'], r['receipt']['outcome']['class']), ('refused', 'noMethod'), r)
+        self.assertEqual(self.host.send({'op': 'world-publications', 'principal': 'ember'})['publications'], [])
+
 
 if __name__ == '__main__':
     unittest.main()
