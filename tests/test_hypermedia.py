@@ -436,6 +436,25 @@ class Catalogue(unittest.TestCase):
         self.assertEqual(set(REFUSALS), names('refusalClasses'))
         self.assertEqual({k for k, v in REFUSALS.items() if v['transient']}, names('transientClasses'))
 
+    def test_no_example_reply_carries_more_than_one_hash_except_a_source(self):
+        """The guide's rule: one hash per reply (the receipt's own), `pin` only on /source. Outside the rule: the REPL
+        checkpoint the client sends back whole, and a result or grant the method returned as its answer."""
+        page = (Path(__file__).resolve().parent.parent / 'docs' / 'AGENTS-EXAMPLES.md').read_text()
+        hashes = lambda v: len(re.findall(r'bafy', json.dumps(v)))
+        bare = lambda v: {k: bare(x) for k, x in v.items() if k not in ('checkpoint', 'result', 'grants')} if isinstance(v, dict) else [bare(x) for x in v] if isinstance(v, list) else v
+        seen = 0
+        for command, status, body in re.findall(r'^    \$ (curl [^\n]*)\n    (\d{3}) (\{.*\})$', page, re.M):
+            if re.search(r'/source"?$', command.split(' -H')[0].split(' -d')[0]):
+                continue
+            try:
+                reply = json.loads(body)
+            except ValueError:  # cut where marked: only the text before the cut is left
+                reply = {'cut': body}
+            reply = bare(reply)
+            seen += 1
+            self.assertLessEqual(hashes(reply), 1, (command[:80], re.findall(r'"(\w+)": "bafy', body)))
+        self.assertGreater(seen, 20)
+
     def test_the_guides_class_tables_are_the_catalogues(self):
         guide = GUIDE.read_text()
         rows = set(re.findall(r'^\| ([a-zA-Z, ]+?) \|', guide, re.M))

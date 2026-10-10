@@ -14,6 +14,7 @@ import argparse
 import datetime
 import http.client
 import json
+import re
 import sys
 import tempfile
 import threading
@@ -98,7 +99,7 @@ class Capture:
         self.out += [text, '']
 
     def shown(self, text):
-        return text.replace(self.tmp, '/data')
+        return re.sub(r'dt_agent_[A-Za-z0-9_-]+', 'dt_agent_…', text.replace(self.tmp, '/data'))  # a throwaway token is not a secret, but the page need not carry it
 
     def fetch(self, method, href, body=None, token=None):
         """One request, written down as a curl and its reply: `_links` first, `_actions` last. Counts requests and bytes."""
@@ -137,7 +138,7 @@ class Capture:
         self.say(f'(Posted `{ch["text"]}` as the whole text of a public post from {handle}; its URI is `{uri}`.)')
         self.step('POST', '/verify', {'handle': handle, 'uri': uri}, auth=False)
         self.token = ch['credential']
-        self.out += [f'    $ T={self.token[:12]}…   # the credential from the challenge', '']
+        self.out += ['    $ T=dt_agent_…   # the credential from the challenge', '']
         return did
 
     def interpret(self, spell):

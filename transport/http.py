@@ -648,7 +648,7 @@ class Handler(BaseHTTPRequestHandler):
         keep = self.login_cookie(self.cookie()) if mine and mine['did'] == out['did'] else ()
         if self.browser():
             return self.html(200, pages.page('verified', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']), did=html.escape(out['did']))), keep)
-        self.reply(200, canonical({**out, '_links': links}), headers=keep)
+        self.reply(200, canonical({**terse(out), '_links': links}), headers=keep)
 
     def me(self, credential, who):
         heap = self.server.heaps.get(who['did'], create=False)
@@ -694,7 +694,9 @@ class Handler(BaseHTTPRequestHandler):
         reply = repl.send({**req, 'artifact': compiled['artifact']})
         if reply.get('status') == 'error':
             return self.answer(reply, links={'check': link(PREFIX + '/check')})
-        self.reply(200, canonical({**reply, '_links': {'self': link(self.path)}}))  # a checkpoint goes back whole
+        # The default rendering omits hashes like every other reply; only the checkpoint, which the client sends back, stays whole.
+        body = reply if 'full=1' in self.path else {**terse({k: v for k, v in reply.items() if k != 'checkpoint'}), **({'checkpoint': reply['checkpoint']} if 'checkpoint' in reply else {})}
+        self.reply(200, canonical({**body, '_links': {'self': link(self.path)}}))
 
     # ---- humans
 
