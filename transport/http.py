@@ -171,6 +171,14 @@ def turn_line(r):
     return f"suspended at height {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
 
 
+def door_rows(view):
+    """The doors in an object's state, in menu order: a list, or a relation (`rows {items}`) ordered by each row's place."""
+    state = plain(view.get('state') or {})
+    doors = (state.get('doors') if isinstance(state, dict) else None) or []
+    doors = sorted(doors.get('items') or [], key=lambda d: d.get('place', 0)) if isinstance(doors, dict) else doors
+    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
+
+
 def digits(text):
     return text.isascii() and text.isdigit()
 
@@ -484,7 +492,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def agents(self, kind, heap, obj, tail):
         auth = self.headers.get('Authorization') or ''
-        credential = auth[7:] if auth.startswith('Bearer ') else ''
+        credential = auth[7:] if auth.startswith('Bearer ') else self.cookie() if self.browser() and self.command == 'GET' else ''
         who = self.principal(credential)
         if who is None:
             return self.fail('unauthenticated', hint='POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>',
@@ -504,6 +512,8 @@ class Handler(BaseHTTPRequestHandler):
         host = self.server.heaps.get(who['did']) if heap else self.server.host
         principal = who['did']  # the principal the host sees; the handle is display only
         base = PREFIX + ('/heap' if heap else '')
+        if self.browser() and kind in ('object', 'card', 'source') and not heap:
+            return self.object_page(obj)
         at = lambda o: {'object': link(f'{base}/world/{oid(o)}'), 'card': link(f'{base}/world/{oid(o)}/card'),
                         'source': link(f'{base}/world/{oid(o)}/source')}
         send = lambda req, links=None: self.answer(host.send(req), links=links)
@@ -513,6 +523,9 @@ class Handler(BaseHTTPRequestHandler):
             ids = reply.get('ids') or []
             nxt = urllib.parse.urlencode({**({'prefix': q['prefix']} if 'prefix' in q else {}), 'after': ids[-1]}) if ids and reply.get('more') else ''
             names = reply.get('methods') or {}  # per id, when the host answers them (host op wanted)
+            if self.browser():
+                words = {d['to']['object']: d.get('label', '') for d in door_rows(host.send({'op': 'world-view', 'principal': principal, 'object': 'directory'}))}
+                return self.html(200, pages.listing(ids, words, who['handle'], principal, nxt and f'{base}/world?{nxt}'))
             return self.answer(reply, links={'item': [link(f'{base}/world/{oid(i)}', name=i, **({'actions': names[i]} if i in names else {}))
                                                       for i in ids],
                                              **({'next': link(f'{base}/world?{nxt}')} if nxt else {}), 'offers': link(base + '/offers')})
@@ -689,8 +702,10 @@ class Handler(BaseHTTPRequestHandler):
             if data is None:
                 return
             intent = f'play:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
-            r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': 'receive', 'identity': intent,
-                           'argument': typed({'text': str(data.get('text', '')), 'post': ''})})
+            kinds = {'n:': lambda v: int(v) if digits(v) else v, 'c:': lambda v: {'tag': 'variant', 'label': v, 'payload': {'tag': 'record', 'fields': []}}}
+            fields = {k[2:] if k[:2] in kinds else k: kinds[k[:2]](v) if k[:2] in kinds else v for k, v in data.items() if k != 'method'}
+            r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent,
+                           'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
             offers = [o['text'] for o in r.get('offers') or []]
             for _ in range(WAIT_MAX if r.get('status') == 'suspended' else 0):  # the interpreter answers as an offer to this intent
                 seen = host.send({'op': 'world-offers', 'principal': did, 'after': r['receipt']['height']}).get('offers') or []
@@ -701,18 +716,10 @@ class Handler(BaseHTTPRequestHandler):
             said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), line=html.escape(turn_line(r)),
                                        offers=''.join(pages.T['offer'].format(text=html.escape(t)) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
-        if card.get('status') != 'card':
-            return self.html(404, pages.missing(name, who['handle'], card))
-        state = plain(view.get('state') or {})
-        doors = (state.get('doors') if isinstance(state, dict) else None) or []
-        if isinstance(doors, dict):  # a relation (`rows {items}`, the directory's): its menu order is each row's place
-            doors = sorted(doors.get('items') or [], key=lambda d: d.get('place', 0))
-        doors = [d for d in doors if (d.get('to') or {}).get('object')]
-        items = ''.join(pages.T['door'].format(href=html.escape(oid(d['to']['object'])), id=html.escape(d['to']['object']), label=html.escape(d.get('label', '')),
-                                            description=html.escape(d.get('description', ''))) for d in doors)
+        if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it
+            return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))
         self.html(200, pages.page(name, who['handle'], pages.T['page'].format(
-            name=html.escape(name), path=html.escape(oid(name)), said=said, card=html.escape(card.get('text', '')),
-            doors=pages.T['doors'].format(items=items) if doors else '')))
+            name=html.escape(name), path=html.escape(oid(name)), said=said, card=html.escape(card.get('text', '')), doors=pages.door_nav(door_rows(view)))))
 
     def html(self, code, body, headers=()):
         self.reply(code, body, 'text/html', headers)
@@ -728,14 +735,11 @@ class Handler(BaseHTTPRequestHandler):
         handle, principal, host = who and who['handle'], who and who['did'], self.server.host
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
-            return self.html(404, pages.missing(name, handle, view))
-        card = self.card(host, principal, name)  # as the public reader sees it, when not logged in
-        self.html(200, pages.obj(name, handle, view, card, self.history(host, name, principal), principal))
-
-    def card(self, host, principal, name):
-        """The object's card as this reader sees it, from the host's world-card (no journaled turn)."""
-        r = host.send({'op': 'world-card', 'principal': principal or 'anonymous', 'object': name})
-        return r.get('text') if r.get('status') == 'card' else None
+            return self.html(404, pages.refusal(name, handle, view, view.get('status')))
+        card, seen = (host.send({'op': op, 'principal': principal or 'anonymous', 'object': name}) for op in ('world-card', 'world-inspect'))
+        acts = actions('', name, seen) if principal and seen.get('status') == 'inspected' else ()
+        self.html(200, pages.obj(name, handle, view, card.get('text') if card.get('status') == 'card' else None,
+                                 self.history(host, name, principal), principal, door_rows(view), seen, acts))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, read from the tail of the journal under the reader's authority."""

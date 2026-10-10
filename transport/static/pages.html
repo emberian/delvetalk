@@ -6,10 +6,8 @@
 <!-- home: the ledger's front page -->
 <h1 class="title">The ledger<small>every object a card, every turn a receipt</small></h1>
 <p class="codes"><span class="code">ht.{height}</span><span class="code">{objects} objects</span></p>{enter}{login}
-<section><h2>In the world</h2><ul class="index">{items}</ul></section>
+<section><h2>In the world</h2><ul class="cards">{items}</ul></section>
 <form method="get" action="/o"><label>Open an object by id <input name="object" placeholder="garden/bell/1"></label><button>Open</button></form>
-<!-- item -->
-<li><a class="kind" data-id="{id}" href="/o/{href}">{id}</a>{yours}</li>
 <!-- yours: the one warm tag -->
 <span class="yours">(yours)</span>
 <!-- enter -->
@@ -28,11 +26,11 @@
 <p class="doors"><a class="door" href="/play/"><span class="kind" data-id="directory"></span>ENTER THE WORLD</a></p>
 <!-- object: as anyone may read it -->
 <h1 class="title"><span class="kind" data-id="{id}"></span>{id}</h1>
-<p class="codes"><span class="code">v.{version}</span>{yours}</p>{shown}{play}{ledger}
+<p class="codes"><span class="code">v.{version}</span>{yours}</p>{shown}{doors}{play}{actions}{source}{ledger}
 <!-- card: the card's bytes, framed, never reflowed -->
 <figure class="frame"><pre class="card">{text}</pre></figure>
-<!-- state: an object with no card, as data -->
-<pre class="state">{state}</pre>
+<!-- state: an object with no card, its state as a definition list -->
+<div class="state">{state}</div>
 <!-- playlink -->
 <p class="doors"><a class="door" href="/play/{href}"><span class="kind" data-id="{id}"></span>PLAY {id}</a></p>
 <!-- ledger -->
@@ -83,3 +81,26 @@
 <div class="entry"><ol class="ledger"><li class="slip {outcome}"><span class="code">{kind}</span><span class="name">{handle}</span><span class="line">{text}</span><span class="by">{fate}</span></li></ol>{retry}<details><summary>reply by hand</summary><form method="post" action="/hand/reply"><input type="hidden" name="uri" value="{uri}"><input name="object" placeholder="object"><textarea name="text" rows="4"></textarea><button class="door">Draft</button></form></details></div>
 <!-- hand_retry: a skipped row's quiet line -->
 <p class="quiet">— skipped: nobody was addressed —</p><form method="post" action="/hand/retry"><input type="hidden" name="uri" value="{uri}"><button class="door">Retry</button></form>
+<!-- world: the listing, each object a small card with its mark and its door word -->
+<h1 class="title">The world<small>the objects you may read, each with its door word when the directory names one</small></h1>
+<ul class="cards">{items}</ul>{more}
+<!-- world_item -->
+<li class="minicard"><a class="kind" data-id="{id}" href="/o/{href}">{id}</a>{word}{yours}</li>
+<!-- word -->
+<span class="word">{word}</span>
+<!-- more -->
+<p class="doors"><a class="door" href="{href}">NEXT PAGE</a></p>
+<!-- source: the program, as the host shows it to you -->
+<section><h2>Law</h2><pre class="listing law">{law}</pre><h2>Source <span class="code">{pin}</span></h2><details><summary>{lines} lines of Objective Bend</summary><pre class="listing">{source}</pre></details></section>
+<!-- actions -->
+<section><h2>Actions</h2><p>Each runs a turn as you, the same turn the play page runs; the object's law decides.</p>{forms}</section>
+<!-- action -->
+<details class="action"><summary><span class="code">POST</span> {method}</summary><form method="post" action="/play/{href}"><input type="hidden" name="method" value="{method}">{inputs}<button>{method}</button></form></details>
+<!-- f_text -->
+<label>{name} <small>text, {min} to {max} characters</small><input name="{name}" minlength="{min}" maxlength="{max}"></label>
+<!-- f_natural -->
+<label>{name} <small>a whole number, {min} to {max}</small><input type="number" name="n:{name}" min="{min}" max="{max}" value="{min}"></label>
+<!-- f_choice -->
+<label>{name} <small>one of these</small><select name="c:{name}">{options}</select></label>
+<!-- f_typed: a method whose input is not a form -->
+<p class="hint">{method} takes typed data, not a form: <code>POST /AGENTS.md/world/{id}/{method}</code> with <code>argument</code>.</p>
