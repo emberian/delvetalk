@@ -215,4 +215,4 @@ stays red and the journal is untouched: set the old tag back and `up` again.
 Both modes: only `model`, `max_tokens`, `system` and `messages` are sent (never `temperature`, `top_p` or `top_k`).
 `DELVETALK_MODEL_THINKING=off` adds `thinking: {"type": "disabled"}` for cheap deterministic JSON calls.
 With a state directory, each replied call appends `{at, model, inputTokens, outputTokens, account}` to `<state>/model-spend.jsonl`; total it against the monthly grant, since no balance endpoint exists.
-`DELVETALK_KEY_NAME` labels the key in that log. Any `anthropic-ratelimit-*` response headers appear in the result as `rateLimits`.
+`DELVETALK_KEY_NAME` labels the key in that log. Total it with `python3 -m transport.model spend --state /data/state [--month YYYY-MM] [--grant 200]`: calls and tokens by month, dollars at Haiku 5.5's published rates ($0.10 per million input tokens, $0.50 output), and the grant remaining. Any `anthropic-ratelimit-*` response headers appear in the result as `rateLimits`.
