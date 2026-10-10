@@ -248,7 +248,7 @@ class Repository(unittest.TestCase):
         self.assertEqual((s, e['error']), (403, 'Denied'), e)
         s, r = self.xrpc('com.atproto.repo.getRecord', tok, repo=REPO, collection=NS + 'object', rkey='diary.0')
         self.assertEqual(s, 200, r)
-        self.assertEqual(self.xrpc('com.atproto.repo.getRecord', tok, repo=REPO, collection=NS + 'object', rkey='diary/0'), (s, r))  # the old form, one release
+        self.assertEqual(self.xrpc('com.atproto.repo.getRecord', tok, repo=REPO, collection=NS + 'object', rkey='diary/0')[0], 400)  # the old <object>/<version> key is gone
         cid = self.host.send({'op': 'world-state-cid', 'principal': DID, 'object': 'diary', 'version': 0})['cid']
         pin = self.host.send({'op': 'world-inspect', 'principal': DID, 'object': 'diary'})['pin']
         self.assertEqual((r['uri'], r['cid'], r['value']['stateCid'], r['value']['pin']), (f'at://{REPO}/{NS}object/diary.0', cid, cid, pin))
@@ -260,7 +260,7 @@ class Repository(unittest.TestCase):
         self.assertEqual((s, garden['value']['object'], garden['value']['version']), (200, 'garden', 1), garden)
         s, bell = self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden~bell~1.0')
         self.assertEqual((s, bell['uri'], bell['value']['object']), (200, f'at://{REPO}/{NS}object/garden~bell~1.0', 'garden/bell/1'), bell)
-        self.assertEqual(self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden/bell/1/0'), (s, bell))
+        self.assertEqual(self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden/bell/1/0')[0], 400)  # the old <object>/<version> key is gone
         laws = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'law')[1]['records']
         self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.owner', [x['uri'] for x in laws])
         self.assertNotIn('diary', [x['value']['object'] for x in laws])
