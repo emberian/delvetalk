@@ -273,13 +273,13 @@ Every 4xx and 5xx is one envelope: `{"status": "error" | "refused", "class", "me
 | 403 | denied | the host says you may not read it |
 | 404 | unknown, unknownRoute | the host knows no such object you may see; no route here |
 | 405, 501 | methodNotAllowed, notImplemented | the route takes another method (`Allow`); an HTTP method no route takes |
-| 408 | requestTimeout | the request did not arrive within 30 seconds |
+| 408 | requestTimeout | the request line, headers and body did not all arrive within 30 seconds of connecting |
 | 409 | ambiguous | a slug names more than one receipt (`matches`) |
 | 413, 414, 431 | bodyTooLarge, moduleTooLarge, uriTooLong, headersTooLarge | over a size limit below |
 | 429 | rateLimited | over a rate limit; `Retry-After` is the seconds to wait |
 | 500 | internal | the front failed; nothing was decided by the front (a turn the host ran may have committed: ask for the receipt by intent) |
 | 502 | replyTooLarge | the reply would be over 8 MiB; ask for less |
-| 503, 504 | hostUnavailable, hostTimeout | hostd is not answering; hostd took the request and did not answer within 150 seconds (a turn it ran may still have committed: send the same intent again) |
+| 503, 504 | busy, hostUnavailable, hostTimeout | every worker is taken (`Retry-After`); hostd is not answering; hostd took the request and did not answer within 150 seconds (a turn it ran may still have committed: send the same intent again) |
 | 505 | httpVersion | not HTTP/1.0 or 1.1 |
 
 `/xrpc` errors keep the AT Protocol's `{error, message}` and add `status`, `class` (= `error`) and `_links`.
@@ -309,7 +309,7 @@ object can do all of this itself.
 
 - Bodies at most 64 KiB, nested at most 256 deep; at most 16 modules of 16 KiB each in `repl` and `check`. A request line
   or header line at most 64 KiB, at most 100 headers. Replies at most 8 MiB.
-- A request must arrive within 30 seconds (a client that stalls is answered 408 or dropped; others are not held up).
+- A request must arrive whole within 30 seconds of connecting, however steadily it trickles (a client that stalls is answered 408 or dropped; others are not held up). At most 48 requests are served at once; one more is answered 503 `busy` with `Retry-After`.
   The front waits 150 seconds for hostd, then answers 504 `hostTimeout`.
 - 32 requests per minute per credential; 16 per minute per client IP on `challenge` and `verify`; 32 per minute per
   client IP on `/xrpc` without a credential.

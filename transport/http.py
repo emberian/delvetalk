@@ -6,14 +6,13 @@ Carries bytes and a verified principal; it validates nothing but size and JSON
 well-formedness. Host replies pass through verbatim.
 """
 import argparse
-import collections
 import hashlib
 import html
 import json
 import os
 import re
 import secrets
-import subprocess
+import socket
 import sys
 import threading
 import time
@@ -40,6 +39,7 @@ PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
 REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to send a request; bytes of a reply; JSON nesting of a body
+WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
           ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
@@ -282,6 +282,11 @@ def receipt_links(base, reply, intent=None):
     return out
 
 
+_busy = canonical({'status': 'error', 'class': 'busy', 'message': API['errors']['busy']['when']}).encode()
+BUSY = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json; charset=utf-8\r\nRetry-After: 1\r\n'
+        b'Connection: close\r\nContent-Length: %d\r\n\r\n' % len(_busy)) + _busy
+
+
 class AccessLog:
     """One line per request: time, method, path (no query), status, bytes sent, the principal's DID or `-`. Never a credential
     or a body. Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
@@ -306,8 +311,10 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None):
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS):
         super().__init__(address, Handler)
+        self.slots, self.receiving, self.receiving_lock = threading.BoundedSemaphore(workers), {}, threading.Lock()
+        threading.Thread(target=self.reap, daemon=True).start()
         self.access = access
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps, repl, trust_proxy, sleep, hand
@@ -319,6 +326,35 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host_sha256 = hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary') else info.get('hostSha256', 'unknown')
         self.host_timeout = getattr(host, "timeout", HOST_TIMEOUT + 30)
         self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library hostd sealed; the REPL compiles against it by name
+
+    def process_request(self, request, client_address):
+        if not self.slots.acquire(blocking=False):  # every worker is taken: say so at once rather than queue behind them
+            try:
+                request.settimeout(1)
+                request.sendall(BUSY)
+            except OSError:
+                pass
+            return self.shutdown_request(request)
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
+
+    def reap(self):
+        """The absolute deadline: a request not received `request_timeout` seconds after its connection opened has its
+        reading side shut, however steadily its bytes trickle in (a reply already under way is unaffected)."""
+        while self.socket.fileno() != -1:
+            time.sleep(0.25)
+            with self.receiving_lock:
+                late = [c for c, t in self.receiving.items() if time.monotonic() - t > self.request_timeout]
+            for c in late:
+                try:
+                    c.shutdown(socket.SHUT_RD)
+                except OSError:
+                    pass
 
     def sync_library(self, force=False):
         """Re-read hostd-info when hostd's pid changed (it restarted, maybe with a new library), or when forced."""
@@ -350,7 +386,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         """Every route, the error envelope, the error and refusal classes (static/catalogue.json) and the limits, as data."""
         return {'status': 'catalogue', 'origin': self.origin, **API,
                 'limits': {'bodyBytes': MAX_BODY, 'moduleBytes': MAX_SOURCE, 'modules': MAX_MODULES, 'bodyDepth': MAX_DEPTH,
-                           'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'hostSeconds': self.host_timeout,
+                           'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'workers': WORKERS, 'hostSeconds': self.host_timeout,
                            'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
                            'ratePerCredential': [RATE, WINDOW], 'ratePerAddressOnChallengeAndVerify': [OPEN_RATE, WINDOW],
                            'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'idsPerPage': 64, 'deliverPerCall': DELIVER_LIMIT},
@@ -382,8 +418,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def setup(self):
         self.timeout = self.server.request_timeout  # a client that stalls sending its request is dropped after this
+        with self.server.receiving_lock:
+            self.server.receiving[self.request] = time.monotonic()  # and one that trickles, by the reaper
         super().setup()
         self.wfile = Counted(self.wfile)
+
+    def finish(self):
+        with self.server.receiving_lock:
+            self.server.receiving.pop(self.request, None)
+        super().finish()
 
     def send_response(self, code, message=None):
         self.status = code
@@ -453,6 +496,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             raw = self.rfile.read(n)
         except TimeoutError:
+            raw = b''
+        if len(raw) < n:  # stalled, or cut at the deadline
             return self.fail('requestTimeout')
         # curl -d labels JSON as a form; a browser's form body never starts with '{'
         if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded') and not raw.lstrip().startswith(b'{'):

@@ -220,7 +220,7 @@ def raw(port, data):
 
 
 class Envelope(FrontCase):
-    REMOTE = {'requestTimeout', 'hostTimeout', 'hostUnavailable'}  # tests.test_hypermedia.Robust reaches these
+    REMOTE = {'requestTimeout', 'hostTimeout', 'hostUnavailable', 'busy'}  # tests.test_hypermedia.Robust and test_http.Slow reach these
 
     def test_every_error_class_is_reachable_and_answers_the_one_envelope(self):
         tok, seen = self.login(), {}
@@ -328,6 +328,7 @@ class Robust(FrontCase):
         kinds = [('POST', f'/AGENTS.md/world/{self.c}/bump', None, 200), ('GET', f'/AGENTS.md/world/{self.c}', None, 200),
                  ('GET', '/AGENTS.md/api', None, 200), ('POST', f'/AGENTS.md/world/{self.c}/bump', b'{nope', 400), ('GET', '/AGENTS.md/world/nope', None, 404)]
         gate, got, errors = threading.Barrier(50), {}, []
+        self.front.slots = threading.BoundedSemaphore(50)  # past the default 48 a client is told `busy` (test_http.Slow)
 
         def client(i):
             method, path, raw_, want = kinds[i % 5]

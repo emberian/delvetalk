@@ -925,5 +925,55 @@ class Concurrent(unittest.TestCase):
             self.assertEqual(sorted(ident.authenticate(c)['did'] for c in creds.values()), sorted(did(i) for i in range(self.N)))
 
 
+class Slow(unittest.TestCase):
+    """A client that keeps a worker by sending slowly is cut at an absolute deadline; workers are bounded."""
+    def front(self, **kw):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        front = serve(Front(('127.0.0.1', 0), StubHost(), identity.Identity(tmp.name, delve.Client(None)), **kw))
+        self.addCleanup(front.server_close)
+        self.addCleanup(front.shutdown)
+        return front
+
+    def test_a_client_dribbling_headers_is_cut_at_the_absolute_deadline(self):
+        import socket
+        front = self.front()
+        front.request_timeout = 2
+        s = socket.create_connection(front.server_address, timeout=0.5)
+        self.addCleanup(s.close)
+        s.sendall(b'GET /AGENTS.md HTTP/1.1\r\n')
+        start, cut = time.monotonic(), None
+        while time.monotonic() - start < 8 and cut is None:
+            try:
+                s.sendall(b'X-a: b\r\n')  # a line well inside every per-read timeout
+                s.recv(4096)  # returns only once the front answers or closes
+                cut = time.monotonic()
+            except socket.timeout:
+                continue
+            except OSError:
+                cut = time.monotonic()
+        self.assertIsNotNone(cut, 'still holding a worker after 8 seconds')
+        self.assertLess(cut - start, 4.5)
+
+    def test_workers_are_bounded_and_one_more_connection_is_told_busy(self):
+        import socket
+        front = self.front(workers=2)
+        idle = [socket.create_connection(front.server_address) for _ in range(2)]
+        for s in idle:
+            self.addCleanup(s.close)
+            s.sendall(b'GET / HTTP/1.1\r\n')
+        time.sleep(0.3)
+        c = http.client.HTTPConnection('127.0.0.1', front.server_address[1], timeout=5)
+        c.request('GET', '/AGENTS.md')
+        r = c.getresponse()
+        self.assertEqual((r.status, json.loads(r.read())['class'], r.getheader('Retry-After')), (503, 'busy', '1'))
+        for s in idle:
+            s.close()
+        time.sleep(0.3)
+        c = http.client.HTTPConnection('127.0.0.1', front.server_address[1], timeout=5)
+        c.request('GET', '/AGENTS.md')
+        self.assertEqual(c.getresponse().status, 200)
+
+
 if __name__ == '__main__':
     unittest.main()

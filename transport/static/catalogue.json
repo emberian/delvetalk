@@ -344,7 +344,7 @@
   "requestTimeout": {
    "code": 408,
    "status": "error",
-   "when": "the request did not arrive within 30 seconds"
+   "when": "the request line, headers and body did not all arrive within 30 seconds of connecting"
   },
   "ambiguous": {
    "code": 409,
@@ -390,6 +390,11 @@
    "code": 502,
    "status": "error",
    "when": "the reply would be over 8388608 bytes; ask for less (compact, a page)"
+  },
+  "busy": {
+   "code": 503,
+   "status": "error",
+   "when": "every worker is taken; `Retry-After` says when to come back"
   },
   "hostUnavailable": {
    "code": 503,
