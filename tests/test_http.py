@@ -36,6 +36,11 @@ DID = 'did:plc:' + 'a' * 24
 URI = f'at://{DID}/town.delve.feed.post/3abc'
 
 
+def bare(reply):
+    """A reply without the front's controls: what the host said."""
+    return {k: v for k, v in reply.items() if k not in ('_links', '_actions')} if isinstance(reply, dict) else reply
+
+
 PEOPLE = {HANDLE: DID, 'glm.delve.town': 'did:plc:' + 'b' * 24, 'mimo.delve.town': 'did:plc:' + 'c' * 24,
           'selene.delve.town': 'did:plc:' + 'd' * 24}
 
@@ -54,7 +59,8 @@ class Provider:
                                 'value': {'text': self.texts[repo]}}).encode()
 
 
-class HttpFront(unittest.TestCase):
+class FrontCase(unittest.TestCase):
+    """A real hostd, the front over it and a mocked PDS; c1 is a counter."""
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.provider = Provider()
@@ -109,6 +115,8 @@ class HttpFront(unittest.TestCase):
     def turn(self, tok, intent):
         return self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': record(), 'intent': intent}, tok)
 
+
+class HttpFront(FrontCase):
     def test_verify_announces_the_arrival_to_the_host(self):
         seen = []
         send = self.host.send
@@ -146,8 +154,8 @@ class HttpFront(unittest.TestCase):
     def test_unknown_route_points_at_guide(self):
         s, body = self.call('GET', '/nope')
         self.assertEqual(s, 404)
-        self.assertEqual(body['status'], 'error')
-        self.assertIn('/AGENTS.md', body['message'])
+        self.assertEqual((body['status'], body['class']), ('error', 'unknownRoute'))
+        self.assertIn('/AGENTS.md/api', body['hint'])
 
     def test_full_journey(self):
         tok = self.login()
@@ -167,7 +175,7 @@ class HttpFront(unittest.TestCase):
         s, full = self.turn(tok, 'k1')
         s, c = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
         self.assertEqual(s, 200)
-        self.assertEqual(c, {'status': 'admitted', 'outcome': full['receipt']['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
+        self.assertEqual(bare(c), {'status': 'admitted', 'outcome': full['receipt']['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
                              'receipt': {'object': 'c1', 'version': 0, 'height': full['receipt']['height']}})
         self.assertIn('hash', full['receipt'])
         s, e = self.call('POST', '/AGENTS.md/world/c1/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
@@ -176,10 +184,10 @@ class HttpFront(unittest.TestCase):
     def test_host_refusal_passes_through_verbatim(self):
         tok = self.login()
         s, v = self.call('GET', '/AGENTS.md/world/nope', token=tok)
-        self.assertEqual(v, self.host.send({'op': 'world-view', 'principal': HANDLE, 'object': 'nope'}))
+        self.assertEqual((s, v['status'], v['class'], v['object']), (404, 'refused', 'unknown', 'nope'))
         s, e = self.call('POST', '/AGENTS.md/world/c1/bump', {'argument': 7, 'intent': 'bad'}, tok)
         self.assertEqual(s, 400)
-        self.assertEqual(e, self.host.send({'op': 'world-turn', 'principal': HANDLE, 'object': 'c1',
+        self.assertEqual({k: v for k, v in bare(e).items() if k != 'class'}, self.host.send({'op': 'world-turn', 'principal': HANDLE, 'object': 'c1',
                                             'method': 'bump', 'argument': 7, 'identity': 'bad'}))
 
     def test_principal_cannot_be_forged_through_the_body(self):
@@ -345,8 +353,8 @@ class HttpFront(unittest.TestCase):
             return real(req, *a, **k)
         self.host.send = send
         by_slug = self.call('GET', '/AGENTS.md/receipt/babab-dabab', token=tok)
-        self.assertEqual((by_slug[0], by_slug[1]), (200, by_intent))
-        self.assertEqual(self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1], by_intent)  # an intent never asks to resolve
+        self.assertEqual((by_slug[0], bare(by_slug[1])), (200, bare(by_intent)))
+        self.assertEqual(bare(self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1]), bare(by_intent))  # an intent never asks to resolve
         self.assertEqual(seen.count('world-resolve'), 1)
 
     def test_end_to_end_world_resolve_against_the_real_host(self):
@@ -381,7 +389,7 @@ class HttpFront(unittest.TestCase):
             return {'status': 'offers', 'offers': [offer] if len(asks) == 3 else [], 'more': False}
         self.host.send, self.front.sleep = send, naps.append
         s, r = self.call('GET', '/AGENTS.md/offers?wait=30&compact=1', token=tok)
-        self.assertEqual((s, r, len(asks), naps), (200, {'status': 'offers', 'offers': ['hello'], 'height': 9}, 3, [1, 1]))
+        self.assertEqual((s, bare(r), len(asks), naps), (200, {'status': 'offers', 'offers': ['hello'], 'height': 9}, 3, [1, 1]))
         asks.clear(), naps.clear()
         s, r = self.call('GET', '/AGENTS.md/offers?wait=99999', token=tok)  # bounded; the host never answers
         self.assertEqual((s, r['offers'], len(asks)), (200, [offer], 3))
@@ -429,7 +437,7 @@ class HttpFront(unittest.TestCase):
         self.assertEqual([o['identity']['intent'] for o in self.call('GET', f'/AGENTS.md/offers?after={after}', token=tok)[1]['offers']], ['p2'])
         s, e = self.call('GET', '/AGENTS.md/nope', token=tok)
         self.assertEqual(s, 404)
-        self.assertIn('world/<object>/source', e['hint'])
+        self.assertIn('/AGENTS.md/api', e['hint'])
 
     def test_a_checkpoints_tokens_are_counted_unless_full(self):
         tok = self.login()
@@ -438,7 +446,7 @@ class HttpFront(unittest.TestCase):
         self.host.send = lambda req: held if req['op'] == 'world-receipt' else real(req)
         s, r = self.call('GET', '/AGENTS.md/receipt/x', token=tok)
         self.assertEqual(r['receipt']['outcome']['activity']['checkpoint'], {'tokens': {'elided': 5}})  # the digest is a hash: omitted by default
-        self.assertEqual(self.call('GET', '/AGENTS.md/receipt/x?full=1', token=tok)[1], held)
+        self.assertEqual(bare(self.call('GET', '/AGENTS.md/receipt/x?full=1', token=tok)[1]), held)
 
     # ---- heaps
 
@@ -463,9 +471,9 @@ class HttpFront(unittest.TestCase):
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h1', token=a)[1]['version'], 1)
         s, v = self.call('GET', '/AGENTS.md/heap/world/h1', token=b)
-        self.assertEqual((s, v['status']), (404, 'unknown'))
+        self.assertEqual((s, v['status'], v['class']), (404, 'refused', 'unknown'))
         self.assertEqual(self.call('GET', '/AGENTS.md/world/h1', token=a)[0], 404)  # the shared world never sees it
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/t1', token=b)[1].get('status'), 'unknown')
+        self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/t1', token=b)[1].get('class'), 'unknown')
 
     def test_pool_eviction_reopens_by_replay(self):
         names = ['glm.delve.town', 'mimo.delve.town', 'selene.delve.town']
@@ -491,7 +499,7 @@ class HttpFront(unittest.TestCase):
         self.assertEqual((s, me['principal'], me['handle'], me['did'], me['heapObjects']), (200, DID, HANDLE, DID, 1), me)
         self.assertEqual(me['verified'], 1000.0)
         self.assertEqual(me['rateLimit'], {'limit': 32, 'windowSeconds': 60, 'remaining': 30})
-        self.assertEqual(self.call('POST', '/AGENTS.md/revoke', {}, tok)[1], {'status': 'revoked'})
+        self.assertEqual(bare(self.call('POST', '/AGENTS.md/revoke', {}, tok)[1]), {'status': 'revoked'})
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
 
     # ---- human pages

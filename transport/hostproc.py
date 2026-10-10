@@ -76,7 +76,7 @@ class Host:
                 except (HostDied, ValueError):
                     self.close()
                     if attempt:
-                        return {'status': 'error', 'message': 'host unavailable'}
+                        return {'status': 'error', 'class': 'hostUnavailable', 'message': 'host unavailable'}
 
     def close(self):
         if self.proc is not None:
@@ -126,8 +126,8 @@ class HostClient:
     One persistent connection per thread, re-made on EOF or when the socket path names a different hostd (a restart).
     hostd serves connections concurrently and still runs ops one at a time, in arrival order."""
 
-    def __init__(self, path, heap=None, stateless=False):
-        self.path, self.heap, self.stateless = str(path), heap, stateless
+    def __init__(self, path, heap=None, stateless=False, timeout=HOST_TIMEOUT + 30):
+        self.path, self.heap, self.stateless, self.timeout = str(path), heap, stateless, timeout
         self.local = threading.local()
 
     def _connection(self):
@@ -142,7 +142,7 @@ class HostClient:
             self.close()
         s = socket.socket(socket.AF_UNIX)
         try:
-            s.settimeout(HOST_TIMEOUT + 30)
+            s.settimeout(self.timeout)
             s.connect(self.path)
             self.local.conn = (s, s.makefile('rb'), os.stat(self.path).st_ino)
         except OSError:
@@ -166,11 +166,14 @@ class HostClient:
                 if not line:
                     raise OSError('hostd closed the connection')
                 return json.loads(line)
+            except TimeoutError:  # hostd took the request and did not answer; a turn it ran may still commit: never re-sent
+                self.close()
+                return {'status': 'error', 'class': 'hostTimeout', 'message': f'hostd did not answer within {self.timeout} seconds'}
             except (OSError, ValueError):
                 self.close()
                 if fresh or request.get('op') not in IDEMPOTENT:  # a stale reused connection: once more on a new one, if the op is safe to repeat
                     break
-        return {'status': 'error', 'message': 'hostd unavailable'}
+        return {'status': 'error', 'class': 'hostUnavailable', 'message': 'hostd unavailable'}
 
     def close(self):
         held = getattr(self.local, 'conn', None)

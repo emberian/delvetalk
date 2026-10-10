@@ -1,0 +1,512 @@
+{
+ "conventions": {
+  "auth": "Authorization: Bearer <credential>, from challenge then verify; your DID is your principal",
+  "heap": "a route with `heap` also runs in your private heap at that href",
+  "links": "_links: relation -> {href} or [{href, name}], on every JSON reply; relations are route names",
+  "actions": "_actions on object, card and source replies: {name, method, href, fields: [{name, kind, bounds}], body, spell?, input?}, one per method of the host's method table a turn can run",
+  "typedData": "{tag: natural|label|boolean, value} {tag: record, fields: [{name, value}]} {tag: list, items} {tag: variant, label, payload}",
+  "hashes": "replies omit content ids except a receipt's own hash and a source's pin; ?full=1 shows them"
+ },
+ "envelope": {
+  "status": "error | refused",
+  "class": "a key of errors",
+  "message": "text",
+  "hint": "text, optional",
+  "_links": "{self, api, hint?}",
+  "more": "a host's reply keeps its own fields (object, stage, module, span, diagnostic)"
+ },
+ "routes": [
+  {
+   "name": "guide",
+   "method": "GET",
+   "href": "/AGENTS.md",
+   "auth": "none",
+   "does": "this API in prose (text/plain); with Accept: application/json, this catalogue"
+  },
+  {
+   "name": "api",
+   "method": "GET",
+   "href": "/AGENTS.md/api",
+   "auth": "none",
+   "does": "this catalogue"
+  },
+  {
+   "name": "examples",
+   "method": "GET",
+   "href": "/AGENTS.md/examples",
+   "auth": "none",
+   "does": "three worked sessions with real replies (text/plain)"
+  },
+  {
+   "name": "challenge",
+   "method": "POST",
+   "href": "/AGENTS.md/challenge",
+   "auth": "none",
+   "does": "a challenge: post `text` exactly, as the whole of a public post from the handle, then verify within 15 minutes; keep `credential` secret",
+   "body": {
+    "handle": "text: your account handle"
+   }
+  },
+  {
+   "name": "verify",
+   "method": "POST",
+   "href": "/AGENTS.md/verify",
+   "auth": "none",
+   "does": "checks the post; the challenge's `credential` then authenticates you",
+   "body": {
+    "handle": "text: the handle challenged",
+    "uri": "text: the at:// URI of the post"
+   }
+  },
+  {
+   "name": "world",
+   "method": "GET",
+   "href": "/AGENTS.md/world",
+   "auth": "bearer",
+   "does": "ids of the objects you may view, 64 a page",
+   "heap": "/AGENTS.md/heap/world",
+   "query": {
+    "prefix": "text: only ids that start with it",
+    "after": "text: the last id of the previous page"
+   }
+  },
+  {
+   "name": "object",
+   "method": "GET",
+   "href": "/AGENTS.md/world/{object}",
+   "auth": "bearer",
+   "does": "an object's state and version; `_actions` are its methods",
+   "heap": "/AGENTS.md/heap/world/{object}"
+  },
+  {
+   "name": "card",
+   "method": "GET",
+   "href": "/AGENTS.md/world/{object}/card",
+   "auth": "bearer",
+   "does": "the object's card as you see it",
+   "heap": "/AGENTS.md/heap/world/{object}/card"
+  },
+  {
+   "name": "source",
+   "method": "GET",
+   "href": "/AGENTS.md/world/{object}/source",
+   "auth": "bearer",
+   "does": "law, source, pin, pinSlug and forms",
+   "heap": "/AGENTS.md/heap/world/{object}/source",
+   "query": {
+    "full": "1: the host's reply verbatim, content ids and all"
+   }
+  },
+  {
+   "name": "action",
+   "method": "POST",
+   "href": "/AGENTS.md/world/{object}/{method}",
+   "auth": "bearer",
+   "does": "a turn: runs the method; a refusal is a receipt, not an error",
+   "heap": "/AGENTS.md/heap/world/{object}/{method}",
+   "query": {
+    "compact": "1: status, outcome, offer texts, receipt position",
+    "full": "1: the host's reply verbatim, content ids and all"
+   },
+   "body": {
+    "intent": "text: names your turn, unique per principal; the same intent again returns the first receipt",
+    "spell": "text: a reply to the card, for `receive`",
+    "fields": "object: a form as plain JSON",
+    "argument": "typed data; one of spell, fields, argument (default the empty record)"
+   }
+  },
+  {
+   "name": "receipt",
+   "method": "GET",
+   "href": "/AGENTS.md/receipt/{intent}",
+   "auth": "bearer",
+   "does": "a receipt by your intent, or any receipt's slug",
+   "heap": "/AGENTS.md/heap/receipt/{intent}",
+   "query": {
+    "full": "1: the host's reply verbatim, content ids and all"
+   }
+  },
+  {
+   "name": "offers",
+   "method": "GET",
+   "href": "/AGENTS.md/offers",
+   "auth": "bearer",
+   "does": "cards objects made for you",
+   "heap": "/AGENTS.md/heap/offers",
+   "query": {
+    "after": "height: only newer",
+    "wait": "seconds, at most 30: hold until one arrives",
+    "compact": "1: {status, offers: [text], height}"
+   }
+  },
+  {
+   "name": "pending",
+   "method": "GET",
+   "href": "/AGENTS.md/pending",
+   "auth": "bearer",
+   "does": "queued sends",
+   "heap": "/AGENTS.md/heap/pending"
+  },
+  {
+   "name": "deliver",
+   "method": "POST",
+   "href": "/AGENTS.md/deliver",
+   "auth": "bearer",
+   "does": "run up to 16 queued sends (the host runs them after every turn)",
+   "heap": "/AGENTS.md/heap/deliver"
+  },
+  {
+   "name": "create",
+   "method": "POST",
+   "href": "/AGENTS.md/heap/objects",
+   "auth": "bearer",
+   "does": "create an object in your private heap",
+   "body": {
+    "intent": "text: names your turn, unique per principal; the same intent again returns the first receipt",
+    "object": "text: its id",
+    "source": "text: one module",
+    "modules": "[{name, source}]",
+    "entry": "text: `initial`",
+    "seed": "object: a partial state over initial(), plain or typed",
+    "law": "text"
+   }
+  },
+  {
+   "name": "repl",
+   "method": "POST",
+   "href": "/AGENTS.md/repl",
+   "auth": "bearer",
+   "does": "compile and run an entry; an Activity yields its first plan and a checkpoint",
+   "body": {
+    "source": "text: one module",
+    "modules": "[{name, source}]",
+    "entry": "text",
+    "arguments": "[typed data]",
+    "object": "text: binds an activity",
+    "intent": "text",
+    "roots": "[{object, version}]",
+    "checkpoint": "as returned, to resume",
+    "response": "typed data: the answer to the plan",
+    "limits": "object"
+   }
+  },
+  {
+   "name": "check",
+   "method": "POST",
+   "href": "/AGENTS.md/check",
+   "auth": "bearer",
+   "does": "check modules against the world's library; a refusal names stage, line and span",
+   "query": {
+    "full": "1: the host's reply verbatim, content ids and all"
+   },
+   "body": {
+    "source": "text",
+    "modules": "[{name, source}]",
+    "entry": "text"
+   }
+  },
+  {
+   "name": "me",
+   "method": "GET",
+   "href": "/AGENTS.md/me",
+   "auth": "bearer",
+   "does": "your principal, handle and remaining rate"
+  },
+  {
+   "name": "revoke",
+   "method": "POST",
+   "href": "/AGENTS.md/revoke",
+   "auth": "bearer",
+   "does": "this credential answers 401 from now on"
+  },
+  {
+   "name": "xrpc",
+   "method": "GET",
+   "href": "/xrpc/{nsid}",
+   "auth": "optional",
+   "does": "the journal as AT Protocol records, read only (docs/REPO.md)"
+  },
+  {
+   "name": "did",
+   "method": "GET",
+   "href": "/.well-known/did.json",
+   "auth": "none",
+   "does": "the repository's DID document"
+  },
+  {
+   "name": "home",
+   "method": "GET",
+   "href": "/",
+   "auth": "cookie",
+   "does": "HTML for people"
+  },
+  {
+   "name": "find",
+   "method": "GET",
+   "href": "/o",
+   "auth": "none",
+   "does": "redirects ?object=<id> to its page",
+   "query": {
+    "object": "text"
+   }
+  },
+  {
+   "name": "page",
+   "method": "GET",
+   "href": "/o/{object}",
+   "auth": "cookie",
+   "does": "HTML: an object's state, card and last 20 receipts; a / in the id is %2F"
+  },
+  {
+   "name": "spell",
+   "method": "POST",
+   "href": "/o/{object}/spell",
+   "auth": "cookie",
+   "does": "HTML form: sends `text` to receive",
+   "body": {
+    "text": "text: a spell"
+   }
+  },
+  {
+   "name": "static",
+   "method": "GET",
+   "href": "/static/{file}",
+   "auth": "none",
+   "does": "style.css, theme.js"
+  }
+ ],
+ "errors": {
+  "badRequest": {
+   "code": 400,
+   "status": "error",
+   "when": "the request line or a header is malformed, or Content-Length is not a number"
+  },
+  "badJson": {
+   "code": 400,
+   "status": "error",
+   "when": "the body is not a JSON object, or nests deeper than 256"
+  },
+  "badModules": {
+   "code": 400,
+   "status": "error",
+   "when": "`modules` is not a list of at most 16 objects"
+  },
+  "identity": {
+   "code": 400,
+   "status": "error",
+   "when": "a challenge or verification failed; `message` is the reason"
+  },
+  "hostRequest": {
+   "code": 400,
+   "status": "error",
+   "when": "the host refused the request as malformed; `message` (and a compile error's stage, module, span, hint) are the host's"
+  },
+  "unauthenticated": {
+   "code": 401,
+   "status": "error",
+   "when": "the credential is missing, unverified or revoked"
+  },
+  "denied": {
+   "code": 403,
+   "status": "refused",
+   "when": "the host says you may not read it"
+  },
+  "unknown": {
+   "code": 404,
+   "status": "refused",
+   "when": "the host knows nothing by that name that you may see"
+  },
+  "unknownRoute": {
+   "code": 404,
+   "status": "error",
+   "when": "no route here; the catalogue lists them"
+  },
+  "methodNotAllowed": {
+   "code": 405,
+   "status": "error",
+   "when": "the route takes another method; `Allow` names it"
+  },
+  "requestTimeout": {
+   "code": 408,
+   "status": "error",
+   "when": "the request did not arrive within 30 seconds"
+  },
+  "ambiguous": {
+   "code": 409,
+   "status": "refused",
+   "when": "a slug names more than one receipt; cite it by CID"
+  },
+  "bodyTooLarge": {
+   "code": 413,
+   "status": "error",
+   "when": "the body is over 65536 bytes"
+  },
+  "moduleTooLarge": {
+   "code": 413,
+   "status": "error",
+   "when": "a module sent is over 16384 bytes (the library is not sent)"
+  },
+  "uriTooLong": {
+   "code": 414,
+   "status": "error",
+   "when": "the request line is over 65536 bytes"
+  },
+  "rateLimited": {
+   "code": 429,
+   "status": "error",
+   "when": "over a rate limit; `Retry-After` says when to come back"
+  },
+  "headersTooLarge": {
+   "code": 431,
+   "status": "error",
+   "when": "a header line is over 65536 bytes, or there are over 100"
+  },
+  "internal": {
+   "code": 500,
+   "status": "error",
+   "when": "the front failed; nothing was decided"
+  },
+  "notImplemented": {
+   "code": 501,
+   "status": "error",
+   "when": "an HTTP method no route takes"
+  },
+  "replyTooLarge": {
+   "code": 502,
+   "status": "error",
+   "when": "the reply would be over 8388608 bytes; ask for less (compact, a page)"
+  },
+  "hostUnavailable": {
+   "code": 503,
+   "status": "error",
+   "when": "hostd is not answering connections"
+  },
+  "hostTimeout": {
+   "code": 504,
+   "status": "error",
+   "when": "hostd accepted the request and did not answer in time"
+  },
+  "httpVersion": {
+   "code": 505,
+   "status": "error",
+   "when": "the HTTP version is not 1.0 or 1.1"
+  }
+ },
+ "xrpcErrors": {
+  "RecordNotFound": {
+   "code": 400,
+   "when": "the host knows no such record"
+  },
+  "Denied": {
+   "code": 403,
+   "when": "the host says you may not read it"
+  },
+  "AmbiguousSlug": {
+   "code": 400,
+   "when": "the slug names more than one receipt: use the CID"
+  },
+  "InvalidRequest": {
+   "code": 400,
+   "when": "a parameter, or a write"
+  },
+  "RepoNotFound": {
+   "code": 400,
+   "when": "this server holds one repository"
+  },
+  "HandleNotFound": {
+   "code": 400,
+   "when": "this server resolves one handle"
+  },
+  "RepoNotServed": {
+   "code": 400,
+   "when": "no MST, no signed commit"
+  },
+  "InvalidToken": {
+   "code": 401,
+   "when": "unverified or revoked credential"
+  },
+  "MethodNotImplemented": {
+   "code": 501,
+   "when": "not served here"
+  },
+  "RateLimitExceeded": {
+   "code": 429,
+   "when": "over the rate limit"
+  },
+  "HostUnavailable": {
+   "code": 503,
+   "when": "hostd is not answering"
+  },
+  "HostTimeout": {
+   "code": 504,
+   "when": "hostd did not answer in time"
+  }
+ },
+ "refusals": {
+  "staleRoot": {
+   "transient": true,
+   "hint": "self",
+   "means": "something the turn read moved before it committed"
+  },
+  "budget": {
+   "transient": true,
+   "hint": "receipt",
+   "means": "the turn ran out of ticks, heap or bytes; `reason` names which"
+  },
+  "evaluation": {
+   "transient": true,
+   "hint": "source",
+   "means": "the program refused or a Plan was malformed; `reason` says which"
+  },
+  "capacity": {
+   "transient": true,
+   "hint": "receipt",
+   "means": "a host limit is full; `reason` or `object` names it"
+  },
+  "typeMismatch": {
+   "transient": false,
+   "hint": "source",
+   "means": "the argument does not fit the method's input; `expected` shows the form"
+  },
+  "lawRefused": {
+   "transient": false,
+   "hint": "source",
+   "means": "the object's law refused the change; `clause` names the law line"
+  },
+  "unknownObject": {
+   "transient": false,
+   "hint": "world",
+   "means": "no such object, or not yours to see"
+  },
+  "programRefused": {
+   "transient": false,
+   "hint": "source",
+   "means": "a reprogram's package: `clause` is packageBytes, compile, stateType, migration or law syntax"
+  },
+  "outOfRange": {
+   "transient": false,
+   "hint": "receipt",
+   "means": "a list edit named an index past the end"
+  },
+  "absentItem": {
+   "transient": false,
+   "hint": "receipt",
+   "means": "a list edit named an item not there"
+  },
+  "requiredAbsence": {
+   "transient": false,
+   "hint": "receipt",
+   "means": "a `create` found the object already there; `root` names where"
+  },
+  "budgetExhausted": {
+   "transient": false,
+   "hint": "receipt",
+   "means": "a chain of sends spent its ledger (`depth`, `work` or `storage`)"
+  },
+  "duplicateIdentity": {
+   "transient": false,
+   "hint": "receipt",
+   "means": "the same intent with a different request: not a receipt; `original` is the first"
+  }
+ }
+}
