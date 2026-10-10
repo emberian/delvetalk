@@ -519,3 +519,15 @@ type, the three edits, the row-rebase rule, `insertOnly`, and the objects whose
 lists are plainly keyed (Bell, Tide, Directory, Anthology, Garden's pending,
 Deal). After: `viewField`, `On.rows`, row lenses, the rest of the objects. No
 kernel theorem moves; the new obligations are host-side and small.
+
+After the before-launch slice, three additive reads that relations make
+cheap and that move no state shape: `viewAt {object, version}` (as-of reads
+over the journal the host already keeps, so a card can say what changed since
+the reader last looked); named derived views, `viewDerived {object, view}`,
+running the target's own pure `views()` function under the reader's authority
+and budget as the host runs `render` for `card`, so objects answer each other's
+questions without a query language; and Wake patterns with `above`, `below`
+and `contains` beside `equals`, still closure-free. No incremental or
+differential maintenance: a card renders at most eight rows and a count under
+one turn's budget, and a maintained view would be derived state the host owned
+across turns, which §2 keeps out of the store.
