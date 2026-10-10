@@ -203,6 +203,7 @@ def primitiveTypes : Primitive → Ty × Ty × Ty
   | .textConcat => (.label, .label, .label)
   | .textSpan | .textBreak => (.label, .label, .natural)
   | .textHasAny => (.label, .label, .boolean)
+  | .textCanonicalCompare => (.label, .label, .natural)
   | .textTake | .textDrop => (.label, .natural, .label)
 
 def unaryTypes : UnaryPrimitive → Ty × Ty
@@ -1276,6 +1277,7 @@ def decodePrimitive (value : Json) : Except String Primitive := do
   | "less" => pure .less | "lessEqual" => pure .lessEqual | "modulo" => pure .modulo
   | "textConcat" => pure .textConcat | "textTake" => pure .textTake | "textDrop" => pure .textDrop
   | "textSpan" => pure .textSpan | "textBreak" => pure .textBreak | "textHasAny" => pure .textHasAny
+  | "textCanonicalCompare" => pure .textCanonicalCompare
   | _ => .error "unknown Objective primitive"
 
 def decodeUnaryPrimitive (value : Json) : Except String UnaryPrimitive := do

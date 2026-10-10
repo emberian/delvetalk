@@ -22,7 +22,8 @@ TAGS = ["bound", "lam", "app", "mix", "fix", "specification", "prototype", "refl
         "project", "nat", "boolean", "label", "refuse", "unary", "binary", "extend", "record", "get", "ifZero",
         "inject", "case", "ifBool", "perform", "done", "toData", "textJoin"]
 BINARY = ["add", "multiply", "equal", "conjunction", "labelEqual", "subtract", "divide", "less",
-          "lessEqual", "modulo", "textConcat", "textTake", "textDrop", "textSpan", "textBreak", "textHasAny"]
+          "lessEqual", "modulo", "textConcat", "textTake", "textDrop", "textSpan", "textBreak", "textHasAny",
+          "textCanonicalCompare"]
 UNARY = ["natText", "textLength", "sha256Text"]
 STRINGS = ["", "a", "abc", "hello world", "line\nbreak", "\n", "é", "日本語", "😀x", "tab\t", "a b c",
            'q"uote', "back\\slash", "x" * 40, "Hello, World!", "world hello", "HELLO-there"]
@@ -104,6 +105,8 @@ class Gen:
         if c == 6:
             return ["unary", "textLength", self.g_label(env, h)]
         if c == 7:
+            if r.random() < 0.3:
+                return ["binary", "textCanonicalCompare", self.g_label(env, h // 2), self.g_label(env, h // 2)]
             return ["binary", r.choice(["textSpan", "textBreak"]), self.g_label(env, h // 2), ["label", r.choice(ALPHABETS)]]
         if c == 8:
             # toData is the identity at runtime: it must step exactly like done.

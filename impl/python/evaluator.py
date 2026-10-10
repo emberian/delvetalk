@@ -15,7 +15,8 @@ if hasattr(sys, "set_int_max_str_digits"):
 
 PRIMITIVES = {"add", "multiply", "equal", "conjunction", "labelEqual",
               "subtract", "divide", "less", "lessEqual", "modulo",
-              "textConcat", "textTake", "textDrop", "textSpan", "textBreak", "textHasAny"}
+              "textConcat", "textTake", "textDrop", "textSpan", "textBreak", "textHasAny",
+              "textCanonicalCompare"}
 UNARY = {"natText", "textLength", "sha256Text"}
 VALUES = {"lam", "nat", "boolean", "label", "record", "specification",
           "prototype", "inject"}
@@ -146,6 +147,12 @@ def primitive(name, left, right):
         return ["boolean", left[1] and right[1]] if left[0] == right[0] == "boolean" else None
     if name == "labelEqual":
         return ["boolean", left[1] == right[1]] if left[0] == right[0] == "label" else None
+    if name == "textCanonicalCompare":
+        if left[0] != "label" or right[0] != "label":
+            return None
+        a, b = left[1].encode("utf-8"), right[1].encode("utf-8")
+        ka, kb = (len(a), a), (len(b), b)
+        return ["nat", "0" if ka < kb else "1" if ka == kb else "2"]
     if name == "textHasAny":
         if left[0] != "label" or right[0] != "label":
             return None

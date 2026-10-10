@@ -48,6 +48,7 @@ def primitiveName : Primitive → String
   | .subtract => "-" | .divide => "/" | .less => "<" | .lessEqual => "<=" | .modulo => "%"
   | .textConcat => "textConcat" | .textTake => "textTake" | .textDrop => "textDrop"
   | .textSpan => "textSpan" | .textBreak => "textBreak" | .textHasAny => "textHasAny"
+  | .textCanonicalCompare => "textCanonicalCompare"
 
 def unaryName : UnaryPrimitive → String
   | .natText => "natText" | .textLength => "textLength" | .sha256Text => "sha256Text"

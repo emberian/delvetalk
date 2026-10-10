@@ -266,6 +266,24 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
   `relations():`); `compileEntryCore` is the compile without it (check-package's path).
   Test: `test_sugar.Relations`.
 
+- `canonicalCompare(a, b) -> Nat` (relational day 1): 0/1/2 by the canonical DAG-CBOR
+  bytes of two values of ONE first-order type. Not a core form: the elaborator writes the
+  comparison out from the type as Bend (`cmpTerm`, `canonicalComparator`), mirroring
+  `Delvetalk.Canonical`: Nat numerically (shortest heads and big-endian bignums order so),
+  `false < true`, text by UTF-8 byte length then bytes (the new scalar primitive
+  `textCanonicalCompare`, checkpoint code 17, all three evaluators and the generator), a
+  record field by field in map-key order, a sum by label (same order) then payload, a
+  list-shaped sum (`nil: {}`, `cons: {head, tail: itself}`, an array on the wire) by
+  length first, then item by item (one `fix` with an accumulator); recursive types are a
+  `fix` per type variable. Refused by name: `Data` (Bend cannot read its shape), functions,
+  activities, a sum with nil/cons beside other cases (its nil values encode as arrays).
+  So the machine, codecs and proofs are untouched; the tariff is the generated term's
+  ticks, linear in the values' size. The Data signature the brief named is refused: a Data
+  value has no shape Bend can read, and a generic `Relation<T>` is monomorphised before
+  elaboration, so `T` is always known where `canonicalCompare` is written. Test:
+  `tests/test_canonical_compare.py` (a hundred random records against `canonical-encode`).
+  Conformance 1500: 1432 agree per evaluator, 68 known, 0 unexpected.
+
 ## 15. Design note: lazy state (RELATIONAL §11 item 4)
 
 **Today.** A turn's state argument is admitted whole as native cells: `Cell.native d` holds

@@ -123,7 +123,7 @@ private def primNames : List (String × Primitive) :=
    ("labelEqual",.labelEqual),("subtract",.subtract),("divide",.divide),
    ("less",.less),("lessEqual",.lessEqual),("modulo",.modulo),("textConcat",.textConcat),
    ("textTake",.textTake),("textDrop",.textDrop),("textSpan",.textSpan),("textBreak",.textBreak),
-   ("textHasAny",.textHasAny)]
+   ("textHasAny",.textHasAny),("textCanonicalCompare",.textCanonicalCompare)]
 private def primName (p : Primitive) : String :=
   ((primNames.find? (fun x => x.2 == p)).map Prod.fst).getD "unknown"
 

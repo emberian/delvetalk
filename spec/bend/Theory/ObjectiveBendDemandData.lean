@@ -104,6 +104,8 @@ def textStepCost (state : State) (ticks : Nat) : Nat × Nat :=
   match state.control,state.stack with
   | .returned (.label alphabet), .binaryRight .textSpan (.label text) :: _ => textPrefixCost text alphabet true ticks
   | .returned (.label alphabet), .binaryRight .textBreak (.label text) :: _ => textPrefixCost text alphabet false ticks
+  | .returned (.label right), .binaryRight .textCanonicalCompare (.label left) :: _ =>
+      (1 + 2 * (left.utf8ByteSize + right.utf8ByteSize), 0)
   | .returned (.label words), .binaryRight .textHasAny (.label text) :: _ =>
       -- One pass over each text, each word kept once: linear in both.
       let bytes := text.utf8ByteSize + words.utf8ByteSize

@@ -13,7 +13,7 @@ const arities = new Map(Object.entries({
 }));
 const primitives = new Set(['add', 'multiply', 'equal', 'conjunction',
   'labelEqual', 'subtract', 'divide', 'less', 'lessEqual', 'modulo',
-  'textConcat', 'textTake', 'textDrop', 'textSpan', 'textBreak', 'textHasAny']);
+  'textConcat', 'textTake', 'textDrop', 'textSpan', 'textBreak', 'textHasAny', 'textCanonicalCompare']);
 const unaries = new Set(['natText', 'textLength', 'sha256Text']);
 const values = new Set(['lam', 'nat', 'boolean', 'label', 'record',
   'specification', 'prototype', 'inject']);
@@ -122,6 +122,14 @@ function wordsOf(text) {
   return out;
 }
 function primitive(op, left, right) {
+  if (op === 'textCanonicalCompare') {
+    if (left[0] !== 'label' || right[0] !== 'label') return null;
+    return () => {
+      const a = Buffer.from(left[1], 'utf8'), b = Buffer.from(right[1], 'utf8');
+      const c = a.length !== b.length ? (a.length < b.length ? -1 : 1) : Buffer.compare(a, b);
+      return nat(BigInt(c + 1));
+    };
+  }
   if (op === 'textHasAny') {
     if (left[0] !== 'label' || right[0] !== 'label') return null;
     return () => { const wanted = new Set(wordsOf(right[1])); return bool(wordsOf(left[1]).some(w => wanted.has(w))); };

@@ -20,6 +20,9 @@ inductive Primitive where
   | textConcat | textTake | textDrop | textSpan | textBreak
   /-- Hosted: whether any word of the right text is a word of the left (`textWordsOf`). -/
   | textHasAny
+  /-- Hosted: the canonical (DAG-CBOR) order of two texts: by UTF-8 byte length, then by
+  bytes; 0 less, 1 equal, 2 greater. -/
+  | textCanonicalCompare
   deriving Repr, DecidableEq
 
 /-- DelveTalk hosted text extension; not part of the pinned upstream edition. -/
@@ -265,6 +268,9 @@ def primitiveResult : Primitive → Term → Term → Option Term
   | .lessEqual, .nat a, .nat b => some (.boolean (decide (a ≤ b)))
   | .modulo, .nat a, .nat b => some (.nat (a % b))
   | .textConcat, .label a, .label b => some (.label (a ++ b))
+  | .textCanonicalCompare, .label a, .label b =>
+      some (.nat (if a.utf8ByteSize < b.utf8ByteSize then 0 else if b.utf8ByteSize < a.utf8ByteSize then 2
+        else if a == b then 1 else if decide (a < b) then 0 else 2))
   | .textHasAny, .label text, .label words =>
       let wanted := textWordsOf words
       some (.boolean ((textWordsOf text).any wanted.contains))

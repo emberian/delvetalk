@@ -429,6 +429,7 @@ def builtinResult (name : String) (arity : Nat) : Option IType :=
   else if ["textConcat", "textTake", "textDrop", "textJoin"].contains name && arity == 2 then some (.ground (.atom "String"))
   else if ["textSpan", "textBreak"].contains name && arity == 2 then some (.ground (.atom "Nat"))
   else if name == "textHasAny" && arity == 2 then some (.ground (.atom "Bool"))
+  else if name == "canonicalCompare" && arity == 2 then some (.ground (.atom "Nat"))
   else if name == "textSlice" && arity == 3 then some (.ground (.atom "String"))
   else none
 
