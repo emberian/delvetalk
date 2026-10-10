@@ -699,6 +699,15 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    (`PackageMain.timingLine`; ms from reading the request to writing the reply, the settling pass included). hostd's
    children inherit the variable and the stderr, so a rehearsal run with it set leaves the lines in `hostd.stderr`.
 
+44. **Rehearsal run 9's costs (host7, finding 5).** Measured with `DELVETALK_TIMING=1` on the run (host ms by op and
+   object): directory `receive` turns 15.5 s (120 turns, ~130 ms), `world-arrive` 8.3 s (77 arrivals, ~110 ms), garden
+   `receive` 6.1 s, env `receive` 5.5 s (277 turns), `world-interpretation` 1.7 s. Fixes, measured as host CPU per op
+   on the run's own journal (median of 15, hbox at load ~20): `libraryClosure` is a worklist that reads each wanted
+   module's imports once (it re-split every library module's source once per library module per call, and a creation
+   calls it twice): an arrival 190 -> 20 ms. The checkpoint dictionary (`Dictionary.ofProgram`, which the kernel built
+   twice per yield) is built once per compiled method (`Compiled.dictionary`) and passed to `Turn.startEntry` /
+   `resumeEntry` (an optional parameter added to the kernel's functions): a directory prose turn 310 -> 180 ms.
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value

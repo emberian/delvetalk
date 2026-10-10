@@ -500,11 +500,16 @@ def sealLibrary (files : List (String × String)) : Except String Library := do
   return { pin := libraryDigest placed, modules := placed }
 
 /-- The library modules a set of module sources needs, transitively, in library order. -/
-def libraryClosure (lib : Library) (sources : List String) : List (String × String) :=
-  let wanted := (List.range (lib.modules.length + 1)).foldl (fun need _ =>
-    (need ++ need.flatMap fun n => ((lib.modules.lookup n).map importsOf).getD []).eraseDups)
-    (sources.flatMap importsOf).eraseDups
-  lib.modules.filter fun (n, _) => wanted.contains n
+def libraryClosure (lib : Library) (sources : List String) : List (String × String) := Id.run do
+  -- A worklist: each library module's imports are read once, when it is first wanted.
+  let mut wanted : Std.HashSet String := {}
+  let mut todo := (sources.flatMap importsOf).eraseDups
+  for _ in [0:lib.modules.length + 1] do
+    let fresh := todo.filter (!wanted.contains ·)
+    if fresh.isEmpty then break
+    wanted := fresh.foldl (·.insert ·) wanted
+    todo := (fresh.flatMap fun n => ((lib.modules.lookup n).map importsOf).getD []).eraseDups
+  return lib.modules.filter fun (n, _) => wanted.contains n
 
 /-- A package's own modules over a library, as the compiler is given them: the library modules
     they import (transitively, in library order), then the own modules that are not the library's
