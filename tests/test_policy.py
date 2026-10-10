@@ -11,6 +11,8 @@ against the offered form and Garden.plant's input before resuming the garden.
 """
 import unittest
 
+from tests.host import as_owner
+
 from tests.test_replay import rows
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
@@ -294,6 +296,7 @@ class PolicyObject(Chain):
         settled = self.host.send(op="world-interpretation", id=pending[0]["id"], reply=reply)
         self.assertEqual(settled["status"], "interpreted", settled)
         [resumed] = settled["resumed"]
+        resumed = as_owner(self.host, resumed)
         # A resumed turn's offers are retained on its receipt as {to, text}.
         resumed.setdefault("offers", [{"principal": o["to"], "text": o["text"]} for o in resumed["receipt"].get("offers", [])])
         return resumed
@@ -435,7 +438,7 @@ class PolicyObject(Chain):
         # The host fits the model's spell to the offered plant form (HOST-HANDOFF 5.54).
         verdict = settled["receipt"]["outcome"]["verdict"]
         self.assertEqual((verdict["tag"], verdict["method"]), ("proposal", "plant"), settled)
-        [resumed] = settled["resumed"]
+        [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual(resumed["result"]["label"], "planted", resumed)
         self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", resumed["receipt"]["offers"][0]["text"])

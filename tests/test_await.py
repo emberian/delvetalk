@@ -217,11 +217,23 @@ class Suspend(Await):
         self.strike()
         rain = self.turn("bell", "rain", record(text=label("drip")), principal="kimik3")
         self.assertEqual(rain["status"], "admitted")
-        settled = self.settle()
+        settled = self.settle(who="gemini")
         [resumed] = settled["resumed"]
         self.assertEqual((resumed["status"], resumed["result"]), ("admitted", boolean(True)), resumed)
         self.assertNotIn("rerunOf", resumed)
         self.assertEqual(self.rung(), boolean(True))
+
+    def test_a_settling_turn_sees_another_principals_resumption_only_as_its_projection(self):
+        # codex host 1: glm's reply releases gemini's strike; glm's reply carries gemini's receipt as
+        # glm may read it, never its result or the journaled resumption.
+        self.bell()
+        self.strike()
+        [resumed] = self.settle()["resumed"]
+        self.assertEqual((resumed["status"], resumed["receipt"]["identity"]["principal"]), ("admitted", "gemini"), resumed)
+        self.assertNotIn("result", resumed)
+        self.assertNotIn("result", resumed["receipt"])
+        self.assertNotIn("resumes", resumed["receipt"])
+        self.assertNotIn("ticksUsed", resumed)
 
     def test_restart_between_suspend_and_resume_rebuilds_the_activity_from_the_journal(self):
         self.bell()

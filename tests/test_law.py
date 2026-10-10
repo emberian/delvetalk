@@ -103,6 +103,15 @@ class TwoTier(Reflection):
         self.assertEqual(self.count(), "2")
         self.assertEqual(self.bump(1)["status"], "admitted")
 
+    def test_a_bend_law_is_given_no_object_its_subject_may_not_view(self):
+        # codex host 3: a law reading a private object would let its verdict disclose that state.
+        self.make("vault", GATE, record(open=nat(0)), read={"principals": ["ember"]})
+        self.make("v", GUARD.replace('"gate"', '"vault"'), record(count=nat(0)))
+        self.assertEqual(self.turn("vault", "open")["status"], "admitted")
+        r = self.turn("v", "bump", record(n=nat(1)), principal="bob")
+        self.assertEqual((r["status"], self.clause(r)), ("refused", "lawReads"), r)
+        self.assertEqual(self.turn("v", "bump", record(n=nat(1)))["status"], "admitted")
+
     def test_a_bend_laws_reading_is_the_refusals_reason(self):
         # WORLD-REVIEW finding 8: `refused {clause, reading}` reaches the receipt and the public projection.
         self.make("r", READING, record(count=nat(0)))

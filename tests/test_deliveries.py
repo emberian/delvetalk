@@ -108,7 +108,7 @@ class Deliveries(TurnWorld):
         if not self.pending()["count"]:
             return receipts
         for _ in range(rounds):
-            r = self.host.send(op="world-deliver", limit=limit)
+            r = self.host.send(op="world-deliver", principal="ember", limit=limit)
             self.assertEqual(r["status"], "delivered", r)
             receipts += r["receipts"] + r.get("delivered", [])
             if r["pending"] == 0 and not self.pending()["count"]:

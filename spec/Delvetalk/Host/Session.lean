@@ -93,8 +93,9 @@ def snapshotNow (s : Open) : IO (Open × Json) := do
   | .ok h => return ({ s with snapshotAt := h }, Json.mkObj [("height", toJson h)])
   | .error e => return ({ s with snapshotAt := s.world.height }, Json.mkObj [("refused", toJson e)])
 
-/-- Run a pure world step and make its entry durable before the reply exists. -/
-def durable (s : Open) (step : World → Except String (World × Json)) : IO (Session × Except String Json) := do
+/-- Run a pure world step and make its entry durable before the reply exists. The turns its
+    settling pass ran are shown as `reader` (the request's principal) may see them (`settledFor`). -/
+def durable (s : Open) (reader : String) (step : World → Except String (World × Json)) : IO (Session × Except String Json) := do
   -- A step, then whatever it let go on: resumptions follow in the same durable write.
   let settled := fun (w : World) => w.suspended.isEmpty && w.pending.isEmpty
   match (do
@@ -104,11 +105,9 @@ def durable (s : Open) (step : World → Except String (World × Json)) : IO (Se
       return (w'', r, resumed, delivered) : Except String (World × Json × Array Json × Array Json)) with
   | .error e => return (some s, .error e)
   | .ok (w', r0, resumed, delivered) =>
-    -- Turns the settling pass ran belong to their own principals: their offers are read with
-    -- `world-offers` by their addressees, never handed to whoever caused the pass.
-    let quiet := fun (rs : Array Json) => rs.map fun x => match x.getObj? with
-      | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "offers"))
-      | .error _ => x
+    -- Turns the settling pass ran belong to their own principals: whoever caused the pass sees
+    -- another's only as its projection, and nobody's offers (`world-offers` reads them).
+    let quiet := fun (rs : Array Json) => rs.map (settledFor w' reader)
     let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr (quiet resumed))
     let r := if delivered.isEmpty then r else r.setObjVal! "delivered" (Json.arr (quiet delivered))
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
@@ -178,6 +177,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
   let op ← match request.getObjValAs? String "op" with
     | .ok op => pure op
     | .error _ => return (session, .error "missing op")
+  let reader := (request.getObjValAs? String "principal").toOption.getD ""
   if op == "world-open" then
     match request.getObjValAs? String "path" with
     | .error e => return (session, .error e)
@@ -208,7 +208,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
           | .error e => return (session, .error e)
           | .ok (none, none, none, none) => pure o
           | .ok (clock, quota, opener, interpretQuota) =>
-            let (s', r) ← durable o (fun w => settingsOp w clock quota opener interpretQuota)
+            let (s', r) ← durable o reader (fun w => settingsOp w clock quota opener interpretQuota)
             match r, s' with
             | .ok _, some o' => pure o'
             | .error e, _ => return (session, .error e)
@@ -233,7 +233,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
               let some who := (request.getObjValAs? String "principal").toOption
                 | return (session, .error "world-open with a library needs the opening principal")
               let law := (request.getObjValAs? String "libraryLaw").toOption
-              let (s', r) ← durable o (fun w => libraryOp w who s!"library:{lib.pin}" lib law)
+              let (s', r) ← durable o reader (fun w => libraryOp w who s!"library:{lib.pin}" lib law)
               match r with
               | .error e => return (session, .error e)
               | .ok reply =>
@@ -245,13 +245,13 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
     | none => return (none, .error "no world is open; send world-open first")
     | some s =>
       match op with
-      | "world-create" => durable s (fun w => create w request)
-      | "world-turn" => durable s (fun w => do runTurn w (← parseTurn request))
-      | "world-deliver" => durable s (fun w => do
+      | "world-create" => durable s reader (fun w => create w request)
+      | "world-turn" => durable s reader (fun w => do runTurn w (← parseTurn request))
+      | "world-deliver" => durable s reader (fun w => do
           let limit := (← optNat request "limit").getD Limits.deliveriesPerCall
           if limit == 0 || limit > Limits.deliveriesPerCall then
             throw s!"limit must be 1..{Limits.deliveriesPerCall}"
-          deliver w limit)
+          deliver w limit reader)
       | "world-pending" => return (session, .ok (pendingReply s.world))
       | "world-snapshot" =>
         let (o, note) ← snapshotNow s
@@ -267,18 +267,18 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
           | .error e => return (session, .error e)
         match ← loadLibrary libPath with
         | .error e => return (session, .error e)
-        | .ok lib => durable s (fun w => libraryOp w principal intent lib none)
+        | .ok lib => durable s reader (fun w => libraryOp w principal intent lib none)
       | "world-inspect" => return (session, inspectOp s.world request)
       | "world-check" => return (session, worldCheck s.world request)
       | "world-interpretations" =>
         let (w, r) := interpretationsReply s.world
         return (some { s with world := w }, .ok r)
-      | "world-interpretation" => durable s (fun w => interpretationOp w request)
-      | "world-reprogram" => durable s (fun w => reprogramOp w request)
-      | "world-amend" => durable s (fun w => amendOp w request)
-      | "world-revoke" => durable s (fun w => revokeOp w request)
-      | "world-advance" => durable s (fun w => advance w request)
-      | "world-propose" => durable s (fun w => do return commit w (← parseProposal request))
+      | "world-interpretation" => durable s reader (fun w => interpretationOp w request)
+      | "world-reprogram" => durable s reader (fun w => reprogramOp w request)
+      | "world-amend" => durable s reader (fun w => amendOp w request)
+      | "world-revoke" => durable s reader (fun w => revokeOp w request)
+      | "world-advance" => durable s reader (fun w => advance w request)
+      | "world-propose" => durable s reader (fun w => do return commit w (← parseProposal request))
       | "world-view" => return (session, view s.world request)
       | "world-state-cid" => return (session, stateCidOp s.world request)
       | "world-fork" => return (session, ← forkWorld s request)
@@ -302,9 +302,9 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
           fun r => (match s.world.forkedFrom with
             | some f => r.setObjVal! "forkedFrom" f
             | none => r) |> fun r => interpretStatus s.world r (request.getObjValAs? String "principal").toOption))
-      | "world-posted" => durable s (fun w => postedOp w request)
-      | "world-principal" => durable s (fun w => principalOp w request)
-      | "world-arrive" => durable s (fun w => arriveWith w request)
+      | "world-posted" => durable s reader (fun w => postedOp w request)
+      | "world-principal" => durable s reader (fun w => principalOp w request)
+      | "world-arrive" => durable s reader (fun w => arriveWith w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-publications" => return (session, publicationsOp s.world request)
       | "world-objects" => return (session, objectsOp s.world request)

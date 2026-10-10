@@ -232,6 +232,22 @@ class Snapshots(Reflection):
         self.assertIn("version", report["refused"][0]["reason"])
         self.assertEqual(self.count("a"), "1")
 
+    def test_a_snapshot_whose_law_is_not_the_journals_is_refused(self):
+        # codex host 7: a forger who rewrites a law and recomputes the snapshot's CID changes no version,
+        # pin or state; the journal names every law, so a plain open refuses it.
+        self.make("a", PACKAGE, source_seed())
+        self.turn("a", "bump")
+        law = self.host.send(op="world-inspect", principal="ember", object="a")["law"]
+        height = self.snapshot()
+        path = self.path + f".snapshot.{height}.cbor"
+        body = read_snapshot(path)
+        body["objects"][0]["law"] = 'law owner: request.subject == "mallory"'
+        write_snapshot(path, body)
+        report = self.reopen_report()
+        self.assertEqual(report["resumed"], 0, report)
+        self.assertEqual(report["refused"], [{"height": height, "reason": "the law of a is not the journal's"}])
+        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="a")["law"], law)
+
     def test_a_snapshot_keeps_suspended_activities_and_pending_deliveries(self):
         from tests.test_reflection import PROBE, probe_seed
         self.make("probe", PROBE, probe_seed())
