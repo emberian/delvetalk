@@ -23,10 +23,12 @@ import json
 import os
 import unittest
 
+from deploy import genesis
 from tests.host import as_owner
 
 from tests import test_chain, test_policy
 from tests.test_chain import garden_seed, reference
+from tests.test_laws import anthology_seed
 from tests.test_objects import closure
 from tests.test_receive import ROOT_DOORS, door
 from tests.test_replay import get, items, rows
@@ -281,13 +283,13 @@ class Hub(test_chain.Chain):
         listing what came of each (a misfit is named, never run)."""
         self.policy()
         self.directory("policy")
-        made = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                              entry="initial", seed=record(owner=label("ember")))
+        made = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                              entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(made["status"], "created", made)
         self.greet(KIMI)
         self.assertEqual(self.say("plant me a silver fern, then put a line in the anthology, and plant one more", KIMI)["status"], "suspended")
         r = self.interpret("delvetalk garden plant\nseed: a fern\ncolour: silver\n"
-                           "delvetalk anthology submit\nline: the bell kept both of us\n"
+                           "delvetalk anthology write\ntext: the bell kept both of us\n"
                            "delvetalk garden plant\nseed: another")
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "several"), r)
         texts = [o["text"] for o in r["receipt"]["offers"]]
@@ -297,12 +299,12 @@ class Hub(test_chain.Chain):
             "Three spells, in the order said:\n"
             "  delvetalk garden plant\n"
             "  » admitted\n"
-            "  delvetalk anthology submit\n"
+            "  delvetalk anthology write\n"
             "  » admitted\n"
             "  (spell 3)\n"
             "  » unclear: colour\n"))
         self.assertEqual(len(self.children()), 1)
-        self.assertEqual([get(p, "line")["value"] for p in rows(get(self.state("anthology"), "proposals"))], ["the bell kept both of us"])
+        self.assertEqual([get(p, "text")["value"] for p in rows(get(self.state("anthology"), "lines"))], ["the bell kept both of us"])
         self.assertEqual(get(rows(get(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
 
     def test_the_garden_hears_the_first_of_several_spells(self):
@@ -511,19 +513,19 @@ class HandedToTheDirectory(test_chain.Chain):
     """Rehearsal run 6: anthology lines posted under glm's planting reached the bell, which has
     no policy and no anthology form, and were lost. A card's quiet prose is sent to the
     directory's receive (Card's default); the directory, with a policy, has the model read it
-    against every door's forms, and the model's submit spell reaches the anthology."""
+    against every door's forms, and the model's write spell reaches the anthology."""
     policy = test_policy.PolicyObject.policy
 
-    # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which the
+    # The model's write reaches the anthology by the Directory's `call` of its `receive`, which the
     # host reads as a spell (SpellsPassedOn).
-    def test_two_anthology_lines_under_glms_planting_are_submitted(self):
+    def test_two_anthology_lines_under_glms_planting_are_written(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
         self.assertEqual(r["status"], "created", r)
-        self.turn("directory", "add", record(door=door("ANTHOLOGY", "Submit a line.", "anthology")), principal="ember")
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember")))
+        self.turn("directory", "add", record(door=door("ANTHOLOGY", "Write a line.", "anthology")), principal="ember")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
@@ -534,9 +536,9 @@ class HandedToTheDirectory(test_chain.Chain):
             self.assertEqual((r["status"], r["result"]["label"], len(r.get("offers", []))), ("admitted", "silent", 1), r)
             self.deliver_all()
             [pending] = self.host.send(op="world-interpretations")["pending"]
-            self.assertIn("submit", [o["action"] for o in pending["offers"]])
+            self.assertIn("write", [o["action"] for o in pending["offers"]])
             settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "model": "m",
-                                     "raw": "delvetalk anthology submit\nline: " + lines[who]})
+                                     "raw": "delvetalk anthology write\ntext: " + lines[who]})
             [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
             self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
             # The submission is answered with the anthology as it now stands, to its author.
@@ -548,7 +550,7 @@ class HandedToTheDirectory(test_chain.Chain):
             [offer] = [o for o in self.host.send(op="world-offers", principal=who)["offers"] if lines[who] in o["text"]]
             self.assertNotEqual(offer["identity"]["intent"], asked)
             self.assertEqual(offer["from"], {"post": asked, "principal": who, "intent": asked}, offer)
-        submitted = [(get(p, "author")["value"], get(p, "line")["value"]) for p in rows(get(self.state("anthology"), "proposals"))]
+        submitted = [(get(p, "author")["value"], get(p, "text")["value"]) for p in rows(get(self.state("anthology"), "lines"))]
         self.assertEqual(submitted, [(KIMI, lines[KIMI]), (GLM, lines[GLM])])
 
 
@@ -581,8 +583,8 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.assertEqual(self.turn("directory", "add", record(door=door(label_, "A door.", to)), principal="ember")["result"]["label"], "done")
 
     def test_chatter_costs_no_interpretation_and_an_anthology_line_is_handed_on(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember")))
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
         self.add("ANTHOLOGY", "anthology")
         self.assertEqual(self.say("What a lovely evening it is; thank you for this.", "c1"), 0)
@@ -669,75 +671,82 @@ class HandedOnlyWhenNamed(test_chain.Chain):
 class AnthologyOwner(test_chain.Chain):
 
     def test_the_seeded_owner_handle_names_the_owner_before_any_admission(self):
-        r = self.host.send(op="world-create", principal="did:plc:6amo7col5h4ciq2gpm5eur7b", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("did:plc:6amo7col5h4ciq2gpm5eur7b"), ownerHandle=label("ember.delve.town")))
+        r = self.host.send(op="world-create", principal="did:plc:6amo7col5h4ciq2gpm5eur7b", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("did:plc:6amo7col5h4ciq2gpm5eur7b", "ember.delve.town"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
         card = self.turn("anthology", "receive", record(text=label(""), post=label("")), principal=GLM)["offers"][0]["text"]
-        self.assertTrue(card.startswith("THE ANTHOLOGY, kept by ember.delve.town"), card)
+        self.assertTrue(card.startswith("THE ANTHOLOGY; keeper ember.delve.town"), card)
 
 
 class AnthologyReachable(test_chain.Chain):
-    """Run 5, finding 4: the anthology has a door, forms (submit {line}; admit {number}, the
-    owner's) and receive, so a submit line or the model's submit spell reaches it."""
+    """Run 5, finding 4: the anthology has a door, forms (write {text}; admit {number}, the
+    owner's) and receive, so a write line or the model's write spell reaches it."""
     policy = test_policy.PolicyObject.policy
     interpret = Hub.interpret
 
     def say(self, obj, text, who):
         return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who)
 
-    # The model's submit reaches the anthology by the Directory's `call` of its `receive`, which
+    # The model's write reaches the anthology by the Directory's `call` of its `receive`, which
     # the host reads as a spell (SpellsPassedOn).
-    def test_lines_are_submitted_by_field_line_and_by_the_model_and_the_owner_admits(self):
+    def test_lines_are_written_by_field_text_and_by_the_model_and_the_keeper_admits(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
         self.assertEqual(r["status"], "created", r)
-        self.turn("root", "add", record(door=door("ANTHOLOGY", "Submit a line.", "anthology")), principal="ember")
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember")))
+        self.turn("root", "add", record(door=door("ANTHOLOGY", "Write a line.", "anthology")), principal="ember")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
-        self.assertEqual(self.say("anthology", "```\nsubmit: the merchant tips his hat\n```", KIMI)["result"], nat(1))
+        self.assertEqual(self.say("anthology", "```\nwrite: the merchant tips his hat\n```", KIMI)["result"], nat(1))
         self.assertEqual(self.say("root", "hello", GEMINI)["result"]["label"], "menu")
         asked = self.say("root", post("3mxghd6kvo22f"), GEMINI)
         self.assertEqual(asked["status"], "suspended", asked)
         [pending] = self.host.send(op="world-interpretations")["pending"]
-        self.assertIn("submit", [o["action"] for o in pending["offers"]])
+        self.assertIn("write", [o["action"] for o in pending["offers"]])
         settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "model": "m",
-                                 "raw": "delvetalk anthology submit\nline: a splash for every refusal"})
+                                 "raw": "delvetalk anthology write\ntext: a splash for every refusal"})
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
-        lines = [get(p, "line")["value"] for p in rows(get(self.state("anthology"), "proposals"))]
+        lines = [get(p, "text")["value"] for p in rows(get(self.state("anthology"), "lines"))]
         self.assertEqual(lines, ["the merchant tips his hat", "a splash for every refusal"])
 
     def test_the_owner_admits_by_number_and_a_stranger_is_refused_by_name(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember")))
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
         for who, line in ((KIMI, "the merchant tips his hat"), (GEMINI, "a splash for every refusal")):
-            submitted = self.say("anthology", "delvetalk anthology submit\nline: " + line, who)
+            submitted = self.say("anthology", "delvetalk anthology write\ntext: " + line, who)
             self.assertEqual(submitted["receipt"]["offers"][0]["to"], who)  # the anthology as it now stands, to its author
         refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
-        self.assertEqual((refused["status"], refused["receipt"]["outcome"].get("reason")),
-                         ("refused", "refused owner: the owner never changes; only the owner admits a line; anyone submits one"), refused)
+        self.assertEqual((refused["status"], refused["result"]["label"]), ("admitted", "refused"), refused)
+        self.assertTrue(refused["offers"][0]["text"].startswith("refused notKeeper: Only the keeper, ember, admits\n\n"), refused)
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did="ember", handle="ember.delve.town")["status"], "principal")
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
-        self.assertEqual(admitted["offers"][0]["text"], "Admitted: a splash for every refusal\n")
+        self.assertEqual(admitted["offers"][0]["text"], "#2 admitted: a splash for every refusal\n")
         card = self.say("anthology", "", GLM)["offers"][0]["text"]
         self.assertEqual(card, (
-            "THE ANTHOLOGY, kept by ember.delve.town. Submit a line: delvetalk anthology submit / line: <1 to 280 characters>. The keeper admits by number.\n"
-            "#1 [proposed] …vnmpir6d: the merchant tips his hat\n"
+            "THE ANTHOLOGY; keeper ember.delve.town. Write: delvetalk anthology write / text: <1 to 280 characters>; numbered, [pending] until admitted.\n"
+            "#1 [pending] …vnmpir6d: the merchant tips his hat\n"
             "#2 [admitted] …kzlobkuu: a splash for every refusal\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
-            "    delvetalk anthology submit\n"
-            "    line: <text, 1 to 280 characters>\n"
+            "    delvetalk anthology write\n"
+            "    text: <text, 1 to 280 characters>\n"
             "\n"
             "    delvetalk anthology admit\n"
             "    number: <a number from 1 to 1000000000>\n"
             "\n"
             "    delvetalk anthology lines\n"
-            "    from: <a number from 1 to 1000000000>\n"))
+            "    from: <a number from 1 to 1000000000>\n"
+            "\n"
+            "    delvetalk anthology door\n"
+            "    label: <text, 1 to 32 characters>\n"
+            "    to: <text, 1 to 128 characters>\n"
+            "\n"
+            "    delvetalk anthology undoor\n"
+            "    label: <text, 1 to 32 characters>\n"))
         # The owner who admitted is named by the handle stored at admission, to every reader.
-        self.assertTrue(card.startswith("THE ANTHOLOGY, kept by ember.delve.town"), card)
+        self.assertTrue(card.startswith("THE ANTHOLOGY; keeper ember.delve.town"), card)
         self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)

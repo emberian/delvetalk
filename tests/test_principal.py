@@ -12,6 +12,8 @@ Mini type checker'}); a method without one never sees it, and records the princi
 """
 import unittest
 
+from deploy import genesis
+from tests.test_laws import anthology_seed
 from tests.test_turn_world import relation
 from tests.test_chain import Chain, garden_seed, reference
 from tests.test_objects import closure
@@ -50,15 +52,15 @@ class Principal(Chain):
         self.acted("bell", "rain", argument)
         self.assertEqual([get(r, "author") for r in rows(get(self.state("bell"), "rains"))], [label(ACTOR)])
 
-    def test_a_submission_is_authored_by_the_turns_principal(self):
-        # Anthology declares a law, so it is made with world-create (whole state) by its owner.
-        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember"), proposals=relation()))
+    def test_a_written_line_is_authored_by_the_turns_principal(self):
+        # Record's creator passes its law, so it is made with world-create (whole state) by its owner.
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
+                           entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
-        argument = record(line=label("lamps"))
-        self.forged("anthology", "submit", argument, "author")
-        self.acted("anthology", "submit", argument)
-        self.assertEqual([get(p, "author") for p in rows(get(self.state("anthology"), "proposals"))], [label(ACTOR)])
+        argument = record(text=label("lamps"))
+        self.forged("anthology", "write", argument, "author")
+        self.acted("anthology", "write", argument)
+        self.assertEqual([get(p, "author") for p in rows(get(self.state("anthology"), "lines"))], [label(ACTOR)])
 
     def test_a_note_is_from_the_turns_principal(self):
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))

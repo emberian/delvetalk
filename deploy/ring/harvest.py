@@ -19,7 +19,7 @@ from rehearsal.rehearse import journal_stats  # noqa: E402
 
 ARCS = {'garden': ('plant', 'rain', 'cistern'), 'workshop': ('check', 'propose', 'adopt'), 'rooms': ('enter', 'choose', 'leave')}
 SPELL = re.compile(r'^\s*delvetalk\s+([\w:./-]+)\s+(\S+)', re.M)
-CARD = re.compile(r'\b(?:garden|workshop|tide|anthology|rooms|directory|commons|play|env|wake)(?:/[\w:.-]+)+\b|\b(?:GARDEN|ROOMS|WORKSHOP|TIDE|ANTHOLOGY|STUDIO)\b')
+CARD = re.compile(r'\b(?:garden|workshop|tide|anthology|rooms|directory|env|wake)(?:/[\w:.-]+)+\b|\b(?:GARDEN|ROOMS|WORKSHOP|TIDE|ANTHOLOGY|STUDIO)\b')
 FENCE = re.compile(r'```obend')
 
 

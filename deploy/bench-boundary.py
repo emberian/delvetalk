@@ -24,6 +24,10 @@ OWNER = 'did:plc:bench'
 EMPTY = {'tag': 'record', 'fields': []}
 
 
+def modules_with_counter():  # Counter is a fixture, not a world object
+    return {**modules_on_disk(), 'Counter': ROOT / 'tests' / 'fixtures' / 'objects' / 'Counter.obend'}
+
+
 class PerOp:
     """The old HostClient: a socket per op."""
     def __init__(self, path): self.path = str(path)
@@ -52,11 +56,11 @@ def main():
         threading.Thread(target=d.serve_forever, daemon=True).start()
         sock = Path(tmp) / 'host.sock'
         made = PerOp(sock).send({'op': 'world-create', 'principal': OWNER, 'identity': 'mk', 'object': 'c', 'entry': 'initial',
-                                 'modules': closure('Counter', modules_on_disk()), 'seed': EMPTY})
+                                 'modules': closure('Counter', modules_with_counter()), 'seed': EMPTY})
         assert made['status'] == 'created', made
         raw = Host(str(Path(tmp) / 'raw.journal'), BINARY, clock='transport', opener=OWNER)
         assert raw.send({'op': 'world-create', 'principal': OWNER, 'identity': 'mk', 'object': 'c', 'entry': 'initial',
-                         'modules': closure('Counter', modules_on_disk()), 'seed': EMPTY})['status'] == 'created'
+                         'modules': closure('Counter', modules_with_counter()), 'seed': EMPTY})['status'] == 'created'
         status = lambda i: {'op': 'world-status'}
         count = [0]
 

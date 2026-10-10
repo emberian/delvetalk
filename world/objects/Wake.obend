@@ -80,7 +80,7 @@ def refusal(w: Why) -> Card.Refusal:
     case early(_): {clause: "early", reading: "The schedule was answered before its time."}
     case schedulesFull(_): {clause: "schedulesFull", reading: "Eight standing schedules is the most a wake holds."}
     case never(_): {clause: "never", reading: "A schedule needs a time after now: at, or every from now."}
-    case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads rains, buffer, greeted, proposals, traces and subs)."}
+    case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads rains, lines, buffer, greeted, traces and subs)."}
     case unwatched(u): {clause: "unwatched", reading: "{u.object}.{u.field} cannot be watched ({u.clause})."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
@@ -95,7 +95,7 @@ def receiverFor(on: On) -> String:
     case rows(r): rowsReceiver(r.field)
     case _: "changedSensed"
 def rowsReceiver(field: String) -> String:
-  if field == "rains" then "changedRains" else if field == "buffer" then "changedSensed" else if field == "greeted" then "changedGreetings" else if field == "proposals" then "changedProposals" else if field == "traces" then "changedTraces" else if field == "subs" then "changedSubscriptions" else ""
+  if field == "rains" || field == "lines" then "changedLines" else if field == "buffer" then "changedSensed" else if field == "greeted" then "changedGreetings" else if field == "traces" then "changedTraces" else if field == "subs" then "changedSubscriptions" else ""
 def watched(event: On, action: Action, context: Abi.Context, state: State) -> Activity<Done>:
   if context.principal != state.owner then notOwner(state) else if Lists.length(state.triggers) >= 32n then refused(Why.full({})) else subscribing(event, action, context, state)
 # A trigger on writes or rows holds only when the subscription does: the subscription first,
@@ -168,12 +168,10 @@ def turnArgument(action: Action, object: String, field: String) -> Data:
 # rows inserted, as columns. A rows trigger on that object and field fires once when at least
 # `atLeast` (at least one) of the rows match every pattern; a call action is sent with
 # nothing, any other the line. Rows the env took in are also events for the event triggers.
-def changedRains(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Rain>, retracted: Lists.List<Rows.Rain>}, context: Abi.Context) -> Activity<Done>:
-  delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.rainColumns), Lists.List.nil(), context, state)
+def changedLines(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Line>, retracted: Lists.List<Rows.Line>}, context: Abi.Context) -> Activity<Done>:
+  delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.lineColumns), Lists.List.nil(), context, state)
 def changedGreetings(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Greeting>, retracted: Lists.List<Rows.Greeting>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.greetingColumns), Lists.List.nil(), context, state)
-def changedProposals(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Proposal>, retracted: Lists.List<Rows.Proposal>}, context: Abi.Context) -> Activity<Done>:
-  delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.proposalColumns), Lists.List.nil(), context, state)
 def changedTraces(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Trace>, retracted: Lists.List<Rows.Trace>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.traceColumns), Lists.List.nil(), context, state)
 def changedSubscriptions(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Subscription>, retracted: Lists.List<Rows.Subscription>}, context: Abi.Context) -> Activity<Done>:

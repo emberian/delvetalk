@@ -219,7 +219,7 @@ MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ig
 
 def mention_turns(state, host, obs, authors, handles):
     """A mention is addressed to the mentioned: one turn per mention (a facet's DID, or an @handle that is a known
-    author) to env/<did>.mention {text, post} under the author (Env's own method: a stranger's
+    author) to env/<did>.write {text, post} under the author (Env's own method: a stranger's
     `receive` carrying a spell line is retargeted by the host, so a quoted spell would run). Once per post. Only an arrived principal has an Env:
     a mentioned principal the observer has seen is arrived first; one it has not is skipped, with a note in skipped.txt."""
     path = Path(state) / 'mentioned.txt'
@@ -236,7 +236,7 @@ def mention_turns(state, host, obs, authors, handles):
             with open(Path(state) / 'skipped.txt', 'a') as f:
                 f.write(f"{obs['uri']}#mention:{did}\n")  # not arrived, so no Env: nothing to send
             continue
-        replies.append(host.send({'op': 'world-turn', 'principal': author['did'], 'object': f'env/{did}', 'method': 'mention',
+        replies.append(host.send({'op': 'world-turn', 'principal': author['did'], 'object': f'env/{did}', 'method': 'write',
                                   'argument': {'tag': 'record', 'fields': fields}, 'identity': f"{obs['uri']}#env:{did}"}))
     if all('receipt' in r for r in replies):  # else retry next run: the host answers a repeated identity with its first receipt
         with open(path, 'a') as f:

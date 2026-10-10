@@ -20,6 +20,7 @@ submit being refused; the variants committing once the host runs predicates.
 """
 import unittest
 
+from deploy import genesis
 from tests.test_chain import nil, reference
 from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
@@ -31,14 +32,18 @@ def door(name):
     return record(label=label(name), description=label("a " + name), to=reference(name), examples={"tag": "list", "items": []}, watch=label(""))
 
 
+def anthology_seed(owner, handle=""):
+    return record(owner=label(owner), keeper=label(owner), keeperHandle=label(handle), head=label("THE ANTHOLOGY"))
+
+
 def heard(text):
     return record(text=label(text), post=label(""))
 
 
 class LawWorld(TurnWorld):
-    def create(self, name, modules, seed, by=OWNER):
+    def create(self, name, modules, seed, by=OWNER, law=None):
         r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name,
-                           modules=modules, entry="initial", seed=seed)
+                           modules=modules, entry="initial", seed=seed, **({"law": law} if law else {}))
         self.assertEqual(r["status"], "created", r)
         return r
 
@@ -80,55 +85,52 @@ class Laws(LawWorld):
         self.assertEqual(r["status"], "error", r)
         self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
-    def test_anyone_submits_and_only_the_owner_admits(self):
-        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
-        self.assertEqual(self.turn("anthology", "submit", record(line=label("moths")), principal=OTHER)["status"], "admitted")
-        spelled = self.turn("anthology", "receive", heard("delvetalk anthology submit\nline: lamps"), principal="did:plc:glm")
-        self.assertEqual((spelled["status"], spelled["result"]), ("admitted", nat(2)), spelled)  # the method's own result: the count
-        # A stranger's admit is the owner law's to refuse: the turn is refused, and its receipt
-        # reads why (codex agent 4); a line that is not there is refused by name with the card.
+    def test_anyone_writes_and_only_the_keeper_admits(self):
+        self.create("anthology", closure("Record"), anthology_seed(OWNER), law=genesis.RECORD_LAW)
+        self.assertEqual(self.turn("anthology", "write", record(text=label("moths")), principal=OTHER)["status"], "admitted")
+        spelled = self.turn("anthology", "receive", heard("delvetalk anthology write\ntext: lamps"), principal="did:plc:glm")
+        self.assertEqual((spelled["status"], spelled["result"]), ("admitted", nat(2)), spelled)  # the method's own result: the line's number
+        # A stranger's admit is refused by name in Bend, with the card; so is a line that is not there.
         stranger = self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)
-        self.assertEqual(self.clause(stranger), "lawRefused/owner", stranger)
-        self.assertEqual(stranger["receipt"]["outcome"]["reason"], "refused owner: the owner never changes; only the owner admits a line; anyone submits one")
-        missing = self.turn("anthology", "admit", record(number=nat(9)), principal=OTHER)
+        self.assertEqual((stranger["status"], stranger["result"]["label"]), ("admitted", "refused"), stranger)
+        self.assertTrue(stranger["offers"][0]["text"].startswith("refused notKeeper: Only the keeper, inkling, admits\n\nTHE ANTHOLOGY"), stranger)
+        missing = self.turn("anthology", "admit", record(number=nat(9)), principal=OWNER)
         self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
-        self.assertTrue(missing["offers"][0]["text"].startswith("Not done: No line numbered 9\n\nTHE ANTHOLOGY"), missing)
+        self.assertTrue(missing["offers"][0]["text"].startswith("refused noLine: No line numbered 9\n\nTHE ANTHOLOGY"), missing)
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
-        statuses = [get(p, "status")["label"] for p in rows(get(self.state("anthology"), "proposals"))]
-        self.assertEqual(statuses, ["proposed", "admitted"])
+        admitted = [get(p, "n") for p in rows(get(self.state("anthology"), "admitted"))]
+        self.assertEqual(admitted, [nat(2)])
         card = self.turn("anthology", "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        self.assertTrue(card.startswith("THE ANTHOLOGY, kept by inkling (yours). Submit a line: delvetalk anthology submit / line: <1 to 280 characters>. The keeper admits by number.\n#1 [proposed] kimik3: moths\n"), card)
-
+        self.assertTrue(card.startswith("THE ANTHOLOGY; keeper inkling (yours). Write: delvetalk anthology write / text: <1 to 280 characters>; numbered, [pending] until admitted.\n#1 [pending] kimik3: moths\n#2 [admitted] glm: lamps\n"), card)
 
     def test_a_line_keeps_its_number_after_the_oldest_is_dropped(self):
         """The anthology keeps its newest 128 lines, which fit the host's state bytes at 280
         four-byte characters each; past them the oldest goes and every other keeps its number, so
         `admit / number: N` copied from a card admits that line (codex objects 13)."""
-        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
+        self.create("anthology", closure("Record"), anthology_seed(OWNER), law=genesis.RECORD_LAW)
         poet = "did:plc:" + "p" * 24
         for i in range(1, 130):
-            r = self.turn("anthology", "submit", record(line=label("%04d" % i + "\U0001f319" * 276)), principal=poet)
+            r = self.turn("anthology", "write", record(text=label("%04d" % i + "\U0001f319" * 276)), principal=poet)
             self.assertEqual(r["status"], "admitted", (i, r.get("receipt", {}).get("outcome")))
-        lines = rows(get(self.state("anthology"), "proposals"))
-        self.assertEqual((len(lines), get(lines[0], "line")["value"][:4]), (128, "0002"))
+        lines = rows(get(self.state("anthology"), "lines"))
+        self.assertEqual((len(lines), get(lines[0], "text")["value"][:4]), (128, "0002"))
         gone = self.turn("anthology", "admit", record(number=nat(1)), principal=OWNER)
         self.assertEqual(gone["result"]["label"], "refused", gone)
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
-        admitted = [get(p, "line")["value"][:4] for p in rows(get(self.state("anthology"), "proposals")) if get(p, "status")["label"] == "admitted"]
-        self.assertEqual(admitted, ["0002"])
+        self.assertEqual([get(p, "n") for p in rows(get(self.state("anthology"), "admitted"))], [nat(2)])
 
     def test_the_ninth_line_is_in_its_acknowledgement_and_a_page_reaches_it(self):
-        """The card shows eight lines; a submission is acknowledged with its own number and line
+        """The card shows eight lines; a write is acknowledged with its own number and line
         whatever the card shows, and `lines / from: N` shows them from N (codex agent 7)."""
-        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
+        self.create("anthology", closure("Record"), anthology_seed(OWNER), law=genesis.RECORD_LAW)
         for i in range(1, 10):
-            r = self.turn("anthology", "submit", record(line=label("line %d" % i)), principal=OTHER)
+            r = self.turn("anthology", "write", record(text=label("line %d" % i)), principal=OTHER)
         ack = r["offers"][0]["text"]
-        self.assertTrue(ack.startswith("Submitted as #9: line 9\n\n"), ack)
+        self.assertTrue(ack.startswith("#9 is written: line 9\n\n"), ack)
         self.assertIn("… and 1 more: delvetalk anthology lines / from: 9\n", ack)
         page = self.turn("anthology", "receive", heard("delvetalk anthology lines / from: 9"), principal=OWNER)
         text = page["offers"][0]["text"]
-        self.assertIn("#9 [proposed] kimik3: line 9\n", text)
+        self.assertIn("#9 [pending] kimik3: line 9\n", text)
         self.assertNotIn("#8 ", text)
 
 TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation())
@@ -153,6 +155,15 @@ def wake_variant():
     assert "notOwner(state) else if Lists.length(state.triggers) >= 32n" not in source, \
         "Wake changed: the variant no longer skips its checks"
     return closure("Wake", override={"Wake": source})
+
+
+def record_variant():
+    """Record whose admit skips the keeper check, so only the law text stands."""
+    with open("world/objects/Record.obend") as handle:
+        source = handle.read()
+    check = 'if state.keeper == "" || context.principal != state.keeper then refusedCard(state, context, {clause: "notKeeper", reading: keeperReading(state, context)}) else admitting(state, input.number, context)'
+    assert check in source, "Record changed: the variant no longer skips its checks"
+    return closure("Record", override={"Record": source.replace(check, "admitting(state, input.number, context)", 1)})
 
 
 class FixedFields(LawWorld):
@@ -185,6 +196,12 @@ class Predicates(LawWorld):
         self.assertEqual(self.turn("tide", "tick", principal=OTHER)["status"], "admitted")
         r = self.turn("tide", "tick", principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/tooSoon", r)
+
+    def test_records_law_refuses_a_strangers_admission(self):
+        self.create("anthology", record_variant(), anthology_seed(OWNER), law=genesis.RECORD_LAW)
+        self.assertEqual(self.turn("anthology", "write", record(text=label("moths")), principal=OTHER)["status"], "admitted")
+        self.assertEqual(self.clause(self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)), "lawRefused/kept")
+        self.assertEqual(self.turn("anthology", "admit", record(number=nat(1)), principal=OWNER)["result"]["label"], "done")
 
     def test_wakes_law_refuses_a_strangers_trigger(self):
         self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
