@@ -30,7 +30,7 @@ change the library. `postQuota` is 16 an hour, the town's own cap.
 | `play` | Table | the Automatafl 11x11 opening (the package's default); seats are made when players sit; `owner` filled with ember, its creator | owner: ember reprograms and amends; anyone plays; the round only goes forward |
 | `commons` | Commons | porch, garden, workshop as places; porch open; workshop gated by `directory` | owner: ember |
 
-Avatars, Envs and Wakes are not seeded. At a principal's first verified
+Avatars, Envs and Wakes are not seeded, with one exception: genesis arrives the opener first (`world-arrive` with the handle `ember.delve.town`), so the world holds the ten objects below plus ember's Avatar, Env and Wake. At a principal's first verified
 request or first observed post, transport sends `world-arrive {principal:
 "transport", did, handle}`: the host records the handle and creates, when
 absent, the Avatar (id = the DID), the Env (`env/<did>`) and the Wake
