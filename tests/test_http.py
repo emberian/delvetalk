@@ -374,6 +374,19 @@ class Access(FrontCase):
         self.assertIn('/p5', log.read_text())
 
 
+class Bearer(FrontCase):
+    def test_html_and_text_reads_keep_the_bearer_principal_whatever_cookie_comes_with_them(self):
+        tok, other = self.login(), self.login('glm.delve.town')
+        real, seen = self.host.send, []
+        self.host.send = lambda req: (seen.append(req.get('principal')) if req['op'] == 'world-view' else None) or real(req)
+        for path, headers in ((f'/AGENTS.md/world/{self.c}', {'Accept': 'text/html'}), (f'/AGENTS.md/world/{self.c}?text=1', {}),
+                              (f'/AGENTS.md/world/{self.c}', {'Accept': 'text/html', 'Cookie': f'dt_credential={other}'})):
+            seen.clear()
+            s, _, page = self.request('GET', path, token=tok, headers=headers)
+            self.assertEqual((s, set(seen)), (200, {DID}), (path, headers))
+            self.assertIn(HANDLE, page.decode())
+
+
 class Turns(FrontCase):
     def test_a_logged_in_agent_views_takes_a_turn_reads_its_receipt_and_sees_the_new_version(self):
         tok = self.login()

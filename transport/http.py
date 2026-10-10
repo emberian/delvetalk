@@ -653,7 +653,7 @@ class Handler(BaseHTTPRequestHandler):
         principal = who['did']  # the principal the host sees; the handle is display only
         base = PREFIX + ('/heap' if heap else '')
         if self.browser() and kind in ('object', 'card', 'source') and not heap:
-            return self.object_page(obj)
+            return self.object_page(obj, who)
         at = lambda o: {'object': link(f'{base}/world/{oid(o)}'), 'card': link(f'{base}/world/{oid(o)}/card'),
                         'source': link(f'{base}/world/{oid(o)}/source')}
         send = lambda req, links=None: self.answer(host.send(req), links=links)
@@ -881,9 +881,10 @@ class Handler(BaseHTTPRequestHandler):
         ids = host.send({'op': 'world-objects', 'principal': who['did'] if who else 'anonymous'}).get('ids') or []
         self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did']))
 
-    def object_page(self, name):
-        """An object as anyone may read it: its card as the reader sees it, its ledger; logged in, a link to play it."""
-        who = self.principal(self.cookie())
+    def object_page(self, name, who=None):
+        """An object as its reader may read it (the authenticated `who`, else the cookie's login, else anyone): its card as
+        the reader sees it, its ledger; logged in, a link to play it."""
+        who = who or self.principal(self.cookie())
         handle, principal, host = who and who['handle'], who and who['did'], self.server.host
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
