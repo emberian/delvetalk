@@ -288,7 +288,7 @@ class PolicyObject(Chain):
 
     def say(self, text, principal="glm", identity=None):
         return self.turn("garden", "receive", record(text=label(text), post=label("at://glm/p/1")), principal=principal,
-                         identity=identity)
+                         identity=identity, reach="mention")
 
     def interpret(self, reply):
         pending = self.host.send(op="world-interpretations")["pending"]
@@ -499,7 +499,7 @@ class PolicyObject(Chain):
         door = record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"), examples={"tag": "list", "items": []}, watch=label(""))
         self.assertEqual(self.turn("directory", "add", record(door=door), principal="ember")["result"]["label"], "done")
         prose = lambda who, text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://" + ident)),
-                                                   principal=who, identity=ident)
+                                                   principal=who, identity=ident, reach="mention")
         self.assertEqual(prose("inkling", "hello, town", "i-1")["status"], "admitted")     # greeted once
         waiting = prose("inkling", "an env interface card for the garden, perhaps?", "i-2")
         self.assertEqual(waiting["status"], "suspended", waiting)

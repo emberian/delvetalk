@@ -705,8 +705,8 @@ class Handler(BaseHTTPRequestHandler):
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             reply = host.send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
             return self.answer(reply, links=receipt_links(base, reply))
-        reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
-                           'argument': argument(data), 'identity': data.get('intent')})
+        reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,  # asked on the card itself
+                           'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct'})
         links, acts = {**at(obj), **receipt_links(base, reply, data.get('intent'))}, None
         if reply.get('status') in ('refused', 'error'):  # the usage action: the method as the host's table shows it
             seen = host.send({'op': 'world-inspect', 'principal': principal, 'object': obj})
@@ -849,7 +849,7 @@ class Handler(BaseHTTPRequestHandler):
             intent = f'play:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
             kinds = {'n:': lambda v: int(v) if digits(v) else v, 'c:': lambda v: {'tag': 'variant', 'label': v, 'payload': {'tag': 'record', 'fields': []}}}
             fields = {k[2:] if k[:2] in kinds else k: kinds[k[:2]](v) if k[:2] in kinds else v for k, v in data.items() if k != 'method'}
-            r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent,
+            r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent, 'reach': 'direct',
                            'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
             offers = [o['text'] for o in r.get('offers') or []]
             for _ in range(WAIT_MAX if r.get('status') == 'suspended' else 0):  # the interpreter answers as an offer to this intent

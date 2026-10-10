@@ -36,6 +36,24 @@ structure TurnRequest where
   /-- The post the turn came from (`inputOrigin.post`): the `post` of the `{text, post}` it was
       asked with, kept when the host reads that reply as a spell (`heardPost`). -/
   post : String := ""
+  /-- How the words reached the object (docs/FLEX.md §2, HOST-HANDOFF 5.118): as parsed, what the
+      transport saw of the post (`statedReaches`); after `runTurn`, `reply` or `spell` when the host
+      checked one itself. "" for none: an `interpret` of such a turn is `not addressed`. -/
+  reach : String := ""
+
+/-- What a transport may state of a post's reach: a mention or summons of the world, a door's word
+    in a thread the world opened, field lines there (checked: the text has one), or a turn asked on
+    the card itself (its page, the API). `reply` and `spell` are the host's to find. -/
+def statedReaches : List String := ["mention", "door", "fields", "direct"]
+
+/-- The text of a `receive {text, …}`; "" for another method. -/
+def heardText (method : String) (argument : Data) : String :=
+  if method != "receive" then "" else
+  match argument with
+  | .record fs => match fs.lookup "text" with
+    | some (.label t) => t
+    | _ => ""
+  | _ => ""
 
 /-- The post a `receive {text, post}` is asked from: the reply's own post, which a spell's method
     no longer sees in its argument. -/
@@ -64,14 +82,20 @@ def parseTurn (j : Json) : Except String TurnRequest := do
     if asked > Limits.maxTurnTicks then throw "ticks exceeds the turn ceiling"
   let replyTo := (← optText j "replyTo").getD ""
   if replyTo.utf8ByteSize > Limits.maxUriBytes then throw s!"replyTo must be at most {Limits.maxUriBytes} bytes"
+  let reach := (← optText j "reach").getD ""
+  unless reach.isEmpty || statedReaches.contains reach do
+    throw s!"reach is one of {", ".intercalate statedReaches}, not {reach}; a reply and a spell line are the host's to find"
+  if reach == "fields" && (Spell.bare (heardText method argument)).isEmpty then
+    throw "reach fields, but the text has no field line"
   let digest := Journal.bodyHash (Json.mkObj ([("principal", toJson principal), ("object", toJson object),
     ("method", toJson method), ("argument", dataJson argument), ("limits", limits)] ++
-    (if replyTo.isEmpty then [] else [("replyTo", toJson replyTo)])))
+    (if replyTo.isEmpty then [] else [("replyTo", toJson replyTo)]) ++
+    (if reach.isEmpty then [] else [("reach", toJson reach)])))
   let profile ← match j.getObjVal? "profile" with
     | .ok (.bool b) => pure b
     | .ok _ => throw "profile must be true or false"
     | .error _ => pure false
-  return { principal, object, method, argument, intent, limits, digest, profile, replyTo }
+  return { principal, object, method, argument, intent, limits, digest, profile, replyTo, reach }
 
 inductive Abort where
   /-- The request is not a well-formed turn; nothing is journaled. -/
@@ -129,6 +153,9 @@ structure TurnState where
   /-- The running frame's post (`inputOrigin.post`): its own `receive {text, post}`'s, else the
       calling frame's; journaled with a suspension. -/
   post : String := ""
+  /-- How the turn's words reached it (`TurnRequest.reach`, `delivery` for a delivered turn, `direct`
+      for a method other than `receive`); journaled with a suspension. -/
+  reach : String := ""
   grants : List Grant := []
   revokes : List String := []
   /-- Subscriptions this turn makes and ends (`subscribe`/`unsubscribe`). -/
@@ -1240,6 +1267,9 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
   let misfit := ((f.lookup "misfit").bind labelOf).getD ""
   if held.utf8ByteSize + misfit.utf8ByteSize > Limits.maxUtteranceBytes then evaluation "interpret held exceeds its byte capacity"
   let s ← get
+  -- Words that reached no card go to no model (docs/FLEX.md §2): answered at once, no quota spent.
+  if s.reach.isEmpty then
+    return ← respond bounds responseType "unclear" [.record [("needs", listData [.label "not addressed"])]]
   match s.world.objects[policy]? with
   | none => respond bounds responseType "denied" [emptyRecord]
   | some o =>
@@ -1894,6 +1924,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("spent", spentJson st.spent)] ++
       (if st.post.isEmpty then [] else [("post", toJson st.post)]) ++
       (if st.origin == "request" then [] else [("origin", toJson st.origin), ("command", toJson st.command)]) ++
+      (if st.reach.isEmpty then [] else [("reach", toJson st.reach)]) ++
       (if st.violation.isSome then [("violation", toJson st.violation), ("violator", toJson st.violator)] else [])).filter
         fun (k, v) => k == "ticks" || !(v == Json.arr #[] || v == toJson "" || v == toJson (0 : Nat)))
     -- A post await names the post; the slot it settles on is whichever reply answers it.
@@ -1981,7 +2012,9 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
                             direct := how.delivery.isNone, receiver := how.receiver, ticks, limits := req.limits, profiling := req.profile,
                             origin := req.origin, command := req.command,
-                            post := if req.post.isEmpty then (heardPost req.method req.argument).getD "" else req.post }
+                            post := if req.post.isEmpty then (heardPost req.method req.argument).getD "" else req.post,
+                            reach := if how.delivery.isSome then "delivery" else if !req.reach.isEmpty then req.reach
+                              else if req.method != "receive" then "direct" else "" }
   -- A reply to a post recorded for this very object answers it (reply-is-address).
   let post := if req.replyTo.isEmpty then none else w.posts[req.replyTo]?
   let answers := match post with
@@ -2124,6 +2157,14 @@ def lentVia (w : World) (principal object method : String) : String :=
   (w.grants.fold (fun acc gid g => if acc.isNone && g.to == principal && g.holder == object &&
       (grantStands w gid object method).isSome then some gid else acc) none).getD ""
 
+/-- How a direct turn's words reached the card (docs/FLEX.md §2): a reply to a post the world recorded,
+    a spell line in the text, else what the transport stated (`statedReaches`), else nothing. -/
+def reachOf (w : World) (req : TurnRequest) : String :=
+  if !req.replyTo.isEmpty && w.posts.contains req.replyTo then "reply"
+  else match Spell.parse (heardText req.method req.argument) with
+    | .spell .. => "spell"
+    | _ => req.reach
+
 /-- A direct turn's `receive` read as a spell (`routeSpell`); `none` when the host leaves the turn as asked. -/
 def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) :=
   match routeSpell w req.principal req.object req.method req.argument true with
@@ -2152,6 +2193,7 @@ def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   -- A retry is answered from the identity before its spell is read again: new code may route the
   -- same words elsewhere (codex host 13).
   if let some r := retainedTurn w req then .ok (w, r) else
+  let req := { req with reach := reachOf w req }
   match spellTurn w req with
   | some r => r
   | none => runTurnWith w req { via := lentVia w req.principal req.object req.method }
@@ -2347,6 +2389,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       -- stale re-run of that one runs as the spell it was (codex host 15).
       origin := (act.getObjValAs? String "origin").toOption.getD "request"
       command := (act.getObjValAs? String "command").toOption.getD ""
+      reach := (act.getObjValAs? String "reach").toOption.getD ""
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
   let action : M Data := do
     let s ← get
@@ -2392,7 +2435,8 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       -- A spell's re-run is the spell's method again, from the post it was asked from.
       post := (act.getObjValAs? String "post").toOption.getD ""
       origin := (act.getObjValAs? String "origin").toOption.getD "request"
-      command := (act.getObjValAs? String "command").toOption.getD "" }
+      command := (act.getObjValAs? String "command").toOption.getD ""
+      reach := (act.getObjValAs? String "reach").toOption.getD "" }
   let (w'', again) ← runTurnWith w' req { rerun := true }
   let staleHash := ((r.getObjVal? "receipt").toOption.bind (·.getObjValAs? String "hash" |>.toOption)).getD ""
   return (w'', again.setObjVal! "rerunOf" (toJson staleHash))
@@ -2743,6 +2787,8 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     let held := (i.getObjValAs? String "held").toOption.getD ""
     let misfit := (i.getObjValAs? String "misfit").toOption.getD ""
     let card := cardText w object speaker
+    let reach := ((s.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
+      |>.bind (·.getObjValAs? String "reach" |>.toOption)).getD ""
     let asked := Data.record [("utterance", .label utterance), ("offers", offers), ("card", .label card),
       ("held", .label held), ("misfit", .label misfit)]
     let (shown, w') := policyJson w policy offers utterance asked
@@ -2753,7 +2799,7 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     let (tried, next) := (w.attempts[id]?).getD (0, 0)
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
       ("utterance", toJson utterance), ("offers", plainJson offers), ("card", toJson card), ("held", toJson held),
-      ("misfit", toJson misfit), ("attempts", toJson tried),
+      ("misfit", toJson misfit), ("reach", toJson reach), ("attempts", toJson tried),
       ("next", if next > w.clock then toJson next else Json.null)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
 

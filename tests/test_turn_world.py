@@ -152,10 +152,12 @@ class TurnWorld(HostCase):
         self.assertEqual(r["status"], "created", r)
         return r
 
-    def turn(self, obj, method, argument=None, identity=None, principal="ember", **limits):
+    def turn(self, obj, method, argument=None, identity=None, principal="ember", reach=None, **limits):
         self.n = getattr(self, "n", 0) + 1
         request = dict(op="world-turn", principal=principal, object=obj, method=method,
                        argument=argument or record(), identity=identity or f"t{self.n}")
+        if reach:
+            request["reach"] = reach
         if limits:
             request["limits"] = limits
         return self.host.send(**request)

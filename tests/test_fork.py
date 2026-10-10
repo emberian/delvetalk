@@ -51,7 +51,7 @@ class Fork(Reflection):
 
     def plant(self, host):
         return host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="what-if",
-                         argument=record(text=label(PLANT), post=label("at://x/p/1")))
+                         argument=record(text=label(PLANT), post=label("at://x/p/1")), reach="mention")
 
     def test_a_planting_in_the_fork_leaves_the_shared_world_unchanged(self):
         shared = self.host.send(op="world-status")
@@ -106,7 +106,7 @@ class Fork(Reflection):
                            modules=closure("Garden"), entry="initial", seed=garden_seed("policy", confirm=False))
         self.assertEqual(r["status"], "created", r)
         asked = self.host.send(op="world-turn", principal="glm", object="g2", method="receive", identity="prose",
-                               argument=record(text=label("Could we plant a silver fern that remembers?"), post=label("at://x/p/2")))
+                               argument=record(text=label("Could we plant a silver fern that remembers?"), post=label("at://x/p/2")), reach="mention")
         self.assertEqual(asked["status"], "suspended", asked)
         _, fork = self.fork()
         [pending] = fork.send(op="world-interpretations")["pending"]
