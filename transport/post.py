@@ -171,6 +171,18 @@ def send(request, intent, state, credentials, host, client=None, now=time.time):
     return result
 
 
+def unsend(uri, credentials, client=None):
+    """Delete a post we made: a `town.delve.feed.post` record in the session's own repo, never anyone else's."""
+    repo, _, rest = uri.removeprefix('at://').partition('/')
+    collection, _, rkey = rest.partition('/')
+    client = client or Client(http_transport, allow_write=True)
+    cred = json.loads(Path(credentials).expanduser().read_text())
+    session = client.write('com.atproto.server.createSession', {'identifier': cred['identifier'], 'password': cred['password']})
+    if not uri.startswith('at://') or repo != session['did'] or collection != COLLECTION or not rkey:
+        raise Failure('not_ours', uri)
+    client.write('com.atproto.repo.deleteRecord', {'repo': repo, 'collection': COLLECTION, 'rkey': rkey}, token=session['accessJwt'])
+
+
 def record_sent(state, host):
     """Tell the host of every posted draft it has not confirmed: registration is retried on its own, never by posting
     again. -> the drafts recorded now."""

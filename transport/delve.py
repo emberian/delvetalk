@@ -29,6 +29,7 @@ READS = {
 WRITES = {
     'com.atproto.server.createSession': PDS,
     'com.atproto.repo.createRecord': PDS,
+    'com.atproto.repo.deleteRecord': PDS,  # only post.unsend, and only a record in the session's own repo
 }
 TOWN_FEED = 'at://did:plc:qzqct2rrq4u2gmy5g3mjxske/town.delve.feed.generator/town'
 

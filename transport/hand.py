@@ -23,6 +23,7 @@ from deploy.genesis import OPENER as OWNER
 from transport import post, pages
 from transport.bridge import all_observations, awaiting_path, skipped, uri_hash, write_atomic
 from transport.delve import Failure, canonical
+from transport.hostd import CLOCK
 from transport.hostproc import HostClient
 
 CLIP, HAND_COOKIE = 400, 'dt_hand'
@@ -197,6 +198,30 @@ class Hand:
         self.log('skip', draft_id, reason=reason)
         return {'skipped': draft_id}
 
+    def unpost(self, draft_id, reason, zulip=None, client=None):
+        """Delete the post this draft became (ours alone: Delve's deleteRecord in the session's repo, Zulip's DELETE of the
+        bot's message) and tell the host (`world-posted {unposted: true}`, so replies stop routing to it); the draft and
+        the hand's log keep the fact whatever the host answers."""
+        path, d = self.draft(draft_id)
+        uri = (d.get('sent') or {}).get('uri')
+        if not d.get('posted') or not uri or d.get('unposted'):
+            raise HandError(f'{draft_id} is no post of ours to withdraw')
+        try:
+            if uri.startswith('zulip://'):
+                from transport.zulip import parse_uri
+                if zulip is None:
+                    raise HandError('a Zulip post is withdrawn with --zuliprc')
+                zulip.delete(parse_uri(uri)[2])
+            else:
+                post.unsend(uri, self.credentials, client)
+        except Failure as err:
+            raise HandError(f'unpost failed: {err.code}') from None
+        got = self.host.send({'op': 'world-posted', 'principal': CLOCK, 'uri': uri, 'cid': d['sent'].get('cid'), 'object': post.draft_object(d),
+                              'intent': d.get('intent'), 'unposted': True, 'reason': reason})
+        write_atomic(path, dict(d, unposted={'at': int(self.clock()), 'reason': reason, 'recorded': got}))
+        self.log('unpost', draft_id, uri=uri, reason=reason)
+        return {'unposted': uri}
+
     def hold(self, draft_id):
         self.draft(draft_id)
         self.log('hold', draft_id)
@@ -287,6 +312,11 @@ def text_of(data, indent=''):
     return indent + str(data)
 
 
+def zulip_client(rc):
+    from transport.zulip import Client
+    return Client(rc)
+
+
 def main(argv=None, out=None, host=None, poster=post.post_draft):
     out = out or sys.stdout
     common = argparse.ArgumentParser(add_help=False)
@@ -300,6 +330,7 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
             'outbox': [('--all', dict(action='store_true'))], 'show': [('draft', {})],
             'edit': [('draft', {}), ('--text-file', {}), ('--stdin', dict(action='store_true'))],
             'post': [('draft', {}), ('--object', {})], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],
+            'unpost': [('draft', {}), ('--reason', dict(required=True)), ('--zuliprc', dict(default=os.environ.get('DELVETALK_ZULIPRC')))],
             'status': [('--journal', dict(help='--json: the world journal (default <state>/../world.journal)')),
                        ('--backups', dict(help='--json: the backup directory (default DELVETALK_BACKUPS or /var/backups/delvetalk)'))], 'search': [('slug', {})], 'retry': [('uri', {})],
             'reply': [('uri', {}), ('--text-file', dict(required=True)), ('--object', dict(required=True))],
@@ -316,7 +347,8 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
         read = lambda p: Path(p).read_text()
         data = {'inbox': lambda: h.inbox(a.since, a.kind), 'outbox': lambda: h.outbox(a.all), 'show': lambda: h.show(a.draft),
                 'edit': lambda: h.edit(a.draft, sys.stdin.read() if a.stdin else read(a.text_file)), 'post': lambda: h.post(a.draft, object=a.object),
-                'skip': lambda: h.skip(a.draft, a.reason), 'hold': lambda: h.hold(a.draft), 'status': (lambda: h.probe(a.backups, a.journal)) if a.json else h.status, 'search': lambda: h.search(a.slug),
+                'skip': lambda: h.skip(a.draft, a.reason), 'hold': lambda: h.hold(a.draft),
+                'unpost': lambda: h.unpost(a.draft, a.reason, zulip_client(a.zuliprc) if a.zuliprc else None), 'status': (lambda: h.probe(a.backups, a.journal)) if a.json else h.status, 'search': lambda: h.search(a.slug),
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail)}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)

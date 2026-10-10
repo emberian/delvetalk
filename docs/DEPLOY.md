@@ -251,6 +251,10 @@ flags; `--json` prints one JSON document, otherwise readable text; each action i
 - `retry URI`: forget that the bridge skipped an observation, so the next run routes it again.
 - `reply URI --text-file F --object ID`: draft a hand-written reply to any observed post as if the object had offered it;
   then `post` it. The web page offers the same as Retry on skipped inbox rows and "reply by hand" on every row.
+- `unpost DRAFT --reason R [--zuliprc RC]`: withdraw the post a draft became, ours alone: Delve's `deleteRecord` in the
+  credentials' own repo, or Zulip's delete of the bot's own message (`--zuliprc`, or `DELVETALK_ZULIPRC`); then
+  `world-posted {unposted: true, reason}` so replies stop routing to it, and the draft and `hand-log.jsonl` keep the fact.
+  Anyone else's post is refused before any call.
 - `log [--tail N]`: the last actions in `hand-log.jsonl`.
 
 The command-line way remains: `python3 -m transport.bridge outbox --state STATE` prints each draft with its own

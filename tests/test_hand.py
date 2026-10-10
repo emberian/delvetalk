@@ -177,6 +177,57 @@ class Listener(unittest.TestCase):
         self.assertEqual(get(hand_at['127.0.0.1'], '/AGENTS.md'), 404)  # and the hand's listener nothing else
 
 
+class Unpost(HandCase):
+    """`unpost` withdraws a post we made, on Delve or Zulip, and never anyone else's."""
+    def posted(self, uri, cid='bafy9'):
+        path = self.state / 'outbox' / '7-aaaa.json'
+        write_atomic(path, dict(json.loads(path.read_text()), posted=True, sent={'uri': uri, 'cid': cid}, intent='draft-7-aaaa'))
+        return path
+
+    def pds(self, did):
+        class Pds:
+            def __init__(self): self.sent = []
+            def write(self, nsid, body, token=None):
+                self.sent.append((nsid, body))
+                return {'did': did, 'accessJwt': 't'} if 'Session' in nsid else {}
+        return Pds()
+
+    def test_a_delve_post_of_ours_is_deleted_and_the_host_told_the_draft_and_log_keep_it(self):
+        path, pds = self.posted('at://did:plc:me/town.delve.feed.post/r9'), self.pds('did:plc:me')
+        (self.state / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
+        self.hand.credentials = self.state / 'creds.json'
+        self.assertEqual(self.hand.unpost('7-aaaa', 'wrong card', client=pds), {'unposted': 'at://did:plc:me/town.delve.feed.post/r9'})
+        self.assertEqual(pds.sent[1], ('com.atproto.repo.deleteRecord', {'repo': 'did:plc:me', 'collection': 'town.delve.feed.post', 'rkey': 'r9'}))
+        told = [o for o in self.host.ops if o['op'] == 'world-posted'][-1]
+        self.assertEqual((told['unposted'], told['uri'], told['intent'], told['reason']), (True, 'at://did:plc:me/town.delve.feed.post/r9', 'draft-7-aaaa', 'wrong card'))
+        self.assertEqual(json.loads(path.read_text())['unposted']['reason'], 'wrong card')
+        self.assertEqual(self.logged()[-1]['what'], 'unpost')
+        with self.assertRaises(hand.HandError):  # once
+            self.hand.unpost('7-aaaa', 'again', client=pds)
+
+    def test_anyone_elses_post_and_an_unposted_draft_are_refused_before_any_delete(self):
+        self.posted('at://did:plc:someone/town.delve.feed.post/r9')
+        (self.state / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
+        self.hand.credentials, pds = self.state / 'creds.json', self.pds('did:plc:me')
+        with self.assertRaises(hand.HandError):
+            self.hand.unpost('7-aaaa', 'x', client=pds)
+        self.assertEqual([n for n, _ in pds.sent], ['com.atproto.server.createSession'])
+        write_atomic(self.state / 'outbox' / '7-aaaa.json', dict(json.loads((self.state / 'outbox' / '7-aaaa.json').read_text()), posted=False))
+        with self.assertRaises(hand.HandError):
+            self.hand.unpost('7-aaaa', 'x', client=pds)
+
+    def test_a_zulip_post_is_deleted_through_the_bots_client(self):
+        self.posted('zulip://delvetalk/garden/42', '42')
+        deleted = []
+        zulip = type('Z', (), {'delete': lambda s, mid: deleted.append(mid)})()
+        self.hand.unpost('7-aaaa', 'misread', zulip=zulip)
+        self.assertEqual(deleted, [42])
+        with self.assertRaises(hand.HandError):
+            self.posted('zulip://delvetalk/garden/43', '43')
+            write_atomic(self.state / 'outbox' / '7-aaaa.json', {k: v for k, v in json.loads((self.state / 'outbox' / '7-aaaa.json').read_text()).items() if k != 'unposted'})
+            self.hand.unpost('7-aaaa', 'misread')  # no --zuliprc
+
+
 class Writer:
     """The delve.town side of post.post_draft: createSession and createRecord."""
     def __init__(self): self.sent = []
