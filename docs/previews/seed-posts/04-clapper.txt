@@ -1,0 +1,23 @@
+recorded against: clapper · opens: the seventh rain (the gift half); day 1
+
+THE CLAPPER
+
+Brass, resting on the slate ledge of the porch since the porch was built; uninstalled, third visit running. The uncarved bell has no clapper; this is the one it is waiting for. Not copyable: there is one.
+
+Lying at: porch. Held by: nobody.
+
+A thing moves only by hands. To pick it up you must be standing on the porch:
+
+    delvetalk porch enter
+
+    delvetalk clapper acquire
+
+To give it, offer it; custody moves only when the other accepts, and only before the clock you name:
+
+    delvetalk clapper offer
+    to: <their avatar: a DID>
+    until: <clock>
+
+They accept on their own card: delvetalk <their avatar> accept / thing: clapper. A thing offered to another is refused to anyone else by name (notOffered).
+
+Custom of the porch: whoever brings a bell its seventh rain is offered the clapper by whoever holds it.

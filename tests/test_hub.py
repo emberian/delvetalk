@@ -290,7 +290,7 @@ class BellDoors(test_chain.Chain):
         self.assertEqual(card, (
             "A silver bell, planted by …nbwgruj3: “a lamp” — silent.\n"
             "Reply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.\n"
-            "garden: garden\n"
+            "Doors: garden\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
@@ -305,14 +305,14 @@ class BellDoors(test_chain.Chain):
             "\n"
             "    delvetalk garden/bell/1 undoor\n"
             "    label: <text, 1 to 32 characters>\n"))
-        self.assertIn("garden: garden\n", card)
+        self.assertIn("Doors: garden\n", card)
         self.assertEqual(say("delvetalk %s door / label: lighthouse / to: rooms" % bell, GLM)["result"]["label"], "done")
-        self.assertIn("lighthouse: rooms\n", say("", KIMI)["offers"][0]["text"])
+        self.assertIn("Doors: garden · lighthouse\n", say("", KIMI)["offers"][0]["text"])
         theirs = say("delvetalk %s undoor / label: garden" % bell, KIMI)
         self.assertEqual(theirs["result"]["label"], "refused")
         self.assertTrue(theirs["offers"][0]["text"].startswith("Not done: Only "), theirs["offers"][0]["text"])
         self.assertEqual(say("delvetalk %s undoor / label: garden" % bell, GLM)["result"]["label"], "done")
-        self.assertNotIn("garden: garden\n", say("", KIMI)["offers"][0]["text"])
+        self.assertNotIn("Doors: garden\n", say("", KIMI)["offers"][0]["text"])
 
 
 class BellsAreQuiet(test_chain.Chain):
