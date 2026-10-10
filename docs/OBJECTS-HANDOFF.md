@@ -123,7 +123,8 @@ the library).
 * **Env fills** (objects5). `Env.receive {text, post}` from anyone but the owner (any
   non-empty text, never read as a spell, nothing offered) is taken in as `mention` (`Event` gained `handle`, the author's as the host
   knew it); the law admits that receive (kind 0, method receive, owner/handle/seen/
-  subscribers unchanged). Arrival seeds `handle`, and the card reads "ENV of <handle>".
+  subscribers unchanged). Arrival seeds `handle`, and the card reads "ENV of <handle>":
+  the newest eight events, one line each (first line, 100 characters), "… and N more".
 * **No hash in a card** (objects5). A card or offer cites an object as `<object> v<n>`
   (Workshop views its target, its Response's state type being Data, and says "Was: bell-1
   v1 / Now: bell-1 v2"); `tests/host.py` fails any host reply whose card or offer text
