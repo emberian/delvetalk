@@ -240,7 +240,9 @@ def respond (bounds : DataBounds) (responseType : Ty) (label : String) (payloads
   evaluation s!"response type cannot carry {label}"
 
 def refusedWith (bounds : DataBounds) (responseType : Ty) (clause : String) : M Data :=
-  respond bounds responseType "refused" [.record [("clause", .label clause)], emptyRecord]
+  -- A result whose refusal carries a reading (`Created`, `Programmed`, `Amended`) hears an empty one.
+  respond bounds responseType "refused" [.record [("clause", .label clause)],
+    .record [("clause", .label clause), ("reading", .label "")], emptyRecord]
 
 /-- `refused {clause, reading}` where the call site's result carries a reading (World's `call`
     since run 11), the refusal's voiced reason (`Refusal.voiced`); `{clause}` otherwise. -/
@@ -692,7 +694,7 @@ def helperOf (w : World) (self id method : String) : Bool :=
     not one: the host's spell path runs a card's methods directly (WHOLENESS, second root decisions, 5). -/
 def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
-   "sendVia", "create", "createUnder", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
+   "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
    "objects", "card", "subscribe", "unsubscribe"]
 
@@ -1520,8 +1522,27 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     set { s with checks := s.checks + 1 }
     respond bounds responseType "checked"
       [.record [("diagnostics", listData ((checkSource s.world source).map Data.label))]]
-  | .variant "create" (.record f) | .variant "createUnder" (.record f) =>
+  | .variant "create" (.record f) | .variant "createUnder" (.record f) | .variant "make" (.record f) =>
     let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"
+    -- `make` (docs/GROUND.md §6 changes 1 and 6): the create, from source a resident supplied, with
+    -- its lineage `madeFrom {object, receipt}`, to which the host adds the pin `object` runs now; the
+    -- object and the receipt must be the journal's.
+    let (madeFrom, unmade) ← (match plan with
+      | .variant "make" _ => do
+        let some (.record m) := f.lookup "madeFrom" | evaluation "malformed make plan"
+        let some fromId := (m.lookup "object").bind referenceId | evaluation "malformed make plan"
+        let some receipt := (m.lookup "receipt").bind labelOf | evaluation "malformed make plan"
+        let s ← get
+        match s.world.objects[fromId]? with
+        | none => pure (none, some s!"there is no object {fromId} to have been made from")
+        | some fromObj =>
+          if !(s.world.entries.any fun e => (e.getObjValAs? String "hash").toOption == some receipt) then
+            pure (none, some s!"there is no receipt {receipt} in the journal")
+          else do
+            recordRoot fromId fromObj.version
+            pure (some (Json.mkObj [("object", toJson fromId), ("pin", toJson fromObj.pin), ("receipt", toJson receipt)]), none)
+      | _ => pure (none, none) : M (Option Json × Option String))
+    if let some reason := unmade then refusedReading bounds responseType "madeFrom" reason else
     -- `createUnder` names the child's supervisor; it must be an object now.
     let supervisor := ((f.lookup "supervisor").bind referenceId).getD ""
     let some seed := f.lookup "seed" | evaluation "malformed create plan"
@@ -1549,9 +1570,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     else
       let some creator := s.world.objects[self]? | evaluation "the creating object vanished"
       match buildCreated s.world creator package seed lawArg s.principal (s.world.height + 1) with
-      | .error (clause, _) => refusedWith bounds responseType clause
+      -- The checker's diagnostic goes back with the clause, where the call site's result has `reading`.
+      | .error (clause, message) => refusedReading bounds responseType clause message
       | .ok (made, built) =>
-        let made := { made with object := { made.object with supervisor } }
+        let made := { made with object := { made.object with supervisor }, madeFrom }
         set { note s with creates := s.creates ++ [(id, made)], world := cacheBuild s.world made.object.inputs built }
         respond bounds responseType "created" [.record [("object", .record [("world", .label ""), ("object", .label id)])]]
   | .variant "send" (.record f) | .variant "sendVia" (.record f) =>

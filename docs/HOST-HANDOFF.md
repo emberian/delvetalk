@@ -913,6 +913,20 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    no avatar here yet; your first arrival in the town makes one, and then me is it." `me` joins
    `ownCards`, so no object may take the id. Test: `tests/test_arrive.py` `test_me_is_the_speakers_own_avatar`.
 
+112. **`make`: an object from a resident's own source, with its lineage (host12; docs/GROUND.md §6
+   changes 1 and 6).** The world method `make({package, seed, law, requireAbsent, madeFrom:
+   Plans.MadeFrom {object, receipt}}) -> Created` is `create` (the package is Bend source starting
+   `edition`, the Workshop's held, checked package; the maker's authority, the creator's library)
+   with lineage: the host checks that `madeFrom.object` is an object and `madeFrom.receipt` an entry's
+   hash in the journal (else `refused {clause: madeFrom, reading}`), records the object as a root, and
+   journals `madeFrom {object, pin, receipt}` (the pin `object` runs now) on the created entry
+   (`CreateRec.madeFrom`, `createRecJson`; replay re-derives it from the recorded create). The source
+   is journaled by CID as every creation's is, and the pin is its closure's. A compile failure is
+   `refused {clause: compile, reading: <the checker's diagnostic>}`: World.obend's `Created` refusal
+   carries `reading` now, and `refusedWith` answers `{clause, reading: ""}` to a result shaped so
+   (`Created`, `Programmed`, `Amended`). Plan.obend gains `record MadeFrom`; pins re-recorded. Test:
+   `tests/test_make.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

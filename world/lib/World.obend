@@ -56,7 +56,7 @@ sum Sent:
   refused: {clause: String}
 sum Created:
   created: {object: Plans.Reference}
-  refused: {clause: String}
+  refused: {clause: String, reading: String}
 sum Awaited:
   reply: {receipt: Plans.Receipt}
   unknown: {}
@@ -118,6 +118,7 @@ protocol world:
   sendVia({object: Plans.Reference, method: String, argument: Data, via: String}) -> Sent
   create({package: String, seed: Data, law: String, requireAbsent: Plans.Reference}) -> Created
   createUnder({package: String, seed: Data, law: String, requireAbsent: Plans.Reference, supervisor: Plans.Reference}) -> Created
+  make({package: String, seed: Data, law: String, requireAbsent: Plans.Reference, madeFrom: Plans.MadeFrom}) -> Created
   await({slot: Plans.Slot, patience: Nat}) -> Awaited
   awaitUntil({slot: Plans.Slot, until: Nat}) -> Awaited
   awaitPost({post: String, patience: Nat}) -> Awaited

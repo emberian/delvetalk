@@ -159,6 +159,8 @@ structure CreateRec where
   sources : String
   /-- The final state, on the wire. -/
   seed : Json
+  /-- Its lineage, when a `make` made it: `{object, pin, receipt}` (docs/GROUND.md §6 change 6). -/
+  madeFrom : Option Json := none
 
 /-- One change to an object, by the object whose method made it. `caller` is the
     object that called the running one (empty when the running object was the turn's
@@ -1526,7 +1528,10 @@ def createRecJson (id : String) (c : CreateRec) : Json :=
   Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin),
     ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
     ("seed", c.seed), ("law", toJson c.object.lawText)] |> fun j =>
-    if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)
+    (if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)) |> fun j =>
+    match c.madeFrom with
+    | some m => j.setObjVal! "madeFrom" m
+    | none => j
 
 structure Judged where
   updates : List (String × Object)
@@ -2995,7 +3000,7 @@ def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
       (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
     w := w'
     let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
-    creates := creates ++ [(id, ({ object := o, sources, seed } : CreateRec))]
+    creates := creates ++ [(id, ({ object := o, sources, seed, madeFrom := (r.getObjVal? "madeFrom").toOption } : CreateRec))]
   return (w, creates)
 
 def replayEntry (w : World) (entry : Json) : Except String World := do
