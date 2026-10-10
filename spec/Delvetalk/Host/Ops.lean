@@ -931,6 +931,10 @@ partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theo
   | .emptyRow => some []
   | _ => none
 
+/-- The first of `fixed` whose value in `after` is not its value in `before` (by canonical bytes). -/
+def movedFixed (fixed : List String) (before after : Data) : Option String :=
+  fixed.find? fun f => ((Law.rawField f before).map Law.canon) != ((Law.rawField f after).map Law.canon)
+
 /-- The State fields an artifact lists as `fixed` (none when absent). -/
 def fixedOf (artifact : Json) : List String :=
   ((artifact.getObjValAs? (List String) "fixed").toOption).getD []
@@ -1887,6 +1891,11 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       | .ok d => pure d
       | .error clause => throw { cls := clause, object := id }
     unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
+    -- A fixed field is set when the object is made and never after: no write changes it (a
+    -- proposal's edits are not the kernel's, which refuses such a write at compile).
+    if let some f := movedFixed o.fixed o.state written then
+      throw { cls := "lawRefused", clause := some "fixed", object := some id,
+              reason := some s!"refused fixed: {f} is fixed; it is set when {id} is made and never after." }
     unless stateBytes written ≤ Limits.maxStateBytes do
       throw { cls := "capacity", object := id, reason := some "maxStateBytes" }
     -- A reprogram replaces code and, through its migration, the state's type.
@@ -1908,6 +1917,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType && stateBytes state ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
+      -- A migration may not set a fixed field: one the new code fixes keeps the value it had.
+      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
+        throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
       -- A migration's result is put in canonical form under the new code's relations.
       state ← match canonicalState prog.relations state with
         | .ok s => pure s

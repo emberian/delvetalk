@@ -612,6 +612,13 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    scanning the entry module's source for `def <name>(`. The scan goes when the kernel's list is in
    foundation (coordinator's word). `#guard`s in `Ops.lean`.
 
+79. **No write or migration moves a fixed field (host11).** `judge` refuses an admitted-to-be write
+   (a `world-propose`'s edits, which the kernel never sees) that changes a field of `Object.fixed`:
+   class `lawRefused`, clause `fixed`, reason "refused fixed: <f> is fixed; it is set when <id> is
+   made and never after." (`movedFixed`, by canonical bytes). A reprogram whose migration changes a
+   field the new code fixes is refused `programRefused`, clause `fixed`. Tests:
+   `tests/test_spell_turns.py` `FixedFields`, `tests/test_appointments.py` (its marker gone).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

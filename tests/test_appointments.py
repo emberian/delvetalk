@@ -7,8 +7,8 @@ Appointments: a booking creates an Appointment that waits in its own turn (an aw
 a slot nobody settles, resumed timedOut when the clock passes) and then notes its
 recipient's Avatar. Cancelling writes the appointment, so the waiting turn resumes on a
 stale root and sends nothing. Its owner, topic, target and time are `fixed` State fields: the
-artifact lists them and no edit of its own names them. A proposed write naming one is not yet
-refused by the host (expected failure, the host lane's: `world-propose` reads the artifact's `fixed`).
+artifact lists them and no edit of its own names them. A proposed write naming one is
+refused `fixed` by the host, which reads the artifact's `fixed`.
 """
 import unittest
 
@@ -80,7 +80,6 @@ class Appointments(Chain):
         artifact = self.host.send(op="compile", modules=closure("Appointment"), entry="initial")["artifact"]
         self.assertEqual(artifact["fixed"], ["owner", "topic", "to", "after"])
 
-    @unittest.expectedFailure
     def test_a_proposed_write_naming_a_fixed_field_is_refused(self):
         self.book()
         version = self.host.send(op="world-view", principal="glm", object="book/1")["version"]
@@ -88,6 +87,7 @@ class Appointments(Chain):
         edits = record(topic={"tag": "variant", "label": "set", "payload": record(value=label("moths"))}, status=keep)
         r = self.host.send(op="world-propose", principal="glm", identity="retopic", roots=[{"object": "book/1", "version": version}],
                            writes=[{"object": "book/1", "edits": [edits]}])
+        self.assertEqual((r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]), ("lawRefused", "fixed"), r)
         self.assertEqual(get(self.state("book/1"), "topic"), label("tea"), r)
 
 
