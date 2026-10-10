@@ -49,6 +49,23 @@ def observations(state):
         db.close()
 
 
+def access(state):
+    """The front's access log (transport/http.py AccessLog: time method path status bytes did), with its rotated generation.
+    -> None when there is none. 4xx by status, the 5xx count (the zero-500s gate), the most requested paths, the most bytes."""
+    files = [p for p in (state / 'access.log.1', state / 'access.log') if p.exists()]
+    if not files:
+        return None
+    rows = [l.split() for p in files for l in p.read_text().splitlines()]
+    rows = [x for x in rows if len(x) >= 6 and x[3].isdigit()]
+    paths, sent = collections.Counter(x[2] for x in rows), collections.Counter()
+    for x in rows:
+        sent[x[2]] += int(x[4]) if x[4].isdigit() else 0
+    return {'requests': len(rows), 'status4xx': dict(sorted(collections.Counter(x[3] for x in rows if x[3].startswith('4')).items())),
+            'status5xx': sum(1 for x in rows if x[3].startswith('5')), 'status500': sum(1 for x in rows if x[3] == '500'),
+            'principals': len({x[5] for x in rows if x[5] != '-'}),
+            'topPaths': [[p, n] for p, n in paths.most_common(5)], 'topBytes': [[p, n] for p, n in sent.most_common(3)]}
+
+
 def harvest(run, cast_root=None):
     run, state = Path(run).resolve(), Path(run).resolve() / 'state'
     journal = next((p for p in (run / 'world.journal', state / 'world.journal') if p.exists()), None)
@@ -78,6 +95,7 @@ def harvest(run, cast_root=None):
     r['spend'] = {'calls': len(spend), 'inputTokens': sum(x.get('inputTokens') or 0 for x in spend), 'outputTokens': sum(x.get('outputTokens') or 0 for x in spend)}
     r['hand'] = dict(collections.Counter(h.get('what') for h in hand))
     r['front'] = {'requests': len(front), 'status500': sum(1 for x in front if x.get('code') == 500), 'logged': bool(front)}
+    r['access'] = access(state)
     answered = {d['replyTo'] for d in drafts if d.get('text') or d.get('usage')}
     addressed = [o for o in obs if o['kind'] in ('spell', 'summon') or 'delvetalk' in o['text'].lower()]
     r['noReply'] = [o['uri'] for o in addressed if o['uri'] not in answered and o['uri'] not in awaiting]
@@ -144,6 +162,14 @@ def markdown(r):
     w(f"| model calls, input, output tokens | {r['spend']['calls']}, {r['spend']['inputTokens']:,}, {r['spend']['outputTokens']:,} |")
     w(f"| hand actions | {r['hand'] or 'none'} |")
     w(f"| front requests logged, HTTP 500 | {r['front']['requests'] if r['front']['logged'] else 'not logged'}, {r['front']['status500'] if r['front']['logged'] else 'unread'} |")
+    if r['access']:
+        a = r['access']
+        w(f"| front requests (access.log), principals seen | {a['requests']}, {a['principals']} |")
+        w(f"| front 5xx, of which 500 (the gate is zero) | {a['status5xx']}, {a['status500']} |")
+        for k, v in a['status4xx'].items():
+            w(f'| front HTTP {k} | {v} |')
+        w('| most requested paths | ' + ', '.join(f'`{p}` {n}' for p, n in a['topPaths']) + ' |')
+        w('| most bytes sent | ' + ', '.join(f'`{p}` {n:,}' for p, n in a['topBytes']) + ' |')
     w(f"| addressed posts with no reply | {len(r['noReply'])} |")
     w(f"| journal height, bytes, median suspended | {j['height']}, {j['bytes']:,}, {j['medianSuspendedBytes']:,} |\n")
     w('### By principal\n')
