@@ -164,6 +164,11 @@ the library).
   line}`; the line is offered under the speaker's name to every avatar present (newest
   arrivals first, at most 32), a whisper to one; someone not present is refused by name.
   The place card's "Here:" lines and the avatar card's "is at" line are the who and where.
+* **Copy as a right** (objects5): Thing `copyable` (default true; the owner's lens). The
+  Workshop's `create / like: <thing>` sends the thing `copy`; the thing creates a Thing from
+  its own package with its state minus holder, offer and owner (the copy is the asker's:
+  the host fills owner with the creating principal, and the law must admit its own owner),
+  lying nowhere; not copyable is refused by name to the asker.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

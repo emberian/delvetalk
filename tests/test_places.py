@@ -401,3 +401,36 @@ class Talk(Chain):
         stranger = self.say("delvetalk porch say / line: hello?", "zero")
         self.assertEqual(stranger["result"]["label"], "refused")
         self.assertEqual(stranger["offers"][0]["text"], "Not done: only someone here can say.\n")
+
+
+class Copies(Chain):
+    """Copy as a right: a thing is copyable unless its owner says no; the Workshop's `create /
+    like: stone` has the thing copy itself from its own package, without holder and offer."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def test_create_like_copies_a_thing_and_the_owner_may_forbid_it(self):
+        self.make("porch", closure("Place"), place_seed("Porch", present=["glm"], things=["stone"]))
+        self.make("stone", closure("Thing"), thing_seed("stone", location="porch"))
+        self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
+        ask = lambda who, ident: self.turn("workshop", "receive", record(text=label("delvetalk workshop create / like: stone"), post=label("at://x/" + ident)),
+                                           principal=who, identity=ident)
+        r = ask("glm", "c1")
+        self.assertEqual(r["status"], "admitted", r)
+        delivered = r.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
+        texts = [o["text"] for d in delivered for o in d.get("receipt", d).get("offers", [])]
+        print("\n--- copy ---\n%r" % texts)
+        self.assertTrue(any(t.startswith("Copied stone as ") for t in texts), (texts, delivered[:1]))
+        copied = [t for t in texts if t.startswith("Copied stone as ")][0][len("Copied stone as "):-2]
+        state = self.state(copied)
+        fields = {f["name"]: f["value"] for f in state["fields"]}
+        self.assertEqual((fields["name"], fields["copyable"]), (label("stone"), boolean(True)))
+        self.assertEqual(fields["holder"], NOBODY)
+        self.assertEqual(fields["owner"], label("glm"))           # the copy is the asker's
+        # The owner switches it off; a second ask is refused by name.
+        off = self.turn("stone", "receive", record(text=label("delvetalk stone set\ncopyable: no"), post=label("")), principal="ember")
+        self.assertEqual(off["status"], "admitted", off)
+        r = ask("glm", "c2")
+        delivered = r.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
+        texts = [o["text"] for d in delivered for o in d.get("receipt", d).get("offers", [])]
+        self.assertIn("Not copied: stone is not copyable; its owner, ember, decides.\n", texts)

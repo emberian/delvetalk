@@ -88,7 +88,7 @@ def reprogrammedCard(target: String, version: Nat) -> Document.Document:
 def refusedCard(reason: String) -> Document.Document:
   Document.text(cat("Not done: ", cat(reason, "\n")))
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a fenced block and:\n\n    delvetalk workshop check\n\n```obend\n…your Objective Bend…\n```\n\nor a block field:\n\n    delvetalk workshop check\n    source: <<BEND\n    …your Objective Bend…\n    BEND\n\nTo check what an object runs now:\n\n    delvetalk workshop check\n    target: bell-1\n\nTo reprogram it with a checked block:\n\n    delvetalk workshop propose\n    target: bell-1\n    migration: how the old state becomes the new\n")
+  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a fenced block and:\n\n    delvetalk workshop check\n\n```obend\n…your Objective Bend…\n```\n\nor a block field:\n\n    delvetalk workshop check\n    source: <<BEND\n    …your Objective Bend…\n    BEND\n\nTo check what an object runs now:\n\n    delvetalk workshop check\n    target: bell-1\n\nTo reprogram it with a checked block:\n\n    delvetalk workshop propose\n    target: bell-1\n    migration: how the old state becomes the new\n\nTo have a copy of a thing made (unless its owner forbids it):\n\n    delvetalk workshop create\n    like: stone\n")
 def tell(verdict: Verdict, card: Document.Document) -> Activity<Plan, Response, Verdict>:
   match perform(Plan.offer({to: "", document: card})):
     case _: verdict
@@ -177,8 +177,17 @@ def askedFirst(parsed: Spell.Parsed, text: String) -> Spell.Parsed:
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match spellOf(input.text):
     case notASpell(n): if textTake(n.reason, 9n) == "the block" then tell(Verdict.refused({reason: n.reason}), refusedCard(n.reason)) else tell(Verdict.refused({reason: "Reply with a workshop spell."}), render(state, context))
-    case spell(s): if s.card == context.object && (s.action == "adopt" || s.action == "withdraw") then numbered(state, s.action, Spell.number(Spell.valueOf(s.fields, "n")), context) else routed(state, input, context, s.card, s.action, Spell.valueOf(s.fields, "target"), Spell.valueOf(s.fields, "migration"), Spell.valueOf(s.fields, "source"))
+    case spell(s): if s.card == context.object && s.action == "create" then likeness(Spell.valueOf(s.fields, "like"), context) else if s.card == context.object && (s.action == "adopt" || s.action == "withdraw") then numbered(state, s.action, Spell.number(Spell.valueOf(s.fields, "n")), context) else routed(state, input, context, s.card, s.action, Spell.valueOf(s.fields, "target"), Spell.valueOf(s.fields, "migration"), Spell.valueOf(s.fields, "source"))
 # The code is a `source: <<BEND` field (Spell's block value), else a fenced obend block.
+# `create / like: <thing>` asks the thing for a copy of itself (its `copy`, under the asker):
+# the thing refuses by name when its owner made it not copyable, and offers the result.
+def likeness(like: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  if like == "" then tell(Verdict.refused({reason: "like"}), refusedCard("create takes like: the thing to copy")) else asked(like, context)
+def asked(like: String, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
+  match perform(Plan.send({object: {world: context.world, object: like}, method: "copy", argument: Plans.nothing()})):
+    case delivery(_): Verdict.clean({})
+    case refused(r): tell(Verdict.refused({reason: r.clause}), refusedCard("No copy of {like}: {r.clause}"))
+    case _: tell(Verdict.refused({reason: "noAnswer"}), refusedCard("No copy of {like}"))
 def numbered(state: State, action: String, n: Spell.Number, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match n:
     case no(_): tell(Verdict.refused({reason: "n"}), refusedCard("{action} takes n: the held proposal's number"))
