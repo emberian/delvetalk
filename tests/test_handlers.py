@@ -95,6 +95,28 @@ def go(state: State, input: {target: String, handler: String}, context: Abi.Cont
     case _: 98n
 """)
 
+# Calls the counter: the counter's frame is one deeper than the frame `run` started.
+NESTER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+record State:
+  n: Nat
+record Edits:
+  n: Plans.Edit<Nat, Nat>
+type Plan = Plans.Plan<Edits>
+type Response = Plans.Response<State, Nat>
+def initial() -> State:
+  {n: 0n}
+def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+  match perform(Plan.call({object: {world: "", object: "c"}, method: "bump", argument: Plans.nothing()})):
+    case returned(r): r.result + 10n
+    case _: 97n
+""")
+
+# Runs the counter under a handler of its own, from inside another `run`.
+INNER = RUNNER.replace("def go(", "def bump(").replace('head: "go"', 'head: "bump"').replace("input: {target: String, handler: String}, ", "").replace(
+    "input.target", '"c"').replace("input.handler", '"views"')
+
 
 class Handlers(Reflection):
     def setUp(self):
@@ -126,6 +148,26 @@ class Handlers(Reflection):
     def test_an_unknown_handler_is_refused(self):
         self.assertEqual(self.go("ghost")["result"], nat(99))
         self.assertEqual(self.count(), "0")
+
+    def test_a_handler_answers_the_plans_of_frames_its_callee_calls(self):
+        self.make("nester", NESTER, record(n=nat(0)))
+        r = self.turn("runner", "go", record(target=label("nester"), handler=label("sandbox")))
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(11)), r)
+        self.assertEqual(self.count(), "0")
+        self.assertEqual([w["object"] for w in r["receipt"]["outcome"]["writes"]], [])
+        # Without the handler the nested write is the host's.
+        self.assertEqual(self.turn("nester", "bump")["result"], nat(11))
+        self.assertEqual(self.count(), "1")
+
+    def test_a_pass_goes_to_the_next_handler_out(self):
+        # inner runs the counter under `views`, which passes a write; the `sandbox` around it answers it.
+        self.make("inner", INNER, record(note=nat(0)))
+        r = self.turn("runner", "go", record(target=label("inner"), handler=label("sandbox")))
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
+        self.assertEqual(self.count(), "0")
+        # Under `views` alone the write passes to the host.
+        self.assertEqual(self.turn("inner", "bump")["result"], nat(1))
+        self.assertEqual(self.count(), "1")
 
     def test_judge_answers_the_verdict_and_commits_nothing(self):
         r = self.turn("c", "probe", record(n=nat(5)))

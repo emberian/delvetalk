@@ -161,7 +161,8 @@ structure TurnState where
   awaits : Nat := 0
   /-- `check` Plans this turn ran; the journal keeps the count. -/
   checks : Nat := 0
-  /-- Frames run under a handler (`run`): the call depth of the frame and the handler object. -/
+  /-- Handlers installed by `run`, innermost first: the call depth of the callee's frame and the
+      handler object. Every frame at that depth or deeper, until the `run` returns, is under it. -/
   handlers : List (Nat × String) := []
   limits : Json
   /-- `profile: true` on the request: every activity segment's tick breakdown, by kind
@@ -1026,11 +1027,15 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
       | .variant "awaitPost" (.record f) | .variant "awaitPostUntil" (.record f) => awaitPostPlan depth self compiled.bounds f responseType suspension.checkpoint
       | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType suspension.checkpoint
       | _ => do
-        -- A frame run under a handler offers each Plan to it first.
-        match (← get).handlers.lookup depth with
-        | some handler => match ← handleWith handler self message compiled.bounds responseType with
-          | some response => pure response
-          | none => answer depth self caller compiled.bounds plan responseType
+        -- A frame in the extent of a `run` (its callee, or any frame that callee calls) offers each
+        -- Plan to the handlers around it, innermost first; a `pass` goes to the next one out, and
+        -- the host answers what every one passed.
+        let mut handled : Option Data := none
+        for (installed, handler) in (← get).handlers do
+          if handled.isNone && installed ≤ depth then
+            handled ← handleWith handler self message compiled.bounds responseType
+        match handled with
+        | some response => pure response
         | none => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
     let entry ← entryOf compiled

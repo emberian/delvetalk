@@ -152,7 +152,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - Method table and forms: `Object.methods` is the artifact's method table (reprogram replaces it; for a layer stack it lists every layer's methods, top first). `world-inspect` answers it as `methods` plus `forms`. A form is `{card, action, fields}` for each method that takes a context and whose input is a record of `String` (text 0..`formTextMax`), `Nat` (0..`formNaturalMax`) or a closed sum of empty payloads.
 - Extend: `world-reprogram {mode: "extend"}` and Plan `extend` add the source as module `Layer<n>`. The host writes `layer over ./<module below>.obend` as its first line (`layerLine`), so the kernel builds a layer stack with late binding. New pin = CID of `["extend", old pin, source CID]`; the state type must be equal under `canonicalTy` or a migration named. Tests: `test_extend`, `test_layers`.
 - Supervisors: `Object.supervisor` is fixed at creation (`world-create {supervisor}`, Plan `createUnder`; `refused {clause: supervisor}` if not an object). An activity of a supervised object ends `broken` when refused `evaluation`, `budget` when a machine budget ran out, `timedOut` when a segment resumed past its deadline ends in any way. `commit` puts an `ended {id, to, method: "ended", argument, sender, ledger}` field in that entry (`endedField`, `endedId`); `record` makes it a pending delivery with argument `{receipt, how}`. A ledger refusal (`budgetExhausted`) tells nobody. Replay checks the id and that `to` is the supervisor (`checkEnded`). Test: `test_supervisors`.
-- Handlers: Plan `run {object, method, argument, handler}` runs the callee as `call` does, but every Plan the callee's own frame yields is first offered to the handler's pure `handle(state, plan[, context]) -> Handled<R>` (`answer {response}` or `pass`). The handler must be readable by the subject (`refused {clause: handler}`) and is a root. Plan `judge {edits}` answers `judged {admitted, clause}` without committing. Test: `test_handlers`.
+- Handlers: Plan `run {object, method, argument, handler}` runs the callee as `call` does, but every Plan the callee's frame, or any frame it calls, yields is first offered to the handlers around it, innermost first, each a pure `handle(state, plan[, context]) -> Handled<R>` (`answer {response}`, or `pass` to the next one out; 5.73). The handler must be readable by the subject (`refused {clause: handler}`) and is a root. Plan `judge {edits}` answers `judged {admitted, clause}` without committing. Test: `test_handlers`.
 - Held entries: `compiledMethod`/`compileDef` use `compileEntryIn` (`Package.prepareRequest` cached in `world.requests`, `Package.compileEntryFrom`); `Compiled.entry` is a decoded, checked `CheckedEntry`. Turns run `Turn.startEntry`/`resumeEntry`; pure definitions (law, `lawReads`, handler, pure methods, migrations) run `Package.executeDataEntry`. Only `initial()` at creation runs from the packet.
 - Kernel integration: `world-turn {…, profile: true}` returns `profile [{kind, steps, ticks}]` (not journaled). `annotateData` (`Turn.lean`) annotates sum-valued arguments.
 
@@ -557,6 +557,15 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    and `turnRequest` (two digests, both checked), the argument (~300 B). The rest is the kernel's: the
    fresh checkpoint blocks (3 KB for one speaker, more for nine) and the `tokenTree` roots (~900 B).
 
+73. **Handlers over nested frames (host11; §7 item 3 of host10).** A `run` installs its handler for its
+   whole extent: every frame at the callee's depth or deeper until the `run` returns
+   (`TurnState.handlers`, innermost first). `drive` offers a yielded Plan to each handler around the
+   frame in turn; the first `answer` is the response, a `pass` (or a plan the handler's input does not
+   name) goes to the next one out, and the host answers what all passed. Activities need nothing more:
+   only a top frame suspends (an await in a call is refused), and a `run` callee is never the top.
+   Test: `tests/test_handlers.py` (a sandbox answers the write of a frame its callee calls; an inner
+   `views` handler passes a write to the `sandbox` around it).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -573,9 +582,6 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ## 7. Open
 
-- Handlers over nested frames and activities: `run` offers only the callee's own frame's plans to a pure
-  `handle`. The smallest change: `drive` looks up the innermost handler at a depth at or below the frame's
-  (the `handlers` stack), not the one at exactly `depth`.
 - Foreign worlds: `Reference.world != ""` is refused `foreignWorld`.
 - `world-reprogram`/`amend` are gated only by the object's law.
 - Closed by host10, not by code: "forms for sum inputs held as bounds variables". A closed sum of empty
