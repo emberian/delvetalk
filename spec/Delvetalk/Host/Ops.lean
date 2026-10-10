@@ -3418,6 +3418,14 @@ def lawClauses (text : String) : List (String × Option String × String) :=
     let expr ← after.dropPrefix? ":"
     return (name, reading, expr.toString.trimAscii.toString)
 
+/-- An object's law as clauses with their readings, every kind of law text alike: a reading the
+    text gives, else the one the package gave the clause while it stands (`Object.readings`). What
+    `world-inspect` answers as `laws` and the library's `law {card}` page reads. -/
+def lawRows (o : Object) : Json :=
+  Json.arr ((lawClauses o.lawText).toArray.map fun (name, reading, expr) =>
+    Json.mkObj ([("name", toJson name), ("clause", toJson expr)] ++
+      ((reading.orElse fun _ => o.readings.lookup name).map fun r => [("reading", toJson r)]).getD []))
+
 /-- The pin and law text `id` had at `version`: its current ones, with each later reprogram and
     amendment undone (newest first), as the admitted entries that made later versions record them. -/
 def pinAndLawAt (w : World) (o : Object) (id : String) (version : Nat) : String × String := Id.run do

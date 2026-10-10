@@ -214,6 +214,18 @@ class Readings(Reflection):
         self.assertEqual((seen["status"], seen["reason"]), ("refused", SAID), seen)
         self.assertEqual(self.turn("r", "bump")["status"], "admitted")
 
+    def test_inspect_answers_each_clause_with_its_reading(self):
+        # docs/VOICE.md: the library's `law {card}` page reads world-inspect's clauses and readings, the
+        # package's law as well as an amended one.
+        laws = self.host.send(op="world-inspect", principal="kim", object="r", source=False)["laws"]
+        self.assertEqual([(l["name"], l.get("reading")) for l in laws], [("owner", "only the owner may count"), ("small", None)])
+        self.assertTrue(all(l["clause"] for l in laws), laws)
+        self.host.send(op="world-amend", principal="ember", identity="a9", object="r", version=0,
+                       law='law owner "ask ember": request.subject == new.owner\nlaw small: new.count <= 5')
+        laws = self.host.send(op="world-inspect", principal="kim", object="r", source=False)["laws"]
+        self.assertEqual([(l["name"], l.get("reading"), l["clause"]) for l in laws],
+                         [("owner", "ask ember", "request.subject == new.owner"), ("small", None, "new.count <= 5")])
+
     def test_a_clause_without_a_reading_says_only_its_name(self):
         self.host.send(op="world-amend", principal="ember", identity="a1", object="r", version=0,
                        law='law owner: request.subject == new.owner\nlaw small: new.count <= 100')

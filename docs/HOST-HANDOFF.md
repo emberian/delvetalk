@@ -894,6 +894,17 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    `test_pages_by_height_and_item_skip_nothing` (the library entry's many sources one at a time, both
    orders).
 
+110. **hob's tail line, and inspect's laws with readings (host12; docs/VOICE.md "hob").** A direct
+   turn's `?` usage and its badSpell `hint` end, after a blank line, with hob's one line
+   (`hobTail`): "hob: how a spell is read: delvetalk library read / page: spells" under usage, "hob: the
+   page on this: delvetalk library read / page: spells" under a hint, only when an object `library`
+   exists that the speaker may view; never in the `reason`, never in a call's or delivery's reading,
+   never twice. `world-inspect` answers `laws: [{name, clause, reading?}]` (`lawRows`: the reading the
+   law text gives, else the package's while its clause stands) and `bendLaw` (whether a Bend
+   `law(old, new, request)` judges after the text), which the library's `law {card}` page reads.
+   Tests: `tests/test_usage_voice.py` `test_hobs_tail_line_follows_usage_and_hints_only_when_a_library_is_visible`,
+   `tests/test_law.py` `test_inspect_answers_each_clause_with_its_reading`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
