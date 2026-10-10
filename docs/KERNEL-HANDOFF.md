@@ -1,20 +1,20 @@
 # Kernel handoff
 
-State on 2026-10-10 (lane/kernel8 after foundation 61dd81a; the queue is §16).
+State on 2026-10-10 (foundation 189b534, after lane/kernel9).
 
 ## Summary
 
-The kernel is the Objective Bend edition: source text to a checked typed packet, a demand machine with a tick tariff, a checkpoint codec, and the wire/canonical forms. The host (HOST-HANDOFF) calls it through `Turn.lean` and `Package.lean`; JSON exists only at the process boundary.
+The kernel is the Objective Bend edition: source text to a checked typed packet, a demand machine with a tick tariff, a checkpoint codec, and the wire and canonical forms. The host (HOST-HANDOFF) calls it through `Turn.lean` and `Package.lean`; JSON exists only at the process boundary.
 
-- Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV2, DemandCollect and proofs).
-- Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
+- Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV2, DemandCollect and the proofs). Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
 - Binary: `.lake/build/bin/delvetalk-obend` (`lake build`; `make build` also builds the proof-only modules in `PROOF_ONLY`). No `sorry` in `spec/`.
-- Needed first: ops (section 2), `Bounds` limits (section 4), tariff (section 5), `Data` universal type, `textJoin`, `refuse`, `form` blocks, `write {…}`, string interpolation, `layer over` (section 8).
+- One dialect (§21): an activity is `Activity<A>` = `computation Message Data A`; its only yields are world calls `world.X(arg)` / `world.X::<T>(arg)` against `world/lib/World.obend`'s `protocol world` (§17), each resumed at its site's type. Surface `perform` and `Activity<P, R, A>` are refused by name.
+- The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`.
+- Relations (§14, §22): law atoms `insertOnly`, `count`, column membership; `insert`/`upsert`/`retract` in `write {...}`; `canonicalCompare`; the artifact's `relations: [{field, key, limit, retain?}]`, evaluated once per package.
 - Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
-- Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
-- Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
-- Tests: 1,053 `def test_` across `tests/test_*.py` (lane/kernel8). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
-- Open: section 9.
+- Checkpoints: edition v3 only (`decodeCheckpoint`), with a site prefix; closures trimmed to the slots they read (§19). Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`; `tests/test_artifact_pins.py` guards that world sources keep compiling.
+- Tests: 1,077 `def test_` across 99 `tests/test_*.py` files. Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_world_calls`, `test_protocols`, `test_canonical_compare`, `test_artifact_pins`.
+- Open: §9 and the queue in §16 (the form-input refusal; `textWords` only if asked; lazy state after launch, §15).
 
 ## 0. Working rules
 
@@ -37,7 +37,7 @@ Pipeline for `compile`: source -> (document templates, text) -> `ObjectiveBendPa
 | Driver / `accept` | `Compiler/ObjectiveBendFrontEnd.lean` | `Diagnostic {stage, message, span, sourceModule, hint, definition, expected, found}`. Stages: `objective-source-parse`, `objective-core-elaboration`, `objective-typed-check`, `document-template`, `package-request`. |
 | Blame | `Compiler/ObjectiveBendBlame.lean` | `explain`, `locate`, `Naming.render`: diagnostics only; acceptance is `check`'s. |
 | Term wire | `Compiler/ObjectiveBendTermWire.lean` | `ATerm.json` <-> `Typing.decodeTerm`. The evaluators' array form differs (section 6). |
-| Core terms | `Theory/ObjectiveBendOpenRecursion.lean` | `Term` (27 constructors, incl. `unary`, `inject`, `case`, `ifBool`, `perform`, `done`, `toData`, `textJoin`, `refuse`), `Primitive` (15), `UnaryPrimitive` (3: natText, textLength, sha256Text), `Step`, `Value`. Text prims, `unary`, `toData`, `textJoin`, `refuse` are hosted extensions, not upstream. |
+| Core terms | `Theory/ObjectiveBendOpenRecursion.lean` | `Term` (27 constructors, incl. `unary`, `inject`, `case`, `ifBool`, `perform`, `done`, `toData`, `textJoin`, `refuse`), `Primitive` (17, with `textHasAny` and `textCanonicalCompare`), `UnaryPrimitive` (3: natText, textLength, sha256Text), `Step`, `Value`. Text prims, `unary`, `toData`, `textJoin`, `refuse` are hosted extensions, not upstream. |
 | Types | `Theory/ObjectiveBendTypes.lean` | `Ty`. `isDataUnder bounds rigid fuel seen` / `isPlanUnder`: non-rigid variables unfold through the packet's `bounds` as a greatest fixed point. `Ty.dataFuel` 4096; `Ty.dataFuelFor bounds type` = max of that and the type's size plus its bounds'. |
 | Typing | `Theory/ObjectiveBendTyping.lean` | `PartialTyping`, `infer`, `check`, `decodePacket`, `decodeTerm` (`termNestingCapacity` 4096), `Assumptions {bounds, shareableVariables, rigid}`. The `decide`d rule examples at the end are the regression suite for effect rules. |
 | Machine | `Theory/ObjectiveBendDemandMachine.lean`, `…MachineFast.lean` | `State {heap, control, stack}`, `Cell`, `Frame`, `Control` (incl. `yielded`, `nativeApplication`, `refused`), `stepRaw`, `runBounded`, `resume`. `Fast` is a proved-equal faster stepper. |
@@ -87,7 +87,7 @@ Turn API in Lean (`spec/Delvetalk/Turn.lean`): `startActivity packet args bindin
 
 Held entries (`Delvetalk/Entry.lean`): `CheckedEntry {pin, source, checked, fuel}` (`.type`, `.ofPacket`, `.apply`). `Package.prepareRequest j`, `Package.compileEntryFrom request entry` (`{artifact, entry, laws}`), `Package.compileEntry`, `Package.executeDataEntry entry args limits`, `Package.executeEntry`. None decodes the packet or re-checks the package.
 
-Annotations: injecting a variant argument or response needs per-injection annotations (`annotateData`, an `AnnotationTree` shaped like the literal, built by `Turn.quoteAt`/`shapeTree`); the checker rejects an unannotated `inject`. A turn argument is checked at `Delvetalk.argumentFuel` = the entry's fuel plus twice the literal's `Term.nodes`. Every data-typed argument is checked with `conformsUnder` first: "turn refused: argument does not conform to its type" (the host maps it to `typeMismatch`).
+Annotations: injecting a variant argument or response needs per-injection annotations (an `AnnotationTree` shaped like the literal, built by `Turn.quoteAt`/`shapeTree`); the checker rejects an unannotated `inject`. A turn argument is checked at `Delvetalk.argumentFuel` = the entry's fuel plus twice the literal's `Term.nodes`. Every data-typed argument is checked with `conformsUnder` first: "turn refused: argument does not conform to its type" (the host maps it to `typeMismatch`).
 
 Artifact extras: `methods` (`Package.methodTable`; `stackMethodTable` for a layer stack: every layer's methods, top first), `law` shape, `laws: [{name, reading}]` (`Package.lawTable`, one per enforced law, source order, key absent without laws), `Limits.lawTicks`.
 
@@ -125,7 +125,7 @@ Every machine transition costs 1 tick. Before a text primitive runs, `forceHoste
 - `textSpan/textBreak`: `1 + perScalar*visited`, perScalar = `2*(|alphabet|+2)`; refused up front if the cap cannot cover the scan.
 - `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`. `natText n`: `1 + bits^2`. Everything else: 1 tick.
 
-`tests/test_tariff.py` pins the numbers (bump turn 56 + 10; 64-field spell parse 79,583; `Document.plain` over 1,025 leaves 129,272; 1,025-rain Bell card 76,485); update them with a reason when they move. Profile before optimizing the interpreter: the spell parse was 81% text primitives.
+`tests/test_tariff.py` pins the bump turn (73 + 10 ticks since day 4) and `Document.plain` over 1,025 leaves (129,272); library workloads are bounded where that code is tested (`test_hub`: glm's 1,788-character reply under a bell under 20,000 ticks, the directory's reading under 250,000). Update a pin with a reason when it moves. Profile before optimizing the interpreter: the Bend spell parse was 81% text primitives, and the host parses spells now.
 
 Quadratic idioms to avoid: `Lists.append xs x` in a loop; `Lists.length` in a loop; left folds of `textConcat` (use `textJoin`); character walks with `textDrop` (copies the suffix each step, in bytes).
 
@@ -151,18 +151,18 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 
 - `Data` (`Ty.data`, `Term.toData`, `Data.of::<T>(value)`): any well-formed first-order data (`Data.wellFormed`), produced only by `toData`; no elimination (`data_not_eliminated`). Runtime: `toData` is its value. Turn arguments are quoted by their declared type at every depth (`Turn.quoteAt`). Implicit injection (`coerceAt`/`coerceArgs`/`coerceGo`): where `Data` is expected and the expression has type `T`, the term is wrapped `toData T`; a value whose type holds an arrow or computation is refused by name ("refused (data-injection): …"). `Plan.obend`'s `call`/`send`/`create` payloads are `Data`. The typed-data schema has `Schema.data`; admission charges `admissionWork` and refuses "typed data value at Data repeats a record field".
 - `textJoin(list, sep)`: `Term.textJoin`, frames `joinSeparator/joinList/joinCons/joinHead`, typing `Ty.isTextList`, meaning `textJoinExpansion`.
-- Type-argument inference (`Generics.lean`, `inferArguments`, `synthI`): a call of a generic without `::<…>` gets the arguments its explicit spelling names, then is rewritten exactly as that spelling (instance numbers and packets agree; the generics pass visits children in the old JSON's sorted-key order, and changing that order moves every pin with a generic instance). A parameter left unbound is refused: "cannot infer the type argument U of Lists.kept …; write Lists.kept::<T, Rain>(…)". `maxInferenceSteps` bounds it. `world/` uses no `::<` and no `Data.of`.
+- Type-argument inference (`Generics.lean`, `inferArguments`, `synthI`): a call of a generic without `::<…>` gets the arguments its explicit spelling names, then is rewritten exactly as that spelling (instance numbers and packets agree; the generics pass visits children in the old JSON's sorted-key order, and changing that order moves every pin with a generic instance). A parameter left unbound is refused: "cannot infer the type argument U of Lists.kept …; write Lists.kept::<T, Rain>(…)". `maxInferenceSteps` bounds it. `world/` writes `::<T>` only where a world call's result type cannot be inferred (`world.view::<S>`, `world.call::<R>`, `world.interpret::<R>`) and never `Data.of`.
 - `let label(x) = world.METHOD(arg)` then the rest of the block: lowers to `match world.METHOD(arg): case label(x): …` plus a `Pattern.unexpected` branch expanded to `case l(_): refuse("unexpected response l")` per other label. The scrutinee must be a world call ("refused (let-response)").
 - `Term.refuse (reason)`, surface `refuse("why")`: stands only where an activity finishes ("refused (refuse-outside-tail)", "refused (refuse-outside-activity)"). Typing rule `PartialTyping.refuse`; machine `control := .refused (.program r)`, `Turn.refusalText` = "turn refused: <reason>". `evaluate-term` reports `stuck`.
 - Law readings: `law NAME "reading": EXPR`; `Surface.Decl.law name source reading`.
 - String interpolation (`interpolationPieces`/`joinPieces`): `{expr}` in a string; up to four pieces lower to nested `textConcat`, more to `textJoin(TextPieces…, "")`. `{{`/`}}` are literal braces; a lone `}`, an unclosed `{` and two expressions in one pair of braces are refused by name. Document templates quote braces as `{`/`}`.
-- `form ACTION [as NAME]:` blocks (`formRe`/`formKind`): fields `name: text A..B | natural A..B | source | a | b | c` (`source` is `F.Kind.source({})`, Bend source the host reads as text of 1 to `Host.Limits.formSourceMax` 16,384 characters and fills from a reply's ```obend fence; Form.obend's `source: {}` case is the objects lane's) declare `def NAME() -> F.Form` (default `ACTIONForm`) from the module's alias `F` of `Form.obend`; refused by name without a Form import or with an unknown kind.
+- `form ACTION [as NAME]:` blocks (`formRe`/`formKind`): fields `name: text A..B | natural A..B | source | a | b | c` (`source` is `F.Kind.source({})`, Bend source the host reads as text of 1 to `Host.Limits.formSourceMax` 16,384 characters and fills from a reply's ```obend fence; the Workshop's `check` and `propose` declare it) declare `def NAME() -> F.Form` (default `ACTIONForm`) from the module's alias `F` of `Form.obend`; refused by name without a Form import or with an unknown kind.
 - `write {field: op value, …}`: the world call `world.write(extend(keep(), {…}))` with ops `add`, `set`, `append`, `remove`, `amend ITEM with CHANGE`, `removeItem`, `insert`, `upsert`, `retract` (`remove` and `amend` as §22 says). Needs a nullary `keep()`; `P` is the module's alias of Plan.obend (placeholder `$plans`, replaced by `Surface.Decl.mapVars`).
 - `layer over ./X.obend` must be a module's first line (else refused "…is the module's first line"); it imports `X` as `Super`. Every declaration is a field of one knot, so a layer's `L.f` overrides `B.f`: `B.f` holds `self.L.f`, the old body moves to a hygienic `B.f#below`, and a layer's `Super.f` resolves to the key below. `checkOverrides` refuses a retyped override ("refused (layer-override): L.f is …, but it overrides B.f, which is …"). Unlayered packets are byte-identical. `Elaborated.select` takes an entry the top layer lacks from the topmost layer defining it. Tests: `test_layers`.
 - Located refusals: every refusal of an elaborated package names `definition`, `module`, `span`; a type refusal `expected` and `found` in surface syntax, with `hint` (`blameHint`: a record where its field was expected, a function waiting for arguments, too many arguments, a missing field, an unknown case). Core `Expr`/`Body` carry the surface span as an implicit `{span}` field; `ATerm.located` is transparent to `json`, `erase`, `annotate`, `mapTypes`, `knotNames`. Generic instances are placed at their generic declaration (`Origins`, `FrontEnd.originsOf`). Test: `test_located`.
 - Dialect hints (`Delvetalk/Hints.lean`, `Diagnostic.hint`): only on refusals, at the named line for a parse refusal, at the Surface declaration holding the named line otherwise. `Hints.hintFor` never fires on a typed-packet checker refusal; `blameHint` does. Test: `test_hints`.
 - Compile performance structure: package knot holds only what the entry reaches (`Elaborated.select`, `Output.knotRow`; `globalRow` stays whole for the method table and law shape); the whole closure is checked once per package (`checkClosure`: every template and the knot of every declaration as one term) without rendering a packet (`directSource`/`checkDirect`); an entry goes JSON -> `decodePacket` -> `check`. Row width is charged by `typeRowCapacity`, so an entry may reach any number of definitions. Interning: `PTy.internSlot` keyed by constructor, strings and child slots (`InternKey`); the derived `Hashable PTy` rehashes subtrees and is quadratic. `agree` decides through `sameTypeShared` before canonicalizing. `compile-profile` (`spec/CompileProfile.lean`, `lake build compile-profile`) gives stage timings, a loop mode for `perf`, `self-check`, `sha`.
-- `tests/test_artifact_pins.py` compiles every non-generic entry of every world closure and compares against `tests/fixtures/pins/artifacts.json` (`{module: {pin, entries: {def: {status, packet?}}}}`, 43 modules, 1124 defs on 2026-10-09). It fails only when a module's source pin changes or a def that compiled stops compiling; packets that recompile differently are counted and printed. Re-record only when `world/` changes: `DELVETALK_OBEND=… python3 -m tests.test_artifact_pins --record`.
+- `tests/test_artifact_pins.py` compiles every non-generic entry of every world closure and compares against `tests/fixtures/pins/artifacts.json` (`{module: {pin, entries: {def: {status, packet?}}}}`, 43 modules and 1,036 defs at 189b534). It fails only when a module's source pin changes or a def that compiled stops compiling; packets that recompile differently are counted and printed. Re-record only when `world/` changes: `DELVETALK_OBEND=… python3 -m tests.test_artifact_pins --record`.
 - `Package.localize` still localizes spanless refusals in `check-package`; located refusals make it rare.
 
 Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): Garden (11 modules, 78 KB) first entry 48 ms, further entries about 9 ms, `check-package` 45 ms. Re-measure before relying on them.
@@ -195,9 +195,8 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
   then refuse a door to a module whose artifact lacks `Card`. Test: `tests/test_protocols.py`.
 - Fixed on the way: `Surface.Module.mapSpans` (document-literal span remapping) rebuilt
   the module from imports and decls only, dropping `layerOver`; it keeps every field now.
-  `tests.test_extend.LouderBell` (Louder grafted over Bell through the host, Bell's
-  `receive` rendering Louder's card) was marked an expected failure and now passes; the
-  marker is removed.
+  `tests.test_extend.LateBinding` (Louder grafted over Bell through the host, Bell's
+  `receive` rendering Louder's card) was an expected failure and passes.
 - `textHasAny(text, words: List<String>) -> Bool` (hosted primitive `Primitive.textHasAny`,
   checkpoint code 16): whether a word of the list is a whole word of the text. Words are
   maximal runs of ASCII letters, digits and non-ASCII scalars (`textWordChar`), ASCII
@@ -223,7 +222,7 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
   state) is written absolute from everywhere, data near its holder relative, so a region
   that moved as a whole encodes the same. Proofs: `ofRelative_toRelative`,
   `mapValue/Cell/Frame/Control_inverse`, `absolute_relative`, `stateV3_roundTrip`
-  (`ObjectiveBendCheckpointV2RoundTrip.lean`); v2 still decodes. Measured:
+  (`ObjectiveBendCheckpointV2RoundTrip.lean`); v2 decoded beside it until day 4 (§21). Measured then:
   `tests.test_suspension_size` nine speakers median 11,440 -> 10,223 bytes, edit runs
   between consecutive checkpoints 21-107 -> 15-22; one speaker 7,101 -> 8,161 (the
   same 4-6 edits; checkpoints are 8% more tokens, so its fresh blocks are larger). The
@@ -302,7 +301,7 @@ codec case each.
 that forced half a list checkpoints forced rows as `nativeCached` (their data inline,
 the "forced cells only" the brief asks) and unforced ones as handles naming the version
 read at the turn's start. On resume an unforced row is fetched at that version: the host
-must answer old versions (it can: `world-object {version}`, HOST-HANDOFF 5.42) or, more
+must answer old versions (it can: `world-object {version}`, HOST-HANDOFF 5.7, and `viewAt`, 5.47) or, more
 simply, treat a resumed fetch of a row changed since as a stale root and refuse/re-run
 the turn, as a moved root does today.
 
@@ -327,55 +326,14 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
-## 16. Queue for the successor (lane/kernel8, after foundation 61dd81a)
+## 16. Queue for the successor (after lane/kernel9)
 
-Done: item 1 checkpoint trimming (kernel7, §19); item 2 the checker over an annotation tree and
-type equality by shared subtrees (§20); item 3 `relationsOf` once per prepared package, item 4
-`limit`/`retain` in the artifact's `relations`, item 5 `remove`/`amend` by item and `retract`
-on a relation (§22); item 6 day 4, the message dialect alone (§21); the `source` form kind
-(§8). Remaining, in order:
+Done, each in its own section: checkpoint trimming (§19); the checker over an annotation tree and type equality by shared subtrees (§20); day 4, the message dialect alone (§21); `relationsOf` once per package, `limit`/`retain` in the artifact, `remove`/`amend` by item and `retract` on a relation (§22); the `source` form kind (§8); the State is the schema, derived `Edits`/`keep()`, form-block inputs, derived `forms()` and `fixed` fields (§23). Remaining, in order:
 
-7. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a
-   native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both
-   codecs).
-8. **The State is the schema.** Surface below, reported for the three lanes BEFORE
-   implementing; implement once the root approves it. Lowering only, in the generics pass
-   (types resolved there); pins move for the objects that change; a test per claim.
-
-   a. *Edits and `keep()` are derived from `State`.* In a module that declares `record State`
-      and imports Plan.obend (alias `P`), and declares neither `Edits` nor `keep`, the kernel
-      adds `record Edits` with one field per State field, in State order, and
-      `def keep() -> Edits` keeping every field:
-      - a field whose type resolves to `List.List<X>` or `Relation.Relation<X>` (the library
-        sums, by module and name, through any alias) is `P.Entries<X, X>` (`amendItem`'s change
-        is a whole new item; today 23 fields say `{}` and never amend, 9 say `X`);
-      - a `Nat` field is `P.Edit<Nat, Nat>` (`add` takes a Nat delta);
-      - any other field is `P.Edit<T, {}>` (`set` and `keep`).
-      `keep()` is `{f: P.Edit::<T, D>.keep({}) | P.Entries::<X, X>.keep({}), ...}`. A module
-      that declares `Edits` or `keep` beside `State` is refused by name ("refused
-      (derived-edits): Edits is derived from State; delete this declaration"), so there is one
-      schema. Without a Plan import the derivation is refused by name when `write {...}` or
-      `keep()` is used. `write {f: op v}` and `world.write(extend(keep(), {...}))` are
-      unchanged; the edits type is `Edits` as before.
-   b. *`initial()` is the only constructor.* Nothing in the kernel: `def initial() -> State`
-      stays the one state constructor the host compiles, and the host already lays a creator's
-      partial seed over it. `Seed`, `defaultSeed()` and `seeded(seed)` are conventions the
-      objects lane deletes; a creator's seed is `Data`.
-   c. *A method's form block is its input type with its bounds.* `form NAME [as VALUE]:`
-      declares, besides the Form value `VALUE()` (default `NAMEForm`, unchanged), the record
-      type `NameInput` (NAME capitalized) of its fields: `text A..B` and `source` are `String`,
-      `natural A..B` is `Nat`, `a | b | c` is a generated closed sum `NameField` (field
-      capitalized) of empty cases `a`, `b`, `c`, and a new kind `T` naming a closed sum of
-      empty cases in scope (`colour: Bell.Colour`) is that sum, offered as a choice of its case
-      labels (so Garden's `Planting` and its form's `amber | violet | silver` stop disagreeing).
-      The method `NAME` takes `input: NameInput` (any other input type for a method with a form
-      block is refused by name, "refused (form-input): plant has a form block, so its input is
-      PlantInput"). Its method-table row gains `form: [{name, kind}]` (each kind the `Form.Kind`
-      as Data, `source` as `{"tag":"variant","label":"source"}`), which the host enforces on
-      spells and direct turns (host lane). `forms()` is derived when the module declares form
-      blocks and no `forms()`: `def forms() -> Lists.List<F.Form>`, the blocks in source order;
-      a hand-written `forms()` beside form blocks is refused by name. A module without form
-      blocks is unchanged (its methods' inputs are their declared types, defaults as today).
+1. **Commit 3 of §23.** Refuse a method whose input type is not its form block's `NameInput` ("refused (form-input): plant has a form block, so its input is PlantInput", `sameTy` after typing, beside `checkProtocols`; drafted as `checkFormInputs`, not in the tree), then refuse a hand-written `Edits`/`keep()` beside a `State` and a hand-written `forms()` beside form blocks. World objects agree already (Deal's `countersign` takes `{}`); every object still hand-writes `forms()`, the objects lane's deletion.
+2. Name a prepared package by its sources CID (§9, first item).
+3. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both codecs).
+4. After launch: lazy state cells (§15), with the host's half of rows as roots.
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -543,8 +501,8 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   files moved to the message dialect (two helpers, reviewed). `def test_` count 1,058 at
   foundation 17b1767 -> 1,052: deleted as old-dialect-only: writing another object
   (`notSelf`, three tests: `world.write` names no object), a non-Plan sum as the Plan, the
-  `denied` interpretation (World's `Interpreted` has no `denied`; the host still answers it:
-  a host/objects decision), the two typed-view tests; added: the two refusals above.
+  `denied` interpretation (World's `Interpreted` had no `denied` then; it has one again, the host
+  answers it, and Garden and the Directory refuse it as policy), the two typed-view tests; added: the two refusals above.
   `test_tariff` bump: 56 + 10 -> 73 + 10 ticks (a `Message` record and a `Data` injection
   where a sum injection was).
 - Pins re-recorded once (`tests/fixtures/pins/artifacts.json`): every world source had moved
@@ -563,8 +521,7 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
 - The artifact's `relations` entries are `{field, key, limit, retain?}`: `limit` the Decl's
   Nat (0, the host's default, when the Decl has none), `retain` the Decl's retention as text
   (a String field or a case label) only when it declares one; a non-Nat limit is refused
-  "relations(): a limit is a Nat". The host's own `parseDecls` (Ops.lean) reads the same fields
-  from the evaluated value; it could read the artifact instead (host lane). Test:
+  "relations(): a limit is a Nat". The host reads them from the artifact (`declsOfArtifact`, Ops.lean; host11). Test:
   `test_sugar.Relations`.
 - `write {f: remove v}` is `removeItem {item: v}`, or `retract {key: v}` when the module's
   `State` types `f` as a `Relation<…>` (the parser emits the marker `$remove` and
@@ -576,7 +533,7 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
 
 ## 23. The State is the schema (lane/kernel9, §16 item 8)
 
-- 8a, derivation. `Generics.derivedEdits` (a probe pass over the package whose state is dropped)
+- 8a, derivation. `Generics.deriveEdits` (a probe pass over the package whose state is dropped)
   resolves each State field's type with `typeOf` and writes, for a module declaring `State` (a
   record, or `type State = M.S` naming one) that imports Plan.obend and declares neither `Edits`
   nor `keep`, the source of §16's pair, parsed by `parseObjective` at the State's span. A list or
@@ -589,7 +546,7 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   (pins: 0 recompiled, including Places and Seats, which gain an unused pair). A module with a
   State, no Plan import and a `keep()` call (every `write {…}`) is refused by the parser
   ("refused (derived-edits): write {...} and keep() derive Edits from State through the Plan
-  library"). A hand-written pair is still accepted. Tests: `test_sugar.DerivedEdits` (derived
+  library"). A hand-written pair is still accepted (refusing it is §16 item 1); no object in world/ writes one since objects10. Tests: `test_sugar.DerivedEdits` (derived
   = the pair written at the end of the module, for a write, `keep` and `initial`; `keep()` runs
   to a keep per field in State order; `type State = Lib.State`; the two refusals).
 - With every hand-written `record Edits` and `def keep() -> Edits` deleted from world/objects (a
@@ -618,14 +575,13 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   package (bounds are package-wide), so a module that drops its `forms()` moves its packets
   only if nothing else names that list. Tests: `test_sugar.FormInputs`; `test_sugar.Forms`'s
   explicit spellings now include the `forms()` the block derives.
-- Not yet enforced (commit 3, with the refusal of hand-written pairs): "refused (form-input):
-  plant has a form block, so its input is PlantInput", by `sameTy` of the method's input and
-  `NameInput` after typing (`checkFormInputs` beside `checkProtocols`, drafted). In world/ only Deal
-  disagrees: `form countersign:` has no fields and `countersign` takes `{post: String}`.
-  Structurally, Garden's `Planting` already equals `PlantInput` (`amber | violet | silver` is
-  `Bell.Colour`). With `forms()` also deleted from objects: Counter and Loop import no
-  List.obend (derived `forms()` refused by name); Cistern, Seat, Table and Workshop have no form
-  blocks and keep theirs.
+- Not yet enforced (§16 item 1): "refused (form-input): plant has a form block, so its input is
+  PlantInput", by `sameTy` of the method's input and `NameInput` after typing (drafted as
+  `checkFormInputs`, not in the tree). World objects agree: Deal's `countersign` takes `{}`
+  (objects10), and Garden's `Planting` equals `PlantInput` (`amber | violet | silver` is
+  `Bell.Colour`). Deleting the hand-written `forms()`: Counter and Loop import no List.obend
+  (derived `forms()` refused by name); Cistern, Seat and Table have no form blocks and keep
+  theirs; the Workshop's `forms()` lists exactly its two blocks.
 - `fixed` State fields (coordinator's addition before commit 3). `colour: fixed Colour` in
   `record State` (`Surface.Field.fixed`; anywhere else "refused (fixed): only a State field is
   fixed") is a field the derived `Edits`/`keep()` omit, set only by `initial()` or a seed.
