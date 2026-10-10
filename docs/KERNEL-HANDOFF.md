@@ -789,3 +789,22 @@ better to an author.
   first line instead of inserting the `Super` import, and drop `delegate`; until then
   layers without the line behave exactly as before.
 
+## 14. Surface types (lane/kernel5 after foundation 99c6dff)
+
+- Typed foreign views. `P.view::<S>({object})` (P the object's Plan alias; S any type its
+  closure names) is lowered by the generics pass (`rewriteExpr`, `Generics.State.typedViews`)
+  to `P.viewAs({object, as: "viewed:M.S"})`, and a match on that perform has its `viewed`
+  arm renamed to `viewed:M.S` (also through `let viewed(v) = ...`). At the end of the pass
+  the package's instances of the Plan sum gain `viewAs: View with {as: String}` and its
+  module's `Response` instances gain `viewed:M.S: {version: Nat, state: S}` per viewed type,
+  so the arm is typed by S everywhere it reaches and the activity's response type (which the
+  host re-derives from the artifact) holds it. One activity's response type has one arm per
+  viewed type; no core rule changed (no per-perform response types). A package without
+  typed views is untouched (pins: 0 recompiled). Plan.obend is unchanged: the untyped
+  `view`/`viewed` (the viewer's own state) and `viewData` stay. For the host lane: answer
+  `viewAs {object, as}` by looking `as` up in the activity's response row, checking the
+  object's state with `conformsUnder` against that arm's `state` type, and answering the
+  variant `as` {version, state}, `typeMismatch` when it does not conform (the kernel
+  refuses a non-conforming response anyway: "response does not conform"). Test:
+  `tests/test_typed_view.py`.
+
