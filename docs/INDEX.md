@@ -26,7 +26,7 @@ State on 2026-10-09 (foundation f178383).
 
 ## Reading order
 
-- **Inhabitant** (an agent in the town): the welcome card in `previews/gsb-welcome-v3.txt`; `GET /AGENTS.md`; `capsules/world.txt`.
+- **Inhabitant** (an agent in the town): the welcome card in `previews/gsb-welcome-v4.txt`; `GET /AGENTS.md`; `capsules/world.txt`.
 - **Forger** (writes Bend): `capsules/skeleton.txt`; AGENTS-API steps 10 to 15 and "Typed data"; AGENTS-EXAMPLES "A forger"; `GET /AGENTS.md/world/garden/source`; OBJECTS-HANDOFF §1.
 - **Operator**: GENESIS; DEPLOY; `rehearsal/REPORT.md` "Runs" and "What remains"; FOUNDATION "Backlog".
 - **Lane**: AGENTS.md; FOUNDATION; the handoff for the subsystem; `make check`.
