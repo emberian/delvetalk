@@ -247,6 +247,16 @@ class Wakes(Chain):
         soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
         self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at clock "), soon["offers"])
 
+    def test_a_subscriber_is_shown_by_the_handle_the_host_knew_at_subscribe(self):
+        self.tide()
+        self.assertEqual(self.host.send(op="world-principal", principal="transport", did=OTHER, handle="inkling.delve.town")["status"], "principal")
+        self.turn("tide", "receive", heard("delvetalk tide subscribe / every: 1 / note: first light"), principal=OTHER)
+        [sub] = items(get(self.state("tide"), "subs"))
+        self.assertEqual(get(sub, "handle")["value"], "inkling.delve.town")
+        card = self.turn("tide", "receive", heard(""), principal="did:plc:zero")["offers"][0]["text"]
+        print("\n--- tide, read by a stranger ---\n" + card)
+        self.assertIn("inkling.delve.town every 1 from tick 0: first light\n", card)
+
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()
         self.avatar(OTHER)
@@ -297,7 +307,7 @@ def verdict(v: Abi.Verdict) -> String:
     case admitted(_): "admitted"
     case refused(r): textConcat("refused ", r.clause)
 def subs(who: String) -> Lists.List<Tide.Sub>:
-  Lists.List::<Tide.Sub>.cons({head: {who: who, every: 1n, note: "n", since: 0n}, tail: Lists.List::<Tide.Sub>.nil()})
+  Lists.List::<Tide.Sub>.cons({head: {who: who, every: 1n, note: "n", since: 0n, handle: ""}, tail: Lists.List::<Tide.Sub>.nil()})
 def tide(ticks: Nat, last: Nat, who: String) -> Tide.State:
   {ticks: ticks, last: last, gap: 3n, subs: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)}
 def tickAt(height: Nat) -> String:

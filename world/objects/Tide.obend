@@ -9,11 +9,14 @@ import ./Card.obend as Card
 # subscriber is the turn's principal, never an argument); anyone may tick, but a tick
 # sooner than `gap` clock units after the last is refused tooSoon, naming when the next may
 # come. A tick sends each due subscriber's Avatar (its id is the DID) a note.
+# handle: the subscriber's handle as the host knew it at subscribe, shown as a bell
+# shows its planter's.
 record Sub:
   who: String
   every: Nat
   note: String
   since: Nat
+  handle: String
 record State:
   ticks: Nat
   last: Nat
@@ -45,7 +48,7 @@ def ownSubs(old: Lists.List<Sub>, new: Lists.List<Sub>, principal: String) -> Bo
 def changedSub(old: Lists.List<Sub>, head: Sub, rest: Lists.List<Sub>, principal: String) -> Bool:
   match old:
     case nil(_): head.who == principal && ownSubs(old, rest, principal)
-    case cons(o): (o.head.who == head.who && o.head.every == head.every && o.head.note == head.note && o.head.since == head.since || head.who == principal) && ownSubs(o.tail, rest, principal)
+    case cons(o): (o.head.who == head.who && o.head.every == head.every && o.head.note == head.note && o.head.since == head.since && o.head.handle == head.handle || head.who == principal) && ownSubs(o.tail, rest, principal)
 def defaultSeed() -> Seed:
   {gap: 1n}
 def seeded(seed: Seed) -> State:
@@ -85,7 +88,7 @@ def doneLine(done: Done) -> String:
     case tooSoon(t): "Too soon: the next tick may come at clock {natText(t.next)}.\n\n"
     case refused(r): "refused {r.clause}: {r.reading}\n\n"
 def subscribed<T>(state: State, every: Nat, note: String, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
-  if every == 0n then told(refused(Why.everyZero({})), card, then) else subscribing(state, Lists.find(state.subs, fn(s: Sub) -> Bool: s.who == context.principal), {who: context.principal, every: every, note: note, since: state.ticks}, context, card, then)
+  if every == 0n then told(refused(Why.everyZero({})), card, then) else subscribing(state, Lists.find(state.subs, fn(s: Sub) -> Bool: s.who == context.principal), {who: context.principal, every: every, note: note, since: state.ticks, handle: context.handle}, context, card, then)
 def subscribing<T>(state: State, found: Lists.Maybe<Sub>, sub: Sub, context: Abi.Context, card: Document.Document, then: Done -> T) -> Activity<Plan, Response, T>:
   match found:
     case some(s): subWritten(Plans.Entries.amendItem({item: s.value, change: sub}), sub.since, context, render(extend(state, {subs: Lists.map(state.subs, fn(old: Sub) -> Sub: if old.who == sub.who then sub else old)}), context), then)
@@ -139,7 +142,7 @@ def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<P
     case act(a): if a.action == "tick" then ticked(state, context, render(state, context), doneReply) else subscribed(state, Card.natural(a.fields, "every"), Card.text(a.fields, "note"), context, render(state, context), doneReply)
     case _: Card.answer(routed, context, forms(), render(state, context))
 def line(context: Abi.Context) -> Sub -> Document.Document:
-  fn(sub: Sub) -> Document.Document: Document.text("{Card.name(sub.who, context)}{Card.mine(sub.who, context)} every {natText(sub.every)} from tick {natText(sub.since)}: {sub.note}\n")
+  fn(sub: Sub) -> Document.Document: Document.text("{Card.shown(sub.who, sub.handle, context)}{Card.mine(sub.who, context)} every {natText(sub.every)} from tick {natText(sub.since)}: {sub.note}\n")
 # The card as the reader in the context sees it (the host's card {object} passes the reader).
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("TIDE at tick {natText(state.ticks)}, last at clock {natText(state.last)}; the next no sooner than {natText(state.last + state.gap)}\n"), tail: Card.clipped(Lists.map(state.subs, line(context)), 8n)})})
