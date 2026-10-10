@@ -303,6 +303,23 @@ The same operations have a command-line face for the owner's assistant over ssh:
   Anyone else's post is refused before any call.
 - `log [--tail N]`: the last actions in `hand-log.jsonl`.
 
+Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/root/` (a red rule
+across the top, a reason or reading required on every form, served on the hand's listener only, linked from `/hand/`):
+
+- `quiet --who P --hours N`, `unquiet --who P`, `retire|unretire|hide|show --object O`, `revoke --grant G`, `expire
+  --scratch S` (refused until scratch worlds exist), each `--reading R`: the power as a turn by the opener on
+  `world` or the card, journaled and receipted. `settings [--postQuota N] [--interpretQuota N] [--modelQuota N]
+  --reading R`: `world-settings`. `modlog [--object O] [--tail N]`: the object's `world-history`, or the journal's
+  newest root, moderated and opener entries. `find TEXT`: observed handles, object ids by prefix, a receipt by slug.
+- `root dump O`: the object as the opener reads it (view, record, sources; the page's editor saves a `set` for each
+  changed field). `root set --object O --field F --value JSON|--value-file F`, `root delete --object O`, `root as
+  --principal P --object O --method M --argument JSON --intent I`, `root settings [--clock N] [--postQuota N]
+  [--interpretQuota N] [--modelQuota N]`, `root library --dir D`, `root ignore|unignore --height N`, `root card
+  --object O [--text-file F]` (no text clears), `root quiet|hide|show|retire|unretire|revoke ...`, each `--reason R`:
+  one `world-root`, an entry marked `root` with its reason, public. `root entries [--after N] [--object O]
+  [--principal P]` pages the journal raw; `root edit N [--journal J] [--out F]` saves entry N and prints the offline
+  `root-edit rewrite`, since an entry is never edited in place.
+
 The command-line way remains: `python3 -m transport.bridge outbox --state STATE` prints each draft with its own
 `post.py` command.
 
@@ -531,8 +548,8 @@ channel (hob's register: what happened and what to do next, no apology) and what
 `/opt/delvetalk` on the workhorse after `set -a; . ./.env; set +a`; `hand` is `docker compose --profile ops run --rm -v
 "$DELVETALK_WATCH_ZULIPRC:/run/watch/zuliprc:ro" delvetalk-ops python3 -m transport.hand` (the ops container names the
 state and the root socket; the bot's rc is mounted where `unpost --zuliprc` reads it). A and F lose data if done in the wrong order: both stop the writers first. The
-moderation verbs named "when ROOT section 3 lands" (`quiet`, `retire`, `hide`, `find`, `settings`) are the host
-lane's; until then their fallback is given.
+moderation verbs (`quiet`, `retire`, `hide`, `find`, `settings`) are the hand's, over the host's powers (ROOT section 2,
+replay edition 3); root is one click further (`hand root ...`, `/hand/root/`).
 
 **A. The host will not start.** Healthcheck red; every reply "host unavailable".
 
@@ -563,8 +580,7 @@ On Zulip the bot posts itself; stop it first, then withdraw what it said:
     hand unpost DRAFT --reason 'misread' --zuliprc /run/watch/zuliprc
     docker compose --profile town up -d --wait delvetalk-bridge
 
-If a card's own render is the cause, retire it (`retire`, when ROOT section 3 lands; until then stop the bridge and
-leave it stopped). Channel: `hob: the hand withdrew that; its receipt stays.` Record: the object and the receipt.
+If a card's own render is the cause, retire it: `hand retire --object OBJ --reading 'it loops'` (`unretire` reverses). Channel: `hob: the hand withdrew that; its receipt stays.` Record: the object and the receipt.
 
 **C. The model is down.** Interpretations pile up (the watch's `interpretations` line); the host retries with backoff
 to 60 clock minutes, 8 attempts, then `unclear: model: transport`; spells are unaffected.
@@ -578,21 +594,21 @@ words for now; a spell needs no reading. The cards still answer.` Record: the ho
 
 **D. A quota is exhausted.** Which one: `hand status --json` (`reservations`, `hour.refused.quota`, `model.day`).
 
-- posts on Delve (`16 of 16`, drafts held `rate_limited`): wait for `next`, or raise `postQuota` (`settings --post N`,
-  when ROOT section 3 lands).
+- posts on Delve (`16 of 16`, drafts held `rate_limited`): wait for `next`, or raise it: `hand settings --postQuota N --reading R`.
 - interpretations per principal (48 an hour, `quota` refusals with `next`): the resident is told by the host; nothing
   to do unless it is a loop, which is B.
-- the model cap per day: the world's words wait for the clock day to turn; `settings --model N` with a reading, when
-  ROOT section 3 lands. Channel: `hob: my readings for today are spent; spells run as they always do.`
+- the model cap per day: the world's words wait for the clock day to turn, or `hand settings --modelQuota N --reading
+  R`. Channel: `hob: my readings for today are spent; spells run as they always do.`
 
 Record: which quota, and whether it was a loop.
 
-**E. A resident is abusive.** `quiet WHO --hours 24 --reading R` when ROOT section 3 lands; a card that carries it is
-hidden then retired (`hide`, `retire`). What the bot already said on Zulip:
+**E. A resident is abusive.** `hand quiet --who DID --hours 24 --reading R` (their turns are refused `quiet` until the
+clock passes; `hand root quiet --principal DID --hours 0 --reason R` lifts it while the power's `unquiet` is refused by
+the host); a card that carries it is hidden then retired (`hand hide --object OBJ --reading R`, `hand retire ...`). What
+the bot already said on Zulip:
 
     hand unpost DRAFT --reason 'abuse' --zuliprc /run/watch/zuliprc
 
-Until `quiet` lands: `hand skip` their drafts on Delve, and on Zulip stop the bridge (B) while the hand decides.
 Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt.
 
 **F. The box is full.**
