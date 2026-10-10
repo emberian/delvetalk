@@ -1339,6 +1339,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       else
         let shown := [("pin", Data.label o.pin), ("law", .label o.lawText), ("source", .label (entrySource o))]
         let id := ((f.lookup "object").bind referenceId).getD ""
+        -- What the turn learnt (pin, law, source) is the object's now: a root (codex host 11).
+        recordRoot id o.version
         respond bounds responseType "inspected"
           [.record (shown ++ [("methods", listData (← formsOf id o))]), .record shown]
   | .variant "objects" (.record f) =>
@@ -1395,6 +1397,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         | .record fields => fields.any (·.1 == name)
         | _ => false
       if !has then refusedWith bounds responseType "field" else
+      -- A subscription checked the field: a root on it (codex host 11), so a migration that drops
+      -- it, or any write of it, makes a waiting turn's subscription stale.
+      if !ending then recordFieldRoot id name o.version
+      let s ← get
       let x : Subscription := { subscriber := self, principal := s.subject, object := id, field := name, method := receiver }
       let standing := ((s.world.subscriptions.getD id #[]).toList.filter (!s.unsubscribes.contains ·))
       let mine := (standing ++ s.subscribes).filter x.sameAs

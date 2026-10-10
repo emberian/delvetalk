@@ -743,6 +743,13 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    each created object's whole state as well as by its writes' growth; a factory chain cannot allocate
    past its ledger. Test: `tests/test_deliveries.py` `test_a_created_child_spends_the_storage_its_sends_inherit`.
 
+97. **`inspect` and `subscribe` read roots (host12; codex host 11).** The `inspect` Plan records the
+   inspected object as a root at its version, so a turn that inspected, waited and commits after the
+   object moved (a reprogram, a write) is `staleRoot` and re-run; `subscribe` records a field root on
+   the subscribed field (as `viewField`), so a waiting subscription is stale after a write or a
+   migration of that field and not after another field's. Tests: `tests/test_changes.py`
+   `test_an_inspected_object_is_a_root_of_the_turn`, `test_a_subscription_reads_its_field`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
