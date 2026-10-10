@@ -440,13 +440,51 @@ def formKind (member : Json) : Option Data :=
 /-- The actions of an object as forms, from its artifact's method table: every method a turn can
     run (it takes a context) whose input is a record of form-expressible fields, among those the package
     declares public (and `receive`): helpers and the other conventional names (`render`, `set`) have none. -/
-def methodForms (id : String) (methods : Json) : List Data :=
+def methodForms (id : String) (methods : Json) (declared : List (String × List (String × Data)) := []) : List Data :=
   ((methods.getArr?.toOption).getD #[]).toList.filterMap fun m => do
     guard ((m.getObjValAs? Bool "context").toOption == some true && isActionRow m)
     let name ← (m.getObjValAs? String "name").toOption
     let fields ← rowFields ((m.getObjVal? "input").toOption.getD Json.null)
-    let kinds ← fields.mapM fun (n, member) => (formKind member).map fun k => Data.record [("name", .label n), ("kind", k)]
+    -- A field the package's form for this action declares takes that kind; any other, its type's.
+    let given := (declared.lookup name).getD []
+    let kinds ← fields.mapM fun (n, member) =>
+      (given.lookup n <|> formKind member).map fun k => Data.record [("name", .label n), ("kind", k)]
     return .record [("card", .label id), ("action", .label name), ("fields", listData kinds)]
+
+/-- A declared form field's kind as the host reads it: `text`, `natural` and `choice` as given, and
+    `source` (Bend source) as text of 1 to `Limits.formSourceMax` characters. -/
+def declaredKind : Data → Option Data
+  | .variant "source" _ => some (.variant "text" (.record [("min", .natural 1), ("max", .natural Limits.formSourceMax)]))
+  | k@(.variant "text" _) => some k
+  | k@(.variant "natural" _) => some k
+  | k@(.variant "choice" _) => some k
+  | _ => none
+
+/-- The kinds the package's pure `forms()` declares, by action and field, and the `source` fields by
+    action; none when its entry module declares no `forms()` or it does not evaluate. -/
+def declaredForms (o : Object) : M (List (String × List (String × Data)) × List (String × List String)) := do
+  if !((entrySource o).splitOn "\n").any (·.startsWith "def forms(") then return ([], [])
+  let some c ← tryCatch (some <$> compiledMethod o "forms") (fun _ => pure none) | return ([], [])
+  let some entry := c.entry | return ([], [])
+  let .ok value := (runPure entry [] Delvetalk.Bounds.lawTicks).1 | return ([], [])
+  let forms := ((listOf value).getD []).filterMap fun
+    | .record f => do
+      let action ← (f.lookup "action").bind labelOf
+      let fields := (((f.lookup "fields").bind listOf).getD []).filterMap fun
+        | .record g => do
+          let name ← (g.lookup "name").bind labelOf
+          let kind ← g.lookup "kind"
+          return (name, kind)
+        | _ => none
+      return (action, fields)
+    | _ => none
+  return (forms.map fun (a, fs) => (a, fs.filterMap fun (n, k) => (declaredKind k).map (n, ·)),
+          forms.map fun (a, fs) => (a, fs.filterMap fun (n, k) => match k with | .variant "source" _ => some n | _ => none))
+
+/-- An object's forms (`methodForms`) with the kinds its `forms()` declares: a spell is judged by the
+    card's own bounds, and the type's default holds only for a field no form names. -/
+def formsOf (id : String) (o : Object) : M (List Data) := do
+  return methodForms id o.methods (← declaredForms o).1
 
 /-- Does the object's method table list `name`? -/
 def hasMethod (o : Object) (name : String) : Bool :=
@@ -698,7 +736,18 @@ def spellArgument (entries : List Spell.Entry) : Data :=
   .record (entries.map fun e => (e.name, match e.value with
     | .text t => .label t
     | .natural n => .natural n
-    | .choice c => .variant c (.record [])))
+    | .choice c => .label c))
+
+/-- A spell's argument for `method` of `o`: a choice is a word, read as the case of that name where
+    the method's input has a closed sum there (`inputWords`), and kept as text where it takes text (a
+    form may offer choices for a `String`). `none` when a word names no case of the type. -/
+def spellArgumentFor (w : World) (o : Object) (method : String) (entries : List Spell.Entry) : Except String Data :=
+  let argument := spellArgument entries
+  match ((compiledMethod o method).run.run (scratchState w)).1 with
+  | .ok c => match inputWords c argument with
+    | .ok a => .ok a
+    | .error (path, word, cases) => .error s!"{path} is one of: {", ".intercalate cases} (not {word})"
+  | .error _ => .ok argument
 
 def bindingsData (bs : List Spell.Binding) : Data :=
   listData (bs.map fun b => .record [("name", .label b.name), ("value", .label b.value)])
@@ -713,8 +762,13 @@ def withFields (w : World) (o : Object) (argument : Data) (fields : List Spell.B
     | .error _ => argument
   | other => other
 
+/-- `formsOf` outside a turn. -/
+def spellFormsData (w : World) (id : String) (o : Object) : List Data :=
+  ((formsOf id o).run.run (scratchState w)).1.toOption.getD (methodForms id o.methods)
+
 /-- The forms a card offers, as the spell grammar reads them. -/
-def spellForms (id : String) (o : Object) : List Spell.Form := (methodForms id o.methods).filterMap Spell.Form.ofData
+def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
+  (spellFormsData w id o).filterMap Spell.Form.ofData
 
 /-- The lenses of a card (WHOLENESS §2: a lens is a form): the fields its pure `lenses() ->
     Lists.List<Form.Field>` names, each with the kind of value it takes, when it also has a `set`
@@ -780,6 +834,26 @@ def lensSpell (w : World) (id : String) (argument : Data) (target : Object) (car
   | _ => .refuse id "unknownField"
       s!"set takes one field a spell, not {", ".intercalate (fields.map (·.name))}" (spellUsage id [] lenses)
 
+/-- The first ```obend fenced block of a reply: the lines after the opening fence up to a line that
+    starts with ```; none when there is none or it is never closed. -/
+def firstFence (text : String) : Option String := Id.run do
+  let lines := text.splitOn "\n"
+  let some start := lines.findIdx? (fun l => (l.dropWhile (· == ' ')).startsWith "```obend") | return none
+  let body := lines.drop (start + 1)
+  let some stop := body.findIdx? (fun l => (l.dropWhile (· == ' ')).startsWith "```") | return none
+  return some ("\n".intercalate (body.take stop))
+
+/-- A spell's fields with a reply's ```obend block as the value of the form's first `source` field it
+    lacks (`Form.Kind.source`): a block and a fenced reply are one value, judged by one bound. -/
+def withFence (w : World) (o : Object) (action : String) (argument : Data) (fields : List Spell.Binding) : List Spell.Binding :=
+  let sources := ((((declaredForms o).run.run (scratchState w)).1.toOption.map (·.2)).getD []).lookup action |>.getD []
+  let text := match argument with
+    | .record fs => ((fs.lookup "text").bind labelOf).getD ""
+    | _ => ""
+  match sources.find? (fun n => !fields.any (·.name == n)), firstFence text with
+  | some name, some code => fields ++ [{ name, value := code }]
+  | _, _ => fields
+
 /-- What a spell naming `card` and `action` with `fields` asks of card `self` (`o`), read for
     `principal`. `retarget`: a direct turn goes to the card the spell names; a call or a delivery
     reads only spells naming the card it was sent to (another is `otherCard`), since its sender chose
@@ -787,13 +861,13 @@ def lensSpell (w : World) (id : String) (argument : Data) (target : Object) (car
 def castSpell (w : World) (principal self : String) (argument : Data) (o : Object) (card action : String)
     (fields : List Spell.Binding) (retarget : Bool) : SpellRoute := Id.run do
   let id := resolveCard principal card
-  let usageHere := spellUsage self (spellForms self o)
+  let usageHere := spellUsage self (spellForms w self o)
   let some target := w.objects[id]? | return .refuse self "otherCard" s!"There is no card {card}." usageHere
   unless target.read.permits principal && (retarget || id == self) do
     return .refuse self "otherCard" s!"There is no card {card}." usageHere
   -- A card of the sum-Plan dialect reads its own replies.
   unless speaksMessages w target do return .run id "receive" argument ""
-  let forms := spellForms id target
+  let forms := spellForms w id target
   let lenses := declaredLenses w target
   if action == "?" then return .usage id (spellUsage id forms lenses)
   -- `set` with one `<field>: <value>` line goes through a lens (`lensSpell`).
@@ -801,8 +875,11 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
     return lensSpell w id argument target card lenses fields
   let some form := forms.find? (·.action == action)
     | return .refuse id "noAction" s!"{id} has no action {action}." (spellUsage id forms lenses)
+  let fields := withFence w target action argument fields
   match Spell.fit (.spell id action fields) form with
-  | .proposal _ _ entries => return .run id action (spellArgument entries) (spellLine card action)
+  | .proposal _ _ entries => match spellArgumentFor w target action entries with
+    | .ok a => return .run id action a (spellLine card action)
+    | .error reason => return .refuse id "badValue" reason (spellTemplate id form fields)
   | .unclear _ => return receiveHeard w id target argument fields
   | .refused clause reason => return .refuse id clause.name reason (spellTemplate id form fields)
 
@@ -819,12 +896,12 @@ def routeSpell (w : World) (principal id method : String) (argument : Data) (ret
   | .spell card action fields => return castSpell w principal id argument o card action fields retarget
   | .notASpell reason fielded =>
     if reason.startsWith "the block <<" then
-      return .refuse id "unclosedBlock" reason (spellUsage id (spellForms id o))
+      return .refuse id "unclosedBlock" reason (spellUsage id (spellForms w id o))
     let bare := Spell.bare text
     -- A reply with no spell line whose first field line names an action or a field of one of this
     -- card's forms is that form's spell (`Card.withBare`).
     let first := if fielded then bare.head? else none
-    let form := first.bind fun b => (spellForms id o).find? fun f => f.action == b.name || f.fields.any (·.name == b.name)
+    let form := first.bind fun b => (spellForms w id o).find? fun f => f.action == b.name || f.fields.any (·.name == b.name)
     match form with
     | some f =>
       let given := bare.filter fun b => b.name == f.action || f.fields.any (·.name == b.name)
@@ -1231,7 +1308,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         let shown := [("pin", Data.label o.pin), ("law", .label o.lawText), ("source", .label (entrySource o))]
         let id := ((f.lookup "object").bind referenceId).getD ""
         respond bounds responseType "inspected"
-          [.record (shown ++ [("methods", listData (methodForms id o.methods))]), .record shown]
+          [.record (shown ++ [("methods", listData (← formsOf id o))]), .record shown]
   | .variant "objects" (.record f) =>
     let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed objects plan"
     let some after := (f.lookup "after").bind labelOf | evaluation "malformed objects plan"
@@ -1628,11 +1705,16 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (some { cls := "quota", reason := some reason, next := some next })
     return (w', turnReply w' r)
   | .error (.suspend sp si patience checkpoint interpretation post) =>
-    let interpretation := interpretation.map compactInterpretation
-    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson ((interpretation.map (·.2)).getD #[])
+    let interpretation := interpretation.map (compactInterpretation · ctx.argument)
+    -- An argument's long texts are blocks, the same the checkpoint holds them in (`activityArgument`
+    -- restores them): a reply's text is journaled once.
+    let (hoisted, argumentBlocks) := hoistLabels (dataJson ctx.argument)
+    let argument := Json.mkObj [("argument", hoisted)]
+    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson
+      (((interpretation.map (·.2)).getD #[]) ++ argumentBlocks)
     let interpretation := interpretation.map (·.1)
-    let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
-      ("argument", dataJson ctx.argument),
+    let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method)] ++
+      ((argument.getObj?.toOption.map (·.toList)).getD []) ++ [
       ("checkpoint", journaledCheckpoint.1),
       ("roots", allRootsJson st.roots st.fieldRoots), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
@@ -1708,7 +1790,7 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
   let card ← match ← renderCard o (fun m => cardContext s.world id "" "" s.intent s.world.height m) with
     | .ok doc => liftEval (Delvetalk.Document.render doc)
     | .error clause => evaluation s!"publishPage: the card does not render ({clause})"
-  let usage := spellUsage id (spellForms id o) (declaredLenses s.world o)
+  let usage := spellUsage id (spellForms s.world id o) (declaredLenses s.world o)
   let body := s!"## Card\n\n{card}\n## How to reply\n\n{usage}"
   if title.utf8ByteSize > Limits.maxTitleBytes || title.any (· == '\n') then evaluation "publishPage: the title is not one line of at most 256 bytes"
   if body.utf8ByteSize > Delvetalk.Document.maxOutputBytes then evaluation "publishPage: the page exceeds its capacity"
@@ -1836,7 +1918,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let act ← outcome.getObjVal? "activity"
   let object ← act.getObjValAs? String "object"
   let method ← act.getObjValAs? String "method"
-  let argument ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
+  let argument ← decodeData Limits.dataDepth (← activityArgument w act)
   let roots ← parseRoots (← act.getObjVal? "roots")
   let fieldRoots ← parseFieldRoots (← act.getObjVal? "roots")
   let absent := strings (act.getObjVal? "absent").toOption
@@ -1969,7 +2051,7 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
     { principal := ← identity.getObjValAs? String "principal"
       object := ← act.getObjValAs? String "object"
       method := ← act.getObjValAs? String "method"
-      argument := ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
+      argument := ← decodeData Limits.dataDepth (← activityArgument w act)
       intent := ← identity.getObjValAs? String "intent"
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))]
       digest := ← sus.getObjValAs? String "turnRequest"
@@ -2208,7 +2290,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
-      ("forms", dataJson (listData (methodForms id o.methods)))]) |> fun r =>
+      ("forms", dataJson (listData (spellFormsData w id o)))]) |> fun r =>
       -- The views its package declares (`views()`), which `viewDerived` answers.
       let init : TurnState := { world := w, principal, intent := "", subject := principal,
                                 ticks := Delvetalk.Bounds.lawTicks, limits := Json.mkObj [] }
@@ -2268,7 +2350,7 @@ def policyJson (w : World) (id : String) (offers : Data) (utterance : String) : 
 
 /-- A suspension's interpretation, with what it journals by block restored (`expandInterpretation`). -/
 def interpretationOf (w : World) (s : Json) : Option Json :=
-  ((s.getObjVal? "outcome").toOption.bind fun o => (o.getObjVal? "interpretation").toOption).bind (expandInterpretation w)
+  (s.getObjVal? "outcome").toOption.bind (expandInterpretation w)
 
 /-- `world-interpretations`: every `interpret` still waiting for a reply. The world returned
     carries only the compiled prompts it cached; nothing is journaled. -/

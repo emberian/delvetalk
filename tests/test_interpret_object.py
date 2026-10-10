@@ -15,7 +15,7 @@ from tests.test_chain import Chain
 from tests.test_policy import PolicyObject
 from tests.test_turn_world import ON_DISK, closure, declared, label, record
 
-WORLD_LINE = ("  proposal: {method: String, argument: R}", "  proposal: {object: String, method: String, argument: R}")
+WORLD_LINE = "  proposal: {object: String, method: String, argument: R}"
 
 HUB = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -67,12 +67,10 @@ class ProposalForAnotherCard(Chain):
 
     def modules(self, name, source):
         with open(ON_DISK["World"], encoding="utf-8") as f:
-            world = f.read()
-        self.assertIn(WORLD_LINE[0], world)
-        override = {"World": world.replace(WORLD_LINE[0], WORLD_LINE[1])}
+            self.assertIn(WORLD_LINE, f.read())
         seen, out = set(), []
         for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out, override)
+            closure(dep, seen, out)
         return out + [{"name": name, "source": source}]
 
     def setUp(self):
