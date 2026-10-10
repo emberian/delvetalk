@@ -65,8 +65,8 @@ class Replay(Chain):
         second = self.turn("garden", "cistern", record(), principal="glm")
         out = second["receipt"]["outcome"]
         self.assertEqual((second["status"], out["class"], out["object"]),
-                         ("refused", "requiredAbsence", "garden/cistern/1"))
-        self.assertEqual(second["receipt"]["absent"], ["garden/cistern/1"])
+                         ("refused", "requiredAbsence", "garden/cistern"))
+        self.assertEqual(second["receipt"]["absent"], ["garden/cistern"])
 
     def test_4_the_cistern_retains_the_refusal_receipt_as_its_first_entry(self):
         self.make("cistern", closure("Cistern"), record())

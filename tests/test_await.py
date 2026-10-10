@@ -111,8 +111,8 @@ class Create(Await):
         self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "made"))
         second = self.turn("garden", "cistern", record(), principal="glm")
         out = second["receipt"]["outcome"]
-        self.assertEqual((second["status"], out["class"], out["object"]), ("refused", "requiredAbsence", "garden/cistern/1"))
-        self.assertEqual(second["receipt"]["absent"], ["garden/cistern/1"])
+        self.assertEqual((second["status"], out["class"], out["object"]), ("refused", "requiredAbsence", "garden/cistern"))
+        self.assertEqual(second["receipt"]["absent"], ["garden/cistern"])
         self.assertNotIn("creates", out)
 
     def test_a_partial_seed_overlays_initial_and_a_field_the_state_lacks_is_refused_as_type_mismatch(self):
@@ -150,9 +150,19 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         again = {f["name"]: f["value"] for f in self.state("k1")["fields"]}
         self.assertEqual(again, kid)
 
+    def test_bells_are_minted_past_an_id_already_held_and_the_garden_records_the_minted_one(self):
+        self.make("garden", closure("Garden"), garden_seed())
+        self.make("garden/bell/1", closure("Bell"), bell_seed())
+        r = self.plant()
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
+        self.assertEqual(r["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/2")
+        children = [get(c, "object")["value"] for c in get(self.state("garden"), "children")["items"]]
+        self.assertEqual(children, ["garden/bell/2"])
+        self.assertEqual(self.plant(post="at://glm.delve.town/app.bsky.feed.post/3m-plant2")["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/3")
+
     def test_an_existing_object_makes_the_create_fail_even_if_made_by_world_create(self):
         self.make("garden", closure("Garden"), garden_seed())
-        self.make("garden/cistern/1", closure("Cistern"), record())
+        self.make("garden/cistern", closure("Cistern"), record())
         r = self.turn("garden", "cistern", record(), principal="glm")
         self.assertEqual(r["receipt"]["outcome"]["class"], "requiredAbsence")
 
