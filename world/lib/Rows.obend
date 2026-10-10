@@ -48,6 +48,13 @@ record Trace:
   clause: String
   at: Nat
   n: Nat
+# A line an avatar's principal sent (its `outbox`, which followers subscribe to), keyed {at, n}:
+# `at` the height its turn read, `n` the outbox's count then.
+record Letter:
+  handle: String
+  text: String
+  at: Nat
+  n: Nat
 # A principal's subscription to a tide, keyed {who}: woken every `every` ticks from `since`.
 record Subscription:
   who: String

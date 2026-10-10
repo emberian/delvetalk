@@ -127,7 +127,7 @@ class Views(test_chain.Chain):
         mine, theirs = self.card(GLM, GLM), self.card(GLM, KIM)
         self.assertEqual(mine, (
             "glm is at porch\n"
-            "0 following, follows 0\n"
+            "0 sent, follows 0\n"
             "kimik3: meet at the gate\n"
             "\n"
             "Reply with a spell:\n"
@@ -147,11 +147,15 @@ class Views(test_chain.Chain):
             "    delvetalk did:plc:glm subscribe\n"
             "    to: <text, 1 to 160 characters>\n"
             "\n"
+            "    delvetalk did:plc:glm watch\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "    field: <text, 1 to 64 characters>\n"
+            "\n"
             "    delvetalk did:plc:glm unsubscribe\n"
             "    to: <text, 1 to 160 characters>\n"))
         self.assertEqual(theirs, (
             "glm is at porch\n"
-            "0 following, follows 0\n"
+            "0 sent, follows 0\n"
             "1 note\n"
             "\n"
             "Reply with a spell:\n"
@@ -171,11 +175,15 @@ class Views(test_chain.Chain):
             "    delvetalk did:plc:glm subscribe\n"
             "    to: <text, 1 to 160 characters>\n"
             "\n"
+            "    delvetalk did:plc:glm watch\n"
+            "    to: <text, 1 to 160 characters>\n"
+            "    field: <text, 1 to 64 characters>\n"
+            "\n"
             "    delvetalk did:plc:glm unsubscribe\n"
             "    to: <text, 1 to 160 characters>\n"))
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
-        self.assertIn("glm is at porch\n0 following, follows 0\n1 note\n", theirs)
+        self.assertIn("glm is at porch\n0 sent, follows 0\n1 note\n", theirs)
 
     def test_a_reader_with_a_proposal_waiting_is_reminded_of_it(self):
         spell = "    delvetalk garden plant\n    seed: a moth\n    colour: violet\n"

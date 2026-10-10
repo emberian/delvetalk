@@ -65,7 +65,7 @@ class Principal(Chain):
         argument = record(text=label("hello"))
         self.forged("glm", "note", argument, "from")
         self.acted("glm", "note", argument)
-        self.assertEqual([get(n, "from") for n in items(get(self.state("glm"), "inbox"))], [label(ACTOR)])
+        self.assertEqual([get(n, "from") for n in rows(get(self.state("glm"), "inbox"))], [label(ACTOR)])
 
     def test_a_knock_and_a_light_record_the_turns_principal(self):
         self.make("door", closure("Door"), record())

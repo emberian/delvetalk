@@ -146,7 +146,7 @@ class Floor(Chain):
         return self.turn("stone", "offer", record(to=label(to), until=nat(until if until is not None else self.now() + 50)), principal=who)
 
     def accept(self, who="kimik3"):
-        return self.turn(who, "accept", record(thing=reference("stone")), principal=who)
+        return self.turn(who, "accept", record(thing=label("stone")), principal=who)
 
     def stone(self, name):
         return [f for f in self.state("stone")["fields"] if f["name"] == name][0]["value"]
@@ -220,14 +220,6 @@ class Floor(Chain):
 
     def holding(self, name):
         return names([f["value"] for f in self.state(name)["fields"] if f["name"] == "holding"][0])
-
-    def inbox(self, name):
-        wire = [f["value"] for f in self.state(name)["fields"] if f["name"] == "inbox"][0]
-        out = []
-        for item in wire["items"]:
-            note = {f["name"]: f["value"]["value"] for f in item["fields"]}
-            out.append((note["from"], note["text"]))
-        return out
 
     def test_acquire_of_a_held_thing_is_refused_by_name(self):
         self.world()
