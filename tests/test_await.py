@@ -5,7 +5,6 @@ The clock is `world-advance`; the host never reads wall time.
 import time
 import unittest
 
-from tests.host import awaiting_relations
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_replay import get, rows, silver
@@ -84,7 +83,6 @@ class Create(Await):
         return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post), slot=label("")),
                          principal=who, identity=post)
 
-    @awaiting_relations
     def test_a_planted_bell_appears_with_its_planter_and_only_the_overlaid_fields(self):
         self.make("garden", closure("Garden"), garden_seed())
         self.assertEqual(self.plant()["status"], "admitted")
@@ -95,7 +93,6 @@ class Create(Await):
         self.assertEqual((v["status"], v["version"]), ("viewed", 0))
         self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(1))
 
-    @awaiting_relations
     def test_the_creation_is_journaled_in_the_admitted_entry_and_replays(self):
         self.make("garden", closure("Garden"), garden_seed())
         r = self.plant()
@@ -153,14 +150,13 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         again = {f["name"]: f["value"] for f in self.state("k1")["fields"]}
         self.assertEqual(again, kid)
 
-    @awaiting_relations
     def test_bells_are_minted_past_an_id_already_held_and_the_garden_records_the_minted_one(self):
         self.make("garden", closure("Garden"), garden_seed())
         self.make("garden/bell/1", closure("Bell"), bell_seed())
         r = self.plant()
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
         self.assertEqual(r["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/2")
-        children = [get(c, "object")["value"] for c in get(self.state("garden"), "children")["items"]]
+        children = [get(c, "object")["value"] for c in rows(get(self.state("garden"), "children"))]
         self.assertEqual(children, ["garden/bell/2"])
         self.assertEqual(self.plant(post="at://glm.delve.town/app.bsky.feed.post/3m-plant2")["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/3")
 
@@ -235,7 +231,6 @@ class Suspend(Await):
         self.assertEqual((r["status"], r["clock"]), ("advanced", 5))
         self.assertEqual(self.height(), h + 1)
 
-    @awaiting_relations
     def test_a_suspended_turn_whose_bell_was_rained_on_meanwhile_is_rebased_on_resume(self):
         # The rain appended to `rains`; the strike sets only `rung`, which nothing else changed, so
         # the resumed strike commits on the bell as it is now (a resumed turn's own object re-bases).
@@ -317,7 +312,6 @@ def sent(text: String, context: Abi.Context) -> Activity<Plan, Response, Nat>:
 
 
 class Rains(Await):
-    @awaiting_relations
     def test_two_agents_raining_in_one_settle_pass_are_both_admitted(self):
         """Two agents' turns wait on one post; the reply resumes both in one settling pass and
         their two rains reach the bell as two deliveries of that pass: two inserts of

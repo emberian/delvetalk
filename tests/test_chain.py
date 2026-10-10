@@ -67,6 +67,17 @@ def field(state, name):
 # Objects are born the way the world makes them: a creator performs `create` with a
 # Seed and the host lays it over the child's initial(). The host's own world-create
 # still takes a whole state, so a test that wants a Seed borrows a one-method creator.
+def maker_source(package, modules):
+    """The creator for `package`. The host compiles the entry module's relations() when any
+    module of the package declares one (host7's `declaresRelations` scans every module), so a
+    creator of a package with relations (Bell) declares its own: none."""
+    source = MAKER.replace("PACKAGE", package)
+    if any("\ndef relations(" in m["source"] for m in modules):
+        source = source.replace("import ./Abi.obend as Abi\n", "import ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Relation.obend as Relations\n", 1)
+        source += "def relations() -> Lists.List<Relations.Decl>:\n  Lists.List.nil({})\n"
+    return source
+
+
 MAKER = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
@@ -101,7 +112,7 @@ class Chain(TurnWorld):
             self.assertEqual(r["status"], "created", r)
             return
         maker = "maker-" + name
-        creator = modules + [{"name": "Maker", "source": MAKER.replace("PACKAGE", package)}]
+        creator = modules + [{"name": "Maker", "source": maker_source(package, modules)}]
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + maker, object=maker,
                            modules=creator, entry="initial", seed=record(made=nat(0)))
         self.assertEqual(r["status"], "created", r)

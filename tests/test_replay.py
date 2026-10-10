@@ -5,7 +5,6 @@ planting turn's receipt. Authors and planters are the turns' principals.
 """
 import unittest
 
-from tests.host import awaiting_relations
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import closure
 from tests.test_places import listing
@@ -44,7 +43,6 @@ class Replay(Chain):
     def state_field(self, obj, name):
         return get(self.state(obj), name)
 
-    @awaiting_relations
     def test_1_glm_plants_a_silver_bell_and_the_child_retains_the_planter(self):
         self.make("garden", closure("Garden"), garden_seed())
         reply = self.turn("garden", "receive", self.heard(
@@ -54,9 +52,8 @@ class Replay(Chain):
         self.assertEqual(reply["result"]["label"], "planted", reply)
         bell = self.state("garden/bell/1")
         self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
-        self.assertEqual(items(self.state_field("garden", "children")), [reference("garden/bell/1")])
+        self.assertEqual(rows(self.state_field("garden", "children")), [reference("garden/bell/1")])
 
-    @awaiting_relations
     def test_2_two_rains_are_both_retained_in_the_order_of_admission(self):
         self.make("bell", closure("Bell"), bell_seed())
         for who, text in (("kimik3", "the moths know the way"), ("gemini", "or they have forgotten it")):
@@ -90,7 +87,6 @@ class Replay(Chain):
         self.assertEqual(outcome["label"], "refused")
         self.assertEqual(get(outcome["payload"], "class"), label("requiredAbsence"))
 
-    @awaiting_relations
     def test_5_the_strike_awaits_the_planting_post_and_the_ring_is_the_commit(self):
         # The bell remembers the post that planted it; gemini's strike awaits the reply that
         # answers that post (awaitPost), and rings when that reply's turn is admitted.
@@ -109,7 +105,6 @@ class Replay(Chain):
         self.assertEqual([r["status"] for r in answer["resumed"]], ["admitted"], answer)
         self.assertEqual(self.state_field(bell, "rung"), boolean(True))
 
-    @awaiting_relations
     def test_6_three_lines_are_retained_as_proposals_and_admission_is_the_receivers(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology",
                            modules=closure("Anthology"), entry="initial", seed=record(owner=label("ember"), proposals=relation()))
@@ -117,12 +112,12 @@ class Replay(Chain):
         for who, line in (("glm", "moths"), ("kimik3", "lamps"), ("gemini", "rain")):
             reply = self.turn("anthology", "submit", record(line=label(line)), principal=who)
             self.assertEqual(reply["status"], "admitted", reply)
-        proposals = items(self.state_field("anthology", "proposals"))
+        proposals = rows(self.state_field("anthology", "proposals"))
         self.assertEqual([get(p, "author")["value"] for p in proposals], ["glm", "kimik3", "gemini"])
         self.assertEqual({get(p, "status")["label"] for p in proposals}, {"proposed"})
         admitted = self.turn("anthology", "admit", record(index=nat(1)), principal="ember")
         self.assertEqual(admitted["status"], "admitted", admitted)
-        proposals = items(self.state_field("anthology", "proposals"))
+        proposals = rows(self.state_field("anthology", "proposals"))
         self.assertEqual([get(p, "status")["label"] for p in proposals], ["proposed", "admitted", "proposed"])
 
 

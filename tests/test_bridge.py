@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.host import awaiting_relations
 from tests import test_outbound
 from tests.test_chain import garden_state
 from tests.test_http import BINARY
@@ -167,7 +166,6 @@ class Bridging(BridgeCase):
         bridge.main(['outbox', '--state', str(self.state)], out)
         self.assertEqual(out.getvalue(), '')
 
-    @awaiting_relations
     def test_real_garden_receive_end_to_end(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
@@ -318,7 +316,6 @@ class Suspended(BridgeCase):
         (d,) = self.drafts()
         self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
 
-    @awaiting_relations
     def test_end_to_end_a_handed_on_offer_carries_from_on_the_real_host(self):
         from deploy import genesis
         from transport.hostproc import LIBRARY

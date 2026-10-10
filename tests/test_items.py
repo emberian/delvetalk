@@ -9,7 +9,6 @@ Refuted by: a removeItem that removes another item or none, an amendItem of an a
 commits, or the index forms stopping to work before the release ends."""
 import unittest
 
-from tests.host import awaiting_relations
 from tests.test_chain import nil
 from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import TurnWorld, closure, label, record
@@ -97,7 +96,6 @@ class ObjectsWriteByItem(TurnWorld):
         state = self.host.send(op="world-view", principal="ember", object="porch")["state"]
         self.assertEqual([get(p, "object")["value"] for p in items(get(state, "present"))], ["glm", "gemini"])
 
-    @awaiting_relations
     def test_a_tide_resubscription_upserts_the_subscribers_own_row(self):
         from tests.test_chain import nil as empty
         from tests.test_turn_world import nat

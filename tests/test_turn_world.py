@@ -10,7 +10,6 @@ import tempfile
 import time
 import unittest
 
-from tests.host import awaiting_relations
 from tests import host
 from tests.host import Host, HostCase
 from tests.wire import cid_of
@@ -405,7 +404,6 @@ class ListEdits(TurnWorld):
 
 
 class BellList(TurnWorld):
-    @awaiting_relations
     def test_two_rains_append_in_order_to_the_cons_list_and_replay_to_the_same_state(self):
         modules = closure("Bell")
         empty = {"tag": "record", "fields": []}

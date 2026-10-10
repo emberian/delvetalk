@@ -6,7 +6,6 @@ Refuted by: a Garden page draft without its eighteen sections in order; the brid
 publication twice; a merge reply to the page post going anywhere but the garden."""
 import unittest
 
-from tests.host import awaiting_relations
 from tests.test_bridge import BridgeCase
 from tests.test_chain import garden_state
 from tests.test_transport import DID, mk
@@ -15,7 +14,6 @@ from transport import bridge, post
 
 
 class Publishing(BridgeCase):
-    @awaiting_relations
     def test_a_gardens_page_is_drafted_recorded_and_a_merge_reply_routes_to_the_garden(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
                             'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state()})

@@ -15,7 +15,6 @@ Refuted by: a stranger's add, remove or admit committing; an owner's being refus
 submit being refused; the variants committing once the host runs predicates."""
 import unittest
 
-from tests.host import awaiting_relations
 from tests.test_chain import nil, reference
 from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
@@ -60,7 +59,6 @@ class Laws(LawWorld):
         r = self.turn("policy", "receive", heard("delvetalk policy set\nmodel: n"), principal=OWNER)
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
 
-    @awaiting_relations
     def test_only_the_directorys_owner_adds_or_removes_a_door(self):
         self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))
         self.assertEqual(self.turn("dir", "add", record(door=door("garden")), principal=OWNER)["status"], "admitted")
@@ -76,7 +74,6 @@ class Laws(LawWorld):
         self.assertEqual(r["status"], "error", r)
         self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
-    @awaiting_relations
     def test_anyone_submits_and_only_the_owner_admits(self):
         self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
         self.assertEqual(self.turn("anthology", "submit", record(line=label("moths")), principal=OTHER)["status"], "admitted")
@@ -117,7 +114,6 @@ class Predicates(LawWorld):
         self.assertNotEqual(tide_variant()[-1]["source"], closure("Tide")[-1]["source"])
         self.assertNotEqual(wake_variant()[-1]["source"], closure("Wake")[-1]["source"])
 
-    @awaiting_relations
     def test_tides_predicate_refuses_someone_elses_subscription(self):
         self.create("tide", tide_variant(), TIDE_SEED)
         r = self.turn("tide", "subscribe", record(every=nat(1), note=label("wake me")), principal=OTHER)
@@ -135,7 +131,6 @@ class Predicates(LawWorld):
                                                action={"tag": "variant", "label": "notify", "payload": record()}), principal=OTHER)
         self.assertEqual(self.clause(r), "lawRefused/owner", r)
 
-    @awaiting_relations
     def test_the_owners_own_writes_pass_both_tiers(self):
         self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
         r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},

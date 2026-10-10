@@ -12,7 +12,6 @@ import os
 import statistics
 import unittest
 
-from tests.host import awaiting_relations
 from tests import test_hub
 
 PROSE = [
@@ -59,11 +58,9 @@ class SuspensionSize(test_hub.Hub):
         self.assertEqual(len(sizes), 9)
         return statistics.median(sizes[1:])
 
-    @awaiting_relations
     def test_nine_prose_replies_from_one_speaker_journal_a_small_median_suspension(self):
         self.assertLess(self.suspensions([WHO[0]] * 9), 12 * 1024)
 
-    @awaiting_relations
     def test_nine_speakers_suspensions_stay_bounded(self):
         # Each speaker sits at another place in the directory's greeted list, which the reading walks.
         self.assertLess(self.suspensions(WHO), 32 * 1024)

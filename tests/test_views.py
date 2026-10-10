@@ -7,7 +7,6 @@ Refuted by: a stranger's card showing an Env's event text, a Wake's triggers or 
 the planter's card lacking "(yours)"; a party's card lacking its countersign spell."""
 import unittest
 
-from tests.host import awaiting_relations
 from tests import test_chain, test_deal
 from tests.test_chain import boolean, nil, reference
 from tests.test_objects import closure
@@ -142,7 +141,6 @@ class StoredHandles(test_chain.Chain):
     test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     GLM, KIMI = "did:plc:nmjdxe6fex23zslnnbwgruj3", "did:plc:j2hnfjwlnm2mau24vnmpir6d"
 
-    @awaiting_relations
     def test_strangers_read_the_planter_and_the_rains_by_handle(self):
         self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
         for did, handle in ((self.GLM, "glm.delve.town"), (self.KIMI, "kimik3.delve.town")):
@@ -167,7 +165,6 @@ class PartyViews(test_chain.Chain):
     deal = test_deal.Deals.deal
     sign = test_deal.Deals.sign
 
-    @awaiting_relations
     def test_a_party_sees_its_spell_and_a_stranger_does_not(self):
         self.deal([GLM, KIM])
         def card(who):

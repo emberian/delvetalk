@@ -13,7 +13,6 @@ first miss not asked again with its needs, or a second miss not reaching the nee
 escalation copy."""
 import unittest
 
-from tests.host import awaiting_relations
 from tests import test_chain, test_policy
 from tests.test_objects import PROBE_HEAD_G, run_pure
 from tests.test_turn_world import label, record
@@ -58,7 +57,6 @@ class Resumed(test_chain.Chain):
     def text(self, raw):
         return {"status": "replied", "json": None, "raw": raw, "model": "m"}
 
-    @awaiting_relations
     def test_a_spell_in_the_models_text_plants(self):
         self.policy()
         self.garden("policy", confirm=False)
@@ -81,7 +79,6 @@ class Resumed(test_chain.Chain):
         [resumed] = settled["resumed"]
         return item, resumed
 
-    @awaiting_relations
     def test_a_miss_is_asked_once_more_with_its_needs_and_a_hit_then_plants(self):
         self.policy(escalate="claude-opus")
         self.garden("policy", confirm=False)
@@ -119,7 +116,6 @@ class Resumed(test_chain.Chain):
         self.assertEqual([o["to"] for o in missed["receipt"]["offers"]], ["glm"], missed)
         self.assertIn("I still need: colour.", missed["receipt"]["offers"][0]["text"])
 
-    @awaiting_relations
     def test_with_the_default_policy_an_understood_planting_plants_and_the_receipt_answers(self):
         """Confirmation is per action: the policy's confirmFor (reprogram, amend, give, offer by
         default) does not name plant, and a garden with an empty confirmFor asks nobody."""
@@ -130,7 +126,6 @@ class Resumed(test_chain.Chain):
         self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "planted"), planted)
         self.assertNotIn("Reply yes", planted["receipt"]["offers"][0]["text"])
 
-    @awaiting_relations
     def test_the_policys_owner_makes_plant_ask_first(self):
         self.policy()
         taught = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")

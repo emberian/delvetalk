@@ -7,7 +7,6 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.host import awaiting_relations
 from tests.test_chain import garden_state
 from tests.test_turn_world import BINARY, closure, counter_modules, label, nat, record
 
@@ -394,7 +393,6 @@ class HttpFront(unittest.TestCase):
         self.call('GET', '/AGENTS.md/offers', token=tok)
         self.assertEqual(len(asks), 1)
 
-    @awaiting_relations
     def test_list_card_source_offers_and_ids_with_slashes(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',

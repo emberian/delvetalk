@@ -9,7 +9,6 @@ Mini type checker'}); a method without one never sees it, and records the princi
 import unittest
 
 from tests.test_turn_world import relation
-from tests.host import awaiting_relations
 from tests.test_chain import Chain, garden_seed, reference
 from tests.test_objects import closure
 from tests.test_places import avatar_seed, names, place_seed
@@ -42,7 +41,6 @@ class Principal(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
-    @awaiting_relations
     def test_a_rain_is_authored_by_the_turns_principal(self):
         self.make("bell", closure("Bell"), bell_seed())
         argument = record(text=label("the moths know the way"))
@@ -50,7 +48,6 @@ class Principal(Chain):
         self.acted("bell", "rain", argument)
         self.assertEqual([get(r, "author") for r in rows(get(self.state("bell"), "rains"))], [label(ACTOR)])
 
-    @awaiting_relations
     def test_a_submission_is_authored_by_the_turns_principal(self):
         # Anthology declares a law, so it is made with world-create (whole state) by its owner.
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
@@ -82,7 +79,6 @@ class Principal(Chain):
         self.ignored("porch", "enter", "by")
         self.assertEqual(names(get(self.state("porch"), "present")), [ACTOR])
 
-    @awaiting_relations
     def test_the_planter_is_the_turns_principal_and_the_planting_its_post(self):
         self.make("garden", closure("Garden"), garden_seed())
         spell = "delvetalk garden plant\nseed: a fern\ncolour: amber"

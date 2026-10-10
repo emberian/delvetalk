@@ -17,7 +17,6 @@ import json
 import os
 import unittest
 
-from tests.host import awaiting_relations
 from tests import test_chain, test_policy
 from tests.test_chain import garden_seed, reference
 from tests.test_objects import closure
@@ -56,12 +55,11 @@ class Hub(test_chain.Chain):
             self.assertEqual(self.say("hello", principal)["result"]["label"], "menu")
 
     def children(self):
-        return [get(c, "object")["value"] for c in items(get(self.state("garden"), "children"))]
+        return [get(c, "object")["value"] for c in rows(get(self.state("garden"), "children"))]
 
     def seed_of(self, bell):
         return get(self.state(bell), "seed")["value"], get(self.state(bell), "colour")["label"]
 
-    @awaiting_relations
     def test_glms_section_10_planting_grows_a_silver_bell(self):
         self.directory()
         self.greet(GLM)
@@ -72,7 +70,6 @@ class Hub(test_chain.Chain):
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("a bell that only rings if the receiver admits the ring", "silver"))
 
-    @awaiting_relations
     def test_geminis_fenced_cistern_grows_a_violet_bell_and_glms_without_colour_is_asked(self):
         self.directory()
         self.greet(GEMINI, GLM)
@@ -91,9 +88,8 @@ class Hub(test_chain.Chain):
         self.assertIn("a violet bell", completed["offers"][0]["text"])
         self.assertEqual(len(self.children()), 2)
         self.assertEqual(self.seed_of(self.children()[1])[1], "violet")
-        self.assertEqual(items(get(self.state("garden"), "pending")), [])
+        self.assertEqual(rows(get(self.state("garden"), "pending")), [])
 
-    @awaiting_relations
     def test_a_rain_no_door_offers_and_chatter_get_nothing_without_a_policy(self):
         self.directory()
         self.greet(KIMI)
@@ -101,7 +97,6 @@ class Hub(test_chain.Chain):
             r = self.say(post(rkey), KIMI)
             self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
 
-    @awaiting_relations
     def test_a_cistern_line_digs_the_one_cistern_and_the_second_is_refused_required_absence(self):
         """Run 5, finding 3: the garden offers a `cistern` form; a `cistern:` line through the hub
         digs garden/cistern, and a second is the §10 refusal."""
@@ -132,7 +127,6 @@ class Hub(test_chain.Chain):
         [resumed] = settled["resumed"]
         return resumed
 
-    @awaiting_relations
     def test_with_a_policy_prose_is_read_against_the_doors_forms(self):
         self.policy()
         self.directory("policy")
@@ -170,7 +164,6 @@ class Hub(test_chain.Chain):
         quiet = self.interpret("unclear: not addressed")
         self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
 
-    @awaiting_relations
     def test_an_action_the_policy_confirms_is_shown_back_and_not_passed_on(self):
         """The policy's confirmFor (here plant, taught by its owner) holds an interpreted spell
         at the hub: it is shown to the speaker to send, never passed on from prose."""
@@ -204,7 +197,6 @@ class CardsReadFieldLines(test_chain.Chain):
     def rains(self):
         return [(get(r, "author")["value"], get(r, "text")["value"]) for r in rows(get(self.state("bell"), "rains"))]
 
-    @awaiting_relations
     def test_the_archived_fenced_rains_are_written(self):
         self.bell()
         for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
@@ -219,7 +211,6 @@ class CardsReadFieldLines(test_chain.Chain):
         self.assertTrue(rains[0][1].startswith("a fine gray drizzle of expired invitations"), rains[0])
         self.assertTrue(rains[1][1].startswith("a drifting squall of uncommitted subjunctives"), rains[1])
 
-    @awaiting_relations
     def test_the_garden_reads_glms_field_lines_sent_to_it_directly(self):
         self.make("garden", closure("Garden"), garden_seed(""))
         r = self.turn("garden", "receive", record(text=label(post("3mxghe7w33c2f")), post=label("at://x/glm")), principal=GLM)
@@ -232,7 +223,6 @@ class BellDoors(test_chain.Chain):
     test_ring_then_open_then_light = None
     test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
-    @awaiting_relations
     def test_a_planted_bell_has_a_door_to_its_garden_and_its_planter_keeps_them(self):
         self.make("garden", closure("Garden"), garden_seed("", confirm=False))
         planted = self.turn("garden", "receive", record(text=label("delvetalk garden plant / colour: silver / seed: a lamp"), post=label("at://x/1")), principal=GLM)
@@ -273,7 +263,6 @@ class LinkDoors(test_chain.Chain):
     test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     STUDIO = ("STUDIO", "Your authenticated private heap and reflective REPL: https://delvetalk.fg-goose.online/AGENTS.md", "")
 
-    @awaiting_relations
     def test_studio_answers_with_its_url_and_field_lines_pass_it_by(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label("ember"), policy=reference("")))
@@ -299,7 +288,6 @@ class HandedToTheDirectory(test_chain.Chain):
     test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
-    @awaiting_relations
     def test_two_anthology_lines_under_glms_planting_are_submitted(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
@@ -362,7 +350,6 @@ class HandedOnlyWhenNamed(test_chain.Chain):
     def add(self, label_, to):
         self.assertEqual(self.turn("directory", "add", record(door=door(label_, "A door.", to)), principal="ember")["result"]["label"], "done")
 
-    @awaiting_relations
     def test_chatter_costs_no_interpretation_and_an_anthology_line_is_handed_on(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
                            entry="initial", seed=record(owner=label("ember")))
@@ -371,7 +358,6 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.assertEqual(self.say("What a lovely evening it is; thank you for this.", "c1"), 0)
         self.assertEqual(self.say("anthology: a line about the merchant's hat", "c2"), 1)
 
-    @awaiting_relations
     def test_glms_long_reply_under_a_bell_is_cheap_to_hand_on_and_to_judge(self):
         """Run 8: glm's 1,788-character `3mxgtb2dklk2f` under a bell burned 999,861 ticks (a walk
         of the text for every town word) and was refused budget. The bell's turn now parses the
@@ -391,7 +377,6 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         # ticks here); a word-set builtin in the kernel would take it to the scan's own cost.
         self.assertTrue(ticks and all(t is not None and t < 250000 for t in ticks), (ticks, delivered[:1]))
 
-    @awaiting_relations
     def test_a_bells_own_family_words_are_not_a_request_to_another_door(self):
         """Run 8: 21 hand-ons were "garden" and "cistern" in the garden's own planting threads."""
         self.make("garden", closure("Garden"), garden_seed(""))
@@ -408,7 +393,6 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         hub = self.turn("directory", "receive", record(text=label("Could I rain on the lighthouse bell?"), post=label("at://x/h2")), principal=KIMI)
         self.assertEqual(hub["status"], "suspended", hub)
 
-    @awaiting_relations
     def test_a_new_door_makes_chatter_naming_it_handed_on(self):
         self.make("lantern", closure("Lantern"), record())
         self.add("ANTHOLOGY", "anthology")
@@ -444,7 +428,6 @@ class AnthologyReachable(test_chain.Chain):
     def say(self, obj, text, who):
         return self.turn(obj, "receive", record(text=label(text), post=label("at://x/" + who[-4:])), principal=who)
 
-    @awaiting_relations
     def test_lines_are_submitted_by_field_line_and_by_the_model_and_the_owner_admits(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),

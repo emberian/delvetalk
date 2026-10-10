@@ -5,7 +5,6 @@ that declares a law). Env and Wake are made by their owner: a law must admit an 
 by the one who installs it, and theirs admit only the owner."""
 import unittest
 
-from tests.host import awaiting_relations
 from tests.test_chain import Chain, boolean, nil, reference
 from tests.test_objects import closure
 from tests.test_places import avatar_seed
@@ -230,7 +229,6 @@ class Wakes(Chain):
     def tide(self, gap=3):
         self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=relation()))
 
-    @awaiting_relations
     def test_when_garden_planted_passes_10_the_wake_ticks_the_tide(self):
         """A Wake watches another object's writes: the garden tells its observers its count
         after each planting, and the trigger fires once, as the count passes 10."""
@@ -253,7 +251,6 @@ class Wakes(Chain):
             # 10 does not pass 10; 11 does, once; 12 does not fire again.
             self.assertEqual(ticks(), [0, 1, 1][i], i)
 
-    @awaiting_relations
     def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
         """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
         and subscribe, tick and a tick too soon each answer with what happened and the card."""
@@ -273,7 +270,6 @@ class Wakes(Chain):
         soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
         self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at clock "), soon["offers"])
 
-    @awaiting_relations
     def test_a_subscriber_is_shown_by_the_handle_the_host_knew_at_subscribe(self):
         self.tide()
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did=OTHER, handle="inkling.delve.town")["status"], "principal")
@@ -284,7 +280,6 @@ class Wakes(Chain):
         print("\n--- tide, read by a stranger ---\n" + card)
         self.assertIn("inkling.delve.town every 1 from tick 0: first light\n", card)
 
-    @awaiting_relations
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()
         self.avatar(OTHER)

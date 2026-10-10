@@ -6,7 +6,7 @@ against the offered form and Garden.plant's input before resuming the garden.
 """
 import unittest
 
-from tests.host import awaiting_relations
+from tests.test_replay import rows
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job, computation, row_names
 from tests.test_places import listing
@@ -156,7 +156,6 @@ class PolicyObject(Chain):
         print("\n--- policy card with a macro ---\n" + card)
         self.assertIn("Macro moth-bell: moth for {who}\n  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", card)
 
-    @awaiting_relations
     def test_a_macro_fires_without_the_model_and_a_non_match_falls_through_to_it(self):
         self.policy()
         self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="ember")
@@ -235,7 +234,6 @@ class PolicyObject(Chain):
         reply = self.say("Could we plant a silver fern?")
         self.assertEqual((reply["status"], reply["result"]["label"], reply.get("offers", [])), ("admitted", "silent", []), reply)
 
-    @awaiting_relations
     def test_a_typed_spell_never_consults_the_policy(self):
         self.policy()
         self.garden("policy")
@@ -252,7 +250,6 @@ class PolicyObject(Chain):
         self.assertEqual(item["utterance"], "Could we plant a silver fern that remembers?")
         self.assertEqual([o["action"] for o in item["offers"]], ["plant"])
 
-    @awaiting_relations
     def test_with_confirm_on_the_garden_asks_first_then_yes_from_the_same_principal_plants(self):
         self.policy()
         self.garden("policy", confirm=True)
@@ -264,7 +261,7 @@ class PolicyObject(Chain):
         # The confirm card is addressed: to the principal who spoke, and by name.
         self.assertTrue(asked["offers"][0]["text"].startswith("✾ THE NIGHT GARDEN\n\nglm, I understood this:\n"), asked["offers"][0])
         self.assertEqual(asked["offers"][0]["principal"], "glm", asked["offers"][0])
-        self.assertNotEqual(self.pending()["items"], [])
+        self.assertNotEqual(rows(self.pending()), [])
         # Another principal's yes is not glm's: it is heard afresh (prose, so interpreted).
         other = self.say("yes", principal="kimik3")
         self.assertEqual(other["status"], "suspended", other)
@@ -272,9 +269,8 @@ class PolicyObject(Chain):
         self.assertEqual(planted["status"], "admitted", planted["receipt"]["outcome"])
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", planted["offers"][0]["text"])
-        self.assertEqual(self.pending()["items"], [])
+        self.assertEqual(rows(self.pending()), [])
 
-    @awaiting_relations
     def test_no_drops_the_waiting_proposal(self):
         self.policy()
         self.garden("policy", confirm=True)
@@ -282,10 +278,9 @@ class PolicyObject(Chain):
         self.interpret(self.planting("violet", "a moth"))
         dropped = self.say("no")
         self.assertEqual(dropped["result"]["label"], "cleared", dropped)
-        self.assertEqual(self.pending()["items"], [])
+        self.assertEqual(rows(self.pending()), [])
         self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(0))
 
-    @awaiting_relations
     def test_with_confirm_off_the_garden_plants_and_a_bad_colour_is_refused_by_name(self):
         self.policy()
         self.garden("policy", confirm=False)
@@ -321,7 +316,6 @@ class PolicyObject(Chain):
                        "Participant: Could we plant a silver fern that remembers?"):
             self.assertIn(needle, system)
 
-    @awaiting_relations
     def test_a_plain_spell_reply_resumes_replied_and_the_garden_plants_it(self):
         self.policy()
         self.garden("policy", confirm=False)
@@ -351,7 +345,6 @@ class PolicyObject(Chain):
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertNotEqual(resumed["result"]["label"], "planted", resumed)
 
-    @awaiting_relations
     def test_a_suspension_journals_its_checkpoint_blocks_once(self):
         """Rehearsal run 5: a suspended entry cost about 236 KB, nearly all of it the program's own
         terms in the checkpoint. Blocks are journaled once; a later suspension of the same package
@@ -368,12 +361,18 @@ class PolicyObject(Chain):
         self.assertLess(sizes[1], 20000)
         # Both resume from their reassembled checkpoints, after a restart too.
         self.reopen()
-        for item in self.host.send(op="world-interpretations")["pending"]:
-            settled = self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
-            [resumed] = settled["resumed"]
-            self.assertEqual(resumed["status"], "admitted", resumed)
+        # Both are glm's: the first resumed upserts glm's pending row, which moves the garden
+        # under the second (the same key, so no rebase), and the host re-runs the second, which
+        # asks again; that answer resumes it.
+        admitted = []
+        for _ in range(4):
+            pending = self.host.send(op="world-interpretations")["pending"]
+            if not pending:
+                break
+            settled = self.host.send(op="world-interpretation", id=pending[0]["id"], reply={"status": "replied", "json": None, "raw": SPELL, "model": "m"})
+            admitted += [r for r in settled["resumed"] if r["status"] == "admitted"]
+        self.assertEqual(len(admitted), 2, admitted)
 
-    @awaiting_relations
     def test_a_resumed_interpretation_whose_directory_moved_meanwhile_still_admits(self):
         """Rehearsal run 5, finding 6: inkling's prose resumed after another principal's greeting
         had moved the directory, was refused staleRoot, and nobody retried it."""
@@ -400,7 +399,6 @@ class PolicyObject(Chain):
         self.reopen()
         self.assertEqual(self.host.send(op="world-receipt", principal="inkling", identity="i-2")["receipt"]["outcome"]["tag"], "admitted")
 
-    @awaiting_relations
     def test_interpretations_have_their_own_capacity_apart_from_awaits(self):
         """The rehearsal rerun: the ninth prose reply in a batch was refused at the await cap."""
         self.policy()

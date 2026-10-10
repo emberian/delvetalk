@@ -111,15 +111,21 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   when the atom parses.
 * **Seeds on the wire.** A relation seed is the `rows` variant (`tests.test_turn_world.relation(*rows)`,
   rows in key order); `deploy/genesis.py` seeds the directory's doors that way with places.
-* **Until the host lands** (`tests/host.py`): the host refuses a write holding an insert,
-  upsert or retract "malformed write plan" (class evaluation); every test that writes a
-  relation end to end wears `@awaiting_relations` (expectedFailure; 80 tests after item 4, most
-  of them because a planting inserts the garden's child), and `tests/test_repo.py`'s class
-  fixture, which plants, skips by `skip_awaiting_relations` only on that refusal;
-  `DELVETALK_SHOW_AWAITING=1` runs them plainly to see where each stops (all at that
-  refusal now). The lane landing the edits deletes the decorator. Wire: a relation is
+* **Against the host** (host7, foundation 613639d). The edits, canonical order, keys and
+  limits are the host's now; inserts do not yet commute (relations day 2), so a turn whose
+  root another write moved re-runs: two prose replies of one speaker to the garden (each
+  upserts that speaker's pending row) cost a second interpretation of the later one
+  (`test_policy ...checkpoint_blocks_once`). Two host behaviours to know: (1) a package
+  any of whose modules declares `relations()` has the ENTRY module's `relations()`
+  compiled, so a creator importing Bell, or a Cistern dug from Garden's chain, must declare
+  its own (Cistern declares none; `tests/test_chain.maker_source` does the same for the test
+  creator), else creation fails "missing selected entry"; (2) that compile runs at every
+  creation: 20 bells 6.7 s with `relations()` and 0.31 s without, so
+  `test_journal.Maximum` (200 bells under 10 s) is an expectedFailure until the host reads
+  `relations` from the artifact. `insertOnly` parses (kernel) but the host's Law.lean fails
+  closed on it (false), so it stays in the Bend predicates. Wire: a relation is
   `{"tag": "variant", "label": "rows", "payload": {items: [...]}}`; `tests.test_replay.rows`
-  reads one.
+  reads one, `tests.test_turn_world.relation` builds one.
 * **Costs** (hbox, `tests/test_relation_lib.py`): a compare of two equal two-cell keys about
   450 ticks, one deciding on its first cell about 200 (about 30 ticks a call, which is the
   machine's); `joinOn` of two stored 200-row relations 278,301 ticks with building them

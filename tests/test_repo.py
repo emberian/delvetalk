@@ -14,7 +14,6 @@ import threading
 import unittest
 from pathlib import Path
 
-from tests.host import skip_awaiting_relations
 from tests.host import start_hostd, stop_hostd
 from tests.test_chain import garden_state
 from tests.test_http import DID, PEOPLE, Provider
@@ -105,11 +104,6 @@ class Repository(unittest.TestCase):
             send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'publish', 'argument': record(), 'identity': 'pub-1'}),
             send({'op': 'world-create', 'principal': DID, 'identity': 'mk-d', 'object': 'diary', 'modules': counter_modules(),
                   'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}})]
-        try:
-            skip_awaiting_relations(seeded[1])  # the planting inserts the garden's child
-        except unittest.SkipTest:
-            cls.tearDownClass()  # not run for a class skipped in setUpClass
-            raise
         assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created'], seeded
         cls.receipts = {r['receipt']['identity']['intent']: r['receipt'] for r in seeded}
 

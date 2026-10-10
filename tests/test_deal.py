@@ -4,7 +4,6 @@ signatures append-only and a withdrawal final, and admit only a party's change
 (`request.subject in new.parties`)."""
 import unittest
 
-from tests.host import awaiting_relations
 from tests.test_turn_world import relation
 from tests.test_replay import rows
 from tests.test_chain import Chain, nil
@@ -37,7 +36,6 @@ class Deals(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
-    @awaiting_relations
     def test_three_countersignatures_amend_an_objects_law_and_a_stranger_is_refused(self):
         """A deal at rest applies its amendment by `amend`, the deal as caller, judged by the
         object's own law."""
@@ -62,7 +60,6 @@ class Deals(Chain):
         self.assertIn('request.caller == "deal"', inspected["law"])
         self.assertIn('did:plc:glm', inspected["law"])
 
-    @awaiting_relations
     def test_an_exhibition_is_at_rest_when_all_three_have_countersigned(self):
         self.deal([ARTIST, GALLERY, CURATOR], "hang it in the east room for a week", "a bell for lost moths", "exhibition")
         self.assertEqual(self.sign(ARTIST, "at://glm/p/1", "exhibition")["result"]["label"], "done")
@@ -74,8 +71,9 @@ class Deals(Chain):
         last = self.turn("exhibition", "countersign", record(post=label("at://gemini/p/1")), principal=CURATOR)
         self.assertEqual(last["result"]["label"], "atRest")
         signatures = rows(get(self.state("exhibition"), "signatures"))
+        signed = [(ARTIST, "at://glm/p/1"), (GALLERY, "at://inkling/p/1"), (CURATOR, "at://gemini/p/1")]
         self.assertEqual([(get(s, "principal")["value"], get(s, "post")["value"]) for s in signatures],
-                         [(ARTIST, "at://glm/p/1"), (GALLERY, "at://inkling/p/1"), (CURATOR, "at://gemini/p/1")])
+                         sorted(signed, key=lambda s: (len(s[0].encode()), s[0].encode())))   # key order
         card = self.turn("exhibition", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"]
         print("\n--- exhibition card ---\n" + card)
         self.assertIn("At rest: every party has countersigned.", card)
@@ -83,7 +81,6 @@ class Deals(Chain):
         late = self.turn("exhibition", "withdraw", principal=GALLERY)
         self.assertEqual(late["result"]["payload"]["fields"][1]["value"], label("The deal is at rest."))
 
-    @awaiting_relations
     def test_a_party_withdraws_before_rest_and_nobody_signs_after(self):
         self.deal([ARTIST, GALLERY])
         self.sign(ARTIST, "at://glm/p/1")
@@ -101,7 +98,6 @@ class Deals(Chain):
     def keep(self):
         return {"tag": "variant", "label": "keep", "payload": record()}
 
-    @awaiting_relations
     def test_the_law_keeps_signatures_insert_only_and_a_withdrawal_final(self):
         self.deal([ARTIST, GALLERY])
         self.sign(ARTIST, "at://glm/p/1")
@@ -113,7 +109,6 @@ class Deals(Chain):
                                             withdrawnHandle=self.keep(), closed={"tag": "variant", "label": "set", "payload": record(value={"tag": "natural", "value": "0"})}), "undo")
         self.assertEqual((undo["status"], undo["receipt"]["outcome"].get("clause")), ("refused", "once"), undo)
 
-    @awaiting_relations
     def test_a_strangers_signature_proposed_directly_is_refused_by_the_law(self):
         """The membership atom: `request.subject in new.parties`."""
         self.deal([ARTIST, GALLERY])
