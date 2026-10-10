@@ -14,6 +14,8 @@ import shutil
 import tempfile
 import unittest
 
+from tests.host import whole
+
 from tests.test_chain import field
 from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
 from tests.test_turn_world import label, nat, record, declared
@@ -212,7 +214,7 @@ class Time(Reflection):
         self.assertEqual(r["deadline"], 7)
         self.assertNotIn("resumed", self.host.send(op="world-advance", height=7))
         [resumed] = self.host.send(op="world-advance", height=8)["resumed"]
-        self.assertEqual(resumed["result"], label("timedOut"))
+        self.assertEqual(whole(self.host, resumed)["result"], label("timedOut"))
 
     def test_an_until_already_past_answers_timedOut_without_suspending(self):
         self.host.send(op="world-advance", height=5)
@@ -637,7 +639,7 @@ class ReplyIsAddress(PostWaiterWorld):
         answer = self.reply(URI + "/r1", URI, obj="card")
         self.assertEqual((answer["status"], answer["receipt"]["replyTo"]), ("admitted", URI), answer)
         [resumed] = answer["resumed"]
-        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", label("answered by " + URI + "/r1")), resumed)
+        self.assertEqual((resumed["status"], whole(self.host, resumed)["result"]), ("admitted", label("answered by " + URI + "/r1")), resumed)
         # (A reply run on the waiter itself would move its root; this one comes after.) Run on
         # another object than the post's, a reply answers nothing.
         elsewhere = self.reply(URI + "/r00", URI, obj="w")
@@ -651,7 +653,7 @@ class ReplyIsAddress(PostWaiterWorld):
         self.turn("w", "waitFor", record(post=label(URI)), principal="ann", identity="wait-1")
         advanced = self.host.send(op="world-advance", principal="transport", height=10)
         [resumed] = advanced["resumed"]
-        self.assertEqual(resumed["result"], label("timed out"), resumed)
+        self.assertEqual(whole(self.host, resumed)["result"], label("timed out"), resumed)
 
     def test_receive_takes_text_and_post_and_nothing_else(self):
         self.posted(URI, slot=SLOT)
@@ -718,7 +720,7 @@ class MintedIds(Reflection):
         self.assertEqual(waiting["status"], "suspended", waiting)
         self.assertEqual(self.mint()[1], "m/child/7")
         [resumed] = self.host.send(op="world-advance", principal="transport", height=9)["resumed"]
-        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", label("m/child/6")), resumed)
+        self.assertEqual((resumed["status"], whole(self.host, resumed)["result"]), ("admitted", label("m/child/6")), resumed)
         # A real collision is still refused: a named create of a minted id.
         clash, _ = self.mint("named", record(id=label("m/child/1")))
         self.assertEqual((clash["status"], clash["receipt"]["outcome"]["class"]), ("refused", "requiredAbsence"), clash)
@@ -834,7 +836,8 @@ class Transient(Reflection):
         settler = self.turn("teller", "tell", record(to=label("x"), text=label("x")), principal="glm", identity="x")
         # Refused staleRoot (transient), and re-run once at once from its request.
         [again] = settler["resumed"]
-        self.assertEqual((again["status"], again["result"], again["receipt"]["rerun"]), ("admitted", label("told"), True), again)
+        mine = whole(self.host, again)
+        self.assertEqual((again["status"], mine["result"], mine["rerun"]), ("admitted", label("told"), True), again)
         self.assertIn("rerunOf", again)
         self.assertEqual(self.offers(), ["woken"])
         receipt = self.host.send(op="world-receipt", principal="kim", identity="w")
@@ -842,7 +845,7 @@ class Transient(Reflection):
         self.reopen()
         self.assertEqual(self.host.send(op="world-receipt", principal="kim", identity="w"), receipt)
         retry = self.turn("teller", "waitAndTell", principal="kim", identity="w")
-        self.assertEqual(retry["receipt"], again["receipt"])
+        self.assertEqual(retry["receipt"], mine)
 
     def test_a_budget_refusal_is_retried_under_the_same_identity_and_then_commits(self):
         tight = self.host.send(op="world-turn", principal="kim", object="teller", method="tell", identity="b",

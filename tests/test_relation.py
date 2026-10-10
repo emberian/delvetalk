@@ -11,6 +11,8 @@ rows; `insert`, `upsert`, `retract` follow the nine-cell table. Each case names 
 """
 import unittest
 
+from tests.host import as_owner
+
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record, declared
 
@@ -254,7 +256,7 @@ class Moved(RelationCase):
         r = self.edit(concurrent, carg, ident="go")
         self.assertEqual(r["status"], "admitted", r)
         [resumed] = r["resumed"]
-        return resumed
+        return as_owner(self.host, resumed, "kim")
 
     def setUp(self):
         super().setUp()

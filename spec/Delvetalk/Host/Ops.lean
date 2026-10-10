@@ -1723,6 +1723,10 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
     match w.objects[r]? with
     | some ro =>
       unless p.roots.any (·.1 == r) do return refuse "lawReads"
+      -- A law reads only what its subject may view: its verdict could disclose the rest (codex host 3).
+      unless ro.read.permits subject do
+        return some { cls := "lawRefused", clause := some "lawReads", object := some id,
+                      reason := some s!"refused lawReads: the law of {id} reads {r}, which you may not see." }
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
   let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method
@@ -1911,13 +1915,17 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType && stateBytes state ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
-      -- A migration may not set a fixed field: one the new code fixes keeps the value it had.
-      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
-        throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
+      -- A fixed field stays fixed: new code must fix it too (codex host 5, docs 1).
+      if let some f := o.fixed.find? (!prog.fixed.contains ·) then
+        throw (refuse "fixed" s!"{f} is fixed; it is set when {id} is made and never after, so the new code must keep it fixed")
       -- A migration's result is put in canonical form under the new code's relations.
       state ← match canonicalState prog.relations state with
         | .ok s => pure s
         | .error e => throw (refuse "migration" s!"{e}: the converted state's relations are not canonical")
+      -- No migration sets a fixed field: one fixed before, or one the new code fixes that the old
+      -- state had, keeps the value it had, judged on the state as it will be held.
+      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
+        throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,
@@ -2441,6 +2449,8 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1) law
   let supervisor := (← optText j "supervisor").getD ""
   unless supervisor.isEmpty || w.objects.contains supervisor do throw s!"supervisor {supervisor} is not an object"
+  unless supervisor.isEmpty || ((w.objects[supervisor]?).map (·.offers "ended")).getD false do
+    throw s!"supervisor {supervisor} does not take ended: a supervisor's package declares it"
   let o := { o with supervisor }
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   discard <| pure sources
@@ -2452,6 +2462,9 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let outcome := match law with
     | some text => outcome.setObjVal! "law" (toJson text)
     | none => outcome
+  -- The law the object starts with, as it holds it: a snapshot's law is checked against the
+  -- journal's (`Snapshot.expectedLaws`), and replay against this.
+  let outcome := outcome.setObjVal! "lawText" (toJson o.lawText)
   let (w', entry) := push (noteMinted { w with objects := w.objects.insert id o } id) (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
@@ -2906,6 +2919,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     -- The pin binds the sources; the packet this compiler made of them is only counted if it differs.
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == o.pin do
       throw s!"object {id} is not the source closure its pin names"
+    if let .ok text := outcome.getObjValAs? String "lawText" then
+      unless text == o.lawText do throw s!"object {id} is not made with the law its creation journaled"
     let w := noteRecompiled w o
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
     return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]

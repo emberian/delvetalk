@@ -14,6 +14,8 @@ import json
 import os
 import unittest
 
+from tests.host import whole
+
 from tests.test_replay import rows
 from tests import test_policy
 from tests.test_chain import garden_seed
@@ -112,7 +114,7 @@ class Fork(Reflection):
                             reply={"status": "replied", "json": None, "model": "m",
                                    "raw": "delvetalk g2 plant / colour: silver / seed: a fern that remembers"})
         [resumed] = settled["resumed"]
-        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "planted"), resumed)
+        self.assertEqual((resumed["status"], whole(fork, resumed)["result"]["label"]), ("admitted", "planted"), resumed)
         self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 1)
 
     def test_a_fork_is_refused_onto_an_existing_path(self):

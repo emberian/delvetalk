@@ -13,6 +13,8 @@ import shutil
 import tempfile
 import unittest
 
+from tests.host import as_owner
+
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record, declared
 from tests.test_reflection import LIBRARY
@@ -119,7 +121,7 @@ class WorldObject(Reflection):
         waiting = self.turn("a", "later", record())
         self.assertEqual(waiting["status"], "suspended", waiting)
         go = self.turn("b", "bump", record(), identity="go", principal="ann")
-        [resumed] = go["resumed"]
+        [resumed] = [as_owner(self.host, r) for r in go["resumed"]]
         self.assertEqual((resumed["status"], resumed["result"]), ("admitted", nat(1)), resumed)
         self.assertEqual(self.count("a"), nat(100))
         self.reopen()

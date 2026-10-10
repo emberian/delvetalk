@@ -16,6 +16,8 @@ import os
 import tempfile
 import unittest
 
+from tests.host import whole
+
 from tests.test_reflection import Reflection
 from tests.test_turn_world import label, nat, record
 from tests.test_world_object import extended_library
@@ -174,14 +176,14 @@ class Changes(Reflection):
         self.make2("r", READER)
         self.assertEqual(self.turn("r", "later", record(other=label("bell"), slot=label("go1")), identity="w1")["status"], "suspended")
         [resumed] = self.turn("bell", "name", record(who=label("kim")), principal="ann", identity="go1")["resumed"]
-        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", nat(0)), resumed)
+        self.assertEqual((resumed["status"], whole(self.host, resumed)["result"]), ("admitted", nat(0)), resumed)
         self.assertNotIn("rerunOf", resumed)
         self.assertIn({"object": "bell", "field": "rung", "key": "*", "version": 0}, resumed["receipt"]["roots"])
         self.make2("r2", READER)
         self.assertEqual(self.turn("r2", "later", record(other=label("bell"), slot=label("go2")), identity="w2")["status"], "suspended")
         [stale] = self.turn("bell", "ring", record(), principal="ann", identity="go2")["resumed"]
         self.assertIn("rerunOf", stale)
-        self.assertEqual(stale["result"], nat(1), stale)
+        self.assertEqual(whole(self.host, stale)["result"], nat(1), stale)
         self.reopen()
         self.assertEqual((self.get("r", "got"), self.get("r2", "got")), (nat(100), nat(101)))
 
@@ -261,8 +263,11 @@ class Receivers(Reflection):
         self.assertEqual(self.watch_with("asText"), label("subscribed"))
         rung = self.turn("bell", "ring", record())
         [d] = rung["delivered"]
-        self.assertEqual((d["status"], d["receipt"]["outcome"]["class"]), ("refused", "typeMismatch"), d)
-        self.assertEqual(d["receipt"]["outcome"]["expected"]["method"], "asText")
+        # The delivery is ann's: ember, whose ring caused it, sees its public projection (codex host 1).
+        self.assertEqual((d["status"], d["receipt"]["class"]), ("refused", "typeMismatch"), d)
+        [entry] = [e for e in self.entries() if e["height"] == d["receipt"]["height"]]
+        self.assertEqual(entry["identity"]["principal"], "ann")
+        self.assertEqual(entry["outcome"]["expected"]["method"], "asText")
         self.assertEqual(self.counts(), (0, 0, 0))
 
     def test_empty_is_changed_and_another_receiver_replaces(self):
