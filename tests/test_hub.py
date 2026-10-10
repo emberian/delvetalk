@@ -142,3 +142,18 @@ class CardsReadFieldLines(test_chain.Chain):
         self.make("garden", closure("Garden"), garden_seed(""))
         r = self.turn("garden", "receive", record(text=label(post("3mxghe7w33c2f")), post=label("at://x/glm")), principal=GLM)
         self.assertEqual(r["result"]["label"], "planted", r)
+
+
+class BellsAreQuiet(test_chain.Chain):
+    """Run 5, finding 2: 38 bell cards went to people talking about something else in the planting
+    threads. A bell answers prose naming none of its forms with no offer."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def test_the_replies_under_glms_planting_get_nothing(self):
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM)))
+        for rkey in ("3mxghexfsqk2f", "3mxghge5hak2f", "3mxghjyx4pk2f", "3mxghjmm6zc2f"):
+            r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=KIMI)
+            self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
+        self.assertEqual(items(get(self.state("bell"), "rains")), [])

@@ -67,7 +67,6 @@ class Cards(Chain):
         cases = {
             "delvetalk garden plant\nseed: a fern\ncolour: green": "Not planted: colour is one of: amber, violet, silver\n",
             "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": "Not planted: Unknown field smell\n",
-            "Could we plant a silver fern?": "Not planted: The garden has no interpretation policy.\n",
             "delvetalk orchard plant\nseed: a fern\ncolour: silver": "Not planted: This card offers garden plant\n",
         }
         for spell, expected in cases.items():

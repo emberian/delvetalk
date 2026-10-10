@@ -200,6 +200,7 @@ def guard(state: State, context: Abi.Context) -> String:
   if context.principal == state.owner then "" else textConcat("Only the garden's owner sets it; that is ", Card.name(state.owner, context))
 def fromCard(reply: Card.Reply) -> Reply:
   match reply:
+    case silent(_): Reply.silent({})
     case done(_): Reply.changed({})
     case usage(_): Reply.shown({})
     case unclear(u): Reply.unclear({needs: u.needs})
@@ -210,9 +211,10 @@ def bared(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.P
   match parsed:
     case spell(_): judged(state, context, input.post, parsed, false, found)
     case notASpell(_): understand(state, input, context, found)
-# What is not a spell is given to the policy's model, which can only propose.
+# What is not a spell is given to the policy's model, which can only propose; with no
+# policy, prose naming none of the garden's forms gets no card.
 def understand(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
-  if Plans.isNobody(state.policy) then told(found, context, Reply.refused({reason: "The garden has no interpretation policy."}), refusedCard("The garden has no interpretation policy.")) else interpreted(state, input, context, state.confirm, found)
+  if Plans.isNobody(state.policy) then silent(found, context) else interpreted(state, input, context, state.confirm, found)
 def interpreted(state: State, input: Card.Heard, context: Abi.Context, confirm: Bool, found: Held) -> Activity<Plan, Response, Reply>:
   match perform(Plan.interpret({utterance: input.text, offers: Lists.List::<Form.Form>.cons({head: plantForm(context), tail: Lists.List::<Form.Form>.nil()}), policy: state.policy})):
     case proposal(p): named(state, context, input.post, found, confirm, p.argument.colour, p.argument.seed)
