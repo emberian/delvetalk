@@ -393,6 +393,15 @@ class PolicyObject(Chain):
         self.assertEqual(green["result"]["label"], "unclear")
         self.assertEqual(green["offers"][0]["text"], "✾ THE NIGHT GARDEN\n\nI could not make a planting of that. I still need: colour is one of: amber, violet, silver (not green).\n")
 
+    def test_the_interpretation_shows_the_model_the_card_as_the_speaker_reads_it(self):
+        # docs/FLEX.md §2: the card answered, rendered for the speaker, beside the forms and lexicon.
+        self.policy()
+        self.garden("policy")
+        self.say("plant something")
+        [pending] = self.host.send(op="world-interpretations")["pending"]
+        self.assertIn("NIGHT GARDEN", pending["card"])
+        self.assertLessEqual(len(pending["card"]), 1400)
+
     def test_an_unclear_interpretation_offers_its_needs(self):
         self.policy()
         self.garden("policy")

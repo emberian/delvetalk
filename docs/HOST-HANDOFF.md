@@ -975,6 +975,21 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_spell.py` `test_a_prose_line_with_a_colon_after_the_fields_ends_them`,
    `test_a_name_outside_the_identifier_alphabet_is_no_field_and_ends_the_fields`.
 
+117. **What the model sees, and hob's answers (host12; docs/FLEX.md §4 host 5, 6).** The `interpret`
+   Plan may name `held` (what the card holds for this speaker: a pending question, a held proposal)
+   and `misfit` (a misfit spell's clause and reason), both journaled on the interpretation (a World
+   line for the objects lane: `interpret<R>({utterance, offers, policy, model, held, misfit})`).
+   `world-interpretations` lists, beside the utterance and offers, `card` (the asking card as the
+   speaker reads it now, `cardText`, at most `Limits.cardShownChars` 1,400 characters), `held` and
+   `misfit`, and the policy's `lexicon`; a Policy whose `prompt` takes `(state, asked)` gets `asked =
+   {utterance, offers, card, held, misfit}` fitted to its type (the old `(state, offers, utterance)`
+   still runs). `interpretVerdict` reads hob's three non-spell answers before the spells: `none` is
+   `unclear {needs: ["not addressed"]}`, `card` is `replied {text: "card"}` (`unclear ["card"]` where
+   the Response has no `replied`), `ask: <one line>` is `unclear {needs: [<question>]}`; spells and
+   `proposals` as before. Tests: `tests/test_interpret_object.py` `test_hobs_three_answers_that_are_no_spell`,
+   `test_the_request_carries_the_card_as_the_speaker_reads_it`, `tests/test_policy.py`
+   `test_the_interpretation_shows_the_model_the_card_as_the_speaker_reads_it`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
