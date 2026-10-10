@@ -28,7 +28,15 @@ def pass(state: State, input: {to: String, text: String}, context: Abi.Context) 
     case returned(_): "returned"
     case refused(r): "{r.clause}|{r.reading}"
     case _: "other"
-""", "pass")
+def handled(state: State, input: {to: String, handler: String}, context: Abi.Context) -> Activity<String>:
+  match world.run::<Data>({object: {world: "", object: input.to}, method: "plant", argument: {colour: "amber", seed: "x"}, handler: {world: "", object: input.handler}}):
+    case returned(_): "returned"
+    case refused(r): "{r.clause}|{r.reading}"
+    case _: "other"
+""", "pass", "handled")
+
+# World's `run` answers `Ran<R>` until the objects lane folds it into `Returned<R>`; this copy does.
+RAN = ("-> Ran<R>\n", "-> Returned<R>\n")
 
 
 class CallReading(Chain):
@@ -38,7 +46,7 @@ class CallReading(Chain):
         self.assertIn(RETURNED[1], world)   # world/lib/World.obend carries the reading
         seen, out = set(), []
         for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out)
+            closure(dep, seen, out, {"World": world.replace(*RAN)})
         return out + [{"name": name, "source": source}]
 
     def setUp(self):
@@ -57,6 +65,12 @@ class CallReading(Chain):
         self.assertEqual(self.pass_("forge", "delvetalk forge make"),
                          "unknownObject|no card forge that you may see; the directory lists the doors.")
         self.assertEqual(self.pass_("garden", "delvetalk garden plant\ncolour: amber\nseed: oak"), "returned")
+
+    def test_a_refused_run_says_why(self):
+        run = lambda to, handler: self.turn("relay", "handled", record(to=label(to), handler=label(handler)), principal="glm")["result"]["value"]
+        self.assertEqual(run("garden", "ghost"),
+                         "handler|no handler ghost that you may see; a run names an object whose handle() answers plans.")
+        self.assertEqual(run("forge", "garden"), "unknownObject|no card forge that you may see; the directory lists the doors.")
 
 
 if __name__ == "__main__":

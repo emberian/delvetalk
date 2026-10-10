@@ -641,6 +641,11 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    another object calls (Env's `mention`; the objects lane writes `~mention`). Test:
    `tests/test_public_methods.py` `Unoffered`.
 
+84. **A refused run says why (host11).** The `run` arm's refusals answer `refused {clause, reading}`
+   as `call`'s do (5.77): `handler` ("no handler <h> that you may see; …"), unknownObject, noMethod,
+   typeMismatch; so World.obend's `Ran<R>` may fold back into `Returned<R>` (objects lane). Test:
+   `tests/test_call_reading.py` `test_a_refused_run_says_why` (a World copy with `run -> Returned<R>`).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

@@ -1234,20 +1234,23 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some target := f.lookup "object" | evaluation "malformed run plan"
     let some method := (f.lookup "method").bind labelOf | evaluation "malformed run plan"
     let some argument := f.lookup "argument" | evaluation "malformed run plan"
-    let some handler := (f.lookup "handler").bind referenceId | refusedWith bounds responseType "handler"
+    let some handler := (f.lookup "handler").bind referenceId
+      | refusedReading bounds responseType "handler" "a run names its handler by reference."
     let s ← get
     match referenceId target >>= fun id => (s.world.objects[id]?).map (id, ·) with
-    | none => refusedWith bounds responseType "unknownObject"
+    | none => refusedReading bounds responseType "unknownObject" (callReading "unknownObject" ((referenceId target).getD ""))
     | some (id, calleeObj) =>
       match s.world.objects[handler]? with
-      | none => refusedWith bounds responseType "handler"
+      | none => refusedReading bounds responseType "handler" s!"no handler {handler} that you may see; a run names an object whose handle() answers plans."
       | some h =>
-        if !h.read.permits s.subject then refusedWith bounds responseType "handler"
-        else if helperOf s.world self id method then refusedWith bounds responseType "noMethod"
+        if !h.read.permits s.subject then refusedReading bounds responseType "handler" s!"no handler {handler} that you may see; a run names an object whose handle() answers plans."
+        else if helperOf s.world self id method then refusedReading bounds responseType "noMethod" (noMethodReason id method)
         else if depth + 1 > Limits.maxCallDepth then evaluation "call depth exceeded"
         else
           let callee ← compiledMethod calleeObj method
-          if !argumentFits callee argument then refusedWith bounds responseType "typeMismatch" else
+          if !argumentFits callee argument then
+            refusedReading bounds responseType "typeMismatch"
+              (callReading "typeMismatch" id (some (Json.mkObj [("method", toJson method)]))) else
           modify fun s => { s with handlers := (depth + 1, handler) :: s.handlers }
           let result ← runMethod (depth + 1) id method argument self s.subject
           modify fun s => { s with handlers := s.handlers.drop 1 }
