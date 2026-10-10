@@ -102,7 +102,7 @@ def summoned(state: State, input: Card.Heard, context: Abi.Context) -> Activity<
 def worded(state: State, input: Card.Heard, found: Lists.Maybe<Door>, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match found:
     case some(d): doorCard(d.value.to, context)
-    case none(_): fielded(state, input, fieldsOf(input.text), state.doors, context)
+    case none(_): fielded(state, input, Spell.bare(input.text), state.doors, context)
 # Field lines with no delvetalk line (the §10 hour: `plant: … / colour: silver`, `rain: …`):
 # when the first `name: value` line names an action one of the doors offers, the lines
 # become that door's spell (the action line's value fills the form's first field the
@@ -130,13 +130,6 @@ def spellFor(card: String, form: Form.Form, first: Spell.Binding, fields: Spell.
   textConcat("delvetalk ", textConcat(card, textConcat(" ", textConcat(form.action, textConcat("\n", textJoin(Lists.map::<Spell.Binding, String>(Lists.filter::<Spell.Binding>(fields, fn(b: Spell.Binding) -> Bool: b.name == form.action || isField(form, b.name)), fn(b: Spell.Binding) -> String: textConcat(b.name, textConcat(": ", b.value))), "\n"))))))
 def isField(form: Form.Form, name: String) -> Bool:
   Lists.any::<Form.Field>(form.fields, fn(f: Form.Field) -> Bool: f.name == name)
-# Every `name: value` line of a post whose name is a field name ([a-z0-9-]+), outside
-# code fences and quotation.
-def fieldsOf(text: String) -> Spell.Bindings:
-  if text == "" then Spell.Bindings.nil() else fieldLine(textTake(text, textBreak(text, "\n")), textDrop(text, textBreak(text, "\n") + 1n))
-def fieldLine(raw: String, rest: String) -> Spell.Bindings:
-  let line = trimmed(raw)
-  if textTake(line, 1n) == ">" || textTake(line, 3n) == "```" || Spell.looksLikeField(line) == false then fieldsOf(rest) else Spell.Bindings.cons({head: {name: textTake(line, textBreak(line, ":")), value: trimmed(textDrop(line, textBreak(line, ":") + 1n))}, tail: fieldsOf(rest)})
 # Prose that names no door, card or field form: the menu once per principal; then, with a
 # policy, the town's model reads it against every door's forms, and a spell it answers
 # with goes to the door it names; anything else gets nothing at all.

@@ -190,7 +190,7 @@ def confirmed(state: State, input: Card.Heard, context: Abi.Context, found: Held
     case _: told(found, context, Reply.refused({reason: "I could not read what I had understood."}), refusedCard("I could not read what I had understood."))
 def hear(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
-    case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), render(state, context)) else understand(state, input, context, found)
+    case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), render(state, context)) else bared(state, input, context, Card.withBare(parsed, input.text, context, forms()), found)
     case spell(s): if s.action == "set" || s.action == "?" then Card.answerLensedAs::<Edits, State, Planting, Reply>(Card.routeParsed(parsed, context, forms()), context, forms(), lenses(), guard(state, context), render(state, context), fromCard) else judged(state, context, input.post, parsed, false, found)
 # Whether understood prose waits for "yes" is the owner's to set: `delvetalk garden set`
 # with `confirm: yes` or `confirm: no`.
@@ -204,6 +204,12 @@ def fromCard(reply: Card.Reply) -> Reply:
     case usage(_): Reply.shown({})
     case unclear(u): Reply.unclear({needs: u.needs})
     case refused(r): Reply.refused({reason: r.reason})
+# Field lines naming the plant form (`plant: a fern / colour: silver`) are its spell;
+# other prose goes to the policy's model.
+def bared(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
+  match parsed:
+    case spell(_): judged(state, context, input.post, parsed, false, found)
+    case notASpell(_): understand(state, input, context, found)
 # What is not a spell is given to the policy's model, which can only propose.
 def understand(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   if Plans.isNobody(state.policy) then told(found, context, Reply.refused({reason: "The garden has no interpretation policy."}), refusedCard("The garden has no interpretation policy.")) else interpreted(state, input, context, state.confirm, found)

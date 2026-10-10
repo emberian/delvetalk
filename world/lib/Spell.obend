@@ -201,6 +201,15 @@ def consed(name: String, value: String, parsed: Fields2) -> Fields2:
     case found(f): Fields2.found({bindings: Bindings.cons({head: {name: name, value: value}, tail: f.bindings})})
     case stray(st): Fields2.stray({bindings: Bindings.cons({head: {name: name, value: value}, tail: st.bindings}), rest: st.rest})
     case _: parsed
+# Field lines with no delvetalk line, as the town writes them (`plant: a fern`, `rain:
+# a drizzle`, fenced or not): every `name: value` line whose name is a field name, outside
+# code fences with an info string and `>` quotation, in order.
+def bare(text: String) -> Bindings:
+  if text == "" then Bindings.nil() else bareLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
+def bareLine(text: String, indent: Nat, stop: Nat) -> Bindings:
+  if tagged(text, indent, stop) then bare(pastFence(textDrop(text, stop + 1n))) else bareField(trimEnd(textDrop(textTake(text, stop), indent)), textDrop(text, stop + 1n))
+def bareField(line: String, rest: String) -> Bindings:
+  if textTake(line, 1n) == ">" || textTake(line, 3n) == "```" || looksLikeField(line) == false then bare(rest) else Bindings.cons({head: {name: textTake(line, textBreak(line, ":")), value: trimStart(textDrop(line, textBreak(line, ":") + 1n))}, tail: bare(rest)})
 sum Verdict:
   fine: {}
   wrong: {reason: String}

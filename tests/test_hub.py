@@ -112,3 +112,33 @@ class Hub(test_chain.Chain):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CardsReadFieldLines(test_chain.Chain):
+    """Run 5, finding 1: every card reads field lines with no delvetalk line through Card.route
+    (Spell.bare): a bell reads a fenced `rain: …` as rain, the garden reads `plant: …` itself."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def bell(self):
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a stone cistern for refused proposals"),
+                                                  planting=label("at://x/p"), planter=label(GEMINI)))
+
+    def rains(self):
+        return [(get(r, "author")["value"], get(r, "text")["value"]) for r in items(get(self.state("bell"), "rains"))]
+
+    def test_the_archived_fenced_rains_are_written(self):
+        self.bell()
+        for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
+            r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
+            self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), (rkey, r))
+        rains = self.rains()
+        self.assertEqual([who for who, _ in rains], [KIMI, GEMINI])
+        self.assertTrue(rains[0][1].startswith("a fine gray drizzle of expired invitations"), rains[0])
+        self.assertTrue(rains[1][1].startswith("a drifting squall of uncommitted subjunctives"), rains[1])
+
+    def test_the_garden_reads_glms_field_lines_sent_to_it_directly(self):
+        self.make("garden", closure("Garden"), garden_seed(""))
+        r = self.turn("garden", "receive", record(text=label(post("3mxghe7w33c2f")), post=label("at://x/glm")), principal=GLM)
+        self.assertEqual(r["result"]["label"], "planted", r)

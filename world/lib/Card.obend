@@ -44,7 +44,24 @@ sum Reply:
 def named(form: Form.Form, card: String) -> Form.Form:
   {card: card, action: form.action, fields: form.fields}
 def route(text: String, context: Abi.Context, forms: Forms) -> Routed:
-  routeParsed(Spell.parse(text), context, forms)
+  routeParsed(withBare(Spell.parse(text), text, context, forms), context, forms)
+# A reply with no delvetalk line whose first `name: value` line names an action or a
+# field of one of this card's forms is that form's spell (a bell reads a fenced `rain:
+# a drizzle` as rain; Spell.fit gives an action-named line to the form's open text field).
+def withBare(parsed: Spell.Parsed, text: String, context: Abi.Context, forms: Forms) -> Spell.Parsed:
+  match parsed:
+    case spell(_): parsed
+    case notASpell(_): bareSpell(Spell.bare(text), context.object, forms, parsed)
+def bareSpell(bindings: Spell.Bindings, card: String, forms: Forms, otherwise: Spell.Parsed) -> Spell.Parsed:
+  match bindings:
+    case nil(_): otherwise
+    case cons(c): bareFor(Lists.find::<Form.Form>(forms, fn(f: Form.Form) -> Bool: f.action == c.head.name || hasField(f, c.head.name)), bindings, card, otherwise)
+def hasField(form: Form.Form, name: String) -> Bool:
+  Lists.any::<Form.Field>(form.fields, fn(f: Form.Field) -> Bool: f.name == name)
+def bareFor(found: Lists.Maybe<Form.Form>, bindings: Spell.Bindings, card: String, otherwise: Spell.Parsed) -> Spell.Parsed:
+  match found:
+    case none(_): otherwise
+    case some(f): Spell.Parsed.spell({card: card, action: f.value.action, fields: Lists.filter::<Spell.Binding>(bindings, fn(b: Spell.Binding) -> Bool: b.name == f.value.action || hasField(f.value, b.name))})
 def routeParsed(parsed: Spell.Parsed, context: Abi.Context, forms: Forms) -> Routed:
   match parsed:
     case notASpell(_): Routed.usage({})

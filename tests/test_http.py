@@ -240,7 +240,8 @@ class HttpFront(unittest.TestCase):
     # ---- heaps
 
     def heap_create(self, tok, name='h1'):
-        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': counter_modules(), 'entry': 'initial',
+        # A bare counter: Counter's closure with Card and Spell (about 67 KB) exceeds the front's 64 KiB body.
+        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': closure('Plan') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
                                                              'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
 
     def test_a_heap_is_private_and_missing_is_404_not_403(self):
