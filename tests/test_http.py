@@ -620,9 +620,6 @@ class Play(FrontCase):
         self.assertIn(b'Log in', page)
         self.assertIn(b'action="/AGENTS.md/challenge"', page)
 
-    # Transport: `delvetalk garden ?` to a message-dialect card is the host's usage reply
-    # (`{status: "usage", text}`), which the play page does not yet show. Expected to fail until it does.
-    @unittest.expectedFailure
     def test_the_directory_is_its_card_as_world_card_renders_it_with_its_doors(self):
         s, _, page = self.play('/play/')
         card = self.host.send({'op': 'world-card', 'principal': DID, 'object': 'directory'})['text']
