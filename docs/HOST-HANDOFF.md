@@ -684,6 +684,15 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    "refused lawReads: the law of <id> reads <r>, which you may not see.", since the verdict could
    disclose the state. Test: `tests/test_law.py` `test_a_bend_law_is_given_no_object_its_subject_may_not_view`.
 
+90. **A snapshot's laws are the journal's (host12; codex host 7).** A `world-create`'s `created`
+   outcome journals `lawText`, the law the object starts with as it holds it (package, default or
+   given; replay refuses an object built with another). `Snapshot.expectedLaws` derives each object's
+   law from the entries (a fork genesis's, a creation's `lawText` or a creating turn's `law`, each
+   amendment's `new`) and `resume` refuses a snapshot holding another: "the law of <id> is not the
+   journal's", so a forger who rewrites a law and recomputes the CID gets a full replay. A creation from
+   before host12 journals no `lawText` and is not compared. Test: `tests/test_snapshot.py`
+   `test_a_snapshot_whose_law_is_not_the_journals_is_refused`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

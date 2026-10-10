@@ -2456,6 +2456,9 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let outcome := match law with
     | some text => outcome.setObjVal! "law" (toJson text)
     | none => outcome
+  -- The law the object starts with, as it holds it: a snapshot's law is checked against the
+  -- journal's (`Snapshot.expectedLaws`), and replay against this.
+  let outcome := outcome.setObjVal! "lawText" (toJson o.lawText)
   let (w', entry) := push (noteMinted { w with objects := w.objects.insert id o } id) (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
@@ -2910,6 +2913,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     -- The pin binds the sources; the packet this compiler made of them is only counted if it differs.
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == o.pin do
       throw s!"object {id} is not the source closure its pin names"
+    if let .ok text := outcome.getObjValAs? String "lawText" then
+      unless text == o.lawText do throw s!"object {id} is not made with the law its creation journaled"
     let w := noteRecompiled w o
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
     return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]
