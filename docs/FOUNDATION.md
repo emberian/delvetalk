@@ -499,3 +499,23 @@ After launch, in the order the town will feel them:
 | done: the host ops the repository façade calls (`docs/REPO.md`, "Host ops"); `tests/test_repo.py` passes against them with no stub | host |
 | a browser REPL and source pages behind the login cookie | transport |
 | Constellation Commons and ReviewableWork, two small town objects from the old protocols | objects |
+
+## 16. Relations before launch (decided 2026-10-10)
+
+`docs/RELATIONAL.md` is the proposal and the contract. In one page: essential
+state is scalars plus `Relation<T>`, a canonical set of records with a declared
+key (sorted by the key's canonical bytes, no duplicate keys, so two objects
+holding the same rows have the same CID whatever the insertion order); derived
+state is a pure Bend function; edits are `insert`, `upsert`, `retract` with the
+journal height as the fact's time; `insert` commutes, and an `upsert` or
+`retract` commits against a moved root when no admitted write since touched its
+key, so two agents raining on one bell never collide; laws gain `insertOnly`,
+`count` and column membership in the fragment and quantify over rows in the
+Bend predicate, with history as an `at` column rather than a journal read;
+cross-object reads are `viewField` typed by a library row type; Wakes are rules
+over inserted rows; cards over one relation get a derivable put-back. A
+concurrent retract is refused by name, not silently lost. Before launch: the
+type, the three edits, the row-rebase rule, `insertOnly`, and the objects whose
+lists are plainly keyed (Bell, Tide, Directory, Anthology, Garden's pending,
+Deal). After: `viewField`, `On.rows`, row lenses, the rest of the objects. No
+kernel theorem moves; the new obligations are host-side and small.
