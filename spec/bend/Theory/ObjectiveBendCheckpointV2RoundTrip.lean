@@ -315,13 +315,12 @@ theorem texts_mapM (f : Token → Option String) (texts : ∀ x, f (.text x) = s
   | x :: rest => by simp [List.mapM_cons, texts, texts_mapM f texts rest]
 
 /-- The string layer inverts: whatever the table and the hint. -/
-theorem strings_roundTrip (terms : Array Term) (strings locals : Array String) (nameLists : Array (List String))
+theorem strings_roundTrip (edition : String) (strings locals : Array String)
     (find : String → Option Nat) (plain : Tokens) :
-    decodeStateV2 terms strings nameLists (.text checkpointEditionV2 :: .nat locals.size ::
-      (locals.toList.map .text ++ plain.map (internString (strings ++ locals) find))) =
-      decodePlainV2 terms nameLists plain := by
+    decodeStrings edition strings (.text edition :: .nat locals.size ::
+      (locals.toList.map .text ++ plain.map (internString (strings ++ locals) find))) = some plain := by
   have size : (locals.toList.map Token.text).length = locals.size := by simp
-  simp only [decodeStateV2, bne_self_eq_false, Bool.false_eq_true, if_false]
+  simp only [decodeStrings, bne_self_eq_false, Bool.false_eq_true, if_false]
   rw [← size, List.take_left' rfl, List.drop_left' rfl, texts_mapM _ (fun _ => rfl)]
   have back : (List.map (resolveString (strings ++ locals) ∘ internString (strings ++ locals) find) plain) = plain := by
     rw [← List.map_map, resolve_intern_map]
@@ -348,10 +347,71 @@ restored exactly by decoding against the program's terms, strings and name lists
 every dictionary (its hints only find candidates; every reference is checked). -/
 theorem stateV2_roundTrip (d : Dictionary) (s : State) :
     decodeStateV2 d.terms d.strings d.nameLists (encodeStateV2 d s) = some s := by
-  unfold encodeStateV2 internAll
+  unfold decodeStateV2 encodeStateV2 internAll
   simp only []
-  rw [strings_roundTrip, plainV2_roundTrip]
+  rw [strings_roundTrip]
+  exact plainV2_roundTrip d s
 
-#assert_axioms stateV2_roundTrip
+/-! ## v3: relative addresses -/
+
+theorem unzigzagFrom_zigzagFrom (i a : Nat) : unzigzagFrom i (zigzagFrom i a) = a := by
+  unfold zigzagFrom unzigzagFrom
+  split <;> rename_i h
+  · have : 2 * (i - a) % 2 = 0 := by omega
+    simp only [this, beq_self_eq_true, ite_true]; omega
+  · have : (2 * (a - i) - 1) % 2 = 1 := by omega
+    have hne : ((2 * (a - i) - 1) % 2 == 0) = false := by rw [this]; rfl
+    simp only [hne, Bool.false_eq_true, ite_false]; omega
+
+theorem ofRelative_toRelative (i a : Nat) : ofRelative i (toRelative i a) = a := by
+  unfold toRelative ofRelative
+  split
+  · have odd : (2 * zigzagFrom i a + 1) % 2 = 1 := by omega
+    have half : (2 * zigzagFrom i a + 1) / 2 = zigzagFrom i a := by omega
+    simp [odd, half, unzigzagFrom_zigzagFrom]
+  · have even : 2 * a % 2 = 0 := by omega
+    simp only [even]; simp
+
+section
+variable {f g : Address → Address} (inv : ∀ a, g (f a) = a)
+include inv
+
+theorem mapValue_inverse (v : RuntimeValue) : mapValueAddresses g (mapValueAddresses f v) = v := by
+  cases v <;> simp [mapValueAddresses, inv, Function.comp_def]
+
+theorem mapCell_inverse (c : Cell) : mapCellAddresses g (mapCellAddresses f c) = c := by
+  cases c <;> simp [mapCellAddresses, mapValue_inverse inv, inv, Function.comp_def]
+
+theorem mapFrame_inverse (fr : Frame) : mapFrameAddresses g (mapFrameAddresses f fr) = fr := by
+  cases fr <;> simp [mapFrameAddresses, mapValue_inverse inv, inv, Function.comp_def]
+
+theorem mapControl_inverse (c : Control) : mapControlAddresses g (mapControlAddresses f c) = c := by
+  cases c <;> simp [mapControlAddresses, mapValue_inverse inv, inv, Function.comp_def]
+end
+
+theorem absolute_relative (s : State) : absoluteState (relativeState s) = s := by
+  obtain ⟨heap, control, stack⟩ := s
+  simp only [absoluteState, relativeState, mapStateAddresses, Array.size_mapIdx]
+  congr 1
+  · apply Array.ext
+    · simp
+    · intro i h1 h2
+      simp [mapCell_inverse (ofRelative_toRelative i)]
+  · exact mapControl_inverse (ofRelative_toRelative heap.size) control
+  · rw [List.map_map]
+    conv => rhs; rw [← List.map_id stack]
+    apply List.map_congr_left
+    intro fr _
+    exact mapFrame_inverse (ofRelative_toRelative heap.size) fr
+
+/-- **The v3 checkpoint round trip**, for every dictionary and every state. -/
+theorem stateV3_roundTrip (d : Dictionary) (s : State) :
+    decodeStateV3 d.terms d.strings d.nameLists (encodeStateV3 d s) = some s := by
+  unfold decodeStateV3 encodeStateV3 internAll
+  simp only []
+  rw [strings_roundTrip]
+  simp only [Option.bind_some, plainV2_roundTrip, Option.map_some, absolute_relative]
+
+#assert_axioms stateV2_roundTrip stateV3_roundTrip
 
 end Minidregg.Theory.ObjectiveBendCheckpointRoundTrip

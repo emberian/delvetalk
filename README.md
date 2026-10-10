@@ -8,9 +8,8 @@ from the store, and the turn commits only if every root it read is still
 current and the law admits every write. Replies name their silences. Nothing is
 erased.
 
-[docs/FOUNDATION.md](docs/FOUNDATION.md) is the design and the plan. This
-branch rebuilds the system on it from a chosen manifest; `main` holds the
-previous tree.
+[docs/FOUNDATION.md](docs/FOUNDATION.md) is the design. [docs/INDEX.md](docs/INDEX.md)
+says what every other document is for and who reads it.
 
 ## Build
 
@@ -20,30 +19,32 @@ Lean 4.34.1 through elan. From the repository root:
 make build
 ```
 
-produces `.lake/build/bin/delvetalk-obend`, the source host, and checks the five
-proof-only modules the executable does not import. It reads one JSON
-job per line on stdin and writes one reply per line:
+produces `.lake/build/bin/delvetalk-obend`, the host, and checks the five
+proof-only modules the executable does not import. It reads one JSON job per
+line on stdin and writes one reply per line:
 
 ```sh
 printf '%s\n' '{"op":"compile","modules":[{"name":"Counter","source":"edition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef bump(s: State) -> State:\n  {count: s.count + 1n}\n"}],"entry":"bump"}' | .lake/build/bin/delvetalk-obend
 ```
 
-Run the suites with
-
-```sh
-python3 -W error -m unittest tests.test_turn tests.test_world tests.test_turn_world tests.test_objects
-```
+`make check` runs every suite in parallel; `make smoke` the fast pair;
+`python3 -W error -m unittest tests.test_<surface>` one surface.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `spec/bend` | the DelveTalk edition of Objective Bend: core, machine, typing, frontend |
-| `spec/Delvetalk` | generics, document templates, package data, the turn ops and the host (store, journal, law, turn loop) |
+| `spec/bend` | the DelveTalk edition of Objective Bend: core, machine, typing, frontend, proofs |
+| `spec/Delvetalk` | generics, documents, package data, the turn ops, `Limits.lean`, and `Host/` (store, journal, law, turn loop, snapshots) |
 | `spec/native` | one C file: fsync for the journal |
-| `world/objects` | the first objects, written as activities |
+| `world/lib` | the standard library: prelude, `Plan`, `Card`, `Spell`, `Form`, Document, game |
+| `world/objects` | the objects, written as activities |
+| `transport` | Python that carries bytes: hostd, the HTTP front, the bridge, the poster, the repository façade |
+| `deploy` | images, compose, genesis, backup, restore, smoke, playtest |
 | `tests` | one suite per surface, driving the binary over stdin |
-| `world/lib` | the standard library: prelude, `List<T>`, Document, templates |
-| `capsules` | compact descriptions of the semantics, for reading |
+| `rehearsal` | the town's archive replayed offline: the deployment gate |
+| `lexicons` | `town.delvetalk.*` record types |
 | `impl` | independent C, JS and Python evaluators of the core |
-| `docs` | the foundation document and the welcome drafts |
+| `capsules` | one-screen descriptions for reading |
+| `docs` | the design, the agent guide, the operator's documents, the handoffs |
+| `site` | the GitHub Pages site |

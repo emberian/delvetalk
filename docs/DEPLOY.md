@@ -1,6 +1,6 @@
 # Deploying DelveTalk
 
-`https://delvetalk.fg-goose.online` is the HTTP front (`transport.http`) on the
+`https://gsb.fg-goose.online` is the HTTP front (`transport.http`) on the
 workhorse, behind native Caddy on the anchor. Everything in `deploy/` is an
 artifact the owner runs; nothing here deploys itself.
 
@@ -40,8 +40,10 @@ enforce it across containers (measured), so test the stack there on a named volu
 - `/var/lib/delvetalk/v2`, owner `10425:10425`, mode 0700 (the image's uid,
   next in the edge's series). On ext4 or ZFS, local disk: see "Durability".
 - `/etc/delvetalk/anthropic.key`: the key alone, owner 10425, mode 0400.
-- The Caddy route in `edge/anchor/Caddyfile` for `delvetalk.fg-goose.online`
-  already proxies to `10.10.1.10:8765`. No change there. The old systemd
+- The portal is `https://gsb.fg-goose.online` (`DELVETALK_ORIGIN` overrides it for every program; the front's `--origin` in
+  `compose.yml` names it too). The Caddy route in `edge/anchor/Caddyfile` for `gsb.fg-goose.online`, and the old
+  `delvetalk.fg-goose.online` route, both proxy to `10.10.1.10:8765` until the town has moved; then the old one goes.
+  No other change there. The old systemd
   units listen on that address: stop and disable `delvetalk-proxy.socket`,
   `delvetalk-proxy.service`, `delvetalk-portal.service`; keep
   `delvetalk-tick.timer` disabled. Their data under `/var/lib/delvetalk/world`
@@ -71,24 +73,27 @@ On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` 
     docker compose up -d --wait delvetalk-hostd
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
 
-`deploy.genesis` is docs/GENESIS.md as one command: as the opener it creates `policy`, `directory`, `garden`
-(`confirm: false`), `tide`, `workshop`, `anthology`, `cistern` and `commons`, in that order, and refuses to run a second
-time if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the same way.
-`deploy.seed` creates one further object by hand.
+`deploy.genesis` is docs/GENESIS.md as one command. The opener arrives first (`world-arrive`), then creates `policy`,
+`directory`, `garden`, `tide`, `workshop`, `anthology`, `cistern`, `commons`, `rooms` and `play`, in that order. It
+refuses to run if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the
+same way. `deploy.seed` creates one further object by hand.
 
-Genesis also has each door's object publish its page (`publishPage`), so after the bridge runs its outbox holds one
-`wiki: <Door>` draft each for GARDEN, ROOMS, PLAY, WORKSHOP, TIDE and ANTHOLOGY (STUDIO is a link, with no page).
+Genesis then has each door's object publish its page (`publishPage`). After the bridge runs, its outbox holds one
+`wiki: <Door>` draft each for GARDEN, ROOMS, PLAY, WORKSHOP and ANTHOLOGY. Tide has no `publishPage`, so TIDE's is
+named on stderr as not published; STUDIO is a link, with no page.
 Post each with `transport.post ... --object <object>` as `python3 -m transport.bridge outbox` prints it; that records the
 post for the object, so replies to it route there. A door whose page was not published is named on stderr.
 
-    docker compose up -d --wait --remove-orphans
+    docker compose --profile town up -d --wait --remove-orphans
     docker compose ps
+
+`delvetalk-interpret` is in the `town` profile, kept on purpose so a stack without the model key still comes up: every `up` that should run it names `--profile town` (as here, after a restore and after a new binary); without it the interpreter does not start and interpretations wait.
 
 `--wait` fails red unless the healthcheck passes: `/AGENTS.md` answers and the
 home page shows a journal height (a refused `world-open` shows none). From
 the laptop:
 
-    deploy/smoke.sh https://delvetalk.fg-goose.online --pin <sha256> --handle <you>.delve.town
+    deploy/smoke.sh https://gsb.fg-goose.online --pin <sha256> --handle <you>.delve.town
 
 Post the challenge text it prints from that account, then rerun with
 `--verify at://<did>/town.delve.feed.post/<rkey>` to view as the verified DID
@@ -109,28 +114,30 @@ confirmed post, post.py calls the host's `world-posted` for it, so every card po
 is recorded in the same step (replies to it then route to that object). Post a card
 without `--object` only if no object should hear its replies.
 
-## The daily loop
+## Open the hand
 
-The front keeps running. Run the town programs against hostd:
+The front keeps running, and the bridge and interpreter run against hostd (`bridge run --poll`, `interpret run --poll`, or
+`--once` by hand as in "First start"). The owner works the town from the hand, a console the front serves at `/hand/`
+only when it is started with a secret:
 
-    docker compose run --rm delvetalk-bridge python3 -m transport.bridge run --once --observe \
-      --state /data/state
-    docker compose run --rm delvetalk-interpret python3 -m transport.interpret run --once \
-      --state /data/state
-    docker compose run --rm delvetalk-ops python3 -m transport.bridge outbox --state /data/state
+    python3 -m transport.http --state /data/state --hand-token <secret> --credentials /run/delve.json
 
-Each draft in the outbox prints its own command. It posts the draft as a reply, records it
-with the host and marks it posted:
+(in compose, add those arguments and the credentials mount to `delvetalk-http`; the front's port is not public, so
+reach it by a forward):
 
-    python3 -m transport.post --state STATE post --draft <file> --intent draft-<name> \
-      --host-socket SOCKET --object <object> [--slot <principal:intent>] --i-am-ember-and-authorize-posting \
-      && python3 -m transport.bridge mark-posted <file>
+    ssh -L 8765:10.10.1.10:8765 root@workhorse     # then open http://127.0.0.1:8765/hand/?token=<secret>
 
-Read the draft, add the credentials mount as above, and run it. A turn that suspends on an
-interpretation has no draft until the interpretation settles; then the bridge drafts what the
-resumed turn offered (none if it offered nothing). A model failure (network, rate limit)
-leaves the interpretation pending and is retried with backoff up to 8 times. Draft
-principals are observed, unverified DIDs.
+The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. The page
+has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
+retries, hostd pid), a search by receipt slug (`world-resolve`), the OUTBOX and the INBOX. The outbox groups drafts by
+the post they answer, the post beside an editable textarea of the draft, with three buttons: **Post** runs
+`post.post_draft`, the code `post.py --draft` runs (the edited text, the owner's credentials file, `world-posted` for the
+draft's object, the draft marked posted); **Skip** marks it `skipped` with a reason and it leaves the outbox; **Hold**
+leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
+(what, who, when, draft id). A turn that suspends on an interpretation has no draft until the interpretation settles; a
+model failure leaves it pending and retried with backoff up to 8 times. Draft principals are observed, unverified DIDs.
+The command-line way remains: `python3 -m transport.bridge outbox --state STATE` prints each draft with its own
+`post.py` command.
 
 ## Playtesting in Zulip
 
@@ -167,7 +174,7 @@ an argv.
 ## Durability and backups
 
 The host appends each step's entries and fsyncs once before it replies
-(`spec/native/sync.c`: `fsync` on Linux, `F_FULLFSYNC` on macOS). That holds
+(`spec/native/sync.c`: `fsync`; `F_FULLFSYNC` only when `world-open` asks for `sync: full`, which hostd does not). That holds
 only if fsync reaches the disk: use a bind mount of a local ext4 or ZFS
 directory, as here. Not NFS, not a network volume driver. Docker Desktop's
 file sharing on a Mac is for testing, not custody.
@@ -182,7 +189,7 @@ Run it from a timer and copy the tarballs off the box. Restore:
 
     docker compose down
     deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
-    docker compose up -d --wait
+    docker compose --profile town up -d --wait
 
 `restore.sh` checks the checksum and replays before touching the data, refuses
 while the lock is held, and moves the current data to `v2.before-<stamp>`.
@@ -221,8 +228,8 @@ hash match the journal.
     deploy/backup.sh --image delvetalk-host:<old> ...      # first
     deploy/build.sh; docker save ... | ssh ... docker load  # new sha
     # .env: DELVETALK_IMAGE=delvetalk:<new sha12>
-    docker compose up -d --wait
-    deploy/smoke.sh https://delvetalk.fg-goose.online --pin <new sha256>
+    docker compose --profile town up -d --wait
+    deploy/smoke.sh https://gsb.fg-goose.online --pin <new sha256>
 
 If the new compiler refuses an old object, `world-open` fails, the healthcheck
 stays red and the journal is untouched: set the old tag back and `up` again.

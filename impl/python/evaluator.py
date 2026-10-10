@@ -15,7 +15,8 @@ if hasattr(sys, "set_int_max_str_digits"):
 
 PRIMITIVES = {"add", "multiply", "equal", "conjunction", "labelEqual",
               "subtract", "divide", "less", "lessEqual", "modulo",
-              "textConcat", "textTake", "textDrop", "textSpan", "textBreak"}
+              "textConcat", "textTake", "textDrop", "textSpan", "textBreak", "textHasAny",
+              "textCanonicalCompare"}
 UNARY = {"natText", "textLength", "sha256Text"}
 VALUES = {"lam", "nat", "boolean", "label", "record", "specification",
           "prototype", "inject"}
@@ -126,11 +127,37 @@ def prefix_length(text, alphabet, member):
     return count
 
 
+def words_of(text):
+    """Maximal runs of word characters (ASCII letters and digits, any non-ASCII scalar),
+    ASCII letters lowercased."""
+    out, current = [], []
+    for c in text:
+        if (c.isascii() and c.isalnum()) or ord(c) >= 128:
+            current.append(c.lower() if c.isascii() else c)
+        elif current:
+            out.append("".join(current))
+            current = []
+    if current:
+        out.append("".join(current))
+    return out
+
+
 def primitive(name, left, right):
     if name == "conjunction":
         return ["boolean", left[1] and right[1]] if left[0] == right[0] == "boolean" else None
     if name == "labelEqual":
         return ["boolean", left[1] == right[1]] if left[0] == right[0] == "label" else None
+    if name == "textCanonicalCompare":
+        if left[0] != "label" or right[0] != "label":
+            return None
+        a, b = left[1].encode("utf-8"), right[1].encode("utf-8")
+        ka, kb = (len(a), a), (len(b), b)
+        return ["nat", "0" if ka < kb else "1" if ka == kb else "2"]
+    if name == "textHasAny":
+        if left[0] != "label" or right[0] != "label":
+            return None
+        wanted = set(words_of(right[1]))
+        return ["boolean", any(w in wanted for w in words_of(left[1]))]
     if name in {"textConcat", "textSpan", "textBreak"}:
         if left[0] != "label" or right[0] != "label":
             return None

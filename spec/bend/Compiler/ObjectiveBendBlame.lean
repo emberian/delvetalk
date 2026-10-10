@@ -47,7 +47,8 @@ def primitiveName : Primitive → String
   | .add => "+" | .multiply => "*" | .equal => "==" | .conjunction => "&&" | .labelEqual => "=="
   | .subtract => "-" | .divide => "/" | .less => "<" | .lessEqual => "<=" | .modulo => "%"
   | .textConcat => "textConcat" | .textTake => "textTake" | .textDrop => "textDrop"
-  | .textSpan => "textSpan" | .textBreak => "textBreak"
+  | .textSpan => "textSpan" | .textBreak => "textBreak" | .textHasAny => "textHasAny"
+  | .textCanonicalCompare => "textCanonicalCompare"
 
 def unaryName : UnaryPrimitive → String
   | .natText => "natText" | .textLength => "textLength" | .sha256Text => "sha256Text"

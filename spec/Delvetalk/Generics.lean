@@ -91,6 +91,9 @@ structure State where
   /-- Instances by their fresh name. -/
   instanceByName : Std.HashMap String Nat := {}
   inferRemaining : Nat := maxInferenceSteps
+  /-- Typed foreign views met: (Plan sum's module, Plan sum's name, response label, state type
+  as the generated module spells it). -/
+  typedViews : Array (String × String × String × String) := #[]
 
 abbrev M := StateT State (Except String)
 
@@ -425,6 +428,8 @@ def builtinResult (name : String) (arity : Nat) : Option IType :=
   else if name == "textLength" && arity == 1 then some (.ground (.atom "Nat"))
   else if ["textConcat", "textTake", "textDrop", "textJoin"].contains name && arity == 2 then some (.ground (.atom "String"))
   else if ["textSpan", "textBreak"].contains name && arity == 2 then some (.ground (.atom "Nat"))
+  else if name == "textHasAny" && arity == 2 then some (.ground (.atom "Bool"))
+  else if name == "canonicalCompare" && arity == 2 then some (.ground (.atom "Nat"))
   else if name == "textSlice" && arity == 3 then some (.ground (.atom "String"))
   else none
 
@@ -685,6 +690,22 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
     let recurFields := fun (fs : List (String × Expr)) (fieldTypes : String → M IType) => fs.mapM fun (n, v) => do
       spendString n
       return (n, ← rewriteExpr fuel site locals (fieldTypes n) v)
+    -- A typed foreign view `P.view::<S>({object})`: the Plan `viewAs {object, as}` naming the
+    -- response arm `viewed:S`, which the package's Plan and Response instances gain (`run`).
+    if let .call (.specialize (.member planExpr "view" vspan) [stateType] _) [arg] span := e then
+      if let some c ← calleeOf site names (.member planExpr "view" vspan) then
+        if let (some "view", .app origin planName _ _) := (c.label, c.result) then
+          let g ← typeOf fuel site.origin site.bindings stateType
+          let shown ← render (← get).generatedModule g
+          -- Named by its declaring module (module names are unique in a package).
+          let label := "viewed:" ++ match g with
+            | .named m n _ => m ++ "." ++ n
+            | _ => shown
+          let module := (← originModule origin).name
+          modify fun st => { st with typedViews := st.typedViews.push (module, planName, label, shown) }
+          let lowered := Expr.call (.member planExpr "viewAs" vspan)
+            [.record [("object", .member arg "object" span), ("as", .str label span)] span] span
+          return ← rewriteExpr fuel site locals expected lowered
     if let .call (.specialize target types _) args span := e then
       if path names target == some "Data.of" && (← resolve site.origin "Data").isNone then
         let [typeArgument] := types | throw "Data.of takes exactly one type argument"
@@ -795,10 +816,24 @@ def rewriteBody : Nat → Site → List (String × M IType) → M IType → Body
     match b with
     | .expr e s => return .expr (← rewriteExpr fuel site locals expected e) s
     | .cases scrutinee branches s =>
+      let views := (← get).typedViews.size
       let scrutinee' ← rewriteExpr fuel site locals (pure .unknown) scrutinee
+      -- A match on a typed view: its `viewed` arm is the view's own arm.
+      let after ← get
+      let viewLabel : Option String := if after.typedViews.size > views then
+          match scrutinee with
+          | .call _ [.call (.specialize (.member _ "view" _) [_] _) [_] _] _ =>
+            (after.typedViews.back?).map (·.2.2.1)
+          | _ => none
+        else none
+      let branches : List (ObjectiveBendSurface.Pattern × Body × Span) := match viewLabel with
+        | some label => branches.map fun (pattern, body, span) => match pattern with
+          | ObjectiveBendSurface.Pattern.ctor "viewed" binder => (ObjectiveBendSurface.Pattern.ctor label binder, body, span)
+          | other => (other, body, span)
+        | none => branches
       let branches ← branches.mapM fun (pattern, body, span) => do
         let binder : M IType := match pattern with
-          | .ctor l _ => do payloadOf (← synthI site locals scrutinee) l
+          | .ctor l _ => if l.startsWith "viewed:" then pure .unknown else do payloadOf (← synthI site locals scrutinee) l
           | .succ _ => pure (.ground (.atom "Nat"))
           | _ => pure .unknown
         return (pattern, ← rewriteBody fuel site ((pattern.binder, binder) :: locals) expected body, span)
@@ -853,6 +888,11 @@ def rewriteDecl : Nat → Site → List (String × M IType) → Decl → M Decl
       let cases ← cases.mapM fun c => do return { c with type := ← rewriteType fuel site c.type }
       return .sum name cases typeParameters span
     | .law .. | .typeAlias .. => return d
+    | .protocol name methods shown span =>
+      -- The implementer's State, Plan and Response stay names (the elaborator binds them).
+      let free := { site with bindings := ["State", "Plan", "Response"].map (fun n => (n, GType.atom n)) ++ site.bindings }
+      let methods ← methods.mapM fun f => do return { f with type := ← rewriteType fuel free f.type }
+      return .protocol name methods shown span
 end
 
 structure Output where
@@ -898,7 +938,7 @@ end
 def declGenerics (d : Decl) : Bool :=
   !d.typeParameters.isEmpty ||
   match d with
-  | .typeAlias .. => true
+  | .typeAlias .. | .protocol .. => true
   | .function _ _ b _ | .extension _ _ _ b _ _ => (bodyGenerics b)
   | .spec sp => sp.methods.any (fun m => bodyGenerics m.body) || sp.claims.any (fun c => exprGenerics c.body)
   | _ => false
@@ -969,6 +1009,7 @@ def declStrings : Decl → List String
   | .record n methods fields _ => n :: methods.flatMap signatureStrings ++ fields.flatMap (fun f => [f.name, f.type])
   | .law n source reading _ => [n, source, reading]
   | .function sig ps b _ => signatureStrings sig ++ ps.getD [] ++ (bodyStrings b)
+  | .protocol n methods shown _ => n :: shown ++ methods.flatMap (fun f => [f.name, f.type])
 
 def moduleNames (m : ObjectiveBendSurface.Module) (names : Std.TreeSet String) : Std.TreeSet String :=
   let names := m.imports.foldl (fun acc i => addNames (addNames acc i.path) i.importAlias) names
@@ -1016,6 +1057,31 @@ def run (sources : Array Source) : Except String Output := do
         if (d matches .typeAlias ..) || !d.typeParameters.isEmpty then continue
         ordinary := ordinary.push (← rewriteDecl maxNesting site [] d)
       rewritten := rewritten ++ [(source.module.name, { source.ast with decls := ordinary.toList })]
+    -- Typed foreign views widen this package's Plan and Response instances of the Plan sum's
+    -- module: Plan gains `viewAs {object, as}`, Response one `viewed:S {version, state: S}`
+    -- per viewed type. A package without typed views is untouched.
+    let views := (← get).typedViews
+    if !views.isEmpty then
+      let s ← get
+      let mut widened := s.instances
+      for index in [:widened.size] do
+        let some i := widened[index]? | continue
+        let some (.sum name cases ps span) := i.ast | continue
+        let origin := (sources[i.origin]?.map (·.module.name)).getD ""
+        let mine := views.toList.filter (·.1 == origin)
+        if mine.isEmpty then continue
+        if mine.any (·.2.1 == i.declarationName) then
+          let some view := cases.find? (·.name == "view") | continue
+          if !cases.any (·.name == "viewAs") then
+            widened := widened.set! index { i with ast := some (.sum name (cases ++ [⟨"viewAs", view.type ++ " with {as: String}", view.span⟩]) ps span) }
+        else if i.declarationName == "Response" then
+          let some viewed := cases.find? (·.name == "viewed") | continue
+          let mut extra : List ObjectiveBendSurface.Field := []
+          for (_, _, label, shown) in mine do
+            if !(cases ++ extra).any (·.name == label) then
+              extra := extra ++ [⟨label, "{version: Nat, state: " ++ shown ++ "}", viewed.span⟩]
+          widened := widened.set! index { i with ast := some (.sum name (cases ++ extra) ps span) }
+      modify fun s => { s with instances := widened }
     let state ← get
     let generated : ObjectiveBendSurface.Module := { imports := [], decls := state.instances.toList.filterMap (·.ast) }
     rewritten := rewritten ++ [(moduleName, generated)]

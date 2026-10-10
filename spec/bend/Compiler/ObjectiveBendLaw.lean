@@ -14,6 +14,8 @@ The fragment, exactly (G1B-ENFORCED-LAW-DESIGN; anything else refuses
             | REF == REF | REF <= REF | REF <= REF + INT
             | monotone(FIELD) | writeOnce(FIELD)
             | appendOnly(FIELD) | unchanged(FIELD) | REF in new.FIELD
+            | insertOnly(FIELD) | REF in new.FIELD.COLUMN
+            | count(new.FIELD) <= INT | count(new.FIELD) <= count(old.FIELD) + INT
     REF   ::= new.FIELD | request.subject | request.caller | request.height | request.turn
             | request.pin | request.kind | request.method
     INT   ::= -?[0-9]+
@@ -67,6 +69,15 @@ inductive LawExpr where
   | unchanged (field : String)
   /-- `REF in new.FIELD`: the text fact is an item of the list-of-text field (host extension). -/
   | member (ref : LawRef) (field : String)
+  /-- The new relation holds every row of the old one, unchanged (relations, host extension). -/
+  | insertOnly (field : String)
+  /-- `count(new.FIELD) <= INT` (relations, host extension). -/
+  | countLe (field : String) (bound : Int)
+  /-- `count(new.FIELD) <= count(old.FIELD) + INT` (relations, host extension). -/
+  | countGrowth (field : String) (offset : Int)
+  /-- `REF in new.FIELD.COLUMN`: the text fact is the COLUMN of some row of the relation
+  (relations, host extension). -/
+  | memberColumn (ref : LawRef) (field column : String)
   | not (body : LawExpr)
   | and (left right : LawExpr)
   | or (left right : LawExpr)
@@ -82,7 +93,8 @@ def LawExpr.fields : LawExpr → List String
   | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.fields
   | .eqR left right | .leR left right | .leROff left right _ => left.fields ++ right.fields
   | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => [field]
-  | .member ref field => ref.fields ++ [field]
+  | .member ref field | .memberColumn ref field _ => ref.fields ++ [field]
+  | .insertOnly field | .countLe field _ | .countGrowth field _ => [field]
   | .not body => body.fields
   | .and left right | .or left right | .implies left right => left.fields ++ right.fields
 
@@ -103,6 +115,8 @@ def LawExpr.fieldsPlain : LawExpr → Bool
   | .eqR left right | .leR left right | .leROff left right _ => left.plain && right.plain
   | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => plainName field
   | .member ref field => ref.plain && plainName field
+  | .memberColumn ref field column => ref.plain && plainName field && plainName column
+  | .insertOnly field | .countLe field _ | .countGrowth field _ => plainName field
   | .not body => body.fieldsPlain
   | .and left right | .or left right | .implies left right => left.fieldsPlain && right.fieldsPlain
 
@@ -134,6 +148,8 @@ def compile : LawExpr → Pred
   | .writeOnce field => .writeOnce ("state/" ++ field)
   -- Lists and equality of whole fields are beyond the kernel predicate: host laws judge them.
   | .appendOnly _ | .unchanged _ | .member _ _ => Pred.any []
+  -- Relations are lists of records: the host judges these too (RELATIONAL §5).
+  | .insertOnly _ | .countLe _ _ | .countGrowth _ _ | .memberColumn _ _ _ => Pred.any []
   | .not body => .not (compile body)
   | .and left right => Pred.all [compile left, compile right]
   | .or left right => Pred.any [compile left, compile right]
@@ -170,6 +186,10 @@ def LawExpr.render : LawExpr → String
   | .appendOnly field => s!"appendOnly({field})"
   | .unchanged field => s!"unchanged({field})"
   | .member ref field => s!"{ref.render} in new.{field}"
+  | .insertOnly field => s!"insertOnly({field})"
+  | .countLe field bound => s!"count(new.{field}) <= {bound}"
+  | .countGrowth field offset => s!"count(new.{field}) <= count(old.{field}) + {offset}"
+  | .memberColumn ref field column => s!"{ref.render} in new.{field}.{column}"
   | .not body => s!"not ({body.render})"
   | .and left right => s!"({left.render}) and ({right.render})"
   | .or left right => s!"({left.render}) or ({right.render})"
@@ -266,7 +286,7 @@ def parseRef : List Tok → Except String (LawRef × List Tok)
     | some ref => .ok (ref, rest)
     | none => refuse ("request." ++ fact ++ " (a law reads request.subject, request.caller, request.height, request.turn, \
         request.pin, request.kind and request.method)")
-  | .ident "old" :: _ => refuse "old.FIELD outside monotone, writeOnce, appendOnly and unchanged"
+  | .ident "old" :: _ => refuse "old.FIELD outside monotone, writeOnce, appendOnly, unchanged, insertOnly and count(old.FIELD)"
   | t :: _ => refuse (t.render ++ " where a reference new.FIELD or request.FACT was expected")
   | [] => refuse "a comparison missing its reference"
 
@@ -307,9 +327,13 @@ def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × L
       | _ => return (.leR left right, after)
   | .ident "in" :: .ident "new" :: .sym "." :: .ident field :: after =>
     match left, after with
-    | _, .sym "." :: _ => refuse ("the nested field path new." ++ field ++ ".… (edition 1 reads top-level fields only)")
+    | _, .sym "." :: .ident _ :: .sym "." :: _ =>
+      refuse ("the path new." ++ field ++ ".COLUMN.… (membership reads one column of a relation: REF in new.FIELD.COLUMN)")
+    | .subject, .sym "." :: .ident column :: after' | .caller, .sym "." :: .ident column :: after' =>
+      return (.memberColumn left field column, after')
+    | _, .sym "." :: _ => refuse ("new." ++ field ++ ". without a column name (REF in new.FIELD.COLUMN)")
     | .subject, _ | .caller, _ => return (.member left field, after)
-    | _, _ => refuse "membership in a list field reads request.subject or request.caller"
+    | _, _ => refuse "membership in a list field or a relation's column reads request.subject or request.caller"
   | .ident "in" :: .sym "[" :: .sym "]" :: after => return (.inC left [], after)
   | .ident "in" :: .sym "[" :: more =>
     let (values, after) ← parseIntList fuel more
@@ -366,6 +390,20 @@ def parseUnary : Nat → List Tok → Except String (LawExpr × List Tok)
     | .ident "monotone" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.monotone field, after)
     | .ident "writeOnce" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.writeOnce field, after)
     | .ident "appendOnly" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.appendOnly field, after)
+    | .ident "insertOnly" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.insertOnly field, after)
+    | .ident "insertOnly" :: _ => refuse "insertOnly takes one top-level relation field: insertOnly(FIELD)"
+    | .ident "count" :: .sym "(" :: .ident "new" :: .sym "." :: .ident field :: .sym ")" :: .sym "<=" :: more =>
+      if startsInt more then do
+        let (bound, after) ← parseInt more
+        return (.countLe field bound, after)
+      else match more with
+        | .ident "count" :: .sym "(" :: .ident "old" :: .sym "." :: .ident other :: .sym ")" :: .sym "+" :: offset =>
+          if other != field then refuse ("count(old." ++ other ++ ") beside count(new." ++ field ++ "): a growth bound reads one field")
+          else do
+            let (k, after) ← parseInt offset
+            return (.countGrowth field k, after)
+        | _ => refuse "a count bound is count(new.FIELD) <= INT or count(new.FIELD) <= count(old.FIELD) + INT"
+    | .ident "count" :: _ => refuse "a count bound is count(new.FIELD) <= INT or count(new.FIELD) <= count(old.FIELD) + INT"
     | .ident "unchanged" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.unchanged field, after)
     | .ident "appendOnly" :: _ => refuse "appendOnly takes one top-level field name: appendOnly(FIELD)"
     | .ident "unchanged" :: _ => refuse "unchanged takes one top-level field name: unchanged(FIELD)"
@@ -406,8 +444,21 @@ theorem parse_refuses_nested :
       (parse "new.a == 1 claim").toBool = false ∧ (parse "request.target == 1").toBool = false := by
   native_decide
 
+theorem parse_relational :
+    (parse "insertOnly(rains) and count(new.subs) <= 64 and count(new.rains) <= count(old.rains) + 1 and request.subject in new.greeted.principal").toOption =
+      some (.and (.and (.and (.insertOnly "rains") (.countLe "subs" 64)) (.countGrowth "rains" 1))
+        (.memberColumn .subject "greeted" "principal")) := by native_decide
+
+theorem parse_refuses_relational :
+    (parse "insertOnly(a.b)").toBool = false ∧ (parse "count(new.a) <= count(old.b) + 1").toBool = false ∧
+      (parse "count(new.a) == 3").toBool = false ∧ (parse "request.height in new.a.b").toBool = false ∧
+      (parse "request.subject in new.a.b.c").toBool = false ∧ (parse "count(old.a) <= 3").toBool = false := by
+  native_decide
+
 end Minidregg.Compiler.ObjectiveBendLaw
 
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_tally
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_precedence
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_refuses_nested
+#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_relational
+#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_refuses_relational
