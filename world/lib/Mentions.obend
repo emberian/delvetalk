@@ -132,3 +132,8 @@ def knownFields() -> Lists.List<String>:
 # The forms of the doors themselves (not of a card under one): what the model is offered.
 def doorForms(learned: Learning) -> Lists.List<Form.Form>:
   formsOf(Lists.filter(learned, fn(l: Learned) -> Bool: l.child == false))
+# Whether a reply names a door: its word or object, or an action or field of the forms learned
+# under it (a bell's rain names the garden).
+def touches(input: Card.Reply, door: Door, learned: Learning) -> Bool:
+  let forms = formsOf(Lists.filter(learned, fn(l: Learned) -> Bool: l.door == door.to.object))
+  mentions(textTake(input.text, 2000n), input.fields, Lists.concat(doorWords(door), formWords(forms)), formFields(forms))

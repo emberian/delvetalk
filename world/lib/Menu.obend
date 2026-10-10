@@ -67,6 +67,9 @@ def countWord(n: Nat) -> String:
 def trie(all: Lists.List<Door>, news: Relations.Relation<News>, context: Abi.Context, first: String) -> Document.Document:
   let top = firstOf(Lists.filter(all, fn(d: Door) -> Bool: isArc(all, d) == false), first)
   framed(trieHead(Lists.length(top)), Lists.map(top, fn(d: Door) -> Document.Document: branch(d, all, news, context)), trieTail())
+# The trie pruned to some doors under another head, and no tail: a second miss's card.
+def pruned(head: String, doors: Lists.List<Door>, all: Lists.List<Door>, news: Relations.Relation<News>, context: Abi.Context) -> Document.Document:
+  framed("{head}\n", Lists.map(doors, fn(d: Door) -> Document.Document: branch(d, all, news, context)), "")
 def trieHead(count: Nat) -> String:
   "✾ DELVETALK · ROOT\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back. Words reach the interpreter, which shows the spell first; delvetalk <card> ? lists its spells.\n\n"
 def trieTail() -> String:

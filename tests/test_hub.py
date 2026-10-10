@@ -204,9 +204,13 @@ class Hub(test_chain.Chain):
         self.assertEqual(asked["status"], "suspended", asked)
         resumed = self.interpret("delvetalk garden plant\nseed: something for moths\ncolour: amber")
         self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+        # docs/MENU.md §2.2: the request is read first; the menu follows what it drew, opening
+        # on the door the proposal went through.
         texts = [o["text"] for o in resumed["receipt"]["offers"]]
-        self.assertTrue(texts[0].startswith("✾ DELVETALK · ROOT\n"), texts)
-        self.assertIn("Planted for", texts[-1])
+        self.assertIn("Planted for", texts[0])
+        self.assertTrue(texts[-1].startswith("✾ DELVETALK · ROOT\n\nSix doors. "), texts)
+        self.assertEqual(texts[-1].split("\n")[4], "GARDEN · 0 planted")  # the menu as the turn read it
+        self.assertEqual(get(rows(get(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("something for moths", "amber"))
         # Greeted once: the next words get no menu.
@@ -243,6 +247,33 @@ class Hub(test_chain.Chain):
         self.assertEqual(self.say("is the garden open on the wiki today?", KIMI, uri="at://x/post/3")["status"], "suspended")
         quiet = self.interpret("unclear: not addressed")
         self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
+
+    def test_a_second_miss_is_the_menu_pruned_to_the_doors_the_reply_named(self):
+        """docs/MENU.md §2.2: the second miss is not "I still need: X" alone but the branches of the
+        doors whose words, actions or fields the reply named, to type from."""
+        self.policy()
+        self.directory("policy")
+        self.greet(KIMI)
+        self.assertEqual(self.say("Could the tide wake me every morning?", KIMI)["status"], "suspended")
+        again = self.interpret("unclear: how often")
+        self.assertEqual(again["status"], "suspended", again)
+        missed = self.interpret("unclear: how often")
+        self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
+        [card] = [o["text"] for o in missed["receipt"]["offers"]]
+        self.assertEqual(card, (
+            "✾ DELVETALK · ROOT\n"
+            "\n"
+            "I could not fit that to a door. I still need: how often.\n"
+            "\n"
+            "TIDE\n"
+            "  delvetalk tide subscribe / every: 3 / note: first light\n"
+            "  delvetalk tide tick\n"
+            "  » sooner than the gap: refused tooSoon; a due tick notes your avatar\n"))
+        # A reply naming the garden's planting and the anthology gets those two branches.
+        self.assertEqual(self.say("I would plant a line in the anthology", KIMI, uri="at://x/post/2")["status"], "suspended")
+        self.interpret("unclear: which")
+        two = [o["text"] for o in self.interpret("unclear: which")["receipt"]["offers"]][0]
+        self.assertEqual([l for l in two.split("\n") if l and not l.startswith(" ")][2:], ["GARDEN · 0 planted", "ANTHOLOGY"])
 
     def test_an_action_the_policy_confirms_is_shown_back_and_not_passed_on(self):
         """The policy's confirmFor (here plant, taught by its owner) holds an interpreted spell
