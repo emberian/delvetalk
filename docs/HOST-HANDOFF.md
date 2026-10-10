@@ -646,6 +646,15 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    typeMismatch; so World.obend's `Ran<R>` may fold back into `Returned<R>` (objects lane). Test:
    `tests/test_call_reading.py` `test_a_refused_run_says_why` (a World copy with `run -> Returned<R>`).
 
+85. **A newcomer's Wake hears `arrived` (host11).** `world-arrive` (`arriveWith`, TurnLoop, over
+   `arriveOp`): when this arrival made `wake/<did>` and its package declares `arrived` (in `methods()`,
+   `~arrived` too, or as a form), the host runs `arrived {}` on it as an ordinary turn of the newcomer
+   (principal and subject the DID, intent `arrive-<did>`), journaled as any turn and settled in the
+   same `durable` write; the reply carries it as `arrivedTurn`. A Wake without `arrived` is unchanged;
+   a second arrival makes nothing and runs nothing. Test: `tests/test_arrive.py` `Arrived` (a fixture
+   Wake subscribing to a garden's field; the garden's next write owes the wake a change, before and
+   after a reopen).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

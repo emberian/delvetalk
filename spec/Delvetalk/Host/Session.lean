@@ -304,7 +304,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
             | none => r) |> fun r => interpretStatus s.world r (request.getObjValAs? String "principal").toOption))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-principal" => durable s (fun w => principalOp w request)
-      | "world-arrive" => durable s (fun w => arriveOp w request)
+      | "world-arrive" => durable s (fun w => arriveWith w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-publications" => return (session, publicationsOp s.world request)
       | "world-objects" => return (session, objectsOp s.world request)

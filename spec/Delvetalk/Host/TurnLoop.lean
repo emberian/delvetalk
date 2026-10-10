@@ -1912,6 +1912,24 @@ def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   | some r => r
   | none => runTurnWith w req {}
 
+/-- `world-arrive` (`arriveOp`), then, when this arrival made the newcomer's Wake and its package
+    declares `arrived` (in `methods()` or as a form), the Wake's `arrived {}` as an ordinary turn of the
+    newcomer: subject the DID, intent `arrive-<did>`, journaled as any turn is. A Wake without it is
+    unchanged; a second arrival makes nothing, so it runs nothing. The reply carries the turn's as
+    `arrivedTurn`. -/
+def arriveWith (w : World) (j : Json) : Except String (World × Json) := do
+  let (w, r) ← arriveOp w j
+  let did ← r.getObjValAs? String "did"
+  let wake := s!"wake/{did}"
+  let made := ((r.getObjVal? "created").toOption.bind (·.getArr?.toOption)).getD #[]
+  unless made.any (fun c => (c.getObjValAs? String "object").toOption == some wake) do return (w, r)
+  let some o := w.objects[wake]? | return (w, r)
+  unless (declaredRows o.methods).any (fun n => n == "arrived" || n == "~arrived") do return (w, r)
+  let req ← parseTurn (Json.mkObj [("principal", toJson did), ("object", toJson wake), ("method", toJson "arrived"),
+    ("argument", dataJson (.record [])), ("identity", toJson s!"arrive-{did}")])
+  let (w, turned) ← runTurnWith w req {}
+  return (w, r.setObjVal! "arrivedTurn" turned)
+
 /-! ## Resuming suspended turns -/
 
 inductive Resume where
