@@ -83,7 +83,7 @@ def seeds(opener):
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
             ('anthology', 'Anthology', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
-            ('cistern', 'Cistern', rec(level=nat(0))),  # then amended to cistern_law(opener)
+            ('cistern', 'Cistern', rec(level=nat(0))),  # created with cistern_law(opener)
             ('commons', 'Commons', rec(owner=lab(opener))),
             ('rooms', 'Scene', moss_gate(opener)),
             ('play', 'Table', rec())]  # the Automatafl opening is the package's default; seats join when players sit
@@ -112,12 +112,7 @@ def run(host, opener=OPENER):
         return [], 'the opener could not arrive: ' + str(arrived.get('message'))
     made = []
     for name, package, seed in seeds(opener):
-        reply = create(host, opener, name, package, 'genesis-' + name, seed)
-        if name == 'cistern' and reply.get('status') == 'created':  # world-create takes no law; its creator amends it in
-            amended = host.send({'op': 'world-amend', 'principal': opener, 'identity': 'genesis-cistern-law', 'object': 'cistern',
-                                 'version': 0, 'law': cistern_law(opener)})
-            if amended.get('status') != 'admitted':
-                reply = {**reply, 'status': 'lawRefused', 'amend': amended}
+        reply = create(host, opener, name, package, 'genesis-' + name, seed, cistern_law(opener) if name == 'cistern' else None)
         made.append({'object': name, 'module': package, 'status': reply.get('status'),
                      'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal'), 'reply': reply})
         if reply.get('status') != 'created':

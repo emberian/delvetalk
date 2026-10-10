@@ -655,6 +655,14 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    Wake subscribing to a garden's field; the garden's next write owes the wake a change, before and
    after a reopen).
 
+86. **`world-create {law}` (host11).** A non-empty `law` is the object's law text from creation, in
+   `world-amend`'s grammar with its readings (`makeObject`'s `lawText`), replacing the package's and the
+   default law; the creating principal must still be able to amend it (the metarule). A malformed
+   law is a request error "law syntax: …" and creates nothing. The created outcome journals `law`
+   and replay builds the object with it. `deploy/genesis.py` creates the cistern with
+   `Cistern.lawText` this way instead of amending it in. Tests: `tests/test_law.py`
+   `LawAtCreation`, `tests/test_genesis.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
