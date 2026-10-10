@@ -73,6 +73,21 @@ def argument(data):
     return typed(data['fields']) if isinstance(data.get('fields'), dict) else data.get('argument', {'tag': 'record', 'fields': []})
 
 
+# Keys whose values are content ids, digests or chain links: the default rendering omits them; ?full=1 shows them.
+HASHY = {'pin', 'compiled', 'library', 'cid', 'previous', 'request', 'turnRequest', 'binary', 'packet', 'digest', 'packetSha256',
+         'rootsDigest', 'newPin', 'oldPin', 'head'}
+
+
+def terse(value, keep=(), root=True, own=False):
+    """A reply without its hashes. The root receipt's own `hash` (the entry CID) stays, as does any key named in `keep`."""
+    if isinstance(value, list):
+        return [terse(v, keep, False) for v in value]
+    if not isinstance(value, dict):
+        return value
+    return {k: terse(v, keep, False, root and k == 'receipt') for k, v in value.items()
+            if k in keep or (k not in HASHY and (k != 'hash' or own))}
+
+
 def brief(value):
     """A checkpoint's tokens (hundreds of KiB for a suspended turn) as their count."""
     if isinstance(value, dict):
@@ -178,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail(400, 'body is not valid JSON')
         return data if isinstance(data, dict) else self.fail(400, 'body must be a JSON object')
 
-    def answer(self, reply):
+    def answer(self, reply, keep=()):
         """The host's reply, rendered: a diagnostic carried as JSON text in `message` is lifted, its `hint` with it,
         and a checkpoint's tokens are counted, not shown (?full=1 shows them)."""
         status = reply.get('status')
@@ -190,7 +205,7 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(reply.get('diagnostic'), dict) and 'hint' in reply['diagnostic']:
             reply = {**reply, 'hint': reply['diagnostic']['hint']}
         full = 'full' in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200, canonical(reply if full else brief(reply)))
+        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200, canonical(reply if full else brief(terse(reply, keep))))
 
     def cookie(self):
         for part in (self.headers.get('Cookie') or '').split(';'):
@@ -281,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
             r = host.send({'op': 'world-card' if kind == 'card' else 'world-inspect', 'principal': principal, 'object': obj})
             if 'full' not in q:  # the readable part; ?full=1 is the host's reply verbatim
                 r = {k: plain(v) if k == 'forms' else v for k, v in r.items() if k not in ('document', 'methods')}
-            return self.answer(r)
+            return self.answer(r, keep=('pin',))  # the program's name there
         if kind == 'receipt':
             return send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
         if kind == 'offers':
