@@ -65,6 +65,24 @@ class Arrive(HostCase):
         card = self.host.send(op="world-card", principal=DID, object="env")
         self.assertEqual((card["status"], card["object"]), ("card", "env/" + DID), card)
 
+    def test_the_env_is_named_by_its_owners_handle_and_takes_a_mention_in(self):
+        self.arrive(handle="talkie.delve.town")
+        self.assertEqual(field(self.view("env/" + DID), "handle")["value"], "talkie.delve.town")
+        stranger = self.host.send(op="world-card", principal="did:plc:someone", object="env/" + DID)
+        print("\n--- env, read by a stranger ---\n" + stranger["text"])
+        self.assertTrue(stranger["text"].startswith("ENV of talkie.delve.town: 0 new"), stranger)
+        self.assertNotIn("…", stranger["text"])
+        other = "did:plc:zyxwvutsrqponmlkjihgfedc"
+        self.arrive(handle="glm.delve.town", did=other)
+        r = self.host.send(op="world-turn", principal=other, object="env/" + DID, method="receive", identity="mention-1",
+                           argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "@talkie.delve.town the cistern is dug"}},
+                                                                  {"name": "post", "value": {"tag": "label", "value": "at://glm/post/9"}}]})
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
+        self.assertEqual(r.get("offers", []), [])
+        mine = self.host.send(op="world-card", principal=DID, object="env/" + DID)["text"]
+        print("--- env, read by its owner ---\n" + mine)
+        self.assertIn("mention from glm.delve.town: @talkie.delve.town the cistern is dug\n", mine)
+
     def test_a_second_arrival_creates_nothing_and_a_new_handle_is_one_entry(self):
         self.arrive()
         height = self.host.send(op="world-status")["height"]

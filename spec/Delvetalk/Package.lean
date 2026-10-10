@@ -128,7 +128,9 @@ packet's (recursive sums are variables of the packet's bounds). Definitions with
 more than one input beyond state and context are not callable methods and are
 left out. -/
 def methodTable (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy) : Json :=
-  let rows : List Json := signatures.filterMap fun ((fname, types) : String × List String) => do
+  Json.arr (methodRows moduleName signatures globals).toArray
+where methodRows (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy) : List Json :=
+  signatures.filterMap fun ((fname, types) : String × List String) => do
     guard (types.head? == some "State")
     let ty ← lookupRow globals (moduleName ++ "." ++ fname)
     let (domains, result) := peelPTy types.length ty
@@ -140,7 +142,18 @@ def methodTable (moduleName : String) (signatures : List (String × List String)
     let activity := match result with | .computation .. => true | _ => false
     return Json.mkObj [("name", toJson fname), ("input", input), ("result", result.json),
       ("activity", toJson activity), ("context", toJson context)]
-  Json.arr rows.toArray
+
+open Minidregg.Compiler.ObjectiveBendElaborate (PTy) in
+/-- A layer stack's method table: every method of every layer, the topmost definition of a
+name winning (the one every call reaches). `stack` is top first: (module, its signatures). -/
+def stackMethodTable (stack : List (String × List (String × List String))) (globals : Option PTy) : Json := Id.run do
+  let mut seen : List String := []
+  let mut rows : Array Json := #[]
+  for (moduleName, signatures) in stack do
+    for row in methodTable.methodRows moduleName (signatures.filter fun s => !seen.contains s.1) globals do
+      rows := rows.push row
+    seen := seen ++ signatures.map (·.1)
+  return Json.arr rows
 
 open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- A package's optional Bend law predicate, checked by shape: `law(old: State,
@@ -232,6 +245,12 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
   let signatures := signaturesOf (prepared.asts.getLastD default)
   let globals := lowered.output.globalRow
   let law ← lawShape entryModule.name signatures globals lowered.output.sumBounds
+  let stack := prepared.elaborated.ctx.stack.toList.reverse
+  let methods := if stack.isEmpty then methodTable entryModule.name signatures globals else
+    stackMethodTable (stack.filterMap fun name => do
+      let i ← modules.findIdx? (·.name == name)
+      let ast ← prepared.asts[i]?
+      return (name, signaturesOf ast)) globals
   let pin := Delvetalk.Canonical.cidJson packet
   let artifact := Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),
@@ -240,7 +259,7 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
     ("entry", toJson entry), ("genericInstances", prepared.instances), ("limits", request.limits), ("packet", packet),
     ("packetSha256", toJson pin),
     ("type", typeJson accepted.typed.type),
-    ("methods", methodTable entryModule.name signatures globals), ("law", law)]
+    ("methods", methods), ("law", law)]
   let readings := lawTable (lowered.laws.map (·.1)) (prepared.asts.getLastD default)
   let artifact := if readings.isEmpty then artifact else artifact.setObjVal! "laws"
     (Json.arr (readings.toArray.map fun (name, reading) =>

@@ -7,8 +7,9 @@ reads a post's `name: value` lines; when the first names an action one of its do
 door object's method table, read with `inspect`), the lines become that door's spell and go to its
 receive by call. Other prose, from a principal the menu has already reached, is read by the town's
 model under the directory's policy against every door's forms; a spell in its answer that fits a
-door's form goes to that door, `unclear: not addressed` gets no offer, and a miss (a rain no door
-offers) is asked once more and then answered with what is still needed.
+door's form goes to that door, `unclear: not addressed` gets no offer, a miss naming an action no
+door offers (a rain) is answered at once with the nearest door's usage card, and any other miss is
+asked once more and then answered with what is still needed.
 
 Refuted by: glm's or gemini's §10 planting not growing a bell, a rain or chatter drawing a card, or
 the model's spell not reaching the garden."""
@@ -138,12 +139,15 @@ class Hub(test_chain.Chain):
         # The rehearsal's mock answer for kimik3's rain: no door offers rain. A miss is asked once
         # more with what it missed; the second is answered with what is still needed.
         self.assertEqual(self.say(post("3mxghh4qis22f"), KIMI)["status"], "suspended")
-        again = self.interpret("unclear: rain is not one of the offered actions")
-        self.assertEqual(again["status"], "suspended", again)
+        # A miss that says the action is not offered is answered at once with the nearest
+        # door's usage card; the model is not asked again.
         missed = self.interpret("unclear: rain is not one of the offered actions")
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
-        self.assertEqual([o["text"] for o in missed["receipt"]["offers"]],
-                         ["✾ DELVETALK · ROOT\n\nI could not fit that to a door. I still need: rain is not one of the offered actions.\n"])
+        [card] = [o["text"] for o in missed["receipt"]["offers"]]
+        print("--- root, an action no door offers ---\n" + card)
+        self.assertTrue(card.startswith("✾ DELVETALK · ROOT\n\nNo door offers that (rain is not one of the offered actions). The nearest is garden:\n"), card)
+        self.assertIn("    delvetalk garden plant\n", card)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # `unclear: not addressed` is silence at once.
         self.assertEqual(self.say("lovely weather on the wiki today", KIMI, uri="at://x/post/2")["status"], "suspended")
         quiet = self.interpret("unclear: not addressed")
@@ -282,6 +286,33 @@ class HandedToTheDirectory(test_chain.Chain):
             self.assertEqual(offer["from"], {"post": asked, "principal": who, "intent": asked}, offer)
         submitted = [(get(p, "author")["value"], get(p, "line")["value"]) for p in items(get(self.state("anthology"), "proposals"))]
         self.assertEqual(submitted, [(KIMI, lines[KIMI]), (GLM, lines[GLM])])
+
+
+class HandedOnlyWhenNamed(test_chain.Chain):
+    """Rehearsal run 7: bells handed every conversational reply to the directory's model
+    (127 of 132 came back "not addressed"). A card hands prose on only when it names a door
+    word, a town action or a `name: value` line."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    policy = test_policy.PolicyObject.policy
+
+    def test_chatter_under_a_bell_costs_nothing_and_an_anthology_line_is_handed_on(self):
+        self.policy()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(r["status"], "created", r)
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        say = lambda text, ident: self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
+        chatter = say("What a lovely evening it is; thank you for this.", "c1")
+        self.assertEqual((chatter["status"], chatter["result"]["label"], chatter.get("offers", [])), ("admitted", "silent", []), chatter)
+        self.deliver_all()
+        self.assertEqual(self.host.send(op="world-pending").get("count", 0), 0)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        line = say("anthology: a line about the merchant's hat", "c2")
+        self.assertEqual((line["status"], line["result"]["label"], line.get("offers", [])), ("admitted", "silent", []), line)
+        self.deliver_all()
+        self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 1)
 
 
 class AnthologyReachable(test_chain.Chain):

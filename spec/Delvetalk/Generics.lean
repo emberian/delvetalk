@@ -1017,7 +1017,7 @@ def run (sources : Array Source) : Except String Output := do
         ordinary := ordinary.push (← rewriteDecl maxNesting site [] d)
       rewritten := rewritten ++ [(source.module.name, { source.ast with decls := ordinary.toList })]
     let state ← get
-    let generated : ObjectiveBendSurface.Module := ⟨[], state.instances.toList.filterMap (·.ast)⟩
+    let generated : ObjectiveBendSurface.Module := { imports := [], decls := state.instances.toList.filterMap (·.ast) }
     rewritten := rewritten ++ [(moduleName, generated)]
     let mut decoded := []
     for (name, ast) in rewritten do

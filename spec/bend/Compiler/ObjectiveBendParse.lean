@@ -915,8 +915,9 @@ def sourceLines (source : String) : Except Diagnostic (Array Line) := do
     number := number + 1
   return lines
 
-def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
+def declarations (lines : Array Line) : PS (Array Import × Array Decl × Option (String × Span)) := do
   let fuel := lines.size + 1
+  let mut layer : Option (String × Span) := none
   let mut imports : Array Import := #[]
   let mut decls : Array Decl := #[]
   for _ in [0:lines.size] do
@@ -925,6 +926,15 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
     set (i + 1)
     if line.indent != 0 then fail line "unexpected indentation"
     if line.text == "edition ObjectiveBend 1".toList then continue
+    if startsWith line.text "layer " then
+      if i != 0 then fail line "`layer over ./NAME.obend` is the module's first line"
+      let rest := jsTrim (line.text.drop 6)
+      unless startsWith rest "over " do fail line "a layer is declared `layer over ./NAME.obend`"
+      let path := String.ofList (jsTrim (rest.drop 5))
+      unless path.startsWith "./" && path.endsWith ".obend" && !path.any (· == ' ') do
+        fail line "a layer is declared `layer over ./NAME.obend`"
+      layer := some (path, line.span)
+      continue
     if let some (_, caps) ← matchAt line namedImportRe line.text then
       imports := imports.push ⟨cap line.text caps 2, cap line.text caps 1, line.span⟩
       continue
@@ -1076,16 +1086,22 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl) := do
       decls := decls.push (.function sig none functionBody line.span)
       continue
     fail line "unsupported Objective Bend declaration"
-  return (imports, decls)
+  return (imports, decls, layer)
 
 /-- Parse one module's source text. -/
 def parseObjective (source : String) : Except Diagnostic Module := do
   let lines ← sourceLines source
-  let ((imports, decls), _) ← (declarations lines).run 0
+  let ((imports, decls, layer), _) ← (declarations lines).run 0
   -- `write {...}` names the Plan library by placeholder; it becomes the module's alias.
   let plans := ((imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias)).getD "Plans"
   let decls := decls.map (·.mapVars fun n => if n == writePlansAlias then plans else n)
-  return ⟨imports.toList, decls.toList⟩
+  -- A layer imports the module it layers over as `Super` (unless it already does).
+  let imports := match layer with
+    | some (path, span) =>
+      if imports.any (fun i => i.importAlias == "Super" && i.path == path) then imports
+      else #[(⟨path, "Super", span⟩ : Import)] ++ imports
+    | none => imports
+  return ⟨imports.toList, decls.toList, layer.map (·.1)⟩
 
 /-- Strict UTF-8 decoding as `new TextDecoder("utf-8",{fatal:true})`: invalid bytes refuse and a
 leading byte-order mark is consumed. -/

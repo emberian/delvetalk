@@ -65,7 +65,9 @@ the library).
   policy's `escalateTo` (lens `escalate-to`) names a principal, `Card.escalation`'s copy to
   it: "<handle> said: <utterance>; I could not fit it (<card>).". A host `unclear {needs}`
   (a failed model call, a JSON proposal that does not fit) is not retried. An activity
-  composes only in tail position, so the object owns the loop (`interpreted`/`readBack` in
+  composes only in tail position, so the object owns the loop (Directory answers a miss
+  that says the action is not offered at once, with the nearest door's usage card, and
+  does not ask again; `interpreted`/`readBack` in
   Garden, `interpreting`/`readBack` in Directory) and Card gives the Plans, the pure
   reading and `Card.unfit` for a card with no writes of its own. A read-only root that moves
   while the interpretation waits does not make the resumption stale.
@@ -96,7 +98,9 @@ the library).
   post}; objects route with `Card.routeHeard(input, …)`) is sent by Card's default
   (`Card.forwarded`; Garden without a policy too) to `directory` (`Card.directory`, the
   genesis id) as `receive {text, post}` under the speaker; the card still offers nothing.
-  A turn some object started forwards nothing. The directory reads a handed-on reply with
+  A turn some object started forwards nothing, and only prose that names a door word, a
+  town action or a `name: value` line is handed on (`Card.handsOn`, a fixed word list in
+  Card.obend: keep it in step with the directory's doors). The directory reads a handed-on reply with
   no menu, its field lines as usual, and with a policy the model; the owner's handed-on
   replies are read too. A send, not a call: a call's result must fit the caller's Response
   R, which the directory's Heard does not.
@@ -107,6 +111,14 @@ the library).
 * **Link doors** (objects5): a Directory door whose `to` is nobody (genesis's STUDIO) answers
   its word with `<label>\n<description>` (the URL is in the description) and is skipped
   when field lines and the model look for forms.
+* **Env fills** (objects5). `Env.receive {text, post}` from anyone but the owner, naming
+  no Env form, is taken in as `mention` (`Event` gained `handle`, the author's as the host
+  knew it); the law admits that receive (kind 0, method receive, owner/handle/seen/
+  subscribers unchanged). Arrival seeds `handle`, and the card reads "ENV of <handle>".
+* **No hash in a card** (objects5). A card or offer cites an object as `<object> v<n>`
+  (Workshop views its target, its Response's state type being Data, and says "Was: bell-1
+  v1 / Now: bell-1 v2"); `tests/host.py` fails any host reply whose card or offer text
+  contains `bafy`, in every suite.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

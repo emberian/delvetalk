@@ -168,6 +168,9 @@ structure Import where
 structure Module where
   imports : List Import
   decls : List Decl
+  /-- `layer over ./X.obend` (the module's first line): the path of the module it layers
+  over, which it also imports as `Super`. -/
+  layerOver : Option String := none
   deriving Inhabited, Repr, BEq
 
 /-! ## The JSON rendering (`dregg.objective-bend.module.v1`) -/
