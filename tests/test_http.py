@@ -285,6 +285,14 @@ class HttpFront(unittest.TestCase):
                             object='c1', intent='repl-2', roots=[{'object': 'c1', 'version': 0}])
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
 
+    def test_a_turn_start_fills_the_context_so_the_arguments_omit_it(self):
+        tok = self.login()
+        bind = dict(object='c1', intent='repl-3', roots=[{'object': 'c1', 'version': 0}])
+        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], **bind)
+        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **bind)
+        self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
+
     def test_check_and_compile_refusals_carry_the_hosts_hint(self):
         tok = self.login()
         habit = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
