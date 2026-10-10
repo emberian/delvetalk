@@ -170,6 +170,22 @@ class Readings(Reflection):
         r = self.refused("k2")
         self.assertNotIn("reason", r["receipt"]["outcome"])
 
+    def test_an_amendment_may_carry_readings_and_a_refusal_quotes_the_new_one(self):
+        text = 'law owner "only the keeper may count: ask ember": request.subject == new.owner\nlaw small "at most five": new.count <= 5'
+        a = self.host.send(op="world-amend", principal="ember", identity="a2", object="r", version=0, law=text)
+        self.assertEqual(a["status"], "admitted", a)
+        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="r")["law"], text)
+        r = self.refused("k5")
+        self.assertEqual((r["receipt"]["outcome"]["reason"], r["public"]["reason"]),
+                         ("refused owner: only the keeper may count: ask ember",) * 2, r)
+        self.reopen()
+        self.assertEqual(self.refused("k6")["receipt"]["outcome"]["reason"], "refused owner: only the keeper may count: ask ember")
+
+    def test_a_malformed_reading_is_law_syntax(self):
+        a = self.host.send(op="world-amend", principal="ember", identity="a3", object="r", version=0,
+                           law='law owner "unterminated: request.subject == new.owner')
+        self.assertEqual((a["status"], a["receipt"]["outcome"]["clause"]), ("refused", "law syntax"), a)
+
     def test_an_amendment_that_keeps_the_clause_keeps_its_reading_and_a_snapshot_keeps_it(self):
         a = self.host.send(op="world-amend", principal="ember", identity="a1", object="r", version=0,
                            law='law owner: (not (request.kind == 0)) or (request.subject == new.owner)\nlaw small: new.count <= 5')

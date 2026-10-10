@@ -43,7 +43,10 @@ the native cells and `settle_resume_segment` on the runner a turn uses
 `Theory/ObjectiveBendDemandSettleProofs.lean`), and Mini's collector
 simulation is ported in full (`Theory/ObjectiveBendDemandCollectProofs.lean`:
 `checkpoint_resume_segment` says resuming `collect (settle s)` gives the same
-verdict, ticks and Data as resuming `s`). A package closure has no size cap:
+verdict, ticks and Data as resuming `s`). A suspended turn's checkpoint references the compiled package by pin and
+carries only its dynamic cells (a Garden prose suspension is about 7 KB, from
+248 KB), and the collector numbers live cells in a fixed order from the roots
+so checkpoints of one package share their bytes. A package closure has no size cap:
 an entry's packet carries only what it reaches, and the whole closure is
 checked once per package. The runtime data check agrees with a declarative typing
 (`Theory/ObjectiveBendDataConformance.lean`). A universal first-order type

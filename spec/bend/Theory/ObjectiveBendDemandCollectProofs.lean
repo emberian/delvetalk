@@ -333,47 +333,47 @@ theorem liveDomain_of_not_false {state : State} {x : Nat}
     · rfl
   · left; omega
 
-theorem collectRenaming_live {state : State} {a : Nat} (marked : (liveMarks state)[a]? = some true) :
-    collectRenaming state a = ((liveMarks state).toList.take a).count true := by
+theorem addressRenaming_live {state : State} {a : Nat} (marked : (liveMarks state)[a]? = some true) :
+    addressRenaming state a = ((liveMarks state).toList.take a).count true := by
   have size := (liveMarks_spec state).1
   have bound : a < state.heap.size := by rw [← size]; exact bound_of_some marked
   have ranks := rankTable_spec (liveMarks state)
-  simp only [collectRenaming, relocate, bound, if_true]
+  simp only [addressRenaming, relocate, bound, if_true]
   rw [Array.getD_eq_getD_getElem?, ranks.2.2 a (by omega)]
   rfl
 
-theorem collectRenaming_beyond {state : State} {a : Nat} (past : state.heap.size ≤ a) :
-    collectRenaming state a = a - state.heap.size + (liveMarks state).count true := by
+theorem addressRenaming_beyond {state : State} {a : Nat} (past : state.heap.size ≤ a) :
+    addressRenaming state a = a - state.heap.size + (liveMarks state).count true := by
   have ranks := rankTable_spec (liveMarks state)
-  simp only [collectRenaming, relocate, show ¬ a < state.heap.size by omega, if_false]
+  simp only [addressRenaming, relocate, show ¬ a < state.heap.size by omega, if_false]
   rw [ranks.1]
 
-theorem collect_heap_size (state : State) :
-    (collect state).heap.size = (liveMarks state).count true :=
+theorem collectByAddress_heap_size (state : State) :
+    (collectByAddress state).heap.size = (liveMarks state).count true :=
   compact_size _ _ _ (liveMarks_spec state).1
 
-/-- **Collection is a renaming of the state it collects.** -/
-theorem related_collect (state : State) :
-    Related (collectRenaming state) (liveDomain state) state (collect state) := by
+/-- Collection in address order is a renaming of the state it collects. -/
+theorem related_collectByAddress (state : State) :
+    Related (addressRenaming state) (liveDomain state) state (collectByAddress state) := by
   obtain ⟨size, roots, closed⟩ := liveMarks_spec state
   have live_lt : ∀ a, (liveMarks state)[a]? = some true →
-      collectRenaming state a < (liveMarks state).count true := by
+      addressRenaming state a < (liveMarks state).count true := by
     intro a marked
-    rw [collectRenaming_live marked, ← Array.count_toList]
+    rw [addressRenaming_live marked, ← Array.count_toList]
     exact count_take_lt_count _ (by simpa using marked)
   have count_le : (liveMarks state).count true ≤ state.heap.size := by
     rw [← size, ← Array.count_toList, ← Array.length_toList]; exact List.count_le_length
   refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, rfl, ?_, rfl⟩
-  · rw [collect_heap_size]; exact count_le
+  · rw [collectByAddress_heap_size]; exact count_le
   · intro a past
     refine ⟨.inl past, ?_⟩
-    rw [collectRenaming_beyond past, collect_heap_size]; omega
+    rw [addressRenaming_beyond past, collectByAddress_heap_size]; omega
   · intro a b inA inB same
     rcases inA with pastA | markedA <;> rcases inB with pastB | markedB
-    · rw [collectRenaming_beyond pastA, collectRenaming_beyond pastB] at same; omega
-    · have := live_lt b markedB; rw [collectRenaming_beyond pastA] at same; omega
-    · have := live_lt a markedA; rw [collectRenaming_beyond pastB] at same; omega
-    · rw [collectRenaming_live markedA, collectRenaming_live markedB] at same
+    · rw [addressRenaming_beyond pastA, addressRenaming_beyond pastB] at same; omega
+    · have := live_lt b markedB; rw [addressRenaming_beyond pastA] at same; omega
+    · have := live_lt a markedA; rw [addressRenaming_beyond pastB] at same; omega
+    · rw [addressRenaming_live markedA, addressRenaming_live markedB] at same
       rcases Nat.lt_trichotomy a b with lt | eq | gt
       · have := count_take_lt (liveMarks state).toList lt (by simpa using markedA); omega
       · exact eq
@@ -385,7 +385,7 @@ theorem related_collect (state : State) :
       · exact marked
     obtain ⟨c, found⟩ : ∃ c, state.heap[a]? = some c := ⟨_, Array.getElem?_eq_getElem bound⟩
     refine ⟨c, found, ?_, ?_⟩
-    · rw [collectRenaming_live marked]
+    · rw [addressRenaming_live marked]
       exact compact_getElem _ _ _ found marked
     · intro x member
       apply liveDomain_of_not_false
@@ -395,6 +395,97 @@ theorem related_collect (state : State) :
   · intro frame member x inFrame
     exact liveDomain_of_not_false (roots x (List.mem_append_right _ (List.mem_flatMap.mpr ⟨frame, member, inFrame⟩)))
 
+
+
+/-! ### Collection in canonical order -/
+
+/-- What `orderValid` confirms: every live cell has a position whose cell is it. -/
+theorem orderValid_spec {marks : Array Bool} {order rank : Array Nat}
+    (valid : orderValid marks order rank = true) :
+    order.size = marks.count true ∧
+    ∀ a, marks[a]? = some true → ∃ i, rank[a]? = some i ∧ i < order.size ∧ order[i]? = some a := by
+  simp only [orderValid, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range] at valid
+  obtain ⟨size, each⟩ := valid
+  refine ⟨size, fun a marked => ?_⟩
+  have bound : a < marks.size := bound_of_some marked
+  have := each a bound
+  simp only [marked, bne_self_eq_false, Bool.false_or] at this
+  split at this
+  · rename_i i hi
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at this
+    exact ⟨i, hi, this.1, this.2⟩
+  · simp at this
+
+theorem compactInOrder_getElem (f : Nat → Nat) (heap : Array Cell) (order : Array Nat)
+    {i a : Nat} {c : Cell} (at_ : order[i]? = some a) (found : heap[a]? = some c) :
+    (compactInOrder f heap order)[i]? = some (renameCell f c) := by
+  simp [compactInOrder, at_, found]
+
+theorem orderRenaming_live {size live : Nat} {rank : Array Nat} {a i : Nat}
+    (bound : a < size) (ranked : rank[a]? = some i) : orderRenaming size live rank a = i := by
+  simp [orderRenaming, bound, Array.getD_eq_getD_getElem?, ranked]
+
+theorem orderRenaming_beyond {size live : Nat} {rank : Array Nat} {a : Nat} (past : size ≤ a) :
+    orderRenaming size live rank a = a - size + live := by
+  simp [orderRenaming, show ¬ a < size by omega]
+
+/-- **Collection is a renaming of the state it collects**, in canonical order when the
+traversal numbered every live cell once, else in address order. -/
+theorem related_collect (state : State) :
+    Related (collectRenaming state) (liveDomain state) state (collect state) := by
+  unfold collectRenaming collect ordered
+  simp only []
+  split
+  · rename_i valid
+    generalize canonicalOrder state.heap (liveMarks state) (rootAddresses state) = order at valid ⊢
+    generalize rankOf state.heap.size order = rank at valid ⊢
+    obtain ⟨size, roots, closed⟩ := liveMarks_spec state
+    obtain ⟨osize, each⟩ := orderValid_spec valid
+    have count_le : (liveMarks state).count true ≤ state.heap.size := by
+      rw [← size, ← Array.count_toList, ← Array.length_toList]; exact List.count_le_length
+    have live : ∀ a, (liveMarks state)[a]? = some true → ∃ i,
+        orderRenaming state.heap.size order.size rank a = i ∧ i < order.size ∧ order[i]? = some a := by
+      intro a marked
+      obtain ⟨i, ranked, lt, at_⟩ := each a marked
+      have bound : a < state.heap.size := by have := bound_of_some marked; omega
+      exact ⟨i, orderRenaming_live bound ranked, lt, at_⟩
+    have newSize : (compactInOrder (orderRenaming state.heap.size order.size rank) state.heap order).size =
+        order.size := by simp [compactInOrder]
+    refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, rfl, ?_, rfl⟩
+    · simp only []; rw [newSize]; omega
+    · intro a past
+      refine ⟨.inl past, ?_⟩
+      simp only []; rw [orderRenaming_beyond past, newSize]; omega
+    · intro a b inA inB same
+      rcases inA with pastA | markedA <;> rcases inB with pastB | markedB
+      · rw [orderRenaming_beyond pastA, orderRenaming_beyond pastB] at same; omega
+      · obtain ⟨i, hi, lt, _⟩ := live b markedB
+        rw [orderRenaming_beyond pastA, hi] at same; omega
+      · obtain ⟨i, hi, lt, _⟩ := live a markedA
+        rw [orderRenaming_beyond pastB, hi] at same; omega
+      · obtain ⟨i, hi, _, ai⟩ := live a markedA
+        obtain ⟨j, hj, _, bj⟩ := live b markedB
+        rw [hi, hj] at same
+        subst same
+        rw [ai] at bj
+        exact Option.some.inj bj
+    · intro a inA bound
+      have marked : (liveMarks state)[a]? = some true := by
+        rcases inA with past | marked
+        · omega
+        · exact marked
+      obtain ⟨c, found⟩ : ∃ c, state.heap[a]? = some c := ⟨_, Array.getElem?_eq_getElem bound⟩
+      obtain ⟨i, hi, _, ai⟩ := live a marked
+      refine ⟨c, found, ?_, ?_⟩
+      · simp only []; rw [hi]; exact compactInOrder_getElem _ _ _ ai found
+      · intro x member
+        apply liveDomain_of_not_false
+        exact closed a x marked (by simp [children, found, member])
+    · intro x member
+      exact liveDomain_of_not_false (roots x (List.mem_append_left _ member))
+    · intro frame member x inFrame
+      exact liveDomain_of_not_false (roots x (List.mem_append_right _ (List.mem_flatMap.mpr ⟨frame, member, inFrame⟩)))
+  · exact related_collectByAddress state
 
 /-! ## Heap agreement is preserved by allocation and update -/
 

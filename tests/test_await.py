@@ -279,7 +279,9 @@ class Suspend(Await):
             text = f.read()
         i = text.index('"items"')  # the checkpoint's tokens are journaled as blocks
         with open(self.path, "w") as f:
-            f.write(text[:i] + text[i:].replace('"n":"', '"n":"9', 1))
+            # A v2 checkpoint's tokens are bare: change the first number in the blocks.
+            j = next(k for k in range(i, len(text)) if text[k].isdigit() and text[k - 1] in "[,")
+            f.write(text[:j] + "9" + text[j:])
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")

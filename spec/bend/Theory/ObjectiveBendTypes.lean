@@ -98,6 +98,24 @@ def Ty.isDataUnder (bounds : DataBounds) (rigid : List Nat) : Nat → List Nat �
 
 def Ty.dataFuel : Nat := 4096
 
+/-- The constructors of a type. -/
+def Ty.size : Ty → Nat
+  | .arrow _ _ domain codomain => 1 + domain.size + codomain.size
+  | .field _ member tail => 1 + member.size + tail.size
+  | .specification metadata extension => 1 + metadata.size + extension.size
+  | .prototype spec target => 1 + spec.size + target.size
+  | .variant row => 1 + row.size
+  | .computation plan response result => 1 + plan.size + response.size + result.size
+  | _ => 1
+
+/-- A walk fuel for `isDataUnder` that grows with the type and its bounds, never below
+`Ty.dataFuel`. Along any path the walk spends one step per constructor of the type and of
+each bound it unfolds, and unfolds a bound at most once (`seen`), so this fuel never runs
+out before the walk decides. A value's own shape type (a `Data` literal) is as deep as the
+value, so a fixed fuel would refuse a long list that the runtime admits. -/
+def Ty.dataFuelFor (bounds : DataBounds) (type : Ty) : Nat :=
+  max Ty.dataFuel (type.size + (bounds.map fun (_, bound) => bound.size).sum + 1)
+
 /-- No bounds: the closed, non-recursive first-order types. -/
 def Ty.isData (type : Ty) : Bool := type.isDataUnder [] [] Ty.dataFuel []
 

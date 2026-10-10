@@ -690,6 +690,9 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
   let some (.label utterance) := f.lookup "utterance" | evaluation "malformed interpret plan"
   let some offers := f.lookup "offers" | evaluation "malformed interpret plan"
   let some policy := (f.lookup "policy").bind referenceId | evaluation "malformed interpret plan"
+  -- The model to ask instead of the policy's own (a card's second attempt names the escalate model).
+  let model := ((f.lookup "model").bind labelOf).getD ""
+  if model.utf8ByteSize > Limits.maxPrincipalBytes then evaluation "interpret model exceeds its byte capacity"
   let s ← get
   match s.world.objects[policy]? with
   | none => respond bounds responseType "denied" [emptyRecord]
@@ -704,8 +707,9 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
       let id := Journal.bodyHash (Json.arr #[toJson s.principal, toJson s.intent, toJson s.awaits])
       set { s with awaits := s.awaits + 1 }
       throw (.suspend interpretationPrincipal id Limits.interpretationPatience checkpoint
-        (some (Json.mkObj [("id", toJson id), ("object", toJson self), ("policy", toJson policy),
-          ("utterance", toJson utterance), ("offers", dataJson offers)])))
+        (some (Json.mkObj ([("id", toJson id), ("object", toJson self), ("policy", toJson policy),
+          ("utterance", toJson utterance), ("offers", dataJson offers)] ++
+          (if model.isEmpty then [] else [("model", toJson model)])))))
 
 partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
@@ -1693,7 +1697,7 @@ def interpretationsReply (w : World) : World × Json := Id.run do
   let mut w := w
   let mut pending : Array Json := #[]
   for s in w.suspended do
-    let item : Option (String × String × String × Data × String) := do
+    let item : Option (String × String × String × Data × String × String) := do
       let i ← interpretationOf w s
       let id ← (i.getObjValAs? String "id").toOption
       guard (settled w interpretationPrincipal id).isNone
@@ -1703,9 +1707,11 @@ def interpretationsReply (w : World) : World × Json := Id.run do
       let policy ← (i.getObjValAs? String "policy").toOption
       let offers ← (i.getObjVal? "offers").toOption.bind fun o => (decodeData Limits.dataDepth o).toOption
       let utterance ← (i.getObjValAs? String "utterance").toOption
-      pure (id, object, policy, offers, utterance)
-    let some (id, object, policy, offers, utterance) := item | continue
+      pure (id, object, policy, offers, utterance, (i.getObjValAs? String "model").toOption.getD "")
+    let some (id, object, policy, offers, utterance, model) := item | continue
     let (shown, w') := policyJson w policy offers utterance
+    -- A model the Plan named takes precedence over the policy's own.
+    let shown := if model.isEmpty then shown else shown.setObjVal! "model" (toJson model)
     w := w'
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
       ("utterance", toJson utterance), ("offers", plainJson offers)])

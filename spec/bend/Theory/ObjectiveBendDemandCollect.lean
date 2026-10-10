@@ -4,8 +4,9 @@ A yielded activity's checkpoint is its exact machine state, and the demand machi
 only ever allocates: every cell a finished demand left behind stays in the heap, so an
 activity that loops through yields grows its checkpoint without bound. `collect` keeps
 exactly the cells traced from the roots (the control, including the yielded Plan cell,
-and every stack frame), compacts them in increasing old-address order, and renames
-every address. Addresses past the heap (never present in a lexically valid state) are
+and every stack frame), numbers them in a canonical order from the roots (a sum's payload
+in a later round, so how far a turn walked a list moves no other cell; address order when
+the traversal does not check out), and renames every address. Addresses past the heap (never present in a lexically valid state) are
 renamed by the shift that keeps them past the compacted heap, so collection is total and
 its behaviour theorem needs no validity premise.
 
@@ -165,19 +166,113 @@ def relocate (size live : Nat) (table : Array Nat) (address : Nat) : Nat :=
 def compact (f : Nat → Nat) (heap : Array Cell) (marks : Array Bool) : Array Cell :=
   (heap.zip marks).filterMap fun entry => if entry.2 then some (renameCell f entry.1) else none
 
-/-- The renaming `collect` applies to `state`. -/
-def collectRenaming (state : State) : Nat → Nat :=
+/-- The renaming `collectByAddress` applies to `state`. -/
+def addressRenaming (state : State) : Nat → Nat :=
   let ranked := rankTable (liveMarks state)
   relocate state.heap.size ranked.2 ranked.1
 
-/-- Collect the heap: keep the cells reachable from the roots, compact, rename. A
-yielded state stays yielded (at its Plan cell's new address); heap and stack keep
-their meaning under the renaming (`Theory.ObjectiveBendDemandCollectProofs`). -/
-def collect (state : State) : State :=
+/-- Collect keeping the live cells in increasing old-address order. -/
+def collectByAddress (state : State) : State :=
   let marks := liveMarks state
   let ranked := rankTable marks
   let f := relocate state.heap.size ranked.2 ranked.1
   ⟨compact f state.heap marks, renameControl f state.control, state.stack.map (renameFrame f)⟩
+
+/-! ## Canonical order
+
+Allocation order makes a checkpoint's addresses depend on how far a turn happened to force
+a structure: a reading that walks a list one cell further allocates there, and every cell
+allocated after it moves. `collect` instead numbers the live cells by a traversal from the
+roots that depends only on the reachable structure: depth first, children in order, except
+that a sum's payload (a list's spine is `cons` payloads) is put off to a later round. The
+skeleton the roots reach without entering data comes first and keeps its numbers however
+far any list was walked; each round of nested data follows. The traversal is not trusted:
+its order is used only when `orderValid` confirms it numbers every live cell exactly once,
+and otherwise the cells keep address order (`collectByAddress`). -/
+
+/-- A cell's children: those followed now, and a sum value's payload, put off. -/
+def splitChildren : Cell → List Nat × List Nat
+  | .cached origin (.variant _ payload) => (origin.environment, [payload])
+  | .nativeCached _ (.variant _ payload) => ([], [payload])
+  | cell => (cellAddresses cell, [])
+
+/-- One round, depth first: number what `work` reaches without entering a payload; the
+payloads met are the next round. `fuel` bounds the steps (a short fuel only leaves the order
+incomplete, which `orderValid` then refuses). -/
+def orderRound (heap : Array Cell) (marks : Array Bool) :
+    Nat → Array Bool → Array Nat → List Nat → Array Nat → Array Bool × Array Nat × Array Nat
+  | 0, seen, order, _, next => (seen, order, next)
+  | _ + 1, seen, order, [], next => (seen, order, next)
+  | fuel + 1, seen, order, a :: rest, next =>
+    if marks[a]? != some true || seen[a]?.getD true then orderRound heap marks fuel seen order rest next
+    else
+      let (now, later) := match heap[a]? with
+        | some cell => splitChildren cell
+        | none => ([], [])
+      orderRound heap marks fuel (seen.set! a true) (order.push a) (now ++ rest) (next ++ later.toArray)
+
+def orderRounds (heap : Array Cell) (marks : Array Bool) (fuel : Nat) :
+    Nat → Array Bool → Array Nat → List Nat → Array Nat
+  | 0, _, order, _ => order
+  | rounds + 1, seen, order, round =>
+    if round.isEmpty then order
+    else
+      let (seen, order, next) := orderRound heap marks fuel seen order round #[]
+      orderRounds heap marks fuel rounds seen order next.toList
+
+/-- Depth-first rounds from `roots`: each round numbers what it reaches without entering a
+payload; the payloads it met start the next round. -/
+def canonicalOrder (heap : Array Cell) (marks : Array Bool) (roots : List Nat) : Array Nat :=
+  let edges := heap.foldl (fun n cell => n + (cellAddresses cell).length) 0
+  orderRounds heap marks (roots.length + edges + heap.size + 1) (heap.size + 1)
+    (Array.replicate heap.size false) #[] roots
+
+/-- Each old address's position in `order`. -/
+def rankOf (size : Nat) (order : Array Nat) : Array Nat :=
+  (order.foldl (fun (acc : Array Nat × Nat) a => (acc.1.set! a acc.2, acc.2 + 1)) (Array.replicate size 0, 0)).1
+
+/-- `order` numbers every live cell exactly once (`rank` is its inverse on them). -/
+def orderValid (marks : Array Bool) (order rank : Array Nat) : Bool :=
+  order.size == marks.count true &&
+  (List.range marks.size).all fun a => marks[a]? != some true ||
+    (match rank[a]? with
+      | some i => decide (i < order.size) && order[i]? == some a
+      | none => false)
+
+/-- The renaming by an order: a live cell to its position, an address past the heap by
+the shift past the compacted heap. -/
+def orderRenaming (size live : Nat) (rank : Array Nat) (address : Nat) : Nat :=
+  if address < size then rank.getD address 0 else address - size + live
+
+/-- The cells in `order`, renamed. -/
+def compactInOrder (f : Nat → Nat) (heap : Array Cell) (order : Array Nat) : Array Cell :=
+  order.map fun a => renameCell f (heap[a]?.getD (.native (.natural 0)))
+
+structure Ordered where
+  marks : Array Bool
+  order : Array Nat
+  rank : Array Nat
+
+def ordered (state : State) : Ordered :=
+  let marks := liveMarks state
+  let order := canonicalOrder state.heap marks (rootAddresses state)
+  ⟨marks, order, rankOf state.heap.size order⟩
+
+/-- The renaming `collect` applies to `state`. -/
+def collectRenaming (state : State) : Nat → Nat :=
+  let o := ordered state
+  if orderValid o.marks o.order o.rank then orderRenaming state.heap.size o.order.size o.rank
+  else addressRenaming state
+
+/-- Collect the heap: keep the cells reachable from the roots, number them canonically,
+rename. A yielded state stays yielded (at its Plan cell's new address); heap and stack keep
+their meaning under the renaming (`Theory.ObjectiveBendDemandCollectProofs`). -/
+def collect (state : State) : State :=
+  let o := ordered state
+  if orderValid o.marks o.order o.rank then
+    let f := orderRenaming state.heap.size o.order.size o.rank
+    ⟨compactInOrder f state.heap o.order, renameControl f state.control, state.stack.map (renameFrame f)⟩
+  else collectByAddress state
 
 /-! ## Settling: a cached cell's origin is no longer a root
 
@@ -236,9 +331,10 @@ theorem garbageExample_heap_size : garbageExample.heap.size = 5 := rfl
 /-- Two of five cells are garbage: the collected heap has three. -/
 theorem collect_garbageExample_heap_size : (collect garbageExample).heap.size = 3 := by decide +kernel
 
-/-- The yielded Plan cell moved from 2 to 1, and the frame's capture from 4 to 2. -/
+/-- Numbered from the roots: the yielded Plan cell (the first root) moved from 2 to 0, the
+cell it captures from 0 to 1, and the frame's capture from 4 to 2. -/
 theorem collect_garbageExample_roots :
-    (match (collect garbageExample).control with | .yielded plan => plan | _ => 99) = 1 ∧
+    (match (collect garbageExample).control with | .yielded plan => plan | _ => 99) = 0 ∧
     (collect garbageExample).stack.flatMap frameAddresses = [2] := by decide
 
 #assert_axioms collect_garbageExample_heap_size

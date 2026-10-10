@@ -73,6 +73,22 @@ inductive Term where
 def liftRename (rename : Nat → Nat) : Nat → Nat
   | 0 => 0 | n + 1 => rename n + 1
 
+mutual
+/-- The constructors of a term (a field list's entries count through their terms). -/
+def Term.nodes : Term → Nat
+  | .lam a | .reflect a | .metadata a | .project a | .unary _ a | .get a _ | .inject _ a
+  | .perform a | .done a | .toData a => 1 + a.nodes
+  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b
+  | .textJoin a b => 1 + a.nodes + b.nodes
+  | .ifZero a b c | .ifBool a b c => 1 + a.nodes + b.nodes + c.nodes
+  | .extend a fields | .case a fields => 1 + a.nodes + Term.fieldNodes fields
+  | .record fields => 1 + Term.fieldNodes fields
+  | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ => 1
+def Term.fieldNodes : List (String × Term) → Nat
+  | [] => 0
+  | (_, body) :: rest => body.nodes + Term.fieldNodes rest
+end
+
 def Term.rename (rename : Nat → Nat) : Term → Term
   | .bound index => .bound (rename index)
   | .lam body => .lam (body.rename (liftRename rename))

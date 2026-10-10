@@ -286,9 +286,8 @@ evaluators' validators/arity tables/`reducible`, run the report, and decide fix 
 - Host-side resume of suspended activities rebuilds the `Checkpoint` from journaled tokens plus the
   activity's object/principal/intent/roots (`resumeOne` in TurnLoop); if you change `Checkpoint`'s
   fields, journals written before the change stop resuming (no migration exists).
-- Checkpoints contain the whole program heap (hundreds of tokens even for `bump`); `collect` only drops
-  unreachable cells. A size-aware checkpoint (share the program, store only mutable cells) would cut
-  journal bytes a lot but changes the binding story.
+- Checkpoints contain the whole program heap; since lane 6 (§12) v2 checkpoints reference the
+  program's terms instead of carrying them.
 - `Outcome.exhausted` is a silence, not an error; the host currently maps it to a refused turn with
   message "turn refused: <resource> budget exhausted"; journaling class `budget` is host work.
 - Related docs: `docs/FOUNDATION.md` (design), `docs/HOST-HANDOFF.md`, `docs/OBJECTS-HANDOFF.md`.
@@ -583,3 +582,117 @@ fixture recorded by the foundation binary).
   refuses an unbound alias). Tested against the explicit spelling and through
   world-create/world-turn. A `state.x = ...` line hints it.
 - Correction: the form-block note above means Garden.obend ~85 (`planting()`).
+
+
+## 12. Kernel lane 6 (lane/kernel5, 2026-10-09)
+
+- Deep values on the activity path (`Ty.dataFuel` item). The checker's `toData` rule
+  first tries `Ty.dataFuel`, then `Ty.dataFuelFor bounds type` = max of that and the
+  type's constructors plus its bounds' (`Ty.size`): `isDataUnder` spends a step per
+  constructor and unfolds a bound once per path, so that fuel always decides. The
+  declarative rule already took any fuel, so no proof moved (`conformsFuel_sound` is
+  untouched; runtime conformance never had a fixed bound). A turn argument is checked at
+  `Delvetalk.argumentFuel` = the entry's fuel plus twice the literal's `Term.nodes`
+  (`infer` spends one per constructor and one per earlier field). Argument annotations
+  are an `AnnotationTree` shaped like the literal (`Turn.quoteAt`, `Turn.shapeTree`
+  builds a value's shape type once per node): before, each annotation carried its own
+  path, `CheckedEntry.apply` found one by scanning the list (cubic) and
+  `shapeAnnotations` recomputed `shapeType` per injection (quadratic memory). Measured
+  on hbox, `keep(value: Data)` with a list of n labels, whole `turn-start` in a fresh
+  process: foundation refused n = 1500 ("applied package refused by Mini type
+  checker", 4.1 s); now n = 1000 / 2000 / 4000 / 8000 yield in 0.4 / 1.2 / 3.2 / 14 s.
+  What remains quadratic is the v1 checkpoint of a FORCED literal list (each cell's
+  closure carries its subterm by value) and the checker's own `position ++ [k]`;
+  `List<String>` at 2000 starts in 0.35 s. Test:
+  `tests.test_data_type ...test_a_long_list_argument_starts_an_activity_at_data_and_at_its_declared_type`
+  (2,500 items at `Data`, 6,000 at `Lists.List<String>`).
+- Law readings (`laws[].reading`). The table is now `Package.lawTable`: one entry per
+  ENFORCED law (`EntryCompiled.laws`), in order, reading "" when the source gives none;
+  `lawTable_names` proves its names are exactly the enforced laws', so a host lookup by
+  a refusing law's name is total. It already behaved so; it is now so by construction.
+  Test: the `#guard` in `Package.lean` compiles a module with `law small "stays small"`
+  and `law plain` and checks the artifact's `laws` and `readings` (`lake build` runs it).
+- Located refusals. Every refusal of an elaborated package now names `definition`,
+  `module` and `span` (the surface node), and a type refusal `expected` and `found` in
+  surface syntax, with a `hint` when one applies (`Diagnostic` gained `definition`,
+  `expected`, `found`; JSON keys of the same names). How:
+  - The elaborator's core `Expr`/`Body` keep the surface span on every node as an
+    IMPLICIT constructor field (`{span}`: patterns never mention it, so no match changed;
+    a construction must pass `(span := ...)`, the compiler finds each). `Body.cases`
+    also keeps `armSpans`.
+  - `withLoc` (around `expression`, `tail`, `body`) sets `St.here` and wraps the result
+    in `ATerm.located loc t`, which is transparent everywhere: `json`, `erase`, `depth`,
+    `annotate`, `mapTypes`, `knotNames` see through it (`decode_json` has its case;
+    `coerceGo` peels and re-wraps). No packet moved (pins: 0 recompiled differently).
+    `St.declKey` (`inDecl` in `emitDecl`/`templateLayer`) names the declaration.
+  - `M`'s error is now `Refusal {message, loc, hint, expected, found}` (`Coe String`);
+    `fail` takes `St.here`. `elaboratePackageLocated` keeps it; `elaboratePackage`
+    still answers a string (CompileProfile).
+  - `Compiler/ObjectiveBendBlame.lean`: `explain` re-walks a refused term as `infer`
+    does (same positions, same fuel), descends into the first child that does not
+    infer, and names the failing premise with its types; `locate` maps a position to
+    the innermost `located` mark; `Naming.render` prints `Ty` with declared names
+    (`namingOf` resolves every record and sum in a copy of the final state, aliases as
+    the refusing module imports them). Diagnostics only: acceptance is `check`'s.
+  - `ObjectiveBendFrontEnd.blameDiagnostic` is the explainer of `checkDirect` (closure
+    check), `checkTemplate` and `accept`; generic instances are placed at their generic
+    declaration (`Origins`, from the instance table, `Delvetalk.FrontEnd.originsOf`), and
+    the instance list is appended only to an unlocated refusal. The message keeps its
+    prefix ("the checker refused the front end's typed packet: ...").
+  - Hints for checker refusals (`blameHint`): a record where one of its fields' type was
+    expected ("its String field is `object`: write `c.object.object`"), a function still
+    waiting for arguments, too many arguments, a missing field (lists the fields), an
+    unknown case (lists the cases). §10's "never for a typed-packet checker refusal" no
+    longer holds; `Hints.hintFor` still never fires there (the blame's hint is kept by
+    `withHint`).
+  - Tests: `tests/test_located.py` (the objects lane's `textConcat(c.object, ...)`,
+    too few and too many arguments, an arm and a constructor naming no case; each on
+    check-package and compile, which must agree). Garden compile time unchanged
+    (95 vs 96 ms fresh-process, three entries).
+- Checkpoint edition v2 (`Theory/ObjectiveBendCheckpointV2.lean`, proofs in
+  `ObjectiveBendCheckpointV2RoundTrip.lean`). A checkpoint is written against a
+  `Dictionary` the decoder rebuilds from the entry's term (`Dictionary.ofProgram
+  entry.source.term`; the packet is named by pin): a term is one token `i+1` for the
+  program's `i`th subterm in preorder (`0` then the v1 term when it is not one: an
+  argument's or response's literal), an environment of two or more addresses one token
+  into a table listed once, a record value's names one token for a program record's or
+  extension's name list, address lists as zigzag steps, and every string a `Token.str`
+  reference into the program's strings then the checkpoint's own (listed after the
+  edition). JSON: a v2 token list is bare (`3`, `"x"`, `-(i+1)` for a string reference);
+  a v1 list keeps `{"n"}`/`{"s"}` objects, so old digests are unchanged and old
+  checkpoints decode (`decodeStateAny`). Every reference is emitted only after a check
+  that it names exactly the value (`termEq`: pointer, else equal v1 encodings, which
+  `encodeTerm_injective` makes equality), so `stateV2_roundTrip : decodeStateV2 d.terms
+  d.strings d.nameLists (encodeStateV2 d s) = some s` holds for EVERY dictionary (the
+  hash hints are unverified accelerators) and every state. v1's `state_roundTrip` and the
+  collector proofs are untouched (the state is the same; only its encoding changed).
+  `Token` gained `str`; the host's `Relative.relativeTokens` does not decode v2 and
+  journals it plain, which is what it should do now.
+  Measured (Garden prose suspension, tokens as the journal would hold them before any
+  block scheme, `tests.test_policy` scenario): v1 20,338 tokens, 248,006 bytes; v2 2,412
+  tokens, 6,984 bytes (35x). `tests.test_suspension_size`: one speaker median 6,661 ->
+  5,093 bytes, nine speakers 24,947 -> 15,362. Still quadratic: a FORCED literal argument
+  (each forced cell's closure carries its subterm inline); a checkpoint-local term table
+  would fix it. `Dictionary.ofProgram` runs per start/resume (not cached on
+  `CheckedEntry`; suites showed no slowdown).
+- Stable checkpoint addresses (coordinator's item). `collect` numbered live cells in
+  allocation order, so a reading that walked the directory's `greeted` list further
+  moved every cell allocated after it. It now numbers them by `canonicalOrder`: depth
+  first from the roots (control, then frames), children in order, a sum value's payload
+  (a list's spine) put off to the next round. The order is untrusted: `orderValid`
+  checks it numbers every live cell once (`rank` inverts it), else `collectByAddress`
+  (the old collector) is used. `related_collect` is re-proved for both branches from the
+  checked property alone (`orderValid_spec`, `orderRenaming_live/beyond`,
+  `compactInOrder_getElem`); every downstream theorem (`checkpoint_resume_segment`,
+  `collect_resume_segment`, ...) stands unchanged. `collect_garbageExample_roots` now
+  reads Plan 2 -> 0 (the first root). `tests.test_suspension_size` (host lane): nine new
+  speakers median 24,947 (foundation) -> 15,362 (v2 codec) -> 8,959 bytes (canonical
+  order); one speaker 6,661 -> 5,093 -> 5,034. Consecutive nine-speaker checkpoints share
+  89% of tokens in 258 edit runs before, 93-99% in 7-83 runs after. What still moves: the
+  later data rounds, and a settled cell's self origin (its own absolute address); writing
+  each cell's addresses relative to its own index would fix the latter (host7's
+  `Relative` did that on v1 tokens and does not apply to v2).
+  For the host lane: `compactCheckpoint`'s `dynamic` marking looks for `{"s": text}`
+  tokens; v2 strings are bare or `str` references, so the utterance is no longer cut into
+  its own leaf (it sits in the v2 header).
+

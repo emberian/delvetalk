@@ -54,9 +54,23 @@ structure Prepared where
   elaborated : ObjectiveBendElaborate.Elaborated
   instances : Json
 
+/-- An unlocated refusal lists the selected generic instances (their names may appear in
+it); a located one names its definition and place instead. -/
 def instancesNote (instances : Json) (diagnostic : Diagnostic) : Diagnostic :=
+  if diagnostic.span.isSome then diagnostic else
   { diagnostic with message := diagnostic.message ++
     (if instances == Json.arr #[] then "" else "; selected generic instances: " ++ instances.compress) }
+
+/-- A generic instance's knot key to its generic declaration's module and name, from the
+specialization's instance table (`declaration` is `[module, sha, sealed, name]`). -/
+def originsOf (instances : Json) : Origins := fun key => do
+  let items ← instances.getArr?.toOption
+  let item ← items.find? fun i => (i.getObjValAs? String "name").toOption == some key
+  let declaration ← (item.getObjValAs? String "declaration").toOption
+  let parts ← (Json.parse declaration).toOption.bind (·.getArr?.toOption)
+  let module ← (parts[0]?).bind (·.getStr?.toOption)
+  let name ← (parts[3]?).bind (·.getStr?.toOption)
+  return (module, name)
 
 /-- Specialize, elaborate and check a closure whose modules are already parsed. -/
 def prepareParsed (modules : List SourceModule) (asts : List ObjectiveBendSurface.Module) (limits : Json) :
@@ -66,9 +80,10 @@ def prepareParsed (modules : List SourceModule) (asts : List ObjectiveBendSurfac
   let specialized ← (Generics.run sources.toArray).mapError fun message =>
     { stage := "source-specialization", message }
   let note := instancesNote specialized.instances
-  let elaborated ← (ObjectiveBendElaborate.elaboratePackage specialized.modules).mapError
-    (fun e => note (elaborationRefusal e))
-  (checkClosure modules elaborated limits).mapError note
+  let origins := originsOf specialized.instances
+  let elaborated ← (ObjectiveBendElaborate.elaboratePackageLocated specialized.modules).mapError
+    (fun e => note (locatedRefusal origins e))
+  (checkClosure modules elaborated limits origins).mapError note
   return ⟨modules, asts, specialized.modules, elaborated, specialized.instances⟩
 
 def prepare (modules : List SourceModule) (limits : Json) : Except Diagnostic Prepared := do
