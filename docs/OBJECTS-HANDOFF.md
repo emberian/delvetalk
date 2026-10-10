@@ -30,7 +30,7 @@ the library).
   handle (`context.handle`, from the host's registry) and anyone else as `Card.handle`:
   never a raw DID, a long fragment is `…` and its last eight. A handle stored when the
   host knew it shows by `Card.shown`: a bell's planter, a rain's author, a Tide subscriber,
-  the Anthology's owner (stored at each admission), a lantern's lighter, a door's opener and
+  the Anthology's owner (seeded as `ownerHandle`, and stored at each admission), a lantern's lighter, a door's opener and
   knockers, a Deal's signers and withdrawer, a Thing's holder, an Avatar note's author, and
   an Env's and a Wake's owner (seeded at arrival). Deadlines (Thing offers,
   the Tide's gap) compare `context.clock`, which only world-advance moves.

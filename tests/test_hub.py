@@ -405,6 +405,18 @@ class HandedOnlyWhenNamed(test_chain.Chain):
         self.assertEqual(self.say("Is the lantern lit tonight?", "c2"), 1)
 
 
+class AnthologyOwner(test_chain.Chain):
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def test_the_seeded_owner_handle_names_the_owner_before_any_admission(self):
+        r = self.host.send(op="world-create", principal="did:plc:6amo7col5h4ciq2gpm5eur7b", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
+                           entry="initial", seed=record(owner=label("did:plc:6amo7col5h4ciq2gpm5eur7b"), ownerHandle=label("ember.delve.town")))
+        self.assertEqual(r["status"], "created", r)
+        card = self.turn("anthology", "receive", record(text=label(""), post=label("")), principal=GLM)["offers"][0]["text"]
+        self.assertTrue(card.startswith("Anthology, admitted by ember.delve.town"), card)
+
+
 class AnthologyReachable(test_chain.Chain):
     """Run 5, finding 4: the anthology has a door, forms (submit {line}; admit {number}, the
     owner's) and receive, so a submit line or the model's submit spell reaches it."""

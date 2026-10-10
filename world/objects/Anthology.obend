@@ -13,8 +13,8 @@ record Proposal:
   handle: String
   line: String
   status: Status
-# ownerHandle: the owner's handle as the host knew it at their last admission, so the
-# card names them to every reader.
+# ownerHandle: the owner's handle, from the seed (genesis passes it) and then as the host
+# knew it at their last admission, so the card names them to every reader.
 record State:
   owner: String
   ownerHandle: String
@@ -22,6 +22,7 @@ record State:
 # What a creator may supply; the host lays it over initial().
 record Seed:
   owner: String
+  ownerHandle: String
 record Edits:
   proposals: Plans.Entries<Proposal, Proposal>
   ownerHandle: Plans.Edit<String, {}>
@@ -32,9 +33,9 @@ type Response = Plans.Response<State, {}>
 # them is the pin's.
 law owner "only the owner changes it; anyone submits a line": request.subject == new.owner or (request.kind == 0 and (request.method == "submit" or request.method == "receive"))
 def defaultSeed() -> Seed:
-  {owner: ""}
+  {owner: "", ownerHandle: ""}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, ownerHandle: "", proposals: Lists.List.nil()}
+  {owner: seed.owner, ownerHandle: seed.ownerHandle, proposals: Lists.List.nil()}
 def initial() -> State:
   seeded(defaultSeed())
 # Submission only proposes; admission is the receiver's law, not the author's. The
