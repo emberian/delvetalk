@@ -1,54 +1,25 @@
-"""The spell grammar in Bend: the last unquoted delvetalk line, field lines, slash forms, blocks,
-fences skipped, fitted to a form or refused by name, within budget at 4 KB.
+"""The spell grammar: the last unquoted delvetalk line, field lines, slash forms, blocks, fences
+skipped, fitted to a form or refused by name. The host parses (op `spell-parse`); world/lib/
+Spell.obend keeps only the spell line's card, action and inline fields, which a card reads.
 
-Evidence for FOUNDATION §5 Spell grammar (layer: objects).
-
-The spell grammar in Bend: parse a card reply, fit it to the card's form.
+Evidence for FOUNDATION §5 Spell grammar (layer: host; the Bend reading: objects).
 
     python3 -m unittest tests.test_spell -v
 """
 import unittest
 
+from tests.test_host_spell import host, show_fit, show_parsed
 from tests.test_objects import check, closure, compile_job, record
 
-PROBE = """edition ObjectiveBend 1
-import ./List.obend as Lists
-import ./Abi.obend as Abi
-import ./Spell.obend as Spell
-import ./Form.obend as Form
-# Garden's plant form (Garden.planting), written out: these are Spell's tests, and
-# Garden's closure leaves no room for a probe this size.
-def plantForm(context: Abi.Context) -> Form.Form:
-  {card: context.object, action: "plant", fields: Form.Fields.cons({head: {name: "colour", kind: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "amber"), "violet"), "silver")})}, tail: Form.Fields.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 80n})}, tail: Form.Fields.nil()})})}
-def bar(items: Form.Names) -> String:
-  Lists.fold::<String, String>(items, "", fn(head: String) -> String -> String: fn(rest: String) -> String: textConcat(head, textConcat("|", rest)))
-def value(v: Spell.Value) -> String:
-  match v:
-    case text(t): t.value
-    case natural(n): natText(n.value)
-    case choice(c): c.value
-def entries(items: Spell.Entries) -> String:
-  Lists.fold::<Spell.Entry, String>(items, "", fn(e: Spell.Entry) -> String -> String: fn(rest: String) -> String: textConcat(e.name, textConcat("=", textConcat(value(e.value), textConcat(";", rest)))))
-def bindings(items: Spell.Bindings) -> String:
-  Lists.fold::<Spell.Binding, String>(items, "", fn(b: Spell.Binding) -> String -> String: fn(rest: String) -> String: textConcat(b.name, textConcat("=", textConcat(b.value, textConcat(";", rest)))))
-def showParsed(parsed: Spell.Parsed) -> String:
-  match parsed:
-    case spell(s): textConcat("spell ", textConcat(s.card, textConcat(" ", textConcat(s.action, textConcat(" ", bindings(s.fields))))))
-    case notASpell(n): textConcat("not a spell: ", n.reason)
-def parse(text: String) -> String:
-  showParsed(Spell.parse(text))
-def fieldCount(text: String) -> Nat:
-  match Spell.parse(text):
-    case spell(s): Lists.length::<Spell.Binding>(s.fields)
-    case notASpell(_): 9999n
-def show(fit: Spell.Fit) -> String:
-  match fit:
-    case proposal(p): textConcat("proposal ", textConcat(p.card, textConcat(" ", textConcat(p.action, textConcat(" ", entries(p.bindings))))))
-    case unclear(u): textConcat("unclear ", bar(u.needs))
-    case refused(r): textConcat("refused ", r.reason)
-def propose(text: String, context: Abi.Context) -> String:
-  show(Spell.fit(Spell.parse(text), plantForm(context)))
-"""
+# Garden's plant form, as the host's fit takes it.
+def plant_form(card="garden-1"):
+    return {"card": card, "action": "plant", "fields": [
+        {"name": "colour", "kind": {"choice": {"options": ["amber", "violet", "silver"]}}},
+        {"name": "seed", "kind": {"text": {"min": 1, "max": 80}}}]}
+
+
+def text(value):
+    return {"tag": "label", "value": value}
 
 
 def unique(modules):
@@ -56,37 +27,20 @@ def unique(modules):
     return [m for m in modules if not (m["name"] in seen or seen.add(m["name"]))]
 
 
-def text(value):
-    return {"tag": "label", "value": value}
-
-
 def context(card="garden-1"):
     return record(world=text(""), object=text(card), principal=text("glm"), handle=text(""),
                   caller=text(""), intent=text("probe"), height={"tag": "natural", "value": "0"}, clock={"tag": "natural", "value": "0"},
                   inputOrigin=record(
         kind=text("request"), object=text(""), command=text(""), program=text(""),
-        immediatelyPrevious={"tag": "boolean", "value": False}))
-
-
-def run(entry, *arguments, limits=None):
-    compiled = compile_job(unique(closure("Spell") + closure("Abi")) + [{"name": "Probe", "source": PROBE}], entry)
-    assert compiled["status"] == "compiled", compiled
-    request = {"op": "run", "artifact": compiled["artifact"], "arguments": list(arguments)}
-    if limits:
-        request["limits"] = limits
-    return check(request)
+        immediatelyPrevious={"tag": "boolean", "value": False}, post=text("")))
 
 
 def propose(reply, card="garden-1"):
-    out = run("propose", text(reply), context(card))
-    assert out["status"] == "finished", out
-    return out["value"]["value"]
+    return show_fit(host({"text": reply, "form": plant_form(card)})["fit"])
 
 
 def parse(reply):
-    out = run("parse", text(reply))
-    assert out["status"] == "finished", out
-    return out["value"]["value"]
+    return show_parsed(host({"text": reply}))
 
 
 class Parse(unittest.TestCase):
@@ -214,9 +168,7 @@ class Blocks(unittest.TestCase):
     """`field: <<DELIM` opens a block ending at a line that is exactly DELIM."""
 
     def parsed(self, reply):
-        out = run("parse", text(reply))
-        self.assertEqual(out["status"], "finished", out)
-        return out["value"]["value"]
+        return parse(reply)
 
     def test_a_block_value_is_its_lines_joined_without_a_trailing_newline(self):
         reply = "delvetalk workshop check\nsource: <<BEND\nedition ObjectiveBend 1\n\ndef f(n: Nat) -> Nat:\n  n\nBEND\ntarget: bell-1\n"
@@ -230,13 +182,6 @@ class Blocks(unittest.TestCase):
     def test_an_unclosed_block_is_refused_by_name(self):
         self.assertEqual(self.parsed("delvetalk w c\nsource: <<BEND\nline\n"),
                          "not a spell: the block <<BEND for source is never closed by a line BEND")
-
-    def test_a_4_kb_block_costs(self):
-        body = "\n".join("  line %04d of a long block of Bend source text" % i for i in range(80))[:4096]
-        out = run("fieldCount", text("delvetalk workshop check\nsource: <<BEND\n%s\nBEND\n" % body), limits={"ticks": "1000000"})
-        print("\n  a 4 KB block: %d ticks" % out["ticksUsed"])
-        self.assertEqual(out["value"]["value"], "1")
-        self.assertLess(out["ticksUsed"], 100000)
 
 
 class Fit(unittest.TestCase):
@@ -271,18 +216,11 @@ class Fit(unittest.TestCase):
         self.assertEqual(propose("delvetalk garden-2 plant\nseed: a\ncolour: amber"), "refused This card offers garden-1 plant")
         self.assertEqual(propose("delvetalk garden-1 prune\nseed: a\ncolour: amber"), "refused This card offers garden-1 plant")
 
-    def test_naturals_are_parsed_by_hand_within_bounds(self):
-        form = PROBE + """def form() -> Form.Form:
-  {card: "c", action: "a", fields: Form.Fields.cons({head: {name: "n", kind: Form.Kind.natural({min: 2n, max: 300n})}, tail: Form.Fields.nil()})}
-def natural(text: String) -> String:
-  show(Spell.fit(Spell.parse(text), form()))
-"""
-        compiled = compile_job(unique(closure("Spell") + closure("Abi")) + [{"name": "Probe", "source": form}], "natural")
-        self.assertEqual(compiled["status"], "compiled", compiled)
+    def test_naturals_are_read_in_plain_digits_within_bounds(self):
+        form = {"card": "c", "action": "a", "fields": [{"name": "n", "kind": {"natural": {"min": 2, "max": 300}}}]}
 
         def go(value):
-            out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [text("delvetalk c a\nn: " + value)]})
-            return out["value"]["value"]
+            return show_fit(host({"text": "delvetalk c a\nn: " + value, "form": form})["fit"])
         self.assertEqual(go("42"), "proposal c a n=42;")
         self.assertEqual(go("300"), "proposal c a n=300;")
         self.assertEqual(go("301"), "refused n takes 2 to 300")
@@ -291,51 +229,50 @@ def natural(text: String) -> String:
             self.assertEqual(go(bad), "refused n takes a natural number in plain digits.", bad)
 
 
-class Maximum(unittest.TestCase):
-    """Cost model, measured: take and drop are charged 2 x the bytes of the prefix
-    they traverse (an exact bounded scan, no longer 2 x min(size, 4 x scalars)),
-    break 2 x (|alphabet| + 2) per visited scalar, plus about 400 ticks of fixed
-    work per line. Bytes after a --- rule are never scanned. A 4,096-byte reply
-    with 64 fields and a rule parses in about 75,000 ticks; one whose every byte
-    is in a field line (4,057 bytes) in about 83,000 (each line is also checked
-    for a later spell line, which takes over): both fit the default
-    100,000 ticks (the dense one needed 1,000,000 under the 4-bytes-per-scalar
-    charge)."""
+PROBE = """edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Spell.obend as Spell
+def bindings(items: Spell.Bindings) -> String:
+  Lists.fold(items, "", fn(b: Spell.Binding) -> String -> String: fn(rest: String) -> String: textConcat(b.name, textConcat("=", textConcat(b.value, textConcat(";", rest)))))
+def parse(text: String) -> String:
+  match Spell.parse(text):
+    case spell(s): "spell {s.card} {s.action} {bindings(s.fields)}"
+    case notASpell(n): "not a spell: {n.reason}"
+"""
 
-    def reply(self, value_size, rule=True):
-        lines = ["delvetalk garden-1 plant"] + ["f%02d: %s" % (i, "v" * value_size) for i in range(64)]
-        body = "\n".join(lines) + "\n"
-        if not rule:
-            return body
-        body += "---\n"
-        return body + "#" * (4096 - len(body.encode()))
 
-    def test_a_4096_byte_reply_with_64_fields_parses_under_the_default_budget(self):
-        reply = self.reply(44)
-        self.assertEqual(len(reply.encode()), 4096)
-        out = run("fieldCount", text(reply))
-        print("\n  4096 bytes, 64 fields (3.2 KB of them before the rule): parse %s ticks, %s heap cells" %
-              (out.get("ticksUsed"), out.get("heapCells")))
-        self.assertEqual(out["status"], "finished", out)
-        self.assertEqual(out["value"]["value"], "64")
-        self.assertLess(out["ticksUsed"], 100000)
+def bend_parse(reply):
+    compiled = compile_job(unique(closure("Spell")) + [{"name": "Probe", "source": PROBE}], "parse")
+    assert compiled["status"] == "compiled", compiled
+    out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [text(reply)]})
+    assert out["status"] == "finished", out
+    return out["value"]["value"]
 
-    def test_a_dense_4057_byte_reply_fits_the_default_budget(self):
-        reply = self.reply(57, rule=False)
-        self.assertEqual(len(reply.encode()), 4057)
-        default = run("fieldCount", text(reply))
-        print("  dense 4057 bytes: default budget %s, %s ticks" % (default["status"], default.get("ticksUsed")))
-        self.assertEqual(default["status"], "finished", default)
-        self.assertEqual(default["value"]["value"], "64")
-        self.assertLess(default["ticksUsed"], 100000)
-        starved = run("fieldCount", text(reply), limits={"ticks": "20000"})
-        self.assertEqual(starved["status"], "refused", starved)
-        self.assertTrue(starved["failure"].endswith("tickExhausted"))
 
-    def test_a_4096_byte_prose_reply_is_cheap(self):
-        out = run("parse", text("word " * 819))
-        print("  4096 bytes of prose: %s ticks" % out.get("ticksUsed"))
-        self.assertEqual(out["status"], "finished", out)
+class BendReading(unittest.TestCase):
+    """What a card still reads in Bend: the spell line's card and action (a card answering a
+    spell the host found missing fields) and the fields on that line (a macro's expansion)."""
+
+    def test_the_spell_line_and_its_inline_fields_as_the_host_reads_them(self):
+        for reply in ("delvetalk garden plant / colour: violet / seed: a bell for moths",
+                      "delvetalk tide subscribe / every: 1 / note: WC-01, first light",
+                      "delvetalk garden-1 plant seed: a fern, that remembers, colour: silver",
+                      "delvetalk a b x: at://did/p/1 / y: 2",
+                      "delvetalk garden-1 ?",
+                      "Could we plant a fern?",
+                      "delvetalk garden-1 plant now",
+                      "> delvetalk garden-1 plant / seed: fern",
+                      "```json\ndelvetalk garden-1 plant\n```"):
+            with self.subTest(reply=reply):
+                self.assertEqual(bend_parse(reply), parse(reply))
+
+    def test_the_last_unquoted_line_wins_and_a_quoted_one_only_alone(self):
+        post = ("e.g. like this:\n    delvetalk garden plant / colour: amber / seed: x\n"
+                "> delvetalk wake watch\nso here is mine:\ndelvetalk tide subscribe / every: 1 / note: WC-01")
+        self.assertEqual(bend_parse(post), "spell tide subscribe every=1;note=WC-01;")
+        self.assertEqual(bend_parse("delvetalk a first\ndelvetalk b second\nx: 1"), "spell b second ")
+        self.assertEqual(bend_parse("quoted:\n    delvetalk garden-1 plant / seed: fern"), "spell garden-1 plant seed=fern;")
+        self.assertEqual(bend_parse("delvetalk a b\nx: 1\ndelvetalk Is The word"), "spell a b ")
 
 
 if __name__ == "__main__":

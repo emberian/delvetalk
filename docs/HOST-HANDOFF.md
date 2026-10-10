@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-09 (foundation f178383).
+State on 2026-10-10 (lane/host11 over foundation cce14c7).
 
 ## Summary
 
@@ -13,7 +13,7 @@ The host is one Lean process holding a world of durable objects. Every state cha
 - Refusals are receipts with a class; `staleRoot`, `budget`, `evaluation`, `capacity` are transient (a retry with the same identity runs again).
 - Ops in section 2. Limits in section 4 (`Store.lean`, namespace `Limits`).
 - Run: `make check` (parallel runner `tests/run.py`), `make smoke` (`test_turn_world test_chain`). Narrow: `DELVETALK_OBEND=<binary> python3 -W ignore -m tests.run test_x`. `tests/host.py` opens test journals with `sync: "none"`.
-- Tests: 896 `def test_` across `tests/test_*.py` on 2026-10-09.
+- Tests: full `tests.run` on hbox at lane/host11 (load ~25): 1070 tests in 263 classes; the only failures were `test_artifact_pins` (the `Abi.Origin.post` line moves every pin), re-recorded in the same commit as this line.
 - Wall-clock bounds (`test_turn_world.Maximum` 200 bumps under 5 s, `test_http` 200 turns under 10 s, `test_snapshot` reopen under 1 s) are fsync- and load-bound and can miss on a loaded box.
 - Open: section 7 (forms for sum inputs, nested handlers, foreign worlds, one stale `expectedFailure` in `tests/test_bridge.py`).
 
@@ -129,7 +129,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - Fragment: `request.subject`, `request.caller`, `request.pin`, `request.kind`, `request.method`, text constants, `x in new.F` (`member`), `appendOnly(F)`, `unchanged(F)`, `writeOnce(F)`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
 - `judge` judges every distinct (caller, kind) of an object's changes. Default law `owner: request.kind == 0 or request.subject == "<creator>"`: anyone may invoke methods, only the creator may reprogram or amend (`defaultLaw`). Metarule: an amendment must be admitted by the existing law for its proposer; message "law does not admit an amendment by its proposer <p>: <name>: <expr>".
 - `Object.readings` holds the package's law readings for clauses that are still the package's; `makeObject` keeps those the effective law leaves equal, an amendment keeps those it leaves equal, a reprogram keeps all. `parseLawTextReadings` reads `law NAME "reading": EXPR`; a malformed reading is `law syntax`.
-- Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin}`. The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
+- Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin {kind, object, command, program, immediatelyPrevious, post}}` (`post`: 5.71). The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
 - Two-tier law: for an artifact with `law.present` (`Object.predicate`), after the text admits, `judge` runs `law(old, new, request)` once per distinct kind-0 change (`bendLaw`) with `request = {context, method, argument, kind, pin, reads}` (`inputOrigin.kind = "law"`). `reads` are the ids `lawReads()` returns; `commit` adds them to the roots (`withLawReads`). Runs under `Bounds.lawTicks`: `admitted`, `refused {clause}` (= `lawRefused clause`), exhaustion is class `budget` reason `law ticks`, anything else fails closed as `lawRefused law`/`lawReads`. Reprograms and amendments are the text's alone. `warmLaws` compiles `law`/`lawReads` before `judge`.
 - Commutative edits: `judge` accepts a root `(id, seen)` whose object moved (`seen < version now`) when every change of `id` is a kind-0 write whose every edit is `keep`, `add`, `append`, `insert` (`EditKind.commutes`), or an `upsert`/`retract` of a relation row whose key no admitted write since `seen` touched (`keysChangedSince`, read from `writes[].edits`; a `set` or list edit of the relation touches every key), or, on a resumed turn's own object, an edit of a field later writes left alone (`movedRootAdmits`, one rule for `judge` and `resumeOne`). The entry keeps the roots as read, so `writes[].version` can be past `seen + 1`. Any other moved root is `staleRoot`. List items by bytes: `amendItem {item, change}` and `removeItem {item}` address the first item with the same canonical DAG-CBOR; none is `absentItem`.
 - Stale resumptions: a resumed turn's own object may have moved while it waited. `judge` and `resumeOne` accept it when `movedRootAdmits` holds (every later change was an ordinary write and each of the turn's edits commutes, is a row edit of an untouched key, or touches a field those left alone). Otherwise `staleRoot` (transient), and `resumeOne` re-runs the direct turn once from its journaled request (`TurnMeta.rerun`, journaled `rerun: true`, reply `rerunOf`). Deliveries are not re-run.
@@ -152,7 +152,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - Method table and forms: `Object.methods` is the artifact's method table (reprogram replaces it; for a layer stack it lists every layer's methods, top first). `world-inspect` answers it as `methods` plus `forms`. A form is `{card, action, fields}` for each method that takes a context and whose input is a record of `String` (text 0..`formTextMax`), `Nat` (0..`formNaturalMax`) or a closed sum of empty payloads.
 - Extend: `world-reprogram {mode: "extend"}` and Plan `extend` add the source as module `Layer<n>`. The host writes `layer over ./<module below>.obend` as its first line (`layerLine`), so the kernel builds a layer stack with late binding. New pin = CID of `["extend", old pin, source CID]`; the state type must be equal under `canonicalTy` or a migration named. Tests: `test_extend`, `test_layers`.
 - Supervisors: `Object.supervisor` is fixed at creation (`world-create {supervisor}`, Plan `createUnder`; `refused {clause: supervisor}` if not an object). An activity of a supervised object ends `broken` when refused `evaluation`, `budget` when a machine budget ran out, `timedOut` when a segment resumed past its deadline ends in any way. `commit` puts an `ended {id, to, method: "ended", argument, sender, ledger}` field in that entry (`endedField`, `endedId`); `record` makes it a pending delivery with argument `{receipt, how}`. A ledger refusal (`budgetExhausted`) tells nobody. Replay checks the id and that `to` is the supervisor (`checkEnded`). Test: `test_supervisors`.
-- Handlers: Plan `run {object, method, argument, handler}` runs the callee as `call` does, but every Plan the callee's own frame yields is first offered to the handler's pure `handle(state, plan[, context]) -> Handled<R>` (`answer {response}` or `pass`). The handler must be readable by the subject (`refused {clause: handler}`) and is a root. Plan `judge {edits}` answers `judged {admitted, clause}` without committing. Test: `test_handlers`.
+- Handlers: Plan `run {object, method, argument, handler}` runs the callee as `call` does, but every Plan the callee's frame, or any frame it calls, yields is first offered to the handlers around it, innermost first, each a pure `handle(state, plan[, context]) -> Handled<R>` (`answer {response}`, or `pass` to the next one out; 5.73). The handler must be readable by the subject (`refused {clause: handler}`) and is a root. Plan `judge {edits}` answers `judged {admitted, clause}` without committing. Test: `test_handlers`.
 - Held entries: `compiledMethod`/`compileDef` use `compileEntryIn` (`Package.prepareRequest` cached in `world.requests`, `Package.compileEntryFrom`); `Compiled.entry` is a decoded, checked `CheckedEntry`. Turns run `Turn.startEntry`/`resumeEntry`; pure definitions (law, `lawReads`, handler, pure methods, migrations) run `Package.executeDataEntry`. Only `initial()` at creation runs from the packet.
 - Kernel integration: `world-turn {…, profile: true}` returns `profile [{kind, steps, ticks}]` (not journaled). `annotateData` (`Turn.lean`) annotates sum-valued arguments.
 
@@ -527,6 +527,57 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    checkpoint blocks (median 4.7 KB fresh per entry) and the `tokenTree` roots (~1 KB); the 7 KB target
    needs the kernel's share.
 
+71. **`inputOrigin.post` (host11; from the objects lane).** The post a turn came from: a frame asked
+   `receive {text, post}` has that `post` (`heardPost`), kept when the host reads the reply as a spell
+   (`TurnRequest.post`, set by `spellTurn` and `deliverOne`; the called path passes it to `runMethod`), so
+   the spell's method, which no longer sees `{text, post}`, sees it; a called frame otherwise inherits its
+   caller's (`TurnState.post`, restored after the call), and a delivered `receive` brings its own. It is
+   the reply's own post, not `replyTo` (its parent, which `awaitPost` matches against the post a turn
+   awaits). Handle and view contexts carry the frame's; a card render's and a Bend law's are "". A
+   suspended activity journals `post`, and `origin`/`command` when the turn was a spell, so a call after
+   the resumption and a stale re-run (`resumeOne`) see the same Context. `Abi.Origin` gains `post:
+   String` (fitted, so an older library's Origin without it runs unchanged). A `receive` argument with a
+   field its card's `receive` input lacks (with or without the host's `fields`) is not read as a spell
+   (`heardFits`): `receive` runs as asked and is refused `typeMismatch`, so a forged `who` beside a spell
+   no longer runs the spell. The Garden may read `context.inputOrigin.post` for its planting post and drop
+   `context.intent` (objects lane; `tests/test_replay.py` test_1 and `tests/test_principal.py`'s planting
+   case pass with that one-line change, probed on hbox). Not carried: a delivery's post from the sending
+   turn (only its own `receive` argument's); `sends` journal no post. Test: `tests/test_input_post.py`.
+
+72. **A suspension journals what it does not already say (host11; §7 item 2 of host10).** The
+   journaled checkpoint drops `object`, `principal` and `intent` when they are the activity's object
+   and the entry's identity, and its `digest`, which `expandSuspended` (Ops; replay, resumption, fork)
+   derives again from them, `packetSha256`, `rootsDigest` and the tokens (an older entry's journaled
+   digest is still checked). The activity leaves out every empty or zero field but `ticks` (`absent`,
+   `writes`, `sends`, `creates`, `programs`, `laws`, `grants`, `offers`, `awaits`, `checks`, `caller`,
+   …; `activityArray`/`activityNat` read them back) and its `roots`, which were always the entry's
+   (an older activity's own roots are read first). Measured on hbox (`tests/test_suspension_size.py`):
+   one speaker's median 5,532 -> 5,092 B, nine speakers' 7,940 -> 7,500 B. What is left of the host's:
+   `slot` beside an interpretation (its id again, ~100 B; `slot` is read in five places), `request`
+   and `turnRequest` (two digests, both checked), the argument (~300 B). The rest is the kernel's: the
+   fresh checkpoint blocks (3 KB for one speaker, more for nine) and the `tokenTree` roots (~900 B).
+
+73. **Handlers over nested frames (host11; §7 item 3 of host10).** A `run` installs its handler for its
+   whole extent: every frame at the callee's depth or deeper until the `run` returns
+   (`TurnState.handlers`, innermost first). `drive` offers a yielded Plan to each handler around the
+   frame in turn; the first `answer` is the response, a `pass` (or a plan the handler's input does not
+   name) goes to the next one out, and the host answers what all passed. Activities need nothing more:
+   only a top frame suspends (an await in a call is refused), and a `run` callee is never the top.
+   Test: `tests/test_handlers.py` (a sandbox answers the write of a frame its callee calls; an inner
+   `views` handler passes a write to the `sandbox` around it).
+
+74. **`insertOnly` under retention (host11; RELATIONAL §12, WORLD-REVIEW finding 10's trap).**
+   `insertOnly(F)` means: no admitted write retracts or alters a row of F; a row the declared retention
+   dropped does not count. `Law.Facts.relations` carries the object's declarations (`judge` passes the
+   code's `relations`); an old row missing from the new relation is a retention drop when the relation
+   is full (`RelDecl.cap`) and the row's key sorts before every kept key (`retentionDropped`, by
+   canonical key bytes, `Law.bytesLt`, which `canonicalRows` now shares). An altered row keeps its key,
+   so it still refuses; so does a retraction from a relation that is not full. Without a declaration
+   (a field that is no relation) the rule is as before. `#guard`s in `Law.lean`; test:
+   `tests/test_relation.py` `test_insert_only_does_not_count_the_rows_retention_drops` (limit 2, three
+   inserts admitted, an upsert and a retract of a kept row refused). The Directory's Bend 4,096 check
+   (`greeted`) may now be `law greeted "...": insertOnly(greeted)` (objects lane).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -543,9 +594,6 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ## 7. Open
 
-- Handlers over nested frames and activities: `run` offers only the callee's own frame's plans to a pure
-  `handle`. The smallest change: `drive` looks up the innermost handler at a depth at or below the frame's
-  (the `handlers` stack), not the one at exactly `depth`.
 - Foreign worlds: `Reference.world != ""` is refused `foreignWorld`.
 - `world-reprogram`/`amend` are gated only by the object's law.
 - Closed by host10, not by code: "forms for sum inputs held as bounds variables". A closed sum of empty
@@ -553,37 +601,41 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
   forms a choice (probed on hbox with `test_sum_words`'s garden); declared forms (5.69) cover the rest.
 - `tests/test_bridge.py`'s stale `expectedFailure` is gone (foundation).
 
-### Queue for the next host lane, in order (from lane/host10)
+### Queue for the next host lane, in order (from lane/host11)
 
-host10 landed 5.62 to 5.70, one commit each (plus the world `methods()` lines, 9c85454, and two
-foundation merges): declared methods (the public-method hole); called and delivered `receive` read
-as spells; an interpretation's proposal names its card; `receiveArgument` and the old item labels
-deleted; the on-disk compile cache; a Bend law's reading; the host's default page; a card's own form
-bounds and the `source` kind; suspension fields by block. Full `tests.run` on hbox at lane/host10's
-last code commit (load ~18): 1063 tests in 262 classes, one failed class (`test_pages`, the
-garden's and tide's declared bounds), fixed in the commit that rewrote this section.
+host11 landed 5.71 to 5.74, one commit each (plus foundation merges and the re-recorded pins): `inputOrigin.post` and the
+forged-field rule for spells; suspensions that journal what they do not already say; handlers over a
+run's whole extent; `insertOnly` under retention.
+`tests/test_form_bounds.py` `WorkshopSource` is the Workshop's case (a 6 KB `source` block checked,
+20 KB refused `badValue` naming `source`), declaring `form check`/`form propose` with `source:
+source` over the on-disk Workshop until Workshop.obend declares them. It is an `expectedFailure`
+until foundation has lane/kernel8's `name: source` form line (a977d64) and the library has
+`Form.Kind.source` with its `case source` arms (Spell.obend `judge` and `typed`, Card.obend's
+template, Policy.obend's kind text); probed on hbox with those overlaid, it passes. Then drop the
+marker.
 
 1. **WORLD-REVIEW finding 22**, waiting on the review lane: when its commit deletes the seven unused
    variants (`quote`, `reference`, `offer`, `fields`, `source`, `result`, `continuation`) and
    Phrasebook from `world/lib/document/Document.obend`, delete the same cases from
    `spec/Delvetalk/Document.lean` and the kinds from `tests/test_document.py`'s generator, one commit.
-2. **Suspension size to under 7 KB** (5.70): the host's fields are now ~3 KB of a 7.6 KB median; the
-   rest is the kernel's checkpoint blocks (median 4.7 KB fresh) and the `tokenTree` root names (~1 KB,
-   up to 16 CIDs). Ask the kernel lane, or fold the roots into one inner block only if that block
-   recurs (it does not today).
-3. **Handlers over nested frames** (above).
-4. **Rows as roots** (WHOLENESS §3a): blocked on the kernel's lazy cells (KERNEL-HANDOFF §15): when
-   `fetch` lands, record `{object, field, key}` there and judge it with `keysChangedSince`.
-5. **Rehearsal wall**: 23.0 s and 32.6 s on hbox at load ~17 (two runs of 5.70's binary); the 50 s
-   target holds. Measure on a quiet box before quoting a number.
+2. **Suspension size** (5.72): one speaker's median is 5.1 KB, nine speakers' 7.5 KB. The host's
+   remaining share is ~0.5 KB (`slot` beside an interpretation, ~100 B, read in five places:
+   `turnReply`, `settle`'s waiting lookup, `record`; the argument). The kernel's fresh checkpoint
+   blocks (3 KB and up) and the `tokenTree` roots (~900 B) are the rest: the kernel lane's queue
+   (KERNEL-HANDOFF §16, `lane/kernel7`'s environment trimming).
+3. **Rows as roots** (WHOLENESS §3a): still blocked on the kernel's lazy cells (KERNEL-HANDOFF §15 is a
+   design note): when `fetch` lands, record `{object, field, key}` there and judge it with
+   `keysChangedSince`.
+4. **Rehearsal wall**: not measured by host11; hbox's load stayed 19 to 37 through the lane. host10's
+   two runs were 23.0 s and 32.6 s at load ~17 against the 50 s target. Measure on a quiet box.
+5. **A delivery's post** (5.71): a delivered turn sees only its own `receive` argument's post, not the
+   sending turn's; `sends` journal none. Add it only when an object needs it (none does).
 
 Requests to other lanes (not the host's files):
-- Objects: `Form.obend`'s `Kind` gains `source: {}`, and the Workshop declares forms whose `source`
-  fields are of that kind (then a 6 KB block is admitted and a 20 KB one refused `badValue` by name;
-  `tests/test_form_bounds.py` shows it with a fixture). `Abi.Verdict.refused` may carry `reading`
-  (5.67). The five pasted `publishPage` methods may go (5.68). Fixtures the rule touched declare their
-  methods with `tests.test_turn_world.declared`; world objects declare theirs with `methods()`
-  (Card.wordList).
-- Kernel: the `form` block grammar (`ObjectiveBendParse.lean`) gains `name: source` for
-  `Form.Kind.source`. `Package.lawShape` was widened by host10 to accept `refused {clause, reading}`
-  (two lines in the kernel's file, at the coordinator's request).
+- Objects: the Garden reads `context.inputOrigin.post` for its planting post and drops `context.intent`
+  and the two `expectedFailure`s (test_replay test_1, test_principal's planting case; probed passing).
+  The Directory's Bend 4,096 `greeted` check may become `insertOnly(greeted)` (5.74). `Form.obend`'s
+  `Kind` gains `source: {}` and the Workshop declares its `source` fields with the kernel's
+  `name: source` form line.
+- Review: WORLD-REVIEW finding 10's trap ("insertOnly with a limit refuses every insert past the
+  limit") is fixed by 5.74.

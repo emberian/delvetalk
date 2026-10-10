@@ -28,7 +28,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=silver;seed=fern;"
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;",
+  "parsed": "spell garden-1 plant seed=fern;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: A fern whose leaves remember\ncolour: amber",
@@ -59,7 +60,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=amber;seed=A fern whose leaves remember;"
+  "expected": "proposal garden-1 plant colour=amber;seed=A fern whose leaves remember;",
+  "parsed": "spell garden-1 plant seed=A fern whose leaves remember;colour=amber;"
  },
  {
   "text": "\n# hello\n  delvetalk garden-1 plant  \r\n\nseed:   fern  \r\n# note\ncolour: violet\n---\nnot: a field\nProse here\n",
@@ -90,7 +92,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=violet;seed=fern;"
+  "expected": "proposal garden-1 plant colour=violet;seed=fern;",
+  "parsed": "spell garden-1 plant seed=fern;colour=violet;"
  },
  {
   "text": "Could we plant a fern?",
@@ -120,7 +123,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused The reply has no delvetalk line.",
+  "parsed": "not a spell: The reply has no delvetalk line."
  },
  {
   "text": "> ✾ DELVETALK · ROOT\n> \n> GARDEN\n> Plant something.\n> Say: delvetalk is the word\n---\nSure!\n\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver\n---\ntrailing prose",
@@ -151,7 +156,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=silver;seed=fern;"
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;",
+  "parsed": "spell garden-1 plant seed=fern;colour=silver;"
  },
  {
   "text": "Sure!\ndelvetalk garden-1 plant\nseed: fern\ncolour: silver",
@@ -181,7 +187,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;",
+  "parsed": "spell garden-1 plant seed=fern;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant seed: a fern, that remembers, colour: silver",
@@ -212,7 +220,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=silver;seed=a fern, that remembers;"
+  "expected": "proposal garden-1 plant colour=silver;seed=a fern, that remembers;",
+  "parsed": "spell garden-1 plant seed=a fern, that remembers;colour=silver;"
  },
  {
   "text": "Quoted menu\n  delvetalk garden-1 plant  colour: amber ,  seed: moth  \n",
@@ -243,7 +252,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=amber;seed=moth;"
+  "expected": "proposal garden-1 plant colour=amber;seed=moth;",
+  "parsed": "spell garden-1 plant colour=amber;seed=moth;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed fern",
@@ -274,7 +284,8 @@
     }
    ]
   },
-  "expected": "unclear colour|seed|"
+  "expected": "unclear colour|seed|",
+  "parsed": "spell garden-1 plant "
  },
  {
   "text": "delvetalk garden-1 plant\n: fern",
@@ -305,7 +316,8 @@
     }
    ]
   },
-  "expected": "unclear colour|seed|"
+  "expected": "unclear colour|seed|",
+  "parsed": "spell garden-1 plant "
  },
  {
   "text": "delvetalk garden-1 plant / seed: fern / colour: amber\nthanks, all!\nmore: prose",
@@ -336,7 +348,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=amber;seed=fern;"
+  "expected": "proposal garden-1 plant colour=amber;seed=fern;",
+  "parsed": "spell garden-1 plant seed=fern;colour=amber;"
  },
  {
   "text": "delvetalk env/did:plc:abc plant\nseed: fern\ncolour: silver",
@@ -366,7 +379,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "proposal env/did:plc:abc plant colour=silver;seed=fern;",
+  "parsed": "spell env/did:plc:abc plant seed=fern;colour=silver;"
  },
  {
   "text": "delvetalk env/DID:plc:x seen",
@@ -396,7 +411,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused The reply has no delvetalk line.",
+  "parsed": "not a spell: The reply has no delvetalk line."
  },
  {
   "text": "delvetalk env/did:plc:x? seen",
@@ -426,7 +443,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused The reply has no delvetalk line.",
+  "parsed": "not a spell: The reply has no delvetalk line."
  },
  {
   "text": "delvetalk env_did seen",
@@ -456,7 +475,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused The reply has no delvetalk line.",
+  "parsed": "not a spell: The reply has no delvetalk line."
  },
  {
   "text": "delvetalk env/did:plc:x se:en",
@@ -486,7 +507,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused The reply has no delvetalk line.",
+  "parsed": "not a spell: The reply has no delvetalk line."
  },
  {
   "text": "delvetalk env/x see/n",
@@ -516,7 +539,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused The reply has no delvetalk line.",
+  "parsed": "not a spell: The reply has no delvetalk line."
  },
  {
   "text": "delvetalk env/x seen\na.b: 1",
@@ -546,7 +571,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused This card offers env/x plant",
+  "parsed": "spell env/x seen a.b=1;"
  },
  {
   "text": "delvetalk garden-1 plant / colour: amber / seed: a fern",
@@ -577,7 +604,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=amber;seed=a fern;"
+  "expected": "proposal garden-1 plant colour=amber;seed=a fern;",
+  "parsed": "spell garden-1 plant colour=amber;seed=a fern;"
  },
  {
   "text": "```\ndelvetalk garden-1 plant\n```\n```\nseed: fern\n> colour: violet\ncolour: silver\n```",
@@ -608,7 +636,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=silver;seed=fern;"
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;",
+  "parsed": "spell garden-1 plant seed=fern;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nplant: a fern\ncolour: silver",
@@ -639,7 +668,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=silver;seed=a fern;"
+  "expected": "proposal garden-1 plant colour=silver;seed=a fern;",
+  "parsed": "spell garden-1 plant plant=a fern;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nplant: a fern",
@@ -670,7 +700,8 @@
     }
    ]
   },
-  "expected": "unclear colour|"
+  "expected": "unclear colour|",
+  "parsed": "spell garden-1 plant plant=a fern;"
  },
  {
   "text": "delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver",
@@ -701,7 +732,8 @@
     }
    ]
   },
-  "expected": "refused Unknown field plant"
+  "expected": "refused Unknown field plant",
+  "parsed": "spell garden-1 plant plant=a fern;seed=moss;colour=silver;"
  },
  {
   "text": "a companion card:\n\n```bend\ndelvetalk forge make / name: sentry\n---\nrecord State:\n  n: Nat\n```\n\nAnd planting an initial token:\n\ndelvetalk garden-1 plant / colour: silver / seed: an open gate",
@@ -732,7 +764,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=silver;seed=an open gate;"
+  "expected": "proposal garden-1 plant colour=silver;seed=an open gate;",
+  "parsed": "spell garden-1 plant colour=silver;seed=an open gate;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: 🌙 é “moths” 蛾\ncolour: silver",
@@ -763,7 +796,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=silver;seed=🌙 é “moths” 蛾;"
+  "expected": "proposal garden-1 plant colour=silver;seed=🌙 é “moths” 蛾;",
+  "parsed": "spell garden-1 plant seed=🌙 é “moths” 蛾;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: fern",
@@ -794,7 +828,8 @@
     }
    ]
   },
-  "expected": "unclear colour|"
+  "expected": "unclear colour|",
+  "parsed": "spell garden-1 plant seed=fern;"
  },
  {
   "text": "delvetalk garden-1 plant",
@@ -825,7 +860,8 @@
     }
    ]
   },
-  "expected": "unclear colour|seed|"
+  "expected": "unclear colour|seed|",
+  "parsed": "spell garden-1 plant "
  },
  {
   "text": "delvetalk garden-1 plant\nseed: fern\ncolour: silver\nsmell: sweet",
@@ -856,7 +892,8 @@
     }
    ]
   },
-  "expected": "refused Unknown field smell"
+  "expected": "refused Unknown field smell",
+  "parsed": "spell garden-1 plant seed=fern;colour=silver;smell=sweet;"
  },
  {
   "text": "delvetalk garden-1 plant\nsmell: sweet",
@@ -887,7 +924,8 @@
     }
    ]
   },
-  "expected": "refused Unknown field smell"
+  "expected": "refused Unknown field smell",
+  "parsed": "spell garden-1 plant smell=sweet;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: fern\ncolour: green",
@@ -918,7 +956,8 @@
     }
    ]
   },
-  "expected": "refused colour is one of: amber, violet, silver"
+  "expected": "refused colour is one of: amber, violet, silver",
+  "parsed": "spell garden-1 plant seed=fern;colour=green;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: fern\ncolour: Silver",
@@ -948,7 +987,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused colour is one of: amber, violet, silver",
+  "parsed": "spell garden-1 plant seed=fern;colour=Silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed:\ncolour: silver",
@@ -979,7 +1020,8 @@
     }
    ]
   },
-  "expected": "refused seed takes 1 to 80 characters."
+  "expected": "refused seed takes 1 to 80 characters.",
+  "parsed": "spell garden-1 plant seed=;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\ncolour: silver",
@@ -1010,7 +1052,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=silver;seed=éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé;"
+  "expected": "proposal garden-1 plant colour=silver;seed=éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé;",
+  "parsed": "spell garden-1 plant seed=éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\ncolour: silver",
@@ -1041,7 +1084,8 @@
     }
    ]
   },
-  "expected": "refused seed takes 1 to 80 characters."
+  "expected": "refused seed takes 1 to 80 characters.",
+  "parsed": "spell garden-1 plant seed=ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nSeed: fern\ncolour: silver",
@@ -1072,7 +1116,8 @@
     }
    ]
   },
-  "expected": "refused Unknown field Seed"
+  "expected": "refused Unknown field Seed",
+  "parsed": "spell garden-1 plant Seed=fern;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nsee d: fern\ncolour: silver",
@@ -1103,7 +1148,8 @@
     }
    ]
   },
-  "expected": "refused Unknown field see d"
+  "expected": "refused Unknown field see d",
+  "parsed": "spell garden-1 plant see d=fern;colour=silver;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: a\nseed: b\ncolour: amber",
@@ -1134,7 +1180,8 @@
     }
    ]
   },
-  "expected": "refused Duplicate field seed"
+  "expected": "refused Duplicate field seed",
+  "parsed": "spell garden-1 plant seed=a;seed=b;colour=amber;"
  },
  {
   "text": "delvetalk garden-2 plant\nseed: a\ncolour: amber",
@@ -1165,7 +1212,8 @@
     }
    ]
   },
-  "expected": "refused This card offers garden-1 plant"
+  "expected": "refused This card offers garden-1 plant",
+  "parsed": "spell garden-2 plant seed=a;colour=amber;"
  },
  {
   "text": "delvetalk garden-1 prune\nseed: a\ncolour: amber",
@@ -1196,7 +1244,8 @@
     }
    ]
   },
-  "expected": "refused This card offers garden-1 plant"
+  "expected": "refused This card offers garden-1 plant",
+  "parsed": "spell garden-1 prune seed=a;colour=amber;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: <<S\nfern\nmoss\nS\ncolour: amber",
@@ -1226,7 +1275,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "proposal garden-1 plant colour=amber;seed=fern\nmoss;",
+  "parsed": "spell garden-1 plant seed=fern\nmoss;colour=amber;"
  },
  {
   "text": "delvetalk garden-1 plant\nseed: <<S\nfern\n",
@@ -1256,7 +1307,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused the block <<S for seed is never closed by a line S",
+  "parsed": "not a spell: the block <<S for seed is never closed by a line S"
  },
  {
   "text": "delvetalk garden-1 plant\nplant: a\nseed: b\nplant: c\ncolour: amber",
@@ -1286,6 +1339,8 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused Unknown field plant",
+  "parsed": "spell garden-1 plant plant=a;seed=b;plant=c;colour=amber;"
  }
 ]

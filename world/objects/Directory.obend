@@ -26,7 +26,7 @@ type Greeting = Rows.Greeting
 # {principal} (each later summons gets one line).
 # words, fields: what the directory learned of its doors by inspect (door words, form
 # actions; form fields), space-separated with a space at each end: what a handed-on reply
-# must name before the model reads it (Card.mentions). Learned when a door is added, and
+# must name before the model reads it (`mentions`, below). Learned when a door is added, and
 # by the first handed-on reply when genesis seeded the doors.
 # policy: the interpretation policy prose is read with (the town's model, offered the
 # forms of every door); nobody means prose is not interpreted.
@@ -51,14 +51,12 @@ sum Answer:
   done: {}
   refused: {reason: String}
 # Only the owner adds or removes a door: the law judges every write (a stranger's add is
-# refused with clause owner); anyone's summons only inserts into greeted (the Bend
-# predicate below, clause greeted). A law in source means a Directory is made with
+# refused with clause owner); anyone's summons only inserts into greeted (clause greeted). A law in source means a Directory is made with
 # world-create, never by a creator that imports it.
 law owner "only the owner changes its doors, owner or policy; anyone's summons only adds to who was greeted": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(doors) and unchanged(policy) and writeOnce(words) and writeOnce(fields))
-# TODO(insertOnly): `and insertOnly(greeted)` in the law text once the host denotes the
-# atom; until then the predicate says it.
-def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if request.context.principal == new.owner || Relations.insertedOnly(old.greeted, new.greeted, greetingKey) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "greeted", reading: "Anyone's summons only adds to who was greeted."})
+# Past 4,096 greeted the host would drop the oldest row and insertOnly refuse the write, so
+# the greeting stops at 4,096 in Bend (`greet`).
+law greeted "anyone's summons only adds to who was greeted": request.subject == new.owner or insertOnly(greeted)
 def defaultSeed() -> Seed:
   {owner: "", policy: Plans.nobody()}
 def seeded(seed: Seed) -> State:
@@ -232,7 +230,7 @@ def familyForms(input: Card.Reply, words: String, fields: String, excluded: Stri
     case inspected(i): judged(input, words, fields, "{excluded}{formWords(i.methods)}{formFields(i.methods)}", context, state)
     case _: judged(input, words, fields, excluded, context, state)
 def judged(input: Card.Reply, words: String, fields: String, excluded: String, context: Abi.Context, state: State) -> Activity<Heard>:
-  if Card.mentions(textTake(input.text, 2000n), input.fields, without(Card.wordList(words), Card.wordList(excluded)), without(Card.wordList("{fields}{knownFields()}"), Card.wordList(excluded))) then consulted(input, context, state) else Heard.silent({})
+  if mentions(textTake(input.text, 2000n), input.fields, without(Card.wordList(words), Card.wordList(excluded)), without(Card.wordList("{fields}{knownFields()}"), Card.wordList(excluded))) then consulted(input, context, state) else Heard.silent({})
 def without(words: Lists.List<String>, excluded: Lists.List<String>) -> Lists.List<String>:
   Lists.filter(words, fn(w: String) -> Bool: Lists.any(excluded, fn(x: String) -> Bool: x == w) == false)
 # Learning: a door's word and object id, and its forms' actions and fields, by inspect.
@@ -394,3 +392,42 @@ def greeting(context: Abi.Context, state: State) -> Activity<Heard>:
 def greeted(context: Abi.Context, state: State) -> Activity<Heard>:
   let written(_) = write {greeted: insert {principal: context.principal}}
   Card.tell(Heard.menu({}), render(state, context))
+# The directory's mention scan (it alone reads prose for door words, before any model call).
+# Whether prose names one of `words` (door words and form actions, each a whole word) or,
+# as a `name:` line, one of `words` or `fields`. One pass: the text is split at blanks
+# once, and a word of three or more letters (a leading and a trailing mark dropped) is
+# looked up among the words of its own length (a 1,788-character reply costs about
+# 20,000 ticks, where a walk of the text for each word cost a million).
+def mentions(text: String, bindings: Spell.Bindings, words: Lists.List<String>, fields: Lists.List<String>) -> Bool:
+  let v = vocabulary(words)
+  let first = firsts(words)
+  fieldNamed(bindings, v, vocabulary(fields)) || scanned(text, v, first)
+def fieldNamed(bindings: Spell.Bindings, words: Vocabulary, fields: Vocabulary) -> Bool:
+  Lists.any(bindings, fn(b: Spell.Binding) -> Bool: known(words, b.name) || known(fields, b.name))
+# Words by length: the first list holds the one-letter words, and so on to 24.
+type Vocabulary = Lists.List<Lists.List<String>>
+def vocabulary(words: Lists.List<String>) -> Vocabulary:
+  Lists.fold(words, empty(24n), fn(word: String) -> Vocabulary -> Vocabulary: fn(v: Vocabulary) -> Vocabulary: inserted(v, word, textLength(word)))
+def empty(n: Nat) -> Vocabulary:
+  if n == 0n then Lists.List.nil({}) else Lists.List.cons({head: Lists.List.nil({}), tail: empty(n - 1n)})
+def inserted(v: Vocabulary, word: String, n: Nat) -> Vocabulary:
+  match v:
+    case nil(_): v
+    case cons(c): if n <= 1n then Lists.List.cons({head: Lists.List.cons({head: word, tail: c.head}), tail: c.tail}) else Lists.List.cons({head: c.head, tail: inserted(c.tail, word, n - 1n)})
+def known(v: Vocabulary, word: String) -> Bool:
+  Lists.any(bucket(v, textLength(word)), fn(w: String) -> Bool: w == word)
+def bucket(v: Vocabulary, n: Nat) -> Lists.List<String>:
+  match v:
+    case nil(_): Lists.List.nil({})
+    case cons(c): if n <= 1n then c.head else bucket(c.tail, n - 1n)
+def scanned(text: String, v: Vocabulary, first: String) -> Bool:
+  if text == "" then false else cut(text, textBreak(text, " \n"), v, first)
+def cut(text: String, at: Nat, v: Vocabulary, first: String) -> Bool:
+  if at >= 3n && textSpan(textTake(text, 1n), first) == 1n && wordKnown(textTake(text, at), v) then true else scanned(textDrop(text, at + 1n), v, first)
+# The letters the words start with, and the marks a word may open with: a word starting
+# with anything else is not looked up.
+def firsts(words: Lists.List<String>) -> String:
+  Lists.fold(words, Card.marks(), fn(w: String) -> String -> String: fn(acc: String) -> String: if textSpan(textTake(w, 1n), acc) == 1n then acc else textConcat(acc, textTake(w, 1n)))
+def wordKnown(word: String, v: Vocabulary) -> Bool:
+  let n = textLength(word)
+  if n > 24n then false else known(v, Card.stripped(word, n))

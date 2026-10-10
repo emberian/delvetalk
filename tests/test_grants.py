@@ -21,14 +21,15 @@ from tests.test_turn_world import declared
 SCHEDULER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record Arg:
   n: Nat
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
@@ -78,6 +79,7 @@ def relay(state: State, input: {other: String, target: String}, context: Abi.Con
 BELL = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record Arg:
   n: Nat
 record State:
@@ -88,8 +90,8 @@ record Edits:
   count: Plans.Edit<Nat, Nat>
   by: Plans.Edit<String, {}>
   from: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 law registrar: request.kind == 0 implies request.subject == "registrar"
 def initial() -> State:
   {count: 0n, by: "", from: ""}
@@ -103,14 +105,15 @@ ROSTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
   members: Lists.List<String>
 record Edits:
   count: Plans.Edit<Nat, Nat>
   members: Plans.Entries<String, String>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 law members: request.kind == 0 implies (request.subject in new.members or request.subject == "ember")
 law rings: request.kind == 0 implies (request.method == "ring" or request.method == "admit")
 def initial() -> State:
@@ -284,6 +287,7 @@ if __name__ == "__main__":
 LAMP = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   colour: String
   level: Nat
@@ -292,8 +296,8 @@ record Edits:
   colour: Plans.Edit<String, {}>
   level: Plans.Edit<Nat, Nat>
   by: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 law owner: request.kind == 0 implies request.subject == "owner"
 def initial() -> State:
   {colour: "", level: 0n, by: ""}
@@ -305,6 +309,7 @@ def light(state: State, input: {colour: String, level: Nat}, context: Abi.Contex
 HOLDER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   note: String
 record Edits:
@@ -316,8 +321,8 @@ record Level:
 record Full:
   colour: String
   level: Nat
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:

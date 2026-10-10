@@ -134,12 +134,13 @@ WORLD_LIB = os.path.join(ROOT, "world", "lib")
 
 
 def library_modules(*names):
-    """Library modules (imports first) read from world/lib, as supplied modules."""
+    """Library modules (imports first) read from world/lib and tests/fixtures/obend, as supplied modules."""
     found = {}
-    for directory, _, files in os.walk(WORLD_LIB):
-        for f in files:
-            if f.endswith(".obend"):
-                found[f[:-6]] = os.path.join(directory, f)
+    for root in (WORLD_LIB, os.path.join(ROOT, "tests", "fixtures", "obend")):
+        for directory, _, files in os.walk(root):
+            for f in files:
+                if f.endswith(".obend"):
+                    found[f[:-6]] = os.path.join(directory, f)
     out, seen = [], set()
 
     def visit(name):
@@ -542,7 +543,7 @@ def context_data(principal, intent, obj):
         {"name": "clock", "value": nat(0)},
         {"name": "inputOrigin", "value": {"tag": "record", "fields": [
             text("kind", "request"), text("object", ""), text("command", "bump"), text("program", ""),
-            {"name": "immediatelyPrevious", "value": {"tag": "boolean", "value": False}}]}}]}
+            {"name": "immediatelyPrevious", "value": {"tag": "boolean", "value": False}}, text("post", "")]}}]}
 
 
 class ContextTests(TurnCase):

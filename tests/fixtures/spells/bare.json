@@ -1,23 +1,30 @@
 [
  {
-  "text": "plant: a fern\nrain: a drizzle\n"
+  "text": "plant: a fern\nrain: a drizzle\n",
+  "expected": "plant=a fern;rain=a drizzle;"
  },
  {
-  "text": "```json\nplant: x\n```\nrain: y"
+  "text": "```json\nplant: x\n```\nrain: y",
+  "expected": "rain=y;"
  },
  {
-  "text": "> plant: q\n  rain:  z  \nnot a field\nA b: c\n"
+  "text": "> plant: q\n  rain:  z  \nnot a field\nA b: c\n",
+  "expected": "rain=z;"
  },
  {
-  "text": "```\nplant: fenced\n```"
+  "text": "```\nplant: fenced\n```",
+  "expected": "plant=fenced;"
  },
  {
-  "text": ""
+  "text": "",
+  "expected": ""
  },
  {
-  "text": "delvetalk garden-1 plant\nseed: fern"
+  "text": "delvetalk garden-1 plant\nseed: fern",
+  "expected": "seed=fern;"
  },
  {
-  "text": "name: <<X\nbody\nX"
+  "text": "name: <<X\nbody\nX",
+  "expected": "name=<<X;"
  }
 ]

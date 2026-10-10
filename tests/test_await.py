@@ -29,12 +29,13 @@ def bell_seed(post="post-1"):
 HUB = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 law cap: new.count <= 0
 def initial() -> State:
   {count: 0n}
@@ -54,7 +55,7 @@ class Await(Chain):
         super().setUp()
         self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
         r = self.host.send(op="world-create", principal="ember", identity="mk-hub", object="hub",
-                           modules=closure("Plan") + [{"name": "Hub", "source": HUB}], entry="initial", seed=record(count=nat(0)))
+                           modules=closure("Variant") + [{"name": "Hub", "source": HUB}], entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
         self.recorded = set()
 
@@ -105,12 +106,13 @@ class Create(Await):
         maker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   made: Nat
 record Edits:
   made: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {made: 0n}
 def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) -> Activity<Plan, Response, String>:
@@ -119,7 +121,7 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
     case refused(r): r.clause
     case _: "other"
 """)
-        modules = closure("Plan") + [{"name": "Child", "source": child}, {"name": "Maker", "source": maker}]
+        modules = closure("Variant") + [{"name": "Child", "source": child}, {"name": "Maker", "source": maker}]
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="maker",
                            modules=modules, entry="initial", seed=record(made=nat(0)))
         self.assertEqual(r["status"], "created", r)
@@ -277,12 +279,13 @@ class Suspend(Await):
 RELAY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {count: 0n}
 def wait(state: State, input: {post: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -303,7 +306,7 @@ class Rains(Await):
         different keys, both admitted, both kept in key order."""
         self.bell()
         r = self.host.send(op="world-create", principal="ember", identity="mk-relay", object="relay",
-                           modules=closure("Plan") + [{"name": "Relay", "source": RELAY}], entry="initial", seed=record(count=nat(0)))
+                           modules=closure("Variant") + [{"name": "Relay", "source": RELAY}], entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
         for who, text in (("kimik3", "a drizzle"), ("gemini", "a squall")):
             w = self.turn("relay", "wait", record(post=label(uri("post-1")), text=label(text)), principal=who, identity="wait-" + who)

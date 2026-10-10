@@ -25,12 +25,13 @@ DID = 'did:plc:' + 'a' * 24
 TALLY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -136,7 +137,7 @@ class Hostd(unittest.TestCase):
 
     def test_the_sealed_library_holds_the_packages_arrival_creates_from(self):
         import tempfile as tf
-        from transport.hostproc import LIBRARY
+        from tests.test_reflection import LIBRARY
         who = 'did:plc:' + 'q' * 24
         with tf.TemporaryDirectory() as d2:
             dd = start_hostd(d2, opener=DID, library=LIBRARY)
@@ -148,7 +149,7 @@ class Hostd(unittest.TestCase):
 
     def test_the_stateless_process_holds_the_library_and_compiles_by_pin(self):
         import tempfile as tf
-        from transport.hostproc import LIBRARY
+        from tests.test_reflection import LIBRARY
         with tf.TemporaryDirectory() as d2:
             dd = start_hostd(d2, opener=DID, library=LIBRARY)
             try:
@@ -245,7 +246,7 @@ class Hostd(unittest.TestCase):
 
     def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
         import tempfile as tf
-        from transport.hostproc import LIBRARY
+        from tests.test_reflection import LIBRARY
         one = [{'name': 'Tally', 'source': TALLY}]
         with tf.TemporaryDirectory() as d2:
             dd = start_hostd(d2, opener=DID, library=LIBRARY)

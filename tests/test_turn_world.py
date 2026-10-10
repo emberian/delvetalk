@@ -25,8 +25,8 @@ IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 
 def modules_on_disk():
     found = {}
-    for sub in ("lib", "objects"):
-        for directory, _, files in os.walk(os.path.join(ROOT, "world", sub)):
+    for root in (os.path.join(ROOT, "world", "lib"), os.path.join(ROOT, "world", "objects"), os.path.join(ROOT, "tests", "fixtures", "obend")):
+        for directory, _, files in os.walk(root):
             for name in files:
                 if name.endswith(".obend"):
                     found[name[:-6]] = os.path.join(directory, name)
@@ -61,12 +61,13 @@ def counter_modules():
 FIXTURE_HEAD = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {count: 5n}
 def addSelf(context: Abi.Context, n: Nat) -> Activity<Plan, Response, Nat>:
@@ -96,7 +97,7 @@ def declared(source, *names):
 
 def fixture(body, law=""):
     head = FIXTURE_HEAD.replace("def initial", law + "def initial", 1) if law else FIXTURE_HEAD
-    return closure("Plan") + [{"name": "Fixture", "source": declared(head + body)}]
+    return closure("Variant") + [{"name": "Fixture", "source": declared(head + body)}]
 
 
 MONOTONE = fixture("""def dec(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -338,12 +339,13 @@ NAMES_SOURCE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   names: Lists.List<String>
 record Edits:
   names: Plans.Entries<String, String>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {names: Lists.List::<String>.nil()}
 def add(state: State, input: {text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -362,7 +364,7 @@ def fix(state: State, input: {item: String, text: String}, context: Abi.Context)
 
 
 def names_modules():
-    modules = closure("List") + [m for m in closure("Plan") if m["name"] != "List"]
+    modules = closure("List") + [m for m in closure("Variant") if m["name"] != "List"]
     seen, out = set(), []
     for m in modules:
         if m["name"] not in seen:

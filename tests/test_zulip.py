@@ -23,7 +23,8 @@ from tests.test_bridge import CARD, OFFERING
 from tests.test_http import BINARY
 from tests.test_turn_world import nat, record
 from transport import bridge, zulip
-from transport.hostproc import LIBRARY, HostClient
+from transport.hostproc import HostClient
+from tests.test_reflection import LIBRARY
 
 OPENER = 'did:plc:' + 'o' * 24
 BOT = {'user_id': 99, 'full_name': 'Delve Bot', 'email': 'bot@zulip.test'}

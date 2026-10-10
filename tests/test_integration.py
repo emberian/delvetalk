@@ -23,13 +23,14 @@ CALLER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./Form.obend as Form
 record State:
   seen: String
 record Edits:
   seen: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, String>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, String>
 sum Colour:
   silver: {}
   gold: {}

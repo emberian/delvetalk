@@ -1,56 +1,29 @@
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
-import ./Document.obend as Document
-import ./Form.obend as Form
-# The Plan vocabulary of docs/FOUNDATION.md section 3, as typed first-order sums.
+# The data every object's writes and references are made of (docs/FOUNDATION.md section 3).
+# An activity asks the world through World.obend's protocol; this module gives what those
+# messages carry: references, per-field edits and receipts.
 #
-# The library is generic and the object supplies its own types.
-#   Plan<E>         E is the object's edits record, one field per state field,
-#                   each an Edit<T, D> (scalars) or Entries<D, U> (lists).
-#   Response<S, R>  S is the full state type of the object a view reads; R is
-#                   the result type of the methods the object calls (the host
-#                   answers a call with returned {result} of the callee's type)
-#                   and of an interpreted proposal.
-# An object fixes them once, for example
-#   type Plan = Plans.Plan<Edits>
-#   type Response = Plans.Response<State, Nat>
-# and writes Activity<Plan, Response, Out>. A write is a record of per-field
-# edits, never a whole state: the host judges each field against the law.
-# Generic records do not parse ("unsupported Objective Bend declaration"), only
-# generic sums do, so payloads are inline records.
+# A write is a record of per-field edits, never a whole state: the host judges each field
+# against the law. An object's `Edits` has one field per state field, each an Edit<T, D>
+# (scalars) or Entries<D, U> (lists and relations); `write {field: op value, ...}` builds a
+# self-write from them, and the type arguments of keep and append are inferred from the
+# field's declared type (`Plans.Edit.keep({})` in a keep() record).
 #
-# Payloads are Data. What a call, send or create carries (an argument, a message, a
-# child's Seed) is the value itself where Data is expected (the compiler injects it, as
-# `Data.of::<T>(value)` would): first-order data that Bend never takes apart and the host
-# checks against the callee's input or the child's state. One object may call and send
-# any shapes.
+# Payloads are Data. What a call, send or create carries (an argument, a message, a child's
+# seed) is the value itself where Data is expected (the compiler injects it): first-order
+# data that Bend never takes apart and the host checks against the callee's input or the
+# child's state. The host's create lays a seed (a record of some of the State's fields) over
+# the child's initial().
 #
-# The Seed rule. A creator supplies a Seed; the child's `seeded` makes its State.
-# Every object exports `Seed`, `defaultSeed()`, `seeded(seed: Seed) -> State` and
-# `initial() = seeded(defaultSeed())`. The host's create lays the seed (a record of
-# some of the State's fields) over the child's initial(); `seeded` is for creators in
-# Bend and for tests.
-#
-# Effects are never in a closure. An activity inside a lambda (a send in List.map or a
-# fold, the town's List.foreach) is refused (effect-in-let, effect-as-argument): fan-out
-# is explicit recursion in the activity, as Card.broadcast does it. An activity composes
-# only in tail position, so a method that another activity reuses takes its finish as a
+# Effects are never in a closure: fan-out is explicit recursion in the activity. An activity
+# composes only in tail position, so a method another activity reuses takes its finish as a
 # pure function `then: Result -> T`.
 #
-# Writes are staged. A `write` of the object's own state is answered `written`; whether the
-# law admits it is decided once, at commit, and a refusal there ends the whole turn, so
-# after a self-write a `refused` arm is dead code. A write naming another object is
-# answered `refused {clause: notSelf}` at once (an object writes only itself; it calls or
-# sends the other). (`create`, `call` and `view` can still be answered `refused` or `denied`.)
-#
-# Recursive data (List, Document) may cross a Plan or Response: the first
-# checker refused it with "the checker refused the front end's typed packet",
-# the current one admits it. List fields are edited by Entries (one item at a time, by
-# its bytes), never replaced whole, so the host judges one item.
-# Generic records are replaced by inline sum payloads. The type arguments of keep and
-# append are inferred from the field's declared Edit or Entries type (`Plans.Edit.keep({})`
-# in a keep() record); `write {field: op value, ...}` builds a self-write from them.
+# Writes are staged. A self-write is answered `written`; whether the law admits it is decided
+# once, at commit, and a refusal there ends the whole turn. List fields are edited one item at
+# a time, by its bytes, so the host judges one item.
 record Reference:
   world: String
   object: String
@@ -87,120 +60,11 @@ record Receipt:
   slot: Slot
   height: Nat
   outcome: Outcome
-record View:
-  object: Reference
-record Await:
-  slot: Slot
-  patience: Nat
-# The forms an interpretation may answer with, in the spell grammar. `model` names the
-# model to ask instead of the policy's own ("" for the policy's): a card's second attempt
-# names the policy's `escalate` model (Card.asking).
-type Forms = Lists.List<Form.Form>
-record Interpret:
-  utterance: String
-  offers: Forms
-  policy: Reference
-  model: String
-# `to` is a principal; "" is the acting principal.
-record Offering:
-  to: String
-  document: Document.Document
-# Delegation. `to` (a principal, or an object id) may run `method` of `object` as the
-# principal of the direct turn that grants it, while the clock is at most `until`. The
-# grant is used by naming its id as `via` in callVia or sendVia: the callee then runs with
-# request.subject = the grantor and request.caller = the calling object. Without a grant
-# that stands the Plan is answered refused {clause: "noGrant"}. (Records have no optional
-# fields, so a call or send under a grant is its own constructor.) grantWith attenuates:
-# `fixed` (a record of some of the callee's input fields, as Data) is merged into every
-# use's argument (a use giving such a field otherwise is refused grantConflict), and the
-# grant serves `uses` (at least 1) admitted calls or sends, then grantSpent. The grantor
-# may also revoke with the op world-revoke, outside any object.
-record Grant:
-  to: String
-  object: Reference
-  method: String
-  until: Nat
-# Listing and cards. `objects` answers one page (64) of the ids the principal may view,
-# starting with `prefix`, after `after` in byte order. `card` runs the target's pure
-# `render(state, context)` (the reader's context) under the reader's read authority (`denied` otherwise), so an object
-# shows one of another state type without viewing its state. `viewDerived {object, view}`
-# runs the target's pure `view` (one its `views()` names, of its state and the reader's
-# context) the same way and answers `derived {version, value}` (FOUNDATION §16; the host's
-# half is HOST-HANDOFF §7 item 6).
-record Publish:
-  page: String
-  section: String
-  body: String
-sum Plan<E>:
-  view: View
-  write: {object: Reference, edits: E}
-  call: {object: Reference, method: String, argument: Data}
-  send: {object: Reference, method: String, argument: Data}
-  create: {package: String, seed: Data, law: String, requireAbsent: Reference}
-  createUnder: {package: String, seed: Data, law: String, requireAbsent: Reference, supervisor: Reference}
-  await: Await
-  awaitUntil: {slot: Slot, until: Nat}
-  awaitPost: {post: String, patience: Nat}
-  awaitPostUntil: {post: String, until: Nat}
-  interpret: Interpret
-  offer: Offering
-  publish: Publish
-  reprogram: {object: Reference, package: String, migration: String}
-  extend: {object: Reference, package: String, migration: String}
-  amend: {object: Reference, law: String}
-  inspect: {object: Reference}
-  check: {package: String}
-  grant: Grant
-  grantWith: {to: String, object: Reference, method: String, until: Nat, fixed: Data, uses: Nat}
-  revoke: {id: String}
-  callVia: {object: Reference, method: String, argument: Data, via: String}
-  sendVia: {object: Reference, method: String, argument: Data, via: String}
-  objects: {prefix: String, after: String}
-  card: {object: Reference}
-  run: {object: Reference, method: String, argument: Data, handler: Reference}
-  judge: {edits: E}
-  viewData: {object: Reference}
-  viewDataField: {object: Reference, field: String}
-  viewDerived: {object: Reference, view: String}
-sum Response<S, R>:
-  viewed: {version: Nat, state: S}
-  denied: {}
-  written: {}
-  refused: {clause: String}
-  returned: {result: R}
-  delivery: {id: String}
-  created: {object: Reference}
-  reply: {receipt: Receipt}
-  unknown: {}
-  timedOut: {}
-  broken: {}
-  proposal: {method: String, argument: R}
-  unclear: {needs: Document.Names}
-  replied: {text: String}
-  offered: {}
-  published: {post: String}
-  reprogrammed: {pin: String}
-  amended: {}
-  inspected: {pin: String, law: String, source: String, methods: Forms}
-  checked: {diagnostics: Document.Names}
-  granted: {id: String}
-  revoked: {}
-  listed: {ids: Document.Names, more: Bool}
-  carded: {document: Document.Document}
-  judged: {admitted: Bool, clause: String}
-  viewedData: {version: Nat, state: Data}
-  viewedField: {version: Nat, value: Data}
-  derived: {version: Nat, value: Data}
-# What a handler's `handle(state, plan, context)` answers for a Plan the callee of a `run`
-# yields: pass it on to the host, or answer it with a response of the callee's type.
-sum Handled<R>:
-  pass: {}
-  answer: {response: R}
-# The reference of the running object, in the world the context carries (the
-# empty world is the world the turn runs in).
 # The empty payload, for a method that takes no input.
 def nothing() -> Data:
   {}
+# The reference of the running object, in the world the context carries (the empty world is
+# the world the turn runs in).
 def self(context: Abi.Context) -> Reference:
   {world: context.world, object: context.object}
 # References compare by world and object. The empty reference (object "") names

@@ -20,6 +20,7 @@ PACKAGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record Rain:
   author: String
   at: Nat
@@ -44,8 +45,8 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   rains: RowEdit
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def relations() -> Lists.List<Decl>:
   Lists.List.cons({head: {field: "rains", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.nil({})})}), limit: LIMIT}, tail: Lists.List.nil({})})
 def initial() -> State:
@@ -229,6 +230,21 @@ def initial() -> State:
                          ("refused", "grow"))
         self.assertEqual(outcome(self.edit("insert", rain("kim", 2, "k"), who="bob", name="l")), ("refused", "small"))
         self.assertEqual(self.rows("l"), [("ember", 0, "seed"), ("ann", 1, "a")])
+
+    def test_insert_only_does_not_count_the_rows_retention_drops(self):
+        # Refuted if a full relation with a limit refuses an insert (its oldest row by key goes), or
+        # if a retract or an upsert is admitted once the relation is full.
+        source = PACKAGE.replace("LIMIT", "2n").replace("def relations()", "law grow: insertOnly(rains)\ndef relations()")
+        r = self.host.send(op="world-create", principal="ember", identity="mk-r", object="r", source=source,
+                           entry="initial", seed=record(rains=relation(rain("ember", 0, "seed"))))
+        self.assertEqual(r["status"], "created", r)
+        outcome = lambda r: (r["status"], r["receipt"]["outcome"].get("clause"))
+        for i, who in enumerate(("ann", "kim", "eve"), 1):
+            self.assertEqual(outcome(self.edit("insert", rain(who, i, who[0]), who=who, name="r")), ("admitted", None))
+        self.assertEqual([a for a, _, _ in self.rows("r")], ["kim", "eve"])
+        self.assertEqual(outcome(self.edit("upsert", rain("kim", 2, "changed"), who="kim", name="r")), ("refused", "grow"))
+        self.assertEqual(outcome(self.edit("retract", record(author=label("kim"), at=nat(2)), who="kim", name="r")),
+                         ("refused", "grow"))
 
 
 def key(author, at):

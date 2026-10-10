@@ -16,7 +16,8 @@
     }
    ]
   },
-  "expected": "proposal c a n=42;"
+  "expected": "proposal c a n=42;",
+  "parsed": "spell c a n=42;"
  },
  {
   "text": "delvetalk c a\nn: 300",
@@ -34,7 +35,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "proposal c a n=300;",
+  "parsed": "spell c a n=300;"
  },
  {
   "text": "delvetalk c a\nn: 301",
@@ -53,7 +56,8 @@
     }
    ]
   },
-  "expected": "refused n takes 2 to 300"
+  "expected": "refused n takes 2 to 300",
+  "parsed": "spell c a n=301;"
  },
  {
   "text": "delvetalk c a\nn: 1",
@@ -71,7 +75,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes 2 to 300",
+  "parsed": "spell c a n=1;"
  },
  {
   "text": "delvetalk c a\nn: 042",
@@ -89,7 +95,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes a natural number in plain digits.",
+  "parsed": "spell c a n=042;"
  },
  {
   "text": "delvetalk c a\nn: 4 2",
@@ -107,7 +115,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes a natural number in plain digits.",
+  "parsed": "spell c a n=4 2;"
  },
  {
   "text": "delvetalk c a\nn: -3",
@@ -125,7 +135,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes a natural number in plain digits.",
+  "parsed": "spell c a n=-3;"
  },
  {
   "text": "delvetalk c a\nn: 4.5",
@@ -143,7 +155,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes a natural number in plain digits.",
+  "parsed": "spell c a n=4.5;"
  },
  {
   "text": "delvetalk c a\nn: x",
@@ -161,7 +175,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes a natural number in plain digits.",
+  "parsed": "spell c a n=x;"
  },
  {
   "text": "delvetalk c a\nn: ",
@@ -179,7 +195,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes a natural number in plain digits.",
+  "parsed": "spell c a n=;"
  },
  {
   "text": "delvetalk c a\nn: 9999999999999999999",
@@ -197,7 +215,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes a natural number in plain digits.",
+  "parsed": "spell c a n=9999999999999999999;"
  },
  {
   "text": "delvetalk c a\nn: 999999999999999999",
@@ -215,7 +235,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes 2 to 300",
+  "parsed": "spell c a n=999999999999999999;"
  },
  {
   "text": "delvetalk c a\nn: 0",
@@ -233,7 +255,9 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes 2 to 300",
+  "parsed": "spell c a n=0;"
  },
  {
   "text": "delvetalk c a\nn: 002",
@@ -251,6 +275,8 @@
      }
     }
    ]
-  }
+  },
+  "expected": "refused n takes a natural number in plain digits.",
+  "parsed": "spell c a n=002;"
  }
 ]

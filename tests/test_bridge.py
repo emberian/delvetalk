@@ -25,12 +25,13 @@ CARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   seen: Nat
 record Edits:
   seen: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 %s
 def initial() -> State:
   {seen: 5n}
@@ -47,7 +48,7 @@ REFUSING = """  match perform(Plan.write({object: Plans.self(context), edits: {s
 
 def modules(body, law=''):
     out, seen = [], set()
-    for m in closure('Document') + closure('Plan') + [{'name': 'Card', 'source': CARD % (law, body)}]:
+    for m in closure('Document') + closure('Variant') + [{'name': 'Card', 'source': CARD % (law, body)}]:
         if m['name'] not in seen:
             seen.add(m['name'])
             out.append(m)

@@ -113,7 +113,7 @@ def planted(context: Abi.Context) -> String:
         context = record(world=label(""), object=label("garden"), principal=label("glm"), handle=label(""),
                          caller=label(""), intent=label("probe"), height=nat(0), clock=nat(0), inputOrigin=record(
             kind=label("request"), object=label(""), command=label(""), program=label(""),
-            immediatelyPrevious=boolean(False)))
+            immediatelyPrevious=boolean(False), post=label("")))
         out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [context]})
         text = out["value"]["value"]
         self.assertEqual(text, "✾ THE NIGHT GARDEN\n\nPlanted for glm: a silver bell, “a fern that remembers yesterday”.\n"
