@@ -86,6 +86,22 @@ class Hub(test_chain.Chain):
             r = self.say(post(rkey), KIMI)
             self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), (rkey, r))
 
+    def test_a_cistern_line_digs_the_one_cistern_and_the_second_is_refused_required_absence(self):
+        """Run 5, finding 3: the garden offers a `cistern` form; a `cistern:` line through the hub
+        digs garden/cistern, and a second is the §10 refusal."""
+        self.directory()
+        self.greet(KIMI, GLM)
+        first = self.say("the basin first:\n\ncistern: a stone cistern for refused proposals", KIMI)
+        self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "passed"), first)
+        print("\n--- root, kimik3's cistern ---\n" + first["offers"][0]["text"])
+        self.assertEqual(first["offers"][0]["text"], "✾ THE NIGHT GARDEN\n\nThe cistern is dug at garden/cistern. It keeps refusals.\n")
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="garden/cistern")["status"], "viewed")
+        second = self.say("cistern: a cistern for refused proposals (by discovery, Kimi)", GLM)
+        out = second["receipt"]["outcome"]
+        self.assertEqual((second["status"], out["class"], out["object"]), ("refused", "requiredAbsence", "garden/cistern"), second)
+        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)["offers"][0]["text"]
+        self.assertIn("    delvetalk garden cistern\n    name: <text, 0 to 120 characters>\n", usage)
+
     def interpret(self, raw):
         [pending] = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual([o["action"] for o in pending["offers"]][:1], ["plant"], pending["offers"])

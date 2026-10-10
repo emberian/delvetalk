@@ -1839,293 +1839,313 @@
  "Form": {},
  "Garden": {
   "asked": {
-   "artifact": "848314d6a892903b854ef7bb2449526efc0df3ab5f439f6fe0bec4c7eea0db8e",
-   "packetSha256": "bafyreickgloppmak2vldasohedyxwu5hv2riffhzjdl7qwg6tuzfwt7ej4",
+   "artifact": "379ebc6caaf8f932b44c8da2dbb8e3ad522a646522d62e1f36e7162615881980",
+   "packetSha256": "bafyreibqt647r7lmdqccuiqkevmtosiwz2l25wmk2xskd6tj4ofeflo3b4",
    "status": "compiled"
   },
   "backOf": {
-   "artifact": "d61e98343775877251e44b8e40632ec3d72a6a796b4aa26cc66977e5362ff688",
-   "packetSha256": "bafyreiet4bzoxtslunxotmanpoy3rgc4lga76z4cnolotelrq5babh3z24",
+   "artifact": "5430c4e1ee198dac25125cbd15f2c1f5b8f51c39ae13fdcebe05f81c1249b5ea",
+   "packetSha256": "bafyreicb7cmjj6l5jq74xoqd3mj425fics3menqzuozeati4uoiqdlmygm",
    "status": "compiled"
   },
   "bared": {
-   "artifact": "bf34db99d145a43f82980af5cf13d1e807b1acff1db8053e86629a858295ed78",
-   "packetSha256": "bafyreifjiycayj2ktm5rv7uck2s22pkx6ahvyom4ljtmirhaz5eodw25ki",
+   "artifact": "9388d3903ac35cba249db90d7fe35a9deeaf2b6ff6161819701a41c0859e45a8",
+   "packetSha256": "bafyreihpfgeuulegfsmnhnufgt75v7undhz222mkarwzhg7lwwopovhydm",
    "status": "compiled"
   },
   "childLine": {
-   "artifact": "4d95cdc2dd884b2a8c55d5a3cb9df58c3d60eea4733aab119bed2f6a0cc2b3a8",
-   "packetSha256": "bafyreicgscymtmytdsynddahkqr5uf357vqkp4hyq7vdtz7z5hquwrvmpu",
+   "artifact": "8b75c65cdcc834e15089638526192c38e8c179e9de925b3be23046f20d483014",
+   "packetSha256": "bafyreihsa5hxfoajcen6e3cay36oi7i6tw5zoit6d4xfhnxb3sq6o7jlfa",
    "status": "compiled"
   },
   "chosen": {
-   "artifact": "3ef81c031d08fb6373cfe63db73eda89abfb249a22c34bab2e87cbf111e31499",
-   "packetSha256": "bafyreifpwtqp2jos52ftfe27dofqktfzribmqyurcxjlvj4mv2iaslrbi4",
+   "artifact": "6c0d94d8949e0f680c3e08a56245de865bc12c5cc01c3ef8dc91ebd51e4f15eb",
+   "packetSha256": "bafyreiaeeke4n4kbecpxm3vazruczknseyelbz4itizz3a5sa5bxndms3u",
    "status": "compiled"
   },
   "cistern": {
-   "artifact": "e94916f9361f30d7c511595180aa1fea3f93ebbca093a42497ede78dea425b6c",
-   "packetSha256": "bafyreiefu3fup46v37boxskresmnolvwjwej25ysdrjfz67w6isnzynrn4",
+   "artifact": "567f38b1598cf1f794f349444cb34dcc4f22a7a96776e9f77e21da8b64fc89ad",
+   "packetSha256": "bafyreia2bvgckb2v5pbkdgwtffy4l64jponw4yiwy32p2scuufoaizaimy",
    "status": "compiled"
   },
   "classed": {
-   "artifact": "24a02437f3330d4b47986a5fd1240b5c8bcc4b058854f4599f8bb5d221a6d2dd",
-   "packetSha256": "bafyreih62k5ctvi3suaqeye6wmslxvfsjmxrp6mq5d3l2sqrufyeezsmpa",
+   "artifact": "f4b7ab1564de5a972f483db6fbc80948e8f8f5b93f8605c7586fc80e944eb992",
+   "packetSha256": "bafyreicln6kcii5bs2grxqdyok6zplrs3qmsxoyjgpw3kt4yo7oph37hxm",
    "status": "compiled"
   },
   "colourNamed": {
-   "artifact": "f57770fca2aebc4fc664981f1ee79920f0b15c28bfae930fc6f7f63752869ce3",
-   "packetSha256": "bafyreid3n5sz2xapfiosvhgghsg3skh24whkrvbcn4qxbphc2jai3jbo5a",
+   "artifact": "f25668213ad0e42c7d8dc8d79bfc9228739e57b7783bb5ac2a24c375fe7d9d18",
+   "packetSha256": "bafyreich2h4ajm4kfyoo245eqzo3tajtudbghbapa6wq4rhp3obtijvujy",
    "status": "compiled"
   },
   "confirmCard": {
-   "artifact": "a82f8cd4c93696c007668aa0716d253359ef280a85050aac98a737172f7256fa",
-   "packetSha256": "bafyreidlohrp3aqchge6ega3nex2kztn64g6e2hk4u3qyfx5ur3zmbyze4",
+   "artifact": "cd3e5828ca01716dca543b2139b550a02e13b769ec96b65bdf42ebf9f41d3ed4",
+   "packetSha256": "bafyreideqxtgti6i5fzvrroraomvhfxurgss6elyjkzqv4dgebvbkxr6qq",
    "status": "compiled"
   },
   "confirmed": {
-   "artifact": "84243cf948c620f6645069d43276caf19b3221a55cb116459bcf6ea81605968c",
-   "packetSha256": "bafyreibwtbd5elf7vceyddw2rzr5jab4j4i4lunr2xxxpzldmcs4atooz4",
+   "artifact": "07303ece1451ff3073712119cc8a94a97d2d26a53ff62cecb0cdfd0a9a1d3aed",
+   "packetSha256": "bafyreiakaysiyikb3snjhxho4gs4yqqusifklxeul7ppknwzzyrriwx7oa",
    "status": "compiled"
   },
   "counted": {
-   "artifact": "42906fa63a8d0213388e5547b5f08392742b5fecfac1db202ca869274283e154",
-   "packetSha256": "bafyreifn7hawdaibzsmdwe2upfe3kmmgahjlacgkhtjsrzpl5i4n72qd24",
+   "artifact": "10731ee24bc2c9fcc037de9d8e6593a8dc340f931201ef3ffaa736fccccb817f",
+   "packetSha256": "bafyreihje4ihs7eyt6tibzpjvqiemy627ebpq2hbj4pkfsqysyh43o2w4u",
    "status": "compiled"
   },
   "defaultSeed": {
-   "artifact": "6cc017b3c3b161e3d56b76e1157d4b37d6d4d2e831a6bc83865ac361be7b4ad8",
-   "packetSha256": "bafyreihbj32jkwow5d2jpvzjfs3em72uo3uqmho7n7ba5cge4rlcg2ct3e",
+   "artifact": "4ab5059332fde5d9a0d3828eabd6b3e4141edcf6066fdf6054027f5af8e02098",
+   "packetSha256": "bafyreihrjs7cqkzublee6auky54oodxq7y2vu22jnul4byr64gjvohzb4m",
+   "status": "compiled"
+  },
+  "dig": {
+   "artifact": "e7ab32a86ad20a1f9ad723efdcf3932133610b4b98eb869493b9b2b41724d3b2",
+   "packetSha256": "bafyreifngfe3pajbzrnyq6veh4f5wjtivn7sccpedjwoghse7g4srvlzhy",
+   "status": "compiled"
+  },
+  "digging": {
+   "artifact": "8f646f7018f1fa796d74af25969fbb5c7f8603d1c4eda44486d0376cbbf8c448",
+   "packetSha256": "bafyreifzyajmm67frw4svygies5kfr7xwls5mrrroh3c7wi7cpcucttz4u",
+   "status": "compiled"
+  },
+  "digging2": {
+   "artifact": "38658d05cfa42d4c81d70cdc1743dc4d464ba31d64fce71a8c106698082e3e0c",
+   "packetSha256": "bafyreiamj2zjj3ehvz2r36eu4riaqkn4wblcsewvudp7vktwh6unbvtdqq",
    "status": "compiled"
   },
   "door": {
-   "artifact": "979e40592848a0565e7bdbfa873cb223872689ea672a101807d860f0efb8b068",
-   "packetSha256": "bafyreib6vjnb3nblt5qvsx5ddfvitcbalnztgexkwpgle7j7h6p4i6ml6e",
+   "artifact": "a23b1b78c9fe66d405becd8fa3e1e8a734e891c8d34ddee84d7321272bfe1356",
+   "packetSha256": "bafyreibzvg6fsnawt2emrlefmn7xo6n4dm2i3xpyszhtjayyi6f7xsajmy",
    "status": "compiled"
   },
   "filled": {
-   "artifact": "298dcc3ee67e4b67340018329bcf6228c733c28b6de3fd2a2f10bbba347f4682",
-   "packetSha256": "bafyreig3zynbnencff27s6unyfhpp3azumenkw4jafuxo7qs4jagdpfmny",
+   "artifact": "ab497387343a873c4938223bd88cf2636137be2168261ec143b67b8a5a6e8486",
+   "packetSha256": "bafyreibkcplhrz5srmo2lhxtpfqr2syxdkomwhaffyxthoc7ukutaxc4ja",
    "status": "compiled"
   },
   "forget": {
-   "artifact": "dfaa1907dd5b10106ef7b9e23ba5f2d873fe6cfc6b73b613cc5e5ad208e33431",
-   "packetSha256": "bafyreidy2irmvxehlmmosux72t55elhscf5uvhtheregp65dv4vkazffma",
+   "artifact": "ba5036dd70358f73836cc695a8c77b94264076dfbeb4c6e0038f54e05aa32fe1",
+   "packetSha256": "bafyreigjwor4ks3njpfb64zxvsgdx6n2erhayiieu2fsxmeevqzrtelzai",
    "status": "compiled"
   },
   "forgotten": {
-   "artifact": "f477cbfbfd3fcc7f8d4cbc3887b53c851d1f8d8e29a1eb28bc304b1995e02519",
-   "packetSha256": "bafyreiflobfadp5yo2fmcd74lglhvqsv747ovvpe2nkxyy4fzwdm4eqtqa",
+   "artifact": "33f0a3ee8137ad2d5da5d06aac8cfbc94d1e6b76c589c8ef8c2674467751c81e",
+   "packetSha256": "bafyreifyjz7tsn2sflnufscdhyylvrvcvlttn2rkaa357youcmy3gkygqa",
    "status": "compiled"
   },
   "forms": {
-   "artifact": "dc559ae92cedeef90c43f42748c8a369d32d5f8d768c5ba3808e78186cb171df",
-   "packetSha256": "bafyreia526knsnka5adzumdnnnxbvccqyv32pst7kk7bpuiblcctskkn7q",
+   "artifact": "82a2c5c989ffd1d1f6ea3cb531aef8c97298e8dc5deb54dd4fe09479cd22a54c",
+   "packetSha256": "bafyreie6ql6c3qv6ylbhl2bm6flxrret2ijpktlf4vqvpszpf7ooucjwli",
    "status": "compiled"
   },
   "fromCard": {
-   "artifact": "1744c27c6f4a3cfa0a2af391176c3dce442977969afdc24a4bce6f42e45f3a29",
-   "packetSha256": "bafyreignzj2dg2migcmuxrabhnb57et3kbcyiezwiplaybia5ofzuodpu4",
+   "artifact": "8737a6ae497e6a19e198147c9ec61225be9825f981338039db63bb92cc73015f",
+   "packetSha256": "bafyreie6aqlrhcjisyg36rn3ayvhds7fzjmoh6jll3zstnhgnpfcpr27nu",
    "status": "compiled"
   },
   "grow": {
-   "artifact": "665070b70c79b1dc987e04e5b8e9538e387cad651c28e1b76b5e36e6eded74a1",
-   "packetSha256": "bafyreic4ozm3syweh2gbzmuqpuhvf4fdyoxvyxesjwz342sbxn3defzvye",
+   "artifact": "a0662c88bc595a8031c347511d66c51a8ce96934f6d30f9f3944a4874547310a",
+   "packetSha256": "bafyreic46lwqs35cgzpvd2ozndq765wcj2m2c56r65fiajnrlrt6sjdcwa",
    "status": "compiled"
   },
   "guard": {
-   "artifact": "0c29a6bdb51bc3a764e648c5501846b103c2ece5e6cffb108418e198daf12eec",
-   "packetSha256": "bafyreifwracstbz42mp3nqzj5eklbglt6y35suy3kqlyht4z2xnx4lihbu",
+   "artifact": "f6917d5b3631841a1090142889140b0ddaa20bb41a6a921264f13a88c95ab536",
+   "packetSha256": "bafyreigm5ol3umitfnnjw4ehi7f7s37delye6luob2ewmusrfyqc4r5npm",
    "status": "compiled"
   },
   "hear": {
-   "artifact": "ba4b2ffbc675304a43c2c382c8723ff440376277eb889e9916a61c7dbe10f73d",
-   "packetSha256": "bafyreifu2brwnu2xbpoudodgfmlyc7guti3ydxjngvu67jcazruzcvrddy",
+   "artifact": "3b766bacdcffa122032efec6d426a931cfd8ef5545b33edee2d86d7980fa0544",
+   "packetSha256": "bafyreiakmlmgiu6jqnbzw7ejpwr5vzfwawug4dikc6bwsjhdxuls5qdy7m",
    "status": "compiled"
   },
   "heard": {
-   "artifact": "d4297a617b8e3d53281200bad251b31560cc9af9d378b2a5d13c39924e0cfc52",
-   "packetSha256": "bafyreigq6o5kxe4jifjg67spnxrtlf66bb4gts3t63xjy7f6k7i7citdhu",
+   "artifact": "60df9c9503588325f47762a22e7c0e25cc5d91ff17df7ca14c66eb99b7d1f4d5",
+   "packetSha256": "bafyreielx2dby7x4l7cq2wfllhe4sl5wyhycqkkds2vt6ezjitbi7ke7o4",
    "status": "compiled"
   },
   "heardBack": {
-   "artifact": "28b4e2ee69ba5c0e37dc4493e395055e163d0f5a1dc123d0d73cc45243b49b1e",
-   "packetSha256": "bafyreieouip3a64wuugdueqis6er4t72m3laavbr2jaxsmvzpzlyyju5pe",
+   "artifact": "9d3dd99fd1401f4c28d99b94ca868121d02f39f0f0acd1566f1dfef70d6a0752",
+   "packetSha256": "bafyreihn3llllrjytswfcnzmtffnqngdvx6ixpiorj2te7kvkn7hublvve",
    "status": "compiled"
   },
   "heldBy": {
-   "artifact": "2a94828a13bba4c1465ea583defa4cd4906080eebfd6b05beffa839a455500d9",
-   "packetSha256": "bafyreig3kfy662bqdyojyujzha75ceidgonrox4lnluswrkxb3zggedi3e",
+   "artifact": "4f0e91988b7df4afb6a3d10e66b0760e992666f73710758bdfa1f7db71f71c69",
+   "packetSha256": "bafyreidnudo4cgk7gucpdttd2edtvhra7eupr3mfej7fpyi7zb3ulmypru",
    "status": "compiled"
   },
   "initial": {
-   "artifact": "a4dbc6faf1a4dcaac3a10a17790b588a4b5177705733ee0152249184f15bf5f1",
-   "packetSha256": "bafyreigpym4ayjcxqepkqel5pq56pjj6uhni5hoqmytdmzjtsqxyfeszca",
+   "artifact": "ac49ffb7fb051a7998dc5ca5c6044ac971e63617989dbf5f32a5c238d7e7b78f",
+   "packetSha256": "bafyreifnzcl6t7bcswkvnd4w26qx5ea2db5zb3et6x2ecbtuyoyoo2bstm",
    "status": "compiled"
   },
   "interpreted": {
-   "artifact": "3a4937a855b6a742dd7cd9ab3d7bccd43e684b45a6020c5891a08f7e2b9a016a",
-   "packetSha256": "bafyreiddbjr4tadfl4u6rc62vikhflbmfdbfzp3gpkcq6b73qk5znum554",
+   "artifact": "c8b275413bc1e2b62a515e9c48a1da3d5987876ab2732949893350b1800cd2e6",
+   "packetSha256": "bafyreihjrwj64mkvqijy5svb7lsyc253p32ky6d6spkyfeirjkdgpkfjsq",
    "status": "compiled"
   },
   "judged": {
-   "artifact": "483152a55e5ad5c0a3d48dbc3fa5aa7e6a9eb43ea2a6ff0526aac9304656fba9",
-   "packetSha256": "bafyreih5ra7tckcgzmvajbvu2vnc4v4tkim6vruh7j4bamhmpecbscnyqy",
+   "artifact": "fca361f9708cdbf9f3222864877e8b24db9ddc0cddc11bf4aa2bccc99fcab3b0",
+   "packetSha256": "bafyreid6fnkcp3pga3fe3f4c4ytnbgp3kpvrcvlzsplrtzactximbkzlxe",
    "status": "compiled"
   },
   "keep": {
-   "artifact": "3a747099479c246b6ade52665b6cf1c6a4c77d29641f1857ecf858f2bb1178d2",
-   "packetSha256": "bafyreihmzrfjvtoph6wee2sakwme5zvstwlp6mxctpwtheivpblshoxnrm",
+   "artifact": "d9b482672668f192faca99b9424cd42495b7e446a87652c7099c80a68c2b7bf9",
+   "packetSha256": "bafyreiacanvapq2yrngst5owlfaccyparu3xdm5gzrkytmtn6h3zm4iyr4",
    "status": "compiled"
   },
   "lenses": {
-   "artifact": "bd8422b17ba016df79c42bb08c68aeb0eccd49f77007a41cceda29276f90fa98",
-   "packetSha256": "bafyreia5pi6243kbq4q7sra4qp6loae76s525u4exsfmas2qcvgy7atzji",
+   "artifact": "e6c55ba54f557a67577600bc9cae12ab6d0a4b9af0410b6bb8e322c1272525d3",
+   "packetSha256": "bafyreihbd7szahxxjsr564i7n5szxpv4mpein5qo6uwkgd2g5fpbw35ggy",
    "status": "compiled"
   },
   "minted": {
-   "artifact": "b74d90fc83cd6708a824d9e15ba73cc78de9002c471500bb4b2b5e544dcf8d5e",
-   "packetSha256": "bafyreihnpjaspidzkjt4ysf7yncoiamxocjqkukxngnwkywzg4x2e5k4pu",
+   "artifact": "0691ddc6d0eae1b238320e2f7f9c8756107fb0618f5f43cc2ec1b719dd030629",
+   "packetSha256": "bafyreiflhfm5fq2q6uybtvlnspnu4gfyaakettfuwq6des34t4j2hk2lry",
    "status": "compiled"
   },
   "named": {
-   "artifact": "f5d285da7c5a4af46dfdf12244be0389bff27f31f9f809e0935d7fb2921333d6",
-   "packetSha256": "bafyreihqv44iro7xwqqomgwhh57hvuky3ycgs2p4ro6x73rnp2wocrvkeu",
+   "artifact": "3de5c432d4abb04eecd23e91ef0faaa92e1bfd0706492efa3985dd86af134b78",
+   "packetSha256": "bafyreihmbvyjqso5qviywrhnhhow6p334thkvwaokqwpy2qwpqzzm57bsi",
    "status": "compiled"
   },
   "needOf": {
-   "artifact": "5d6fffe895451f2fe03c07e50d4dc3a96503259e31421664e96ddb84c485ae99",
-   "packetSha256": "bafyreibfozanuw3btmtttpnzixzbbbzhq7siedoln3bpmw4aqgwzganezq",
+   "artifact": "7ac0e94a4ea6861850dafd4d9d02fd57e5f865e364463b2a2e678ecac9ef5980",
+   "packetSha256": "bafyreihqy6hyeuxvohkjvf235rysk77tquuv732iipcu2ptt2rgmtrgooe",
    "status": "compiled"
   },
   "needsCard": {
-   "artifact": "931c5ff8c24f05c7d9e1fd389e1d6e914e01541f263d51bf17f8fb48604e9a3b",
-   "packetSha256": "bafyreiaxhauzr4hunviclxvkqerbrppwdoodsfcseh4brchfiz6ztomaeu",
+   "artifact": "420806acb0a618cc26b3e9bba3d27edff1932e9d4a50331c1781ab13e6873ed5",
+   "packetSha256": "bafyreigyok4zlolykspnqe4lsgni2mjmnfktwibzuicgukuozjyx57fqkq",
    "status": "compiled"
   },
   "notAddressed": {
-   "artifact": "50df7a56d490c8cbb6da675dd74a8a0398f2ec1e380a05573e1e8eb62bd16232",
-   "packetSha256": "bafyreih2o42wf64bogowbgdyqzgalfuyp55bqljps4daydgrte3c7edo4a",
+   "artifact": "17983ae398244c30d886c83f358a2d574ffb19d9733464ccfec0a9b506f385ce",
+   "packetSha256": "bafyreigzkopcqtzbrbj2vqaml4t7k6y4o6d6slcaydmjxjrhxrd5yxefau",
    "status": "compiled"
   },
   "page": {
-   "artifact": "974d1f73b05b65b0f202bcbbbf68f3553b18ab0f15b451dbe9293596ff990ec9",
-   "packetSha256": "bafyreia57jocetdoicdsdxdfd3btzqnc4q7awatwrd5ltrnzsnkynljtvm",
+   "artifact": "5193680a354c2e1cd441aeb7f3cb3cc0295dc616f07fbffc3fe983b0ef0b716b",
+   "packetSha256": "bafyreifxadau2d55jthjylizs7wfp4h6kpbg6kdlhdsat4mhhcwqniaacu",
    "status": "compiled"
   },
   "plant": {
-   "artifact": "3f6286c5fd70208f24be7150264b854f4b0560a6472aeb573ab96707536630c3",
-   "packetSha256": "bafyreiamvaykyhrc35yeqtfe7k6ahwvqjzikzkeuikqtwl3o4jvdtjxbla",
+   "artifact": "b25cfaad5942ee57d23002c37b5f0816715926dc88835535a503e4fd9b44900e",
+   "packetSha256": "bafyreidfquf2fpdh4ky33ywhlgb6tu4adaimhplflbgftnpzcif4jldsdq",
    "status": "compiled"
   },
   "plantForm": {
-   "artifact": "595a9f5ef6838a05b8ac979500cb8e8b45721f5f4573e8230eb4abba0b147af8",
-   "packetSha256": "bafyreih36ttglrgifytg7hm4fm5v5zty7flk4onqnlayjqp6lqavcnegrm",
+   "artifact": "7c4014493428917be79cd14ac27e26767a7832b7e590cb1a4587246691637815",
+   "packetSha256": "bafyreifh4rnsruccot5x4pysmzkntdykehnoijcu6bb2lsdksiiwbze4nq",
    "status": "compiled"
   },
   "plantedCard": {
-   "artifact": "59b88cbf9fc8fa94ecb1be3315b211118d533804d3878c86e9da98b8559fd396",
-   "packetSha256": "bafyreihulpgpc6yyrrre6m5eovizp4h4arskvlassbwjzei7hdl73enrri",
+   "artifact": "8afbd9151f36cc17bda16ae5848c503cf547793246fe9c9010a4b88ae55837f2",
+   "packetSha256": "bafyreih7j4ovkwz3rkbvm2hstftbcfwlfkre3qqmorwgdsky6lykyiv27i",
    "status": "compiled"
   },
   "planting": {
-   "artifact": "185633b7af2c68c8c7c68f085216a3c7732e82662948062e8dcae0f9ba2db05e",
-   "packetSha256": "bafyreigp2aweqv3bnememoxpflt5iwasu2vgrh2bbmngdshmdfnlrcul2y",
+   "artifact": "cd18e452109ff3cd3c4feee30e76e9245840e6e0ffee0301a01baf6ae0ca88cd",
+   "packetSha256": "bafyreictkqqnugh5wk62bhxmcvhigy5hznkjrowxy6ymcbhxqksialdemq",
    "status": "compiled"
   },
   "publish": {
-   "artifact": "9ea90cfd3246b349ff8206e065300bc742718d941d8394741dcc427b37659ca8",
-   "packetSha256": "bafyreie5d5xhcd5bopsz3oohsujkiccogvtekmdf5xwto4vwybn5uvuf6e",
+   "artifact": "4d4c719157876c447a78fab901f85c32a1c580f6ff8089112cc98a359a33c231",
+   "packetSha256": "bafyreigtaztlj7ulfazisgtc57j54kr6ipa43czkqpcmqhbo7aybw534uu",
    "status": "compiled"
   },
   "quietly": {
-   "artifact": "09b2cb7c896783f63fd661daab5147d3b2b3145463526d62aa58efe790511799",
-   "packetSha256": "bafyreibwkpjnoutqbnnk7cfo2h4v4ruoyq5aujkhkhmhr3t6fmcvw44rqi",
+   "artifact": "ea28fc808c8063acacb42b3918f731f46a6bfd87238f88eeccbffbcb2a62b339",
+   "packetSha256": "bafyreia2du3bf4d4yq7inloj6z55jlx57tofnomxqupgrisdhvqxhevrce",
    "status": "compiled"
   },
   "readBack": {
-   "artifact": "e2777a4ec85c90cba2873906e163f15b4b50d8fe25145f7233dd2f79df7d97ad",
-   "packetSha256": "bafyreicmcp5dimtzcqws7jmratszx37ocpx26tzlqfv7eievjuyzqhudwi",
+   "artifact": "7b262a46fdde6eb9a15e7f76b89ed15b42b7eff750ad26ea87c65e8c7cc1cdc9",
+   "packetSha256": "bafyreifdnbexndihespzyb3cmttbzczwghhuabgokuo227z3jhmj4yvrje",
    "status": "compiled"
   },
   "receive": {
-   "artifact": "414efb0d6e94f76f80d92999a6e604a02c21f5d2e95170de4ef02c864a5a463c",
-   "packetSha256": "bafyreif2pou7yw6ylkga6cqijszwogmnmkz3o44oei5jxmrrdh7yjaps4q",
+   "artifact": "ae40f3bede8b63184178247c5265d8ebe03dae2a4b52e9a1362897bceb0132e7",
+   "packetSha256": "bafyreih7etdeyectsrjarnyedil3jkt4nynhstqvn4qsgq3xv4ono2gmu4",
    "status": "compiled"
   },
   "refusedCard": {
-   "artifact": "ef846d340a78571e0c2b15d6f5ae7ff0b9d12a866b8aae2433b13567b4aefd0e",
-   "packetSha256": "bafyreici2nsaed7ulc4lmnhxqar7sd7g7nuuie5obrgsbykohoimgk6bri",
+   "artifact": "042dd17493960622156c33b43e3aefeb96a3219f7673465c91fcc0b27ea05d10",
+   "packetSha256": "bafyreib2dpx2sv4ezj77zjb3it4zmcum5rkne43wdiq7xfz56jlbur2rui",
    "status": "compiled"
   },
   "remembered": {
-   "artifact": "eaf62191dec3eaa14f9f48084a0e2dc7e6d0d42cbb15cb1f32c73387f1ae044a",
-   "packetSha256": "bafyreidwxswob3afs2pmo2ts3bnwxuk7iak6pdpnj3unujtcw7l7umf4li",
+   "artifact": "35de1e34431d06b691b840f834fb7de70187651819788c88e65f9585862d161f",
+   "packetSha256": "bafyreih6jt63evfcztttw5uoyz6iutgamdps3ej6mp6mueqrjig3wlpddm",
    "status": "compiled"
   },
   "render": {
-   "artifact": "a1c3698477dee250a5d89720e8c53d42bc1691df02cc8d586e8e867f70c15196",
-   "packetSha256": "bafyreigjkaq332yltt5iminoejsqzyqjvywv56phddnwkxpx2jdzrwtbli",
+   "artifact": "2f0870316b601084ac17663809ddff14279f4650ccf8b80553cc6c10c4ee86c2",
+   "packetSha256": "bafyreih2r6fffhsypvt5uky35z42w2fasb4pcyzdxqprrxufsid56czgpy",
    "status": "compiled"
   },
   "replied": {
-   "artifact": "4695368250f99b9d3865c31090bc2e1c14eae274b672bfd9926a6caf640de200",
-   "packetSha256": "bafyreicymdl2m3t6x4srvpipk4756xymrlfz7bhaj65wtzghhpmy7dfprq",
+   "artifact": "7c91b31f73a4d324169f8534117f41316aa43e0aadf34949b1612191491d9a8a",
+   "packetSha256": "bafyreih7lvw4pdotlmx3lav4pgygiwdvrhnbhbjdrqvat3bwb5nwvdzioe",
    "status": "compiled"
   },
   "seeded": {
-   "artifact": "2dc131acbcfe3b356a6e47d3ee03dbc2bb6f5fae1d57c3c50b73e43029fd6f35",
-   "packetSha256": "bafyreiarnsyjnfwro2tq3c2urorocdyacq4b3msn4rbrox5qygujrifhqa",
+   "artifact": "8586978d2217ae2908d94f3eeffdf231846d527956445621550a26bacf052942",
+   "packetSha256": "bafyreib3yfhicou2azonxpuqwoa7fjjamf7emy2acca35mczydkqi7hoy4",
    "status": "compiled"
   },
   "settled": {
-   "artifact": "29fa38faa7b6f3f2951cb363fa8ee0254473cee41390d06b014b024f73d39733",
-   "packetSha256": "bafyreieyhsojqimkjntzipvxqgqzrv7knytdw34rexumpsjxpsm53tr62e",
+   "artifact": "80b847882824b154e0897e60e47a5544bd06e7ace2b3a2c301a4a595ea4aa778",
+   "packetSha256": "bafyreieqae5c5iotzwoy6desccalwng67bxzp4nnerbfthq64xjptvhqdm",
    "status": "compiled"
   },
   "silent": {
-   "artifact": "b3dfff49b34e5da1de75bb0ba7e623de0b8339e7457644997168a4b3ee4628f5",
-   "packetSha256": "bafyreidqswvw7rfyvvzezadum2mumod7awfahz5cbwh7diq5ejcrltqnce",
+   "artifact": "fcf06486505fa2b6fb3a52cfb8740b6226a23cac0ac09d4ffb6f614f7ee1579f",
+   "packetSha256": "bafyreidqav6iesklmqnn2bcvezvfklx5xlnjrmqikx7diut6ydxah6dbx4",
    "status": "compiled"
   },
   "spell": {
-   "artifact": "0f959b873c8537fb056f4e1f2a60da22ef9d2bbd0f7dbceed3bdfa07342c8628",
-   "packetSha256": "bafyreifv5z5rxpjet76l3mfm4gnhlidzw5u7bcjl75e6pglw7e5mhkrbyq",
+   "artifact": "fe025c715a96acf304dd1779859a9c8bd2f1e8e8a891b037cf139b22aefd55d8",
+   "packetSha256": "bafyreihsp5pyhyftknyp27uprhznqb2l746kxvl4aaxmsubrxye4rsmvzm",
+   "status": "compiled"
+  },
+  "spelled": {
+   "artifact": "448808a0296afb062842cb750c0640200740ddaf4e1c08189e610f6358e40761",
+   "packetSha256": "bafyreidsjymbgwgthihwpa7ouuweep2ffcijtpgthcbga74bac3ncnl5eq",
    "status": "compiled"
   },
   "tell": {
-   "artifact": "9dba992c85cc33865d349b2d2ccf97709d2646231c8d82d67f1cd9415efccaaf",
-   "packetSha256": "bafyreiazjj7icyty7jt5o5ewey5xqlifmsnocqbkizlmdrm23wl2tnkfra",
+   "artifact": "b6699ed570a2385e1d98171eedce6f3ffecc9ba208132fe8f4b2cc0e8fc1a1d5",
+   "packetSha256": "bafyreifckl4uxjkobbavvlamj2wjmqukvulfxywjdpimjqhebywvyagxva",
    "status": "compiled"
   },
   "told": {
-   "artifact": "1750fb33d37c99e32a43901a091cf960bf40c17ad821331e0d326853660a88db",
-   "packetSha256": "bafyreibmquylweh42ysolte5geyekmauhuloqjjl7uub6ojkqbz7l34ja4",
+   "artifact": "c31f9402a89e31d7879c7b6e0eed9e28ca8fc40f8e0572f4daad43a54db895a4",
+   "packetSha256": "bafyreieafon5xn6xyqpggglyqzcszd7mynf7qt2yxm3k2gxp6o4i5hnoei",
    "status": "compiled"
   },
   "unclearCard": {
-   "artifact": "d1b2aefaa043a81c2a264bd99d318df0dfeef1a761a2298526e857dab6956087",
-   "packetSha256": "bafyreicsps6bhkgc7v4qxuo33vf6p347spaljdfbx3vflmcvdmlz4ortqe",
+   "artifact": "d50eeb27570dc33a310d9f079ad8a9f00ee0b269e11f14c9f510cfe1da1f68db",
+   "packetSha256": "bafyreigmlngabmnmgldrlx53y3uudp2fmdlfhjqmcnn7njttctzfy7ezvm",
    "status": "compiled"
   },
   "understand": {
-   "artifact": "d8680cb804ec318a7cc2754e934dfe960032e60c37bcb2ed3276b34ad367d1da",
-   "packetSha256": "bafyreih7cvrebou2jfjrlgbc7k3z4prewvald2ta3z7qvlovduv5a3kk7y",
+   "artifact": "2ed88856ae5d7b32b8a0ea61380b7c8fc4164066968a3a2e60ccbb0859a5a91e",
+   "packetSha256": "bafyreiag3ao6ea35cox5s5bwp25fupdkqiw2myjj74dkee3hpsgqevigsi",
    "status": "compiled"
   },
   "waiting": {
-   "artifact": "10d98d3ed8001f0879d668554c72ba8195e96896132bbcb8b55783ea3e7599b0",
-   "packetSha256": "bafyreiajnu5cwrs6jgojb2ziblomxhnuzw3fvqjcepm5jkcyfjzxwvbtj4",
+   "artifact": "64e33321c0e559b1ebd457d0a4ae81299b0d96e316f838750ace55f97fd7d5bd",
+   "packetSha256": "bafyreiafhoscob2vwmekuadejecoj2p6z6s2pw7so2g4zxnxus22fqbaj4",
    "status": "compiled"
   },
   "wordOf": {
-   "artifact": "3c831fd907e74cd1360b0ca2bb1d98bc95d7531eb42b7f5e84f029225f464117",
-   "packetSha256": "bafyreiaop4eo2pac7qckdibizwou4kkf454pwctpe4m3atrb33qscjrd34",
+   "artifact": "afa5bc617012ba0324d817ffbdc87804d5f99d159f40305136366b7da081d7f7",
+   "packetSha256": "bafyreid7mnpy42zqpmihj4cegkqncvpww4di4b4gthdkz6d2sokkkt6puy",
    "status": "compiled"
   },
   "worded": {
-   "artifact": "52e4819a59135a9d609157c65bcdc8dc696323a68c69ba9d04358fc7aa0e45cf",
-   "packetSha256": "bafyreic5gsb6rkyhd2eoug52rgvl44cviat5tozdchlh43fpfdikjq27uy",
+   "artifact": "1e55916894e4dbf21efd5217e82f216cdc4b1d964cb090dfa486ab4981b8f964",
+   "packetSha256": "bafyreid7nqkhr5nqqp6gbdyt7f4mtwczdp7t7ppgw73y2cyxiq3bnctqze",
    "status": "compiled"
   }
  },

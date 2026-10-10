@@ -114,7 +114,24 @@ def publish(state: State, context: Abi.Context) -> Activity<Plan, Response, Stri
     case refused(r): r.clause
     case _: ""
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: planting(), tail: Card.Forms.nil()})
+  Card.Forms.cons({head: planting(), tail: Card.Forms.cons({head: digging(), tail: Card.Forms.nil()})})
+# The cistern form: the garden's one cistern, at garden/cistern, keeps refusals. Its
+# name is what the digger calls it (`cistern: a stone cistern for refused proposals`).
+def digging() -> Form.Form:
+  {card: "", action: "cistern", fields: Form.Fields.cons({head: {name: "name", kind: Form.Kind.text({min: 0n, max: 120n})}, tail: Form.Fields.nil()})}
+# A spell to the garden plants, or digs the cistern.
+def spelled(state: State, context: Abi.Context, post: String, action: String, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
+  if action == "cistern" then dig(context, found, Spell.fit(parsed, Card.named(digging(), context.object))) else judged(state, context, post, parsed, false, found)
+def dig(context: Abi.Context, found: Held, fit: Spell.Fit) -> Activity<Plan, Response, Reply>:
+  match fit:
+    case proposal(_): digging2(context, found)
+    case unclear(u): told(found, context, Reply.unclear({needs: u.needs}), needsCard(u.needs))
+    case refused(r): told(found, context, Reply.refused({reason: r.reason}), refusedCard(r.reason))
+def digging2(context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
+  match perform(Plan.create({package: "Cistern", seed: Plans.nothing(), law: "Cistern", requireAbsent: chosen(context, "cistern")})):
+    case created(c): told(found, context, Reply.dug({object: c.object}), Document.text(textConcat("✾ THE NIGHT GARDEN\n\nThe cistern is dug at ", textConcat(c.object.object, ". It keeps refusals.\n"))))
+    case refused(r): told(found, context, Reply.refused({reason: r.clause}), refusedCard(r.clause))
+    case _: told(found, context, Reply.refused({reason: "The garden could not dig it."}), refusedCard("The garden could not dig it."))
 def door() -> Card.Door:
   {word: "garden", blurb: "Plant something; rain on another's planting. Things remember who helped them grow."}
 # What the town says to the garden is a Card.Heard: the reply text and the post it
@@ -127,6 +144,7 @@ sum Reply:
   cleared: {}
   shown: {}
   merged: {post: String}
+  dug: {object: Plans.Reference}
   changed: {}
   silent: {}
 # A colour by name, or none: a name outside the three is refused, never defaulted.
@@ -191,7 +209,7 @@ def confirmed(state: State, input: Card.Heard, context: Abi.Context, found: Held
 def hear(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
     case notASpell(_): if textSpan(input.text, " \n\t\r") == textLength(input.text) then tell(Reply.shown({}), render(state, context)) else bared(state, input, context, Card.withBare(parsed, input.text, context, forms()), found)
-    case spell(s): if s.action == "set" || s.action == "?" then Card.answerLensedAs::<Edits, State, Planting, Reply>(Card.routeParsed(parsed, context, forms()), context, forms(), lenses(), guard(state, context), render(state, context), fromCard) else judged(state, context, input.post, parsed, false, found)
+    case spell(s): if s.action == "set" || s.action == "?" then Card.answerLensedAs::<Edits, State, Planting, Reply>(Card.routeParsed(parsed, context, forms()), context, forms(), lenses(), guard(state, context), render(state, context), fromCard) else spelled(state, context, input.post, s.action, parsed, found)
 # Whether understood prose waits for "yes" is the owner's to set: `delvetalk garden set`
 # with `confirm: yes` or `confirm: no`.
 def lenses() -> Lists.List<Form.Lens<Edits>>:
@@ -209,7 +227,7 @@ def fromCard(reply: Card.Reply) -> Reply:
 # other prose goes to the policy's model.
 def bared(state: State, input: Card.Heard, context: Abi.Context, parsed: Spell.Parsed, found: Held) -> Activity<Plan, Response, Reply>:
   match parsed:
-    case spell(_): judged(state, context, input.post, parsed, false, found)
+    case spell(s): spelled(state, context, input.post, s.action, parsed, found)
     case notASpell(_): understand(state, input, context, found)
 # What is not a spell is given to the policy's model, which can only propose; with no
 # policy, prose naming none of the garden's forms gets no card.
