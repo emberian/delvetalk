@@ -342,6 +342,128 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
+## 17. World calls (WHOLENESS §1, lane/kernel6)
+
+- Day 1. `Ty.isPlanUnder` admits a record row of data (a message) beside a variant;
+  `Ty.performResponse plan T` is `Data` for a record plan, else `T`, and
+  `PartialTyping.perform` concludes `computation plan (plan.performResponse T) T`, the checker
+  taking `T` from the perform's annotation codomain. A sum-Plan activity is unchanged
+  (`sum_plan_response_unchanged`); `message_sites_accepted` sequences a view and a write with
+  different result types in one `computation Message Data Nat`;
+  `message_then_sum_plan_refused` keeps the dialects apart. Surface `Activity<A>` is
+  `computation Message Data A`, `Message` the record of the module named `World` ("…yields
+  World.Message, but no module named World is in this package"). The `protocol world:`
+  lines are signature form `name<Ps>(INPUT) -> RESULT` (`protocolSignature`; one input,
+  refused by name otherwise), stored as `Field {name, type := "INPUT -> RESULT",
+  typeParameters}`; the generics pass leaves such methods unrewritten and instantiates them
+  at each call. `world.X::<T>(arg)` / `world.X(arg)` (`world` not a local, declaration or
+  alias) lowers in the generics pass (`worldCallOf`, `worldMethod`) to the Surface node
+  `worldCall method input result arg` with both types rendered for the calling module; `T`
+  is inferred only when the input is exactly the one type parameter (`write<E>`,
+  `judge<E>`). The elaborator makes it `ATerm.perform Message RESULT {object: {world: "",
+  object: "world"}, method, argument: toData INPUT arg}`, the argument injected where the
+  input has `Data` fields (`coerceGo`), else refused with `expected`/`found`. `isPerform`
+  accepts it, so `let label(x) = world.X(...)` and the shared-position rules hold.
+  `write {...}` emits the marker callee `$write` (`writeMarker`); the generics pass makes it
+  `world.write(edits)` in an `Activity<R>` definition, `Plan.write({object, edits})`
+  otherwise. Surface `perform` in an `Activity<R>` and a world call in an
+  `Activity<P, R, A>` are refused by name. Old-dialect packets are byte-identical (pins: 0
+  recompiled). Test: `tests/test_world_calls.py` (its `WORLD` is a stand-in for the objects
+  lane's World.obend).
+
+- Day 2. Site types at a yield and a resume, without touching the machine, collector or
+  codecs (those files are lane perf2's): the machine keeps no positions, so a site is named
+  by its plan term. `Turn.performsOf` walks the entry term at the checker's positions and
+  reads each perform's annotation codomain; `messageSites` keeps one `(plan term, T)` per
+  distinct plan (`termEq`) and refuses an entry in which two performs build the same plan
+  term at different types ("refused (world-call-site)", at compile: `Package.messageFields`,
+  so no such artifact exists). At a message yield `conclude` finds the site from the plan
+  cell's origin in the extracted state (before `checkpoint` settles it), reports its `T` as
+  `responseType`, and prefixes the checkpoint tokens with `["delvetalk.checkpoint.site.v1",
+  i]`; resume (`resumeType`) strips the prefix (inside the digest), checks the response
+  against `T` and decodes the rest. A sum-Plan checkpoint carries no prefix and is
+  byte-identical; a prefix on one, or none on a message checkpoint, is refused. No
+  `Checkpoint` field changed. The site walk runs per start/resume of a message entry only
+  (cache it beside the host lane's per-method dictionary when message objects are common).
+  Artifact (message activities only): `dialect: "message"`, `world` (methods the entry's
+  sites name, first occurrence), `worldProtocol` (the World module's source SHA-256 hex).
+  Tests: `tests/test_world_calls.py` `SiteTypes`.
+
+## 16. Queue for the successor (lane/kernel6, after foundation e9d8ca9)
+
+Done on lane/kernel6 (§17): Wholeness kernel day 1 (c6033f7) and day 2 (9d65553). Remaining,
+in order:
+
+1. **Day 4 (after the objects lane has moved every object to `Activity<R>`):** refuse
+   `Activity<P, R, A>` and a sum Plan by name (`sourceType`'s three-argument case and
+   `Ty.isPlanUnder`'s variant case; the decided examples at Typing ~1545-1600 move to the
+   message form), delete the `$write` Plan branch (`writeLowered`), surface `perform`, the
+   typed-view rewrite (`typedViews`, `viewAs`) and `Package.methodTable`'s old rows, then
+   re-record the pins once with the relational re-record (WHOLENESS §4, RELATIONAL §9).
+2. **`textWords(s) -> List<String>`**, only if an object still needs it once the objects
+   lane uses `textHasAny` (no `world/` source does yet). Shape as the old §16 item 1: a
+   list-producing term form, which touches the machine, collector and checkpoint codecs,
+   now lane perf2's files; route through the root.
+3. Cache `Turn.messageSites` per held entry beside the host's per-method dictionary
+   (e01f1e5) when message objects are common: today it is one term walk per start/resume
+   of a message entry.
+
+Contract notes. WHOLENESS §1 says the yield's site is "the annotation at the preorder index
+of the yielded perform (the index `Dictionary.ofProgram` assigns)": the dictionary indexes
+terms, not positions, and identical perform terms share an index, so a site is named by its
+plan term and an entry whose world calls build one message at two result types is refused
+(`refused (world-call-site)`). The old §16's route to the term at resume (keep the plan
+cell's origin in `settleCell`) is in DemandCollect, now lane perf2's; the site index rides
+as a checkpoint token prefix instead (§17). "No `Checkpoint` field changes" holds; the
+token stream of a message checkpoint gains two leading tokens.
+
+## 17. World calls (WHOLENESS §1, lane/kernel6)
+
+- Day 1. `Ty.isPlanUnder` admits a record row of data (a message) beside a variant;
+  `Ty.performResponse plan T` is `Data` for a record plan, else `T`, and
+  `PartialTyping.perform` concludes `computation plan (plan.performResponse T) T`, the checker
+  taking `T` from the perform's annotation codomain. A sum-Plan activity is unchanged
+  (`sum_plan_response_unchanged`); `message_sites_accepted` sequences a view and a write with
+  different result types in one `computation Message Data Nat`;
+  `message_then_sum_plan_refused` keeps the dialects apart. Surface `Activity<A>` is
+  `computation Message Data A`, `Message` the record of the module named `World` ("…yields
+  World.Message, but no module named World is in this package"). The `protocol world:`
+  lines are signature form `name<Ps>(INPUT) -> RESULT` (`protocolSignature`; one input,
+  refused by name otherwise), stored as `Field {name, type := "INPUT -> RESULT",
+  typeParameters}`; the generics pass leaves such methods unrewritten and instantiates them
+  at each call. `world.X::<T>(arg)` / `world.X(arg)` (`world` not a local, declaration or
+  alias) lowers in the generics pass (`worldCallOf`, `worldMethod`) to the Surface node
+  `worldCall method input result arg` with both types rendered for the calling module; `T`
+  is inferred only when the input is exactly the one type parameter (`write<E>`,
+  `judge<E>`). The elaborator makes it `ATerm.perform Message RESULT {object: {world: "",
+  object: "world"}, method, argument: toData INPUT arg}`, the argument injected where the
+  input has `Data` fields (`coerceGo`), else refused with `expected`/`found`. `isPerform`
+  accepts it, so `let label(x) = world.X(...)` and the shared-position rules hold.
+  `write {...}` emits the marker callee `$write` (`writeMarker`); the generics pass makes it
+  `world.write(edits)` in an `Activity<R>` definition, `Plan.write({object, edits})`
+  otherwise. Surface `perform` in an `Activity<R>` and a world call in an
+  `Activity<P, R, A>` are refused by name. Old-dialect packets are byte-identical (pins: 0
+  recompiled). Test: `tests/test_world_calls.py` (its `WORLD` is a stand-in for the objects
+  lane's World.obend).
+
+- Day 2. Site types at a yield and a resume, without touching the machine, collector or
+  codecs (those files are lane perf2's): the machine keeps no positions, so a site is named
+  by its plan term. `Turn.performsOf` walks the entry term at the checker's positions and
+  reads each perform's annotation codomain; `messageSites` keeps one `(plan term, T)` per
+  distinct plan (`termEq`) and refuses an entry in which two performs build the same plan
+  term at different types ("refused (world-call-site)", at compile: `Package.messageFields`,
+  so no such artifact exists). At a message yield `conclude` finds the site from the plan
+  cell's origin in the extracted state (before `checkpoint` settles it), reports its `T` as
+  `responseType`, and prefixes the checkpoint tokens with `["delvetalk.checkpoint.site.v1",
+  i]`; resume (`resumeType`) strips the prefix (inside the digest), checks the response
+  against `T` and decodes the rest. A sum-Plan checkpoint carries no prefix and is
+  byte-identical; a prefix on one, or none on a message checkpoint, is refused. No
+  `Checkpoint` field changed. The site walk runs per start/resume of a message entry only
+  (cache it beside the host lane's per-method dictionary when message objects are common).
+  Artifact (message activities only): `dialect: "message"`, `world` (methods the entry's
+  sites name, first occurrence), `worldProtocol` (the World module's source SHA-256 hex).
+  Tests: `tests/test_world_calls.py` `SiteTypes`.
+
 ## 16. Queue for the successor (lane/kernel5 at 9a29080, after foundation b47046b)
 
 Done on this lane and committed (each green on hbox, details in §14 and §15): typed views

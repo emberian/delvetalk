@@ -76,7 +76,7 @@ class Host:
                 except (HostDied, ValueError):
                     self.close()
                     if attempt:
-                        return {'status': 'error', 'message': 'host unavailable'}
+                        return {'status': 'error', 'class': 'hostUnavailable', 'message': 'host unavailable'}
 
     def close(self):
         if self.proc is not None:
@@ -114,11 +114,41 @@ class Heaps:
         self.pool.clear()
 
 
-class HostClient:
-    """Same send() as Host, over hostd's socket. heap=<did> addresses a private heap; stateless=True the REPL process."""
+# Ops the host answers the same way when sent twice: reads, and a turn (bound to its identity). Only these are
+# re-sent on a new connection after a broken one; any other op surfaces "hostd unavailable" and the caller decides.
+IDEMPOTENT = frozenset({'world-status', 'world-view', 'world-card', 'world-objects', 'world-offers', 'world-history', 'world-receipt',
+                        'world-resolve', 'world-inspect', 'world-entries', 'world-entry', 'world-object', 'world-publications',
+                        'world-grants', 'world-source', 'world-sources', 'world-state-cid', 'world-addressee', 'hostd-info', 'world-turn'})
 
-    def __init__(self, path, heap=None, stateless=False):
-        self.path, self.heap, self.stateless = str(path), heap, stateless
+
+class HostClient:
+    """Same send() as Host, over hostd's socket. heap=<did> addresses a private heap; stateless=True the REPL process.
+    One persistent connection per thread, re-made on EOF or when the socket path names a different hostd (a restart).
+    hostd serves connections concurrently and still runs ops one at a time, in arrival order."""
+
+    def __init__(self, path, heap=None, stateless=False, timeout=HOST_TIMEOUT + 30):
+        self.path, self.heap, self.stateless, self.timeout = str(path), heap, stateless, timeout
+        self.local = threading.local()
+
+    def _connection(self):
+        """-> (socket, reader, fresh). A held connection is dropped if the socket file is no longer the one it reached."""
+        held = getattr(self.local, 'conn', None)
+        if held is not None:
+            try:
+                if os.stat(self.path).st_ino == held[2]:
+                    return held[0], held[1], False
+            except OSError:
+                pass
+            self.close()
+        s = socket.socket(socket.AF_UNIX)
+        try:
+            s.settimeout(self.timeout)
+            s.connect(self.path)
+            self.local.conn = (s, s.makefile('rb'), os.stat(self.path).st_ino)
+        except OSError:
+            s.close()
+            raise
+        return self.local.conn[0], self.local.conn[1], True
 
     def send(self, request):
         envelope = dict(request)
@@ -126,18 +156,34 @@ class HostClient:
             envelope['heap'] = self.heap
         if self.stateless:
             envelope['stateless'] = True
-        try:
-            with socket.socket(socket.AF_UNIX) as s:
-                s.settimeout(HOST_TIMEOUT + 30)
-                s.connect(self.path)
-                s.sendall((json.dumps(envelope) + '\n').encode())
-                line = s.makefile('rb').readline()
-            return json.loads(line)
-        except (OSError, ValueError):
-            return {'status': 'error', 'message': 'hostd unavailable'}
+        data = (json.dumps(envelope) + '\n').encode()
+        for _ in (0, 1):
+            fresh = True
+            try:
+                s, reader, fresh = self._connection()
+                s.sendall(data)
+                line = reader.readline()
+                if not line:
+                    raise OSError('hostd closed the connection')
+                return json.loads(line)
+            except TimeoutError:  # hostd took the request and did not answer; a turn it ran may still commit: never re-sent
+                self.close()
+                return {'status': 'error', 'class': 'hostTimeout', 'message': f'hostd did not answer within {self.timeout} seconds'}
+            except (OSError, ValueError):
+                self.close()
+                if fresh or request.get('op') not in IDEMPOTENT:  # a stale reused connection: once more on a new one, if the op is safe to repeat
+                    break
+        return {'status': 'error', 'class': 'hostUnavailable', 'message': 'hostd unavailable'}
 
     def close(self):
-        pass
+        held = getattr(self.local, 'conn', None)
+        self.local.conn = None
+        if held is not None:
+            for f in (held[1], held[0]):
+                try:
+                    f.close()
+                except OSError:
+                    pass
 
 
 class RemoteHeaps:

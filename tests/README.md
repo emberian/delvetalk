@@ -11,15 +11,15 @@ each test is named as a sentence of what the software does.
 `DELVETALK_OBEND` names the host binary. `tests/run.py` runs each class in its own process (a class
 declaring `independent = True` and measured over 8 s is dealt into chunks); `tests/host.py` holds the
 fixtures: `HostCase` (one process per class, a fresh unsynced journal per test), `HostdCase` (one hostd
-per class), `check` (the run's shared stateless process). [PROFILE.md](PROFILE.md) is the measurement
+per class; test_http's `FrontCase` takes `fresh_world` for a hostd per test), `check` (the run's shared stateless process). [PROFILE.md](PROFILE.md) is the measurement
 that shaped them.
 
 ## Kernel
 
 The compiler, the evaluator and the canonical codec, on one stateless process: what a package means before any world holds it.
 
-- `test_canonical` (§2 Journal): Every Data value and journal entry has one canonical DAG-CBOR form, and an entry's CID is that form's: the AppView's own post records encode to the CIDs it returned.
 - `test_canonical_compare` (§9): canonicalCompare orders two values of one type exactly as their canonical bytes do, so a relation sorts inside a turn in the host's order.
+- `test_canonical` (§2 Journal): Every Data value and journal entry has one canonical DAG-CBOR form, and an entry's CID is that form's: the AppView's own post records encode to the CIDs it returned.
 - `test_conformance` (§1): Three independent evaluators (Python, JS, C) agree with the Lean machine on 400 generated core terms: values, stuckness and yielded Plans.
 - `test_data_type` (§3): Data, the universal first-order type: one Plan carries any payload shape, Data.of checks its declared type, nothing takes Data apart, and a malformed value is refused on every admission path.
 - `test_hints` (§8 Surface): A refused package names the pseudo-Bend habit behind the refusal and the real form, and a hint never changes what is accepted.
@@ -33,6 +33,7 @@ The compiler, the evaluator and the canonical codec, on one stateless process: w
 - `test_text_words` (§1): textHasAny finds whole words in one pass, its tariff linear in the text and the word list.
 - `test_turn` (§2 Turn): An activity yields Plans and resumes from a checkpoint bound to its package, object, principal, intent and roots; a tampered or foreign checkpoint is refused by name, exhaustion is a named silence.
 - `test_typed_view` (§3): A typed foreign view answers another package's state as the type the viewer names, checked by the host.
+- `test_world_calls` (§10): A world call is a typed perform of the world object: each call site resumes at its own result type, checked against the world's protocol.
 
 ## Host
 
@@ -103,6 +104,7 @@ The Python around one hostd, which carries bytes and credentials and decides not
 - `test_hand` (§7): The owner's console at /hand/ over a real front, with a stub host and a stub poster.
 - `test_hostd` (§7): hostd is the one writer: a private socket, one lock, concurrent clients in one chain, a respawned host replaying to the same receipts, private heaps and the sealed library.
 - `test_http` (§7): The agent API at /AGENTS.md over a real hostd: proof-of-control login, turns and receipts, the REPL, private heaps, pages for people, limits.
+- `test_hypermedia` (§7): A stranger acts from the replies alone: every JSON reply carries `_links`, `_actions` are projected from the host's method table and forms, every error is a named envelope, and the front survives bursts, stalls and malformed input.
 - `test_model` (§6): The model client and interpreter: replies parsed, each pending interpretation asked once and settled verbatim, failures retried with backoff, credentials never shown.
 - `test_publish` (§5, §7): A published page reaches the outbox as a draft, is recorded when posted, and a merge reply to it routes back to its object.
 - `test_repo` (§2 Journal, §7): The journal as a read-only AT Protocol repository over a real hostd: records by slug and CID agree with the host, blocks hash to their CIDs, private records stay private.

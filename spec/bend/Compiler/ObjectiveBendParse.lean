@@ -457,6 +457,11 @@ def joinPieces (pieces : List Expr) (span : Span) : Expr :=
 `Plan.obend` replaces it (`parseObjective`). Not an identifier a source can spell. -/
 def writePlansAlias : String := "$plans"
 
+/-- The callee a `write {...}` names until the generics pass decides its dialect: in an
+`Activity<Plan, Response, R>` the Plan `Plan.write({object, edits})`, in an `Activity<R>`
+the world call `world.write(edits)`. Not an identifier a source can spell. -/
+def writeMarker : String := "$write"
+
 /-- `parse(minimum)`: an atom, its postfix member/call chain, then binary operators of at
 least `minimum` precedence (left-associative). -/
 def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
@@ -519,7 +524,8 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
         else
           (.extensionValue parameters (String.ofList resultType) closureBody span, span)
     -- `write {field: op value, ...}`: the Plan that writes the running object's edits,
-    -- every other field kept. Lowers to
+    -- every other field kept (in an `Activity<R>`, the world call `world.write(edits)`;
+    -- the generics pass chooses, `writeMarker`). Lowers to
     -- `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: E, ...})})`
     -- with `E` = `Plans.Edit.add({delta: v})` (add), `Plans.Edit.set({value: v})` (set),
     -- `Plans.Entries.append({item: v})` (append), `Plans.Entries.remove({index: v})`
@@ -556,7 +562,7 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
         if tokenText next != "," then throw "Error: expected , or } in write {...}"
       let object := Expr.call (.member plans "self" span) [.var "context" span] span
       let changes := Expr.extend (.call (.var "keep" span) [] span) edits.toList span
-      result := (.call (.member (.var "Plan" span) "write" span)
+      result := (.call (.var writeMarker span)
         [.record [("object", object), ("edits", changes)] span] span, span)
     else if firstText == "{" then
       let mut fields : Array (String × Expr) := #[]
@@ -966,6 +972,35 @@ def protocolType (text : String) : String :=
     else t
   | none => t
 
+/-- The rest of a signature-form protocol line after its name (`protocolSignature`). -/
+def protocolSignatureOf (name rest : List Char) : Except String (String × List String × String) := do
+  let shape := "a protocol method is `name: TYPE` or `name<T, ...>(INPUT) -> RESULT`"
+  let (params, rest) ← match rest with
+    | '<' :: after =>
+      let inside := after.takeWhile (· != '>')
+      if inside.length == after.length then throw shape
+      let params := (splitTopComma (String.ofList inside)).map trimText
+      if !params.all (fun p => isIdent p.toList) then throw shape
+      pure (params, after.drop (inside.length + 1))
+    | _ => pure ([], rest)
+  let some (input, result) := splitArrow (String.ofList rest) | throw shape
+  if !(input.startsWith "(" && input.endsWith ")" && !result.isEmpty) then throw shape
+  let input := trimText ((input.drop 1).dropRight 1).toString
+  let one := "a world method takes exactly one input: name(INPUT) -> RESULT"
+  match splitTopComma input with
+  | [only] => if (trimText only).isEmpty then throw one else pure (String.ofList name, params, input ++ " -> " ++ result)
+  | _ => throw one
+
+/-- A protocol method in signature form, `name<P, ...>(INPUT) -> RESULT` (the world's
+protocol): its name, type parameters and type `INPUT -> RESULT`. `none` when the line is
+not in that form; `some (.error why)` when it starts as one but is misshapen. -/
+def protocolSignature (text : String) : Option (Except String (String × List String × String)) :=
+  let chars := text.toList
+  let name := chars.takeWhile wordChar
+  let rest := chars.drop name.length
+  if isIdent name && (rest.head? == some '<' || rest.head? == some '(') then some (protocolSignatureOf name rest)
+  else none
+
 def declarations (lines : Array Line) :
     PS (Array Import × Array Decl × Option (String × Span) × Array (String × Span)) := do
   let fuel := lines.size + 1
@@ -1004,12 +1039,18 @@ def declarations (lines : Array Line) :
         if member.indent == 0 then break
         set (j + 1)
         let text := String.ofList member.text
+        if let some signature := protocolSignature text then
+          match signature with
+          | .ok (m, params, type) =>
+            methods := methods.push { name := m, type, span := member.span, typeParameters := params }
+          | .error why => fail member why
+          continue
         match text.splitOn ":" with
         | m :: rest =>
           let m := trimText m
           let type := trimText (":".intercalate rest)
           unless isIdent m.toList && !type.isEmpty do fail member "a protocol method is `name: TYPE`"
-          methods := methods.push ⟨m, protocolType type, member.span⟩
+          methods := methods.push ⟨m, protocolType type, member.span, []⟩
         | [] => fail member "a protocol method is `name: TYPE`"
       if methods.isEmpty then fail line "a protocol declares at least one method"
       decls := decls.push (.protocol name methods.toList (methods.toList.map (·.type)) line.span)
@@ -1090,7 +1131,7 @@ def declarations (lines : Array Line) :
         if c.indent == 0 then break
         set (j + 1)
         let some (_, m) ← matchAt c sumCaseRe c.text | fail c "expected sum case label: Type"
-        cases := cases.push ⟨cap c.text m 1, cap c.text m 2, c.span⟩
+        cases := cases.push ⟨cap c.text m 1, cap c.text m 2, c.span, []⟩
         labels := labels ++ [cap c.text m 1]
       if cases.isEmpty then fail line "empty sum"
       if labels.eraseDups.length != labels.length then fail line "duplicate sum label"
@@ -1133,7 +1174,7 @@ def declarations (lines : Array Line) :
         set (j + 1)
         if let some (_, f) ← matchAt m fieldRe m.text then
           let name ← liftBare (fieldName ((capture m.text f 1).getD []))
-          fields := fields.push ⟨name, cap m.text f 2, m.span⟩
+          fields := fields.push ⟨name, cap m.text f 2, m.span, []⟩
         else
           methods := methods.push (← signature m.text m)
       decls := decls.push (.record (cap line.text caps 1) methods.toList fields.toList line.span)

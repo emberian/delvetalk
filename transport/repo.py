@@ -6,8 +6,10 @@ reads as PUBLIC, a bearer credential as its principal. docs/REPO.md says what is
 the host ops it reads.
 """
 import base64
+import json
 import re
 import urllib.parse
+from pathlib import Path
 
 NS = 'town.delvetalk.'
 COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law'))
@@ -20,6 +22,7 @@ SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]-(?:[bdfghj
 PAGED = {'receipt': ('world-entries', 'entries', 'slug', 'hash'), 'source': ('world-sources', 'sources', 'cid', 'cid'),
          'publication': ('world-publications', 'publications', 'id', 'hash'), 'grant': ('world-grants', 'grants', 'id', 'hash')}
 ERRORS = {'unknown': (400, 'RecordNotFound'), 'denied': (403, 'Denied'), 'ambiguous': (400, 'AmbiguousSlug')}
+XRPC_ERRORS = json.loads((Path(__file__).resolve().parent / 'static' / 'catalogue.json').read_text())['xrpcErrors']  # name -> {code, when}
 NOT_SERVED = 'the chain is served entry by entry, not as a signed MST: page com.atproto.repo.listRecords?collection=' \
              'town.delvetalk.receipt, and fetch each entry\'s block with com.atproto.sync.getRecord'
 
@@ -33,7 +36,8 @@ class Refusal(Exception):
 
 def refused(reply):
     """A host reply that is not a record, as the XRPC error that carries it."""
-    code, error = ERRORS.get(reply.get('status'), (400, 'InvalidRequest'))
+    host = {'hostUnavailable': 'HostUnavailable', 'hostTimeout': 'HostTimeout'}.get(reply.get('class'))
+    code, error = (XRPC_ERRORS[host]['code'], host) if host else ERRORS.get(reply.get('status'), (400, 'InvalidRequest'))
     return Refusal(code, error, reply.get('message') or reply.get('status') or 'no reply', reply)
 
 
@@ -120,11 +124,11 @@ class Repo:
         self.repo(q)
         collection, cursor, reverse = self.collection(q), q.get('cursor'), q.get('reverse') == 'true'
         limit = q.get('limit', str(LIMIT))
-        if not limit.isdigit() or not 1 <= int(limit) <= MAX_LIMIT:
+        if not (limit.isascii() and limit.isdigit()) or not 1 <= int(limit) <= MAX_LIMIT:
             raise Refusal(400, 'InvalidRequest', f'limit must be 1..{MAX_LIMIT}')
         if collection in PAGED:
             op, field, key, cid = PAGED[collection]
-            if cursor is not None and not cursor.isdigit():
+            if cursor is not None and not (cursor.isascii() and cursor.isdigit()):
                 raise Refusal(400, 'InvalidRequest', 'the cursor is a journal height')
             page = {'before' if reverse else 'after': int(cursor)} if cursor else {}
             reply = host.send({'op': op, 'principal': who, 'limit': int(limit), **page, **({'reverse': True} if reverse else {})})
@@ -156,7 +160,7 @@ class Repo:
         elif collection == 'object':
             new = None if '/' in rkey else NEW_KEY.fullmatch(rkey)
             oid, _, version = (new[1].replace('~', '/'), '', new[2]) if new else rkey.rpartition('/')  # <object>/<version>: one release
-            if not oid or not version.isdigit():
+            if not oid or not (version.isascii() and version.isdigit()):
                 raise Refusal(400, 'InvalidRequest', 'an object record key is <object with / as ~>.<version>')
             item = self.object(host, oid, int(version), who)
             cid, rkey = item.get('stateCid'), object_key(oid, version)

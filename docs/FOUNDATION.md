@@ -147,8 +147,9 @@ Snapshots store `stateCid` per object and no binary pin.
 **Durability.** One fsync per step, before the reply (`spec/native/sync.c`;
 `world-open {sync}`: `none` for tests, `fsync` by default, `full` adds
 `F_FULLFSYNC` where the OS has it). An entry may be lost on power loss within
-the write-back window; the chain check on reopen cuts a torn tail rather than
-reading a corrupt one. Restart replays the chain; a suspended activity survives
+the write-back window; the chain check on reopen refuses a torn tail by name rather than
+reading a corrupt one, and `deploy/backup.sh` cuts a torn final line before
+verifying a copy. Restart replays the chain; a suspended activity survives
 because its checkpoint is in the store.
 
 **Limits.** Kernel bounds in `spec/Delvetalk/Limits.lean` (`Delvetalk.Bounds`:
