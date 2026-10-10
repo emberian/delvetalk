@@ -11,16 +11,15 @@ Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
 (`test_turn_world` 200 bumps under 5 s, `test_http` 200 turns under 10 s) are fsync-bound and can miss under a
 loaded box; alone they take 3.3 s and pass. `test_snapshot`'s reopen under 1 s takes 0.2 to 0.4 s alone and
 measured 1.08 s inside the parallel suite on hbox at load 30 while every open read the whole binary for its
-pin; since `binaryPin` reads 1 MiB and only beside a snapshot, reopen is 0.10 s (full replay 0.16 s).
+pin; snapshots name no binary since host7's hash pass, and reopen is 0.10 s (full replay 0.16 s).
 Build: `LEAN_NUM_THREADS=2 lake build 2>&1 | grep -v "^warning\|deprecated" | grep -A10 error`.
 Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes ~3 min).
 
 ## 1. Module map
 
-Import order: Store, Journal, Law, Relative, Ops, TurnLoop, Snapshot, Session; `PackageSession.lean`
+Import order: Store, Journal, Law, Ops, TurnLoop, Snapshot, Session; `PackageSession.lean`
 imports Session and `PackageMain.lean` drives it.
 
-- **Relative.lean**: checkpoint tokens with heap addresses relative to their cells (5.34); imported by Ops.
 - **Store.lean** (263): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
   `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey`. Pure data.
 - **Journal.lean** (33): `bodyHash (body : Json) : String` (SHA-256 of `body.compress`; Lean orders
@@ -36,7 +35,7 @@ imports Session and `PackageMain.lean` drives it.
 - **TurnLoop.lean** (1303): `world-turn` and everything that runs activities: the `M` monad,
   `runMethod`/`drive`/`awaitPlan`/`answer`, `finishTurn`, `runTurnWith`, `resumeOne`/`settle`
   (suspended turns), `deliverOne`/`deliver` (sends), `reprogramOp`, `amendOp`.
-- **Snapshot.lean**: snapshot bytes, `binaryPin`, `openContent` (the snapshot-aware replay `openWorld` uses).
+- **Snapshot.lean**: snapshot bytes, `openContent` (the snapshot-aware replay `openWorld` uses).
 - **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
   Durability is fsync, not a full barrier: an entry may be lost on power loss within the OS write-back
@@ -46,14 +45,13 @@ imports Session and `PackageMain.lean` drives it.
 
 **Pins are sources (host6).** An object's pin is the CID of its sealed source closure: the artifact's
 `sourcesSha256`, the Canonical CID of its modules in order (library modules included), so it depends on bytes and
-never on the compiler. The compiled packet's digest is an observation beside it, `compiled {binary, packet}`
-(`binary` = the host binary's pin, `Snapshot.binaryPin`, set into `World.binary` at open), never compared on replay:
-replay recompiles from the journaled sources with the current compiler, requires the compile to succeed, the seed to
-conform and the recomputed source pin to equal the recorded `pin`, and counts each recorded `compiled.packet` that
-differs from its own in `world-status.recompiledDifferently` (memory, per process). Field names: `created {pin,
-compiled, compile, seed, …}` (no `sourcesSha256`), `creates[] {object, pin, compiled, …}`, `reprograms[] {object,
-oldPin, newPin, compiled, …}`, `library {pin, …}` (the seal's pin, unchanged); `Object.pin`, `Object.packet`;
-snapshot objects carry `pin` and `packet`; `inspected.pin`, `request.pin` in laws, receipts and projections are the
+never on the compiler. No packet digest is journaled (host7's hash pass): replay recompiles from the journaled
+sources with the current compiler, requires the compile to succeed, the seed to conform and the recomputed source pin
+to equal the recorded `pin`; `world-status.recompiledDifferently` (memory, per process, informational) counts objects
+rebuilt after a snapshot resume whose packet differs from the one that snapshot cached for the same inputs
+(`World.cachedPackets`, `noteRecompiled`). A `compiled {binary, packet}` field on an entry written before is ignored.
+Field names: `created {pin, compile, seed, …}`, `creates[] {object, pin, …}`, `reprograms[] {object, oldPin, newPin,
+…}`, `library {pin, …}`; `Object.pin`, `Object.packet` (memory); snapshot objects carry `pin` and `packet`; `inspected.pin`, `request.pin` in laws, receipts and projections are the
 source pin. An extension's pin is the CID of `["extend", old pin, source CID]`, sources too. The host builds each
 Context (and a law's Request) as the receiving code's own library declares it (`fitRecord`: the record type's
 fields, in its order, through the packet's bounds), so a field added to the library later never breaks an object
@@ -94,7 +92,7 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
 `world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
-`world-inspect {principal, object}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
+`world-inspect {principal, object}`, `world-state-cid {principal, object, version}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
 `world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,
@@ -121,8 +119,9 @@ Request errors (`Except.error`) journal nothing; refusals are receipts.
 ## 2. Journal entries
 
 One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`,
-`roots [{object, version, cid?}]` (`cid` = `stateCid` of the state the turn read; replay checks it for a root at the
-version the world holds, see 5.22), `turn`, `request` (digest), `outcome {tag, ...}`. Hash = SHA-256 of the
+`roots [{object, version}]` (the state at a version is named once, by the entry that wrote it: `writes[].cid`, or a
+created seed; `world-state-cid {principal, object, version}` answers it to a reader who may view the object; a root
+`cid` in an entry written before the hash pass is ignored), `turn`, `request` (digest), `outcome {tag, ...}`. Hash = SHA-256 of the
 compressed entry without `hash`. Genesis `previous` is 64 zeros. `identityKey` = compressed
 `[principal, intent]`; `world.receipts` maps it to the entry index (first wins, except that a suspension or a
 transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`: staleRoot,
@@ -310,7 +309,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `receipts` carry none, since the op's caller is not their addressee. Reads under authority: `world-receipt
    {principal, identity, of?}` reads identity (`of`, default the reader); `projectEntry` gives the identity's own
    principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root, reason?}`, root
-   `{object, version?, cid?}`; 5.22)
+   `{object, version?}`; 5.22)
    and other entries as chain fields, identity, turn, outcome tag, the roots and writes of objects the reader may
    view and an `elided` count (no result, offers, sends, sources, checkpoint). `world-history` takes a principal
    ("" = anonymous, public objects only), is `denied` for an object the reader cannot view, and projects each entry.
@@ -357,13 +356,12 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `suspended` hashes as cross-checks. Everything `record` derives (receipts, touched, outbox, published,
    modules, pending, suspended, clock) is rebuilt by `recordAll`, a bookkeeping-only pass over the entries up
    to the height. `openContent`: parse and hash-walk every entry from genesis (`entriesOf`), then for each
-   snapshot newest first check: CID over the stored bytes, edition, `binary` (= `binaryPin`, the CID of the
-   executable's size and its first 1 MiB, computed once per process and only when a snapshot is read or
-   written; Lean handles cannot seek, and reading the whole 127 MB file cost every open 0.45 s on hbox), height within the journal, `head` = the journal's hash at that height, the derived
+   snapshot newest first check: CID over the stored bytes, edition (no binary pin since host7's hash pass: binary
+   identity is deploy's smoke test's; an older snapshot's `binary` is ignored), height within the journal, `head` = the journal's hash at that height, the derived
    copies, each object's version and pin against what the entries record (`expectedObjects`), every law
    reading back from its text, and finally that every later entry replays on it. The first failure refuses
    the snapshot by name in the report and the next older is tried, then full replay. A forger who recomputes
-   the CID and keeps versions and pins can change a state unnoticed by a plain open; `world-open {verify:
+   the CID and keeps versions and pins is caught by each state's `stateCid` against the journal (5.35); `world-open {verify:
    true}` replays everything and refuses, by name, each snapshot whose body differs from the replayed store's
    at its height ("it disagrees with replay at its height"). 500 creates of one package (hbox): reopen 0.10 s from
    the snapshot, 0.16 s by full replay (the build cache already makes that cheap; the snapshot pays off with
@@ -474,8 +472,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
      `replied {text}` (Plan.obend Response); an object whose Response cannot carry it hears `unclear`. `failed`
      resumes `unclear {needs: ["model: <reason>"]}`. Garden fits the text with its own Spell (objects lane).
    - *Silence* (finding 3). A turn that offers nothing has no `offers` field (`test_outbound` pins it).
-   - *Refusals and own cards* (finding 7). `publicRefusal w reader entry`: `{status, class, root: {object, version?,
-     cid?}}` (cid only if the reader may view the object), plus `object` and `hint` for `unknownObject`; a refused
+   - *Refusals and own cards* (finding 7). `publicRefusal entry`: `{status, class, root: {object, version?}}`, plus `object` and `hint` for `unknownObject`; a refused
      turn reply carries it as `public` (anonymous reader). `ownCards` `env`/`wake` resolve to `<name>/<principal>`
      in `runTurn` and `world-card` (`resolveCard`); the bare ids are reserved.
    - *Handles* (finding 8). `World.handles`, `handleOf`, `principalOp`.
@@ -484,9 +481,8 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
      metarule's and default law's principal.
    - *Capacity* (rerun findings). `mayWait … (interpreting := true)` counts interpretations apart;
      `transientClasses` includes `capacity`.
-   - *Root CIDs.* `recordRoot` captures `stateCid` at read (`TurnState.rootCids`, through suspensions);
-     `rootCidsAt` fills client proposals and law reads at the current version; `checkRootCids` in `replayEntry`.
-     A root that moved since (commuting writes) is not checkable on replay: no past states are kept.
+   - *Root CIDs.* Removed in host7's hash pass: roots are `{object, version}`; the state's CID lives on the write
+     that made the version (`writes[].cid`, 5.35) and `world-state-cid` reads it (`stateCidAt`, `stateCidOp`).
 
 23. **Reply-is-address (host6).** `world-turn {…, replyTo: <parent uri>}` (in the digest when given): when the parent
    is a post recorded for the turn's object, the entry journals `replyTo` and `World.replies` (built by `record`)
@@ -578,41 +574,36 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 
 33. **A requiredAbsence names its root (host7, rehearsal run 6 finding 1).** The object whose `create` found the id taken
    (`TurnState.violator`, kept through suspensions as the activity's `violator`) is journaled as the refused outcome's
-   `root` beside `object` (the taken id); `Refusal.root`. `publicRefusal` builds its `root {object, version, cid?}` from
+   `root` beside `object` (the taken id); `Refusal.root`. `publicRefusal` builds its `root {object, version}` from
    `outcome.root` when present (the creator at the version the turn read it) and adds `object` (the taken id): a second
-   cistern reads `{class: requiredAbsence, root: {object: garden, version, cid}, object: garden/cistern}`. Tests:
+   cistern reads `{class: requiredAbsence, root: {object: garden, version}, object: garden/cistern}`. Tests:
    `test_hub` (the cistern pair).
 
-34. **Suspensions journal only what changed (host7, rehearsal run 6 finding 5).** Measured on the rehearsal's own journal
-   (foundation b530dbf's `rehearse.py`, 95 directory suspensions): before, 5.94 MB, median 51,858 B, ten of 150 to 160 KB.
-   What the bytes were: (a) one checkpoint leaf of about 32 KB that changed every time held a 27 KB token, the Garden's
-   source as the directory's `inspect` answered it, next to the turn's own cells; (b) the entry body (13 KB) carried the
-   interpretation's `offers` (9 KB, the same doors' forms every time) and the utterance three times; (c) the ten large
-   ones are each a principal's FIRST prose reading: the directory walks `greeted` to the speaker, so the speaker's place
-   decides how many list cells are materialized and every heap address after them moves; a later reading by a speaker
-   at a known place dedups. Changes: `cutBlocks` leaves are at most 256 tokens (`leafHigh`), a token of 256 bytes or more
-   is a leaf of its own (`leafBig`), and the tokens carrying the turn's argument texts and utterance are leaves of their
-   own (`compactCheckpoint … dynamic`); inner nodes cut at 2..16 names (every 4); the interpretation journals `offers` and
-   `utterance` as one-item blocks by CID (`offersBlock`, `utteranceBlock`; `compactInterpretation`,
-   `expandInterpretation`, and `interpretationOf w s` restores them; old entries carry them inline and read as before);
-   and checkpoint tokens are journaled with every heap address relative to the cell holding it
-   (`Host/Relative.lean`: decode with the kernel's `decodeState`, rename addresses zigzag-relative to the cell's index,
-   the control's and stack's to the heap size, re-encode; the writer checks the inverse reproduces the tokens and else
-   journals them plain; `tokenTree.relative: true`; `expandCheckpoint` inverts, and the checkpoint digest stays over the
-   kernel's tokens, so replay checks it as before). After: 1.57 MB, median 10,090 B, the ten first readings 42 to 50 KB.
-   Without relative addresses the median is 9,073 B but the first readings stay at 90 to 98 KB (1.93 MB): relative
-   addressing pays as the town grows. Old journals replay unchanged (any cut reassembles). Further cuts need the kernel:
-   a collector that orders cells so a walked list's materialized prefix does not renumber the rest. Synthetic gate:
-   `tests/test_suspension_size.py` (nine prose replies: one speaker median 6.7 KB, nine new speakers 24.9 KB; both were
-   about 64 KB).
+34. **Suspensions journal only what changed (host7, rehearsal run 6 finding 5; revised at foundation 6b928f6).** Checkpoint
+   tokens are journaled as a `tokenTree {depth, roots}` of content-defined blocks (`cutBlocks`: leaves of 32..256 tokens,
+   a token of 256 bytes or more a leaf of its own; inner nodes 2..16 names), each block once per journal; an
+   interpretation's `offers` are a one-item block named by CID (`offersBlock`, `compactInterpretation`,
+   `expandInterpretation`; `interpretationOf w s` restores them). With the kernel's checkpoint v2 and canonical cell
+   order, measured on hbox (rehearsal journal, 132 directory suspensions; `tests/test_suspension_size.py`):
+
+   | | rehearsal median / total | one speaker median | nine speakers median |
+   | --- | --- | --- | --- |
+   | v2, blocks and offers block (kept) | 9,392 B / 1.71 MB | 5,549 B | 9,797 B |
+   | v2, offers block, no checkpoint blocks | 109,972 B / 14.6 MB | 48,221 B | 48,404 B |
+   | v2 alone | 119,119 B / 15.8 MB | 49,961 B | 50,144 B |
+
+   v2 alone is about 12x the combined result, so the block scheme stays. Deleted as inert on v2: `Host/Relative.lean`
+   (relative heap addresses; it could not decode v2 and journaled plain), the argument/utterance leaf marking (v2 has no
+   `{"s"}` tokens), and the utterance block (the utterance is inline again). Replay still reads host6 blocks and the
+   `utteranceBlock` of host7 entries; a `tokenTree.relative` checkpoint (host7 builds 0b3363c..6b928f6 only, no
+   deployed journal) is refused by name. Before host7 on v1 the rehearsal median was 51,858 B (5.94 MB).
 
 35. **Snapshots verified by default (host7, §7 item 4).** Each snapshot object carries `stateCid` (`stateCid`, the CID roots
    use), and `install` refuses "the state of X is not its CID's" when the stored state does not hash to it, or "object X
    carries no state CID" (a snapshot written before host7: refused once, the open replays and writes a new one). Since
    a forger can recompute both, the CID is also checked against the journal: an admitted write now journals the new
    state's `cid` beside its `version` (`writes[].cid`, checked on replay when present), and `resume` compares each
-   object with `anchoredStates` (a created or child seed, a write's `cid`, or any root read at that version anywhere
-   in the journal): "the state of X is not the one the journal commits to at version V". No replay, one hash per object
+   object with `anchoredStates` (a created or child seed, or a write's `cid`): "the state of X is not the one the journal commits to at version V". No replay, one hash per object
    and per anchor. An object no entry anchors at its version (only pre-host7 writes, never read since) is checked
    against its own CID only; `verify: true` still replays everything. Tests: `test_snapshot` (stale CID, consistent
    forgery).
@@ -636,6 +627,13 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    Plan, a create's law text and snapshots alike (`parseLawText` is its law half). The law text is kept as given (readings
    included), and an amendment's readings replace the object's for those clauses; a clause it leaves as it was without a
    reading keeps the old one (5.32). A malformed reading is `law syntax`. Tests: `test_law.Readings`.
+
+39. **Offers name the turn they answer (host7, rehearsal run 7 finding 1).** `world-offers` gives each offer
+   `from {post, principal, intent}` (`originOf`): the entry's own identity, or for a delivered turn the direct turn it
+   descends from, followed through `delivery.from` and `world.receipts` up to the ledger depth; `post` is that turn's
+   `replyTo` when it answered a recorded post, else its intent (the bridge's identity for an observed post). A reply a
+   bell handed to the directory by `send` is drafted against the post the author replied to. Tests:
+   `test_hub.HandedToTheDirectory`, `test_bridge` (end to end, no longer an expected failure).
 
 ## 6. Gotchas
 

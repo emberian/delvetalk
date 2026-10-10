@@ -246,15 +246,13 @@ class Snapshots(Reflection):
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual(self.count("probe"), "3")
 
-    def test_a_snapshot_from_another_binary_is_refused(self):
+    def test_a_snapshot_names_no_binary(self):
+        # Binary identity is deploy's smoke test's; a snapshot binds the journal head and each state's CID.
         self.make("a", PACKAGE, source_seed())
         height = self.snapshot()
-        path = self.path + f".snapshot.{height}.cbor"
-        body = read_snapshot(path)
-        body["binary"] = "b" + "a" * 58
-        write_snapshot(path, body)
-        report = self.reopen_report()
-        self.assertEqual(report["refused"], [{"height": height, "reason": "written by another binary"}])
+        body = read_snapshot(self.path + f".snapshot.{height}.cbor")
+        self.assertNotIn("binary", body)
+        self.assertEqual(self.reopen_report()["resumed"], height)
 
 
 if __name__ == "__main__":
