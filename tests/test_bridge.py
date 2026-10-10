@@ -304,6 +304,35 @@ class Suspended(BridgeCase):
         self.assertNotIn('offered', bridge.run(self.state, stub))
         self.assertEqual(len(self.drafts()), 1)
 
+    def test_an_offer_for_a_handed_on_turn_is_drafted_against_the_originating_post(self):
+        stub = Stub()
+        stub.suspending = {'garden-1'}
+        p = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        self.observe([p])
+        bridge.run(self.state, stub)
+        stub.offers[DID] = [{'height': 9, 'ordinal': 0, 'identity': {'principal': DID, 'intent': 'handed-on-turn'},
+                             'from': {'principal': DID, 'intent': p['uri']}, 'text': 'Handed over.'}]
+        self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri']])
+        (d,) = self.drafts()
+        self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
+
+    @unittest.expectedFailure
+    def test_end_to_end_a_handed_on_offer_carries_from_on_the_real_host(self):
+        # Until the host adds `from` to offers of handed-on turns: the offer has only `identity`.
+        from deploy import genesis
+        from transport.hostproc import LIBRARY
+        with tempfile.TemporaryDirectory() as tmp:
+            d = start_hostd(tmp, BINARY, opener=genesis.OPENER, library=LIBRARY)
+            try:
+                host = HostClient(Path(tmp) / 'host.sock')
+                self.assertIsNone(genesis.run(host)[1])
+                host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'receive', 'identity': 'handed',
+                           'argument': genesis.rec(text=genesis.lab('delvetalk garden plant\nseed: a\ncolour: amber'), post=genesis.lab('at://x/p/1'), slot=genesis.lab(''))})
+                offers = host.send({'op': 'world-offers', 'principal': genesis.OPENER})['offers']
+                self.assertTrue(offers and all('from' in o for o in offers), offers)
+            finally:
+                stop_hostd(d)
+
 
 class Silence(BridgeCase):
     def test_a_turn_that_offers_nothing_has_no_draft_in_the_outbox_unless_asked(self):

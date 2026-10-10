@@ -131,7 +131,7 @@ def offer_drafts(state, host):
             if got.get('status') != 'offers':
                 break
             for o in got['offers']:
-                who = o['identity']  # the host's {principal, intent}
+                who = o.get('from') or o['identity']  # {principal, intent}: `from` is the originating post of a handed-on turn
                 if isinstance(who, dict) and (who.get('principal'), who.get('intent')) in mine:
                     grouped.setdefault((who['principal'], who['intent']), []).append(o)
             if not got.get('more') or not got['offers']:
