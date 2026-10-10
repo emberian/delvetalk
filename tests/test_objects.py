@@ -205,7 +205,7 @@ def one(n: Nat) -> String:
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 def one(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Relations.Relation.rows({items: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: Rows.Status.proposed({}), at: 1n, n: 0n}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: Rows.Status.admitted({}), at: 2n, n: 1n}, tail: Lists.List::<O.Proposal>.nil()})})})}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Relations.Relation.rows({items: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: Rows.Status.proposed({}), at: 1n, n: 1n}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: Rows.Status.admitted({}), at: 2n, n: 2n}, tail: Lists.List::<O.Proposal>.nil()})})}), next: 3n}, Card.stranger()))
 """
 
 

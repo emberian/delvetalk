@@ -96,6 +96,23 @@ class Laws(LawWorld):
         self.assertTrue(card.startswith("THE ANTHOLOGY, kept by inkling (yours). Submit a line: delvetalk anthology submit / line: <1 to 280 characters>. The keeper admits by number.\n#1 [proposed] kimik3: moths\n"), card)
 
 
+    def test_a_line_keeps_its_number_after_the_oldest_is_dropped(self):
+        """The anthology keeps its newest 128 lines, which fit the host's state bytes at 280
+        four-byte characters each; past them the oldest goes and every other keeps its number, so
+        `admit / number: N` copied from a card admits that line (codex objects 13)."""
+        self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
+        poet = "did:plc:" + "p" * 24
+        for i in range(1, 130):
+            r = self.turn("anthology", "submit", record(line=label("%04d" % i + "\U0001f319" * 276)), principal=poet)
+            self.assertEqual(r["status"], "admitted", (i, r.get("receipt", {}).get("outcome")))
+        lines = rows(get(self.state("anthology"), "proposals"))
+        self.assertEqual((len(lines), get(lines[0], "line")["value"][:4]), (128, "0002"))
+        gone = self.turn("anthology", "admit", record(number=nat(1)), principal=OWNER)
+        self.assertEqual(gone["result"]["label"], "refused", gone)
+        self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
+        admitted = [get(p, "line")["value"][:4] for p in rows(get(self.state("anthology"), "proposals")) if get(p, "status")["label"] == "admitted"]
+        self.assertEqual(admitted, ["0002"])
+
 TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation())
 
 
