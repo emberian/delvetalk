@@ -762,6 +762,8 @@ class Handler(BaseHTTPRequestHandler):
         data = self.body()
         if data is None:
             return
+        auth = self.headers.get('Authorization') or ''  # the challenge answered is the requester's own when it holds its credential
+        mine = auth[7:] if auth.startswith('Bearer ') else self.cookie()
         try:
             text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
             if which == 'challenge':
@@ -771,10 +773,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, canonical({**out, '_links': {'self': link(self.path), 'verify': link(PREFIX + '/verify')}}),
                                   headers=self.login_cookie(out['credential']))
             # An agent that has the post's URI gives it; a person presses "I posted it" and the account's newest posts are read.
-            out = self.server.identity.verify(text('handle'), text('uri')) if text('uri') else self.server.identity.claim(text('handle'))
+            ident = self.server.identity
+            out = ident.verify(text('handle'), text('uri'), mine) if text('uri') else ident.claim(text('handle'), mine)
         except IdentityError as err:
             line = CLAIM_LINES.get(err.code)
-            waiting = self.server.identity.pending(text('handle')) if err.code in ('no_post_yet', 'posts_hidden') else None
+            waiting = self.server.identity.pending(text('handle'), mine) if err.code in ('no_post_yet', 'posts_hidden') else None
             if self.browser() and waiting:  # the word is still good: show it again with what went wrong
                 return self.html(200, pages.challenged(text('handle'), waiting['text'], line.format(handle=text('handle'))))
             return self.fail('identity', line.format(handle=text('handle')) if line else err.code, links={'hint': link(PREFIX + '/challenge')})

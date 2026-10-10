@@ -306,6 +306,16 @@ class Claim(FrontCase):
         self.assertIn(b'ENTER THE WORLD', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=cookie.split('=', 1)[1])[1]['handle'], HANDLE)
 
+    def test_someone_elses_newer_challenge_neither_shows_its_word_nor_displaces_mine(self):
+        cookie, _ = self.word_page()
+        word = self.front.identity.pending(HANDLE)['text']
+        self.now[0] += 1
+        theirs = self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[1]
+        self.assertIn(f'<pre class="card">{word}</pre>', self.press(cookie)[2].decode())  # my word again, not theirs
+        self.provider.texts[PEOPLE[HANDLE]] = word
+        self.assertIn(b'Claimed', self.press(cookie)[2])
+        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=theirs['credential'])[0], 401)
+
     def test_posts_we_cannot_read_and_a_lapsed_word_have_their_lines(self):
         cookie, _ = self.word_page()
         self.provider.hidden.add(PEOPLE[HANDLE])

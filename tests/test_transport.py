@@ -291,6 +291,24 @@ class Identity(unittest.TestCase):
         self.serve(uri=f'at://{DID}/town.delve.feed.post/other')
         self.refused('proof_mismatch')
 
+    def test_a_newer_challenge_by_someone_else_does_not_invalidate_the_proof_of_mine(self):
+        self.now[0] += 1
+        theirs = self.id.challenge(self.HANDLE)  # anyone may ask for a challenge for any handle, a second later
+        self.serve()  # the resident posts the word of the challenge they asked for
+        self.assertEqual(self.id.verify(self.HANDLE, self.uri)['did'], DID)
+        self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
+        with self.assertRaises(identity.IdentityError):
+            self.id.authenticate(theirs['credential'])
+
+    def test_verification_with_my_credential_answers_my_challenge_and_the_claim_finds_my_word(self):
+        self.now[0] += 1
+        self.id.challenge(self.HANDLE)
+        self.assertEqual(self.id.pending(self.HANDLE, self.ch['credential'])['text'], self.ch['text'])
+        rec = self.listing()
+        self.listing(rec(self.ch['text'], 2))
+        self.assertEqual(self.id.claim(self.HANDLE, self.ch['credential'])['did'], DID)
+        self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
+
     def test_ninth_attempt_refused_even_if_correct(self):
         self.serve(text='nope')
         for _ in range(8):

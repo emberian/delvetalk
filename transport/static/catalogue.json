@@ -53,7 +53,7 @@
    "method": "POST",
    "href": "/AGENTS.md/verify",
    "auth": "none",
-   "does": "the host finds the post; the challenge's `credential` then speaks for you",
+   "does": "the host finds the post; the challenge's `credential` then speaks for you. Send it as the bearer (a browser sends the cookie challenge set) and the post answers your own challenge, whoever asked another for your handle since",
    "body": {
     "handle": "text: the handle challenged",
     "uri": "text: the at:// URI of the post"
