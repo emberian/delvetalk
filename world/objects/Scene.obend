@@ -183,8 +183,6 @@ form enter:
 form choose:
   choice: text 1..64
 form leave:
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), enterForm()), chooseForm()), leaveForm())
 def blurb() -> Card.Door:
   {word: "scene", blurb: "A passage-and-choice scene: enter, choose, leave; post a ```spween block to make one."}
 # A ```spween block makes a new scene beside this one; anything else is the card's default.

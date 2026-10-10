@@ -89,8 +89,6 @@ form plant as planting:
   seed: text 1..80
 form cistern as digging:
   name: text 0..120
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Card.Forms.nil(), planting()), digging())
 # A reader with a proposal waiting is reminded of it, first.
 def waiting(context: Abi.Context, state: State) -> String:
   match heldBy(context.principal, state):

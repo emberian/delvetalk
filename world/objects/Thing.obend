@@ -186,8 +186,6 @@ form withdraw:
 # An avatar's accept calls transfer, the Workshop's copy sends copy; drop names a place.
 def methods() -> Lists.List<String>:
   Text.words("transfer copy drop")
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), acquireForm()), offerForm()), withdrawForm())
 def blurb() -> Card.Door:
   {word: "thing", blurb: "Pick it up, put it down, offer it to someone who accepts."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

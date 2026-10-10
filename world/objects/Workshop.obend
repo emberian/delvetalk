@@ -173,8 +173,6 @@ form propose:
   target: text 1..128
   migration: text 0..1400
   source: source
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Card.Forms.nil(), checkForm()), proposeForm())
 def methods() -> Lists.List<String>:
   Text.words("adopt withdraw create")
 def blurb() -> Card.Door:

@@ -73,8 +73,6 @@ form undoor:
   label: text 1..32
 def methods() -> Lists.List<String>:
   Text.words("strike")
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Lists.append(Lists.append(Card.Forms.nil(), rainForm()), ringForm()), doorForm()), undoorForm())
 # Doors on the bell's card are its planter's (the garden gives it one home on planting).
 def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
   doored(Card.doorAdd(state.doors, state.planter, {label: input.label, to: {world: context.world, object: input.to}}, context), "door")

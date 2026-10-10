@@ -122,8 +122,6 @@ def setting(field: String, value: String) -> Activity<Done>:
 # A room is entered and left by an avatar's move, and things take and put themselves.
 def methods() -> Lists.List<String>:
   Text.words("enter leave take put")
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), sayForm()), emoteForm()), whisperForm())
 def placeWord() -> String:
   "<place>"
 def line(prefix: String, suffix: String) -> Document.Document:

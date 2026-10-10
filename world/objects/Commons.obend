@@ -133,8 +133,6 @@ form leave:
 # An action without a form: a gate is opened to a principal by name.
 def methods() -> Lists.List<String>:
   Text.words("allow")
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), enterForm()), moveForm()), leaveForm())
 def blurb() -> Card.Door:
   {word: "commons", blurb: "Places, paths and gates: enter, walk, and see who may cross."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

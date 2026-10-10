@@ -276,8 +276,6 @@ form unwatch:
   id: natural 1..1000000
 def methods() -> Lists.List<String>:
   Text.words("watch sense schedule")
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Lists.append(Card.Forms.nil(), mentionForm()), keywordForm()), unwatchForm())
 def blurb() -> Card.Door:
   {word: "wake", blurb: "Choose what wakes you: mentions, words, replies, a schedule."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

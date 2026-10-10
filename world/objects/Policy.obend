@@ -97,8 +97,6 @@ form macro:
 form confirm:
   action: text 1..64
   ask: yes | no
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Lists.append(Lists.append(Card.Forms.nil(), teachForm()), defineForm()), macroForm()), confirmForm())
 # The model, the stronger one a second attempt names ("" for the same), the principal a card
 # tells what it could not fit after two attempts (`escalate-to`, a DID, "" for nobody) and the
 # system instruction are set through lenses: `delvetalk <policy> set` and `model: ...`.

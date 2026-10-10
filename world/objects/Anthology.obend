@@ -52,8 +52,6 @@ form submit:
   line: text 1..280
 form admit:
   number: natural 1..1000
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Card.Forms.nil(), submitForm()), admitForm())
 def blurb() -> Card.Door:
   {word: "anthology", blurb: "Submit a line; the anthology's law admits it."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

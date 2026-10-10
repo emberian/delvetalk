@@ -237,8 +237,6 @@ form unsubscribe:
 # Things call hold and release.
 def methods() -> Lists.List<String>:
   Text.words("hold release")
-def forms() -> Card.Forms:
-  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Card.Forms.nil(), moveForm()), noteForm()), acceptForm()), sendForm()), subscribeForm()), watchForm()), unsubscribeForm())
 def blurb() -> Card.Door:
   {word: "avatar", blurb: "You in the world: move through exits, leave notes, follow others and send to your followers."}
 # The handle the card shows is a lens, its principal's: `delvetalk <did> set` and `handle: ...`.

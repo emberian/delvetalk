@@ -1,6 +1,7 @@
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
+import ./List.obend as Lists
 import ./Plan.obend as Plans
 import ./Form.obend as Form
 import ./World.obend as World
@@ -16,8 +17,6 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {count: add 1n}
   state.count + 1n
 form bump:
-def forms() -> Card.Forms:
-  Card.Forms.cons({head: bumpForm(), tail: Card.Forms.nil()})
 def blurb() -> Card.Door:
   {word: "counter", blurb: "Bump it; everyone shares the count."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:

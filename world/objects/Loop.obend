@@ -1,6 +1,7 @@
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Document.obend as Document
+import ./List.obend as Lists
 import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./World.obend as World
@@ -17,8 +18,6 @@ def again(count: Nat, context: Abi.Context) -> Activity<Nat>:
   match world.send({object: Plans.self(context), method: "tick", argument: Plans.nothing()}):
     case _: count
 form tick:
-def forms() -> Card.Forms:
-  Card.Forms.cons({head: tickForm(), tail: Card.Forms.nil()})
 def blurb() -> Card.Door:
   {word: "loop", blurb: "Ticks itself until the causal budget runs out."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
