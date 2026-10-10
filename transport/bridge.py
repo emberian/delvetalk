@@ -83,8 +83,11 @@ def cite(object_, version, origin=None):
 
 
 def receipt_line(receipt, origin=None):
-    """`receipt <slug>: <object> v<n>, entry <h>`: the version the turn wrote, else the one it read."""
-    root = ((receipt.get('outcome') or {}).get('writes') or receipt.get('roots') or [{}])[0]
+    """`receipt <slug>: <object> v<n>, entry <h>`: the version the turn wrote of the object it addressed (its first
+    root; a garden's planting writes kind/bell first), else its first write, else the version it read."""
+    read = (receipt.get('roots') or [{}])[0]
+    writes = (receipt.get('outcome') or {}).get('writes') or []
+    root = next((w for w in writes if w.get('object') == read.get('object')), (writes or [read])[0])
     text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
     name = f"receipt {receipt['slug']}" if receipt.get('slug') else 'receipt'  # the slug is the name people and posts use
     return f"{name}: {text}, entry {receipt.get('height')}{link}\n"

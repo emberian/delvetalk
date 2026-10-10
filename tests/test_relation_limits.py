@@ -7,7 +7,7 @@ canonical bytes, or a write to it refused `capacity`.
 import os
 import unittest
 
-from tests.test_chain import Chain, reference
+from tests.test_chain import Chain, reference, town_kinds
 from tests.test_objects import closure
 from tests.test_turn_world import label, nat, record, relation
 
@@ -25,7 +25,8 @@ def lst(*items):
 
 def limit(module, field):
     """The limit a module's relations() declares for `field`."""
-    with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "world", "objects", module + ".obend")) as f:
+    from tests.test_objects import MODULES
+    with open(MODULES[module]) as f:
         source = f.read()
     at = source.index('{field: "%s"' % field)
     tail = source[at:]
@@ -60,6 +61,7 @@ class FullRelations(Chain):
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         children = [record(world=label(""), object=label("garden/bell/%d" % (10000 + i)), colour=silver) for i in range(n)]
         self.full("garden", "Garden", record(owner=label("ember"), policy=reference(""), children=relation(*children), planted=nat(n)))
+        town_kinds(self.host.send)
         self.say("garden", "delvetalk garden plant / seed: %s / colour: amber" % ("s" * 80), did(7), "plant")
 
     def test_a_directory_full_of_greetings_greets_another(self):
@@ -70,7 +72,7 @@ class FullRelations(Chain):
 
     def test_a_workshop_full_of_the_largest_held_proposals_is_under_the_bound(self):
         n = limit("Workshop", "held")
-        held = [record(n=nat(i + 1), target=label("t" * 128), package=label("p" * 16384), migration=label("m" * 1400), proposer=label(DID), proposerHandle=label("h" * 30)) for i in range(n)]
+        held = [record(n=nat(i + 1), target=label("t" * 128), package=label("p" * 16384), migration=label("m" * 1400), proposer=label(DID), proposerHandle=label("h" * 30), name=label("n" * 32), intent=label("i" * 64)) for i in range(n)]
         self.full("workshop", "Workshop", record(title=label("Workshop"), held=relation(*held), next=nat(n + 1)))
 
     def test_an_env_full_of_the_longest_events_takes_another(self):

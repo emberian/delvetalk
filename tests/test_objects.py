@@ -118,11 +118,11 @@ BIG = {"ticks": "1000000"}
 PROBE_HEAD_G = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Card.obend as Card\nimport ./Garden.obend as O\n"
 GARDEN_PROBE = PROBE_HEAD_G + """import ./Document.obend as Document
 import ./Relation.obend as Relations
-import ./Bell.obend as Bell
+import ./Rows.obend as Rows
 def bells(n: Nat) -> Lists.List<O.Child>:
   match n:
     case 0: Lists.List::<O.Child>.nil()
-    case 1+p: Lists.append::<O.Child>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n)), colour: Bell.Colour.amber({})})
+    case 1+p: Lists.append::<O.Child>(bells(p), {world: "", object: textConcat("garden/bell/", natText(n)), colour: Rows.Colour.amber({})})
 def shown(n: Nat) -> String:
   Document.plain(O.render({owner: "ember", ownerHandle: "", planted: n, policy: Plans.nobody(), confirmFor: Lists.List::<String>.nil(), pending: Relations.empty(), children: Relations.Relation.rows({items: bells(n)}), pageCheckpoint: ""}, Card.stranger()))
 """
@@ -227,7 +227,7 @@ class Library(unittest.TestCase):
 
 class Objects(unittest.TestCase):
     def test_methods_perform_the_plans_they_claim(self):
-        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
+        expected = {("Counter", "bump"): "write", ("Garden", "grow"): "call", ("Garden", "counted"): "write", ("Garden", "cistern"): "call",
                     ("Bell", "rain"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
                     ("Cistern", "retain"): "write", ("Cistern", "poured"): "write", ("Record", "write"): "write", ("Record", "admitted"): "write",
                     ("Door", "opened"): "write", ("Door", "knock"): "write",
@@ -238,7 +238,7 @@ class Objects(unittest.TestCase):
             found = re.search(r"\ndef %s(<[^>]*>)?\(" % entry, source)
             self.assertIsNotNone(found, (name, entry))
             body = source[found.start() + 1:].split("\ndef ")[0]
-            self.assertTrue(any(form % plan in body for form in ("world.%s(", "= %s {")), (name, entry))
+            self.assertTrue(any(form % plan in body for form in ("world.%s(", "world.%s::", "= %s {")), (name, entry))
 
     def test_garden_bell_cistern_and_anthology_cards_render_their_text(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))

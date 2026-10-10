@@ -9,7 +9,7 @@ the method; a form's bounds not shown by world-inspect.
 """
 import unittest
 
-from tests.test_chain import Chain
+from tests.test_chain import Chain, town_kinds
 from tests.test_turn_world import ON_DISK, closure, declared, label, record
 
 KIND_LINE = ("  choice: {options: Names}\n", "  choice: {options: Names}\n  source: {}\n")
@@ -114,6 +114,7 @@ class ExpectedForm(Chain):
         from tests.test_chain import garden_seed
         from tests.test_turn_world import nat
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         r = self.turn("garden", "plant", record(colour=label("amber"), seed=nat(3)), principal="glm")
         out = r["receipt"]["outcome"]
         self.assertEqual(out["class"], "typeMismatch", r)
@@ -124,6 +125,7 @@ class ExpectedForm(Chain):
         # codex host 12 / agent 3: the spell path refused an 81-character seed; a direct turn took it.
         from tests.test_chain import garden_seed
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         for seed in ("", "s" * 81):
             r = self.turn("garden", "plant", record(colour=label("amber"), seed=label(seed)), principal="glm")
             out = r["receipt"]["outcome"]

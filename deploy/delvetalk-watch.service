@@ -1,0 +1,12 @@
+# The DelveTalk watch, one run (docs/DEPLOY.md "Watching"). Installed with deploy/delvetalk-watch.timer:
+#   cp deploy/delvetalk-watch.{service,timer} /etc/systemd/system/ && systemctl enable --now delvetalk-watch.timer
+[Unit]
+Description=DelveTalk watch: one probe against the thresholds, one Zulip line per crossed threshold
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=DELVETALK_HOME=/opt/delvetalk
+ExecStart=/opt/delvetalk/watch.sh
+TimeoutStartSec=120

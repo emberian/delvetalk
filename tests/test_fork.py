@@ -18,7 +18,7 @@ from tests.host import whole
 
 from tests.test_replay import rows
 from tests import test_policy
-from tests.test_chain import garden_seed
+from tests.test_chain import garden_seed, town_kinds
 from tests.test_objects import closure
 from tests.test_reflection import PACKAGE, Reflection, source_seed
 from tests.test_replay import get, items
@@ -34,6 +34,7 @@ class Fork(Reflection):
         r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden",
                            modules=closure("Garden"), entry="initial", seed=garden_seed("", confirm=False))
         self.assertEqual(r["status"], "created", r)
+        town_kinds(self.host.send)
         self.make("c", PACKAGE, source_seed())
 
     def fork(self, principal="ember", **extra):

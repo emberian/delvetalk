@@ -13,7 +13,7 @@ import unittest
 from deploy import genesis
 from tests.host import posted
 
-from tests.test_chain import Chain, boolean, garden_seed, nil, reference
+from tests.test_chain import Chain, boolean, garden_seed, nil, reference, town_kinds
 from tests.test_objects import closure
 from tests.test_places import listing
 from tests.test_turn_world import label, nat, record, relation  # noqa: F401 (relation: re-exported)
@@ -56,15 +56,16 @@ class Replay(Chain):
     # to fail until the host gives a spell's method its post (Abi.Context inputOrigin `post`).
     def test_1_glm_plants_a_silver_bell_and_the_child_retains_the_planter(self):
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         reply = self.turn("garden", "receive", self.heard(
             "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver",
             "at://glm.delve.town/app.bsky.feed.post/3m-plant"), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         self.assertEqual(reply["result"]["label"], "planted", reply)
         bell = self.state("garden/bell/1")
-        self.assertEqual((get(bell, "planter"), get(bell, "planting")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
-        self.assertEqual(get(bell, "rung"), boolean(False))            # the rest of the bell is its initial()
-        self.assertEqual(self.host.send(op="world-view", principal="e", object="garden/bell/1")["version"], 0)
+        self.assertEqual((get(bell, "maker"), get(bell, "post")), (label("glm"), label("at://glm.delve.town/app.bsky.feed.post/3m-plant")))
+        self.assertEqual(rows(get(bell, "marks")), [])            # the rest of the bell is Record's initial()
+        self.assertEqual(self.host.send(op="world-view", principal="e", object="garden/bell/1")["version"], 1)  # created, then its body
         self.assertEqual([(get(c, "object"), get(c, "colour")["label"]) for c in rows(self.state_field("garden", "children"))],
                          [(label("garden/bell/1"), "silver")])
         self.assertEqual(self.state_field("garden", "planted"), nat(1))
@@ -78,16 +79,20 @@ class Replay(Chain):
         self.assertEqual([get(r, "author")["value"] for r in rains], ["kimik3", "gemini"])
         self.assertEqual(self.state_field("bell", "planter"), label("glm"))
 
-    def test_3_the_second_cistern_create_is_refused_on_a_required_absence(self):
+    def test_3_a_cistern_create_on_a_taken_id_is_refused_on_a_required_absence(self):
+        """kind/cistern names the next cistern garden/cistern/<n>; when that id is already taken, the create is
+        refused requiredAbsence and nothing is made."""
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         first = self.turn("garden", "cistern", record(name=label("")), principal="kimik3")
         self.assertEqual(first["status"], "admitted", first["receipt"]["outcome"])
         self.assertEqual(first["result"]["label"], "dug")
+        self.make("garden/cistern/2", closure("Counter"), record())
         second = self.turn("garden", "cistern", record(name=label("")), principal="glm")
         out = second["receipt"]["outcome"]
         self.assertEqual((second["status"], out["class"], out["object"]),
-                         ("refused", "requiredAbsence", "garden/cistern"))
-        self.assertEqual(second["receipt"]["absent"], ["garden/cistern"])
+                         ("refused", "requiredAbsence", "garden/cistern/2"))
+        self.assertEqual(second["receipt"]["absent"], ["garden/cistern/2"])
         self.assertNotIn("creates", out)
 
     def test_4_the_cistern_retains_the_refusal_receipt_as_its_first_entry(self):
@@ -108,6 +113,7 @@ class Replay(Chain):
         # answers that post (awaitPost), and rings when that reply's turn is admitted.
         self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
         self.make("garden", closure("Garden"), garden_seed())
+        town_kinds(self.host.send)
         planted = self.turn("garden", "receive", self.heard(
             "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver", PLANTING), principal="glm", identity=PLANTING)
         self.assertEqual(planted["status"], "admitted", planted)
@@ -119,7 +125,7 @@ class Replay(Chain):
                                 argument=self.heard("", PLANTING + "/r1"), identity=PLANTING + "/r1", replyTo=PLANTING)
         self.assertEqual((answer["status"], answer["receipt"]["replyTo"]), ("admitted", PLANTING), answer)
         self.assertEqual([r["status"] for r in answer["resumed"]], ["admitted"], answer)
-        self.assertEqual(self.state_field(bell, "rung"), boolean(True))
+        self.assertEqual([get(m, "name") for m in rows(self.state_field(bell, "marks"))], [label("rung")])
 
     def test_6_three_lines_are_retained_pending_and_admission_is_the_keepers(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),

@@ -17,7 +17,7 @@ import ./Text.obend as Text
 # show itself, or calls a card. A trigger on another object's writes or rows subscribes the
 # wake to that field, with the receiver of its type (`changedNat`, `changedBool`, or one per
 # row type of Rows.obend). `grows` fires on every rise of a natural field (a garden's
-# `planted`), `turns` when a flag becomes true (a bell's `rung`).
+# `planted`), `turns` when a flag becomes true; a bell's `rung` is a row of its `marks`.
 sum On:
   mention: {actor: String}
   keyword: {term: String}
@@ -80,7 +80,7 @@ def refusal(w: Why) -> Card.Refusal:
     case early(_): {clause: "early", reading: "The schedule was answered before its time."}
     case schedulesFull(_): {clause: "schedulesFull", reading: "Eight standing schedules is the most a wake holds."}
     case never(_): {clause: "never", reading: "A schedule needs a time after now: at, or every from now."}
-    case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads rains, lines, buffer, greeted, traces and subs)."}
+    case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads lines, marks, buffer, greeted, traces and subs)."}
     case unwatched(u): {clause: "unwatched", reading: "{u.object}.{u.field} cannot be watched ({u.clause})."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
@@ -95,7 +95,7 @@ def receiverFor(on: On) -> String:
     case rows(r): rowsReceiver(r.field)
     case _: "changedSensed"
 def rowsReceiver(field: String) -> String:
-  if field == "rains" || field == "lines" then "changedLines" else if field == "buffer" then "changedSensed" else if field == "greeted" then "changedGreetings" else if field == "traces" then "changedTraces" else if field == "subs" then "changedSubscriptions" else ""
+  if field == "lines" then "changedLines" else if field == "marks" then "changedMarks" else if field == "buffer" then "changedSensed" else if field == "greeted" then "changedGreetings" else if field == "traces" then "changedTraces" else if field == "subs" then "changedSubscriptions" else ""
 def watched(event: On, action: Action, context: Abi.Context, state: State) -> Activity<Done>:
   if context.principal != state.owner then notOwner(state) else if Lists.length(state.triggers) >= 32n then refused(Why.full({})) else subscribing(event, action, context, state)
 # A trigger on writes or rows holds only when the subscription does: the subscription first,
@@ -170,6 +170,8 @@ def turnArgument(action: Action, object: String, field: String) -> Data:
 # nothing, any other the line. Rows the env took in are also events for the event triggers.
 def changedLines(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Line>, retracted: Lists.List<Rows.Line>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.lineColumns), Lists.List.nil(), context, state)
+def changedMarks(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Mark>, retracted: Lists.List<Rows.Mark>}, context: Abi.Context) -> Activity<Done>:
+  delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.markColumns), Lists.List.nil(), context, state)
 def changedGreetings(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Greeting>, retracted: Lists.List<Rows.Greeting>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.greetingColumns), Lists.List.nil(), context, state)
 def changedTraces(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Trace>, retracted: Lists.List<Rows.Trace>}, context: Abi.Context) -> Activity<Done>:
@@ -247,9 +249,10 @@ def plantings(on: On) -> Bool:
   match on:
     case grows(g): g.object == "garden" && g.field == "planted"
     case _: false
-# The garden calls this in its planter's planting turn: be told when the new bell rings.
+# The garden calls this in its planter's planting turn: be told when the new bell rings (its
+# `rung` mark).
 def watchBell(state: State, input: {bell: String}, context: Abi.Context) -> Activity<Done>:
-  watched(On.turns({object: input.bell, field: "rung"}), Action.notify({}), context, state)
+  watched(On.rows({object: input.bell, field: "marks", where: Lists.List.cons({head: Where.equals({column: "name", equals: Relations.text("rung")}), tail: Lists.List.nil()}), atLeast: 1n}), Action.notify({}), context, state)
 # From a post: watch a mention or a keyword (the action is a note to you), or unwatch.
 def mention(state: State, input: {actor: String}, context: Abi.Context) -> Activity<Done>:
   watched(On.mention({actor: input.actor}), Action.notify({}), context, state)

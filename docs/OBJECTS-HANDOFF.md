@@ -38,9 +38,39 @@ Findings the successor builds on:
   reply to the anthology lists admit, door, undoor (the host's `?` and hints are filtered).
 - Reader-specific: Record's `actions` shows admit to the keeper, door/undoor to the owner.
 
+Step 3b, done on lane/rewrite2 (d3bd6aa, 82136a0; 1288 tests, 0 failed): the garden plants through kind/bell
+and digs through kind/cistern (`makeUnder`, quiet, a door home); Bell.obend and Cistern.obend are test
+fixtures in tests/fixtures/objects (the host's view, subscription, layer, await and limit tests keep them);
+a wake watches a bell's `rung` as a `marks` row; the KINDS door ("KINDS · 3 made"); the WORKSHOP door
+teaches `workshop make / name / description` (hob drafts a `draft`, checked, held as #n for the describer,
+whose `adopt` `make`s it with `madeFrom`); the root menu's head and tail in v4's words; Spell.obend folds
+case as the host does; the library's laws page reads inspect's `laws`; kind/cistern adds `monotone(next)`.
+Tests use `tests.test_chain.town_kinds(send)` wherever a garden plants.
+
+Open from 3b, for the next lane:
+
+- **Atomic make** (host13's same-turn extend): world/objects/Kind.obend with `bodied` (create, then
+  `world.extend` on the new id, `refuse` when refused) in place of `grafting`/`graft` is the target, but
+  a method the creation's layer adds is refused typeMismatch (`kind/key make / seed: x`, direct or by
+  spell; a later extend over it the same), so a made kind's make never runs. Host repro: tests/test_kinds
+  with that Kind. Until it is fixed Kind keeps the self-sent graft.
+- **A taken id stops a kind**: the kind names `<under>/<name>/<count+1>` and a create on a held id is the
+  whole turn's requiredAbsence, so one squatted `garden/bell/N` stops every planting
+  (tests/test_await.py expectedFailure). Host: `create` minting `<under>/<kind>/<n>` past held ids.
+- **The workshop's lineage needs a receipt hash**: `adopt` of a draft passes `madeFrom.receipt: ""`
+  (refused `madeFrom`) because no Plan answers Bend a hash; host: the await's `Plans.Receipt` gains
+  `hash` (receiptData), then `adopt` awaits the holding turn's slot (`Held.intent`) and cites it.
+- **The root menu is at its budget**: seven doors and one arc fill 1,400 characters; the WORKSHOP door
+  now has one spell (`make`), and v4's library lines under STUDIO do not fit yet. Step 4's directory body
+  decides (MENU §1.1 rule 4).
+- The receipt line names the turn's own object's write (transport `turn_line`, bridge `receipt_line`):
+  a planting writes kind/bell before the garden.
+- Docs not in this lane: SEEDING's T1 and the flood (now `garden/cistern/<n>` by `cistern`, the level is
+  `next` less one, a watch on `next`), LIBRARY's plant walk (`field: marks`).
+
 Remaining, in order (each a commit, suite green, pins re-recorded):
 
-3b. **Garden plants through kind/bell**: `Garden.grow` calls `kind/bell` `makeUnder {under: "garden",
+3b. (done, above) **Garden plants through kind/bell**: `Garden.grow` calls `kind/bell` `makeUnder {under: "garden",
    fields: [colour, seed]}` instead of `world.create({package: "Bell"})`; `cistern` the same through
    kind/cistern; then delete `world/objects/Bell.obend` and `Cistern.obend` (keep Cistern's `retain`
    as a fixture in tests/fixtures/objects for test_await, test_outbound, test_replay, test_wakes),
@@ -53,7 +83,8 @@ Remaining, in order (each a commit, suite green, pins re-recorded):
    description}` asks `world.interpret` for Bend from the prose (Policy's prompt for a draft), `check`s
    it, holds it as `#n` for the describer (`held` row with `package`), and `adopt / n` calls
    `world.make({package, seed: {}, law: "", requireAbsent, madeFrom: {object: workshop, receipt}})`.
-4. **PLACE**: make Place.obend lawless (its law to genesis as `PLACE_LAW`), add `makes:
+4. **PLACE** (with host13's misfit: `Card.Reply` gains `misfit {clause, reason}`, passed to `interpret`
+   with `held` per FLEX §2; Card's blank-reply usage lists inspect's `offered` only): make Place.obend lawless (its law to genesis as `PLACE_LAW`), add `makes:
    List<Reference>`, `make` = the kind's `makeUnder` with `under` = the place, `traces` keep as a seed
    field (0 for the Reading Room), exits as `Card.Doorways`; Places.obend and Policies.obend fold in;
    the garden is a PLACE seed (`makes: [kind/bell]`) with `plant` as the alias of make (a generated

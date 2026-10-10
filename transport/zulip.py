@@ -94,6 +94,13 @@ class Client:
     def send(self, stream, topic, content):
         return self.call('POST', 'messages', {'type': 'stream', 'to': stream, 'topic': topic, 'content': content})
 
+    def delete(self, mid):
+        """Delete a message this bot sent; anyone else's is refused before the call."""
+        got = self.call('GET', f'messages/{int(mid)}', {'apply_markdown': 'false'})
+        if (got.get('message') or {}).get('sender_email') != self.email:
+            raise Failure('not_ours', f'message {mid}')
+        return self.call('DELETE', f'messages/{int(mid)}')
+
     def newest(self, stream):
         """The id of the stream's newest message (0 for none): the anchor a delivery is persisted with before it is sent."""
         got = self.call('GET', 'messages', {'anchor': 'newest', 'num_before': 1, 'num_after': 0, 'apply_markdown': 'false',

@@ -9,6 +9,9 @@ import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
+# A test fixture: the world's bell is made by kind/bell, a Record with world/bodies/bell.obend
+# laid over it. This package stays the subject of the host's tests of views, subscriptions,
+# layers, awaits and limits.
 type Colour = Rows.Colour
 # A rain keeps its author's DID and the handle the host knew when it fell, the height its
 # turn read (`at`) and `n`, the bell's count of rains at that read. The key is {author, at,
@@ -17,7 +20,7 @@ type Colour = Rows.Colour
 # the columns by name length), so in the order they fell; the bell keeps 1,024, the host
 # dropping the first past them, after which n stays 1,024 and `at` orders them. Whoever
 # wants to know of rains or a ring subscribes to `rains` or `rung` (a Wake, a door).
-type Rain = Rows.Rain
+type Rain = Rows.Line
 # planting: the uri of the post that planted the bell, which the strike awaits the
 # answer to; planter: the principal of the planting turn (the garden writes both).
 record State:
