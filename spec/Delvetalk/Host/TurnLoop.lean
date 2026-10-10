@@ -110,6 +110,9 @@ structure TurnState where
   command : String := ""
   grants : List Grant := []
   revokes : List String := []
+  /-- Subscriptions this turn makes and ends (`subscribe`/`unsubscribe`). -/
+  subscribes : List Subscription := []
+  unsubscribes : List Subscription := []
   /-- Uses of limited grants this turn spent, by grant id. -/
   spent : List (String × Nat) := []
   sends : List Send := []
@@ -869,7 +872,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let p : Proposal := { principal := s.principal, intent := s.intent, roots := s.roots, writes,
                           programs := s.programs, layered := s.layered, laws := s.laws, absent := s.absent,
                           creates := s.creates, grants := s.grants, revokes := s.revokes, spent := s.spent,
-                          turn := w.height + 1 }
+                          subscribes := s.subscribes, unsubscribes := s.unsubscribes, turn := w.height + 1 }
     let p := withLawReads w p
     let (admitted, clause) := match judge w (w.height + 1) p with
       | .ok _ => (true, "")
@@ -976,6 +979,35 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
           if d.conformsUnder bounds responseType then return d else refusedWith bounds responseType "typeMismatch"
         | none => refusedWith bounds responseType "field"
       | _ => refusedWith bounds responseType "field"
+  | .variant "subscribe" (.record f) | .variant "unsubscribe" (.record f) =>
+    -- A standing request for `changed` deliveries (WHOLENESS §3): the subscriber is the running
+    -- object, the principal the frame's subject, who must be permitted to view the object.
+    let s ← get
+    let some name := (f.lookup "field").bind labelOf | evaluation "malformed subscribe plan"
+    let ending := match plan with
+      | .variant "unsubscribe" _ => true
+      | _ => false
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      let has := match o.state with
+        | .record fields => fields.any (·.1 == name)
+        | _ => false
+      if !has then refusedWith bounds responseType "field" else
+      let x : Subscription := ⟨self, s.subject, id, name⟩
+      let standing := (s.world.subscriptions.getD id #[]).toList
+      if ending then
+        let mine := (standing ++ s.subscribes).filter fun y => y.subscriber == self && y.object == id && y.field == name
+        set { s with subscribes := s.subscribes.filter (!mine.contains ·),
+                     unsubscribes := s.unsubscribes ++ (mine.filter (standing.contains ·)) }
+        respond bounds responseType "subscribed" [emptyRecord]
+      else if standing.contains x || s.subscribes.contains x then respond bounds responseType "subscribed" [emptyRecord]
+      else if (standing ++ s.subscribes).filter (·.object == id) |>.length |> (· ≥ Limits.subscribersPerObject) then
+        refusedWith bounds responseType "subscribers"
+      else
+        set { s with subscribes := s.subscribes ++ [x] }
+        respond bounds responseType "subscribed" [emptyRecord]
   | .variant "viewAt" (.record f) =>
     -- A past version of an object's state, rebuilt from the journal (`stateAt`), answered as `view`
     -- answers the present one; the root is the object as it is NOW, so a turn that read history
@@ -1190,10 +1222,7 @@ def ledgerJson (l : Ledger) : Json := l.json
 def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : Nat)
     (sends : List Send) (updates : List (String × Object)) : List (String × Json) :=
   if sends.isEmpty then [] else
-  let added := updates.foldl (fun n (id, o) =>
-    let before := ((w.objects[id]?).map fun p => (dataJson p.state).compress.utf8ByteSize).getD 0
-    n + ((dataJson o.state).compress.utf8ByteSize - before)) 0
-  let child : Ledger := ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
+  let child := childLedger w ledger used updates
   [("sends", Json.arr (sends.zipIdx.toArray.map fun (x, i) => Json.mkObj
     ([("id", toJson (deliveryId principal intent i)), ("to", toJson x.to), ("method", toJson x.method),
      ("argument", dataJson x.argument), ("sender", toJson x.sender), ("ledger", child.json)] ++
@@ -1265,7 +1294,9 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       creates := st.creates
       grants := st.grants
       revokes := st.revokes
-      spent := st.spent }
+      spent := st.spent
+      subscribes := st.subscribes
+      unsubscribes := st.unsubscribes }
   let base := entryBase ctx used
   -- An activity of a supervised object that ends broken, out of budget, or after its await
   -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
@@ -1306,6 +1337,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits),
       ("offers", offersJson st.offers), ("publishes", Json.arr st.publishes.toArray), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
       ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes),
+      ("subscribes", Json.arr (st.subscribes.toArray.map (·.json))), ("unsubscribes", Json.arr (st.unsubscribes.toArray.map (·.json))),
       ("spent", spentJson st.spent)] ++
       (if st.violation.isSome then [("violation", toJson st.violation), ("violator", toJson st.violator)] else []))
     -- A post await names the post; the slot it settles on is whichever reply answers it.
@@ -1331,7 +1363,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     -- A send under a grant leaves only if the grant still stands (a suspension may have outlived it).
     match st.sends.find? fun x => !x.via.isEmpty && (grantStands w x.via x.to x.method).isNone with
     | some x =>
-      let (w', r) := commit w { proposal with writes := [], creates := [], grants := [], revokes := [], spent := [] } base
+      let (w', r) := commit w { proposal with writes := [], creates := [], grants := [], revokes := [], spent := [], subscribes := [], unsubscribes := [] } base
         (some { cls := "lawRefused", clause := some "noGrant", object := some x.to }) (onEnd := endedIfLate)
       return (w', turnReply w' r)
     | none =>
@@ -1339,7 +1371,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (if st.publishes.isEmpty then [] else [("publishes", Json.arr st.publishes.toArray)]) ++
       (if st.checks == 0 then [] else [("checks", toJson st.checks)])
     let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
-      (sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends) endedIfLate
+      (fun updates => sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends updates ++
+        changesJson w ctx.principal ctx.intent ctx.ledger used st.sends.length updates proposal.allWrites) endedIfLate
     return (w', turnReply w' r)
 
 /-- `receive`'s `slot` is the host's: an object that declares `receive {text, post}` gets the
@@ -1658,6 +1691,10 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       direct := delivery.isNone
       grants := grants
       revokes := strings (act.getObjVal? "revokes").toOption
+      subscribes := ((act.getObjVal? "subscribes").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap
+        fun j => (Subscription.ofJson j).toOption
+      unsubscribes := ((act.getObjVal? "unsubscribes").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap
+        fun j => (Subscription.ofJson j).toOption
       spent := ← parseSpent (act.getObjVal? "spent").toOption
       sends := sends
       programs := programs
@@ -1770,6 +1807,13 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   if !via.isEmpty && (grantStands w via to method).isNone then
     let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
     return commit w p deliveryFields (some { cls := "lawRefused", clause := some "noGrant", object := some to })
+  -- A change is delivered only while its subscription's principal may still view the object; else it
+  -- is consumed, refused, and the subscription drops (`subscriptionsAfter`).
+  if method == "changed" then
+    if let .ok object := d.getObjValAs? String "object" then
+      unless ((w.objects[object]?).map (·.read.permits principal)).getD false do
+        let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
+        return commit w p deliveryFields (some { cls := "lawRefused", clause := some "denied", object := some object })
   match ledger.exhausted with
   | some field =>
     let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }

@@ -207,6 +207,9 @@ structure Proposal where
   revokes : List String := []
   /-- Uses the turn spends of limited grants: grant id and count. -/
   spent : List (String × Nat) := []
+  /-- Subscriptions the turn makes and ends (WHOLENESS §3); they take effect with the commit. -/
+  subscribes : List Subscription := []
+  unsubscribes : List Subscription := []
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
       moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
   rebaseOwn : Option String := none
@@ -354,7 +357,9 @@ def Proposal.digest (p : Proposal) : String :=
        ("law", toJson c.object.lawText)]))]) ++
     (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
     (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
-    (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)])))
+    (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]) ++
+    (if p.subscribes.isEmpty then [] else [("subscribes", Json.arr (p.subscribes.toArray.map (·.json)))]) ++
+    (if p.unsubscribes.isEmpty then [] else [("unsubscribes", Json.arr (p.unsubscribes.toArray.map (·.json)))])))
 
 /-! ## Judging -/
 
@@ -1579,6 +1584,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   if w.objects.size + p.creates.length > Limits.maxObjects then
     throw { cls := "evaluation", reason := some "object capacity reached" }
   if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants" }
+  -- Subscriptions stand at most `subscribersPerObject` to an object, counted as they will be.
+  for x in p.subscribes do
+    let standing := ((w.subscriptions.getD x.object #[]).toList ++ p.subscribes).filter fun y =>
+      y.object == x.object && !p.unsubscribes.contains y
+    if standing.eraseDups.length > Limits.subscribersPerObject then
+      throw { cls := "capacity", object := some x.object, reason := some "subscribersPerObject" }
   for g in p.grants do
     if w.grants.contains g.id then throw { cls := "evaluation", reason := some "a grant id is already taken" }
   -- A limited grant must have the uses the turn spends left when it commits.
@@ -1710,6 +1721,29 @@ def isTransient (entry : Json) : Bool :=
   tagOf entry == "refused" &&
     ((entry.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "class" |>.toOption)).any transientClasses.contains
 
+/-- The subscriptions after an entry: an admitted one's `subscribes` added (once each) and
+    `unsubscribes` removed; a refused delivery of `changed` whose principal may no longer view the
+    object (`lawRefused denied`) drops its subscription, as a fallen grant is dropped. -/
+def subscriptionsAfter (w : World) (entry : Json) : Std.HashMap String (Array Subscription) := Id.run do
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let list := fun (k : String) => ((((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
+    fun j => (Subscription.ofJson j).toOption)
+  let mut subs := w.subscriptions
+  if tagOf entry == "admitted" then
+    for x in list "subscribes" do
+      let now := subs.getD x.object #[]
+      unless now.contains x do subs := subs.insert x.object (now.push x)
+    for x in list "unsubscribes" do
+      subs := subs.insert x.object ((subs.getD x.object #[]).filter (· != x))
+  else if (outcome.getObjValAs? String "clause").toOption == some "denied" then
+    let id := (entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption
+    if let some d := w.pending.find? fun p => (p.getObjValAs? String "id").toOption == id then
+      if (d.getObjValAs? String "method").toOption == some "changed" then
+        if let (.ok to, .ok principal, .ok object, .ok field) :=
+            (d.getObjValAs? String "to", d.getObjValAs? String "principal", d.getObjValAs? String "object", d.getObjValAs? String "field") then
+          subs := subs.insert object ((subs.getD object #[]).filter (· != ⟨to, principal, object, field⟩))
+  return subs
+
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
   let index := w.entries.size
@@ -1724,6 +1758,13 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
           (if fields.any (·.1 == "principal") then [] else
             [("principal", (identity.getObjVal? "principal").toOption.getD Json.null)]) ++ fields)
     | _, _ => #[]
+  -- A subscriber's `changed` deliveries, run under the subscription's principal, the changed
+  -- object as their sender.
+  let changed := if tagOf entry != "admitted" then #[] else
+    (((entry.getObjVal? "changes").toOption.bind (·.getArr?.toOption)).getD #[]).map fun c =>
+      let fields := c.getObj?.toOption.map (·.toList) |>.getD []
+      Json.mkObj ([("from", identity), ("method", toJson "changed"),
+        ("sender", (c.getObjVal? "object").toOption.getD Json.null)] ++ fields)
   let sources := (entrySources entry).toOption.getD []
   -- Offers of an admitted entry are retained for their addressees.
   let offered := if tagOf entry != "admitted" then #[] else
@@ -1738,7 +1779,7 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
     blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (cid, b) => m.insert cid b) w.blocks
     pending := (match delivered with
       | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
-      | none => w.pending) ++ sent ++
+      | none => w.pending) ++ sent ++ changed ++
       -- An activity's end told to its object's supervisor, whatever the entry's outcome.
       (((entry.getObjVal? "ended").toOption.map fun e =>
         #[Json.mkObj ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
@@ -1767,6 +1808,7 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
       | some i => if tagOf w.entries[i]! == "suspended" || isTransient w.entries[i]! then w.receipts.insert key index
           else w.receipts
     touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched
+    subscriptions := subscriptionsAfter w entry
     touches := if tagOf entry != "admitted" then w.touches else
       (touchesOf entry).foldl (fun t (id, x) => t.insert id ((t.getD id #[]).push x)) w.touches }
 
@@ -1886,7 +1928,9 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (if judged.creates.isEmpty then [] else [("creates", Json.arr judged.creates.toArray)]) ++
         (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
         (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
-        (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]))
+        (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]) ++
+        (if p.subscribes.isEmpty then [] else [("subscribes", Json.arr (p.subscribes.toArray.map (·.json)))]) ++
+        (if p.unsubscribes.isEmpty then [] else [("unsubscribes", Json.arr (p.unsubscribes.toArray.map (·.json)))]))
       let holders := (p.grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit updates ++
           newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs) ++ onEnd (w.height + 1) outcome)
@@ -2305,6 +2349,58 @@ def addressee (w : World) (j : Json) : Except String Json := do
 def deliveryId (principal intent : String) (ordinal : Nat) : String :=
   Journal.bodyHash (Json.arr #[toJson principal, toJson intent, toJson ordinal])
 
+/-- The ledger a turn's sends and changes inherit: depth - 1, work - the ticks it used, storage -
+    the bytes its writes added. -/
+def childLedger (w : World) (ledger : Ledger) (used : Nat) (updates : List (String × Object)) : Ledger :=
+  let added := updates.foldl (fun n (id, o) =>
+    let before := ((w.objects[id]?).map fun p => stateBytes p.state).getD 0
+    n + (stateBytes o.state - before)) 0
+  ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
+
+/-- What a write did to one field, as `changed` reports it: for a relation the rows inserted and the
+    rows retracted (an upsert that replaced a row is both), for a list the items added and the items
+    removed (by canonical bytes), for anything else the new value and the old one. Both are lists. -/
+def fieldChange (decls : List RelDecl) (field : String) (old new : Data) : Data × Data :=
+  let listed := fun (items : List Data) => ofList items
+  let diff := fun (a b : List Data) =>
+    let bs := b.map Delvetalk.Canonical.encode
+    a.filter fun x => !bs.contains (Delvetalk.Canonical.encode x)
+  let rows := fun (d : Data) => if decls.any (·.field == field) then (relationRows d).toOption else listOf d
+  match rows old, rows new with
+  | some before, some after => (listed (diff after before), listed (diff before after))
+  | _, _ => (listed [new], listed [old])
+
+/-- The `changed` deliveries an admitted write owes its subscribers (WHOLENESS §3): for each written
+    object, each subscription to a field its edits touched (an edit other than `keep`), in
+    subscription order, `{id, to, object, field, version, principal, ledger, argument}` with argument
+    `{object: Reference, field, version, inserted, retracted}`; ids continue the sends' ordinals. Sends
+    and changes together are at most `sendsPerTurn`: the subscribers past it are named in `unserved`. -/
+def changesJson (w : World) (principal intent : String) (ledger : Ledger) (used sent : Nat)
+    (updates : List (String × Object)) (writes : List (String × List Written)) : List (String × Json) := Id.run do
+  let child := (childLedger w ledger used updates).json
+  let mut changes : Array Json := #[]
+  let mut unserved : Array Json := #[]
+  for (id, o) in updates do
+    let some before := w.objects[id]? | continue
+    let touched := (((writes.lookup id).getD []).filter (·.kind == 0)).flatMap fun c =>
+      (c.edits.filter fun e => match e.kind with | .keep => false | _ => true).map (·.field)
+    for x in w.subscriptions.getD id #[] do
+      unless touched.contains x.field do continue
+      if sent + changes.size ≥ Limits.sendsPerTurn then
+        unserved := unserved.push (toJson x.subscriber)
+        continue
+      let field := fun (d : Data) => match d with
+        | .record fs => (fs.lookup x.field).getD (.record [])
+        | _ => .record []
+      let (inserted, retracted) := fieldChange o.relations x.field (field before.state) (field o.state)
+      let argument := Data.record [("object", .record [("world", .label ""), ("object", .label id)]),
+        ("field", .label x.field), ("version", .natural o.version), ("inserted", inserted), ("retracted", retracted)]
+      changes := changes.push (Json.mkObj [("id", toJson (deliveryId principal intent (sent + changes.size))),
+        ("to", toJson x.subscriber), ("object", toJson id), ("field", toJson x.field), ("version", toJson o.version),
+        ("principal", toJson x.principal), ("ledger", child), ("argument", dataJson argument)])
+  return (if changes.isEmpty then [] else [("changes", Json.arr changes)]) ++
+    (if unserved.isEmpty then [] else [("unserved", Json.arr unserved)])
+
 def ledgerOf (j : Json) : Except String Ledger := do
   return ⟨← natField j "depth", ← natField j "work", ← natField j "storage"⟩
 
@@ -2506,8 +2602,11 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let spent ← parseSpent (outcome.getObjVal? "spent").toOption
     let roots ← parseRoots (← entry.getObjVal? "roots")
     let rebaseOwn := if (entry.getObjVal? "resumes").toOption.isSome then roots.head?.map (·.1) else none
+    let subs := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Subscription.ofJson
+    let subscribes ← subs "subscribes"
+    let unsubscribes ← subs "unsubscribes"
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent, layered }
+                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))
@@ -2528,6 +2627,16 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         -- The state an admitted write commits to (host7; earlier entries name none).
         if let some cid := (raw.getObjValAs? String "cid").toOption then
           unless cid == stateCid o.state do throw s!"the state of {id} does not replay to the CID its write recorded"
+      -- The changes owed to subscribers are re-derived and must be the ones journaled.
+      let sentCount := ((entry.getObjVal? "sends").toOption.bind (·.getArr?.toOption) |>.map (·.size)).getD 0
+      let entryLedger ← match entry.getObjVal? "ledger" with
+        | .ok l => ledgerOf l
+        | .error _ => pure Ledger.start
+      let usedTicks := (entry.getObjValAs? Nat "ticksUsed").toOption.getD 0
+      let owed := changesJson w principal intent entryLedger usedTicks sentCount updates p.allWrites
+      unless owed.lookup "changes" == (entry.getObjVal? "changes").toOption &&
+          owed.lookup "unserved" == (entry.getObjVal? "unserved").toOption do
+        throw "the changes owed to subscribers do not replay"
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w grants revokes spent

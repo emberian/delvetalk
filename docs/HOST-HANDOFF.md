@@ -275,6 +275,25 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    that form's spell (`Card.withBare`). Not yet: the interpretation verdict fitted as spell text (§2
    "Interpretation"), lenses' `set`. Test: `tests/test_spell_turns.py`.
 
+50. **Subscriptions and `changed` (host8; WHOLENESS §3, host day 3).** Plan/world method `subscribe {object, field}`
+   stages `Subscription {subscriber: the running object, principal: the frame's subject, object, field}`:
+   `denied` unless the subject may view the object, `field` unless the object's state has that top-level
+   field, `subscribers` past `Limits.subscribersPerObject` 64; a repeat is idempotent; `unsubscribe` ends
+   the running object's own. The admitted entry journals `subscribes`/`unsubscribes` (also in the request
+   digest; `judge` re-counts the bound); `record` derives `World.subscriptions` (`subscriptionsAfter`), so
+   replay and snapshot resume rebuild it; a suspended activity carries its staged ones. After an admitted
+   write, `changesJson` owes each subscription to a field the turn's ordinary edits touched a delivery
+   `{id, to, object, field, version, principal, ledger, argument}` beside `sends` (ids continue the sends'
+   ordinals; ledger as a send's, `childLedger`), argument `{object: Reference, field, version, inserted,
+   retracted}`: for a relation the rows added and removed (an upsert that replaced a row is both), for a
+   list the items added and removed, for a scalar `[new]` and `[old]`. Sends and changes together are at
+   most `sendsPerTurn`; the subscribers past it are named in `unserved`. `record` queues them as pending
+   deliveries of method `changed` (sender the changed object, run under the subscription's principal).
+   Unlike WHOLENESS's "re-derived, never stored", the argument IS journaled: a scalar's old value is not in
+   `writes[].edits`; replay re-derives the whole `changes`/`unserved` from the states and requires them
+   equal, so it is checked, not trusted. `deliverOne` refuses a `changed` whose principal may no longer view
+   the object (`lawRefused`, clause `denied`) and `record` drops that subscription. Test: `tests/test_changes.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

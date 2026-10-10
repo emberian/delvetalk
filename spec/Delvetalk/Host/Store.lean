@@ -53,6 +53,8 @@ def deliveriesPerCall : Nat := 16
 /-- Deliveries the settling pass after one durable op runs; the rest wait for the next op. -/
 def deliveriesPerSettle : Nat := 64
 def sendsPerTurn : Nat := 32
+/-- Subscriptions to one object (`subscribe`, WHOLENESS §3). -/
+def subscribersPerObject : Nat := 64
 /-- Undelivered sends held by the world. -/
 def maxPending : Nat := 4096
 /-- Ticks of one turn: the default and the ceiling a request may ask for (the kernel's own cap). -/
@@ -301,6 +303,24 @@ structure Built where
   /-- The relations its entry module's `relations()` declares, unchecked against the state type. -/
   relations : List RelDecl := []
 
+/-- A standing subscription (WHOLENESS §3): after every admitted write that touches `field` of
+    `object`, `subscriber` is sent `changed`, run under `principal` (who subscribed it and must still
+    be permitted to view `object`). -/
+structure Subscription where
+  subscriber : String
+  principal : String
+  object : String
+  field : String
+  deriving BEq, Repr, Inhabited
+
+def Subscription.json (x : Subscription) : Json :=
+  Json.mkObj [("subscriber", toJson x.subscriber), ("principal", toJson x.principal),
+    ("object", toJson x.object), ("field", toJson x.field)]
+
+def Subscription.ofJson (j : Json) : Except String Subscription := do
+  return ⟨← j.getObjValAs? String "subscriber", ← j.getObjValAs? String "principal",
+    ← j.getObjValAs? String "object", ← j.getObjValAs? String "field"⟩
+
 /-- One admitted write of an object, as the moved-root rule reads it (`Ops.movedRootAdmits`): the
     version it produced and, for an ordinary write (kind 0 only) whose steps decode, every edit
     other than `keep` as `(field, edit)` in step order; none otherwise. Derived by `record` from
@@ -329,6 +349,9 @@ structure World where
   /-- Per object, its admitted writes in version order (`Touch`): what changed since a version is
       read from the newest back, never by scanning the journal. -/
   touches : Std.HashMap String (Array Touch) := {}
+  /-- Standing subscriptions by the object they watch, in the order they were made; derived by
+      `record` from entries' `subscribes`/`unsubscribes`. -/
+  subscriptions : Std.HashMap String (Array Subscription) := {}
   /-- Memory only, never journaled: compiled methods by `inputsKey/method`. -/
   compiled : Std.HashMap String Compiled := {}
   /-- Undelivered sends in journal order, derived from the journal. -/
