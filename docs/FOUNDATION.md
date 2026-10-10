@@ -605,7 +605,7 @@ hand-written edits, the voice. Open before launch:
 | hand-written `forms()` beside form blocks deleted, then refused | objects, kernel | no `def forms()` in an object with form blocks, except Counter and Loop (no List import) |
 | a `world-propose` naming a fixed field refused (`test_appointments`, expected failure) | host | the marker gone |
 | `_actions` for a choice field carries a `spell` template (`tests/test_hypermedia.py`, two expected failures) | transport | the markers gone |
-| `transport/static/catalogue.json` `refusals` matches `refusalClasses` (it lists the withdrawn `outOfRange` and lacks `keyTaken`, `duplicateKey`, `badSpell`, `quota`, `noMethod`) | transport | the catalogue's classes are the host's |
+| ✓ `transport/static/catalogue.json` `refusals` matches `refusalClasses` (read from Ops.lean by a test) | transport |
 | `deploy/capture-examples.py` in the message dialect (its `TALLY` and its forger note are the withdrawn dialect; this page was regenerated from a wrapper) | transport | the script regenerates `docs/AGENTS-EXAMPLES.md` unchanged |
 | the operator commands DEPLOY names (`deploy.genesis`, `deploy/library-update.sh`, `deploy.spend`) are in the transport image (`Dockerfile.transport` copies `deploy/`) | transport | `docker compose run --rm delvetalk-ops python3 -m deploy.genesis --help` runs |
 | the transport ceiling: 3,749 lines against 2,900 | root | a new ceiling, or the lines cut |

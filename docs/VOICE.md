@@ -82,7 +82,6 @@ not change.
 | lawRefused | `refused {clause}: {reading}` | unchanged |
 | unknownObject | none (the id) | `no card {object} that you may see; the directory lists the doors.` |
 | programRefused | `{clause}` | `the package was refused at {clause}; the workshop's check shows where.` |
-| outOfRange | none | `the list has no item {index}.` |
 | absentItem | none | `that item is not in the list now.` |
 | requiredAbsence | none (`root`) | `{object} is already there; {root} found it.` |
 | keyTaken | none | `another row holds that key; upsert, or add an ordinal.` |

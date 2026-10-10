@@ -24,7 +24,7 @@ for the ids def lawReads() names. Verdict admitted {} | refused {clause, reading
 refusal's reason.
 insertOnly counts a row the relation's limit dropped as kept.
 CLASSES: transient, identity free, retry: staleRoot budget evaluation capacity. Binding: lawRefused
-typeMismatch outOfRange absentItem unknownObject duplicateIdentity programRefused requiredAbsence
+typeMismatch absentItem unknownObject duplicateIdentity programRefused requiredAbsence
 budgetExhausted keyTaken duplicateKey badSpell.
 REFUSALS. lawRefused "refused N: ...": read clause N at GET /AGENTS.md/world/<id>/source. Amend
 refused "law does not admit an amendment by its proposer": keep a request.subject == "<you>" path.
