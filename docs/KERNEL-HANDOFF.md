@@ -174,6 +174,7 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
 - An activity entry's packet is 200-250 KB that must be rendered, hashed, decoded and checked per entry.
 - A checkpoint-local term table was built and measured: no gain on forced literal lists, worse nine-prose dedup; not committed (the edition name v3 now means relative addresses, §14).
 - The `Not proved` list in section 1.
+- Turn performance: docs/PERF.md (lane/perf2). The machine runs 25 to 37 million ticks a second; a directory turn spends about two thirds of its drive loop encoding, digesting, re-digesting and decoding a checkpoint per segment the host answers in process. Its items 1, 2 and 4 are this lane's (`Turn.lean`, `ObjectiveBendTyping.infer`).
 
 ## 14. Surface types (lane/kernel5 after foundation 99c6dff)
 
