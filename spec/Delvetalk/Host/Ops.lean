@@ -470,16 +470,11 @@ def keyOf (d : RelDecl) : Data → EditResult Data
 /-- A key as the edit gives it, put in the declaration's column order. -/
 def keyAsDeclared (d : RelDecl) (key : Data) : EditResult Data := keyOf d key
 
-def bytesLt (a b : ByteArray) : Bool := Id.run do
-  for i in [0:min a.size b.size] do
-    if a[i]! != b[i]! then return a[i]! < b[i]!
-  return a.size < b.size
-
 /-- Rows sorted by their keys' canonical bytes, no key twice (`duplicateKey`), the oldest by key
     order dropped past the declared limit. -/
 def canonicalRows (d : RelDecl) (rows : List Data) : EditResult (List Data) := do
   let keyed ← rows.mapM fun r => do return (Delvetalk.Canonical.encode (← keyOf d r), r)
-  let sorted := (keyed.toArray.qsort fun a b => bytesLt a.1 b.1).toList
+  let sorted := (keyed.toArray.qsort fun a b => Law.bytesLt a.1 b.1).toList
   let mut prev : Option ByteArray := none
   for (k, _) in sorted do
     if prev == some k then throw "duplicateKey"
@@ -818,7 +813,7 @@ def parseLawText (text : String) : Except String Law := do
     amendment (the state unchanged) by the principal who proposes it. None when it does,
     else the refusal naming that principal and the clause (`name: expression`) that refused. -/
 def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data) : Option String :=
-  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, ""⟩ (some state) state).map fun name =>
+  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, "", []⟩ (some state) state).map fun name =>
     amendmentRefusal principal (((law.lookup name).map fun e => s!"{name}: {e.render}").getD name)
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
@@ -1887,7 +1882,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         match grantStands w via id method with
         | some g => pure g.grantor
         | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
-      let facts : Law.Facts := ⟨subject, caller, height, p.turn, next.pin, kind, method⟩
+      let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
+                                 relations := next.relations }
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id, reason := readingOf o clause }
     -- The Bend law, after the text admits: once for each ordinary change, with its argument.
@@ -2410,7 +2406,7 @@ def libraryLawText (opener : String) : Except String String := do
 def libraryRefusal (lawText principal : String) (height : Nat) (pin : String) : Option String :=
   match parseLawText lawText with
   | .error _ => some "law syntax"
-  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, ""⟩ (some (.record [])) (.record [])
+  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, "", []⟩ (some (.record [])) (.record [])
 
 def installLibrary (w : World) (lib : Library) (lawText : String) : World :=
   { w with library := some lib, libraries := w.libraries.insert lib.pin lib, libraryLaw := lawText }

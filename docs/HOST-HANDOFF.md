@@ -566,6 +566,18 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    Test: `tests/test_handlers.py` (a sandbox answers the write of a frame its callee calls; an inner
    `views` handler passes a write to the `sandbox` around it).
 
+74. **`insertOnly` under retention (host11; RELATIONAL §12, WORLD-REVIEW finding 10's trap).**
+   `insertOnly(F)` means: no admitted write retracts or alters a row of F; a row the declared retention
+   dropped does not count. `Law.Facts.relations` carries the object's declarations (`judge` passes the
+   code's `relations`); an old row missing from the new relation is a retention drop when the relation
+   is full (`RelDecl.cap`) and the row's key sorts before every kept key (`retentionDropped`, by
+   canonical key bytes, `Law.bytesLt`, which `canonicalRows` now shares). An altered row keeps its key,
+   so it still refuses; so does a retraction from a relation that is not full. Without a declaration
+   (a field that is no relation) the rule is as before. `#guard`s in `Law.lean`; test:
+   `tests/test_relation.py` `test_insert_only_does_not_count_the_rows_retention_drops` (limit 2, three
+   inserts admitted, an upsert and a retract of a kept row refused). The Directory's Bend 4,096 check
+   (`greeted`) may now be `law greeted "...": insertOnly(greeted)` (objects lane).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

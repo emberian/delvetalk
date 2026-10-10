@@ -2319,7 +2319,7 @@ def amendOp (w : World) (j : Json) : Except String (World × Json) := do
     `{clause, reading?}` naming the first clause that refuses and reads no state field, whose verdict
     the change cannot alter. A clause that reads the state leaves the verdict to the commit (`true`). -/
 def methodAdmits (w : World) (o : Object) (principal method : String) : Json :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method⟩
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, []⟩
   match o.law.find? fun (_, clause) => clause.fields.isEmpty && !Law.admits facts (some o.state) o.state clause with
   | none => Json.bool true
   | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
