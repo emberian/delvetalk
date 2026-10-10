@@ -29,10 +29,13 @@ from tests.test_turn_world import closure
 LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 implies request.subject == "ember"\n'
 
 
-def fill(action):
-    """Plain values for an action's fields, chosen from its bounds as any client would."""
-    return {f['name']: f['bounds']['options'][0] if f['kind'] == 'choice' else f['bounds']['min'] if f['kind'] == 'natural'
-            else f"a {f['name']}" for f in action['fields']}
+def fill(spell):
+    """Plain values for a spell template's fields, as any client would read them: a choice's first word, a natural's minimum."""
+    values = {}
+    for name, shown in re.findall(r'^(\w+): (.+)$', spell.partition('\n')[2], re.M):
+        values[name] = re.split(r', ', shown[len('one of '):])[0] if shown.startswith('one of ') else \
+            int(re.search(r'(\d+)\.\.', shown)[1]) if shown.startswith('<natural') else f"a {name} for strangers"
+    return values
 
 
 PURE = 'edition ObjectiveBend 1\ndef twice(n: Nat) -> Nat:\n  n + n\n'
@@ -50,26 +53,18 @@ def walk(call, handle, prove, module):
     v = call('POST', ch['_links']['verify']['href'], {'handle': handle, 'uri': prove(ch['text'])}, None)[1]
     tok = ch['credential']
     listing = call('GET', v['_links']['world']['href'], None, tok)[1]
-    items = listing['_links']['item']
-    for item in [i for i in items if 'plant' in i.get('actions', ())] or items:  # the first object that offers a `plant`
-        view = call('GET', item['href'], None, tok)[1]
-        plant = [a for a in view.get('_actions') or [] if a['name'] == 'plant']
-        if plant:
-            break
-    card = call('GET', view['_links']['card']['href'], None, tok)[1]['text']
-    values = {}
-    for f in plant[0]['fields']:  # the card names the choices a text field takes, as `<a, b or c>`
-        shown = re.search(rf"{f['name']}: <([^>]*)>", card)
-        values[f['name']] = re.split(r', | or ', shown[1])[0] if shown and ' or ' in shown[1] else f"a {f['name']} for strangers"
-    planted = call(plant[0]['method'], plant[0]['href'], {'intent': 'stranger-plant', 'fields': values}, tok)[1]
+    item = [i for i in listing['_links']['item'] if 'plant' in i.get('actions', ())][0]  # the listing names each object's methods
+    spell = call('GET', item['href'], None, tok)[1]['_actions']['plant']
+    planted = call('POST', f"{item['href']}/plant", {'intent': 'stranger-plant', 'fields': fill(spell)}, tok)[1]
     got['planted'] = (planted['status'], [c['name'] for c in planted['_links'].get('created', [])])
     receipt = call('GET', planted['_links']['receipt']['href'], None, tok)[1]
     got['receipt'] = (receipt['status'], receipt['receipt']['slug'] == planted['receipt']['slug'])
     made = call('POST', routes['create']['href'], {'intent': 'stranger-make', 'object': 'mine', 'entry': 'initial', 'source': module, 'seed': {}}, tok)[1]
     mine = call('GET', made['_links']['object']['href'], None, tok)[1]
-    bump = [a for a in mine['_actions'] if a['name'] == 'bump'][0]
-    bumped = call(bump['method'], bump['href'], {'intent': 'stranger-bump', 'fields': {}}, tok)[1]
-    got['heap'] = (made['status'], bumped['status'], bumped['result'])
+    assert 'bump' in mine['_actions'], mine
+    bumped = call('POST', mine['_links']['object']['href'] + '/bump', {'intent': 'stranger-bump', 'fields': {}}, tok)[1]
+    result = call('GET', bumped['_links']['receipt']['href'], None, tok)[1]['receipt']['result']
+    got['heap'] = (made['status'], bumped['status'], result)
     ran = call('POST', routes['repl']['href'], {'source': PURE, 'entry': 'twice', 'arguments': [{'tag': 'natural', 'value': '21'}]}, tok)[1]
     got['repl'] = (ran['status'], ran['value'])
     return got
@@ -92,9 +87,6 @@ class Controls(FrontCase):
         self.assertEqual(body['_links']['self']['href'], href)
         return s, body
 
-    # Transport: http.py gives an action with a choice field (Garden's colour, a Bell.Colour since
-    # the garden moved to the message dialect) no `spell` template. Expected to fail until it does.
-    @unittest.expectedFailure
     def test_an_object_reply_carries_one_action_per_turnable_method_with_its_form(self):
         s, view = self.get('/AGENTS.md/world/garden')
         self.assertEqual((s, view['status']), (200, 'viewed'))
@@ -102,39 +94,37 @@ class Controls(FrontCase):
                          {'object': '/AGENTS.md/world/garden', 'card': '/AGENTS.md/world/garden/card', 'source': '/AGENTS.md/world/garden/source',
                           'world': '/AGENTS.md/world', 'offers': '/AGENTS.md/offers'})
         methods = self.host.send({'op': 'world-inspect', 'principal': DID, 'object': 'garden'})['methods']
-        acts = {a['name']: a for a in view['_actions']}
-        self.assertEqual(sorted(acts), sorted(m['name'] for m in methods if m['context']))
-        plant = acts['plant']
-        self.assertEqual((plant['method'], plant['href']), ('POST', '/AGENTS.md/world/garden/plant'))
-        # The garden's own form (forms()) names the bounds; the input type alone would say text 0..1400.
-        self.assertEqual(plant['fields'], [{'name': 'colour', 'kind': 'choice', 'bounds': {'options': ['amber', 'violet', 'silver']}},
-                                           {'name': 'seed', 'kind': 'text', 'bounds': {'min': 1, 'max': 80}}])
-        self.assertEqual(plant['spell'], 'delvetalk garden plant\ncolour: one of amber, violet, silver\nseed: <text 1..80>\n')
-        self.assertEqual(acts['receive']['body'], {'intent': 'text', 'spell': "text: any action's spell, or prose"})
-        self.assertIn('input', acts['set'])  # no form for a sum with payloads: the host's type, and typed data
+        offered = {m['name'] for m in methods if m['context']}
+        self.assertLessEqual(set(view['_actions']), offered)
+        self.assertEqual(view['_actions']['plant'], 'delvetalk garden plant\ncolour: one of amber, violet, silver\nseed: <text 1..80>\n')
+        self.assertTrue(all(t.startswith('delvetalk garden ') for t in view['_actions'].values()))
+        self.assertNotIn('receive', view['_actions'])  # spells go to receive; it is not one
+        self.assertNotIn('set', view['_actions'])  # no form: the host's type, and typed data
+        self.assertLess(len(json.dumps(view['_actions'])), 800)
         for route in ('card', 'source'):
             self.assertEqual(self.get(f'/AGENTS.md/world/garden/{route}')[1]['_actions'], view['_actions'])
 
-    # Transport: as above, the plant action of a choice field carries no `spell` template.
-    @unittest.expectedFailure
     def test_acting_from_the_reply_alone(self):
         view = self.get('/AGENTS.md/world/garden')[1]
-        plant = [a for a in view['_actions'] if a['name'] == 'plant'][0]
-        s, t = self.call(plant['method'], plant['href'], {'intent': 'by-form', 'fields': {**fill(plant), 'colour': 'amber'}}, self.tok)
+        spell = view['_actions']['plant']
+        s, t = self.call('POST', '/AGENTS.md/world/garden/plant', {'intent': 'by-form', 'fields': fill(spell)}, self.tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        self.assertLess(len(json.dumps(t)), 1024, t)
+        self.assertEqual(set(t), {'status', 'line', 'offers', 'receipt', '_links'})
+        self.assertTrue(t['line'].startswith('● admitted garden v'), t['line'])
         links = t['_links']
         self.assertEqual(links['receipt']['href'], '/AGENTS.md/receipt/' + t['receipt']['slug'])
         self.assertEqual(links['offers']['href'], f"/AGENTS.md/offers?after={t['receipt']['height'] - 1}")
         self.assertEqual(links['created'], [{'href': '/AGENTS.md/world/garden/bell/1', 'name': 'garden/bell/1'}])
         s, r = self.get(links['receipt']['href'])
-        self.assertEqual((s, r['receipt']['hash']), (200, t['receipt']['hash']))
+        self.assertEqual((s, r['receipt']['slug']), (200, t['receipt']['slug']))
+        self.assertIn('hash', r['receipt'])  # the whole receipt is here, not in the turn
         self.assertEqual(r['_links']['object']['href'], '/AGENTS.md/world/garden')
         s, bell = self.get(links['created'][0]['href'])
         self.assertEqual((s, bell['object']), (200, 'garden/bell/1'))
-        self.assertTrue(all(a['href'].startswith('/AGENTS.md/world/garden/bell/1/') for a in bell['_actions']))
-        receive = [a for a in view['_actions'] if a['name'] == 'receive'][0]
-        spell = plant['spell'].replace('<text 0..1400>', 'amber', 1).replace('<text 0..1400>', 'a spelled bell')
-        s, t = self.call('POST', receive['href'], {'intent': 'by-spell', 'spell': spell}, self.tok)
+        self.assertTrue(all(t.startswith('delvetalk garden/bell/1 ') for t in bell['_actions'].values()), bell['_actions'])
+        filled = view['_actions']['plant'].replace('one of amber, violet, silver', 'amber').replace('<text 1..80>', 'a spelled bell')
+        s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'by-spell', 'spell': filled}, self.tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         s, offers = self.get(links['offers']['href'])
         self.assertEqual(offers['_links']['next']['href'], f"/AGENTS.md/offers?after={offers['offers'][-1]['height']}&wait=30")
@@ -145,12 +135,13 @@ class Controls(FrontCase):
         self.assertEqual((s, made['status']), (200, 'created'), made)
         self.assertEqual(made['_links']['object']['href'], '/AGENTS.md/heap/world/kept')
         s, t = self.call('POST', '/AGENTS.md/heap/world/kept/bump', {'intent': 'no'}, self.tok)
-        self.assertEqual((s, t['status'], t['receipt']['outcome']['class']), (200, 'refused', 'lawRefused'), t)
+        self.assertEqual((s, t['status'], t['class']), (200, 'refused', 'lawRefused'), t)
+        self.assertTrue(t['line'].startswith('§ refused '), t['line'])
         self.assertEqual(t['_links']['hint']['href'], '/AGENTS.md/heap/world/kept/source')  # the law is there
         # The law refuses this caller `bump` on a request-only clause (`admits`), so it is not offered again.
         self.assertNotIn('_actions', t)
         s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': 7, 'intent': 'bad'}, self.tok)
-        self.assertEqual((s, e['_links']['hint']['href'], [a['name'] for a in e['_actions']]), (400, f'/AGENTS.md/world/{self.c}/source', ['bump']))
+        self.assertEqual((s, e['_links']['hint']['href'], list(e['_actions'])), (400, f'/AGENTS.md/world/{self.c}/source', ['bump']))
         self.turn(self.tok, 'dup')
         s, d = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'fields': {'a': 1}, 'intent': 'dup'}, self.tok)
         self.assertEqual((d['class'], d['_links']['hint']['href']), ('duplicateIdentity', '/AGENTS.md/receipt/dup'), d)
@@ -158,7 +149,8 @@ class Controls(FrontCase):
     def test_a_listing_links_each_id_and_its_next_page(self):
         s, listed = self.get('/AGENTS.md/world')
         self.assertEqual([i['name'] for i in listed['_links']['item']], listed['ids'])
-        self.assertIn({'href': '/AGENTS.md/world/garden', 'name': 'garden'}, listed['_links']['item'])
+        self.assertIn('garden', [i['name'] for i in listed['_links']['item']])
+        self.assertIn('plant', next(i for i in listed['_links']['item'] if i['name'] == 'garden')['actions'])
         self.assertNotIn('next', listed['_links'])
         real = self.host.send
         self.host.send = lambda req: {'status': 'listed', 'ids': ['a', 'b/c'], 'more': True} if req['op'] == 'world-objects' else real(req)
@@ -203,8 +195,7 @@ class Controls(FrontCase):
                 r['methods'] = {'garden': ['plant', 'receive']}
             return r
         self.host.send = send
-        names = [a['name'] for a in self.get('/AGENTS.md/world/garden')[1]['_actions']]
-        self.assertIn('receive', names)
+        names = list(self.get('/AGENTS.md/world/garden')[1]['_actions'])
         self.assertNotIn('plant', names)
         items = self.get('/AGENTS.md/world')[1]['_links']['item']
         self.assertIn({'href': '/AGENTS.md/world/garden', 'name': 'garden', 'actions': ['plant', 'receive']}, items)

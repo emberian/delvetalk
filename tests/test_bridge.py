@@ -104,6 +104,16 @@ class BridgeCase(unittest.TestCase):
 
 
 class Bridging(BridgeCase):
+    def test_a_bell_spell_in_a_fresh_post_routes_to_the_bell(self):
+        self.make('garden/bell/1')
+        post = spell_post(1, 'garden/bell/1', '2026-10-09T10:00:00Z')
+        post['record']['text'] = 'delvetalk garden/bell/1 rain\nnote: soft'
+        self.observe([post])
+        got = self.run_bridge()
+        self.assertEqual(len(got['turns']), 1, got)
+        (d,) = self.drafts()
+        self.assertEqual(d['object'], 'garden/bell/1')
+
     def test_three_posts_three_turns_in_created_order_then_nothing(self):
         self.make('garden-1')
         self.make('directory')

@@ -298,3 +298,9 @@ Both modes: only `model`, `max_tokens`, `system` and `messages` are sent (never 
 `DELVETALK_MODEL_THINKING=off` adds `thinking: {"type": "disabled"}` for cheap deterministic JSON calls.
 With a state directory, each replied call appends `{at, model, inputTokens, outputTokens, account}` to `<state>/model-spend.jsonl`; total it against the monthly grant, since no balance endpoint exists.
 `DELVETALK_KEY_NAME` labels the key in that log. Total it with `python3 -m deploy.spend --state /data/state [--month YYYY-MM] [--grant 200]`: calls and tokens by month, dollars at Haiku 5.5's published rates ($0.10 per million input tokens, $0.50 output), and the grant remaining. Any `anthropic-ratelimit-*` response headers appear in the result as `rateLimits`.
+
+## The front's access log
+
+`transport.http` writes one line per request to `<state>/access.log`: `<time> <method> <path> <status> <bytes> <did or ->`,
+the path without its query, never a credential or a body. Past 16 MB the file becomes `access.log.1` (one generation kept).
+Zero 500s is `awk '$4 == 500' access.log access.log.1`.

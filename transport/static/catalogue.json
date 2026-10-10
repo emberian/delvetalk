@@ -3,9 +3,10 @@
   "auth": "Authorization: Bearer <credential>, from challenge then verify; your DID is your principal",
   "heap": "a route with `heap` also runs in your private heap at that href",
   "links": "_links: relation -> {href} or [{href, name}], on every JSON reply; relations are route names",
-  "actions": "_actions on object, card and source replies: {name, method, href, fields: [{name, kind, bounds}], body, spell?, input?}, one per method of the host's method table a turn can run",
+  "actions": "_actions on object, card and source replies: {method name: spell template}, one per method that has a form (not receive, render, page, publishPage or a view). Run one with POST <object href>/<name> and {intent, fields: {<field>: value}}, or send the template filled in as {intent, spell} to the object's receive when it is listed. The fields' kinds and bounds are the template's (`one of a, b`, `<text 1..80>`, `<natural 0..9>`) and, whole, in /source `forms`. A method with no form takes typed data: POST {intent, argument}. /world lists each object's method names beside its id.",
   "typedData": "{tag: natural|label|boolean, value} {tag: record, fields: [{name, value}]} {tag: list, items} {tag: variant, label, payload}",
-  "hashes": "replies omit content ids except a receipt's own hash and a source's pin; a receipt and a program each have a spoken name; ?full=1 shows the ids"
+  "hashes": "replies omit content ids except a receipt's own hash and a source's pin; a receipt and a program each have a spoken name; ?full=1 shows the ids",
+  "turns": "a turn's reply is {status, class?, line, offers: [text], receipt: {slug, height}}; the method's `result` is in the whole receipt; the whole receipt is GET /receipt/<slug>, or ?full=1 on the turn"
  },
  "envelope": {
   "status": "error | refused",

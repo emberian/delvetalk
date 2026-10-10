@@ -116,6 +116,8 @@ class Classification(unittest.TestCase):
         self.assertEqual(card('> delvetalk garden plant'), None)
         self.assertEqual(card('delvetalk garden'), None)  # no action: malformed
         self.assertEqual(card('delvetalk !x plant'), None)
+        self.assertEqual(card('delvetalk garden/bell/1 rain'), 'garden/bell/1')  # the host's id alphabet: . _ : / -
+        self.assertEqual(card('delvetalk wake/did:plc:abc.d_e receive'), 'wake/did:plc:abc.d_e')
         obs, _ = self.kinds([mk(1, kimik3)])
         self.assertEqual((obs['000001']['kind'], obs['000001']['spell']), ('spell', {'card': 'tide'}))
 
