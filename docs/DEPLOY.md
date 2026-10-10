@@ -45,7 +45,7 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
 | (b) hostd's socket, one persistent connection | 0.21 ms | 1.03 to 1.08 ms |
 | (c) the raw pipe to the host process | 0.13 to 0.15 ms | 0.87 to 0.94 ms |
 
-A connection per op costs about 0.25 ms; hostd's own dispatch and the pipe add about 0.07 ms; the rest of a bump is the host.
+`HostClient` now keeps one connection per thread, so production runs path (b) (measured through `HostClient` itself: 0.20 ms and 0.99 ms). A connection per op cost about 0.25 ms; hostd's own dispatch and the pipe add about 0.07 ms; the rest of a bump is the host.
 
 ## Prerequisites on the workhorse
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Per-op round trip across the transport boundary, in medians: world-status x1000 and Counter bumps x200 through
-(a) hostd's socket with a connection per op, (b) one persistent connection, (c) the raw pipe to the host process.
+(a) hostd's socket with a connection per op, (b) one persistent connection (transport.hostproc.HostClient), (c) the raw pipe to the host process.
 
   DELVETALK_OBEND=/path/to/delvetalk-obend python3 deploy/bench-boundary.py
 """
@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from deploy.seed import closure, modules_on_disk  # noqa: E402
 from transport.hostd import Hostd  # noqa: E402
-from transport.hostproc import BINARY, Host  # noqa: E402
+from transport.hostproc import BINARY, Host, HostClient  # noqa: E402
 import threading  # noqa: E402
 
 OWNER = 'did:plc:bench'
@@ -33,17 +33,6 @@ class PerOp:
             s.connect(self.path)
             s.sendall((json.dumps(req) + '\n').encode())
             return json.loads(s.makefile('rb').readline())
-
-
-class Persistent:
-    def __init__(self, path):
-        self.s = socket.socket(socket.AF_UNIX)
-        self.s.connect(str(path))
-        self.f = self.s.makefile('rb')
-
-    def send(self, req):
-        self.s.sendall((json.dumps(req) + '\n').encode())
-        return json.loads(self.f.readline())
 
 
 def median_ms(send, make, n):
@@ -74,7 +63,7 @@ def main():
         def bump(tag):
             return lambda i: {'op': 'world-turn', 'principal': OWNER, 'object': 'c', 'method': 'bump', 'argument': EMPTY, 'identity': f'{tag}-{i}'}
         rows = []
-        for name, send, tag in (('(a) socket per op', PerOp(sock).send, 'a'), ('(b) persistent socket', Persistent(sock).send, 'b'),
+        for name, send, tag in (('(a) socket per op', PerOp(sock).send, 'a'), ('(b) persistent socket', HostClient(sock).send, 'b'),
                                 ('(c) raw pipe', raw.send, 'c')):
             rows.append((name, median_ms(send, status, 1000), median_ms(send, bump(tag), 200)))
         d.shutdown()
