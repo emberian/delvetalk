@@ -1682,6 +1682,42 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         changesJson w ctx.principal ctx.intent ctx.ledger used st.sends.length updates proposal.allWrites) endedIfLate
     return (w', turnReply w' r)
 
+/-- The door word a card's pure `blurb()` gives (`Card.Door {word, blurb}`), if it has one. -/
+def blurbWord (o : Object) : M (Option String) := do
+  if !((entrySource o).splitOn "\n").any (·.startsWith "def blurb(") then return none
+  let some c ← tryCatch (some <$> compiledMethod o "blurb") (fun _ => pure none) | return none
+  let some entry := c.entry | return none
+  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+  | .ok (.record fs) => return (fs.lookup "word").bind labelOf
+  | _ => return none
+
+/-- `publishPage {page}` asked of a card whose package declares no `publishPage` (WORLD-REVIEW
+    finding 16): the host publishes the card's default page as `Card.defaultPage` wrote it, the card as
+    a stranger sees it and how to reply (the host's usage of its forms and lenses), under `page`, else
+    the door word `blurb()` gives, else the object's id. The result is the post id, as
+    `Card.publishPage`'s. -/
+def defaultPublishPage (id : String) (argument : Data) : M Data := do
+  let s ← get
+  let some o := s.world.objects[id]? | evaluation s!"unknown object {id}"
+  recordRoot id o.version
+  let given := match argument with
+    | .record fs => ((fs.lookup "page").bind labelOf).getD ""
+    | _ => ""
+  let word := (← blurbWord o).getD id
+  let title := if given.isEmpty then word else given
+  let card ← match ← renderCard o (fun m => cardContext s.world id "" "" s.intent s.world.height m) with
+    | .ok doc => liftEval (Delvetalk.Document.render doc)
+    | .error clause => evaluation s!"publishPage: the card does not render ({clause})"
+  let usage := spellUsage id (spellForms id o) (declaredLenses s.world o)
+  let body := s!"## Card\n\n{card}\n## How to reply\n\n{usage}"
+  if title.utf8ByteSize > Limits.maxTitleBytes || title.any (· == '\n') then evaluation "publishPage: the title is not one line of at most 256 bytes"
+  if body.utf8ByteSize > Delvetalk.Document.maxOutputBytes then evaluation "publishPage: the page exceeds its capacity"
+  let s ← get
+  let post := Journal.bodyHash (Json.arr #[toJson "publish", toJson s.principal, toJson s.intent, toJson s.publishes.length])
+  set { s with publishes := s.publishes ++ [Json.mkObj [("id", toJson post), ("object", toJson id),
+    ("page", toJson title), ("section", toJson ""), ("text", toJson s!"wiki: {title}\n\n{body}")]] }
+  return .label post
+
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
     wrong arity) journal nothing, except for a delivery, which must be consumed. -/
 def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String (World × Json) := do
@@ -1698,7 +1734,12 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let answers := match post with
     | some p => if p.object == req.object then req.replyTo else ""
     | none => ""
-  let (result, st) := (runMethod 0 req.object req.method req.argument how.caller req.principal how.via |>.run).run init
+  -- A card that declares no `publishPage` has the host's default page (`defaultPublishPage`).
+  let byHost := req.method == "publishPage" && how.delivery.isNone &&
+    ((w.objects[req.object]?).map (!hasMethod · "publishPage")).getD false
+  let action := if byHost then defaultPublishPage req.object req.argument
+    else runMethod 0 req.object req.method req.argument how.caller req.principal how.via
+  let (result, st) := (action.run).run init
   let ctx : Ctx :=
     { principal := req.principal
       intent := req.intent

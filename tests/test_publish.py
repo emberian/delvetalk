@@ -79,5 +79,30 @@ class Drafts(BridgeCase):
         self.assertEqual(d['replyTo'], 'at://page')
 
 
+class DefaultPage(BridgeCase):
+    """WORLD-REVIEW finding 16: a card that declares no `publishPage` has the host's default page, the card
+    as a stranger sees it and how to reply, under the given page or its door word."""
+
+    def test_a_card_without_publish_page_gets_the_default_page(self):
+        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-counter', 'object': 'c',
+                            'modules': closure('Counter'), 'entry': 'initial', 'seed': record()})
+        self.assertEqual(r['status'], 'created', r)
+        r = self.host.send({'op': 'world-turn', 'principal': 'ember', 'object': 'c', 'method': 'publishPage',
+                            'argument': record(page=label('')), 'identity': 'page-1'})
+        self.assertEqual(r['status'], 'admitted', r)
+        [published] = self.host.send({'op': 'world-publications', 'principal': 'ember'})['publications']
+        self.assertEqual((published['object'], published['page'], published['section']), ('c', 'counter', ''), published)
+        self.assertEqual(r['result'], label(published['id']))
+        body = published['body']
+        self.assertTrue(body.startswith('## Card\n\n'), body)
+        self.assertIn('\n## How to reply\n\n', body)
+        self.assertIn('delvetalk c bump', body)
+        named = self.host.send({'op': 'world-turn', 'principal': 'ember', 'object': 'c', 'method': 'publishPage',
+                                'argument': record(page=label('Counter')), 'identity': 'page-2'})
+        self.assertEqual(named['status'], 'admitted', named)
+        self.assertEqual([p['page'] for p in self.host.send({'op': 'world-publications', 'principal': 'ember'})['publications']],
+                         ['counter', 'Counter'])
+
+
 if __name__ == '__main__':
     unittest.main()

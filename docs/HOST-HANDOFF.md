@@ -488,6 +488,15 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `Abi.Verdict` gaining `reading` is the objects lane's. Test: `tests/test_law.py`
    `test_a_bend_laws_reading_is_the_refusals_reason`.
 
+68. **The host's default page (host10; WORLD-REVIEW finding 16).** A direct `publishPage {page}` to a card
+   whose package declares no `publishPage` is the host's (`defaultPublishPage`, chosen in `runTurnWith`):
+   it publishes `Card.defaultPage`'s shape, `## Card` (the card rendered for nobody, as `world-card`
+   renders it for "") and `## How to reply` (the host's usage of the card's forms and lenses,
+   `spellUsage`), joined by a line as `Card.pageText` joins sections, under `page`, else the word the
+   pure `blurb()` gives, else the object's id; the result is the post id. The turn writes nothing and
+   stages one publication. The five pasted `publishPage` methods (Anthology, Scene, Table, Tide,
+   Workshop) may go (objects lane); Garden keeps its own. Test: `tests/test_publish.py` `DefaultPage`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
