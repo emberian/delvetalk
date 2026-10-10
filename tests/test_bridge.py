@@ -385,18 +385,18 @@ class Routing(BridgeCase):
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), n)  # drafts and skips are remembered
 
-    def test_a_reply_deep_in_a_thread_routes_by_the_root_when_its_parent_has_no_address(self):
+    def test_a_reply_deep_in_a_thread_is_not_routed_by_the_threads_root(self):
         root = f'at://{DID}/town.delve.feed.post/root01'
         mid = f'at://{DID}/town.delve.feed.post/mid001'
         stub = Stub({root: {'status': 'addressee', 'object': 'garden-1'}})
-        deep = mk(1, 'silver, then', parent=mid)
+        deep = mk(1, 'silver, then', parent=mid)  # one agent answering another under a card's post
         deep['record']['reply']['root'] = {'uri': root, 'cid': 'x'}
         self.observe([deep])
         bridge.run(self.state, stub)
-        self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], ['garden-1'])
-        self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid, root])
+        self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], [])
+        self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid])
 
-    def test_a_deep_reply_routes_to_the_nearest_recorded_ancestor(self):
+    def test_a_reply_reaches_a_card_by_its_direct_parent_only(self):
         u = lambda n: f'at://{DID}/town.delve.feed.post/t{n}'
         stub = Stub({u(2): {'status': 'addressee', 'object': 'garden-1'}, u(1): {'status': 'addressee', 'object': 'wrong'}})
         posts = [mk(1, 'root post'), mk(2, 'recorded', parent=u(1)), mk(3, 'third', parent=u(2)), mk(4, 'fourth', parent=u(3))]
@@ -407,11 +407,7 @@ class Routing(BridgeCase):
         self.observe(posts)
         bridge.run(self.state, stub)
         turns = {t['identity'][-2:]: t['object'] for t in stub.ops if t['op'] == 'world-turn'}
-        self.assertEqual(turns['t4'], 'garden-1')  # 4 -> 3 (unknown) -> 2 (recorded): nearest, not the root
-        asked = [o['parent'] for o in stub.ops if o['op'] == 'world-addressee']
-        self.assertEqual(turns['t2'], 'wrong')  # its own parent is the recorded post 1
-        self.assertEqual(asked.count(u(1)), 1)  # only t2 asked about the root; t3 and t4 stopped at post 2
-        self.assertEqual(turns['t3'], 'garden-1')
+        self.assertEqual(turns, {'t2': 'wrong', 't3': 'garden-1'})  # t4's parent, t3, is no card's post: not by an ancestor
 
     def test_the_walk_is_bounded_and_survives_a_cycle(self):
         a, b = f'at://{DID}/town.delve.feed.post/ca', f'at://{DID}/town.delve.feed.post/cb'

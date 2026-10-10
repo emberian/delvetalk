@@ -274,11 +274,14 @@ def names_door(host, obs):
 
 
 def route(host, obs, known=None):
-    """-> (object, slot|None) or None. A reply to a journaled post goes to that post's addressee; the
-    card word applies only to posts with no journaled parent, and a summon with none routes to the directory
-    when it names a door."""
+    """-> (object, slot|None) or None. A reply reaches the card whose recorded post is its direct parent; on Zulip, where
+    a topic is one thread, the nearest recorded message above it in the topic, unless it @-mentions only other
+    residents. Never by the thread's root alone: deeper replies are agents talking to each other (FLEX.md). Then the
+    post's spell, as the host reads it; then a summons that names a door goes to the directory."""
+    zulip = obs['uri'].startswith('zulip://')
     known, seen, ancestor = known or {}, set(), obs['replyTo']
-    for _ in range(MAX_HOPS):  # the nearest recorded ancestor, walking replyTo through what the observer stored
+    hops = 0 if zulip and obs['mentions'] and obs['kind'] != 'summon' else MAX_HOPS if zulip else 1
+    for _ in range(hops):  # the direct parent; on Zulip the walk up the topic through what the observer stored
         if not ancestor or ancestor in seen:
             break
         seen.add(ancestor)
@@ -286,11 +289,6 @@ def route(host, obs, known=None):
         if got.get('object'):
             return got['object'], got.get('slot')
         ancestor = (known.get(ancestor) or {}).get('replyTo')
-    root = obs.get('root')
-    if root and root not in seen:  # then the thread root
-        got = host.send({'op': 'world-addressee', 'parent': root})
-        if got.get('object'):
-            return got['object'], got.get('slot')
     card = spelled(host, obs)
     if card:
         return card, None

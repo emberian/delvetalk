@@ -207,6 +207,14 @@ class Bridging(ZulipCase):
         self.assertEqual(len(texts), 3, texts)
         self.assertTrue(all('garden-1 says' in t for t in texts), texts)
 
+    def test_in_a_topic_the_world_opened_a_message_mentioning_only_other_residents_is_not_read(self):
+        self.zulip.say('t', 'Alice', SPELL)
+        self.bridge()
+        self.zulip.say('t', 'Bob', '@**Alice** your fern looks well, what colour did you pick?')
+        self.assertEqual(self.bridge()['turns'], [])
+        self.zulip.say('t', 'Bob', 'and one for me too')
+        self.assertEqual(len(self.bridge()['turns']), 1)
+
     def test_a_bell_spell_in_a_new_topic_routes_to_the_bell(self):
         body = OFFERING.replace('"hello "', '"bell says "')
         r = self.host.send({'op': 'world-create', 'principal': OPENER, 'identity': 'mk-bell', 'object': 'garden/bell/1',
