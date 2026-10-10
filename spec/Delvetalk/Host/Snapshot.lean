@@ -10,9 +10,7 @@
    (receipts, history index, outbox, modules, pending, suspended, clock) is rebuilt by a
    bookkeeping pass over the entries up to the snapshot height, and must agree with the copies.
 
-   Loading checks, in order: the CID, the edition, the binary that wrote it (`binaryPin`: a
-   newer checkpoint codec cannot be resumed by an older binary, and a changed judge must re-judge),
-   its height against the journal, its head against the journal's hash at that height, the
+   Loading checks, in order: the CID, the edition, its height against the journal, its head against the journal's hash at that height, the
    derived copies, and finally that every later entry replays on it. -/
 import Delvetalk.Host.Ops
 import Delvetalk.Canonical
@@ -23,28 +21,6 @@ open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
 open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 def edition : String := "delvetalk.snapshot.v1"
-
-/-! ## The binary pin -/
-
-initialize binaryPinCache : IO.Ref (Option String) ← IO.mkRef none
-
-/-- A fingerprint of the running executable: the CID of its size and its first 1 MiB (the
-    file is over 100 MB and Lean's handles cannot seek, so reading or hashing all of it would cost
-    an open up to half a second; a rebuild that changes code changes the size or the leading
-    pages, in practice). Computed once per process, and only when a snapshot is read or written. -/
-def binaryPin : IO String := do
-  if let some p := ← binaryPinCache.get then return p
-  let path ← IO.appPath
-  let size := (← System.FilePath.metadata path).byteSize.toNat
-  let h ← IO.FS.Handle.mk path IO.FS.Mode.read
-  let mut head := ByteArray.empty
-  while head.size < 1048576 do
-    let chunk ← h.read (USize.ofNat (1048576 - head.size))
-    if chunk.isEmpty then break
-    head := head ++ chunk
-  let pin := Delvetalk.Canonical.cid ((toString size).toUTF8 ++ head)
-  binaryPinCache.set (some pin)
-  return pin
 
 /-! ## Canonical bytes back to JSON
 
@@ -150,7 +126,7 @@ def derived (w : World) : List (String × Json) :=
 
 /-- The body of a snapshot of `w`. A law that does not read back from its text is refused: the
     snapshot would judge by another law than replay. -/
-def body (w : World) (binary : String) : Except String Json := do
+def body (w : World) : Except String Json := do
   let objects := sortedBy w.objects.toList (·.1)
   let mut types : List (String × Json) := []
   let mut out : Array Json := #[]
@@ -170,7 +146,7 @@ def body (w : World) (binary : String) : Except String Json := do
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
-  return Json.mkObj ([("edition", toJson edition), ("binary", toJson binary), ("height", toJson w.height),
+  return Json.mkObj ([("edition", toJson edition), ("height", toJson w.height),
     ("head", toJson w.head),
     ("library", toJson ((w.library.map (·.pin)).getD "")), ("libraryLaw", toJson w.libraryLaw),
     ("libraries", Json.arr (libraries.toArray.map fun (pin, l) =>
@@ -187,8 +163,8 @@ def fileOf (journal : String) (height : Nat) : String := s!"{journal}.snapshot.{
 /-- The canonical bytes of a snapshot of `w`: the DAG-CBOR map `{cid: text, body: bytes}` whose
     `body` is the canonical bytes of the body and `cid` their CID, so a reader checks the CID over
     the bytes as stored before it decodes anything. -/
-def encode (w : World) (binary : String) : Except String ByteArray := do
-  let bytes ← Delvetalk.Canonical.encodeJson (← body w binary)
+def encode (w : World) : Except String ByteArray := do
+  let bytes ← Delvetalk.Canonical.encodeJson (← body w)
   let open_ := Delvetalk.Canonical.text (Delvetalk.Canonical.head ByteArray.empty 5 2) "cid"
   let withCid := Delvetalk.Canonical.text (Delvetalk.Canonical.text open_ (Delvetalk.Canonical.cid bytes)) "body"
   return (Delvetalk.Canonical.head withCid 2 bytes.size).append bytes
@@ -232,8 +208,7 @@ def kept : Nat := 3
     all but the newest `kept`. -/
 def write (journal : String) (w : World) : IO (Except String Nat) := do
   try
-    let binary ← binaryPin
-    match encode w binary with
+    match encode w with
     | .error e => return .error e
     | .ok bytes =>
       if bytes.size > Limits.maxSnapshotBytes then return .error "snapshot exceeds its byte capacity"
@@ -248,13 +223,12 @@ def write (journal : String) (w : World) : IO (Except String Nat) := do
 /-! ## Reading -/
 
 /-- The checked body of a snapshot file's bytes, refused by name. -/
-def verifiedBody (bytes : ByteArray) (binary : String) (height : Nat) (entries : Array Json) : Except String Json := do
+def verifiedBody (bytes : ByteArray) (height : Nat) (entries : Array Json) : Except String Json := do
   if bytes.size > Limits.maxSnapshotBytes then throw "exceeds its byte capacity"
   let (cid, raw) ← split bytes
   unless cid == Delvetalk.Canonical.cid raw do throw "its bytes are not its CID's"
   let b ← decodeBytes raw
   unless (← b.getObjValAs? String "edition") == edition do throw "another snapshot edition"
-  unless (← b.getObjValAs? String "binary") == binary do throw "written by another binary"
   unless (← natField b "height") == height do throw "its height is not its file name's"
   if height == 0 || height > entries.size then throw "the journal is shorter than its height"
   unless (entries[height - 1]!.getObjValAs? String "hash").toOption == some (← b.getObjValAs? String "head") do
@@ -471,7 +445,6 @@ def openContent (journal content : String) (verify : Bool := false) : IO (Except
     | .ok e => pure e
     | .error e => return .error e
   let snaps ← files journal
-  let binary ← if snaps.isEmpty then pure "" else binaryPin
   let mut report : Report := {}
   if verify then
     let heights := snaps.map (·.1)
@@ -483,7 +456,7 @@ def openContent (journal content : String) (verify : Bool := false) : IO (Except
       if heights.contains w.height then
         let some (_, f) := snaps.find? (·.1 == w.height) | continue
         let bytes ← IO.FS.readBinFile f
-        match verifiedBody bytes binary w.height entries, body w binary with
+        match verifiedBody bytes w.height entries, body w with
         | .ok mine, .ok replayed =>
           if mine != replayed then
             report := { report with refused := report.refused ++ [(w.height, "it disagrees with replay at its height")] }
@@ -493,7 +466,7 @@ def openContent (journal content : String) (verify : Bool := false) : IO (Except
   for (height, f) in snaps do
     let attempt ← try
         let bytes ← IO.FS.readBinFile f
-        pure (verifiedBody bytes binary height entries >>= fun b => resume b entries)
+        pure (verifiedBody bytes height entries >>= fun b => resume b entries)
       catch e => pure (.error s!"unreadable: {e}")
     match attempt with
     | .ok w => return .ok (w, { report with resumed := height })

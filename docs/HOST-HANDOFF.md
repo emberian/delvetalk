@@ -11,7 +11,7 @@ Tests that pin behaviour: `tests/test_world.py`, `test_turn_world.py`,
 (`test_turn_world` 200 bumps under 5 s, `test_http` 200 turns under 10 s) are fsync-bound and can miss under a
 loaded box; alone they take 3.3 s and pass. `test_snapshot`'s reopen under 1 s takes 0.2 to 0.4 s alone and
 measured 1.08 s inside the parallel suite on hbox at load 30 while every open read the whole binary for its
-pin; since `binaryPin` reads 1 MiB and only beside a snapshot, reopen is 0.10 s (full replay 0.16 s).
+pin; snapshots name no binary since host7's hash pass, and reopen is 0.10 s (full replay 0.16 s).
 Build: `LEAN_NUM_THREADS=2 lake build 2>&1 | grep -v "^warning\|deprecated" | grep -A10 error`.
 Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes ~3 min).
 
@@ -35,7 +35,7 @@ imports Session and `PackageMain.lean` drives it.
 - **TurnLoop.lean** (1303): `world-turn` and everything that runs activities: the `M` monad,
   `runMethod`/`drive`/`awaitPlan`/`answer`, `finishTurn`, `runTurnWith`, `resumeOne`/`settle`
   (suspended turns), `deliverOne`/`deliver` (sends), `reprogramOp`, `amendOp`.
-- **Snapshot.lean**: snapshot bytes, `binaryPin`, `openContent` (the snapshot-aware replay `openWorld` uses).
+- **Snapshot.lean**: snapshot bytes, `openContent` (the snapshot-aware replay `openWorld` uses).
 - **Session.lean** (194): the only IO. `Open {world, path, handle}`, `openWorld`, `durable`, `stepWorld`,
   `syncHandle` (extern, `spec/native/sync.c`). Journal lines are appended and fsynced before any reply.
   Durability is fsync, not a full barrier: an entry may be lost on power loss within the OS write-back
@@ -356,13 +356,12 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `suspended` hashes as cross-checks. Everything `record` derives (receipts, touched, outbox, published,
    modules, pending, suspended, clock) is rebuilt by `recordAll`, a bookkeeping-only pass over the entries up
    to the height. `openContent`: parse and hash-walk every entry from genesis (`entriesOf`), then for each
-   snapshot newest first check: CID over the stored bytes, edition, `binary` (= `binaryPin`, the CID of the
-   executable's size and its first 1 MiB, computed once per process and only when a snapshot is read or
-   written; Lean handles cannot seek, and reading the whole 127 MB file cost every open 0.45 s on hbox), height within the journal, `head` = the journal's hash at that height, the derived
+   snapshot newest first check: CID over the stored bytes, edition (no binary pin since host7's hash pass: binary
+   identity is deploy's smoke test's; an older snapshot's `binary` is ignored), height within the journal, `head` = the journal's hash at that height, the derived
    copies, each object's version and pin against what the entries record (`expectedObjects`), every law
    reading back from its text, and finally that every later entry replays on it. The first failure refuses
    the snapshot by name in the report and the next older is tried, then full replay. A forger who recomputes
-   the CID and keeps versions and pins can change a state unnoticed by a plain open; `world-open {verify:
+   the CID and keeps versions and pins is caught by each state's `stateCid` against the journal (5.35); `world-open {verify:
    true}` replays everything and refuses, by name, each snapshot whose body differs from the replayed store's
    at its height ("it disagrees with replay at its height"). 500 creates of one package (hbox): reopen 0.10 s from
    the snapshot, 0.16 s by full replay (the build cache already makes that cheap; the snapshot pays off with
