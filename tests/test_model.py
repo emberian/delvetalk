@@ -155,6 +155,16 @@ class Interpret(unittest.TestCase):
         self.assertEqual([s['id'] for s in self.settled()], ['i1', 'i2'])
         self.assertEqual(self.settled()[0]['reply']['json']['n'], 1)
 
+    def test_after_a_restore_a_request_the_host_lists_as_pending_is_settled_again_with_its_saved_reply(self):
+        interpret.run(self.state, self.host, self.ask)
+        d = Path(self.tmp.name)  # the journal restored from before i1 settled, its receipt file from after
+        (d / 'pending.json').write_text(json.dumps({'pending': [item(1)]}))
+        restored = Host(None, str(d / 'stub'))
+        self.addCleanup(restored.close)
+        again = interpret.run(self.state, restored, self.ask)
+        self.assertEqual((again['settled'], len(self.calls)), (['i1'], 2))
+        self.assertEqual([(s['id'], s['reply']['json']['n']) for s in self.settled()], [('i1', 1), ('i2', 2), ('i1', 1)])
+
     def test_a_refused_model_call_is_settled_as_the_failure_reply(self):
         interpret.run(self.state, self.host, lambda req: model.failed('refused'))
         self.assertEqual(self.settled()[0]['reply'], {'status': 'failed', 'reason': 'refused', 'detail': ''})
