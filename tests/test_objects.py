@@ -156,6 +156,16 @@ def weight(n: Nat) -> Nat:
   Document.size(O.render(sample(rains(n)), Card.stranger()))
 def lineCount(n: Nat) -> Nat:
   Lists.length::<String>(Document.lines(O.render(sample(rains(n)), Card.stranger())))
+def long(n: Nat) -> String:
+  match n:
+    case 0: ""
+    case 1+previous: textConcat("rain ", long(previous))
+def longRains(n: Nat) -> Lists.List<O.Rain>:
+  match n:
+    case 0: Lists.List::<O.Rain>.nil()
+    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: long(56n), at: 1n, n: previous}, tail: longRains(previous)})
+def wide(n: Nat) -> String:
+  Document.plain(O.render(sample(longRains(n)), Card.stranger()))
 def two(n: Nat) -> String:
   Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first", at: 1n, n: 0n}), {author: "gemini", handle: "", text: "second", at: 2n, n: 1n})), Card.stranger()))
 """
@@ -312,6 +322,17 @@ class Objects(unittest.TestCase):
         self.assertEqual(text.count("author: a line of rain\n"), 8)
         self.assertTrue(text.endswith("… and 239 more\n"), text)
         self.assertLess(len(text), 1400)
+
+    def test_a_bell_of_long_rains_is_clipped_by_characters(self):
+        """Eight rains of 280 characters would be 2,300 characters: `Card.clipped` keeps the lines
+        that fit 1,200 (WORLD-REVIEW 2)."""
+        reply = run_pure("Bell", "wide", nat(12), probe=BELL_PROBE, limits=BIG)
+        self.assertEqual(reply["status"], "finished", reply)
+        text = reply["value"]["value"]
+        self.assertLess(len(text), 1400)
+        shown = text.count("author: rain ")
+        self.assertTrue(0 < shown < 8, text)
+        self.assertTrue(text.endswith("… and %d more\n" % (12 - shown)), text)
 
 
 NEGATIVE_PRELUDE = """edition ObjectiveBend 1

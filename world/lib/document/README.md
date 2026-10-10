@@ -1,10 +1,6 @@
 # Structured documents
 
-`Document.obend` is a pure, recursively typed presentation value shared by authored
-encounters, templates and interpretation prompts: what every card's `render` returns
-(docs/FOUNDATION.md section 4). It imports the List and Encounter prelude modules.
-
-`plain` is an authored text projection. Keep the structured original: concatenated
-text cannot manufacture an offer, reference, field or instruction boundary.
-Templates live in `templates/`; renderers may adapt layout but must resolve actions
-through the same retained invitation and display unbound captures inertly.
+`Document.obend` is what every card's `render` returns (docs/FOUNDATION.md section 5): a
+text, or a sequence of documents. `plain` is its text, `lines` its lines and `size` its
+length in characters; the host renders a Document byte for byte as `plain` does.
+Templates (`templates/`) are the `doc"""…"""` syntax over its `text`, `concat` and `empty`.

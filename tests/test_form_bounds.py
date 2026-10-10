@@ -89,44 +89,15 @@ class FormBounds(Chain):
         self.assertIn("{'name': 'max', 'value': {'tag': 'natural', 'value': '5'}}", str(forms))
 
 
-# The Workshop's two source-carrying actions as `form` blocks (the kernel's `name: source` line), until
-# the objects lane declares them in Workshop.obend itself.
-WORKSHOP_FORMS = ("""def forms() -> Card.Forms:
-  Card.Forms.nil()
-""", """form check:
-  target: text 0..128
-  source: source
-form propose:
-  target: text 1..128
-  migration: text 0..1400
-  source: source
-def forms() -> Card.Forms:
-  Card.Forms.cons({head: checkForm(), tail: Card.Forms.cons({head: proposeForm(), tail: Card.Forms.nil()})})
-""")
-
-
 class WorkshopSource(Chain):
-    """The Workshop's `check` takes a `source` block by its form's bound, not the text default.
-
-    Expected to fail until the library has `Form.Kind.source` with its cases (Form.obend's `source: {}`,
-    and the `case source` arms of Spell.obend's judge and typed value, Card.obend's template and
-    Policy.obend's kind text: the objects lane's) and foundation has the kernel's `name: source` form
-    line (lane/kernel8 a977d64). Probed on hbox with both: it passes."""
+    """The Workshop's `check` takes a `source` block by its form's bound, not the text default."""
 
     def create(self):
-        override = {}
-        with open(ON_DISK["Workshop"], encoding="utf-8") as f:
-            workshop = f.read()
-        if "\nform check" not in workshop:
-            self.assertIn(WORKSHOP_FORMS[0], workshop)
-            workshop = workshop.replace(*WORKSHOP_FORMS)
-        override["Workshop"] = workshop
-        self.make("workshop", closure("Workshop", None, None, override), record())
+        self.make("workshop", closure("Workshop"), record())
 
     def say(self, text):
         return self.turn("workshop", "receive", record(text=label(text), post=label("")), principal="glm")
 
-    @unittest.expectedFailure
     def test_a_six_kib_block_is_checked_and_twenty_kib_refused_by_name(self):
         self.create()
         code = "edition ObjectiveBend 1\n" + ("def x() -> Nat:\n  0n\n" * 400)[:6000].rstrip("\n")

@@ -8,6 +8,7 @@ import ./Card.obend as Card
 import ./Seats.obend as Seats
 import ./Automatafl.obend as Game
 import ./Validated.obend as Checked
+import ./Text.obend as Text
 # The original two-player Automatafl table on the commit-reveal seats. Each round both
 # seats seal, both open (each opening waits for the other's seal), and then anyone
 # resolves: the table views both seats, plays the qualified game, and moves both seats
@@ -68,7 +69,7 @@ def advancedSouth(result: Game.Result, state: State) -> Activity<Done>:
     case _: Done.resolved({round: state.round + 1n, status: result.status, winner: result.winner})
 # An action without a form: anyone resolves a round.
 def methods() -> Lists.List<String>:
-  Card.wordList("resolve")
+  Text.words("resolve")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def blurb() -> Card.Door:

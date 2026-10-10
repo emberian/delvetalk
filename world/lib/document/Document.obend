@@ -1,24 +1,9 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
-import ./Encounter.obend as Encounter
-# Source-owned offer identity; revision/meaning are authored metadata, not native
-# root versions or authenticated program hashes. The host retains exact roots.
-record Capture:
-  object: String
-  revision: Nat
-  meaning: String
-  entry: String
-  token: String
+# What a card's `render` returns: text, and sequences of documents.
 sum Document:
   text: {value: String}
   sequence: {items: Documents}
-  quote: {attribution: String, body: Document}
-  reference: Encounter.Child
-  offer: {label: String, capture: Capture}
-  fields: {capture: Capture, needs: Names}
-  source: {language: String, code: String, revision: String}
-  result: {status: String, body: Document}
-  continuation: {key: String, after: Nat, limit: Nat, label: String}
 type Documents = Lists.List<Document>
 type Names = Lists.List<String>
 def empty() -> Document:
@@ -27,8 +12,6 @@ def text(value: String) -> Document:
   Document.text({value: value})
 def concat(left: Document, right: Document) -> Document:
   Document.sequence({items: Documents.cons({head: left, tail: Documents.cons({head: right, tail: Documents.nil()})})})
-def quote(attribution: String, body: Document) -> Document:
-  Document.quote({attribution: attribution, body: body})
 # Read-only text projection; callers retain the original structured value.
 # The leaves are flattened once (linear) and joined by the textJoin primitive,
 # which appends onto one accumulator and is charged by the bytes it adds:
@@ -41,13 +24,6 @@ def leaves(document: Document, rest: Strings) -> Strings:
   match document:
     case text(t): Strings.cons({head: t.value, tail: rest})
     case sequence(s): leavesItems(s.items, rest)
-    case quote(q): Strings.cons({head: q.attribution, tail: Strings.cons({head: ": ", tail: leaves(q.body, rest)})})
-    case reference(r): Strings.cons({head: r.label, tail: rest})
-    case offer(o): Strings.cons({head: o.label, tail: rest})
-    case fields(_): rest
-    case source(s): Strings.cons({head: s.code, tail: rest})
-    case result(r): leaves(r.body, rest)
-    case continuation(c): Strings.cons({head: c.label, tail: rest})
 def leavesItems(items: Documents, rest: Strings) -> Strings:
   match items:
     case nil(_): rest
@@ -60,13 +36,6 @@ def size(document: Document) -> Nat:
   match document:
     case text(t): textLength(t.value)
     case sequence(s): sizeItems(s.items)
-    case quote(q): textLength(q.attribution) + size(q.body)
-    case reference(r): textLength(r.label)
-    case offer(o): textLength(o.label)
-    case fields(_): 0n
-    case source(s): textLength(s.code)
-    case result(r): size(r.body)
-    case continuation(c): textLength(c.label)
 def sizeItems(items: Documents) -> Nat:
   Lists.fold(items, 0n, fn(document: Document) -> Nat -> Nat: fn(rest: Nat) -> Nat: size(document) + rest)
 # One string per rendered line, without the newline; a final empty line (text
@@ -79,13 +48,6 @@ def linesOf(document: Document, rest: Names) -> Names:
   match document:
     case text(t): splitOnto(t.value, rest)
     case sequence(s): linesOfItems(s.items, rest)
-    case quote(q): splitOnto(q.attribution, splitOnto(": ", linesOf(q.body, rest)))
-    case reference(r): splitOnto(r.label, rest)
-    case offer(o): splitOnto(o.label, rest)
-    case fields(_): rest
-    case source(s): splitOnto(s.code, rest)
-    case result(r): linesOf(r.body, rest)
-    case continuation(c): splitOnto(c.label, rest)
 def linesOfItems(items: Documents, rest: Names) -> Names:
   match items:
     case nil(_): rest

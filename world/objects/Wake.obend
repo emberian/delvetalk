@@ -9,6 +9,7 @@ import ./Card.obend as Card
 import ./Event.obend as Events
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
+import ./Text.obend as Text
 # mimo's reflex arc: an owner's triggers, each an event to match and an action to take.
 # A trigger on an event subscribes the wake to its env's `buffer`, so every event the env
 # takes in is delivered here (`changedSensed`); the owner may also hand one to `sense`. A
@@ -306,7 +307,7 @@ form keyword:
 form unwatch:
   id: natural 1..1000000
 def methods() -> Lists.List<String>:
-  Card.wordList("watch sense schedule")
+  Text.words("watch sense schedule")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: mentionForm(), tail: Card.Forms.cons({head: keywordForm(), tail: Card.Forms.cons({head: unwatchForm(), tail: Card.Forms.nil()})})})
 def blurb() -> Card.Door:

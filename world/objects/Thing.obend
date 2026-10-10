@@ -7,6 +7,7 @@ import ./Form.obend as Form
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Places.obend as Places
+import ./Text.obend as Text
 # owner: who may rename and redescribe the thing (its lenses); the law guards the same.
 # offer: custody offered to someone, open until a clock time (a card address is a versioned
 # capability, not a durable inbox: giving is offer and accept, never a pointer move).
@@ -205,7 +206,7 @@ form offer:
 form withdraw:
 # An avatar's accept calls transfer, the Workshop's copy sends copy; drop names a place.
 def methods() -> Lists.List<String>:
-  Card.wordList("transfer copy drop")
+  Text.words("transfer copy drop")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: acquireForm(), tail: Card.Forms.cons({head: offerForm(), tail: Card.Forms.cons({head: withdrawForm(), tail: Card.Forms.nil()})})})
 def blurb() -> Card.Door:
