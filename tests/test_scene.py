@@ -16,7 +16,7 @@ import unittest
 
 from tests import test_chain
 from tests.test_objects import closure
-from tests.test_turn_world import label, record
+from tests.test_turn_world import label, record, relation
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
 
@@ -31,7 +31,7 @@ def listing(items):
 
 def choice(text, to, key="", value=""):
     """A choice; a key sets that variable to value when it is taken (one `set` effect)."""
-    effects = [record(key=label(key), op=label("set"), value=label(value))] if key else []
+    effects = [record(key=label(key), op={"tag": "variant", "label": "set", "payload": record()}, value=label(value))] if key else []
     return record(label=label(text), to=label(to), effects=listing(effects), guard=listing([]))
 
 
@@ -41,8 +41,8 @@ def passage(pid, text, choices):
 
 def scene_state(passages, start="gate", title="The Moss Gate"):
     return record(owner=label("ember"), title=label(title), start=label(start), passages=listing(passages),
-                  presence=listing([]), vars=listing([]), cooldown={"tag": "natural", "value": "0"},
-                  requires=listing([]), left=listing([]))
+                  presence=relation(), vars=listing([]), cooldown={"tag": "natural", "value": "0"},
+                  requires=listing([]), left=relation())
 
 
 GATE = [
@@ -58,8 +58,12 @@ def why(reply):
 
 
 def plain(item):
-    """A wire value as plain python: records to dicts, lists to lists, scalars to values."""
+    """A wire value as plain python: records to dicts, lists and relations to lists, a sum to its case, scalars to values."""
     tag = item["tag"]
+    if tag == "variant" and item["label"] == "rows":
+        return plain(item["payload"]["fields"][0]["value"])
+    if tag == "variant":
+        return item["label"]
     if tag == "record":
         return {f["name"]: plain(f["value"]) for f in item["fields"]}
     if tag == "list":

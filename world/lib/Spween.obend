@@ -20,8 +20,8 @@ import ./Text.obend as Text
 # Refused by name: `weight` (a scene is entered by name, never drawn), `~ call` and the
 # `~ name args` call form (a scene changes only its own variables), `has:` and
 # `category.key` conditions (a scene cannot see what a reader holds), an effect outside a
-# choice, and a target no passage answers. Sixteen passages of eight choices, as a card
-# shows them.
+# choice, and a target no passage answers. Sixteen passages of eight choices and 600
+# characters, as a card shows them.
 sum Parsed:
   parsed: {seed: Scenes.Seed, id: String}
   refused: {reason: String}
@@ -29,47 +29,35 @@ def parse(text: String) -> Parsed:
   fronted(front(lines(text)))
 # The text of the first ```spween block in a post, if any.
 def block(text: String) -> Lists.Maybe<String>:
-  let at = indexOf(text, "```spween")
+  let at = Text.indexOf(text, "```spween")
   if at == textLength(text) then Lists.Maybe.none({}) else Lists.Maybe.some({value: fenced(textDrop(textDrop(text, at), textBreak(textDrop(text, at), "\n") + 1n))})
 def fenced(inner: String) -> String:
-  let stop = indexOf(inner, "\n```")
+  let stop = Text.indexOf(inner, "\n```")
   if stop == textLength(inner) then inner else textTake(inner, stop + 1n)
 # --- text ---------------------------------------------------------------------------
 def lines(text: String) -> Lists.List<String>:
   if text == "" then Lists.List.nil({}) else Lists.List.cons({head: Text.trimEnd(textTake(text, textBreak(text, "\n"))), tail: lines(textDrop(text, textBreak(text, "\n") + 1n))})
-def trim(text: String) -> String:
-  Text.trimEnd(Text.trimStart(text))
 def indent(line: String) -> Nat:
   textSpan(line, " \t")
-def starts(text: String, prefix: String) -> Bool:
-  textTake(text, textLength(prefix)) == prefix
-# Where `needle` first stands in `text` (its length when nowhere).
-def indexOf(text: String, needle: String) -> Nat:
-  indexFrom(text, needle, 0n)
-def indexFrom(text: String, needle: String, at: Nat) -> Nat:
-  let skip = textBreak(text, textTake(needle, 1n))
-  if skip == textLength(text) then at + skip else if textTake(textDrop(text, skip), textLength(needle)) == needle then at + skip else indexFrom(textDrop(text, skip + 1n), needle, at + skip + 1n)
-def has(text: String, needle: String) -> Bool:
-  indexOf(text, needle) < textLength(text)
 def keyChars() -> String:
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
 def isKey(text: String) -> Bool:
   text != "" && textSpan(text, keyChars()) == textLength(text)
 def unquoted(text: String) -> String:
-  if textLength(text) >= 2n && starts(text, "\"") && textDrop(text, textLength(text) - 1n) == "\"" then textTake(textDrop(text, 1n), textLength(text) - 2n) else text
+  if textLength(text) >= 2n && Text.starts(text, "\"") && textDrop(text, textLength(text) - 1n) == "\"" then textTake(textDrop(text, 1n), textLength(text) - 2n) else text
 def keyOf(line: String) -> String:
-  trim(textTake(line, textBreak(line, ":")))
+  Text.trim(textTake(line, textBreak(line, ":")))
 def valueOf(line: String) -> String:
-  trim(textDrop(line, textBreak(line, ":") + 1n))
+  Text.trim(textDrop(line, textBreak(line, ":") + 1n))
 # The lines indented past `depth` (blank lines among them included), and what follows.
 def deeper(ls: Lists.List<String>, depth: Nat) -> Lists.List<String>:
   match ls:
     case nil(_): ls
-    case cons(c): if trim(c.head) == "" || indent(c.head) > depth then Lists.List.cons({head: c.head, tail: deeper(c.tail, depth)}) else Lists.List.nil({})
+    case cons(c): if Text.trim(c.head) == "" || indent(c.head) > depth then Lists.List.cons({head: c.head, tail: deeper(c.tail, depth)}) else Lists.List.nil({})
 def beyond(ls: Lists.List<String>, depth: Nat) -> Lists.List<String>:
   match ls:
     case nil(_): ls
-    case cons(c): if trim(c.head) == "" || indent(c.head) > depth then beyond(c.tail, depth) else ls
+    case cons(c): if Text.trim(c.head) == "" || indent(c.head) > depth then beyond(c.tail, depth) else ls
 def hyphenated(text: String) -> String:
   let at = textBreak(text, "_")
   if at == textLength(text) then text else "{textTake(text, at)}-{hyphenated(textDrop(text, at + 1n))}"
@@ -86,11 +74,11 @@ sum Front:
 def front(ls: Lists.List<String>) -> Front:
   match ls:
     case nil(_): Front.bare({rest: ls})
-    case cons(c): if trim(c.head) == "" then front(c.tail) else if trim(c.head) == "---" then closing(c.tail, Lists.List.nil({})) else Front.bare({rest: ls})
+    case cons(c): if Text.trim(c.head) == "" then front(c.tail) else if Text.trim(c.head) == "---" then closing(c.tail, Lists.List.nil({})) else Front.bare({rest: ls})
 def closing(ls: Lists.List<String>, seen: Lists.List<String>) -> Front:
   match ls:
     case nil(_): Front.bad({reason: "the frontmatter has no closing ---"})
-    case cons(c): if trim(c.head) == "---" then Front.meta({lines: Lists.reverse(seen), rest: c.tail}) else closing(c.tail, Lists.List.cons({head: c.head, tail: seen}))
+    case cons(c): if Text.trim(c.head) == "---" then Front.meta({lines: Lists.reverse(seen), rest: c.tail}) else closing(c.tail, Lists.List.cons({head: c.head, tail: seen}))
 def noMeta() -> Meta:
   {id: "", title: "", cooldown: 0n, requires: Lists.List.nil({})}
 def fronted(f: Front) -> Parsed:
@@ -108,7 +96,7 @@ def metaRead(read: MetaRead, rest: Lists.List<String>) -> Parsed:
 def readMeta(ls: Lists.List<String>, meta: Meta) -> MetaRead:
   match ls:
     case nil(_): MetaRead.ok({meta: meta})
-    case cons(c): if trim(c.head) == "" || starts(trim(c.head), "#") then readMeta(c.tail, meta) else if indent(c.head) > 0n then MetaRead.bad({reason: "unexpected indentation in the frontmatter: {trim(c.head)}"}) else metaKey(keyOf(trim(c.head)), valueOf(trim(c.head)), c.tail, meta)
+    case cons(c): if Text.trim(c.head) == "" || Text.starts(Text.trim(c.head), "#") then readMeta(c.tail, meta) else if indent(c.head) > 0n then MetaRead.bad({reason: "unexpected indentation in the frontmatter: {Text.trim(c.head)}"}) else metaKey(keyOf(Text.trim(c.head)), valueOf(Text.trim(c.head)), c.tail, meta)
 def metaKey(key: String, value: String, rest: Lists.List<String>, meta: Meta) -> MetaRead:
   if key == "id" then readMeta(rest, extend(meta, {id: unquoted(value)})) else if key == "title" then readMeta(rest, extend(meta, {title: unquoted(value)})) else if key == "cooldown" then cooled(Text.number(value), rest, meta) else if key == "weight" then MetaRead.bad({reason: "weight: a scene is entered by name here, never drawn by weight"}) else if key == "requires" then required(value, deeper(rest, 0n), beyond(rest, 0n), meta) else readMeta(beyond(rest, 0n), meta)
 def cooled(number: Text.Number, rest: Lists.List<String>, meta: Meta) -> MetaRead:
@@ -127,27 +115,27 @@ sum GuardRead:
 def requirements(ls: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
   match ls:
     case nil(_): GuardRead.ok({guard: guard})
-    case cons(c): if trim(c.head) == "" then requirements(c.tail, guard) else requirement(keyOf(trim(c.head)), valueOf(trim(c.head)), deeper(c.tail, indent(c.head)), beyond(c.tail, indent(c.head)), guard)
+    case cons(c): if Text.trim(c.head) == "" then requirements(c.tail, guard) else requirement(keyOf(Text.trim(c.head)), valueOf(Text.trim(c.head)), deeper(c.tail, indent(c.head)), beyond(c.tail, indent(c.head)), guard)
 def requirement(key: String, value: String, nested: Lists.List<String>, rest: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
-  if key == "has" then GuardRead.bad({reason: "has: a scene cannot see what a reader holds; name a variable with flags"}) else if key == "min" || key == "max" then bounded(if key == "min" then ">=" else "<=", pairs(value, nested), rest, guard) else if key == "flags" || key == "not" then flagged(if key == "flags" then "truthy" else "falsy", items(value, nested), rest, guard) else GuardRead.bad({reason: "requires knows min, max, flags and not, not {key}"})
+  if key == "has" then GuardRead.bad({reason: "has: a scene cannot see what a reader holds; name a variable with flags"}) else if key == "min" || key == "max" then bounded(if key == "min" then Scenes.Test.atLeast({}) else Scenes.Test.atMost({}), pairs(value, nested), rest, guard) else if key == "flags" || key == "not" then flagged(if key == "flags" then Scenes.Test.truthy({}) else Scenes.Test.falsy({}), items(value, nested), rest, guard) else GuardRead.bad({reason: "requires knows min, max, flags and not, not {key}"})
 # `{ a: 1, b: 2 }` inline, or one `a: 1` line each beneath.
 def pairs(value: String, nested: Lists.List<String>) -> Lists.List<String>:
-  if starts(value, "{{") then pieces(textTake(textDrop(value, 1n), textBreak(textDrop(value, 1n), "}}"))) else Lists.filter(Lists.map(nested, trim), fn(t: String) -> Bool: t != "")
+  if Text.starts(value, "{{") then pieces(textTake(textDrop(value, 1n), textBreak(textDrop(value, 1n), "}}"))) else Lists.filter(Lists.map(nested, Text.trim), fn(t: String) -> Bool: t != "")
 # `[a, b]` inline, or one `- a` line each beneath.
 def items(value: String, nested: Lists.List<String>) -> Lists.List<String>:
-  if starts(value, "[") then pieces(textTake(textDrop(value, 1n), textBreak(textDrop(value, 1n), "]"))) else Lists.map(Lists.filter(Lists.map(nested, trim), fn(t: String) -> Bool: t != ""), fn(t: String) -> String: if starts(t, "-") then trim(textDrop(t, 1n)) else t)
+  if Text.starts(value, "[") then pieces(textTake(textDrop(value, 1n), textBreak(textDrop(value, 1n), "]"))) else Lists.map(Lists.filter(Lists.map(nested, Text.trim), fn(t: String) -> Bool: t != ""), fn(t: String) -> String: if Text.starts(t, "-") then Text.trim(textDrop(t, 1n)) else t)
 def pieces(text: String) -> Lists.List<String>:
-  if trim(text) == "" then Lists.List.nil({}) else Lists.List.cons({head: trim(textTake(text, textBreak(text, ","))), tail: pieces(textDrop(text, textBreak(text, ",") + 1n))})
-def bounded(op: String, entries: Lists.List<String>, rest: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
+  if Text.trim(text) == "" then Lists.List.nil({}) else Lists.List.cons({head: Text.trim(textTake(text, textBreak(text, ","))), tail: pieces(textDrop(text, textBreak(text, ",") + 1n))})
+def bounded(test: Scenes.Test, entries: Lists.List<String>, rest: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
   match entries:
     case nil(_): requirements(rest, guard)
-    case cons(c): if isKey(keyOf(c.head)) then bounded(op, c.tail, rest, Lists.append(guard, {key: keyOf(c.head), op: op, value: unquoted(valueOf(c.head))})) else keyRefused(keyOf(c.head))
-def flagged(op: String, names: Lists.List<String>, rest: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
+    case cons(c): if isKey(keyOf(c.head)) then bounded(test, c.tail, rest, Lists.append(guard, {key: keyOf(c.head), test: test, value: unquoted(valueOf(c.head))})) else keyRefused(keyOf(c.head))
+def flagged(test: Scenes.Test, names: Lists.List<String>, rest: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
   match names:
     case nil(_): requirements(rest, guard)
-    case cons(c): if isKey(c.head) then flagged(op, c.tail, rest, Lists.append(guard, {key: c.head, op: op, value: ""})) else keyRefused(c.head)
+    case cons(c): if isKey(c.head) then flagged(test, c.tail, rest, Lists.append(guard, {key: c.head, test: test, value: ""})) else keyRefused(c.head)
 def keyRefused(key: String) -> GuardRead:
-  if has(key, ".") then GuardRead.bad({reason: "has: {key} asks what a reader holds; a scene sees only its own variables"}) else GuardRead.bad({reason: "not a variable: {key}"})
+  if Text.contains(key, ".") then GuardRead.bad({reason: "has: {key} asks what a reader holds; a scene sees only its own variables"}) else GuardRead.bad({reason: "not a variable: {key}"})
 # --- conditions ---------------------------------------------------------------------
 def conditions(text: String) -> GuardRead:
   conditionsFrom(pieces(text), Lists.List.nil({}))
@@ -162,18 +150,19 @@ def conditioned(read: ClauseRead, rest: Lists.List<String>, guard: Scenes.Guard)
   match read:
     case bad(b): GuardRead.bad({reason: b.reason})
     case ok(o): conditionsFrom(rest, Lists.append(guard, o.clause))
-def operators() -> Lists.List<String>:
-  Lists.List.cons({head: ">=", tail: Lists.List.cons({head: "<=", tail: Lists.List.cons({head: "!=", tail: Lists.List.cons({head: "==", tail: Lists.List.cons({head: ">", tail: Lists.List.cons({head: "<", tail: Lists.List.nil({})})})})})})})
+# The tests spween writes between a key and a value, two-character ones first.
+def operators() -> Lists.List<Scenes.Test>:
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.List.nil({}), Scenes.Test.atLeast({})), Scenes.Test.atMost({})), Scenes.Test.differs({})), Scenes.Test.equals({})), Scenes.Test.above({})), Scenes.Test.below({}))
 def condition(text: String) -> ClauseRead:
-  match Lists.find(operators(), fn(op: String) -> Bool: has(text, op)):
-    case some(o): compared(trim(textTake(text, indexOf(text, o.value))), o.value, trim(textDrop(text, indexOf(text, o.value) + textLength(o.value))))
-    case none(_): if starts(text, "!") then bare(trim(textDrop(text, 1n)), "falsy") else bare(text, "truthy")
-def compared(key: String, op: String, value: String) -> ClauseRead:
-  if isKey(key) then ClauseRead.ok({clause: {key: key, op: op, value: unquoted(value)}}) else clauseRefused(key)
-def bare(key: String, op: String) -> ClauseRead:
-  if isKey(key) then ClauseRead.ok({clause: {key: key, op: op, value: ""}}) else clauseRefused(key)
+  match Lists.find(operators(), fn(test: Scenes.Test) -> Bool: Text.contains(text, Scenes.symbol(test))):
+    case some(o): compared(Text.trim(textTake(text, Text.indexOf(text, Scenes.symbol(o.value)))), o.value, Text.trim(textDrop(text, Text.indexOf(text, Scenes.symbol(o.value)) + textLength(Scenes.symbol(o.value)))))
+    case none(_): if Text.starts(text, "!") then bare(Text.trim(textDrop(text, 1n)), Scenes.Test.falsy({})) else bare(text, Scenes.Test.truthy({}))
+def compared(key: String, test: Scenes.Test, value: String) -> ClauseRead:
+  if isKey(key) then ClauseRead.ok({clause: {key: key, test: test, value: unquoted(value)}}) else clauseRefused(key)
+def bare(key: String, test: Scenes.Test) -> ClauseRead:
+  if isKey(key) then ClauseRead.ok({clause: {key: key, test: test, value: ""}}) else clauseRefused(key)
 def clauseRefused(key: String) -> ClauseRead:
-  if has(key, ".") then ClauseRead.bad({reason: "has: {key} asks what a reader holds; a scene sees only its own variables"}) else ClauseRead.bad({reason: "not a condition: {key}"})
+  if Text.contains(key, ".") then ClauseRead.bad({reason: "has: {key} asks what a reader holds; a scene sees only its own variables"}) else ClauseRead.bad({reason: "not a condition: {key}"})
 # --- passages -----------------------------------------------------------------------
 record Open:
   id: String
@@ -185,16 +174,16 @@ sum Body:
 def body(ls: Lists.List<String>, at: Lists.Maybe<Open>, choice: Lists.Maybe<Scenes.Choice>, done: Lists.List<Scenes.Passage>) -> Body:
   match ls:
     case nil(_): Body.ok({passages: closed(at, choice, done)})
-    case cons(c): line(trim(c.head), indent(c.head), c.tail, at, choice, done)
+    case cons(c): line(Text.trim(c.head), indent(c.head), c.tail, at, choice, done)
 # An unindented ~ or -> line belongs to the passage, not to the choice above it.
 def line(t: String, depth: Nat, rest: Lists.List<String>, at: Lists.Maybe<Open>, choice: Lists.Maybe<Scenes.Choice>, done: Lists.List<Scenes.Passage>) -> Body:
-  if starts(t, "//") then body(rest, at, choice, done) else if starts(t, "===") then opened(trim(passageName(textDrop(t, 3n))), rest, closed(at, choice, done)) else if depth == 0n && (starts(t, "~") || starts(t, "->")) then inPassage(t, rest, closedChoice(at, choice), Lists.Maybe.none({}), done) else inPassage(t, rest, at, choice, done)
+  if Text.starts(t, "//") then body(rest, at, choice, done) else if Text.starts(t, "===") then opened(Text.trim(passageName(textDrop(t, 3n))), rest, closed(at, choice, done)) else if depth == 0n && (Text.starts(t, "~") || Text.starts(t, "->")) then inPassage(t, rest, closedChoice(at, choice), Lists.Maybe.none({}), done) else inPassage(t, rest, at, choice, done)
 def closedChoice(at: Lists.Maybe<Open>, choice: Lists.Maybe<Scenes.Choice>) -> Lists.Maybe<Open>:
   match at:
     case none(_): at
     case some(o): Lists.Maybe.some({value: withChoice(o.value, choice)})
 def passageName(text: String) -> String:
-  let name = trim(text)
+  let name = Text.trim(text)
   if textLength(name) >= 3n && textDrop(name, textLength(name) - 3n) == "===" then textTake(name, textLength(name) - 3n) else name
 def opened(name: String, rest: Lists.List<String>, done: Lists.List<Scenes.Passage>) -> Body:
   if isKey(name) == false then Body.bad({reason: "a passage name is letters, digits and _: {name}"}) else body(rest, Lists.Maybe.some({value: {id: name, prose: "", choices: Lists.List.nil({})}}), Lists.Maybe.none({}), done)
@@ -203,7 +192,7 @@ def inPassage(t: String, rest: Lists.List<String>, at: Lists.Maybe<Open>, choice
     case none(_): if t == "" then body(rest, at, choice, done) else Body.bad({reason: "text before the first === passage: {textTake(t, 40n)}"})
     case some(o): passageLine(t, rest, o.value, choice, done)
 def passageLine(t: String, rest: Lists.List<String>, open: Open, choice: Lists.Maybe<Scenes.Choice>, done: Lists.List<Scenes.Passage>) -> Body:
-  if starts(t, "*") then chosen(header(trim(textDrop(t, 1n))), rest, withChoice(open, choice), done) else if starts(t, "~") then effected(t, rest, open, choice, done) else if starts(t, "->") then diverted(trim(textDrop(t, 2n)), rest, open, choice, done) else if t == "" then blank(rest, open, choice, done) else body(rest, Lists.Maybe.some({value: extend(withChoice(open, choice), {prose: prosed(withChoice(open, choice).prose, t)})}), Lists.Maybe.none({}), done)
+  if Text.starts(t, "*") then chosen(header(Text.trim(textDrop(t, 1n))), rest, withChoice(open, choice), done) else if Text.starts(t, "~") then effected(t, rest, open, choice, done) else if Text.starts(t, "->") then diverted(Text.trim(textDrop(t, 2n)), rest, open, choice, done) else if t == "" then blank(rest, open, choice, done) else body(rest, Lists.Maybe.some({value: extend(withChoice(open, choice), {prose: prosed(withChoice(open, choice).prose, t)})}), Lists.Maybe.none({}), done)
 def blank(rest: Lists.List<String>, open: Open, choice: Lists.Maybe<Scenes.Choice>, done: Lists.List<Scenes.Passage>) -> Body:
   match choice:
     case some(_): body(rest, Lists.Maybe.some({value: open}), choice, done)
@@ -220,16 +209,14 @@ def closed(at: Lists.Maybe<Open>, choice: Lists.Maybe<Scenes.Choice>, done: List
     case none(_): done
     case some(o): Lists.append(done, passageOf(withChoice(o.value, choice)))
 def passageOf(open: Open) -> Scenes.Passage:
-  {id: open.id, text: trimmedLines(open.prose), choices: open.choices}
-def trimmedLines(text: String) -> String:
-  if textLength(text) > 0n && textDrop(text, textLength(text) - 1n) == "\n" then trimmedLines(textTake(text, textLength(text) - 1n)) else text
+  {id: open.id, text: Text.trimEndOf(open.prose, "\n"), choices: open.choices}
 sum Header:
   ok: {choice: Scenes.Choice}
   bad: {reason: String}
 def header(t: String) -> Header:
-  if starts(t, "[") == false || has(t, "]") == false then Header.bad({reason: "a choice is * [label]: {textTake(t, 40n)}"}) else labelled(trim(textTake(textDrop(t, 1n), textBreak(textDrop(t, 1n), "]"))), trim(textDrop(t, textBreak(t, "]") + 1n)))
+  if Text.starts(t, "[") == false || Text.contains(t, "]") == false then Header.bad({reason: "a choice is * [label]: {textTake(t, 40n)}"}) else labelled(Text.trim(textTake(textDrop(t, 1n), textBreak(textDrop(t, 1n), "]"))), Text.trim(textDrop(t, textBreak(t, "]") + 1n)))
 def labelled(label: String, after: String) -> Header:
-  if after == "" then Header.ok({choice: {label: label, to: Scenes.ending(), effects: Lists.List.nil({}), guard: Lists.List.nil({})}}) else if starts(after, "{{") && has(after, "}}") then guarded(label, conditions(textTake(textDrop(after, 1n), textBreak(textDrop(after, 1n), "}}")))) else if starts(after, "when ") then guarded(label, conditions(textDrop(after, 5n))) else Header.bad({reason: "after a choice's [label] comes {{ condition }} or when condition: {textTake(after, 40n)}"})
+  if after == "" then Header.ok({choice: {label: label, to: Scenes.ending(), effects: Lists.List.nil({}), guard: Lists.List.nil({})}}) else if Text.starts(after, "{{") && Text.contains(after, "}}") then guarded(label, conditions(textTake(textDrop(after, 1n), textBreak(textDrop(after, 1n), "}}")))) else if Text.starts(after, "when ") then guarded(label, conditions(textDrop(after, 5n))) else Header.bad({reason: "after a choice's [label] comes {{ condition }} or when condition: {textTake(after, 40n)}"})
 def guarded(label: String, read: GuardRead) -> Header:
   match read:
     case bad(b): Header.bad({reason: b.reason})
@@ -248,7 +235,7 @@ sum EffectRead:
 def effected(t: String, rest: Lists.List<String>, open: Open, choice: Lists.Maybe<Scenes.Choice>, done: Lists.List<Scenes.Passage>) -> Body:
   match choice:
     case none(_): Body.bad({reason: "an effect outside a choice: {textTake(t, 40n)}"})
-    case some(c): withEffect(effect(trim(textDrop(t, 1n))), rest, open, c.value, done)
+    case some(c): withEffect(effect(Text.trim(textDrop(t, 1n))), rest, open, c.value, done)
 def withEffect(read: EffectRead, rest: Lists.List<String>, open: Open, choice: Scenes.Choice, done: Lists.List<Scenes.Passage>) -> Body:
   match read:
     case bad(b): Body.bad({reason: b.reason})
@@ -256,10 +243,10 @@ def withEffect(read: EffectRead, rest: Lists.List<String>, open: Open, choice: S
 def callRefused(t: String) -> EffectRead:
   EffectRead.bad({reason: "~ call: {textTake(t, 40n)}: a scene changes only its own variables; no game function runs here"})
 def effect(t: String) -> EffectRead:
-  if starts(t, "call(") then callRefused(t) else assigned(textTake(t, textSpan(t, keyChars())), trim(textDrop(t, textSpan(t, keyChars()))), t)
+  if Text.starts(t, "call(") then callRefused(t) else assigned(textTake(t, textSpan(t, keyChars())), Text.trim(textDrop(t, textSpan(t, keyChars()))), t)
 def assigned(key: String, rest: String, t: String) -> EffectRead:
-  if key == "" || starts(rest, ".") then EffectRead.bad({reason: "an effect sets a variable of the scene: {textTake(t, 40n)}"}) else if starts(rest, "+=") then counted(key, "add", unquoted(trim(textDrop(rest, 2n)))) else if starts(rest, "-=") then counted(key, "sub", unquoted(trim(textDrop(rest, 2n)))) else if starts(rest, "=") && starts(rest, "==") == false then EffectRead.ok({effect: {key: key, op: "set", value: unquoted(trim(textDrop(rest, 1n)))}}) else callRefused(t)
-def counted(key: String, op: String, value: String) -> EffectRead:
+  if key == "" || Text.starts(rest, ".") then EffectRead.bad({reason: "an effect sets a variable of the scene: {textTake(t, 40n)}"}) else if Text.starts(rest, "+=") then counted(key, Scenes.Op.add({}), unquoted(Text.trim(textDrop(rest, 2n)))) else if Text.starts(rest, "-=") then counted(key, Scenes.Op.sub({}), unquoted(Text.trim(textDrop(rest, 2n)))) else if Text.starts(rest, "=") && Text.starts(rest, "==") == false then EffectRead.ok({effect: {key: key, op: Scenes.Op.set({}), value: unquoted(Text.trim(textDrop(rest, 1n)))}}) else callRefused(t)
+def counted(key: String, op: Scenes.Op, value: String) -> EffectRead:
   if Scenes.isNatural(value) then EffectRead.ok({effect: {key: key, op: op, value: value}}) else EffectRead.bad({reason: "{key} += and -= take a natural number, not {value}"})
 # --- the seed -----------------------------------------------------------------------
 def finished(meta: Meta, read: Body) -> Parsed:
@@ -267,7 +254,7 @@ def finished(meta: Meta, read: Body) -> Parsed:
     case bad(b): Parsed.refused({reason: b.reason})
     case ok(o): checked(meta, o.passages, problem(o.passages))
 def problem(passages: Lists.List<Scenes.Passage>) -> String:
-  if Lists.length(passages) == 0n then "a scene has at least one === passage" else if Lists.length(passages) > 16n then "a scene holds sixteen passages" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.length(p.choices) > 8n) then "a passage offers at most eight choices" else unknownTarget(passages, Lists.filterMap(passages, fn(p: Scenes.Passage) -> Lists.Maybe<String>: missing(passages, p.choices)))
+  if Lists.length(passages) == 0n then "a scene has at least one === passage" else if Lists.length(passages) > 16n then "a scene holds sixteen passages" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.length(p.choices) > 8n) then "a passage offers at most eight choices" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: textLength(p.text) > 600n) then "a passage holds at most 600 characters" else unknownTarget(passages, Lists.filterMap(passages, fn(p: Scenes.Passage) -> Lists.Maybe<String>: missing(passages, p.choices)))
 def missing(passages: Lists.List<Scenes.Passage>, choices: Lists.List<Scenes.Choice>) -> Lists.Maybe<String>:
   match Lists.find(choices, fn(c: Scenes.Choice) -> Bool: c.to != Scenes.ending() && Lists.any(passages, fn(p: Scenes.Passage) -> Bool: p.id == c.to) == false):
     case some(c): Lists.Maybe.some({value: c.value.to})

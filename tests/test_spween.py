@@ -93,10 +93,20 @@ PROBE = """edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Scenes.obend as Scenes
 import ./Spween.obend as Spween
+def test(t: Scenes.Test) -> String:
+  match t:
+    case truthy(_): "truthy"
+    case falsy(_): "falsy"
+    case _: Scenes.symbol(t)
+def op(o: Scenes.Op) -> String:
+  match o:
+    case set(_): "set"
+    case add(_): "add"
+    case sub(_): "sub"
 def clauses(guard: Scenes.Guard) -> String:
-  textJoin(Lists.map(guard, fn(c: Scenes.Clause) -> String: "{c.key} {c.op} {c.value}"), ", ")
+  textJoin(Lists.map(guard, fn(c: Scenes.Clause) -> String: "{c.key} {test(c.test)} {c.value}"), ", ")
 def effects(list: Lists.List<Scenes.Effect>) -> String:
-  textJoin(Lists.map(list, fn(e: Scenes.Effect) -> String: "{e.key} {e.op} {e.value}"), "; ")
+  textJoin(Lists.map(list, fn(e: Scenes.Effect) -> String: "{e.key} {op(e.op)} {e.value}"), "; ")
 def choice(c: Scenes.Choice) -> String:
   "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}"
 def passage(p: Scenes.Passage) -> String:
@@ -148,6 +158,11 @@ class Parse(unittest.TestCase):
         self.assertTrue(summary("---\nid: s\n---\n=== a\n~ gold += 1\n")[0].startswith("refused: an effect outside a choice"))
         self.assertEqual(summary("---\nid: s\n---\n=== a\n* [Go]\n  -> nowhere\n")[0], "refused: -> nowhere: no passage of that name")
         self.assertEqual(summary("=== a\nText.\n")[0], "refused: a scene starts with frontmatter naming its id: ---, id: <name>, ---")
+
+    def test_a_passage_over_600_characters_is_refused(self):
+        body = "---\nid: s\n---\n=== a\n%s\n* [Go]\n  -> END\n"
+        self.assertTrue(summary(body % ("x" * 600))[0].startswith("s / s"))
+        self.assertEqual(summary(body % ("x" * 601))[0], "refused: a passage holds at most 600 characters")
 
 
 class Made(test_chain.Chain):
@@ -233,7 +248,7 @@ class Made(test_chain.Chain):
         # Inside the cooldown: refused by name, and the same write proposed directly by the law.
         early = self.say(well, "delvetalk %s enter" % well)
         self.assertEqual(self.refusal(early), ("cooldown", "You left at clock %d; enter again from clock %d." % (at, at + 3)))
-        append = {"tag": "variant", "label": "append", "payload": record(item=record(who=label(GLM), at=label("intro")))}
+        append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), at=label("intro")))}
         keep = {"tag": "variant", "label": "keep", "payload": record()}
         forged = self.host.send(op="world-propose", principal=GLM, identity="forged", roots=[{"object": well, "version": version}],
                                 writes=[{"object": well, "edits": [record(presence=append, vars=keep, left=keep)]}])

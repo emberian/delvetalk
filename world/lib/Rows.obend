@@ -62,6 +62,18 @@ record Subscription:
   note: String
   since: Nat
   handle: String
+# Who stands where in a scene or a commons (`at` a passage or a place), keyed {who}.
+record Presence:
+  who: String
+  at: String
+def presenceKey(p: Presence) -> {who: String}:
+  {who: p.who}
+def presentAs(presence: Relations.Relation<Presence>, who: String) -> Lists.Maybe<Presence>:
+  Relations.lookup(presence, {who: who}, presenceKey)
+def isPresent(presence: Relations.Relation<Presence>, who: String) -> Bool:
+  match presentAs(presence, who):
+    case some(_): true
+    case none(_): false
 # A row as a rule reads it (a Wake's `On.rows`, RELATIONAL section 7): its columns by name, each
 # a natural or a text (Relations.Cell), since Bend cannot read Data. One projection per row type.
 record Column:

@@ -6,6 +6,9 @@ import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
 import ./Scenes.obend as Scenes
 import ./Spween.obend as Spween
 # A scene: passages and choices as data (world/lib/Scenes.obend), who is where, the
@@ -13,7 +16,8 @@ import ./Spween.obend as Spween
 # turn's principal; no method takes one as an argument. Passages are the creator's seed
 # (sixteen passages of eight choices are what a card can show), or a ```spween block a
 # reader posts here, which makes a new scene at <this scene>/<its id> (world/lib/
-# Spween.obend). Presence holds sixteen readers and variables sixteen names.
+# Spween.obend). Presence holds sixteen readers, variables sixteen names, and `left` the
+# newest 64 departures.
 #
 # A choice offers itself only when its guard holds over the variables; taking it applies
 # its effects in order and moves the reader to its target, or out of the scene at END.
@@ -23,9 +27,9 @@ import ./Spween.obend as Spween
 type Choice = Scenes.Choice
 type Passage = Scenes.Passage
 type Var = Scenes.Var
-record Presence:
-  who: String
-  at: String
+type Presence = Rows.Presence
+# When a reader last left, keyed {at, who}: key order is the order of leaving, so past 64 the
+# host drops the oldest.
 record Left:
   who: String
   at: Nat
@@ -36,35 +40,39 @@ record State:
   title: String
   start: String
   passages: Lists.List<Passage>
-  presence: Lists.List<Presence>
+  presence: Relations.Relation<Presence>
   vars: Lists.List<Var>
   cooldown: Nat
   requires: Scenes.Guard
-  left: Lists.List<Left>
+  left: Relations.Relation<Left>
 type Seed = Scenes.Seed
 record Edits:
-  presence: Plans.Entries<Presence, Presence>
+  presence: Plans.Entries<Presence, {}>
   vars: Plans.Entries<Var, Var>
-  left: Plans.Entries<Left, Left>
+  left: Plans.Entries<Left, {}>
 def defaultSeed() -> Seed:
   {title: "", start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil()}
 def seeded(seed: Seed) -> State:
-  {owner: "", title: seed.title, start: seed.start, passages: seed.passages, presence: Lists.List.nil(), vars: Lists.List.nil(), cooldown: seed.cooldown, requires: seed.requires, left: Lists.List.nil()}
+  {owner: "", title: seed.title, start: seed.start, passages: seed.passages, presence: Relations.empty(), vars: Lists.List.nil(), cooldown: seed.cooldown, requires: seed.requires, left: Relations.empty()}
 def initial() -> State:
   seeded(defaultSeed())
 def keep() -> Edits:
   {presence: Plans.Entries.keep({}), vars: Plans.Entries.keep({}), left: Plans.Entries.keep({})}
+def leftKey(l: Left) -> {at: Nat, who: String}:
+  {at: l.at, who: l.who}
+def relations() -> Relations.Decls:
+  Lists.append(Lists.append(Relations.Decls.nil(), {field: "presence", key: Text.words("who"), limit: 16n}), {field: "left", key: Text.words("at who"), limit: 64n})
 law owner "only the owner reprograms or amends it; anyone enters, chooses and leaves": request.kind == 0 or request.subject == new.owner
 # The cooldown, as the second tier of the law: a reader who appears in presence must have
 # left at least `cooldown` clock units before the turn's clock.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if old.cooldown == 0n then Abi.Verdict.admitted({}) else arrivals(new.presence, request.context.clock, old)
+  if old.cooldown == 0n then Abi.Verdict.admitted({}) else arrivals(Relations.rows(new.presence), request.context.clock, old)
 def arrivals(presence: Lists.List<Presence>, clock: Nat, old: State) -> Abi.Verdict:
-  if Lists.any(presence, fn(p: Presence) -> Bool: Lists.any(old.presence, fn(q: Presence) -> Bool: q.who == p.who) == false && cooling(p.who, clock, old)) then Abi.Verdict.refused({clause: "cooldown", reading: "A reader who left enters again only after the cooldown."}) else Abi.Verdict.admitted({})
-# The helpers take the State after their own inputs: a definition whose first parameter is
-# the State is a method any turn may run.
+  if Lists.any(presence, fn(p: Presence) -> Bool: Rows.isPresent(old.presence, p.who) == false && cooling(p.who, clock, old)) then Abi.Verdict.refused({clause: "cooldown", reading: "A reader who left enters again only after the cooldown."}) else Abi.Verdict.admitted({})
+def lastLeft(who: String, state: State) -> Lists.Maybe<Left>:
+  Lists.find(Relations.rows(state.left), fn(l: Left) -> Bool: l.who == who)
 def cooling(who: String, clock: Nat, state: State) -> Bool:
-  match Lists.find(state.left, fn(l: Left) -> Bool: l.who == who):
+  match lastLeft(who, state):
     case some(l): clock < l.value.at + state.cooldown
     case none(_): false
 sum Done:
@@ -73,7 +81,7 @@ sum Done:
   left: {}
   refused: Card.Refusal
 def here(context: Abi.Context, state: State) -> Lists.Maybe<Presence>:
-  Lists.find(state.presence, fn(p: Presence) -> Bool: p.who == context.principal)
+  Rows.presentAs(state.presence, context.principal)
 def passageAt(id: String, state: State) -> Lists.Maybe<Passage>:
   Lists.find(state.passages, fn(p: Passage) -> Bool: p.id == id)
 # What an activity may do, judged purely before anything is written: a refusal names
@@ -89,13 +97,13 @@ def no(clause: String, reading: String) -> Verdict:
 def enterVerdict(context: Abi.Context, state: State) -> Verdict:
   match here(context, state):
     case some(_): no("alreadyHere", "You are already in this scene.")
-    case none(_): if Lists.length(state.presence) >= 16n then no("sceneFull", "Sixteen readers are already here.") else if Lists.any(state.passages, fn(p: Passage) -> Bool: p.id == state.start) == false then no("noStart", "This scene has no start passage.") else admitted(context, state)
+    case none(_): if Relations.count(state.presence) >= 16n then no("sceneFull", "Sixteen readers are already here.") else if Lists.any(state.passages, fn(p: Passage) -> Bool: p.id == state.start) == false then no("noStart", "This scene has no start passage.") else admitted(context, state)
 def admitted(context: Abi.Context, state: State) -> Verdict:
   match Scenes.failing(state.requires, state.vars):
     case some(c): no("unmet", "The scene requires {Scenes.clauseText(c.value)}.")
     case none(_): if cooling(context.principal, context.clock, state) then no("cooldown", "You left at clock {natText(leftAt(context.principal, state))}; enter again from clock {natText(leftAt(context.principal, state) + state.cooldown)}.") else Verdict.enter({at: state.start})
 def leftAt(who: String, state: State) -> Nat:
-  match Lists.find(state.left, fn(l: Left) -> Bool: l.who == who):
+  match lastLeft(who, state):
     case some(l): l.value.at
     case none(_): 0n
 def leaveVerdict(context: Abi.Context, state: State) -> Verdict:
@@ -150,10 +158,10 @@ def done(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Done>
     case move(m): moving(m.me, m.choice, m.vars)
     case leave(l): departing(l.me, l.vars, context, state)
 def entering(at: String, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: append {who: context.principal, at: at}}
+  let written(_) = write {presence: insert {who: context.principal, at: at}}
   Done.entered({at: at})
 def moving(me: Presence, c: Choice, vars: Lists.List<Plans.Entries<Var, Var>>) -> Activity<Done>:
-  let written(_) = world.write(extend(keep(), {presence: Plans.Entries.amendItem({item: me, change: {who: me.who, at: c.to}})}))
+  let written(_) = write {presence: upsert {who: me.who, at: c.to}}
   varied(vars, Done.moved({to: c.to}))
 def varied(vars: Lists.List<Plans.Entries<Var, Var>>, done: Done) -> Activity<Done>:
   match vars:
@@ -162,21 +170,18 @@ def varied(vars: Lists.List<Plans.Entries<Var, Var>>, done: Done) -> Activity<Do
 def wroteVar(edit: Plans.Entries<Var, Var>, rest: Lists.List<Plans.Entries<Var, Var>>, done: Done) -> Activity<Done>:
   let written(_) = world.write(extend(keep(), {vars: edit}))
   varied(rest, done)
-# Leaving (or reaching END) records when, for the cooldown: the reader's own entry is
-# amended; a new one is added, the oldest dropped past sixty-four.
+# Leaving (or reaching END) records when, for the cooldown: the reader's last departure is
+# retracted and this one inserted.
 def departing(me: Presence, vars: Lists.List<Plans.Entries<Var, Var>>, context: Abi.Context, state: State) -> Activity<Done>:
-  let written(_) = world.write(extend(keep(), {presence: Plans.Entries.removeItem({item: me}), left: leaving(context, state)}))
-  trimmed(vars, context, state)
-def leaving(context: Abi.Context, state: State) -> Plans.Entries<Left, Left>:
-  match Lists.find(state.left, fn(l: Left) -> Bool: l.who == context.principal):
-    case some(l): Plans.Entries.amendItem({item: l.value, change: {who: context.principal, at: context.clock}})
-    case none(_): Plans.Entries.append({item: {who: context.principal, at: context.clock}})
-def trimmed(vars: Lists.List<Plans.Entries<Var, Var>>, context: Abi.Context, state: State) -> Activity<Done>:
-  match state.left:
-    case cons(c): if Lists.length(state.left) >= 64n && Lists.any(state.left, fn(l: Left) -> Bool: l.who == context.principal) == false then dropped(c.head, vars) else varied(vars, Done.left({}))
-    case nil(_): varied(vars, Done.left({}))
-def dropped(oldest: Left, vars: Lists.List<Plans.Entries<Var, Var>>) -> Activity<Done>:
-  let written(_) = write {left: removeItem oldest}
+  let written(_) = write {presence: retract {who: me.who}}
+  match lastLeft(me.who, state):
+    case some(l): forgotten(l.value, vars, context)
+    case none(_): recorded(vars, context)
+def forgotten(last: Left, vars: Lists.List<Plans.Entries<Var, Var>>, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {left: retract leftKey(last)}
+  recorded(vars, context)
+def recorded(vars: Lists.List<Plans.Entries<Var, Var>>, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {left: insert {at: context.clock, who: context.principal}}
   varied(vars, Done.left({}))
 def enter(state: State, context: Abi.Context) -> Activity<Done>:
   done(enterVerdict(context, state), context, state)
@@ -211,13 +216,13 @@ def varLine(v: Var) -> Document.Document:
   Document.text("{v.name} = {v.value}\n")
 def stranger(context: Abi.Context, state: State) -> Document.Document:
   let card = if context.object == "" then "<scene>" else context.object
-  Document.text("SCENE {state.title}: {natText(Lists.length(state.presence))} here. Reply delvetalk {card} enter to join.\n")
+  Document.text("SCENE {state.title}: {natText(Relations.count(state.presence))} here. Reply delvetalk {card} enter to join.\n")
 def reading(me: Presence, context: Abi.Context, state: State) -> Document.Document:
   match passageAt(me.at, state):
     case none(_): stranger(context, state)
     case some(ps): passageCard(ps.value, state)
 def passageHead(ps: Passage, state: State) -> Document.Document:
-  Document.text("SCENE {state.title} ({natText(Lists.length(state.presence))} here), you are at {ps.id}:\n{ps.text}\nChoices:\n")
+  Document.text("SCENE {state.title} ({natText(Relations.count(state.presence))} here), you are at {ps.id}:\n{ps.text}\nChoices:\n")
 # The choices whose guards hold now; the others are not shown.
 def passageCard(ps: Passage, state: State) -> Document.Document:
   let choices = Card.clipped(Lists.map(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, state.vars)), choiceLine), 8n)

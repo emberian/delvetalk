@@ -7,16 +7,29 @@ import ./Text.obend as Text
 #
 # An effect sets a variable (`set`), adds to it or subtracts from it (`add`, `sub`, on
 # naturals; a missing or non-numeric value counts 0, a subtraction stops at 0). A clause
-# compares a variable with a value (>=, >, <=, < on naturals; == and != on the text) or
-# asks whether it is truthy or falsy ("", "0" and "false" are falsy, as is a variable
-# never set). A guard holds when every clause does.
+# tests a variable: against a value (atLeast, above, atMost, below on naturals; equals and
+# differs on the text), or whether it is truthy or falsy ("", "0" and "false" are falsy, as
+# is a variable never set). A guard holds when every clause does.
+sum Op:
+  set: {}
+  add: {}
+  sub: {}
+sum Test:
+  truthy: {}
+  falsy: {}
+  equals: {}
+  differs: {}
+  atLeast: {}
+  above: {}
+  atMost: {}
+  below: {}
 record Effect:
   key: String
-  op: String
+  op: Op
   value: String
 record Clause:
   key: String
-  op: String
+  test: Test
   value: String
 type Guard = Lists.List<Clause>
 record Choice:
@@ -59,20 +72,42 @@ def isNatural(value: String) -> Bool:
     case no(_): false
 def holdsClause(clause: Clause, vars: Vars) -> Bool:
   let have = valueOf(vars, clause.key)
-  if clause.op == "truthy" then truthy(have) else if clause.op == "falsy" then truthy(have) == false else if clause.op == "==" then have == clause.value else if clause.op == "!=" then have != clause.value else ordered(clause.op, have, clause.value)
-def ordered(op: String, have: String, want: String) -> Bool:
-  if isNatural(have) == false || isNatural(want) == false then false else compared(op, natural(have), natural(want))
-def compared(op: String, have: Nat, want: Nat) -> Bool:
-  if op == ">=" then have >= want else if op == ">" then have > want else if op == "<=" then have <= want else have < want
+  match clause.test:
+    case truthy(_): truthy(have)
+    case falsy(_): truthy(have) == false
+    case equals(_): have == clause.value
+    case differs(_): have != clause.value
+    case atLeast(_): numbers(have, clause.value) && natural(have) >= natural(clause.value)
+    case above(_): numbers(have, clause.value) && natural(have) > natural(clause.value)
+    case atMost(_): numbers(have, clause.value) && natural(have) <= natural(clause.value)
+    case below(_): numbers(have, clause.value) && natural(have) < natural(clause.value)
+def numbers(have: String, want: String) -> Bool:
+  isNatural(have) && isNatural(want)
 # The first clause of a guard that does not hold, if any.
 def failing(guard: Guard, vars: Vars) -> Lists.Maybe<Clause>:
   Lists.find(guard, fn(c: Clause) -> Bool: holdsClause(c, vars) == false)
 def holds(guard: Guard, vars: Vars) -> Bool:
   Lists.any(guard, fn(c: Clause) -> Bool: holdsClause(c, vars) == false) == false
 def clauseText(clause: Clause) -> String:
-  if clause.op == "truthy" then clause.key else if clause.op == "falsy" then "!{clause.key}" else "{clause.key} {clause.op} {clause.value}"
+  match clause.test:
+    case truthy(_): clause.key
+    case falsy(_): "!{clause.key}"
+    case _: "{clause.key} {symbol(clause.test)} {clause.value}"
+# How spween writes a test.
+def symbol(test: Test) -> String:
+  match test:
+    case equals(_): "=="
+    case differs(_): "!="
+    case atLeast(_): ">="
+    case above(_): ">"
+    case atMost(_): "<="
+    case below(_): "<"
+    case _: ""
 # A variable's value after an effect.
 def applied(effect: Effect, old: String) -> String:
-  if effect.op == "add" then natText(natural(old) + natural(effect.value)) else if effect.op == "sub" then natText(less(natural(old), natural(effect.value))) else effect.value
+  match effect.op:
+    case set(_): effect.value
+    case add(_): natText(natural(old) + natural(effect.value))
+    case sub(_): natText(less(natural(old), natural(effect.value)))
 def less(have: Nat, by: Nat) -> Nat:
   if have > by then have - by else 0n

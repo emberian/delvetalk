@@ -45,7 +45,7 @@ POLICY_SYSTEM = 'You turn what a participant says into one spell for the card th
 LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
 def choice(text, to, key='', value=''):
     """A choice; a key sets that variable to value when it is taken (one `set` effect). As tests/test_scene.py builds it."""
-    effects = [rec(key=lab(key), op=lab('set'), value=lab(value))] if key else []
+    effects = [rec(key=lab(key), op={'tag': 'variant', 'label': 'set', 'payload': rec()}, value=lab(value))] if key else []
     return rec(label=lab(text), to=lab(to), effects=lst(*effects), guard=lst())
 
 
@@ -58,7 +58,7 @@ def moss_gate(opener):
     return rec(owner=lab(opener), title=lab('The Moss Gate'), start=lab('gate'),
                passages=lst(passage('gate', 'A moss gate, ajar.', [choice('Open', 'yard', 'gate', 'open'), choice('Wait', 'gate')]),
                             passage('yard', 'A quiet yard.', [choice('Back', 'gate'), choice('Knock', 'yard', 'knock', 'twice')])),
-               presence=lst(), vars=lst(), cooldown=nat(0), requires=lst(), left=lst())
+               presence=relation(), vars=lst(), cooldown=nat(0), requires=lst(), left=relation())
 
 
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
