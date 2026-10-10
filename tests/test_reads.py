@@ -92,6 +92,15 @@ class Reads(Reflection):
         self.assertEqual(heights, sorted(heights))
         self.assertEqual(self.host.send(op="world-source", principal="anonymous", cid="bafy-none")["status"], "unknown")
 
+    def test_object_ids_are_record_keys(self):
+        odd = self.host.send(op="world-create", principal="ember", identity="mk-odd", object="odd~one", source=PACKAGE,
+                             entry="initial", seed=source_seed())
+        self.assertEqual(odd["status"], "error", odd)
+        self.assertIn("is not one: an object id is 1..128 bytes of letters, digits and . _ : / - @", odd["message"])
+        fine = self.host.send(op="world-create", principal="ember", identity="mk-env", object="env/did:plc:abc", source=PACKAGE,
+                              entry="initial", seed=source_seed())
+        self.assertEqual(fine["status"], "created", fine)
+
 
 if __name__ == "__main__":
     unittest.main()

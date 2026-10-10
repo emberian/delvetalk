@@ -906,7 +906,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let id ← if named.isEmpty then mintId self package else pure named
     let s ← get
     let note := fun (s : TurnState) => { s with absent := if s.absent.contains id then s.absent else s.absent ++ [id] }
-    if id.isEmpty || id == "self" || ownCards.contains id || id.utf8ByteSize > Limits.maxObjectIdBytes then
+    if !validObjectId id || id == "self" || ownCards.contains id then
       refusedWith bounds responseType "objectId"
     else if s.world.objects.contains id || s.creates.any (·.1 == id) then
       -- The reply says so now; the turn will be refused at its commit, naming the root.

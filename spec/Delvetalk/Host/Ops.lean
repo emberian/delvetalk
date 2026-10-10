@@ -44,6 +44,16 @@ def boundedText (what : String) (cap : Nat) (s : String) : Except String String 
   if s.isEmpty || s.utf8ByteSize > cap then throw s!"{what} must be 1..{cap} bytes"
   return s
 
+/-- An object id a creation may take: 1..128 bytes of letters, digits and `. _ : / - @`, so every object has an
+    AT record key (`~` stands for `/` there; `@`, which the Zulip playtest's principals carry into
+    `env/zulip:alice@host` ids, needs the façade's escape too). Journals with other ids still replay;
+    only new creations are held to it. -/
+def validObjectId (id : String) : Bool :=
+  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes &&
+    id.toList.all fun (c : Char) => c.isAlphanum || ".:_/-@".toList.contains c
+
+def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / - @"
+
 /-- The public reader's name: `anonymous`, or the empty string; both read as "". -/
 def publicReader : String := "anonymous"
 
@@ -1770,6 +1780,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let digest := Journal.bodyHash (Json.mkObj
     (j.getObj?.toOption.map (·.toList.filter (·.1 != "op")) |>.getD []))
   if let some r := retained w principal intent digest then return (w, r)
+  unless validObjectId id do throw s!"object id {id} is not one: {objectIdRule}"
   if id == "self" then throw "object id self is reserved for the running object"
   if ownCards.contains id then throw s!"object id {id} is reserved: it names each principal's own {id}/<principal>"
   -- The opener of the world may create an object for its owner: the law (the default law
