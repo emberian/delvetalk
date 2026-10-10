@@ -1583,14 +1583,16 @@ def handleOf (w : World) (principal : String) : String :=
     `handle` is the principal's display handle from the registry (`world-principal`), ""
     when unknown; `caller` is the calling object's id (empty for the turn's own method),
     `intent` the turn's identity, `height` the journal height the turn read, `clock` the world
-    clock (`world-advance`) the frame runs at, which deadlines compare against. None is chosen
+    clock (`world-advance`) the frame runs at, which deadlines compare against, and
+    `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none. None is chosen
     by the client. -/
-def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String) : Data :=
+def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String)
+    (post : String := "") : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
     ("handle", .label handle), ("caller", .label caller), ("intent", .label intent), ("height", .natural height),
     ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
-      ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
+      ("program", .label ""), ("immediatelyPrevious", .boolean false), ("post", .label post)])]
 
 /-- A record the host builds (a Context, a law's Request) as the receiving code's own library
     declares it: the fields its type names, in its order, each fitted alike. An object compiled

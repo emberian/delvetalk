@@ -36,6 +36,19 @@ structure TurnRequest where
       the reply's spell (`spellTurn`), and the line that asked (`inputOrigin.command`, "" for the method). -/
   origin : String := "request"
   command : String := ""
+  /-- The post the turn came from (`inputOrigin.post`): the `post` of the `{text, post}` it was
+      asked with, kept when the host reads that reply as a spell (`heardPost`). -/
+  post : String := ""
+
+/-- The post a `receive {text, post}` is asked from: the reply's own post, which a spell's method
+    no longer sees in its argument. -/
+def heardPost (method : String) (argument : Data) : Option String :=
+  if method != "receive" then none else
+  match argument with
+  | .record fs => match fs.lookup "post" with
+    | some (.label p) => if p.isEmpty then none else some p
+    | _ => none
+  | _ => none
 
 def parseTurn (j : Json) : Except String TurnRequest := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
@@ -116,6 +129,9 @@ structure TurnState where
   /-- The top frame's `inputOrigin` kind and command (`TurnRequest.origin`, `command`). -/
   origin : String := "request"
   command : String := ""
+  /-- The running frame's post (`inputOrigin.post`): its own `receive {text, post}`'s, else the
+      calling frame's; journaled with a suspension. -/
+  post : String := ""
   grants : List Grant := []
   revokes : List String := []
   /-- Subscriptions this turn makes and ends (`subscribe`/`unsubscribe`). -/
@@ -599,7 +615,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   recordRoot handler obj.version
   let c ← compiledMethod obj "handle"
   let entry ← entryOf c
-  let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "handle" ""
+  let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "handle" "" s.post
   let (domain, arguments) := match c.type with
     | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ ct _)) => (d, [obj.state, plan, fitRecord c.bounds ct context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
@@ -762,6 +778,15 @@ def withFields (w : World) (o : Object) (argument : Data) (fields : List Spell.B
     | .error _ => argument
   | other => other
 
+/-- Does a `receive` argument fit the card's own `receive` input, with or without the `fields` the
+    host fills? A reply carrying another field (a forged `who`) is not read as a spell: `receive`
+    runs as asked and its type refuses it (`typeMismatch`), as any other method's would. -/
+def heardFits (w : World) (o : Object) (argument : Data) : Bool :=
+  match argument, ((compiledMethod o "receive").run.run (scratchState w)).1 with
+  | .record fs, .ok c =>
+    argumentFits c argument || argumentFits c (.record (fs.filter (·.1 != "fields") ++ [("fields", bindingsData [])]))
+  | _, _ => false
+
 /-- `formsOf` outside a turn. -/
 def spellFormsData (w : World) (id : String) (o : Object) : List Data :=
   ((formsOf id o).run.run (scratchState w)).1.toOption.getD (methodForms id o.methods)
@@ -891,7 +916,7 @@ def routeSpell (w : World) (principal id method : String) (argument : Data) (ret
   let .record args := argument | return .asIs
   let some (.label text) := args.lookup "text" | return .asIs
   let some o := w.objects[id]? | return .asIs
-  unless speaksMessages w o do return .asIs
+  unless speaksMessages w o && heardFits w o argument do return .asIs
   match Spell.parse text with
   | .spell card action fields => return castSpell w principal id argument o card action fields retarget
   | .notASpell reason fielded =>
@@ -920,11 +945,13 @@ def proposalNamesObject (bounds : DataBounds) (responseType : Ty) : Bool :=
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
-    (subject : String) (via : String := "") : M Data := do
+    (subject : String) (via : String := "") (post : Option String := none) : M Data := do
   let outer ← get
-  set { outer with subject, method, via, argument }
+  let post := post.getD ((heardPost method argument).getD outer.post)
+  set { outer with subject, method, via, argument, post }
   let result ← runFrame depth id method argument caller
-  modify fun s => { s with subject := outer.subject, method := outer.method, via := outer.via, argument := outer.argument }
+  modify fun s => { s with subject := outer.subject, method := outer.method, via := outer.via, argument := outer.argument,
+                           post := outer.post }
   return result
 
 /-- The body of `runMethod`, inside the frame it set. -/
@@ -945,7 +972,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
           (some (expected.setObjVal! "cases" (Json.mkObj [("at", toJson path), ("given", toJson word), ("cases", toJson cases)]))))
     else pure argument
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
-    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method)
+    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
@@ -1188,6 +1215,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
           -- A called `receive` to a card of the message dialect is read as a spell, as a direct
           -- turn's is (never under a grant: it names the one method it may run).
           let world := (← get).world
+          let heard := heardPost method argument
           let route := if via.isEmpty then routeSpell world subject id method argument false else .asIs
           let (method, argument, refusal) := match route with
             | .run _ m a _ => (m, a, none)
@@ -1199,7 +1227,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
           let callee ← compiledMethod calleeObj method
           if !argumentFits callee argument then refusedWith bounds responseType "typeMismatch" else
           spendGrant via
-          let result ← runMethod (depth + 1) id method argument self subject via
+          let result ← runMethod (depth + 1) id method argument self subject via heard
           respond bounds responseType "returned" [.record [("result", result)]]
   | .variant "run" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed run plan"
@@ -1406,7 +1434,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | some (id, o) =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       recordRoot id o.version
-      let context := contextData id s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "view" view
+      let context := contextData id s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "view" view s.post
       match ← derivedView o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
@@ -1728,6 +1756,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes),
       ("subscribes", Json.arr (st.subscribes.toArray.map (·.json))), ("unsubscribes", Json.arr (st.unsubscribes.toArray.map (·.json))),
       ("spent", spentJson st.spent)] ++
+      (if st.post.isEmpty then [] else [("post", toJson st.post)]) ++
+      (if st.origin == "request" then [] else [("origin", toJson st.origin), ("command", toJson st.command)]) ++
       (if st.violation.isSome then [("violation", toJson st.violation), ("violator", toJson st.violator)] else []))
     -- A post await names the post; the slot it settles on is whichever reply answers it.
     let waitsOn := match post with
@@ -1810,7 +1840,8 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
     | .error e => throw e
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
                             direct := how.delivery.isNone, receiver := how.receiver, ticks, limits := req.limits, profiling := req.profile,
-                            origin := req.origin, command := req.command }
+                            origin := req.origin, command := req.command,
+                            post := if req.post.isEmpty then (heardPost req.method req.argument).getD "" else req.post }
   -- A reply to a post recorded for this very object answers it (reply-is-address).
   let post := if req.replyTo.isEmpty then none else w.posts[req.replyTo]?
   let answers := match post with
@@ -1856,6 +1887,7 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
   | .asIs => none
   | .run object method argument command =>
     let asked := { req with object := object, method := method, argument := argument,
+                            post := (heardPost req.method req.argument).getD "",
                             origin := (if command.isEmpty then req.origin else "spell"),
                             command := (if command.isEmpty then req.command else command) }
     some (runTurnWith w asked {})
@@ -2015,6 +2047,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       awaits := ← natField act "awaits"
       publishes := (((act.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).toList
       checks := (natField act "checks").toOption.getD 0
+      post := (act.getObjValAs? String "post").toOption.getD ""
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
   let action : M Data := do
     let s ← get
@@ -2055,7 +2088,11 @@ def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World ×
       intent := ← identity.getObjValAs? String "intent"
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))]
       digest := ← sus.getObjValAs? String "turnRequest"
-      replyTo := (sus.getObjValAs? String "replyTo").toOption.getD "" }
+      replyTo := (sus.getObjValAs? String "replyTo").toOption.getD ""
+      -- A spell's re-run is the spell's method again, from the post it was asked from.
+      post := (act.getObjValAs? String "post").toOption.getD ""
+      origin := (act.getObjValAs? String "origin").toOption.getD "request"
+      command := (act.getObjValAs? String "command").toOption.getD "" }
   let (w'', again) ← runTurnWith w' req { rerun := true }
   let staleHash := ((r.getObjVal? "receipt").toOption.bind (·.getObjValAs? String "hash" |>.toOption)).getD ""
   return (w'', again.setObjVal! "rerunOf" (toJson staleHash))
@@ -2145,6 +2182,7 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
     match if via.isEmpty then routeSpell w principal object method argument false else .asIs with
     | .run _ m a command =>
       runTurnWith w { req with method := m, argument := a, command := command,
+                               post := (heardPost method argument).getD "",
                                origin := (if command.isEmpty then req.origin else "spell") } how
     | .refuse card clause reason hint =>
       let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }

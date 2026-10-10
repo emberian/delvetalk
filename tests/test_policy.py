@@ -46,7 +46,7 @@ def context(card="garden-1"):
     return record(world=text(""), object=text(card), principal=text("glm"), handle=text(""), caller=text(""), intent=text("probe"),
                   height={"tag": "natural", "value": "0"}, clock={"tag": "natural", "value": "0"}, inputOrigin=record(
         kind=text("request"), object=text(""), command=text(""), program=text(""),
-        immediatelyPrevious=boolean(False)))
+        immediatelyPrevious=boolean(False), post=text("")))
 
 
 def run(entry, *arguments, limits=None):

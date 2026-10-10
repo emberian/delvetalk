@@ -129,7 +129,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - Fragment: `request.subject`, `request.caller`, `request.pin`, `request.kind`, `request.method`, text constants, `x in new.F` (`member`), `appendOnly(F)`, `unchanged(F)`, `writeOnce(F)`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
 - `judge` judges every distinct (caller, kind) of an object's changes. Default law `owner: request.kind == 0 or request.subject == "<creator>"`: anyone may invoke methods, only the creator may reprogram or amend (`defaultLaw`). Metarule: an amendment must be admitted by the existing law for its proposer; message "law does not admit an amendment by its proposer <p>: <name>: <expr>".
 - `Object.readings` holds the package's law readings for clauses that are still the package's; `makeObject` keeps those the effective law leaves equal, an amendment keeps those it leaves equal, a reprogram keeps all. `parseLawTextReadings` reads `law NAME "reading": EXPR`; a malformed reading is `law syntax`.
-- Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin}`. The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
+- Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin {kind, object, command, program, immediatelyPrevious, post}}` (`post`: 5.71). The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
 - Two-tier law: for an artifact with `law.present` (`Object.predicate`), after the text admits, `judge` runs `law(old, new, request)` once per distinct kind-0 change (`bendLaw`) with `request = {context, method, argument, kind, pin, reads}` (`inputOrigin.kind = "law"`). `reads` are the ids `lawReads()` returns; `commit` adds them to the roots (`withLawReads`). Runs under `Bounds.lawTicks`: `admitted`, `refused {clause}` (= `lawRefused clause`), exhaustion is class `budget` reason `law ticks`, anything else fails closed as `lawRefused law`/`lawReads`. Reprograms and amendments are the text's alone. `warmLaws` compiles `law`/`lawReads` before `judge`.
 - Commutative edits: `judge` accepts a root `(id, seen)` whose object moved (`seen < version now`) when every change of `id` is a kind-0 write whose every edit is `keep`, `add`, `append`, `insert` (`EditKind.commutes`), or an `upsert`/`retract` of a relation row whose key no admitted write since `seen` touched (`keysChangedSince`, read from `writes[].edits`; a `set` or list edit of the relation touches every key), or, on a resumed turn's own object, an edit of a field later writes left alone (`movedRootAdmits`, one rule for `judge` and `resumeOne`). The entry keeps the roots as read, so `writes[].version` can be past `seen + 1`. Any other moved root is `staleRoot`. List items by bytes: `amendItem {item, change}` and `removeItem {item}` address the first item with the same canonical DAG-CBOR; none is `absentItem`.
 - Stale resumptions: a resumed turn's own object may have moved while it waited. `judge` and `resumeOne` accept it when `movedRootAdmits` holds (every later change was an ordinary write and each of the turn's edits commutes, is a row edit of an untouched key, or touches a field those left alone). Otherwise `staleRoot` (transient), and `resumeOne` re-runs the direct turn once from its journaled request (`TurnMeta.rerun`, journaled `rerun: true`, reply `rerunOf`). Deliveries are not re-run.
@@ -526,6 +526,23 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    with the checkpoint (foundation 5f3eddd: 10.1 KB); journal 2.57 MB. What remains is the kernel's
    checkpoint blocks (median 4.7 KB fresh per entry) and the `tokenTree` roots (~1 KB); the 7 KB target
    needs the kernel's share.
+
+71. **`inputOrigin.post` (host11; from the objects lane).** The post a turn came from: a frame asked
+   `receive {text, post}` has that `post` (`heardPost`), kept when the host reads the reply as a spell
+   (`TurnRequest.post`, set by `spellTurn` and `deliverOne`; the called path passes it to `runMethod`), so
+   the spell's method, which no longer sees `{text, post}`, sees it; a called frame otherwise inherits its
+   caller's (`TurnState.post`, restored after the call), and a delivered `receive` brings its own. It is
+   the reply's own post, not `replyTo` (its parent, which `awaitPost` matches against the post a turn
+   awaits). Handle and view contexts carry the frame's; a card render's and a Bend law's are "". A
+   suspended activity journals `post`, and `origin`/`command` when the turn was a spell, so a call after
+   the resumption and a stale re-run (`resumeOne`) see the same Context. `Abi.Origin` gains `post:
+   String` (fitted, so an older library's Origin without it runs unchanged). A `receive` argument with a
+   field its card's `receive` input lacks (with or without the host's `fields`) is not read as a spell
+   (`heardFits`): `receive` runs as asked and is refused `typeMismatch`, so a forged `who` beside a spell
+   no longer runs the spell. The Garden may read `context.inputOrigin.post` for its planting post and drop
+   `context.intent` (objects lane; `tests/test_replay.py` test_1 and `tests/test_principal.py`'s planting
+   case pass with that one-line change, probed on hbox). Not carried: a delivery's post from the sending
+   turn (only its own `receive` argument's); `sends` journal no post. Test: `tests/test_input_post.py`.
 
 ## 6. Gotchas
 
