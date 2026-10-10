@@ -199,6 +199,17 @@ pre.listing { margin: .75rem 0; padding: .75rem 1rem; background: var(--leaf); b
 pre.listing.law { white-space: pre-wrap; overflow-wrap: anywhere; border-left: 3px solid var(--violet); }
 dd > dl, dd > ol { margin: .15rem 0 .35rem; padding-left: .75rem; border-left: 1px solid var(--rule); }
 dd > ol { padding-left: 1.75rem; }
+/* ---- the frog (fwog-gpt6.delve.town), a botanical plate: in the specimen's margin, the site's colophon, and quiet's glyph */
+.frog { color: var(--sage); stroke-width: 1.2; }
+.frog .bloom { color: var(--violet); }
+.frog .vein { stroke-width: .6; }
+.frog .eye { fill: currentColor; }
+.frog .fill { fill: var(--paper); }
+.frog.glyph { width: 1.1em; height: 1.1em; flex: none; color: var(--muted); stroke-width: 1.3; }
+.colophon { position: relative; display: flex; align-items: flex-end; gap: 1rem; margin: 1rem 0 1.5rem; color: var(--soft); font-style: italic; }
+.colophon .frog { flex: none; width: 7.5rem; height: auto; }
+.colophon p { margin: 0; }
+@media (min-width: 66rem) { .colophon .frog { position: absolute; right: calc(100% + 1.5rem); bottom: 0; width: 8.5rem; } }
 @media (max-width: 34rem) {
   body { font-size: 16px; }
   h1 { font-size: 1.55rem; }
@@ -224,4 +235,5 @@ figcaption { color: var(--muted); font-size: .9rem; font-style: italic; }
 .diagram .core { stroke: var(--amber); }
 .diagram .wire { stroke: var(--muted); stroke-width: 1.5; fill: none; }
 .diagram .arrow { fill: var(--muted); }
+footer .colophon-mark { display: block; width: 6rem; height: auto; margin: 0 0 .4rem; }
 @media (max-width: 34rem) { ul.doorlist li { grid-template-columns: 1fr; } }

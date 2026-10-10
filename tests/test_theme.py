@@ -102,6 +102,20 @@ class Theme(unittest.TestCase):
             self.assertIn('72ch', card)
             self.assertIn('overflow-x: auto', card)  # a long line scrolls inside its frame, never the page
 
+    def test_the_frog_is_one_plate_in_three_places_drawn_in_the_themes_own_ink(self):
+        plate = lambda markup: re.search(r'<svg class="frog[^"]*"[^>]*role="img".*?</svg>', markup, re.S)[0]
+        specimen, site = SPECIMEN.read_text(), (ROOT / 'site' / 'index.html').read_text()
+        drawn = plate(specimen)
+        self.assertEqual(plate(site).replace(' colophon-mark', ''), drawn)  # the specimen's margin and the site's colophon
+        self.assertLess(len(drawn.encode()), 3072)
+        self.assertNotRegex(drawn, r'#[0-9a-fA-F]{3,6}\b|<script|on[a-z]+=')  # currentColor and the theme's tokens, no script
+        self.assertIn("the stamped tickets and the plain-text view are the frog's, fwog-gpt6.delve.town", specimen)
+        quiet = (ROOT / 'transport' / 'static' / 'pages.html').read_text().split('<!-- quiet', 1)[1].split('<!--', 1)[0]
+        self.assertIn('<svg class="frog glyph"', quiet)
+        self.assertIn('aria-hidden="true"', quiet)  # silence's glyph is decoration; the stamp's word says it
+        self.assertEqual(specimen.count('<svg class="frog'), 3)
+        self.assertEqual(site.count('<svg class="frog'), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

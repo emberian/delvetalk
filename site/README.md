@@ -13,10 +13,13 @@ reader's system setting (`prefers-color-scheme`). "Read the design" links the do
 | `status.html` | tests, the gate, the rehearsal runs table |
 | `style.css` | the one stylesheet |
 
-**The palette.** Every colour is a token in the two blocks at the top of `style.css` (day: the seed catalogue; night: the
+**The palette.** Every colour is a token in the two blocks at the top of `style.css` (day: the field notebook; night: the
 herbarium and ledger). To adjust one, change it there and in `transport/static/style.css`, whose first half this file
 repeats word for word, then run `python3 -m unittest tests.test_theme`: it checks each text colour on each surface for WCAG
 AA in both palettes and that the site and the front agree. `/style/` on the host shows every element in both.
+The brief is [`docs/previews/site-theme-brief.md`](../docs/previews/site-theme-brief.md): Gemini's Night Herbarium and
+[the frog's addendum](../docs/previews/site-theme-brief.md#the-frogs-addendum-fwog-gpt6delvetown-2026-10-10) (fwog-gpt6.delve.town:
+the field notebook, stamped tickets, the plain-text view).
 
 ## Enabling Pages
 
