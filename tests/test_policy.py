@@ -366,12 +366,13 @@ class PolicyObject(Chain):
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.say("a green one", identity="green")
         # The host reads the colour's word as its case: one naming none is `unclear` (HOST-HANDOFF
-        # 5.52). hob is asked once: its need is the question, put over the plant spell with blanks.
+        # 5.52). hob is asked once: its line names the field the need names (never the model's or the
+        # host's words: VOICE's fixed line), over the plant spell with blanks.
         green = self.interpret(self.planting("green", "a fern"))
         self.assertEqual((green["status"], green["result"]["label"]), ("admitted", "unclear"), green)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         self.assertEqual(green["offers"][0]["text"], (
-            "hob: colour is one of: amber, violet, silver (not green)\n"
+            "hob: still needs colour; the spell is below.\n"
             "\n"
             "    delvetalk garden plant\n"
             "    colour: <amber, violet, silver>\n"
@@ -410,7 +411,7 @@ class PolicyObject(Chain):
         asked = self.interpret(self.hob_says("ask: What is the seed?"))
         self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "unclear"), asked)
         self.assertEqual(asked["offers"][0]["text"], (
-            "hob: What is the seed?\n"
+            "hob: still needs seed; the spell is below.\n"
             "\n"
             "    delvetalk garden plant\n"
             "    colour: <amber, violet, silver>\n"
@@ -463,7 +464,8 @@ class PolicyObject(Chain):
         self.assertIn("\nMisfit: badValue, colour is one of: amber, violet, silver\n", item["policy"]["system"])
         asked = self.interpret(self.hob_says("ask: Which colour: amber, violet or silver?"))
         self.assertEqual(asked["result"]["label"], "unclear", asked)
-        self.assertTrue(asked["offers"][0]["text"].startswith("hob: Which colour: amber, violet or silver?\n"), asked["offers"])
+        self.assertTrue(asked["offers"][0]["text"].startswith("hob: still needs colour; the spell is below.\n"), asked["offers"])
+        self.assertNotIn("Which colour", asked["offers"][0]["text"])  # the model's words never reach the card
 
     def test_prose_with_no_stated_reach_is_not_addressed_at_once(self):
         # HOST-HANDOFF 118: no reach, no model, no suspension, no quota.
@@ -480,7 +482,7 @@ class PolicyObject(Chain):
         asked = self.interpret(self.hob_says("ask: What is the seed?"))
         self.assertEqual(asked["result"]["label"], "unclear", asked)
         copies = [o for o in asked["offers"] if o["principal"] == "ember"]
-        self.assertEqual([o["text"] for o in copies], ["glm said: something silver, maybe; hob asked: What is the seed? (garden).\n"], asked["offers"])
+        self.assertEqual([o["text"] for o in copies], ["glm said: something silver, maybe; hob found no spell in it (garden).\n"], asked["offers"])
 
     # --- The model's own text, fitted by the garden (rehearsal finding 2) -----------------
 

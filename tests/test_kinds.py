@@ -48,6 +48,20 @@ class Kinds(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
+    def test_make_under_judges_text_fields_against_the_form_by_the_hosts_clauses(self):
+        """A place hands a kind's makeUnder text, which no spell fitted: the kind judges it against its form as the
+        host judges a make spell, and a value outside the form makes nothing (OBJECTS-HANDOFF, 4a's open findings)."""
+        town_kinds(self.host.send)
+        for fields, clause, reading in (([("colour", "green"), ("seed", "x")], "badValue", "colour is one of: amber, violet, silver"),
+                                        ([("colour", "amber")], "missing", "Still needs seed."),
+                                        ([("colour", "amber"), ("seed", "x" * 81)], "badValue", "seed is 1 to 80 characters; this one is 81.")):
+            with self.subTest(fields=fields):
+                rows = {"tag": "list", "items": [record(name=label(n), value=label(v)) for n, v in fields]}
+                r = self.turn("kind/bell", "makeUnder", record(under=label("yard"), fields=rows), principal=KIM)
+                self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "refused"), r)
+                self.assertEqual([f["value"]["value"] for f in r["result"]["payload"]["fields"]], [clause, reading], r)
+        self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
+
     def test_a_kind_of_record_makes_a_record_under_its_law_with_its_head(self):
         self.kind("key", "record", "seed: text 1..80", head="THE KEY, begun by {maker}: {seed}", law=genesis.RECORD_LAW)
         made = self.turn("kind/key", "make", record(seed=label("three hands deep")), principal=KIM)
