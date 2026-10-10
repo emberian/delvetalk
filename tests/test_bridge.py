@@ -304,6 +304,70 @@ class Suspended(BridgeCase):
         self.assertNotIn('offered', bridge.run(self.state, stub))
         self.assertEqual(len(self.drafts()), 1)
 
+    def test_an_offer_for_a_handed_on_turn_is_drafted_against_the_originating_post(self):
+        stub = Stub()
+        stub.suspending = {'garden-1'}
+        p = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        self.observe([p])
+        bridge.run(self.state, stub)
+        stub.offers[DID] = [{'height': 9, 'ordinal': 0, 'identity': {'principal': DID, 'intent': 'handed-on-turn'},
+                             'from': {'principal': DID, 'intent': p['uri']}, 'text': 'Handed over.'}]
+        self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri']])
+        (d,) = self.drafts()
+        self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
+
+    @unittest.expectedFailure
+    def test_end_to_end_a_handed_on_offer_carries_from_on_the_real_host(self):
+        # Until the host adds `from` to offers of handed-on turns: the offer has only `identity`.
+        from deploy import genesis
+        from transport.hostproc import LIBRARY
+        with tempfile.TemporaryDirectory() as tmp:
+            d = start_hostd(tmp, BINARY, opener=genesis.OPENER, library=LIBRARY)
+            try:
+                host = HostClient(Path(tmp) / 'host.sock')
+                self.assertIsNone(genesis.run(host)[1])
+                host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'receive', 'identity': 'handed',
+                           'argument': genesis.rec(text=genesis.lab('delvetalk garden plant\nseed: a\ncolour: amber'), post=genesis.lab('at://x/p/1'), slot=genesis.lab(''))})
+                offers = host.send({'op': 'world-offers', 'principal': genesis.OPENER})['offers']
+                self.assertTrue(offers and all('from' in o for o in offers), offers)
+            finally:
+                stop_hostd(d)
+
+
+class Mentions(BridgeCase):
+    GLM, KIMI = 'did:plc:' + 'b' * 24, 'did:plc:' + 'c' * 24
+
+    def facet(self, text, handle, did):
+        start = text.index('@' + handle)
+        return {'index': {'byteStart': start, 'byteEnd': start + len(handle) + 1}, 'features': [{'$type': 'app.bsky.richtext.facet#mention', 'did': did}]}
+
+    def test_a_post_mentioning_two_handles_is_a_turn_on_each_env_under_the_author(self):
+        stub = Stub()
+        glm = mk(1, 'glm here')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        text = 'hello @glm.delve.town and @kimi.delve.town'  # glm by a known author's handle, kimi by facet
+        post = mk(2, text, facets=[self.facet(text, 'kimi.delve.town', self.KIMI)])
+        self.observe([glm, post])
+        r = bridge.run(self.state, stub)
+        turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['object'].startswith('env/')]
+        self.assertEqual([(t['object'], t['principal'], t['method'], t['identity']) for t in turns],
+                         [(f'env/{d}', DID, 'receive', f"{post['uri']}#env:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
+        fields = {f['name']: f['value']['value'] for f in turns[0]['argument']['fields']}
+        self.assertEqual(fields, {'text': text, 'post': post['uri']})
+        self.assertEqual(r['mentioned'], [post['uri']])
+        before = len(stub.ops)
+        self.assertNotIn('mentioned', bridge.run(self.state, stub))  # once per post
+        self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
+
+    def test_only_the_first_four_mentions_are_addressed(self):
+        stub = Stub()
+        dids = ['did:plc:' + c * 24 for c in 'defgh']
+        text = ' '.join(f'@u{i}.delve.town' for i in range(5))
+        post = mk(1, text, facets=[self.facet(text, f'u{i}.delve.town', d) for i, d in enumerate(dids)])
+        self.observe([post])
+        bridge.run(self.state, stub)
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{d}' for d in dids[:4]])
+
 
 class Silence(BridgeCase):
     def test_a_turn_that_offers_nothing_has_no_draft_in_the_outbox_unless_asked(self):
