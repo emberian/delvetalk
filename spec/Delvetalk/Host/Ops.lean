@@ -105,10 +105,12 @@ def EditKind.data : EditKind → Data
   | .upsert row => .variant "upsert" (.record [("row", row)])
   | .retract key => .variant "retract" (.record [("key", key)])
 
-/-- Edits that commute with any other change of the same kinds: `keep`, `add`, `append`. A root
-    whose every change in a proposal is made of them commits against the root as it is now. -/
+/-- Edits that commute with any other change of the same kinds: `keep`, `add`, `append`, and a
+    relation's `insert` (re-applied on the rows as they are now: a fresh key adds, the same row is
+    no change, another row under the key is `keyTaken`). A root whose every change in a proposal
+    is made of them commits against the root as it is now. -/
 def EditKind.commutes : EditKind → Bool
-  | .keep | .add _ | .append _ => true
+  | .keep | .add _ | .append _ | .insert _ => true
   | _ => false
 
 def Step.data (s : Step) : Data := .record (s.map fun e => (e.field, e.kind.data))
@@ -202,7 +204,7 @@ structure Proposal where
   /-- Uses the turn spends of limited grants: grant id and count. -/
   spent : List (String × Nat) := []
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
-      moved while the turn waited (`rebasable`). An entry with `resumes` sets it on replay. -/
+      moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
   rebaseOwn : Option String := none
 
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
@@ -1452,12 +1454,6 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
   | _ => return refuse "law"
 
-/-- Every change of `id` in the writes is an ordinary write made only of commuting edits. -/
-def commutesAt (writes : List (String × List Written)) (id : String) : Bool :=
-  match writes.lookup id with
-  | some changes => !changes.isEmpty && changes.all fun c => c.kind == 0 && c.edits.all (·.kind.commutes)
-  | none => false
-
 /-- The fields of `id` its ordinary admitted writes changed after version `seen` (edits other
     than `keep`), from the journal; none when one of its later changes was not an ordinary write
     (a reprogram or an amendment) or does not decode. -/
@@ -1483,16 +1479,65 @@ def fieldsChangedSince (w : World) (id : String) (seen : Nat) : Option (List Str
         | _ => return none
   return some fields.eraseDups
 
-/-- A resumed turn's own object that moved while it waited may commit on the current state when
-    nothing but ordinary writes moved it and each of the turn's own edits of it commutes or is to
-    a field those writes left alone (a turn that only read it qualifies). -/
-def rebasable (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat) : Bool :=
-  match fieldsChangedSince w id seen with
-  | none => false
-  | some changed =>
-    match writes.lookup id with
-    | none => true
-    | some changes => changes.all fun c => c.kind == 0 && c.edits.all fun e => e.kind.commutes || !changed.contains e.field
+/-- The keys of relation `d` that ordinary admitted writes of `id` touched after version `seen`
+    (the rows' keys of inserts and upserts, the keys of retracts), from the journal; none when a
+    later change of `id` was not an ordinary write, does not decode, or changed the field by any
+    other edit (a `set` of the whole relation touches every key). -/
+def keysChangedSince (w : World) (id : String) (seen : Nat) (d : RelDecl) : Option (List Data) := Id.run do
+  let mut keys : List Data := []
+  for i in w.touched.getD id #[] do
+    let e := w.entries[i]!
+    if ((e.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "tag" |>.toOption)) != some "admitted" then continue
+    let ws := ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
+      |>.bind (·.getArr? |>.toOption)).getD #[]
+    for x in ws do
+      unless (x.getObjValAs? String "object").toOption == some id do continue
+      unless (x.getObjValAs? Nat "version").toOption.getD 0 > seen do continue
+      let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+      if kinds.any (fun k => k.getNat?.toOption != some 0) then return none
+      for step in ((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[] do
+        let .ok (.record fs) := decodeData Limits.dataDepth step | return none
+        let some k := fs.lookup d.field | continue
+        match parseKind k with
+        | some .keep => pure ()
+        | some (.insert row) | some (.upsert row) => match keyOf d row with
+          | .ok key => keys := key :: keys
+          | .error _ => return none
+        | some (.retract key) => match keyAsDeclared d key with
+          | .ok key => keys := key :: keys
+          | .error _ => return none
+        | _ => return none
+  return some keys
+
+/-- A root `id` the turn read at `seen` that has moved since may still commit when every change the
+    turn makes of it is an ordinary write and each edit either commutes (`EditKind.commutes`), or
+    is an `upsert`/`retract` of a relation row whose key no admitted write since `seen` touched
+    (`keysChangedSince`: the row rule, for any root), or, on a resumed turn's own object (`own`), is
+    to a field those writes left alone (a turn that only read its own object qualifies). Anything
+    else is `staleRoot`. -/
+def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat) (own : Bool) : Bool :=
+  let decls := ((w.objects[id]?).map (·.relations)).getD []
+  let changedFields := if own then fieldsChangedSince w id seen else none
+  let untouched := fun (e : Edit) =>
+    match decls.find? (·.field == e.field) with
+    | none => false
+    | some d =>
+      let key? := match e.kind with
+        | .upsert row => (keyOf d row).toOption
+        | .retract key => (keyAsDeclared d key).toOption
+        | _ => none
+      match key?, keysChangedSince w id seen d with
+      | some key, some keys =>
+        let k := Delvetalk.Canonical.encode key
+        !keys.any (Delvetalk.Canonical.encode · == k)
+      | _, _ => false
+  match writes.lookup id with
+  | none => own && changedFields.isSome
+  | some changes => !changes.isEmpty && changes.all fun c => c.kind == 0 && c.edits.all fun e =>
+      e.kind.commutes || untouched e ||
+        (match changedFields with
+         | some fields => !fields.contains e.field
+         | none => false)
 
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
@@ -1505,7 +1550,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   for (id, seen) in p.roots do
     if let some o := w.objects[id]? then
       if o.version != seen && !(seen < o.version &&
-          (commutesAt writes id || (p.rebaseOwn == some id && rebasable w writes id seen))) then
+          movedRootAdmits w writes id seen (p.rebaseOwn == some id)) then
         throw { cls := "staleRoot", object := id }
   -- A write to the running object needs no view; its version is the first root. A
   -- proposal that writes what it never named as a root is malformed.

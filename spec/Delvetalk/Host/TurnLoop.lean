@@ -1350,11 +1350,8 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   -- A moved root whose staged changes so far all commute may still commit (`judge` decides at the
   -- end); one already changed otherwise cannot, and the turn is refused now.
   let staged ← parseRecordedWrites (← act.getObjVal? "writes")
-  let movable := fun (id : String) => match staged.lookup id with
-    | some changes => changes.all fun c => c.kind == 0 && c.edits.all (·.kind.commutes)
-    | none => true
   let stale? := (roots.find? fun (id, v) => match (w.objects[id]?).map (·.version) with
-      | some now => now != v && !(v < now && (movable id || (id == object && rebasable w staged id v)))
+      | some now => now != v && !(v < now && ((staged.lookup id).isNone || movedRootAdmits w staged id v (id == object)))
       | none => true).map (·.1)
     <|> absent.find? fun id => w.objects.contains id
   if let some id := stale? then
@@ -1434,7 +1431,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   finishTurn w ctx result st
 
 /-- Continue a suspended activity. A direct turn whose resumption is refused `staleRoot` (its
-    roots moved past what `rebasable` allows while it waited) is re-run once, at once, from its
+    roots moved past what `movedRootAdmits` allows while it waited) is re-run once, at once, from its
     journaled request on the current state: the refusal is transient, so the identity is free, and
     the re-run carries `rerun: true` so a second stale resumption of it is final. -/
 def resumeOne (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
