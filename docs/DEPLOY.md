@@ -54,6 +54,8 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
 - `/var/lib/delvetalk/v2`, owner `10425:10425`, mode 0700 (the image's uid,
   next in the edge's series). On ext4 or ZFS, local disk: see "Durability".
 - `/etc/delvetalk/anthropic.key`: the key alone, owner 10425, mode 0400.
+- `/etc/delvetalk/repo/town.key`: the repository's signing key (docs/REPO.md "The key"), made at first start
+  (below), owner 10425, mode 0400, in a directory owner 10425, mode 0700. Never printed, never in a backup tarball.
 - The portal is `https://gsb.fg-goose.online` (`DELVETALK_ORIGIN` overrides it for every program; the front's `--origin` in
   `compose.yml` and `compose.hand.yml` is `${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}`, not a fixed string, and compose passes `DELVETALK_ORIGIN` from `.env` into every service). The Caddy route for
   `gsb.fg-goose.online`, and the old `delvetalk.fg-goose.online` route, both proxy to `10.10.1.10:8765` until the town
@@ -134,8 +136,17 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b
     COMPOSE_FILE=compose.yml:compose.hand.yml       # once the hand is opened (below)
     DELVETALK_HAND_TOKEN=<secret>
+    DELVETALK_ORIGIN=https://gsb.fg-goose.online     # the portal, and the repository's did:web host
+    DELVETALK_REPO_KEY_PATH=/etc/delvetalk/repo/town.key
 
+The repository key, once (`deploy.repokey` refuses an existing file; it prints the `did:key`, which
+`/.well-known/did.json` then names as `#atproto`; the front does not start without the file, so a box deployed
+before the signed repository makes it the same way before its next `up`):
 
+    set -a; . ./.env; set +a
+    install -d -m 0700 -o 10425 -g 10425 /etc/delvetalk/repo
+    docker run --rm --user 10425:10425 --network none -v /etc/delvetalk/repo:/repo "$DELVETALK_IMAGE" \
+        python3 -m deploy.repokey --dir /repo --world town
 
     docker compose up -d --wait delvetalk-hostd
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
