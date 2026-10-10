@@ -136,6 +136,16 @@ class Workshop(Chain):
         reply = self.say("delvetalk workshop propose\n```obend\nx\n```")
         self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], "Name a target to propose to.")
 
+    def test_the_root_menus_source_block_is_checked(self):
+        """The root menu teaches `source: <<BEND` … `BEND`."""
+        self.make_workshop()
+        reply = self.say("delvetalk workshop check\nsource: <<BEND\n%sBEND\n" % BLOCK)
+        self.assertEqual(self.verdict(reply), "clean", reply)
+        self.assertEqual(self.card(reply), "✾ WORKSHOP\n\nChecked: it compiles.\n")
+        open_ = self.say("delvetalk workshop check\nsource: <<BEND\n%s" % BLOCK)
+        self.assertEqual(self.verdict(open_), "refused")
+        self.assertIn("the block <<BEND for source is never closed by a line BEND", self.card(open_))
+
     def test_a_fenced_block_is_checked_and_the_diagnostics_card_offered(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop check\n```obend\n%s```\n" % BLOCK)

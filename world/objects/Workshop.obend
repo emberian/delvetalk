@@ -73,7 +73,7 @@ def reprogrammedCard(target: String, version: Nat) -> Document.Document:
 def refusedCard(reason: String) -> Document.Document:
   Document.text(cat("Not done: ", cat(reason, "\n")))
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a fenced block and:\n\n    delvetalk workshop check\n\n```obend\n…your Objective Bend…\n```\n\nTo check what an object runs now:\n\n    delvetalk workshop check\n    target: bell-1\n\nTo reprogram it with a checked block:\n\n    delvetalk workshop propose\n    target: bell-1\n    migration: how the old state becomes the new\n")
+  Document.text("✾ WORKSHOP\n\nTo check Bend, reply with a fenced block and:\n\n    delvetalk workshop check\n\n```obend\n…your Objective Bend…\n```\n\nor a block field:\n\n    delvetalk workshop check\n    source: <<BEND\n    …your Objective Bend…\n    BEND\n\nTo check what an object runs now:\n\n    delvetalk workshop check\n    target: bell-1\n\nTo reprogram it with a checked block:\n\n    delvetalk workshop propose\n    target: bell-1\n    migration: how the old state becomes the new\n")
 def tell(verdict: Verdict, card: Document.Document) -> Activity<Plan, Response, Verdict>:
   match perform(Plan.offer({to: "", document: card})):
     case _: verdict
@@ -126,10 +126,11 @@ def askedFirst(parsed: Spell.Parsed, text: String) -> Spell.Parsed:
     case notASpell(_): Spell.parse(text)
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match spellOf(input.text):
-    case notASpell(_): tell(Verdict.refused({reason: "Reply with a workshop spell."}), usage())
-    case spell(s): routed(input, context, s.card, s.action, Spell.valueOf(s.fields, "target"), Spell.valueOf(s.fields, "migration"))
-def routed(input: Card.Heard, context: Abi.Context, card: String, action: String, target: String, migration: String) -> Activity<Plan, Response, Verdict>:
-  if card != context.object then tell(Verdict.refused({reason: cat("This card is ", context.object)}), refusedCard(cat("This card is ", context.object))) else acted(action, target, migration, fenced(input.text), context)
+    case notASpell(n): if textTake(n.reason, 9n) == "the block" then tell(Verdict.refused({reason: n.reason}), refusedCard(n.reason)) else tell(Verdict.refused({reason: "Reply with a workshop spell."}), usage())
+    case spell(s): routed(input, context, s.card, s.action, Spell.valueOf(s.fields, "target"), Spell.valueOf(s.fields, "migration"), Spell.valueOf(s.fields, "source"))
+# The code is a `source: <<BEND` field (Spell's block value), else a fenced obend block.
+def routed(input: Card.Heard, context: Abi.Context, card: String, action: String, target: String, migration: String, source: String) -> Activity<Plan, Response, Verdict>:
+  if card != context.object then tell(Verdict.refused({reason: cat("This card is ", context.object)}), refusedCard(cat("This card is ", context.object))) else acted(action, target, migration, if source != "" then Block.some({source: source}) else fenced(input.text), context)
 def acted(action: String, target: String, migration: String, block: Block, context: Abi.Context) -> Activity<Plan, Response, Verdict>:
   match block:
     case some(b): withBlock(action, target, migration, b.source, context)

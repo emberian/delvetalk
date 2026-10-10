@@ -141,6 +141,12 @@ the library).
   interpretation overhead of a per-word loop (`Card.mentions`: split at blanks once, words
   by length, a first-letter filter); a kernel word-set builtin would remove it. The newline
   scan is the floor: 6 ticks a scalar.
+* **Block field values** (objects5): `field: <<DELIM` (1 to 32 of A-Z 0-9 _) takes the
+  following lines up to one that is exactly DELIM, joined by newlines, no trailing newline;
+  unclosed is refused by name ("the block <<BEND for source is never closed by a line
+  BEND"). Workshop reads `source:` as its code (the root menu's `source: <<BEND`). A 4 KB
+  block parses in 98,132 ticks (just under a bare run's 100,000); the 64-field parse went
+  75,421 -> 79,583.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for
