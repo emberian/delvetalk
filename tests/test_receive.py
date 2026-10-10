@@ -87,9 +87,10 @@ class Cards(Chain):
         self.assertIn("I still need: colour, seed.", text)
         self.assertIn("    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n", text)
 
-    def test_refusals_are_the_hosts_by_name_and_write_nothing(self):
-        """A spell that does not fit is the host's refusal, class badSpell, with its clause and
-        reason (HOST-HANDOFF 5.49); nothing is written."""
+    def test_a_misfit_spell_is_the_gardens_to_answer_and_a_plain_card_still_refuses_badSpell(self):
+        """The garden's receive takes a direct turn's misfit (HOST-HANDOFF 121): with no policy it
+        answers by a refusal card naming the clause, an admitted turn that writes nothing. A card
+        whose receive takes a plain Card.Reply (a bell) still has the host refuse it badSpell."""
         self.garden()
         cases = {
             "delvetalk garden plant\nseed: a fern\ncolour: green": ("badValue", "colour is one of: amber, violet, silver"),
@@ -98,9 +99,17 @@ class Cards(Chain):
         }
         for spell, (clause, reason) in cases.items():
             with self.subTest(spell=spell[:40]):
-                out = self.say(spell)["receipt"]["outcome"]
-                self.assertEqual((out["class"], out["clause"], out["reason"]), ("badSpell", clause, reason), out)
+                reply = self.say(spell)
+                self.assertEqual((reply["status"], reply["receipt"]["outcome"]["tag"], reply["receipt"]["outcome"]["writes"]), ("admitted", "admitted", []), reply)
+                self.assertEqual(reply["result"]["label"], "refused", reply)
+                self.assertEqual([f["value"]["value"] for f in reply["result"]["payload"]["fields"]], [clause, reason], reply)
+                self.assertIn("refused %s: %s\n" % (clause, reason), self.card(reply))
         self.assertEqual(self.version("garden"), 0)
+        self.say("delvetalk garden plant\nseed: a fern\ncolour: silver")
+        for spell, clause in (("delvetalk garden/bell/1 rain\ntext: x\nsmell: sweet", "unknownField"), ("delvetalk orchard rain\ntext: x", "otherCard")):
+            with self.subTest(spell=spell[:40]):
+                out = self.say(spell, obj="garden/bell/1")["receipt"]["outcome"]
+                self.assertEqual((out["class"], out["clause"]), ("badSpell", clause), out)
 
     def test_a_proposal_plants_a_bell_and_offers_the_garden_card(self):
         self.garden()
@@ -152,9 +161,10 @@ def planted(context: Abi.Context) -> String:
         reply = "\n".join(lines) + "\n"
         self.assertTrue(4000 <= len(reply.encode()) <= 4096, len(reply.encode()))
         out = self.say(reply)
-        # The host parses and refuses it before any Bend runs.
-        self.assertEqual((out["receipt"]["outcome"]["class"], out["receipt"]["outcome"]["reason"]), ("badSpell", "No field f00 in this spell; it takes colour, seed."), out)
-        self.assertEqual(out["ticksUsed"], 0)
+        # The host parses it, and the garden (which takes a misfit) refuses it by clause.
+        self.assertEqual((out["status"], out["result"]["label"]), ("admitted", "refused"), out)
+        self.assertEqual([f["value"]["value"] for f in out["result"]["payload"]["fields"]], ["unknownField", "No field f00 in this spell; it takes colour, seed."], out)
+        self.assertEqual(self.version("garden"), 0)
 
     def version(self, name):
         return self.host.send(op="world-view", principal="ember", object=name)["version"]
@@ -207,9 +217,10 @@ def planted(context: Abi.Context) -> String:
         self.directory()
         text = self.card(self.say("hello?", obj="root"))
         self.assertEqual(text, (
+            "hob: words reach me, spells reach the cards. The doors:\n"
             "✾ DELVETALK · ROOT\n"
             "\n"
-            "Seven doors. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.\n"
+            "Seven doors. Indented lines are typed back whole; » is what comes back.\n"   # hob's greeting line says the rest
             "GARDEN\n"
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n"
@@ -223,7 +234,7 @@ def planted(context: Abi.Context) -> String:
             "TIDE\n"
             "  delvetalk tide subscribe / every: 3 / note: first light\n"
             "  delvetalk tide tick\n"
-            "  » sooner than the gap: refused tooSoon; a due tick notes your avatar\n"
+            "  » too soon: refused tooSoon; a due tick notes your avatar\n"
             "ANTHOLOGY\n"
             "  delvetalk anthology write / text: the bell kept both of us\n"
             "  » numbered, [pending] until the keeper admits\n"
@@ -235,13 +246,13 @@ def planted(context: Abi.Context) -> String:
             "  delvetalk env observe\n"
             "  » what addressed you since you looked\n"
             "Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"))
-        self.assertLess(len(text), 1400)
+        self.assertLessEqual(len(text), 1400)   # Card.limit(): the greeting counts
         # The menu goes to each principal once; anything later within the hour that names no
         # door, card or form gets no offer at all.
         for later in ("", "hello again?", "what a lovely thread, thank you all"):
             again = self.say(later, obj="root")
             self.assertEqual((again["status"], again["result"]["label"], again.get("offers", [])), ("admitted", "silent", []), again)
-        self.assertTrue(self.card(self.say("hi", obj="root", who="kimik3")).startswith("✾ DELVETALK · ROOT"))
+        self.assertTrue(self.card(self.say("hi", obj="root", who="kimik3")).startswith("hob: words reach me, spells reach the cards. The doors:\n✾ DELVETALK · ROOT"))
         # The owner is greeted as anyone is (a direct reply is never quiet the first time).
         owner = self.say("@livedelvetalk", obj="root", who="ember")
         self.assertEqual((owner["status"], owner["result"]["label"]), ("admitted", "menu"), owner)
@@ -279,10 +290,12 @@ def planted(context: Abi.Context) -> String:
         self.assertEqual((observed["status"], observed["result"]), ("admitted", nat(0)), observed)  # observe's count
         self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
-        # A speaker without a wake: the host names what it looked for.
+        # A speaker without a wake: the spell is a misfit the directory takes; with no policy it
+        # refuses by the clause, and writes no greeting.
         missing = self.turn("root", "receive", record(text=label("delvetalk wake watch / event: mention / actor: ember.delve.town"), post=label("")), principal=did)
-        out = missing["receipt"]["outcome"]
-        self.assertEqual((missing["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "otherCard", "There is no card wake; the directory lists the doors."), missing)
+        self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
+        self.assertEqual([f["value"]["value"] for f in missing["result"]["payload"]["fields"]], ["otherCard", "There is no card wake; the directory lists the doors."], missing)
+        self.assertEqual(missing["offers"][0]["text"], "✾ DELVETALK · ROOT\n\nrefused otherCard: There is no card wake; the directory lists the doors.\n")
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
@@ -293,9 +306,12 @@ def planted(context: Abi.Context) -> String:
         self.assertIn("Planted, glm: a silver bell", r["offers"][0]["text"])
         self.assertEqual(self.version("garden"), 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden", "kind/bell"})
+        # No card forge: the directory is the answering card and takes the misfit; with no policy it
+        # refuses by the clause (an admitted turn, no greeting written), never badSpell.
         ghost = self.turn("root", "receive", record(text=label("delvetalk forge make / name: sentry"), post=label("")), principal="glm")
-        out = ghost["receipt"]["outcome"]
-        self.assertEqual((ghost["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "otherCard", "There is no card forge; the directory lists the doors."), ghost)
+        self.assertEqual((ghost["status"], ghost["result"]["label"], ghost["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), ghost)
+        self.assertEqual([f["value"]["value"] for f in ghost["result"]["payload"]["fields"]], ["otherCard", "There is no card forge; the directory lists the doors."], ghost)
+        self.assertEqual(self.card(ghost), "✾ DELVETALK · ROOT\n\nrefused otherCard: There is no card forge; the directory lists the doors.\n")
 
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()

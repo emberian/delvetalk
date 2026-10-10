@@ -187,19 +187,47 @@ def pageName(page: String, word: String) -> String:
   if page == "" then word else page
 def pageText(page: Page) -> String:
   textJoin(Lists.map(page, fn(section: Section) -> String: "## {section.title}\n\n{Document.plain(section.body)}"), "\n")
-# Interpretation (FOUNDATION section 6): a card with a policy views it (Policies.State) and
-# asks `world.interpret` with `interpretation`, offering its forms; the host fits the model's
-# spell. The model's own words (`replied {text}`) read through `prose`: `unclear: not
-# addressed` (or an empty `unclear:`) is silence, any other need or words a miss. A miss is
-# asked once more (the utterance with "missing: <needs>", the policy's escalate model); a
-# second is answered by `unfitted`.
-sum Fitted:
-  miss: {needs: Form.Names}
-  silent: {}
-def needOf(need: String) -> Fitted:
-  if need == "" || need == "not addressed" then Fitted.silent({}) else Fitted.miss({needs: one(need)})
+# Interpretation (docs/FLEX.md §2): a card with a policy views it (Policies.State) and asks
+# `world.interpret` with `interpretation`, offering its forms, what it holds for the speaker and
+# the misfit spell it was handed. hob answers once, with no second attempt: the spell meant (the
+# host fits it: a proposal), `ask: <one question>` (the host's `unclear {needs: [question]}`; a
+# spell of hob's that does not fit reads the same, its reason the question), `card` (`replied
+# {text: "card"}`) or `none` (`unclear {needs: ["not addressed"]}`: silence).
+sum Hob:
+  none: {}
+  card: {}
+  ask: {question: String}
+# The first need that is a question; "not addressed", nothing, and a model that could not be
+# asked (`model: <reason>`) are none.
+def hobNeeds(needs: Form.Names) -> Hob:
+  match Lists.find(needs, fn(n: String) -> Bool: Text.blank(n) == false && n != "not addressed" && textTake(n, 6n) != "model:"):
+    case some(n): Hob.ask({question: n.value})
+    case none(_): Hob.none({})
 def one(need: String) -> Form.Names:
   Form.Names.cons({head: need, tail: Form.Names.nil()})
+def hobSaid(text: String) -> Hob:
+  if Text.trim(text) == "card" then Hob.card({}) else Hob.none({})
+# hob's question over the card's first spell with its blanks.
+def askCard(question: String, card: String, forms: Forms) -> Document.Document:
+  match forms:
+    case nil(_): Document.text("hob: {question}\n")
+    case cons(c): Document.concat(Document.text("hob: {question}\n"), template(card, c.head))
+# What a card does with hob's answer that is no spell: none is silence, card offers the card,
+# ask offers the question over the first spell (and, when the policy names someone to escalate
+# to, a short copy of what could not be fitted).
+def hobbed<T>(hob: Hob, policy: Policies.State, utterance: String, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
+  match hob:
+    case none(_): result
+    case card(_): tell(result, card)
+    case ask(a): escalated(policy, utterance, a.question, context, askCard(a.question, context.object, forms), result)
+def escalated<T>(policy: Policies.State, utterance: String, question: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
+  if policy.escalateTo == "" then tell(result, card) else escalatedTo(policy, utterance, question, context, card, result)
+def escalatedTo<T>(policy: Policies.State, utterance: String, question: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
+  match world.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; hob asked: {question} ({context.object}).\n")}):
+    case _: tell(result, card)
+# The misfit line hob is shown ("" for none).
+def misfitLine(misfit: Misfit) -> String:
+  if misfit.clause == "" then "" else "{misfit.clause}, {misfit.reason}"
 # Whether an interpreted proposal of this action waits for the speaker's yes.
 def confirms(policy: Policies.State, action: String) -> Bool:
   Lists.any(policy.confirmFor, fn(a: String) -> Bool: a == action)
@@ -219,15 +247,6 @@ def yesWords() -> Lists.List<String>:
   Lists.concat(Text.words("yes Yes YES y Y yeah Yeah yep Yep ok Ok OK okay Okay sure Sure"), Lists.List.cons({head: "go ahead", tail: Lists.List.cons({head: "Go ahead", tail: Lists.List.cons({head: "do it", tail: Lists.List.cons({head: "Do it", tail: Lists.List.nil({})})})})}))
 def noWords() -> Lists.List<String>:
   Lists.concat(Text.words("no No NO n N nope Nope cancel Cancel"), Lists.List.cons({head: "never mind", tail: Lists.List.cons({head: "Never mind", tail: Lists.List.nil({})})}))
-# Whether a host verdict `unclear {needs}` says the prose was addressed to nobody.
-def notAddressed(needs: Form.Names) -> Bool:
-  Lists.any(needs, fn(need: String) -> Bool: need == "not addressed")
-def retried(utterance: String, needs: Form.Names) -> String:
-  "{utterance}\n\nmissing: {missing(needs)}"
-def missing(needs: Form.Names) -> String:
-  match needs:
-    case nil(_): "one spell for an offered form, or unclear: <what is missing>"
-    case cons(_): Text.joined(needs)
 # Macros (the policy's, checked before the model): `expanded` is the spell text of the first
 # macro whose pattern the utterance matches (blanks and a trailing . ! or ? aside), none when
 # none does. Patterns and utterances are compared word by word; a hole takes the shortest run
@@ -296,6 +315,20 @@ record Reply:
   text: String
   post: String
   fields: Spell.Bindings
+# A card with a policy takes a direct turn's misfit spell (unknownField, noAction, badValue,
+# otherCard) in its receive as `Heard`, and hob asks one question with its clause and reason
+# (docs/FLEX.md §4 host 4); the host hands any other reply `misfit {clause: "", reason: ""}`. A
+# card that takes `Reply` has its misfits refused by the host (badSpell, with the hint).
+record Misfit:
+  clause: String
+  reason: String
+record Heard:
+  text: String
+  post: String
+  fields: Spell.Bindings
+  misfit: Misfit
+def heard(input: Heard) -> Reply:
+  {text: input.text, post: input.post, fields: input.fields}
 # Offers a document (to the replier, or to one principal) and finishes with the given result.
 def tell<T>(result: T, document: Document.Document) -> Activity<T>:
   match world.offer({to: "", document: document}):
@@ -311,7 +344,15 @@ def answer(input: Reply, context: Abi.Context, forms: Forms, card: Document.Docu
   answerAs(input, context, forms, card, fn(replied: Replied) -> Replied: replied)
 def answerAs<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
   let replied = unanswered(input, forms)
-  if quietly(replied) then owed(input, context, forms, card, as(replied)) else tell(as(replied), answerCard(card, whyNot(replied), context, forms))
+  if quietly(replied) then owed(input, context, forms, card, as(replied)) else offeredCard(as(replied), card, whyNot(replied), context, forms)
+# The card, why, and the spells the host offers this reader (inspect's `offered`: the law and the
+# card's `actions` leave them), so a stranger's usage lists no keeper's or owner's spell.
+def offeredCard<T>(result: T, card: Document.Document, why: String, context: Abi.Context, forms: Forms) -> Activity<T>:
+  match world.inspect({object: Plans.self(context), source: false}):
+    case inspected(i): tell(result, answerCard(card, why, context, offeredOnly(forms, i.offered)))
+    case _: tell(result, answerCard(card, why, context, forms))
+def offeredOnly(forms: Forms, offered: Document.Names) -> Forms:
+  Lists.filter(forms, fn(f: Form.Form) -> Bool: Lists.any(offered, fn(n: String) -> Bool: n == f.action))
 # A reply to the card itself (no card handed it on) that fits no form gets the card and its
 # forms, once an hour per speaker across the town (the directory's `due` keeps the clock: a
 # conversation in a card's thread costs at most one card); either way the prose is handed on.
@@ -319,8 +360,12 @@ def owed<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Doc
   if handsOn(input.text, context) then dueCard(input, context, forms, card, result) else result
 def dueCard<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
   match world.call::<Bool>({object: directory(context), method: "due", argument: {}}):
-    case returned(r): if r.result then toldOn(input, context, answerCard(card, "", context, forms), result) else handingOn(input, context, result)
+    case returned(r): if r.result then dueOffered(input, context, forms, card, result) else handingOn(input, context, result)
     case _: handingOn(input, context, result)
+def dueOffered<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
+  match world.inspect({object: Plans.self(context), source: false}):
+    case inspected(i): toldOn(input, context, answerCard(card, "", context, offeredOnly(forms, i.offered)), result)
+    case _: toldOn(input, context, answerCard(card, "", context, forms), result)
 def toldOn<T>(input: Reply, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
   match world.offer({to: "", document: card}):
     case _: handingOn(input, context, result)
@@ -385,29 +430,7 @@ def subscribed(object: Plans.Reference, field: String, method: String) -> Activi
   match world.subscribe({object: object, field: field, method: method}):
     case subscribed(_): true
     case _: false
-# Interpretation in the message dialect: the `interpret` argument of attempt 0 (the utterance,
-# the policy's model) or 1 (the utterance with what the first answer missed, the policy's
-# escalate model). The host fits the model's spell against the offered forms and answers a
-# `proposal {object, method, argument}` or `unclear {needs}`; text with no spell is `replied`,
-# which `prose` reads: `unclear: not addressed` (or an empty `unclear:`) is silence, any other
-# `unclear: <need>` and other words are a miss.
-def interpretation(utterance: String, forms: Forms, reference: Plans.Reference, policy: Policies.State, attempt: Nat, needs: Form.Names) -> {utterance: String, offers: Forms, policy: Plans.Reference, model: String}:
-  if attempt == 0n then {utterance: utterance, offers: forms, policy: reference, model: ""} else {utterance: retried(utterance, needs), offers: forms, policy: reference, model: policy.escalate}
-def prose(text: String) -> Fitted:
-  unclearLine(textDrop(text, textSpan(text, " \n\t\r")))
-def unclearLine(text: String) -> Fitted:
-  if textTake(text, 8n) == "unclear:" then needOf(Text.trim(textTake(textDrop(text, 8n), textBreak(textDrop(text, 8n), "\n")))) else Fitted.miss({needs: Form.Names.nil()})
-# Whether a host verdict's needs say the prose was addressed to nobody, or name nothing.
-def silentNeeds(needs: Form.Names) -> Bool:
-  Lists.length(needs) == 0n || notAddressed(needs)
-# The second miss: the copy to the policy's escalateTo (when it names one), then the needs card
-# to the speaker (when a need is named).
-def unfitted<T>(policy: Policies.State, utterance: String, needs: Form.Names, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
-  if policy.escalateTo == "" then neededCard(needs, card, result) else escalated(policy, utterance, needs, context, card, result)
-def escalated<T>(policy: Policies.State, utterance: String, needs: Form.Names, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
-  match world.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; I could not fit it ({context.object}).\n")}):
-    case _: neededCard(needs, card, result)
-def neededCard<T>(needs: Form.Names, card: Document.Document, result: T) -> Activity<T>:
-  match needs:
-    case nil(_): result
-    case cons(_): tell(result, card)
+# The `interpret` argument: the utterance, the forms offered, the policy, what the card holds
+# for the speaker and the misfit spell (each "" for none); the policy's own model.
+def interpretation(utterance: String, forms: Forms, reference: Plans.Reference, held: String, misfit: String) -> {utterance: String, offers: Forms, policy: Plans.Reference, model: String, held: String, misfit: String}:
+  {utterance: utterance, offers: forms, policy: reference, model: "", held: held, misfit: misfit}

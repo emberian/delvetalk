@@ -182,8 +182,8 @@ class OwnedLenses(test_chain.Chain):
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
     def test_a_rooms_owner_renames_it(self):
-        from tests.test_places import place_seed
-        self.make("porch", closure("Place"), place_seed("Porch"))
+        from tests.test_places import make_place, place_seed
+        make_place(self, "porch", place_seed("Porch"))
         r = self.say("porch", "delvetalk porch set\nname: Back Porch", "glm")
         self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the room's owner changes it; that is ember"))
         self.assertEqual(self.say("porch", "delvetalk porch set\ndescription: moths at the lamp", "ember")["result"]["label"], "done")

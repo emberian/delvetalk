@@ -55,6 +55,8 @@ class DerivedViews(Chain):
             "\n    delvetalk porch say\n    line: <text, 1 to 280 characters>\n"
             "\n    delvetalk porch emote\n    line: <text, 1 to 280 characters>\n"
             "\n    delvetalk porch whisper\n    to: <text, 1 to 160 characters>\n    line: <text, 1 to 280 characters>\n"
+            "\n    delvetalk porch door\n    label: <text, 1 to 32 characters>\n    to: <text, 1 to 128 characters>\n"
+            "\n    delvetalk porch undoor\n    label: <text, 1 to 32 characters>\n"
             "\n    delvetalk porch/stone acquire\n"
             "\n    delvetalk did:plc:glm move\n    exit: in\n"))
 

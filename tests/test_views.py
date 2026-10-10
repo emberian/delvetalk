@@ -76,14 +76,7 @@ class Views(test_chain.Chain):
             "    delvetalk bell rain\n"
             "    text: <text, 1 to 120 characters>\n"
             "\n"
-            "    delvetalk bell ring\n"
-            "\n"
-            "    delvetalk bell door\n"
-            "    label: <text, 1 to 32 characters>\n"
-            "    to: <text, 1 to 160 characters>\n"
-            "\n"
-            "    delvetalk bell undoor\n"
-            "    label: <text, 1 to 32 characters>\n"))
+            "    delvetalk bell ring\n"))   # no door/undoor: the usage lists only what inspect offers a stranger
         self.assertTrue(mine.startswith("A silver bell, planted by glm (yours): “a bell for lost moths” — silent.\n"), mine)
         self.assertTrue(theirs.startswith("A silver bell, planted by glm: “a bell for lost moths” — silent.\n"), theirs)
         self.assertNotIn("(yours)", self.world_card("bell"))
@@ -108,14 +101,7 @@ class Views(test_chain.Chain):
             "    delvetalk env/did:plc:glm seen\n"
             "    at: <a number from 0 to 1000000000>\n"))
         self.assertEqual(theirs, (
-            "ENV of glm: 1 new since #0.\n"
-            "\n"
-            "Reply with a spell:\n"
-            "\n"
-            "    delvetalk env/did:plc:glm observe\n"
-            "\n"
-            "    delvetalk env/did:plc:glm seen\n"
-            "    at: <a number from 0 to 1000000000>\n"))
+            "ENV of glm: 1 new since #0.\n"))   # a stranger is offered neither observe nor seen: no usage
         self.assertIn("a secret mention", mine)
         self.assertIn("ENV of glm (yours): 1 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n", mine)
         self.assertNotIn("a secret mention", theirs)
@@ -293,14 +279,7 @@ class StoredHandles(test_chain.Chain):
             "    delvetalk garden/bell/1 ring\n"
             "\n"
             "    delvetalk garden/bell/1 lines\n"
-            "    from: <a number from 1 to 1000000000>\n"
-            "\n"
-            "    delvetalk garden/bell/1 door\n"
-            "    label: <text, 1 to 32 characters>\n"
-            "    to: <text, 1 to 128 characters>\n"
-            "\n"
-            "    delvetalk garden/bell/1 undoor\n"
-            "    label: <text, 1 to 32 characters>\n"))
+            "    from: <a number from 1 to 1000000000>\n"))   # a stranger is offered no door/undoor
         self.assertTrue(card.startswith("An amber bell, planted by glm.delve.town: “a lamp for moths” — silent. Rain on it:\n  delvetalk garden/bell/1 rain / text: <1 to 200 characters>\nkimik3.delve.town: drizzle\n"), card)
         r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Record"),
                            entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
