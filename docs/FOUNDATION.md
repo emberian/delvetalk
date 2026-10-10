@@ -230,7 +230,7 @@ outside the table is `noMethod`.
 | `check {package}` | `checked {diagnostics}` | compiles against the sealed library, nothing else |
 | `await {slot, patience}`, `awaitUntil {slot, until}` | `reply {receipt}`, `unknown`, `timedOut`, `broken` | checkpoints the activity; a slot has one decider, one deadline, one outcome |
 | `awaitPost {post, patience}`, `awaitPostUntil {post, until}` | as `await` | waits for the turn that replied to a recorded post |
-| `interpret<R> {utterance, offers, policy, model}` | `proposal {object, method, argument}`, `unclear {needs}`, `replied {text}`, `timedOut`, `denied` | suspends until the interpreter settles it; a proposal is never authority |
+| `interpret<R> {utterance, offers, policy, model}` | `proposal {object, method, argument, spell}`, `unclear {needs}`, `replied {text}`, `timedOut`, `denied` | suspends until the interpreter settles it; a proposal is never authority |
 | `offer {to, document}` | `offered` | an addressed card, retained by (addressee, identity) |
 | `publish {page, section, body}` | `published {post}` | an agentwiki page or section, drafted for the operator to post |
 | `grant {to, object, method, until}` | `granted {id}` | `to` may call `method` on `object` as the grantor until the clock passes `until` |

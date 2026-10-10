@@ -385,6 +385,7 @@ class HandedToTheDirectory(test_chain.Chain):
                                      "raw": "delvetalk bell rain\ntext: " + lines[who][:100]})
             [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
             self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+            self.assertEqual(settled["receipt"]["outcome"]["verdict"]["spell"], "delvetalk bell rain\ntext: " + lines[who][:100])
             # Rehearsal run 7, finding 1: the offer names the post the author replied to, through the hand-off.
             asked = r["receipt"]["identity"]["intent"]
             [offer] = [o for o in self.host.send(op="world-offers", principal=who)["offers"] if o["from"]["post"] == asked and o["identity"]["intent"] != asked]
@@ -392,6 +393,24 @@ class HandedToTheDirectory(test_chain.Chain):
         self.assertEqual([(get(r, "author")["value"], get(r, "text")["value"]) for r in rows(get(self.state("bell"), "rains"))],
                          [(KIMI, lines[KIMI][:100]), (GLM, lines[GLM][:100])])
         self.assertEqual(rows(get(self.state("anthology"), "lines")), [])
+
+    def test_prose_that_reached_no_one_handed_on_is_not_addressed_at_the_directory(self):
+        """The objects lane's hand-on: the bell's quiet prose is sent to the directory; when the words
+        reached no one (no reach stated) the directory hears it silent and no model is asked."""
+        self.policy()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(r["status"], "created", r)
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        r = self.turn("bell", "receive", record(text=label(post("3mxghjyx4pk2f")), post=label("at://x/3mxghjyx4pk2f")), principal=KIMI)
+        self.assertEqual(r["status"], "admitted", r)
+        # The hand-on is delivered within the turn: the directory hears it silent, asking no one.
+        [handed] = r["delivered"]
+        self.assertEqual((handed["status"], handed["result"]["label"], handed["receipt"]["delivery"]["from"]["intent"]),
+                         ("admitted", "silent", r["receipt"]["identity"]["intent"]), handed)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        self.assertEqual(self.host.send(op="world-status")["hour"]["interpretations"], 0)
 
 
 class HandedOnToHob(test_chain.Chain):
