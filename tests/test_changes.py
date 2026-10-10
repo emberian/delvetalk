@@ -242,12 +242,8 @@ class Receivers(Reflection):
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
         library = extended_library(scratch.name, "")
-        path = os.path.join(library, "World.obend")
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-        self.assertIn(RECEIVER_PROTOCOL[0], text)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text.replace(RECEIVER_PROTOCOL[0], RECEIVER_PROTOCOL[1]))
+        with open(os.path.join(library, "World.obend"), encoding="utf-8") as f:
+            self.assertIn(RECEIVER_PROTOCOL[1], f.read())  # world/lib/World.obend names the receiver
         self.open_library(library=library)
         self.make2("bell", BELL)
         self.make2("r", RECEIVER)
