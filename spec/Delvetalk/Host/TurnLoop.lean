@@ -487,7 +487,7 @@ def declaredKind : Data → Option Data
 /-- The kinds the package's pure `forms()` declares, by action and field, and the `source` fields by
     action; none when its entry module declares no `forms()` or it does not evaluate. -/
 def declaredForms (o : Object) : M (List (String × List (String × Data)) × List (String × List String)) := do
-  if !((entrySource o).splitOn "\n").any (·.startsWith "def forms(") then return ([], [])
+  if !o.declaresDef "forms" then return ([], [])
   let some c ← tryCatch (some <$> compiledMethod o "forms") (fun _ => pure none) | return ([], [])
   let some entry := c.entry | return ([], [])
   let .ok value := (runPure entry [] Delvetalk.Bounds.lawTicks).1 | return ([], [])
@@ -540,7 +540,7 @@ def renderCard (o : Object) (context : String → Data) : M (Except String Data)
 /-- The views a package declares: the labels its pure `views()` returns (`def views() ->
     List<String>`), read as `lawReads()` is; none when it has no such definition. -/
 def declaredViews (o : Object) : M (List String) := do
-  if !((entrySource o).splitOn "\n").any (·.startsWith "def views(") then return []
+  if !o.declaresDef "views" then return []
   let some c ← tryCatch (some <$> compiledMethod o "views") (fun _ => pure none) | return []
   let some entry := c.entry | return []
   match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
@@ -789,7 +789,7 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
     method; none otherwise (also when `lenses()` is the sum dialect's list of `Form.Lens`, which is
     not data). A `fixed` State field is no lens, whatever `lenses()` says. -/
 def declaredLenses (w : World) (o : Object) : List Spell.Field :=
-  if !hasMethod o "set" || !((entrySource o).splitOn "\n").any (·.startsWith "def lenses(") then [] else
+  if !hasMethod o "set" || !o.declaresDef "lenses" then [] else
   let read : M (List Spell.Field) := do
     let some c ← tryCatch (some <$> compiledMethod o "lenses") (fun _ => pure none) | return []
     let some entry := c.entry | return []
@@ -1761,7 +1761,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
 
 /-- The door word a card's pure `blurb()` gives (`Card.Door {word, blurb}`), if it has one. -/
 def blurbWord (o : Object) : M (Option String) := do
-  if !((entrySource o).splitOn "\n").any (·.startsWith "def blurb(") then return none
+  if !o.declaresDef "blurb" then return none
   let some c ← tryCatch (some <$> compiledMethod o "blurb") (fun _ => pure none) | return none
   let some entry := c.entry | return none
   match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with

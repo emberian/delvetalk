@@ -605,6 +605,13 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    reason, `noMethodReason`, unknownObject's and typeMismatch's sentences; a grant clause says "no
    grant lets this call run <m> on <id> (<clause>).". Test: `tests/test_call_reading.py`.
 
+78. **Declarations from the artifact (host11).** Whether an entry module declares `forms`, `views`,
+   `lenses`, `blurb` (and, for `publicMethods`, `methods`) is read from the artifact's `declares:
+   [names]` when the kernel lists it, derived definitions included (`packageDeclares`,
+   `Object.declaresDef`; `Object.declares`, in snapshots); an artifact without the list falls back to
+   scanning the entry module's source for `def <name>(`. The scan goes when the kernel's list is in
+   foundation (coordinator's word). `#guard`s in `Ops.lean`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
