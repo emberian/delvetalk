@@ -69,6 +69,7 @@ def sealed_library(library, directory):
 
 class Hostd(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
+    request_queue_size = 128  # the default backlog of 5 refuses connections when a burst arrives faster than accept() runs
 
     def __init__(self, state, journal, binary=BINARY, lock=None, opener=None, library=None, sync='fsync'):
         self.state = Path(state)
