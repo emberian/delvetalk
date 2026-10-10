@@ -6,6 +6,7 @@ against the offered form and Garden.plant's input before resuming the garden.
 """
 import unittest
 
+from tests.host import awaiting_relations
 from tests.test_chain import Chain, boolean, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job, computation, row_names
 from tests.test_places import listing
@@ -155,6 +156,7 @@ class PolicyObject(Chain):
         print("\n--- policy card with a macro ---\n" + card)
         self.assertIn("Macro moth-bell: moth for {who}\n  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", card)
 
+    @awaiting_relations
     def test_a_macro_fires_without_the_model_and_a_non_match_falls_through_to_it(self):
         self.policy()
         self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="ember")
@@ -233,6 +235,7 @@ class PolicyObject(Chain):
         reply = self.say("Could we plant a silver fern?")
         self.assertEqual((reply["status"], reply["result"]["label"], reply.get("offers", [])), ("admitted", "silent", []), reply)
 
+    @awaiting_relations
     def test_a_typed_spell_never_consults_the_policy(self):
         self.policy()
         self.garden("policy")
@@ -249,6 +252,7 @@ class PolicyObject(Chain):
         self.assertEqual(item["utterance"], "Could we plant a silver fern that remembers?")
         self.assertEqual([o["action"] for o in item["offers"]], ["plant"])
 
+    @awaiting_relations
     def test_with_confirm_on_the_garden_asks_first_then_yes_from_the_same_principal_plants(self):
         self.policy()
         self.garden("policy", confirm=True)
@@ -270,6 +274,7 @@ class PolicyObject(Chain):
         self.assertIn("Planted for glm: a silver bell, “a fern that remembers”.", planted["offers"][0]["text"])
         self.assertEqual(self.pending()["items"], [])
 
+    @awaiting_relations
     def test_no_drops_the_waiting_proposal(self):
         self.policy()
         self.garden("policy", confirm=True)
@@ -280,6 +285,7 @@ class PolicyObject(Chain):
         self.assertEqual(self.pending()["items"], [])
         self.assertEqual([f["value"] for f in self.state("garden")["fields"] if f["name"] == "planted"][0], nat(0))
 
+    @awaiting_relations
     def test_with_confirm_off_the_garden_plants_and_a_bad_colour_is_refused_by_name(self):
         self.policy()
         self.garden("policy", confirm=False)
@@ -315,6 +321,7 @@ class PolicyObject(Chain):
                        "Participant: Could we plant a silver fern that remembers?"):
             self.assertIn(needle, system)
 
+    @awaiting_relations
     def test_a_plain_spell_reply_resumes_replied_and_the_garden_plants_it(self):
         self.policy()
         self.garden("policy", confirm=False)
@@ -344,6 +351,7 @@ class PolicyObject(Chain):
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertNotEqual(resumed["result"]["label"], "planted", resumed)
 
+    @awaiting_relations
     def test_a_suspension_journals_its_checkpoint_blocks_once(self):
         """Rehearsal run 5: a suspended entry cost about 236 KB, nearly all of it the program's own
         terms in the checkpoint. Blocks are journaled once; a later suspension of the same package
@@ -365,6 +373,7 @@ class PolicyObject(Chain):
             [resumed] = settled["resumed"]
             self.assertEqual(resumed["status"], "admitted", resumed)
 
+    @awaiting_relations
     def test_a_resumed_interpretation_whose_directory_moved_meanwhile_still_admits(self):
         """Rehearsal run 5, finding 6: inkling's prose resumed after another principal's greeting
         had moved the directory, was refused staleRoot, and nobody retried it."""
@@ -391,6 +400,7 @@ class PolicyObject(Chain):
         self.reopen()
         self.assertEqual(self.host.send(op="world-receipt", principal="inkling", identity="i-2")["receipt"]["outcome"]["tag"], "admitted")
 
+    @awaiting_relations
     def test_interpretations_have_their_own_capacity_apart_from_awaits(self):
         """The rehearsal rerun: the ninth prose reply in a batch was refused at the await cap."""
         self.policy()

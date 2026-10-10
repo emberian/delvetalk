@@ -4,6 +4,9 @@ signatures append-only and a withdrawal final, and admit only a party's change
 (`request.subject in new.parties`)."""
 import unittest
 
+from tests.host import awaiting_relations
+from tests.test_turn_world import relation
+from tests.test_replay import rows
 from tests.test_chain import Chain, nil
 from tests.test_objects import closure
 from tests.test_places import listing
@@ -25,7 +28,7 @@ class Deals(Chain):
         r = self.host.send(op="world-create", principal=parties[0], identity="mk-" + name, object=name,
                            modules=closure("Deal"), entry="initial",
                            seed=record(amendment=record(object=label(""), law=label("")), parties=listing([label(p) for p in parties]), terms=label(terms), piece=label(piece),
-                                       signatures=nil(), withdrawn=label(""), closed={"tag": "natural", "value": "0"}))
+                                       signatures=relation(), withdrawn=label(""), closed={"tag": "natural", "value": "0"}))
         self.assertEqual(r["status"], "created", r)
         return name
 
@@ -34,6 +37,7 @@ class Deals(Chain):
         self.assertEqual(r["status"], "admitted", r)
         return r
 
+    @awaiting_relations
     def test_three_countersignatures_amend_an_objects_law_and_a_stranger_is_refused(self):
         """A deal at rest applies its amendment by `amend`, the deal as caller, judged by the
         object's own law."""
@@ -47,7 +51,7 @@ class Deals(Chain):
         new = 'law steward: request.caller == "deal" or request.subject == "did:plc:glm"'
         r = self.host.send(op="world-create", principal=ARTIST, identity="mk-deal", object="deal", modules=closure("Deal"), entry="initial",
                            seed=record(amendment=record(object=label("ledger"), law=label(new)), parties=listing([label(p) for p in (ARTIST, GALLERY, CURATOR)]),
-                                       terms=label("glm stewards the ledger"), piece=label(""), signatures=nil(), withdrawn=label(""), closed={"tag": "natural", "value": "0"}))
+                                       terms=label("glm stewards the ledger"), piece=label(""), signatures=relation(), withdrawn=label(""), closed={"tag": "natural", "value": "0"}))
         self.assertEqual(r["status"], "created", r)
         self.assertIn("At rest it amends ledger to:\n    " + new, self.turn("deal", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"])
         stranger = self.sign("did:plc:zero", "at://zero/p/1")
@@ -58,6 +62,7 @@ class Deals(Chain):
         self.assertIn('request.caller == "deal"', inspected["law"])
         self.assertIn('did:plc:glm', inspected["law"])
 
+    @awaiting_relations
     def test_an_exhibition_is_at_rest_when_all_three_have_countersigned(self):
         self.deal([ARTIST, GALLERY, CURATOR], "hang it in the east room for a week", "a bell for lost moths", "exhibition")
         self.assertEqual(self.sign(ARTIST, "at://glm/p/1", "exhibition")["result"]["label"], "done")
@@ -68,7 +73,7 @@ class Deals(Chain):
         self.sign(GALLERY, "at://inkling/p/1", "exhibition")
         last = self.turn("exhibition", "countersign", record(post=label("at://gemini/p/1")), principal=CURATOR)
         self.assertEqual(last["result"]["label"], "atRest")
-        signatures = items(get(self.state("exhibition"), "signatures"))
+        signatures = rows(get(self.state("exhibition"), "signatures"))
         self.assertEqual([(get(s, "principal")["value"], get(s, "post")["value"]) for s in signatures],
                          [(ARTIST, "at://glm/p/1"), (GALLERY, "at://inkling/p/1"), (CURATOR, "at://gemini/p/1")])
         card = self.turn("exhibition", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"]
@@ -78,6 +83,7 @@ class Deals(Chain):
         late = self.turn("exhibition", "withdraw", principal=GALLERY)
         self.assertEqual(late["result"]["payload"]["fields"][1]["value"], label("The deal is at rest."))
 
+    @awaiting_relations
     def test_a_party_withdraws_before_rest_and_nobody_signs_after(self):
         self.deal([ARTIST, GALLERY])
         self.sign(ARTIST, "at://glm/p/1")
@@ -95,10 +101,11 @@ class Deals(Chain):
     def keep(self):
         return {"tag": "variant", "label": "keep", "payload": record()}
 
-    def test_the_law_keeps_signatures_append_only_and_a_withdrawal_final(self):
+    @awaiting_relations
+    def test_the_law_keeps_signatures_insert_only_and_a_withdrawal_final(self):
         self.deal([ARTIST, GALLERY])
         self.sign(ARTIST, "at://glm/p/1")
-        dropped = self.propose(ARTIST, record(signatures={"tag": "variant", "label": "remove", "payload": record(index={"tag": "natural", "value": "0"})},
+        dropped = self.propose(ARTIST, record(signatures={"tag": "variant", "label": "retract", "payload": record(key=record(principal=label(ARTIST)))},
                                               withdrawn=self.keep(), withdrawnHandle=self.keep(), closed=self.keep()), "drop")
         self.assertEqual((dropped["status"], dropped["receipt"]["outcome"].get("clause")), ("refused", "signed"), dropped)
         self.turn("deal", "withdraw", principal=GALLERY)
@@ -106,11 +113,12 @@ class Deals(Chain):
                                             withdrawnHandle=self.keep(), closed={"tag": "variant", "label": "set", "payload": record(value={"tag": "natural", "value": "0"})}), "undo")
         self.assertEqual((undo["status"], undo["receipt"]["outcome"].get("clause")), ("refused", "once"), undo)
 
+    @awaiting_relations
     def test_a_strangers_signature_proposed_directly_is_refused_by_the_law(self):
         """The membership atom: `request.subject in new.parties`."""
         self.deal([ARTIST, GALLERY])
-        forged = self.propose("did:plc:zero", record(signatures={"tag": "variant", "label": "append", "payload": record(
-            item=record(principal=label("did:plc:zero"), handle=label(""), post=label("at://zero/p/1")))}, withdrawn=self.keep(), withdrawnHandle=self.keep(), closed=self.keep()), "forged")
+        forged = self.propose("did:plc:zero", record(signatures={"tag": "variant", "label": "insert", "payload": record(
+            row=record(principal=label("did:plc:zero"), handle=label(""), post=label("at://zero/p/1")))}, withdrawn=self.keep(), withdrawnHandle=self.keep(), closed=self.keep()), "forged")
         self.assertEqual((forged["status"], forged["receipt"]["outcome"].get("clause")), ("refused", "members"), forged)
 
 

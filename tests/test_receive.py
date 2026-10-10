@@ -5,6 +5,8 @@ principal, and the reply card is what the turn offers.
 """
 import unittest
 
+from tests.host import awaiting_relations
+from tests.test_replay import relation
 from tests.test_chain import Chain, boolean, field, garden_seed, nil, reference
 from tests.test_objects import check, closure, compile_job
 from tests.test_places import listing
@@ -37,6 +39,7 @@ class Cards(Chain):
         self.assertEqual(len(reply["offers"]), 1, reply)
         return reply["offers"][0]["text"]
 
+    @awaiting_relations
     def test_receive_takes_text_and_post_and_the_host_owns_slot(self):
         # slot is the host's: left out, it is filled from the recorded post ("" when the reply
         # answers none); a forged extra field is still refused typeMismatch before the card runs.
@@ -50,6 +53,7 @@ class Cards(Chain):
         # The unclear spell is held for glm to complete (one write); the forged turn wrote nothing.
         self.assertEqual(self.version("garden"), 1)
 
+    @awaiting_relations
     def test_an_unclear_spell_gets_a_card_naming_the_needs_and_the_template_filled_in(self):
         self.garden()
         text = self.card(self.say("delvetalk garden plant\nseed: a fern that remembers yesterday"))
@@ -62,6 +66,7 @@ class Cards(Chain):
         self.assertEqual(planted["result"]["label"], "planted", planted)
         self.assertIn("a silver bell, “a fern that remembers yesterday”", self.card(planted))
 
+    @awaiting_relations
     def test_nothing_known_repeats_the_whole_template(self):
         self.garden()
         text = self.card(self.say("delvetalk garden plant"))
@@ -81,6 +86,7 @@ class Cards(Chain):
         self.assertEqual(self.version("garden"), 0)
         print("\n--- refused ---\n" + expected)
 
+    @awaiting_relations
     def test_a_proposal_plants_a_bell_and_offers_the_garden_card(self):
         self.garden()
         reply = self.say("delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver")
@@ -88,6 +94,7 @@ class Cards(Chain):
         self.assertEqual(reply["result"]["label"], "planted")
         self.assertIn("Planted for glm: a silver bell", reply["offers"][0]["text"])
 
+    @awaiting_relations
     def test_an_amber_bell_takes_an(self):
         self.garden()
         reply = self.say("delvetalk garden plant / colour: amber / seed: a moth lamp")
@@ -133,7 +140,7 @@ def planted(context: Abi.Context) -> String:
 
     def directory(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), doors={"tag": "list", "items": []}, greeted={"tag": "list", "items": []}))
+                           entry="initial", seed=record(owner=label("ember"), doors=relation(), greeted=relation()))
         self.assertEqual(r["status"], "created", r)
         for label_, description, to in ROOT_DOORS:
             reply = self.turn("root", "add", record(door=door(label_, description, to)), principal="ember")
@@ -143,13 +150,13 @@ def planted(context: Abi.Context) -> String:
         """Genesis scripts named every field and broke whenever an object gained one (`greeted`)."""
         create = lambda ident, seed: self.host.send(op="world-create", principal="ember", identity=ident, object=ident,
                                                     modules=closure("Directory"), entry="initial", seed=seed)
-        doors = {"tag": "list", "items": [door("GARDEN", "Plant something.", "garden")]}
+        doors = relation(record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"), place=nat(0)))
         made = create("d1", record(owner=label("ember"), doors=doors))
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
         self.assertEqual([f["name"] for f in state["fields"]], ["owner", "doors", "greeted", "policy", "words", "fields"])
         self.assertEqual(field(state, "doors"), doors)
-        self.assertEqual(field(state, "greeted"), {"tag": "list", "items": []})
+        self.assertEqual(field(state, "greeted"), relation())
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
         # {doors} alone: a seed that does not set `owner` gets the creating principal, so the
         # creator owns what it makes and the law's dry run admits it.
@@ -170,6 +177,7 @@ def planted(context: Abi.Context) -> String:
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="d1")["state"], state)
 
+    @awaiting_relations
     def test_the_root_menu_card_puts_affordances_first_and_fits_a_reader(self):
         self.directory()
         text = self.card(self.say("hello?", obj="root"))
@@ -187,6 +195,7 @@ def planted(context: Abi.Context) -> String:
         owner = self.say("@livedelvetalk", obj="root", who="ember")
         self.assertEqual((owner["status"], owner["result"]["label"], owner.get("offers", [])), ("admitted", "silent", []), owner)
 
+    @awaiting_relations
     def test_a_door_word_gets_that_doors_card(self):
         self.directory()
         self.garden()
@@ -196,6 +205,7 @@ def planted(context: Abi.Context) -> String:
         self.assertTrue(self.card(self.say("GARDEN", obj="root", who="kimik3")).startswith("✾ THE NIGHT GARDEN"))
         self.assertEqual(self.card(self.say("rooms", obj="root")), "The door to rooms opens on nothing yet.\n")
 
+    @awaiting_relations
     def test_env_and_wake_spells_reach_the_speakers_own(self):
         """Rehearsal run 4, finding D: mimo's `delvetalk env subscribe / card: wake` and `delvetalk
         wake watch / …` got the pointer. A call to the bare `env` is refused unknownObject (the host
@@ -216,6 +226,7 @@ def planted(context: Abi.Context) -> String:
         print("--- root, wake by someone without one ---\n" + str(missing.get("offers", missing)))
         self.assertEqual((missing["result"]["label"], missing["offers"][0]["text"]), ("refused", "Not passed to wake: unknownObject\n"), missing)
 
+    @awaiting_relations
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
         self.garden()
@@ -227,6 +238,7 @@ def planted(context: Abi.Context) -> String:
         ghost = self.say("delvetalk forge make / name: sentry", obj="root")
         print("--- root, an unknown card ---\n" + str(ghost.get("offers", ghost)))
 
+    @awaiting_relations
     def test_doors_are_added_removed_and_labels_are_unique(self):
         self.directory()
         again = self.turn("root", "add", record(door=door("GARDEN", "again", "garden")), principal="ember")

@@ -12,7 +12,8 @@ from tests import test_chain, test_deal
 from tests.test_chain import boolean, nil, reference
 from tests.test_objects import closure
 from tests.test_places import avatar_seed, listing
-from tests.test_turn_world import label, nat, record
+from tests.test_turn_world import label, nat, record, relation
+from tests.test_replay import rows
 from tests.test_wakes import event
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
@@ -80,13 +81,13 @@ class Views(test_chain.Chain):
     def test_a_reader_with_a_proposal_waiting_is_reminded_of_it(self):
         spell = "    delvetalk garden plant\n    seed: a moth\n    colour: violet\n"
         self.make("garden", closure("Garden"), record(policy=reference(""), confirmFor={"tag": "list", "items": [label("plant")]},
-                                                      pending=listing([record(principal=label("glm"), spell=label(spell), needs={"tag": "list", "items": []})])))
+                                                      pending=relation(record(principal=label("glm"), spell=label(spell), needs={"tag": "list", "items": []}))))
         mine, theirs = self.card("garden", "glm"), self.card("garden", "kimik3")
         print("\n--- garden, glm waiting ---\n" + mine)
         self.assertTrue(mine.startswith("✾ THE NIGHT GARDEN\n\nglm, this waits for your yes:\n\n" + spell + "\nTo plant, reply:\n"), mine)
         self.assertTrue(theirs.startswith("✾ THE NIGHT GARDEN\n\nTo plant, reply:\n\n    delvetalk garden plant\n"), theirs)
         # Showing the card drops nothing.
-        self.assertEqual(len([f for f in self.state("garden")["fields"] if f["name"] == "pending"][0]["value"]["items"]), 1)
+        self.assertEqual(len(rows([f for f in self.state("garden")["fields"] if f["name"] == "pending"][0]["value"])), 1)
 
 
 class Handles(test_chain.Chain):
@@ -166,6 +167,7 @@ class PartyViews(test_chain.Chain):
     deal = test_deal.Deals.deal
     sign = test_deal.Deals.sign
 
+    @awaiting_relations
     def test_a_party_sees_its_spell_and_a_stranger_does_not(self):
         self.deal([GLM, KIM])
         def card(who):

@@ -25,6 +25,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # DELVETALK_SHOW_AWAITING=1 runs them as ordinary tests, to see where each one stops.
 AWAITING_RELATIONS = "malformed write plan"
 awaiting_relations = (lambda test: test) if os.environ.get("DELVETALK_SHOW_AWAITING") else unittest.expectedFailure
+
+
+def skip_awaiting_relations(reply):
+    """For a class fixture that needs a relation write: skip the class when (and only when) the
+    host refused it for want of the relation edits."""
+    if not os.environ.get("DELVETALK_SHOW_AWAITING") and AWAITING_RELATIONS in json.dumps(reply):
+        raise unittest.SkipTest("awaiting the host's relation edits: " + AWAITING_RELATIONS)
 FOUNDATION = "/Users/ember/dev/delvetalk2/.lake/build/bin/delvetalk-obend"
 _copy = None
 

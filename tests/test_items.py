@@ -9,8 +9,9 @@ Refuted by: a removeItem that removes another item or none, an amendItem of an a
 commits, or the index forms stopping to work before the release ends."""
 import unittest
 
+from tests.host import awaiting_relations
 from tests.test_chain import nil
-from tests.test_replay import get, items
+from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import TurnWorld, closure, label, record
 
 ROSTER = """edition ObjectiveBend 1
@@ -84,7 +85,7 @@ class ObjectsWriteByItem(TurnWorld):
     def labels(self, reply):
         import json
         text = json.dumps(reply["receipt"]["outcome"]["writes"])
-        return {l for l in ("removeItem", "amendItem", "remove", "amend") if '"label": "%s"' % l in text}
+        return {l for l in ("removeItem", "amendItem", "remove", "amend", "insert", "upsert", "retract") if '"label": "%s"' % l in text}
 
     def test_a_place_removes_who_leaves_by_item(self):
         from tests.test_chain import Chain
@@ -96,15 +97,16 @@ class ObjectsWriteByItem(TurnWorld):
         state = self.host.send(op="world-view", principal="ember", object="porch")["state"]
         self.assertEqual([get(p, "object")["value"] for p in items(get(state, "present"))], ["glm", "gemini"])
 
-    def test_a_tide_resubscription_amends_the_subscribers_own_item(self):
+    @awaiting_relations
+    def test_a_tide_resubscription_upserts_the_subscribers_own_row(self):
         from tests.test_chain import nil as empty
         from tests.test_turn_world import nat
         r = self.host.send(op="world-create", principal="ember", identity="mk-tide", object="tide", modules=closure("Tide"),
-                           entry="initial", seed=record(ticks=nat(0), last=nat(0), gap=nat(1), subs=empty()))
+                           entry="initial", seed=record(ticks=nat(0), last=nat(0), gap=nat(1), subs=relation()))
         self.assertEqual(r["status"], "created", r)
         for who in ("glm", "kimik3"):
             self.turn("tide", "subscribe", record(every=nat(2), note=label("hi " + who)), principal=who)
         again = self.turn("tide", "subscribe", record(every=nat(3), note=label("again")), principal="glm")
-        self.assertEqual(self.labels(again), {"amendItem"})
-        subs = items(get(self.host.send(op="world-view", principal="ember", object="tide")["state"], "subs"))
+        self.assertEqual(self.labels(again), {"upsert"})
+        subs = rows(get(self.host.send(op="world-view", principal="ember", object="tide")["state"], "subs"))
         self.assertEqual([(get(s, "who")["value"], get(s, "note")["value"]) for s in subs], [("glm", "again"), ("kimik3", "hi kimik3")])

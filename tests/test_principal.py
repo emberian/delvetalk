@@ -8,6 +8,7 @@ Mini type checker'}); a method without one never sees it, and records the princi
 """
 import unittest
 
+from tests.test_turn_world import relation
 from tests.host import awaiting_relations
 from tests.test_chain import Chain, garden_seed, reference
 from tests.test_objects import closure
@@ -49,15 +50,16 @@ class Principal(Chain):
         self.acted("bell", "rain", argument)
         self.assertEqual([get(r, "author") for r in rows(get(self.state("bell"), "rains"))], [label(ACTOR)])
 
+    @awaiting_relations
     def test_a_submission_is_authored_by_the_turns_principal(self):
         # Anthology declares a law, so it is made with world-create (whole state) by its owner.
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
-                           entry="initial", seed=record(owner=label("ember"), proposals={"tag": "list", "items": []}))
+                           entry="initial", seed=record(owner=label("ember"), proposals=relation()))
         self.assertEqual(r["status"], "created", r)
         argument = record(line=label("lamps"))
         self.forged("anthology", "submit", argument, "author")
         self.acted("anthology", "submit", argument)
-        self.assertEqual([get(p, "author") for p in items(get(self.state("anthology"), "proposals"))], [label(ACTOR)])
+        self.assertEqual([get(p, "author") for p in rows(get(self.state("anthology"), "proposals"))], [label(ACTOR)])
 
     def test_a_note_is_from_the_turns_principal(self):
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
@@ -80,6 +82,7 @@ class Principal(Chain):
         self.ignored("porch", "enter", "by")
         self.assertEqual(names(get(self.state("porch"), "present")), [ACTOR])
 
+    @awaiting_relations
     def test_the_planter_is_the_turns_principal_and_the_planting_its_post(self):
         self.make("garden", closure("Garden"), garden_seed())
         spell = "delvetalk garden plant\nseed: a fern\ncolour: amber"

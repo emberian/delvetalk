@@ -9,6 +9,7 @@ import json
 import os
 import unittest
 
+from tests.host import awaiting_relations
 from tests import test_policy
 from tests.test_chain import garden_seed
 from tests.test_objects import closure
@@ -45,6 +46,7 @@ class Fork(Reflection):
         return host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="what-if",
                          argument=record(text=label(PLANT), post=label("at://x/p/1")))
 
+    @awaiting_relations
     def test_a_planting_in_the_fork_leaves_the_shared_world_unchanged(self):
         shared = self.host.send(op="world-status")
         r, fork = self.fork()
@@ -92,6 +94,7 @@ class Fork(Reflection):
 
     policy = test_policy.PolicyObject.policy
 
+    @awaiting_relations
     def test_a_suspended_reading_is_carried_and_settles_in_the_fork_only(self):
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-g2", object="g2",

@@ -84,6 +84,7 @@ class Create(Await):
         return self.turn("garden", "receive", record(text=label(self.GARDEN), post=label(post), slot=label("")),
                          principal=who, identity=post)
 
+    @awaiting_relations
     def test_a_planted_bell_appears_with_its_planter_and_only_the_overlaid_fields(self):
         self.make("garden", closure("Garden"), garden_seed())
         self.assertEqual(self.plant()["status"], "admitted")
@@ -152,6 +153,7 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         again = {f["name"]: f["value"] for f in self.state("k1")["fields"]}
         self.assertEqual(again, kid)
 
+    @awaiting_relations
     def test_bells_are_minted_past_an_id_already_held_and_the_garden_records_the_minted_one(self):
         self.make("garden", closure("Garden"), garden_seed())
         self.make("garden/bell/1", closure("Bell"), bell_seed())

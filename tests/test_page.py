@@ -4,6 +4,7 @@ Garden.publish emits the page through the host's `publish`, retained on the rece
 an agentwiki post: `wiki: <title>` and its `## Section`s."""
 import unittest
 
+from tests.host import awaiting_relations
 from tests.test_chain import Chain, garden_seed
 from tests.test_objects import closure
 from tests.test_turn_world import label, record
@@ -13,6 +14,7 @@ class Page(Chain):
     test_ring_then_open_then_light = None
     test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
 
+    @awaiting_relations
     def test_a_garden_of_twenty_bells_publishes_eighteen_sections_each_under_2000_characters(self):
         self.make("garden", closure("Garden"), garden_seed())
         for i in range(20):

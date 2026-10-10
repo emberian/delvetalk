@@ -5,10 +5,11 @@ that declares a law). Env and Wake are made by their owner: a law must admit an 
 by the one who installs it, and theirs admit only the owner."""
 import unittest
 
+from tests.host import awaiting_relations
 from tests.test_chain import Chain, boolean, nil, reference
 from tests.test_objects import closure
 from tests.test_places import avatar_seed
-from tests.test_replay import get, items
+from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import label, nat, record
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
@@ -227,8 +228,9 @@ class Wakes(Chain):
     # --- Tide ------------------------------------------------------------------------
 
     def tide(self, gap=3):
-        self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=nil()))
+        self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=relation()))
 
+    @awaiting_relations
     def test_when_garden_planted_passes_10_the_wake_ticks_the_tide(self):
         """A Wake watches another object's writes: the garden tells its observers its count
         after each planting, and the trigger fires once, as the count passes 10."""
@@ -251,6 +253,7 @@ class Wakes(Chain):
             # 10 does not pass 10; 11 does, once; 12 does not fire again.
             self.assertEqual(ticks(), [0, 1, 1][i], i)
 
+    @awaiting_relations
     def test_kimik3s_archived_spell_subscribes_and_every_answer_is_the_tide_card(self):
         """Rehearsal findings 1 and 9: the slash spell from the archive (3mxhg6achmc2f) subscribes,
         and subscribe, tick and a tick too soon each answer with what happened and the card."""
@@ -270,16 +273,18 @@ class Wakes(Chain):
         soon = self.turn("tide", "receive", heard("delvetalk tide tick"), principal=OWNER)
         self.assertTrue(soon["offers"][0]["text"].startswith("Too soon: the next tick may come at clock "), soon["offers"])
 
+    @awaiting_relations
     def test_a_subscriber_is_shown_by_the_handle_the_host_knew_at_subscribe(self):
         self.tide()
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did=OTHER, handle="inkling.delve.town")["status"], "principal")
         self.turn("tide", "receive", heard("delvetalk tide subscribe / every: 1 / note: first light"), principal=OTHER)
-        [sub] = items(get(self.state("tide"), "subs"))
+        [sub] = rows(get(self.state("tide"), "subs"))
         self.assertEqual(get(sub, "handle")["value"], "inkling.delve.town")
         card = self.turn("tide", "receive", heard(""), principal="did:plc:zero")["offers"][0]["text"]
         print("\n--- tide, read by a stranger ---\n" + card)
         self.assertIn("inkling.delve.town every 1 from tick 0: first light\n", card)
 
+    @awaiting_relations
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()
         self.avatar(OTHER)
@@ -287,7 +292,7 @@ class Wakes(Chain):
         sub = self.turn("tide", "subscribe", record(every=nat(1), note=label("WC-01, first light")), principal=OTHER)
         self.assertEqual(self.label_of(sub), "subscribed")
         self.turn("tide", "receive", heard("delvetalk tide subscribe\nevery: 2\nnote: inkling's first tide"), principal=OWNER)
-        subs = items(get(self.state("tide"), "subs"))
+        subs = rows(get(self.state("tide"), "subs"))
         self.assertEqual([get(s, "who")["value"] for s in subs], [OTHER, OWNER])
         first = self.turn("tide", "tick", principal="did:plc:zero")
         self.assertEqual((self.label_of(first), get(first["result"]["payload"], "sent")), ("ticked", nat(1)))
@@ -323,6 +328,7 @@ import ./List.obend as Lists
 import ./Plan.obend as Plans
 import ./Tide.obend as Tide
 import ./Wake.obend as Wake
+import ./Relation.obend as Relations
 def request(principal: String, clock: Nat) -> Abi.Request:
   {context: {world: "", object: "tide", principal: principal, handle: "", caller: "", intent: "t", height: 0n, clock: clock, inputOrigin: {kind: "request", object: "", command: "", program: "", immediatelyPrevious: false}}, method: "tick", argument: Plans.nothing(), kind: 0n, pin: "", reads: Lists.List::<Abi.Read>.nil()}
 def verdict(v: Abi.Verdict) -> String:
@@ -332,7 +338,19 @@ def verdict(v: Abi.Verdict) -> String:
 def subs(who: String) -> Lists.List<Tide.Sub>:
   Lists.List::<Tide.Sub>.cons({head: {who: who, every: 1n, note: "n", since: 0n, handle: ""}, tail: Lists.List::<Tide.Sub>.nil()})
 def tide(ticks: Nat, last: Nat, who: String) -> Tide.State:
-  {ticks: ticks, last: last, gap: 3n, subs: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)}
+  {ticks: ticks, last: last, gap: 3n, subs: Relations.Relation.rows({items: if who == "" then Lists.List::<Tide.Sub>.nil() else subs(who)})}
+def sub(who: String, every: Nat) -> Tide.Sub:
+  {who: who, every: every, note: "n", since: 0n, handle: ""}
+def tideOf(items: Lists.List<Tide.Sub>) -> Tide.State:
+  {ticks: 0n, last: 0n, gap: 3n, subs: Relations.fromList(items, Tide.subKey)}
+def two(a: Tide.Sub, b: Tide.Sub) -> Lists.List<Tide.Sub>:
+  Lists.List.cons({head: a, tail: Lists.List.cons({head: b, tail: Lists.List.nil({})})})
+def one(a: Tide.Sub) -> Lists.List<Tide.Sub>:
+  Lists.List.cons({head: a, tail: Lists.List.nil({})})
+# Each case: old subs, new subs, requester glm. "own" adds glm beside an unchanged kimik3;
+# "theirs" changes kimik3's row; "drop" retracts kimik3's; "mine" replaces and drops glm's own.
+def changedBy(which: Nat) -> String:
+  if which == 0n then verdict(Tide.law(tideOf(one(sub("kimik3", 1n))), tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), request("glm", 5n))) else if which == 1n then verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(two(sub("kimik3", 4n), sub("glm", 2n))), request("glm", 5n))) else if which == 2n then verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(one(sub("glm", 2n))), request("glm", 5n))) else verdict(Tide.law(tideOf(two(sub("kimik3", 1n), sub("glm", 2n))), tideOf(one(sub("kimik3", 1n))), request("glm", 5n)))
 def tickAt(height: Nat) -> String:
   verdict(Tide.law(tide(1n, 10n, ""), tide(2n, height, ""), request("zero", height)))
 def subscribeAs(principal: String) -> String:
@@ -370,6 +388,10 @@ class LawPredicates(unittest.TestCase):
     def test_a_subscription_is_only_ever_the_requesters_own(self):
         self.assertEqual(self.run_probe("subscribeAs", label("kimik3")), "admitted")
         self.assertEqual(self.run_probe("subscribeAs", label("glm")), "refused self")
+
+    def test_the_changed_keys_of_a_subscription_write_are_the_requesters(self):
+        self.assertEqual([self.run_probe("changedBy", nat(n)) for n in range(4)],
+                         ["admitted", "refused self", "refused self", "admitted"])
 
     def test_wake_triggers_change_only_by_the_owner(self):
         self.assertEqual(self.run_probe("wakeBy", label("inkling")), "admitted")

@@ -139,6 +139,11 @@ def label(s):
     return {"tag": "label", "value": s}
 
 
+def relation(*items):
+    """A relation on the wire (world/lib/Relation.obend `rows {items}`), its rows given in key order."""
+    return {"tag": "variant", "label": "rows", "payload": record(items={"tag": "list", "items": list(items)})}
+
+
 class TurnWorld(HostCase):
     def create(self, obj, modules, count):
         r = self.host.send(op="world-create", principal="ember", identity="create-" + obj,

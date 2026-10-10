@@ -9,14 +9,18 @@ import ./Bell.obend as Bell
 import ./Cistern.obend as Cistern
 import ./Card.obend as Card
 import ./Policies.obend as Policies
+import ./Relation.obend as Relations
 # What the garden holds for a principal: a proposal understood from prose waiting for
 # "yes" (needs empty), or a spell missing fields (needs names them) that a reply of only
-# the missing `name: value` lines completes.
+# the missing `name: value` lines completes. One per principal: `pending` is keyed
+# {principal}, so holding another replaces it (an upsert).
 record Pending:
   principal: String
   spell: String
   needs: Lists.List<String>
-# children: the bells planted here, oldest first, written on each create.
+# children: the bells planted here, keyed {object}: a bell's id is garden/bell/<n> with n
+# minted in order, and a text key sorts by length and then by bytes, so key order is the
+# order of planting.
 # confirmFor: the actions whose proposals understood from prose wait for "yes" here, beside
 # the policy's own confirmFor (either asking is enough); empty by default, so a planting
 # understood from prose plants and the receipt is the answer.
@@ -27,8 +31,8 @@ record State:
   planted: Nat
   policy: Plans.Reference
   confirmFor: Lists.List<String>
-  pending: Lists.List<Pending>
-  children: Lists.List<Plans.Reference>
+  pending: Relations.Relation<Pending>
+  children: Relations.Relation<Plans.Reference>
   pageCheckpoint: String
   observers: Card.Observers
 record Edits:
@@ -44,7 +48,7 @@ record Seed:
   owner: String
   policy: Plans.Reference
   confirmFor: Lists.List<String>
-  pending: Lists.List<Pending>
+  pending: Relations.Relation<Pending>
 type Plan = Plans.Plan<Edits>
 # What plant takes, and so what an interpretation proposes: the host checks the
 # proposal's argument against plant's input type. A proposal is plain JSON, which has
@@ -59,11 +63,13 @@ type Response = Plans.Response<Policies.State, Planting>
 # first, by name; this law refuses the same write proposed any other way).
 law owner "only the owner changes who owns it, its stance, its policy or its page": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(confirmFor) and unchanged(policy) and unchanged(pageCheckpoint))
 def defaultSeed() -> Seed:
-  {owner: "", policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Lists.List.nil()}
+  {owner: "", policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty()}
 def seeded(seed: Seed) -> State:
-  {owner: seed.owner, planted: 0n, policy: seed.policy, confirmFor: seed.confirmFor, pending: seed.pending, children: Lists.List.nil(), pageCheckpoint: "", observers: Card.Observers.nil()}
+  {owner: seed.owner, planted: 0n, policy: seed.policy, confirmFor: seed.confirmFor, pending: seed.pending, children: Relations.empty(), pageCheckpoint: "", observers: Card.Observers.nil()}
 def initial() -> State:
   seeded(defaultSeed())
+def relations() -> Relations.Decls:
+  Relations.Decls.cons({head: {field: "pending", key: Lists.List.cons({head: "principal", tail: Lists.List.nil({})}), limit: 64n}, tail: Relations.Decls.cons({head: {field: "children", key: Lists.List.cons({head: "object", tail: Lists.List.nil({})}), limit: 4096n}, tail: Relations.Decls.nil({})})})
 def keep() -> Edits:
   {planted: Plans.Edit.keep({}), confirmFor: Plans.Entries.keep({}), pageCheckpoint: Plans.Edit.keep({}), pending: Plans.Entries.keep({}), children: Plans.Entries.keep({}), observers: Plans.Entries.keep({})}
 sum Made:
@@ -97,7 +103,7 @@ form plant as planting:
   seed: text 1..80
 # A reader with a proposal waiting is reminded of it, first.
 def waiting(state: State, context: Abi.Context) -> String:
-  match heldBy(state.pending, context.principal, 0n):
+  match heldBy(Relations.rows(state.pending), context.principal, 0n):
     case some(s): "{Card.name(context.principal, context)}, this waits for your yes:\n\n{s.spell}\n"
     case none(_): ""
 def childLine(reference: Plans.Reference) -> Document.Document:
@@ -108,11 +114,11 @@ def childLine(reference: Plans.Reference) -> Document.Document:
 def render(state: State, context: Abi.Context) -> Document.Document:
   let card = if context.object == "" then "garden" else context.object
   let head = Document.text("✾ THE NIGHT GARDEN\n\n{waiting(state, context)}To plant, reply:\n\n    delvetalk {card} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n{Card.checkpointLine(state.pageCheckpoint)}{natText(state.planted)} planted, newest first:\n")
-  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map(Lists.reverse(state.children), childLine), 8n)})})
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map(Lists.reverse(Relations.rows(state.children)), childLine), 8n)})})
 # The garden's page: its card, how to reply, then one section per bell, newest first,
 # sixteen of them; the card section counts the rest.
 def page(state: State, context: Abi.Context) -> Card.Page:
-  let bells = Lists.reverse(state.children)
+  let bells = Lists.reverse(Relations.rows(state.children))
   let shown = Lists.map(Lists.take(bells, 16n), fn(bell: Plans.Reference) -> Card.Section: {title: bell.object, body: Document.text("A bell planted here: [[{bell.object}]]. Reply on its card to rain on it.\n")})
   let more = if Lists.length(bells) > 16n then "… and {natText(Lists.length(bells) - 16n)} more bells\n" else ""
   Lists.concat(Card.defaultPage(Document.concat(render(state, context), Document.text(more)), context, forms()), shown)
@@ -218,8 +224,8 @@ def refusedCard(refusal: Card.Refusal) -> Document.Document:
 # Answers a refusal with its card, first dropping the waiting proposal it superseded.
 def refused(found: Held, context: Abi.Context, w: Why) -> Activity<Plan, Response, Reply>:
   told(found, context, Reply.refused(refusal(w)), refusedCard(refusal(w)))
-# The proposal a principal has waiting, if any: the stored item (amended and removed
-# by its bytes, so another principal's proposal landing first moves nothing) and its spell.
+# The proposal a principal has waiting, if any: the stored row (replaced and retracted by
+# its key, so another principal's proposal landing first moves nothing) and its spell.
 sum Held:
   none: {}
   some: {item: Pending, spell: String, needs: Lists.List<String>}
@@ -244,7 +250,7 @@ def classed(core: String) -> Word:
 # heard as answering it; otherwise the text parses, fits the plant form, plants on a
 # proposal and writes nothing; it always ends by offering a reply card.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Reply>:
-  if Card.isMerge(input.text) then Card.merge(input.post, state.owner, context, fn(post: String) -> Edits: extend(keep(), {pageCheckpoint: Plans.Edit.set({value: post})}), Reply.merged({post: input.post}), fn(r: Card.Refusal) -> Reply: Reply.refused(r)) else heard(state, input, context, heldBy(state.pending, context.principal, 0n))
+  if Card.isMerge(input.text) then Card.merge(input.post, state.owner, context, fn(post: String) -> Edits: extend(keep(), {pageCheckpoint: Plans.Edit.set({value: post})}), Reply.merged({post: input.post}), fn(r: Card.Refusal) -> Reply: Reply.refused(r)) else heard(state, input, context, heldBy(Relations.rows(state.pending), context.principal, 0n))
 def heard(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match found:
     case none(_): hear(state, input, context, Spell.parse(input.text), found)
@@ -385,8 +391,8 @@ def partial(parsed: Spell.Parsed, context: Abi.Context) -> String:
 # What the garden holds, one per principal: a new one replaces the old.
 def holding(state: State, found: Held, entry: Pending) -> Lists.Maybe<Plans.Entries<Pending, Pending>>:
   match found:
-    case some(s): Lists.Maybe.some({value: Plans.Entries.amendItem({item: s.item, change: entry})})
-    case none(_): if Lists.length(state.pending) < 64n then Lists.Maybe.some({value: Plans.Entries.append({item: entry})}) else Lists.Maybe.none({})
+    case some(_): Lists.Maybe.some({value: Plans.Entries.upsert({row: entry})})
+    case none(_): if Relations.count(state.pending) < 64n then Lists.Maybe.some({value: Plans.Entries.upsert({row: entry})}) else Lists.Maybe.none({})
 def held(state: State, context: Abi.Context, found: Held, spell: String, needs: Form.Names, card: Document.Document) -> Activity<Plan, Response, Reply>:
   match holding(state, found, {principal: context.principal, spell: spell, needs: needs}):
     case some(e): heldWritten(context, e.value, needs, card)
@@ -398,8 +404,8 @@ def heldWritten(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, nee
 def asked(state: State, context: Abi.Context, found: Held, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   let entry: Pending = {principal: context.principal, spell: spell(context.object, seed, colour), needs: Lists.List.nil()}
   match found:
-    case some(s): remembered(context, Plans.Entries.amendItem({item: s.item, change: entry}), colour, seed)
-    case none(_): if Lists.length(state.pending) < 64n then remembered(context, Plans.Entries.append({item: entry}), colour, seed) else tell(Reply.refused(refusal(Why.tooManyWaiting({}))), refusedCard(refusal(Why.tooManyWaiting({}))))
+    case some(_): remembered(context, Plans.Entries.upsert({row: entry}), colour, seed)
+    case none(_): if Relations.count(state.pending) < 64n then remembered(context, Plans.Entries.upsert({row: entry}), colour, seed) else tell(Reply.refused(refusal(Why.tooManyWaiting({}))), refusedCard(refusal(Why.tooManyWaiting({}))))
 def remembered(context: Abi.Context, edit: Plans.Entries<Pending, Pending>, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
   let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {pending: edit})}))
   Card.tellTo(Reply.confirming({spell: spell(context.object, seed, colour)}), context.principal, confirmCard(context, colour, seed))
@@ -414,7 +420,7 @@ def bellSeed(context: Abi.Context, post: String, colour: Bell.Colour, seed: Stri
 # Planting counts, keeps the bell among the children, and settles whatever this
 # principal had waiting.
 def counted(state: State, context: Abi.Context, found: Held, reference: Plans.Reference, colour: String, seed: String) -> Activity<Plan, Response, Reply>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit.add({delta: 1n}), pending: forget(found), children: Plans.Entries.append({item: reference})})}))
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {planted: Plans.Edit.add({delta: 1n}), pending: forget(found), children: Plans.Entries.insert({row: reference})})}))
   notified(state.observers, state.planted + 1n, Reply.planted({object: reference, colour: colour, seed: seed}), plantedCard(context, Card.name(context.principal, context), reference, colour, seed, state.planted + 1n))
 # Observers (a Wake watching `planted`) are told the count after each planting, by their
 # method, as `{field: "planted", value}`; then the planter gets the card.
@@ -439,7 +445,7 @@ def observerWritten(change: Card.Change, entries: Plans.Entries<Card.Observer, {
 def forget(found: Held) -> Plans.Entries<Pending, Pending>:
   match found:
     case none(_): Plans.Entries.keep({})
-    case some(s): Plans.Entries.removeItem({item: s.item})
+    case some(s): Plans.Entries.retract({key: {principal: s.item.principal}})
 # Answers with a card, first dropping the waiting proposal this reply superseded.
 def told(found: Held, context: Abi.Context, reply: Reply, card: Document.Document) -> Activity<Plan, Response, Reply>:
   match found:

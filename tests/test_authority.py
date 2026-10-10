@@ -7,6 +7,8 @@ has one method per behaviour; the laws are inserted before `def initial` per tes
 import json
 import unittest
 
+from tests.host import awaiting_relations
+from tests.test_replay import relation
 from tests.test_chain import field, nil, reference
 from tests.test_turn_world import TurnWorld, closure, label, nat, record
 
@@ -199,11 +201,12 @@ class DefaultLaw(Authority):
 
 
 class LawsOnWho(Authority):
+    @awaiting_relations
     def test_directory_remove_by_a_stranger_is_refused_by_the_directorys_law(self):
         door = record(label=label("garden"), description=label("a garden"), to=reference("garden"))
         r = self.host.send(op="world-create", principal="ember", identity="mk-dir", object="dir",
                            modules=closure("Directory"), entry="initial",
-                           seed=record(owner=label("ember"), doors=nil(), greeted=nil()))
+                           seed=record(owner=label("ember"), doors=relation(), greeted=relation()))
         self.assertEqual(r["status"], "created", r)
         self.assertEqual(self.turn("dir", "add", record(door=door))["status"], "admitted")
         version = self.version("dir")

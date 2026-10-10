@@ -287,13 +287,37 @@ the library).
   same. Two concurrent turns that read one root give two rows one `n`; their authors or
   heights differ, so the keys do. Only one author's two writes at one read height and
   count collide (keyTaken), which no current object does.
-* **Migrated / records.** Migrated: Bell (`rains`). Still lists (to migrate, RELATIONAL §9):
-  Tide subs, Directory greeted and doors, Anthology proposals, Deal signatures, Garden
-  pending and children, Env buffer, Place present, things, traces; observers and doors on
-  every card. Records by design: see RELATIONAL §9 "Stays a record".
+* **Migrated / records.** Migrated, with key and limit: Bell `rains` {author, at, n} 2,048;
+  Tide `subs` {who} 1,024 (the Bend cap stays 64: a tick sends to every due one); Directory
+  `doors` {label} 64 and `greeted` {principal} 4,096 (rows `Greeting {principal}`: a
+  relation's rows are records); Anthology `proposals` {author, at, n} 1,024; Deal
+  `signatures` {principal} 64; Garden `pending` {principal} 64 and `children` {object}
+  4,096. Still lists (to migrate, RELATIONAL §9): Env buffer, Place present, things,
+  traces; observers and doors on every card. Records by design: RELATIONAL §9 "Stays a
+  record".
+* **What the cards show now.** Bell, Anthology (n first: the order of falling, so a line's
+  number is unchanged) and Garden (`garden/bell/<n>` sorts by length then bytes, so in
+  planting order) show what they did. Tide's subscribers and a Deal's signatures are listed
+  in key order (by `who`/`principal`: shorter DIDs first), no longer in the order they came.
+  The Directory's menu keeps the owner's order: a door row is `Listed {label, description,
+  to, place}` and `menu(state)` orders by `place` (an added door takes one past the last;
+  genesis seeds 0..6), while every walk whose order does not show uses key order
+  (`doors(state)`). `add {door: Door}` is unchanged; `remove` is a `retract {label}`.
+* **Laws.** Tide's `ownSubs` is one merge of old and new rows: every key added, replaced or
+  retracted must be the requester's (`tests/test_wakes.py` checks the four cases).
+  `insertOnly` is not in the kernel's fragment yet ("law outside the enforced fragment:
+  `insertOnly` where a reference new.FIELD or request.FACT was expected": a Directory or a
+  Deal with it cannot be created), so Directory's greeted and Deal's signatures say it in
+  the Bend predicate, `Relations.insertedOnly(old, new, keyOf, same)` (one merge; clauses
+  `greeted`, `signed`), with a TODO(insertOnly) beside each to move it into the law text
+  when the atom parses.
+* **Seeds on the wire.** A relation seed is the `rows` variant (`tests.test_turn_world.relation(*rows)`,
+  rows in key order); `deploy/genesis.py` seeds the directory's doors that way with places.
 * **Until the host lands** (`tests/host.py`): the host refuses a write holding an insert,
   upsert or retract "malformed write plan" (class evaluation); every test that writes a
-  relation end to end wears `@awaiting_relations` (expectedFailure);
+  relation end to end wears `@awaiting_relations` (expectedFailure; 80 tests after item 4, most
+  of them because a planting inserts the garden's child), and `tests/test_repo.py`'s class
+  fixture, which plants, skips by `skip_awaiting_relations` only on that refusal;
   `DELVETALK_SHOW_AWAITING=1` runs them plainly to see where each stops (all at that
   refusal now). The lane landing the edits deletes the decorator. Wire: a relation is
   `{"tag": "variant", "label": "rows", "payload": {items: [...]}}`; `tests.test_replay.rows`

@@ -28,6 +28,7 @@ def boo(b): return {'tag': 'boolean', 'value': b}
 def lst(*items): return {'tag': 'list', 'items': list(items)}
 def rec(**fields): return {'tag': 'record', 'fields': [{'name': k, 'value': v} for k, v in fields.items()]}
 def ref(obj): return rec(world=lab(''), object=lab(obj))
+def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(items=lst(*rows))}  # world/lib/Relation.obend
 
 
 DOORS = [  # docs/previews/gsb-root-menu.txt, one line each; every door with an object points at a genesis object
@@ -70,7 +71,8 @@ def seeds(opener):
                                      lexicon=lst(*[rec(word=lab(w), meaning=lab(m)) for w, m in LEXICON]),
                                      examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
             ('directory', 'Directory', rec(owner=lab(opener), policy=ref('policy'),
-                                           doors=lst(*[rec(label=lab(l), description=lab(d), to=ref(t)) for l, d, t in DOORS]))),
+                                           doors=relation(*[rec(label=lab(l), description=lab(d), to=ref(t), place=nat(i))
+                                                            for i, (l, d, t) in enumerate(DOORS)]))),
             ('garden', 'Garden', rec(owner=lab(opener), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
