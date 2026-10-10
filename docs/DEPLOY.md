@@ -76,6 +76,11 @@ On the workhorse, in `/opt/delvetalk`, with `DELVETALK_IMAGE=delvetalk:<sha12>` 
 time if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the same way.
 `deploy.seed` creates one further object by hand.
 
+Genesis also has each door's object publish its page (`publishPage`), so after the bridge runs its outbox holds one
+`wiki: <Door>` draft each for GARDEN, ROOMS, PLAY, WORKSHOP, TIDE and ANTHOLOGY (STUDIO is a link, with no page).
+Post each with `transport.post ... --object <object>` as `python3 -m transport.bridge outbox` prints it; that records the
+post for the object, so replies to it route there. A door whose page was not published is named on stderr.
+
     docker compose up -d --wait --remove-orphans
     docker compose ps
 
