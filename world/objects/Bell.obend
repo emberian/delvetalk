@@ -14,8 +14,8 @@ type Colour = Rows.Colour
 # turn read (`at`) and `n`, the bell's count of rains at that read. The key is {author, at,
 # n}: two rains of one author read at one height are two rows whenever the bell counted a
 # rain between them. The host keeps the rains in key order, n first (canonical bytes order
-# the columns by name length), so in the order they fell; the bell keeps 2,048, the host
-# dropping the first past them, after which n stays 2,048 and `at` orders them. Whoever
+# the columns by name length), so in the order they fell; the bell keeps 1,024, the host
+# dropping the first past them, after which n stays 1,024 and `at` orders them. Whoever
 # wants to know of rains or a ring subscribes to `rains` or `rung` (a Wake, a door).
 type Rain = Rows.Rain
 # planting: the uri of the post that planted the bell, which the strike awaits the
@@ -32,7 +32,7 @@ record State:
 def initial() -> State:
   {colour: Colour.amber({}), seed: "", rains: Relations.empty(), rung: false, planting: "", planter: "", planterHandle: "", doors: Lists.List.nil()}
 def relations() -> Relations.Decls:
-  Lists.append(Relations.Decls.nil(), {field: "rains", key: Text.words("author at n"), limit: 2048n})
+  Lists.append(Relations.Decls.nil(), {field: "rains", key: Text.words("author at n"), limit: 1024n})
 def rainKey(rain: Rain) -> {author: String, at: Nat, n: Nat}:
   {author: rain.author, at: rain.at, n: rain.n}
 # The author of a rain is the turn's principal, never an argument. The rain is answered with
@@ -61,7 +61,7 @@ def rang(context: Abi.Context) -> Activity<Bool>:
 def ring(state: State, context: Abi.Context) -> Activity<Bool>:
   rang(context)
 form rain:
-  text: text 1..280
+  text: text 1..120
 form ring:
 form door:
   label: text 1..32
@@ -103,7 +103,7 @@ def render(state: State, context: Abi.Context) -> Document.Document:
   let article = if colourName(state.colour) == "amber" then "An" else "A"
   let sound = if state.rung then "rung" else "silent"
   let id = Card.called(context, "<bell>")
-  let head = Document.text("{article} {colourName(state.colour)} bell, planted by {Card.shown(state.planter, state.planterHandle, context)}{Card.mine(state.planter, context)}: “{state.seed}” — {sound}.\nReply delvetalk {id} rain / text: <1 to 280 characters> to rain on it.\n")
+  let head = Document.text("{article} {colourName(state.colour)} bell, planted by {Card.shown(state.planter, state.planterHandle, context)}{Card.mine(state.planter, context)}: “{state.seed}” — {sound}.\nReply delvetalk {id} rain / text: <1 to 120 characters> to rain on it.\n")
   let doors = Card.doorLines(state.doors)
   let rains = Card.clippedWithin(Lists.map(Relations.rows(state.rains), line), 8n, Card.left(Document.size(head) + Document.size(Document.Document.sequence({items: doors}))))
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(rains, doors)})})

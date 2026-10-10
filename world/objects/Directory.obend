@@ -53,7 +53,7 @@ law greeted "anyone's summons only adds to who was greeted": request.subject == 
 def initial() -> State:
   {owner: "", doors: Relations.empty(), greeted: Relations.empty(), policy: Plans.nobody(), news: Relations.empty(), visits: Relations.empty(), missed: Relations.empty()}
 def relations() -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "doors", key: Text.words("label"), limit: 64n}), {field: "greeted", key: Text.words("principal"), limit: 4096n}), {field: "news", key: Text.words("card"), limit: 64n}), {field: "visits", key: Text.words("principal"), limit: 64n}), {field: "missed", key: Text.words("principal"), limit: 64n})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "doors", key: Text.words("label"), limit: 64n}), {field: "greeted", key: Text.words("principal"), limit: 2048n}), {field: "news", key: Text.words("card"), limit: 64n}), {field: "visits", key: Text.words("principal"), limit: 64n}), {field: "missed", key: Text.words("principal"), limit: 64n})
 def listedKey(listed: Listed) -> {label: String}:
   {label: listed.label}
 def greetingKey(greeting: Greeting) -> Greeting:
@@ -361,7 +361,7 @@ def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Heard>:
   match world.card({object: to}):
     case carded(c): Card.tell(Heard.door({object: to.object}), c.document)
     case _: Card.tell(Heard.refused({clause: "noCard", reading: "No card at {to.object}"}), Document.text("The door to {to.object} opens on nothing yet.\n"))
-# The menu once per principal: the greeting is remembered (the newest 4,096 principals).
+# The menu once per principal: the greeting is remembered (the newest 2,048 principals).
 # A first reply gets the menu; when it also asks for something (it names a door, an action or
 # a field) and there is a policy, the request is read as any later one first, and the menu
 # follows what it drew, opening on the door a proposal went through (docs/MENU.md §2.2).

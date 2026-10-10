@@ -231,8 +231,8 @@ class Workshop(Chain):
         propose("kimik3", "p1")
         out = self.turn("workshop", "receive", record(text=label("delvetalk workshop withdraw / n: 1"), post=label("")), principal="kimik3")
         self.assertEqual(self.card(out), "✾ WORKSHOP\n\nWithdrew #1.\n")
-        # Sixteen are held; a seventeenth drops the oldest with a line.
-        for i in range(17):
+        # Twelve are held; a thirteenth drops the oldest with a line.
+        for i in range(13):
             last = propose("kimik3", "q%d" % i)
         self.assertIn("The oldest held proposal, #2, was dropped.", self.card(last))
 

@@ -55,7 +55,7 @@ law owner "the owner never changes; only the owner changes what asks first, the 
 def initial() -> State:
   {owner: "", ownerHandle: "", planted: 0n, policy: Plans.nobody(), confirmFor: Lists.List.nil(), pending: Relations.empty(), children: Relations.empty(), pageCheckpoint: ""}
 def relations() -> Relations.Decls:
-  Lists.append(Lists.append(Relations.Decls.nil(), {field: "pending", key: Text.words("principal"), limit: pendingMax()}), {field: "children", key: Text.words("object"), limit: 4096n})
+  Lists.append(Lists.append(Relations.Decls.nil(), {field: "pending", key: Text.words("principal"), limit: pendingMax()}), {field: "children", key: Text.words("object"), limit: 2048n})
 # Principals with a planting held at once: the Bend check refuses one more by name, since past
 # the limit the host would drop someone else's.
 def pendingMax() -> Nat:
@@ -149,7 +149,7 @@ def plantedCard(context: Abi.Context, reference: Plans.Reference, colour: String
   let what = "Planted for {Card.name(context.principal, context)}: {article} {colour} bell, “{seed}”."
   let where = "It lives at {reference.object}. The garden now holds {natText(count)} planted."
   let another = spell(context.object, "a fern that remembers yesterday", "silver")
-  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply:\n\n    delvetalk {reference.object} rain\n    text: <1 to 280 characters>\n\nTo plant another:\n\n{another}")
+  Document.text("✾ THE NIGHT GARDEN\n\n{what}\n{where}\n\nTo rain on it, reply:\n\n    delvetalk {reference.object} rain\n    text: <1 to 120 characters>\n\nTo plant another:\n\n{another}")
 def unclearCard(context: Abi.Context, needs: Form.Names, colour: String, seed: String) -> Document.Document:
   let again = spell(context.object, if seed == "" then "<what might grow here, 1 to 80 characters>" else seed, if colour == "" then "<amber, violet or silver>" else colour)
   Document.text("✾ THE NIGHT GARDEN\n\nAlmost. I still need: {Text.joined(needs)}.\nReply with just the missing lines, or the spell filled in:\n\n{again}")

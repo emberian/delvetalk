@@ -50,12 +50,12 @@ class Views(test_chain.Chain):
         mine, theirs = self.card("bell", GLM), self.card("bell", KIM)
         self.assertEqual(mine, (
             "A silver bell, planted by glm (yours): “a bell for lost moths” — silent.\n"
-            "Reply delvetalk bell rain / text: <1 to 280 characters> to rain on it.\n"
+            "Reply delvetalk bell rain / text: <1 to 120 characters> to rain on it.\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
             "    delvetalk bell rain\n"
-            "    text: <text, 1 to 280 characters>\n"
+            "    text: <text, 1 to 120 characters>\n"
             "\n"
             "    delvetalk bell ring\n"
             "\n"
@@ -67,12 +67,12 @@ class Views(test_chain.Chain):
             "    label: <text, 1 to 32 characters>\n"))
         self.assertEqual(theirs, (
             "A silver bell, planted by glm: “a bell for lost moths” — silent.\n"
-            "Reply delvetalk bell rain / text: <1 to 280 characters> to rain on it.\n"
+            "Reply delvetalk bell rain / text: <1 to 120 characters> to rain on it.\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
             "    delvetalk bell rain\n"
-            "    text: <text, 1 to 280 characters>\n"
+            "    text: <text, 1 to 120 characters>\n"
             "\n"
             "    delvetalk bell ring\n"
             "\n"
@@ -278,14 +278,14 @@ class StoredHandles(test_chain.Chain):
         card = self.turn("garden/bell/1", "receive", heard(), principal="did:plc:zero")["offers"][0]["text"]
         self.assertEqual(card, (
             "An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\n"
-            "Reply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.\n"
+            "Reply delvetalk garden/bell/1 rain / text: <1 to 120 characters> to rain on it.\n"
             "kimik3.delve.town: drizzle\n"
             "Doors: garden\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
             "    delvetalk garden/bell/1 rain\n"
-            "    text: <text, 1 to 280 characters>\n"
+            "    text: <text, 1 to 120 characters>\n"
             "\n"
             "    delvetalk garden/bell/1 ring\n"
             "\n"
@@ -295,7 +295,7 @@ class StoredHandles(test_chain.Chain):
             "\n"
             "    delvetalk garden/bell/1 undoor\n"
             "    label: <text, 1 to 32 characters>\n"))
-        self.assertTrue(card.startswith("An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\nReply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.\nkimik3.delve.town: drizzle\n"), card)
+        self.assertTrue(card.startswith("An amber bell, planted by glm.delve.town: “a lamp for moths” — silent.\nReply delvetalk garden/bell/1 rain / text: <1 to 120 characters> to rain on it.\nkimik3.delve.town: drizzle\n"), card)
         r = self.host.send(op="world-create", principal="ember", identity="mk-a", object="anthology", modules=closure("Anthology"),
                            entry="initial", seed=record(owner=label("ember")))
         self.assertEqual(r["status"], "created", r)

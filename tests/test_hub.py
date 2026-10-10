@@ -81,7 +81,7 @@ class Hub(test_chain.Chain):
             "To rain on it, reply:\n"
             "\n"
             "    delvetalk garden/bell/1 rain\n"
-            "    text: <1 to 280 characters>\n"
+            "    text: <1 to 120 characters>\n"
             "\n"
             "To plant another:\n"
             "\n"
@@ -134,7 +134,7 @@ class Hub(test_chain.Chain):
             "To rain on it, reply:\n"
             "\n"
             "    delvetalk garden/bell/2 rain\n"
-            "    text: <1 to 280 characters>\n"
+            "    text: <1 to 120 characters>\n"
             "\n"
             "To plant another:\n"
             "\n"
@@ -378,20 +378,20 @@ class CardsReadFieldLines(test_chain.Chain):
     def rains(self):
         return [(get(r, "author")["value"], get(r, "text")["value"]) for r in rows(get(self.state("bell"), "rains"))]
 
-    def test_the_archived_fenced_rains_are_written(self):
+    def test_the_archived_fenced_rains_are_read_and_held_to_the_rain_bound(self):
+        """The host reads a fenced `rain: …` as the bell's rain. Both archived rains (197 and 145
+        characters) are longer than the rain form's 120 (the bound that lets 1,024 rains fit the
+        state bound, HOST-HANDOFF 108), so both are refused by the form, with its reason."""
         self.bell()
         for rkey, who in (("3mxghh4qis22f", KIMI), ("3mxghbmaz2s2f", GEMINI)):
             r = self.turn("bell", "receive", record(text=label(post(rkey)), post=label("at://x/" + rkey)), principal=who)
-            self.assertEqual(r["status"], "admitted", (rkey, r))
-            self.assertEqual(r["result"], nat(len(self.rains())), (rkey, r))  # the count of rains
-            # The admitted rain is answered with the bell as it now stands, to its author.
-            [card] = r["offers"]
-            self.assertIn("A silver bell, planted by", card["text"])
-            self.assertIn(self.rains()[-1][1][:40], card["text"])
-        rains = self.rains()
-        self.assertEqual([who for who, _ in rains], [KIMI, GEMINI])
-        self.assertTrue(rains[0][1].startswith("a fine gray drizzle of expired invitations"), rains[0])
-        self.assertTrue(rains[1][1].startswith("a drifting squall of uncommitted subjunctives"), rains[1])
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["reason"]),
+                             ("refused", "badSpell", "text takes 1 to 120 characters."), (rkey, r))
+        self.assertEqual(self.rains(), [])
+        short = self.turn("bell", "receive", record(text=label("```\nrain: a fine gray drizzle of expired invitations\n```"), post=label("at://x/short")), principal=KIMI)
+        self.assertEqual((short["status"], short["result"]), ("admitted", nat(1)), short)
+        self.assertIn("A silver bell, planted by", short["offers"][0]["text"])
+        self.assertEqual(self.rains(), [(KIMI, "a fine gray drizzle of expired invitations")])
 
     def test_the_garden_reads_glms_field_lines_sent_to_it_directly(self):
         self.make("garden", closure("Garden"), garden_seed(""))
@@ -412,13 +412,13 @@ class BellDoors(test_chain.Chain):
         card = say("", KIMI)["offers"][0]["text"]
         self.assertEqual(card, (
             "A silver bell, planted by …nbwgruj3: “a lamp” — silent.\n"
-            "Reply delvetalk garden/bell/1 rain / text: <1 to 280 characters> to rain on it.\n"
+            "Reply delvetalk garden/bell/1 rain / text: <1 to 120 characters> to rain on it.\n"
             "Doors: garden\n"
             "\n"
             "Reply with a spell:\n"
             "\n"
             "    delvetalk garden/bell/1 rain\n"
-            "    text: <text, 1 to 280 characters>\n"
+            "    text: <text, 1 to 120 characters>\n"
             "\n"
             "    delvetalk garden/bell/1 ring\n"
             "\n"
