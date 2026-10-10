@@ -389,7 +389,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                            'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'workers': WORKERS, 'hostSeconds': self.host_timeout,
                            'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
                            'ratePerCredential': [RATE, WINDOW], 'ratePerAddressOnChallengeAndVerify': [OPEN_RATE, WINDOW],
-                           'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'idsPerPage': 64, 'deliverPerCall': DELIVER_LIMIT},
+                           'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'ratePerAddressOnPagesWithoutLogin': [RATE, WINDOW], 'idsPerPage': 64, 'deliverPerCall': DELIVER_LIMIT},
                 '_links': {'self': link(here), 'guide': link(PREFIX), 'examples': link(PREFIX + '/examples'),
                            'challenge': link(PREFIX + '/challenge')}}
 
@@ -599,6 +599,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
         if name in ('xrpc', 'did'):
             return self.xrpc(method, p.get('nsid', 'did.json'))
+        if name in ('home', 'page'):  # pages ask the host: limited per account, or per address, before they do
+            key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
+            wait = self.server.limited(key)
+            if wait:
+                return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds', headers=[('Retry-After', str(wait))])
         if name == 'home':
             return self.home()
         if name == 'specimen':

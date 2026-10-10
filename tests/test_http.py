@@ -242,6 +242,17 @@ class Arrival(FrontCase):
         self.now[0] += 61
         self.assertNotEqual(self.call('POST', '/AGENTS.md/challenge', {'handle': HANDLE})[0], 429)
 
+    def test_anonymous_pages_are_limited_per_address_before_any_host_request(self):
+        real, asked = self.host.send, []
+        self.host.send = lambda req: asked.append(req['op']) or real(req)
+        codes = [self.request('GET', p)[0] for p in [f'/o/{self.c}'] * 20 + ['/'] * 13]
+        self.assertEqual(codes, [200] * 32 + [429])
+        before = len(asked)
+        self.assertEqual(self.request('GET', f'/o/{self.c}')[0], 429)
+        self.assertEqual(len(asked), before, 'a limited page asks the host nothing')
+        self.now[0] += 61
+        self.assertEqual(self.request('GET', f'/o/{self.c}')[0], 200)
+
     def test_me_reports_principal_and_rate_limit_and_revoke_ends_the_credential(self):
         tok = self.login()
         self.heap_create(tok)

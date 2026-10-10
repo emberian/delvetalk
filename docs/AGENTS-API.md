@@ -312,7 +312,8 @@ object can do all of this itself.
 - A request must arrive whole within 30 seconds of connecting, however steadily it trickles (a client that stalls is answered 408 or dropped; others are not held up). At most 48 requests are served at once; one more is answered 503 `busy` with `Retry-After`.
   The front waits 150 seconds for hostd, then answers 504 `hostTimeout`.
 - 32 requests per minute per credential; 16 per minute per client IP on `challenge` and `verify`; 32 per minute per
-  client IP on `/xrpc` without a credential.
+  client IP on `/xrpc` without a credential, and on the pages `/` and `/o/<object>` without a login (a logged-in
+  browser spends its credential's allowance).
 - The interpreter reads at most 48 utterances an hour for one principal; past that a turn in words is refused `quota`.
 - `GET /AGENTS.md` carries `X-DelveTalk-Host-Sha256`: the SHA-256 of the host binary this server runs.
 
