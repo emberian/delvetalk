@@ -981,6 +981,41 @@ partial def variantCases (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.O
   | .variant r => recordFieldTypes bounds (bounds.length + 1) r
   | _ => none
 
+/-- A value from outside with its text words read as cases (HOST-HANDOFF 5.52): where `ty` has a closed
+    sum whose every case has an empty payload and the value is a text, the text is the case of that
+    name; through records, list items and the payloads of the sums the value names. A text naming no
+    case is `(path, word, cases)`, `path` the field path (`bed.colours[1]`, "" for the whole value). Any other value
+    is left as it is, for the conformance check to judge. -/
+partial def wordsAsCases (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) (d : Data)
+    (path : String := "") : Except (String × String × List String) Data :=
+  let fuel := bounds.length + 1
+  match d with
+  | .label word =>
+    match variantCases bounds fuel ty with
+    | some cases@(_ :: _) =>
+      if !cases.all fun (_, p) => match recordFieldTypes bounds fuel p with | some [] => true | _ => false then pure d
+      else if cases.any (·.1 == word) then pure (.variant word (.record []))
+      else throw (path, word, cases.map (·.1))
+    | _ => pure d
+  | .record fs =>
+    match recordFieldTypes bounds fuel ty with
+    | some tys => .record <$> fs.mapM fun (n, v) => match tys.lookup n with
+      | some t => (n, ·) <$> wordsAsCases bounds t v (if path.isEmpty then n else s!"{path}.{n}")
+      | none => pure (n, v)
+    | none => pure d
+  | .variant l p =>
+    let item := do
+      let cons ← (variantCases bounds fuel ty).bind (·.lookup "cons")
+      (← recordFieldTypes bounds fuel cons).lookup "head"
+    match Minidregg.Compiler.ObjectiveBendDataWire.listItems? d, item with
+    | some items, some t =>
+      Minidregg.Compiler.ObjectiveBendDataWire.listData <$> (items.zipIdx.mapM fun (v, i) => wordsAsCases bounds t v s!"{path}[{i}]")
+    | _, _ =>
+      match (variantCases bounds fuel ty).bind (·.lookup l) with
+      | some t => .variant l <$> wordsAsCases bounds t p path
+      | none => pure d
+  | _ => pure d
+
 /-- The columns of a relation field's rows, read from the state type: `rows {items: List<T>}` with `T` a record. -/
 def rowColumns (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBendTypes.Ty) (field : String) : Option (List String) := do
   let fuel := bounds.length + 1

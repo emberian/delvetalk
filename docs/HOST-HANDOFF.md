@@ -305,6 +305,17 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    (KERNEL-HANDOFF §15), whose `fetch` would call `recordRows`. Test: `tests/test_changes.py`
    `test_a_field_root_is_stale_only_when_its_field_moved`.
 
+52. **Words for sums at the boundary (host9).** An argument from outside, a direct turn's (`runFrame` at
+   depth 0 of a direct turn) or an interpretation proposal's (`interpretVerdict`), is read against the
+   method's input type before the conformance check (`wordsAsCases`, Ops; `inputWords`, TurnLoop): where
+   the type has a closed sum whose every case has an empty payload and the value is a text, the text is the
+   case of that name, in fields, nested records, list items and the payloads of named cases. A word naming
+   no case refuses the direct turn `typeMismatch` (binding), reason `... : colour is one of: amber, violet,
+   silver (not gold)` (path `bed.colours[1]` inside lists), `expected.cases {at, given, cases}`; a proposal's
+   is `unclear {needs: ["colour is one of: ..."]}`. The frame's argument (`Written.argument`, the Bend
+   law's `request.argument`) is the read one; the request digest is of the argument as sent. Deliveries,
+   `call` and `send` arguments are typed values and are not read so. Test: `tests/test_sum_words.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -338,13 +349,7 @@ and `spell-parse`; spells read by the host for message-dialect cards (`badSpell`
 `changed`; field roots. Build and test on hbox in your own directory with `swarm-build`; narrow suites, then
 the full `tests.run` once (1011 tests green at lane/host8's last commit).
 
-1. **Text word for a sum of empty constructors at the boundary** (coordinator, ahead of the rest: Garden's
-   colour becomes a sum). Where the host decodes an argument from outside (`world-turn`, `world-interpretation`'s
-   proposal argument, `jsonData`/`decodeData` at the op boundary), a label where the method's input type has a
-   closed sum of empty-payload cases is taken as the case of that name; no case of that name is refused by
-   name (`typeMismatch`, `expected` naming the cases). Resolve the input type through the packet's bounds
-   (`variantCases`, Ops). Tests: a JSON proposal and a `receive` (spell path: `spellArgument` already builds
-   the variant).
+1. Done on lane/host9 (5.52).
 2. **Spells, the rest of WHOLENESS §2.** The interpretation verdict fitted as spell text against the offered
    forms (`interpretVerdict`); lenses' `set` (`delvetalk <card> set` with one `field: value`, judged against the
    lens kind, calling `set(state, {field, value}, context)`); `bridge.draft_text` reading `hint` is transport's.

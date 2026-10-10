@@ -507,6 +507,18 @@ def argumentFits (compiled : Compiled) (argument : Data) : Bool :=
     else !(domain.isDataUnder compiled.bounds [] Ty.dataFuel []) || argument.conformsUnder compiled.bounds domain
   | _ => true
 
+/-- The argument of a turn asked from outside with its text words read as cases where the method's
+    input has closed sums of empty payloads (`wordsAsCases`). A word naming no case is
+    `(path, word, cases)`. -/
+def inputWords (compiled : Compiled) (argument : Data) : Except (String × String × List String) Data :=
+  match compiled.type with
+  | .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) => wordsAsCases compiled.bounds domain argument
+  | _ => pure argument
+
+/-- A word that names no case, refused as the reason says: "colour is one of: amber, violet". -/
+def wordRefusal (path word : String) (cases : List String) : String :=
+  s!"{argumentRefusal}: {if path.isEmpty then "the argument" else path} is one of: {", ".intercalate cases} (not {word})"
+
 /-- What method `method` of object `id` takes, for a `typeMismatch` refusal: `type`, its input
     as the artifact's method table records it (resolved, so it reads alone), else the compiled
     domain (`typeJson`, whose variables need the packet's bounds); and `form`, the form a card
@@ -617,13 +629,21 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
   recordRoot id obj.version
   let compiled ← compiledMethod obj method
+  let expected := expectedInput obj id method compiled
+  -- A direct turn's argument came from outside: its text words are read as cases.
+  let argument ← if depth == 0 && s.direct then
+      match inputWords compiled argument with
+      | .ok a => do modify (fun st => { st with argument := a }); pure a
+      | .error (path, word, cases) =>
+        throw (.refused "typeMismatch" (wordRefusal path word cases)
+          (some (expected.setObjVal! "cases" (Json.mkObj [("at", toJson path), ("given", toJson word), ("cases", toJson cases)]))))
+    else pure argument
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
     (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method)
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
-  let expected := expectedInput obj id method compiled
   unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal (some expected))
   match r with
   | .computation .. =>
@@ -2122,6 +2142,11 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   match Package.jsonData Limits.plainDepth wanted with
   | .error e => return (w, unclearVerdict [s!"the argument is not plain data: {e}"])
   | .ok (argument, _) =>
+    -- The model's argument came from outside: its text words are read as cases.
+    let argument ← match inputWords compiledM argument with
+      | .ok a => pure a
+      | .error (path, word, cases) =>
+        return (w, unclearVerdict [s!"{if path.isEmpty then "the argument" else path} is one of: {", ".intercalate cases} (not {word})"])
     let fits := match input with
       | some dom => argument.conformsUnder compiledM.bounds dom
       | none => match argument with | .record [] => true | _ => false
