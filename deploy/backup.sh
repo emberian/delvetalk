@@ -18,7 +18,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$dest/mirror"
 chmod 700 "$dest"
 
-rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' "$data/" "$dest/mirror/"
+rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' --exclude host.sock --exclude /state/library "$data/" "$dest/mirror/"
 
 # A torn tail: the host was mid-append when rsync read the file.
 shopt -s nullglob
