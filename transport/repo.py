@@ -128,15 +128,14 @@ class Repo:
             raise Refusal(400, 'InvalidRequest', f'limit must be 1..{MAX_LIMIT}')
         if collection in PAGED:
             op, field, key, cid = PAGED[collection]
-            if cursor is not None and not (cursor.isascii() and cursor.isdigit()):
-                raise Refusal(400, 'InvalidRequest', 'the cursor is a journal height')
-            page = {'before' if reverse else 'after': int(cursor)} if cursor else {}
-            reply = host.send({'op': op, 'principal': who, 'limit': int(limit), **page, **({'reverse': True} if reverse else {})})
+            # The host's (height, item) cursor, opaque here and to clients: records sharing an entry are never skipped.
+            reply = host.send({'op': op, 'principal': who, 'limit': int(limit), **({'cursor': cursor} if cursor else {}),
+                               **({'reverse': True} if reverse else {})})
             if field not in reply:
                 raise refused(reply)
             items = reply[field]
             return {'records': [self.record(collection, i.get(key), i.get(cid), i) for i in items],
-                    **({'cursor': str(items[-1]['height'])} if reply.get('more') and items else {})}
+                    **({'cursor': reply['cursor']} if reply.get('more') and reply.get('cursor') else {})}
         if reverse:  # objects and laws page by id in byte order, as world-objects lists them
             raise Refusal(400, 'InvalidRequest', f'{NS}{collection} pages by object id and has no reverse order')
         listed = host.send({'op': 'world-objects', 'principal': who, **({'after': cursor} if cursor else {})})

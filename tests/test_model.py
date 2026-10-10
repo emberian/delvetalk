@@ -1,5 +1,5 @@
 """The model client and interpreter: replies parsed, each pending interpretation asked once and
-settled verbatim, failures retried with backoff, credentials never shown.
+submitted verbatim, failures included (the host retries them), credentials never shown.
 
 Evidence for FOUNDATION §6 (layer: transport).
 """
@@ -89,9 +89,16 @@ for line in sys.stdin:
     if req['op'] == 'world-interpretations':
         out = {'status': 'interpretations', 'pending': state['pending']}
     elif req['op'] == 'world-interpretation':
-        state['pending'] = [p for p in state['pending'] if p['id'] != req['id']]
         open(%r, 'a').write(json.dumps(req) + chr(10))
-        out = {'status': 'settled', 'id': req['id']}
+        reply = req['reply']
+        if reply.get('status') == 'failed' and reply.get('reason') in ('transport', 'rate'):  # the host's to retry
+            for p in state['pending']:
+                if p['id'] == req['id']:
+                    p['attempts'], p['next'] = p.get('attempts', 0) + 1, 1
+            out = {'status': 'retrying', 'attempt': 1, 'next': 1}
+        else:
+            state['pending'] = [p for p in state['pending'] if p['id'] != req['id']]
+            out = {'status': 'interpreted', 'id': req['id']}
     else:
         out = {'status': 'error', 'message': 'unknown world operation ' + req['op']}
     print(json.dumps(out), flush=True)
@@ -169,34 +176,13 @@ class Interpret(unittest.TestCase):
         interpret.run(self.state, self.host, lambda req: model.failed('refused'))
         self.assertEqual(self.settled()[0]['reply'], {'status': 'failed', 'reason': 'refused', 'detail': ''})
 
-    def test_transient_failures_retry_with_backoff_and_settle_failed_after_eight(self):
-        clock = [1000.0]
-        flaky = lambda req: model.failed('transport')
-        r = interpret.run(self.state, self.host, flaky, lambda: clock[0])
-        self.assertEqual((r['settled'], r['retrying']), ([], ['i1', 'i2']))
-        self.assertEqual(self.settled(), [])
-        saved = json.loads(interpret.receipt_path(self.state, 'i1').read_text())
-        self.assertEqual((saved['attempts'], saved['next']), (1, 1060.0))
+    def test_every_result_goes_to_the_host_verbatim_and_an_item_waiting_for_its_next_is_not_asked(self):
+        r = interpret.run(self.state, self.host, lambda req: model.failed('transport'))
+        self.assertEqual((r['settled'], r['retrying']), ([], ['i1', 'i2']))  # the host said retrying
+        self.assertEqual([s['reply'] for s in self.settled()], [model.failed('transport')] * 2)  # submitted, failure and all
         calls = []
-        interpret.run(self.state, self.host, lambda req: calls.append(1) or model.failed('rate'), lambda: clock[0])
-        self.assertEqual(calls, [])  # still backing off
-        for n in range(2, 8):
-            clock[0] += 10 ** 5
-            interpret.run(self.state, self.host, flaky, lambda: clock[0])
-        self.assertEqual(self.settled(), [])
-        clock[0] += 10 ** 5
-        r = interpret.run(self.state, self.host, flaky, lambda: clock[0])
-        self.assertEqual(r['settled'], ['i1', 'i2'])
-        self.assertEqual(self.settled()[0]['reply']['reason'], 'transport')
-        self.assertEqual(json.loads(interpret.receipt_path(self.state, 'i1').read_text())['attempts'], 8)
-
-    def test_a_retry_that_replies_settles_with_the_reply(self):
-        clock = [1000.0]
-        interpret.run(self.state, self.host, lambda req: model.failed('rate'), lambda: clock[0])
-        clock[0] += 10 ** 5
-        r = interpret.run(self.state, self.host, self.ask, lambda: clock[0])
-        self.assertEqual(r['settled'], ['i1', 'i2'])
-        self.assertEqual(self.settled()[0]['reply']['status'], 'replied')
+        again = interpret.run(self.state, self.host, lambda req: calls.append(1) or self.ask(req))
+        self.assertEqual((calls, again['retrying'], len(self.settled())), ([], ['i1', 'i2'], 2))  # `next` has not passed
 
     def test_malformed_settles_without_retry(self):
         r = interpret.run(self.state, self.host, lambda req: model.failed('malformed'))

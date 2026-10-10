@@ -1960,6 +1960,17 @@ def refuseSpell (w : World) (req : TurnRequest) (object clause reason hint : Str
     (some { cls := "badSpell", clause := some clause, object := some object, reason := some reason, hint := some hint })
   return (w', turnReply w' r)
 
+/-- hob's one tail line (docs/VOICE.md "hob") under `?` usage or a badSpell hint of a direct turn,
+    when a `library` card the speaker may see exists: the page that says how a spell is read. Never
+    in a refusal's reason, never twice. -/
+def hobTail (w : World) (principal text line : String) : String :=
+  match w.objects["library"]? with
+  | some lib => if lib.read.permits principal && !text.isEmpty then s!"{text.trimAsciiEnd}\n\n{line}" else text
+  | none => text
+
+def hobUsageLine : String := "hob: how a spell is read: delvetalk library read / page: spells"
+def hobHintLine : String := "hob: the page on this: delvetalk library read / page: spells"
+
 /-- A direct turn's `receive` read as a spell (`routeSpell`); `none` when the host leaves the turn as asked. -/
 def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) :=
   match routeSpell w req.principal req.object req.method req.argument true with
@@ -1971,8 +1982,9 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
                             command := (if command.isEmpty then req.command else command) }
     some (runTurnWith w asked {})
   | .usage object text =>
-    some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object), ("text", toJson text)]))
-  | .refuse object clause reason hint => some (refuseSpell w req object clause reason hint)
+    some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object),
+      ("text", toJson (hobTail w req.principal text hobUsageLine))]))
+  | .refuse object clause reason hint => some (refuseSpell w req object clause reason (hobTail w req.principal hint hobHintLine))
 
 /-- A direct turn; `env` and `wake` name the principal's own (`resolveCard`), refused
     `unknownObject` naming `env/<principal>` when it has none. A `receive` to a card of the message
@@ -2458,7 +2470,9 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       | .ok _ => throw "source must be true or false"
       | .error _ => pure true
     return Json.mkObj ([("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
-      ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText)] ++
+      ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText),
+      -- The law's clauses with their readings, and whether a Bend `law(old, new, request)` judges after it.
+      ("laws", lawRows o), ("bendLaw", toJson o.predicate)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
       -- Its size against `Limits.maxStateBytes`, as the host counts it (`stateBytes`).

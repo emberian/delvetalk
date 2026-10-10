@@ -198,12 +198,15 @@ account's credentials file is mounted for that one command only:
 `/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt` at the deployed commit, placed in the data directory by hand
 (owner 10425, mode 0400); compare its SHA-256 with the repository's after any edit of the preview, since a re-genesis that
 carries the old data directory's copy forward carries the old text. `--state /data/state` is
-the hand's: the hourly quota is counted in `<state>/post-log.json`, so every post names the same state directory. Without
+the hand's (its `posting/` ledger keeps each intent's record key). The host reserves every post before it is sent
+(`world-post-reserve`, source `delve`, counted against `postQuota` per clock hour; Zulip's are journaled, never refused),
+releases it only when the post certainly did not leave, and settles it with `world-posted {intent}`; the dry run shows
+`world-status.posts`. Without
 `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
 read it, then add the flag. `--object` names the object the card addresses: after a
 confirmed post, post.py calls the host's `world-posted` for it, so every card posted
-is recorded in the same step (replies to it then route to that object). Post a card
-without `--object` only if no object should hear its replies. An intent posts once: `<state>/posting/` keeps, per
+is recorded in the same step (replies to it then route to that object). A live post must name
+`--object`: its `world-posted {object, intent}` settles the post's reservation (the dry run may omit it). An intent posts once: `<state>/posting/` keeps, per
 intent, the record key chosen before the first send (Zulip: the stream's newest id) and the post that came back, so a
 rerun after a crash adopts the post instead of writing again. A draft whose `world-posted` failed keeps `sent` and is
 recorded by the bridge's next run, never posted twice.
@@ -231,7 +234,7 @@ the post they answer, the post beside an editable textarea of the draft, with th
 draft's object, the draft marked posted); **Skip** marks it `skipped` with a reason and it leaves the outbox; **Hold**
 leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
 (what, who, when, draft id). A turn that suspends on an interpretation has no draft until the interpretation settles; a
-model failure leaves it pending and retried with backoff up to 8 times. Draft principals are observed, unverified DIDs.
+model failure is submitted to the host, which retries a transient one with backoff up to 8 attempts (`attempted` entries). Draft principals are observed, unverified DIDs.
 The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport.hand <verb>
 --state /data/state [--credentials FILE] [--json]` (`DELVETALK_STATE` and `DELVETALK_CREDENTIALS` stand in for the
 flags; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):

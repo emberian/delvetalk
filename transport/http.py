@@ -775,7 +775,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
             if which == 'challenge':
-                out = self.server.identity.challenge(text('handle'))
+                out = self.server.identity.challenge(text('handle'), address=self.client_ip())
                 if self.browser():
                     return self.html(200, pages.challenged(out['handle'], out['text']), self.login_cookie(out['credential']))
                 return self.reply(200, canonical({**out, '_links': {'self': link(self.path), 'verify': link(PREFIX + '/verify')}}),
@@ -879,7 +879,7 @@ class Handler(BaseHTTPRequestHandler):
                 said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
             else:
                 said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r)),
-                                              offers=''.join(pages.T['offer'].format(text=html.escape(t)) for t in offers) or pages.T['quiet'])
+                                              offers=''.join(pages.framed(t) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))

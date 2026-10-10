@@ -309,6 +309,17 @@ class Identity(unittest.TestCase):
         self.assertEqual(self.id.claim(self.HANDLE, self.ch['credential'])['did'], DID)
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
 
+    def test_a_strangers_challenges_do_not_exhaust_the_owners(self):
+        # Challenges are counted per requesting address (the root's queue, from transport4's review):
+        # eight asked from one address for a handle refuse that address's ninth, not the owner's.
+        for _ in range(8):
+            self.id.challenge(self.HANDLE, address='203.0.113.9')
+        with self.assertRaises(identity.IdentityError) as refused:
+            self.id.challenge(self.HANDLE, address='203.0.113.9')
+        self.assertEqual(refused.exception.code, 'rate_limited')
+        mine = self.id.challenge(self.HANDLE, address='198.51.100.4')
+        self.assertTrue(mine['credential'].startswith('dt_agent_'))
+
     def test_ninth_attempt_refused_even_if_correct(self):
         self.serve(text='nope')
         for _ in range(8):
@@ -414,19 +425,19 @@ class Posting(unittest.TestCase):
             f = Path(d) / 't.txt'
             f.write_text('ping @glm.delve.town')
             code, req = self.dry(d, ['--text-file', str(f)], delve.Client(t))
-        self.assertEqual((code, req['quota']), (2, {'limit': 16, 'source': 'constant'}))
+        self.assertEqual((code, req['quota']), (2, {'source': 'delve'}))  # without a host the dry run names no count
         self.assertEqual(req['request']['body']['record']['facets'][0]['features'][0]['did'], OTHER)
 
-    def test_quota_comes_from_the_host_when_it_has_one(self):
-        class H:
-            def send(self, r): return {'status': 'world', 'postQuota': 3}
-        self.assertEqual(post.quota_limit(H()), (3, 'host'))
-        self.assertEqual(post.quota_limit(type('H', (), {'send': lambda s, r: {'status': 'world'}})()), (16, 'constant'))
+    def test_a_live_post_names_its_object_so_its_reservation_is_settled_and_the_dry_run_need_not(self):
         with tempfile.TemporaryDirectory() as d:
-            for _ in range(3):
-                post.take_slot(Path(d), 1.0, 3)
-            with self.assertRaises(delve.Failure):
-                post.take_slot(Path(d), 2.0, 3)
+            f = Path(d) / 't.txt'
+            f.write_text('hello')
+            err = io.StringIO()
+            with mock.patch.object(post, 'send', side_effect=AssertionError('send')), mock.patch('sys.stderr', err):
+                code = post.main(['--state', d, 'post', '--text-file', str(f), '--intent', 't', '--host-socket', str(Path(d) / 'h.sock'),
+                                  post.FLAG], io.StringIO(), delve.Client(Script()))
+            self.assertEqual((code, json.loads(err.getvalue())['error']), (1, 'live_post_needs_object'))
+            self.assertEqual(self.dry(d, ['--text-file', str(f)], delve.Client(Script()))[0], 2)
 
     def test_record_posted_builds_world_posted_from_the_confirmed_result(self):
         seen = []
@@ -478,15 +489,6 @@ class Posting(unittest.TestCase):
             draft.write_text(json.dumps({'text': 'x', 'posted': True}))
             self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--draft', str(draft)], io.StringIO()), 1)
 
-    def test_the_post_slot_limit_refuses_one_more_in_the_window_and_frees_after_it(self):
-        with tempfile.TemporaryDirectory() as d:
-            for _ in range(post.LIMIT):
-                post.take_slot(Path(d), 5000.0)
-            with self.assertRaises(delve.Failure):
-                post.take_slot(Path(d), 5001.0)
-            post.take_slot(Path(d), 5000.0 + post.WINDOW + 1)
-
-
 class Pds:
     """The PDS side of a post: a session, records kept by key, and a reply that can be lost after the write lands."""
     def __init__(self, lose=0):
@@ -513,18 +515,31 @@ class Pds:
 
 
 class Recorder:
-    """A host whose first `fail` world-posted calls answer an error."""
-    def __init__(self, fail=0):
-        self.posted, self.fail = [], fail
+    """A host that reserves `quota` delve posts, releases, and answers its first `fail` world-posted calls with an error."""
+    def __init__(self, fail=0, quota=16):
+        self.ops, self.posted, self.fail, self.quota = [], [], fail, quota
 
     def send(self, req):
+        self.ops.append(req)
+        if req['op'] == 'world-post-reserve':
+            if req['source'] == 'delve' and req['intent'] not in self.reserved():
+                if self.quota <= 0:
+                    return {'status': 'refused', 'class': 'quota', 'next': 60}
+                self.quota -= 1
+            return {'status': 'reserved'}
+        if req['op'] == 'world-post-release':
+            self.quota += 1
+            return {'status': 'released'}
         if req['op'] != 'world-posted':
-            return {'status': 'status', 'postQuota': 16}
+            return {'status': 'status', 'posts': {'hour': 0, 'sources': [{'source': 'delve', 'used': 16 - self.quota, 'quota': 16}]}}
         self.posted.append(req)
         if self.fail:
             self.fail -= 1
             return {'status': 'error', 'message': 'journal busy'}
         return {'status': 'posted'}
+
+    def reserved(self):
+        return [o['intent'] for o in self.ops[:-1] if o['op'] == 'world-post-reserve']
 
 
 class Idempotent(unittest.TestCase):
@@ -557,6 +572,24 @@ class Idempotent(unittest.TestCase):
         self.assertEqual(post.record_sent(self.state, host), [])
         self.assertEqual((pds.creates, [r['uri'] for r in host.posted]), (1, [got['uri']] * 2))
 
+
+    def test_the_host_reserves_each_post_before_it_leaves_releases_one_that_never_left_and_settles_by_intent(self):
+        pds, host = Pds(), Recorder(quota=2)
+        got = post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+        self.assertEqual([o['op'] for o in host.ops[:1]], ['world-post-reserve'])  # before the network
+        self.assertEqual((host.ops[0]['intent'], host.ops[0]['source'], host.ops[0]['principal']), ('draft-7-aaaa', 'delve', 'transport'))
+        self.assertEqual((host.posted[0]['intent'], host.posted[0]['uri']), ('draft-7-aaaa', got['uri']))
+        request = post.build_request('another', None, None)
+        self.assertEqual(post.send(request, 'draft-7-aaaa', self.state, self.creds, host, client=pds), {k: got[k] for k in ('uri', 'cid')})
+        self.assertEqual((pds.creates, host.quota), (1, 1))  # the same intent: no second post, no second slot
+        with self.assertRaises(OSError):  # the credentials are unreadable: the post certainly did not leave
+            post.send(request, 'gone', self.state, self.state / 'absent.json', host, client=pds)
+        self.assertEqual([(o['op'], o['intent']) for o in host.ops[-2:]], [('world-post-reserve', 'gone'), ('world-post-release', 'gone')])
+        self.assertEqual((pds.creates, host.quota), (1, 1))  # it never left: the slot is back
+        post.send(request, 'b', self.state, self.creds, host, client=pds)
+        with self.assertRaises(delve.Failure) as e:
+            post.send(request, 'c', self.state, self.creds, host, client=pds)
+        self.assertEqual((e.exception.code, pds.creates), ('rate_limited', 2))
 
     def test_a_publication_draft_is_recorded_for_its_publications_object_by_the_hand_and_the_cli(self):
         page = {'publication': {'id': 'p1', 'height': 3, 'object': 'genesis'}, 'page': 'Genesis', 'section': '',

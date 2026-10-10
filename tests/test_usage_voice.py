@@ -96,6 +96,23 @@ class UsageVoice(Reflection):
         out = self.say("root", "delvetalk forge make", identity="f1")["receipt"]["outcome"]
         self.assertEqual((out["clause"], out["hint"]), ("otherCard", "no card named forge; reply to the directory for the doors"), out)
 
+    def test_hobs_tail_line_follows_usage_and_hints_only_when_a_library_is_visible(self):
+        # docs/VOICE.md "hob": one tail line on `?` and on a badSpell hint, naming the library's page,
+        # when a `library` card the reader may see exists; never in a refusal's reason.
+        usage = "hob: how a spell is read: delvetalk library read / page: spells"
+        hint = "hob: the page on this: delvetalk library read / page: spells"
+        self.assertNotIn("hob:", self.say("root", "delvetalk garden ?")["text"])
+        r = self.host.send(op="world-create", principal="ember", identity="mk-library", object="library",
+                           modules=[{"name": "Probe", "source": DIRECTORY}], entry="initial", seed=record(),
+                           read={"principals": ["ember"]})
+        self.assertEqual(r["status"], "created", r)
+        self.assertNotIn("hob:", self.say("root", "delvetalk garden ?")["text"])         # a library DID cannot see
+        self.assertTrue(self.say("root", "delvetalk garden ?", principal="ember")["text"].endswith("\n\n" + usage))
+        out = self.say("root", "delvetalk garden nope", principal="ember", identity="h1")["receipt"]["outcome"]
+        self.assertTrue(out["hint"].endswith("\n\n" + hint), out)
+        self.assertNotIn("hob:", out["reason"])
+        self.assertEqual(out["hint"].count("hob:"), 1)
+
     def test_a_card_named_as_any_object_may_be_is_spelled_by_that_name(self):
         # codex agent 14, docs 5: creation took `My_card`, the spell heading refused `_` and capitals.
         r = self.host.send(op="world-create", principal="ember", identity="mk-My_card", object="My_card",

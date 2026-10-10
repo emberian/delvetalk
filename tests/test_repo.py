@@ -191,6 +191,22 @@ class Repository(unittest.TestCase):
         self.assertEqual(newest['records'] + older['records'], records[::-1])
         self.assertEqual(self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'receipt', limit=0)[0], 400)
 
+    def test_sources_sharing_one_entry_page_one_at_a_time_both_ways_and_none_is_skipped(self):
+        def walk(**more):
+            got, cursor = [], None
+            while True:
+                s, page = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'source', limit=1, **more, **({'cursor': cursor} if cursor else {}))
+                self.assertEqual(s, 200, page)
+                got += page['records']
+                cursor = page.get('cursor')
+                if not cursor:
+                    return got
+        s, whole = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'source', limit=100)
+        heights = [r['value']['height'] for r in whole['records']]
+        self.assertGreater(len(heights), len(set(heights)), 'the library entry holds several sources at one height')
+        self.assertEqual([r['cid'] for r in walk()], [r['cid'] for r in whole['records']])
+        self.assertEqual([r['cid'] for r in walk(reverse='true')], [r['cid'] for r in whole['records']][::-1])
+
     def test_get_record_by_slug_equals_by_cid_equals_world_receipt(self):
         tok = self.login()
         for intent in ('plant-1', 'miss', 'pub-1'):

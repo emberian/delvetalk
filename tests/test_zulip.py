@@ -193,6 +193,8 @@ class Bridging(ZulipCase):
         for uri in got['posted']:  # every posted draft is recorded, so the host knows who it addresses
             self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': uri})['object'], 'garden-1')
         self.assertEqual(self.bridge()['posted'], [], 'nothing is posted twice')
+        used = {p['source']: p['used'] for p in self.host.send({'op': 'world-status'})['posts']['sources']}
+        self.assertEqual((used['zulip'], used['delve']), (2, 0))  # each Zulip post reserved with the host, counted apart
 
     def test_replies_in_a_topic_route_to_the_object_the_first_message_addressed(self):
         self.zulip.say('t', 'Alice', SPELL)
