@@ -1,0 +1,32 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+# A place as data: what a thing and an avatar view, and what a place's methods answer. It
+# lives apart from the Place object so they import it, and Place declares its law (a law
+# belongs to the package's entry module; WORLD-REVIEW 20).
+record Exit:
+  label: String
+  to: Plans.Reference
+# owner: who renames and redescribes the room (its lenses). Who is here and what lies here
+# are keyed by object id; `traces` are Rows.Trace, keyed {at, who, action, n}.
+record State:
+  owner: String
+  name: String
+  description: String
+  exits: Lists.List<Exit>
+  present: Relations.Relation<Plans.Reference>
+  things: Relations.Relation<Plans.Reference>
+  traces: Relations.Relation<Rows.Trace>
+# What a place's, a thing's and an avatar's methods answer: done, or a refusal by name.
+sum Done:
+  done: {}
+  refused: Card.Refusal
+def objectKey(reference: Plans.Reference) -> {object: String}:
+  {object: reference.object}
+def holds(relation: Relations.Relation<Plans.Reference>, reference: Plans.Reference) -> Bool:
+  match Relations.lookup(relation, objectKey(reference), objectKey):
+    case some(_): true
+    case none(_): false

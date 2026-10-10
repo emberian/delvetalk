@@ -143,7 +143,7 @@ class Floor(Chain):
         return self.host.send(op="world-status")["clock"]
 
     def offer(self, to="kimik3", until=None, who="glm"):
-        return self.turn("stone", "offer", record(to=reference(to), until=nat(until if until is not None else self.now() + 50)), principal=who)
+        return self.turn("stone", "offer", record(to=label(to), until=nat(until if until is not None else self.now() + 50)), principal=who)
 
     def accept(self, who="kimik3"):
         return self.turn(who, "accept", record(thing=reference("stone")), principal=who)
