@@ -5,11 +5,12 @@ gate reads it.
 Evidence for FOUNDATION §11 (layer: rehearsal).
 
 The section 10 hour, from the archive itself: glm's planting grows a bell and its post is recorded
-for it; a reply to a planting post rains on that bell; the four anthology lines reach a card by the
-reach rule and are written; the nine-post burst admits; every card shows handles, stays within the
-clip and cites no hash; no program fails. The reach rule returns 81 posts, each asked of the model
-at most once; the recorded target is 43 model calls (d02c60f). The journal reopened from a snapshot
-holds what its straight replay holds.
+for it; a reply to a planting post rains on that bell; a second cistern line digs garden/cistern/2;
+the four anthology lines reach a card by the reach rule and are written; the nine-post burst admits;
+every card shows handles, stays within the clip and cites no hash; no program fails. The reach rule
+returns 81 posts, each asked of the model at most once: 70 model calls (FLEX section 2; 43 at
+d02c60f, before FLEX, with the mention gate). The journal reopened from a snapshot holds what its
+straight replay holds.
 """
 import json
 import os
@@ -25,11 +26,10 @@ ROOT = Path(__file__).resolve().parent.parent
 GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6jlibkzlobkuu', 'did:plc:j2hnfjwlnm2mau24vnmpir6d'
 # The posts `transport.bridge.route` sends as turns: the same 81 at d02c60f and at ad785ec.
 REACHED = 81
-# d02c60f, "On the archive (rehearse.py, hbox): 43 interpretations": the reach rule with the
-# directory's mention gate, which answered prose naming no door without the model. Step 4a removed
-# the gate (docs/FLEX.md section 2: every reached post that is not a spell goes to hob), so the same
-# 81 posts now make 70 calls; rehearsal/REPORT.md, "Run 12: the gate as restated".
-INTERPRETATIONS = 43
+# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 81 less the 11 the host
+# reads itself make 70 calls on ad785ec and 907d4bb. d02c60f measured 43 for the same rule while the
+# directory's mention gate (deleted in step 4a) still answered prose naming no door without the model.
+INTERPRETATIONS = 70
 
 
 def rehearse(out):
@@ -67,6 +67,13 @@ class Archive(unittest.TestCase):
         bell = next(p['object'] for p in self.r['plantings'] if p['uri'] and p['uri'].startswith('at://' + GEMINI))
         [rain] = self.steps('4.')
         self.assertTrue(self.wrote(rain, bell), rain)
+
+    def test_a_second_cistern_line_digs_a_second_cistern_named_by_its_receipt(self):
+        first, second = [g for g in self.r['grammar'] if 'cistern: line' in g['what']]
+        self.assertEqual((first['status'], second['status']), ('admitted', 'admitted'), (first, second))
+        named = lambda g: next(f['value']['fields'][1]['value']['value'] for f in g['result']['payload']['fields'] if f['name'] == 'object')
+        self.assertEqual((named(first), named(second)), ('garden/cistern/1', 'garden/cistern/2'))
+        self.assertIn('garden/cistern/2', second['offers'][0])
 
     def test_the_four_anthology_lines_are_written(self):
         lines = sorted((l['author'], l['text']) for l in self.r['anthology']['lines'])
@@ -132,12 +139,9 @@ class Archive(unittest.TestCase):
         self.assertEqual(len(self.r['reached']), REACHED)
         self.assertEqual({u: n for u, n in self.r['asked'].items() if n > 1 or u not in self.r['reached']}, {})
 
-    @unittest.expectedFailure
     def test_the_routing_asks_the_model_as_often_as_recorded(self):
-        """70 on ad785ec: the reach rule's 81 posts less the 11 no model reads (ten spells or field lines the
-        host reads itself, and ember's leaked draft, refused `evaluation`). The 27 over 43 are prose to the
-        hub the directory's mention gate answered silently until step 4a; met again only by asking fewer of
-        the reached posts, the owner's call."""
+        """The reach rule's 81 posts less the 11 no model reads: ten spells or field lines the host reads itself,
+        and ember's leaked draft, refused `evaluation`."""
         self.assertEqual(sum(self.r['verdicts'].values()), INTERPRETATIONS, self.r['verdicts'])
 
 
