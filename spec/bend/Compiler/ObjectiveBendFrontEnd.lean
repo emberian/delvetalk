@@ -19,6 +19,7 @@ import Compiler.ObjectiveBendSurface
 import Compiler.ObjectiveBendElaborate
 import Compiler.ObjectiveBendLaw
 import Compiler.ObjectiveBendTermWire
+import Compiler.ObjectiveBendBlame
 import Compiler.Sha256
 import Theory.ObjectiveBendTyping
 namespace Minidregg.Compiler.ObjectiveBendFrontEnd
@@ -39,6 +40,13 @@ structure Diagnostic where
   /-- A one-line statement of the real form when the refused source shows a known
   dialect habit (hosted front end, `Delvetalk.Hints`); never affects acceptance. -/
   hint : Option String := none
+  /-- The declaration the refusal is in (its knot key, or the generic declaration and the
+  instance), when known. -/
+  definition : Option String := none
+  /-- For a type refusal: the type the position expects and the type found there, in
+  surface syntax. -/
+  expected : Option String := none
+  found : Option String := none
   deriving Inhabited, Repr
 
 def Diagnostic.json (d : Diagnostic) : Json :=
@@ -46,9 +54,36 @@ def Diagnostic.json (d : Diagnostic) : Json :=
     ("message", toJson d.message)] ++
     (match d.span with | some s => [("span", s.json)] | none => []) ++
     (match d.sourceModule with | some m => [("module", toJson m)] | none => []) ++
+    (match d.definition with | some x => [("definition", toJson x)] | none => []) ++
+    (match d.expected with | some x => [("expected", toJson x)] | none => []) ++
+    (match d.found with | some x => [("found", toJson x)] | none => []) ++
     (match d.hint with | some h => [("hint", toJson h)] | none => []))
 
 def elaborationRefusal (message : String) : Diagnostic := { stage := "objective-core-elaboration", message }
+
+/-! ## Located refusals -/
+
+/-- Where a generic instance comes from: its knot key (`__generic_0.__generic_9`) to the
+generic declaration's module and name. The hosted front end supplies it from the
+specialization's instance table; without one a location names what it was elaborated as. -/
+abbrev Origins := String → Option (String × String)
+
+/-- A location as the diagnostic's module, span and definition, a generic instance's at its
+generic declaration (whose source the instance's spans are in). -/
+def placeOf (origins : Origins) (loc : ObjectiveBendElaborate.Loc) : String × ObjectiveBendSurface.Span × String :=
+  match origins loc.definition with
+  | some (module, name) => (module, loc.span, module ++ "." ++ name ++ " (instance " ++ loc.definition ++ ")")
+  | none => (loc.module, loc.span, loc.definition)
+
+/-- An elaboration refusal with its place. -/
+def locatedRefusal (origins : Origins) (r : ObjectiveBendElaborate.Refusal) : Diagnostic :=
+  match r.loc with
+  | none => { elaborationRefusal r.message with hint := r.hint }
+  | some loc =>
+    let (module, span, definition) := placeOf origins loc
+    { stage := "objective-core-elaboration", message := r.message, span := some span, sourceModule := some module,
+      definition := if definition.isEmpty then none else some definition, hint := r.hint,
+      expected := r.expected, found := r.found }
 
 /-! ## Captured modules -/
 
@@ -256,6 +291,101 @@ def directSource (proposed : Proposed) (erased : CoreTerm) :
 
 end direct
 
+/-! ## A checker refusal, explained and located (`ObjectiveBendBlame`) -/
+
+section blame
+open Minidregg.Theory.ObjectiveBendTypes (Ty Context)
+open Minidregg.Theory.ObjectiveBendTyping (AnnotatedTerm Assumptions sameType)
+open ObjectiveBendBlame (Naming Blame explain locate arity rowFields)
+
+/-- The text of `span` in `module`, when it is one of `modules`. -/
+def sliceText (modules : List SourceModule) (module : String) (span : ObjectiveBendSurface.Span) : Option String := do
+  let m ← modules.find? (·.name == module)
+  let bytes := m.source.toUTF8
+  if span.start < span.stop && span.stop ≤ bytes.size then String.fromUTF8? (bytes.extract span.start span.stop)
+  else none
+
+/-- `Module.Name` split at its last dot. -/
+def splitKey (key : String) : Option (String × String) :=
+  match key.splitOn "." with
+  | [] | [_] => none
+  | parts => some (".".intercalate parts.dropLast, parts.getLast!)
+
+/-- Names for the types a refusal shows: every declared record and sum of the closure at
+its resolved type (resolved again in a copy of the final elaboration state), and the
+recursive sums by variable. -/
+def namingOf (e : ObjectiveBendElaborate.Elaborated) (module : String) : Naming := Id.run do
+  let mut table : TyTable := {}
+  let mut named : List (String × Ty) := []
+  for (key, _) in e.ctx.records ++ e.ctx.sums do
+    if key.startsWith (ObjectiveBendElaborate.builtinModuleName ++ ".") then continue
+    let some (m, name) := splitKey key | continue
+    match (ObjectiveBendElaborate.sourceType e.ctx 64 name m []).run e.state with
+    | .ok (some p, _) =>
+      let ((_, ty), t) := (tyOf p).run table
+      table := t
+      named := named ++ [(key, ty)]
+    | _ => pure ()
+  let imports := ((e.ctx.modules.find? (·.name == module)).map (·.imports)).getD []
+  return { named, variables := e.state.sumVariables.map fun (k, i) => (i, k), imports, module }
+
+/-- A hint from what was found where: a record where one of its fields' type was expected,
+a function still waiting for arguments, an applied non-function, a missing field. -/
+def blameHint (n : Naming) (a : Assumptions) (b : Blame) (text : Option String) : Option String :=
+  let subject := "`" ++ text.getD "this" ++ "`"
+  match b.kind, b.expected, b.found with
+  | .mismatch, some e, some f =>
+    if arity f > arity e then
+      some (subject ++ " is a function still waiting for " ++ toString (arity f - arity e) ++
+        " more argument(s) (" ++ n.render f ++ "); pass every argument")
+    else
+      match (rowFields a f).filter fun (_, t) => sameType a t e with
+      | [] => none
+      | [(name, _)] => some (subject ++ " is a " ++ n.render f ++ ", not a " ++ n.render e ++ "; its " ++
+          n.render e ++ " field is `" ++ name ++ "`: write `" ++ text.getD "it" ++ "." ++ name ++ "`")
+      | fields => some (subject ++ " is a " ++ n.render f ++ ", not a " ++ n.render e ++ "; its " ++
+          n.render e ++ " fields are " ++ ", ".intercalate (fields.map fun (x, _) => "`" ++ x ++ "`"))
+  | .notFunction, _, some f =>
+    some ("this call passes more arguments than its function takes: after them it is a " ++ n.render f)
+  | .missingField name, _, some f =>
+    match rowFields a f with
+    | [] => none
+    | fields => some (n.render f ++ " has " ++ ", ".intercalate (fields.map fun (x, _) => "`" ++ x ++ "`") ++
+        "; there is no `" ++ name ++ "`")
+  | .unknownArm label, _, some (.variant row) =>
+    some ("the cases of this sum are " ++ ", ".intercalate ((rowFields a row).map (·.1)) ++ "; there is no `" ++ label ++ "`")
+  | _, _, _ => none
+
+/-- The checker's refusal of `source` (whose locations `term` carries), as a diagnostic: the
+rule that failed, the definition and span it is in, the expected and found types in
+surface syntax, and a hint when one applies. -/
+def blameDiagnostic (origins : Origins) (modules : List SourceModule) (naming : String → Naming)
+    (term : ATerm) (source : AnnotatedTerm) (context : Context) (fuel : Nat) : Diagnostic :=
+  let b := explain source.assumptions source.annotations context [] fuel source.term
+  let loc := (locate term b.focus).orElse fun _ => locate term b.path
+  let place := loc.map (placeOf origins)
+  let n : Naming := { naming ((place.map (·.1)).getD "") with assumptions := source.assumptions }
+  let text := place.bind fun (m, span, _) => sliceText modules m span
+  let subject := match text with
+    | some t => "`" ++ t ++ "`"
+    | none => "this"
+  let detail := match b.kind, b.expected, b.found with
+    | .notFunction, _, some f => ": " ++ subject ++ " applies a " ++ n.render f ++ " to a further argument"
+    | _, some e, some f => ": " ++ subject ++ " is " ++ n.render f ++ ", expected " ++ n.render e
+    | _, none, some f => ": " ++ subject ++ " is " ++ n.render f
+    | _, _, _ => ""
+  { stage := "objective-typed-check", message := "the checker refused the front end's typed packet: " ++ b.message ++ detail,
+    span := place.map (·.2.1), sourceModule := place.map (·.1), definition := place.map (·.2.2),
+    expected := b.expected.map n.render, found := b.found.map n.render, hint := blameHint n source.assumptions b text }
+
+/-- What explains a refusal of a source carrying `term`'s locations, in a context, at a fuel. -/
+abbrev Explainer := ATerm → AnnotatedTerm → Context → Nat → Diagnostic
+
+def unexplained : Explainer := fun _ _ _ _ =>
+  { stage := "objective-typed-check", message := "the checker refused the front end's typed packet" }
+
+end blame
+
 /-! ## Templates: each open declaration checked once against its bounds alone (D2) -/
 
 /-- The context every knot field is checked in: `$seed : {}` then `$globals : the knot`. -/
@@ -270,7 +400,7 @@ accept and only a wider instance would refuse, is refused HERE, naming the decla
 `Theory.ObjectiveBendTemplates.Discharges.check_instantiate` is what a template accepted
 here buys: acceptance at every instance whose bounds are discharged. -/
 def checkTemplate (output : Output) (key : String) (rigidVariables : List Nat) (typeFuel : Nat)
-    (field : ATerm) : Except Diagnostic Unit := do
+    (field : ATerm) (explainer : Explainer := unexplained) : Except Diagnostic Unit := do
   let refuse := fun (why : String) =>
     (throw (elaborationRefusal why) : Except Diagnostic Unit)
   let noTemplate := fun (e : String) => elaborationRefusal ("refused (template-typing): open declaration " ++ key ++
@@ -293,11 +423,15 @@ def checkTemplate (output : Output) (key : String) (rigidVariables : List Nat) (
     | some _ => refuse ("refused (self-rigid): open declaration " ++ key ++ " uses self as a value of its " ++
         "Self bound row; Self ranges over every type that HAS that row (a lower bound), so a value of type " ++
         "Self is not a value of the row. Read the members it needs (self.m) instead")
-    | none => refuse ("refused (template-typing): open declaration " ++ key ++
-        " does not type-check against its declared bounds")
+    | none =>
+      let why := explainer field source knotContext typeFuel
+      let prefix_ := "the checker refused the front end's typed packet"
+      let message := "refused (template-typing): open declaration " ++ key ++
+        " does not type-check against its declared bounds" ++ String.ofList (why.message.toList.drop prefix_.length)
+      throw { why with stage := "objective-core-elaboration", message := message }
 
-def checkTemplates (output : Output) (typeFuel : Nat) : Except Diagnostic Unit :=
-  output.templates.forM fun (key, rigidVariables, field) => checkTemplate output key rigidVariables typeFuel field
+def checkTemplates (output : Output) (typeFuel : Nat) (explainer : Explainer := unexplained) : Except Diagnostic Unit :=
+  output.templates.forM fun (key, rigidVariables, field) => checkTemplate output key rigidVariables typeFuel field explainer
 
 /-- The packet of a lowering: its typing proposal's packet, or why there is none. -/
 def packetOf (proposal : Except String Json) (term : ATerm) (sourceEntry : String) (modules : List SourceModule)
@@ -400,7 +534,7 @@ def lowerDecoded (modules : List SourceModule) (decoded : List ObjectiveBendElab
     Except Diagnostic Lowering := do
   discard <| options projections limits mode
   if modules.length > 64 then throw (elaborationRefusal "preview module capacity refused")
-  let elaborated ← (ObjectiveBendElaborate.elaboratePackage decoded).mapError elaborationRefusal
+  let elaborated ← (ObjectiveBendElaborate.elaboratePackageLocated decoded).mapError (locatedRefusal fun _ => none)
   lowerElaborated modules decoded elaborated false entryModule entryDefinition args projections limits mode
 
 /-- The whole front end on read modules: options, parse and check every module, elaborate,
@@ -475,12 +609,12 @@ def accept (l : Lowering) : Except Diagnostic (Accepted l) := do
             match typed : check source [] packet.fuel with
             | some checked =>
               pure ⟨erased, erasure, proposal, proposed, packet, decoded, packetTerm, closed, source, rfl, checked, typed⟩
-            | none => throw { stage := "objective-typed-check", message := "the checker refused the front end's typed packet" }
+            | none => throw (blameDiagnostic (fun _ => none) l.modules (fun module => { module }) l.term source [] packet.fuel)
           else throw (elaborationRefusal "typed packet context must be closed")
       else throw (elaborationRefusal "core term nesting exceeds the checker's decoding capacity")
 
 /-- `accept`'s refusals, in its order, for a whole closure checked on its direct source. -/
-def checkDirect (out : Output) (typeFuel : Nat) (rigid : List Nat) :
+def checkDirect (out : Output) (typeFuel : Nat) (rigid : List Nat) (explainer : Explainer := unexplained) :
     Except Diagnostic (Minidregg.Theory.ObjectiveBendTyping.AnnotatedTerm) := do
   let erased ← match out.term.erase with
     | .error e => throw (elaborationRefusal ("core erasure: " ++ e))
@@ -494,17 +628,18 @@ def checkDirect (out : Output) (typeFuel : Nat) (rigid : List Nat) :
   let source := { source with assumptions := { source.assumptions with rigid } }
   match check source [] typeFuel with
   | some _ => pure source
-  | none => throw { stage := "objective-typed-check", message := "the checker refused the front end's typed packet" }
+  | none => throw (explainer out.term source [] typeFuel)
 
 /-- Check a whole elaborated closure once: every template, and the knot of every
 declaration as one closed term. An entry's packet then carries only what it reaches
 (`Elaborated.select`) without any declaration going unchecked. -/
-def checkClosure (_modules : List SourceModule) (elaborated : ObjectiveBendElaborate.Elaborated)
-    (limits : Json) : Except Diagnostic Unit := do
+def checkClosure (modules : List SourceModule) (elaborated : ObjectiveBendElaborate.Elaborated)
+    (limits : Json) (origins : Origins := fun _ => none) : Except Diagnostic Unit := do
   let (_, typeFuel) ← options (.arr #[]) limits "definition"
   let whole := elaborated.whole
-  checkTemplates whole typeFuel
-  discard <| checkDirect whole typeFuel []
+  let explainer : Explainer := blameDiagnostic origins modules (namingOf elaborated)
+  checkTemplates whole typeFuel explainer
+  discard <| checkDirect whole typeFuel [] explainer
 
 #assert_axioms Lowering.packet_term
 #assert_axioms Accepted.source_eq_packet

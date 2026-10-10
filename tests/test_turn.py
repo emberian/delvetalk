@@ -277,9 +277,10 @@ class TurnTests(TurnCase):
         cp = y["checkpoint"]
         toks = cp["tokens"]
         self.assertGreater(len(toks), 10)
-        edition = copy.deepcopy(toks); edition[0] = {"s": "other.edition"}
-        swapped = copy.deepcopy(toks); swapped[2] = {"s": "x"}
-        variants = [edition, toks[:-1], toks + [{"n": "0"}], swapped, []]
+        # v2 tokens are bare: numbers, strings, and negative numbers for string references.
+        edition = copy.deepcopy(toks); edition[0] = "other.edition"
+        swapped = copy.deepcopy(toks); swapped[1] = "x"  # the local string count is a natural
+        variants = [edition, toks[:-1], toks + [0], swapped, []]
         # stale digest: refused by digest, before any decoding
         for t in variants:
             r = h.resume(art, with_tokens(cp, t, False), variant("written"))
@@ -289,7 +290,7 @@ class TurnTests(TurnCase):
             r = h.resume(art, with_tokens(cp, t, True), variant("written"))
             self.assertEqual((r["status"], r["message"]), ("error", "checkpoint does not decode"), r)
         # a token that is not a canonical natural never reaches the digest
-        r = h.resume(art, with_tokens(cp, [{"n": "-1"}], False), variant("written"))
+        r = h.resume(art, with_tokens(cp, [1.5], False), variant("written"))
         self.assertEqual(r["message"], "checkpoint does not decode", r)
         # missing or malformed envelope
         for bad in ([], {"tokens": toks}, {**cp, "digest": 7}):
@@ -302,9 +303,9 @@ class TurnTests(TurnCase):
         cp = y["checkpoint"]
         toks = cp["tokens"]
         edited = None
-        for i in range(len(toks) - 1):
-            if toks[i] == {"n": "10"} and toks[i + 1] == {"n": "1"}:  # a literal `1n` term
-                t = copy.deepcopy(toks); t[i + 1] = {"n": "7"}
+        for i in range(1, len(toks)):
+            if isinstance(toks[i], int) and toks[i] > 0:  # e.g. a reference to another program term
+                t = copy.deepcopy(toks); t[i] = toks[i] + 1
                 probe = h.resume(art, with_tokens(cp, t, True), variant("written"))
                 if probe["status"] == "finished" and probe["value"] != nat(4):
                     edited, forged = t, probe
@@ -377,10 +378,9 @@ class TurnTests(TurnCase):
         # bump yields under one `case` frame: the control is [6 (yielded), plan address]
         # followed by the stack length 1 and the case frame tag 10.
         spots = [i for i in range(len(toks) - 3)
-                 if toks[i].get("n") == "6"
-                 and toks[i + 2].get("n") == "1" and toks[i + 3].get("n") == "10"]
+                 if toks[i] == 6 and toks[i + 2] == 1 and toks[i + 3] == 10]
         self.assertEqual(len(spots), 1, spots)
-        toks[spots[0]] = {"n": "1"}
+        toks[spots[0]] = 1
         redigest(cp)  # the same address as an `enter` control instead
         r = h.resume(art, cp, variant("written"))
         self.assertEqual(r["status"], "error", r)

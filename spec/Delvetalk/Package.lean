@@ -201,12 +201,24 @@ structure EntryCompiled where
   /-- Each law's reading (`law NAME "reading": EXPR`; "" when none), by law name. -/
   readings : List (String × String)
 
-/-- The entry module's laws as the artifact's `laws` table: `[{name, reading}]` in source
-order; absent when the module declares none. -/
+/-- The readings the entry module's source gives its laws (`law NAME "reading": EXPR`). -/
 def lawReadings (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) : List (String × String) :=
   ast.decls.filterMap fun d => match d with
     | .law name _ reading _ => some (name, reading)
     | _ => none
+
+/-- The artifact's `laws` table, `[{name, reading}]`: one entry per law the package
+ENFORCES (`EntryCompiled.laws`), in that order, with its source reading or "" when it has
+none. Built from the enforced laws, not from the source's readings, so a host looking a
+refusing law up by name always finds it (`lawTable_names`). -/
+def lawTable (laws : List String) (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) :
+    List (String × String) :=
+  let readings := lawReadings ast
+  laws.map fun name => (name, (readings.lookup name).getD "")
+
+theorem lawTable_names (laws : List String) (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) :
+    (lawTable laws ast).map (·.1) = laws := by
+  simp [lawTable, Function.comp_def]
 
 /-- Compile `entry` from a prepared closure: select its reached knot, build the proposal
 and packet once, check it. -/
@@ -229,7 +241,7 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
     ("packetSha256", toJson pin),
     ("type", typeJson accepted.typed.type),
     ("methods", methodTable entryModule.name signatures globals), ("law", law)]
-  let readings := lawReadings (prepared.asts.getLastD default)
+  let readings := lawTable (lowered.laws.map (·.1)) (prepared.asts.getLastD default)
   let artifact := if readings.isEmpty then artifact else artifact.setObjVal! "laws"
     (Json.arr (readings.toArray.map fun (name, reading) =>
       Json.mkObj [("name", toJson name), ("reading", toJson reading)]))
@@ -239,6 +251,17 @@ def compileEntryFrom (request : PreparedRequest) (entry : String) : Except Diagn
 def compileEntry (j : Json) : Except Diagnostic EntryCompiled := do
   let request ← prepareRequest j
   (compileEntryFrom request (← lift (j.getObjValAs? String "entry"))).mapError (withHint j)
+
+-- A law without a reading is in the artifact's table with reading "", beside one with a
+-- reading, in source order.
+#guard
+  let source := "edition ObjectiveBend 1\nrecord State:\n  count: Nat\nlaw small \"stays small\": new.count <= 100\nlaw plain: new.count <= 1000\ndef initial() -> State:\n  {count: 0n}\n"
+  let request := Json.mkObj [("entry", toJson "initial"), ("modules", Json.arr #[Json.mkObj [("name", toJson "Package"), ("source", toJson source)]])]
+  let entry := fun (name reading : String) => Json.mkObj [("name", toJson name), ("reading", toJson reading)]
+  match compileEntry request with
+  | .ok c => (c.artifact.getObjVal? "laws").toOption == some (Json.arr #[entry "small" "stays small", entry "plain" ""]) &&
+      c.readings == [("small", "stays small"), ("plain", "")] && c.laws.map (·.1) == ["small", "plain"]
+  | .error _ => false
 
 /-- Compilation proper, refusing with the structured diagnostic. -/
 def compileStructured (j : Json) : Except Diagnostic Compiled := do
@@ -351,7 +374,7 @@ def executeEntry (entry : Delvetalk.CheckedEntry) (arguments limits : Json) (pro
   let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
   let mut applied := entry
   for value in values do
-    applied ← applied.apply (← argumentTerm value) []
+    applied ← applied.apply (← argumentTerm value) .empty
   executeTyped applied.source.term applied.type limits profile
 
 /-- World data conversion: exact naturals, booleans, strings and records only.

@@ -23,6 +23,7 @@ set_option autoImplicit false
 mutual
 /-- The nesting depth of an elaborated term: what `decodeTerm`'s fuel must cover. -/
 def depth : ATerm → Nat
+  | .located _ b => depth b
   | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ _ => 1
   | .unary _ b | .lam _ b | .reflect b | .metadata b | .project b | .inject _ _ _ b | .perform _ _ b | .done _ _ b | .toData _ b => depth b + 1
   | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b | .textJoin a b =>
@@ -59,7 +60,12 @@ theorem bind_ok {α β : Type} {x : Except String α} {f : α → Except String 
 attribute [local simp] getObjVal_mkObj getObjValD_mkObj Json.getObjValAs? fromJson? Json.getStr? Json.getBool?
   Json.getArr? pure Except.pure bind Except.bind
 
-theorem depth_pos (t : ATerm) : 1 ≤ depth t := by cases t <;> simp [depth]
+theorem depth_pos : (t : ATerm) → 1 ≤ depth t
+  | .located _ b => by simpa [depth] using depth_pos b
+  | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ _ | .unary _ _ | .lam _ _ | .reflect _
+  | .metadata _ | .project _ | .inject _ _ _ _ | .perform _ _ _ | .done _ _ _ | .toData _ _ | .app _ _
+  | .mix _ _ | .fix _ _ | .specification _ _ | .prototype _ _ | .binary _ _ _ | .textJoin _ _
+  | .ifZero _ _ _ | .ifBool _ _ _ | .extend _ _ | .case _ _ | .record _ | .get _ _ => by simp [depth]
 
 theorem primitive_round {p : String} {prim : CorePrimitive} (h : primitiveOf p = .ok prim) :
     decodePrimitive (Json.str p) = .ok prim := by
@@ -75,6 +81,10 @@ mutual
 theorem decode_json : (t : ATerm) → (n : Nat) → (e : CoreTerm) → depth t ≤ n → t.erase = .ok e →
     decodeTerm n t.json = .ok e
   | t, 0, _, hd, _ => absurd hd (by have := depth_pos t; omega)
+  | .located _ b, n+1, e, hd, he => by
+    simp only [depth] at hd
+    simp only [ATerm.erase] at he
+    simpa [ATerm.json] using decode_json b (n+1) e hd he
   | .bound i, n+1, e, _, he => by
     simp [ATerm.erase] at he; subst he; rw [decodeTerm]; simp [ATerm.json, jsonNat, toJson, Json.getNat?, JsonNumber.fromNat] <;> rfl
   | .lam _ b, n+1, e, hd, he => by
