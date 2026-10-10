@@ -3,7 +3,7 @@
 DelveTalk's own repository, read only, under `did:web:<origin host>` (deployed:
 `did:web:delvetalk.fg-goose.online`). `transport/repo.py` is mounted by the front (`transport/http.py`) at
 `/xrpc/<nsid>` and `/.well-known/did.json`. Record types are in `lexicons/` (`lexicons/README.md` maps each
-to the journal's fields). Tests: `tests/test_repo.py`.
+to the journal's fields). Tests: `tests/test_repo.py`. Agents learn the citable forms from `docs/AGENTS-API.md`, "Names".
 
 Every record is a host reply carried verbatim, with `$type` set to its collection. Python picks the host op,
 passes the reader, and frames the reply; it decides nothing. Read authority is the host's: a request with no
@@ -37,10 +37,10 @@ of the front (32 a minute).
 CID (an entry's, a module's, a publication or grant id, all base32 CIDs) as they are; an object's key is
 its id with each `/` written `~`, a dot, and the version (`garden/bell/1` at version 2 is `garden~bell~1.2`), a
 law's the same with the clause name in place of the version (`garden~bell~1.owner`). The key reads back by
-the last dot and `~` to `/`. The host refuses at creation an id outside letters, digits and `. _ : / - @`, but
-replays any id a journal already holds; an id holding `~` (which would read back as `/`), `@`, or another
-character record keys forbid has no key: `listRecords` of objects and laws leaves it out
-and names it in `unkeyable: [ids]`. getRecord also accepts the old `<object>/<version>` for one release
+the last dot and `~` to `/`. The host creates only ids of letters, digits and `. _ : / -`
+(`validObjectId`), so every object it creates has a key. It still replays any id a journal written before
+that rule holds; such an id with `~`, `@` or another character record keys forbid gets a key outside the
+syntax, and its record cannot be cited until the object is recreated. getRecord also accepts the old `<object>/<version>` for one release
 (any key holding `/`) and answers with the new key in `uri`.
 
 Host statuses become XRPC errors carrying the host reply as `reply`: `unknown` is 400 `RecordNotFound`,
@@ -109,12 +109,9 @@ op `principal` is the reader; `anonymous` is the public reader in every host rea
 7. **`world-publications`** for every reader (a publication is posted publicly), with `hash` (the retaining
    entry's) on each item, and `limit`, `before`, `reverse` as above.
 
-Open: an object id holding `@`. The host admits `.`, `_`, `:`, `/`, `-` and `@` beside letters and digits at
-creation (`validObjectId`), `@` for Zulip principals' `env/zulip:alice@host`. Record keys have no `@`, and with
-`/` already written `~` there is no character left to escape it with unambiguously, so such an object is
-`unkeyable`. Either transport renames those principals (no `@` in the ids it makes), or the key mapping
-changes to a prefix-free escape (`~` then a letter for each of `/`, `@`, `~`), which moves every slashed key
-once.
+The object-id alphabet settles record keys: the host creates ids only in `[A-Za-z0-9._:/-]`, Zulip principals
+are `zulip:<numeric id>` (no `@`), and `/` written `~` is then a key for every id, read back without
+ambiguity since no id holds `~`.
 
 ## What a real PDS would still need
 
