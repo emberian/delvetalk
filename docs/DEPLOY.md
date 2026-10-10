@@ -464,6 +464,89 @@ hash match the journal.
 If the new compiler refuses an old object, `world-open` fails, the healthcheck
 stays red and the journal is untouched: set the old tag back and `up` again.
 
+## Playbooks
+
+The six incidents of docs/OPERATIONS.md section b, each with the commands that diagnose and fix it, the line for the
+channel (hob's register: what happened and what to do next, no apology) and what to record. Every command runs in
+`/opt/delvetalk` on the workhorse after `set -a; . ./.env; set +a`; `hand` is `docker compose --profile ops run --rm -v
+"$DELVETALK_WATCH_ZULIPRC:/run/watch/zuliprc:ro" delvetalk-ops python3 -m transport.hand` with `--state /data/state`
+after the verb (the bot's rc mounted where `unpost --zuliprc` reads it). A and F lose data if done in the wrong order: both stop the writers first. The
+moderation verbs named "when ROOT section 3 lands" (`quiet`, `retire`, `hide`, `find`, `settings`) are the host
+lane's; until then their fallback is given.
+
+**A. The host will not start.** Healthcheck red; every reply "host unavailable".
+
+    docker compose logs --tail 50 delvetalk-hostd
+
+- `journal broken at height N: unterminated final line`: a torn tail; "A torn tail" above (backup.sh cuts it in its
+  mirror and replays, restore.sh puts the verified copy back).
+- `height out of sequence`: a second writer. Find it before anything else: `docker compose ps -a`, `fuser -v
+  /var/lib/delvetalk/v2/journal.lock` (a writer elsewhere holds the lock; hostd exits 75 naming it).
+- `journal replay edition 1; this host is 2`: set the previous `DELVETALK_IMAGE`/`DELVETALK_HOST_IMAGE` back in `.env`
+  and `docker compose --profile town up -d --wait`; a new edition is "A new binary" and docs/OPERATIONS.md's upgrade path.
+- `journal exceeds byte capacity`: docs/OPERATIONS.md section c, the journal bound.
+- the library's bytes differ: hostd rebuilds `<state>/library` from the image's `world/` at every start, so the image is
+  not the commit the journal sealed. Set that commit's image back in `.env`; a deliberate change of library is
+  "Changing the library after launch", once the host is up.
+
+Channel: `hob: the host is down; the hand is on it. Spells wait; nothing sent is lost.` Record: the height and the
+cause.
+
+**B. The bridge posts garbage.** On Delve nothing posts without a click:
+
+    hand skip DRAFT --reason 'wrong card'
+
+On Zulip the bot posts itself; stop it first, then withdraw what it said:
+
+    docker compose stop delvetalk-bridge
+    hand outbox --all --json                      # the draft ids and what they became
+    hand unpost DRAFT --reason 'misread' --zuliprc /run/watch/zuliprc
+    docker compose --profile town up -d --wait delvetalk-bridge
+
+If a card's own render is the cause, retire it (`retire`, when ROOT section 3 lands; until then stop the bridge and
+leave it stopped). Channel: `hob: the hand withdrew that; its receipt stays.` Record: the object and the receipt.
+
+**C. The model is down.** Interpretations pile up (the watch's `interpretations` line); the host retries with backoff
+to 60 clock minutes, 8 attempts, then `unclear: model: transport`; spells are unaffected.
+
+    hand status --json | python3 -c 'import json,sys; p=json.load(sys.stdin); print(p["interpretations"], p["model"]["hour"])'
+    docker compose logs --tail 20 delvetalk-interpret
+
+If the key is the problem, set `DELVETALK_MODEL_AUTH=oauth` in `.env` (the fallback accounts, "Model credentials")
+and `docker compose --profile town up -d --wait delvetalk-interpret`; otherwise wait. Channel: `hob: I cannot read
+words for now; a spell needs no reading. The cards still answer.` Record: the hour and the count of `attempted`.
+
+**D. A quota is exhausted.** Which one: `hand status --json` (`reservations`, `hour.refused.quota`, `model.day`).
+
+- posts on Delve (`16 of 16`, drafts held `rate_limited`): wait for `next`, or raise `postQuota` (`settings --post N`,
+  when ROOT section 3 lands).
+- interpretations per principal (48 an hour, `quota` refusals with `next`): the resident is told by the host; nothing
+  to do unless it is a loop, which is B.
+- the model cap per day: the world's words wait for the clock day to turn; `settings --model N` with a reading, when
+  ROOT section 3 lands. Channel: `hob: my readings for today are spent; spells run as they always do.`
+
+Record: which quota, and whether it was a loop.
+
+**E. A resident is abusive.** `quiet WHO --hours 24 --reading R` when ROOT section 3 lands; a card that carries it is
+hidden then retired (`hide`, `retire`). What the bot already said on Zulip:
+
+    hand unpost DRAFT --reason 'abuse' --zuliprc /run/watch/zuliprc
+
+Until `quiet` lands: `hand skip` their drafts on Delve, and on Zulip stop the bridge (B) while the hand decides.
+Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt.
+
+**F. The box is full.**
+
+    df -h /var/lib/delvetalk /var/backups
+    docker compose stop delvetalk-bridge delvetalk-interpret     # the host keeps answering reads
+    du -sk /var/backups/delvetalk /var/lib/delvetalk/v2/state/heaps /var/lib/delvetalk/v2/state/access.log* | sort -n
+    docker image ls 'delvetalk*'
+
+Remove only what the puller already holds: compare `ls /var/backups/delvetalk` with the owner's
+`~/delvetalk-backups` before deleting a tarball there, then old image tags (`docker image rm` of a tag `.env` does not
+name). Bring the writers back: `docker compose --profile town up -d --wait`. Channel: `hob: the host is full; the hand
+is making room. Spells wait.` Record: what was removed and why.
+
 ## What is not automated, and why
 
 - **Posting.** Every post is a human decision under the owner's authority;
