@@ -149,7 +149,8 @@ class Run:
         for item in listed.get('pending') or []:
             policy = item['policy'] or {}
             req = {'model': policy.get('model'), 'system': policy.get('system', ''), 'user': interpret.user_content(item)}
-            uri = texts.get(item['utterance'])
+            # A miss asked once more carries the post's text plus what is missing: the same post, the same careful answer.
+            uri = texts.get(item['utterance']) or max(((len(t), u) for t, u in texts.items() if t and item['utterance'].startswith(t)), default=(0, None))[1]
             raw = (self.answers.get(uri) or {}).get('answer') or NOT_ADDRESSED
             body = {'id': 'msg_rehearsal', 'type': 'message', 'role': 'assistant', 'model': req['model'] or model.DEFAULT_MODEL,
                     'content': [{'type': 'text', 'text': raw}], 'stop_reason': 'end_turn', 'usage': {'input_tokens': 0, 'output_tokens': 0}}
@@ -449,7 +450,9 @@ def main(argv=None):
     results['verdicts'] = dict(verdicts)
     gate = []
     for uri, step in SECTION10:
-        mine = [e for e in entries if (e.get('identity') or {}).get('intent') == uri]
+        # The post's own turns, and the turns a card handed it on to (a delivery whose origin is the post).
+        mine = [e for e in entries if (e.get('identity') or {}).get('intent') == uri
+                or ((e.get('delivery') or {}).get('from') or {}).get('intent') == uri]
         gate.append({'uri': uri, 'step': step, 'routed': results['observations'].get(uri, {}).get('kind'),
                      'entries': [{'tag': (e.get('outcome') or {}).get('tag'), 'class': (e.get('outcome') or {}).get('class'),
                                   'to': ((e.get('roots') or [{}])[0]).get('object') or ((e.get('outcome') or {}).get('activity') or {}).get('object'),
