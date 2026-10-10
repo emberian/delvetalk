@@ -102,7 +102,7 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
 `world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
-`world-inspect {principal, object}`, `world-state-cid {principal, object, version}`, `world-resolve {principal, slug}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
+`world-inspect {principal, object}`, `world-state-cid {principal, object, version}`, `world-resolve {principal, slug}`, `world-fork {principal, height?, into}` (5.41), `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
 `world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,
@@ -657,6 +657,20 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `tests/fixtures/pins/artifacts.json` is re-recorded (no entry stopped compiling); objects already created keep the
    library they were compiled under. Tests: `tests/test_view_data.py` (the directory has no `words` field; `words` is a
    def, so the test reads a fixture object's `words` and `greeted` fields).
+
+41. **Fork a world (host7, FOUNDATION 15).** `world-fork {principal, height?, into}` (`Session.forkWorld`; `into` must not
+   exist) writes a new journal whose one entry is a `forked` genesis (`Snapshot.forkGenesis`): the store at `height`
+   (default the head; an earlier height replays the entries up to it) as a snapshot body with whole sources, only the
+   objects `principal` may view (their grants, pending deliveries, and suspended activities with checkpoints and offers
+   written out whole), the handle registry, `omitted [ids]`, and `forkedFrom {world (the journal path), height, cid}`.
+   The fork's opener, clock principal and library-law principal are `principal`. Its `previous` is `cid`, the forked
+   world's entry at that height: `entriesOf` lets height 1 chain there only when the entry is `forked` and names that
+   cid. Every replay (`replayAll`, `verify`, snapshot `resume` through `startOf`/`installFork`) starts from the
+   installed genesis; `expectedObjects` and `anchoredStates` read its objects. `world-status` reports `forkedFrom`.
+   Nothing is journaled in the forked world. Answers `{status: "forked", into, forkedFrom, carried, omitted}`. hostd
+   exposes it as a heap op later (transport). Tests: `tests/test_fork.py` (a planting in the fork leaves the shared
+   world unchanged, replay and a snapshot of the fork, an earlier height, a carried suspended reading settles in the
+   fork only, a private object omitted for a stranger).
 
 ## 6. Gotchas
 

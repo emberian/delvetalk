@@ -1025,7 +1025,7 @@ def offersJson (offers : List (String × String)) : Json :=
 
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`). -/
-def turnReply (w : World) (r : Json) : Json :=
+def turnReply (_w : World) (r : Json) : Json :=
   match r.getObjVal? "receipt" with
   | .error _ => r
   | .ok entry =>
