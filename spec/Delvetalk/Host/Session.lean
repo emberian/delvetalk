@@ -159,6 +159,22 @@ def forkWorld (s : Open) (j : Json) : IO (Except String Json) := do
       ("forkedFrom", Json.mkObj [("world", toJson s.path), ("height", toJson height), ("cid", toJson cid)]),
       ("carried", toJson (w.objects.size - omitted.length)), ("omitted", toJson omitted)])
 
+/-- `world-status`'s interpretation quota: the cap, and for a named principal how many it may still
+    start this clock hour and the clock at which the count starts again (`exempt` for the opener and
+    the clock principal). -/
+def interpretStatus (w : World) (r : Json) (principal : Option String) : Json :=
+  let r := r.setObjVal! "interpretQuota" (toJson w.interpretQuota)
+  match principal with
+  | none => r
+  | some p =>
+    if p == w.opener || p == w.clockPrincipal then r.setObjVal! "interpretations" (toJson "exempt") else
+    let hour := w.clock / 60
+    let used := match w.interpretsStarted[p]? with
+      | some (h, n) => if h == hour then n else 0
+      | none => 0
+    r.setObjVal! "interpretations" (Json.mkObj [("remaining", toJson (w.interpretQuota - used)),
+      ("next", toJson ((hour + 1) * 60))])
+
 def stepWorld (session : Session) (request : Json) : IO (Session × Except String Json) := do
   let op ← match request.getObjValAs? String "op" with
     | .ok op => pure op
@@ -187,12 +203,13 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
             let quota ← match request.getObjVal? "postQuota" with
               | .ok q => some <$> natOf q
               | .error _ => pure none
+            let interpretQuota ← optNat request "interpretQuota"
             return ((request.getObjValAs? String "clock").toOption, quota,
-              (request.getObjValAs? String "opener").toOption) : Except String _) with
+              (request.getObjValAs? String "opener").toOption, interpretQuota) : Except String _) with
           | .error e => return (session, .error e)
-          | .ok (none, none, none) => pure o
-          | .ok (clock, quota, opener) =>
-            let (s', r) ← durable o (fun w => settingsOp w clock quota opener)
+          | .ok (none, none, none, none) => pure o
+          | .ok (clock, quota, opener, interpretQuota) =>
+            let (s', r) ← durable o (fun w => settingsOp w clock quota opener interpretQuota)
             match r, s' with
             | .ok _, some o' => pure o'
             | .error e, _ => return (session, .error e)
@@ -283,9 +300,9 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
           -- What this process holds compiled (carried from world to world it opens).
           ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
             ("methods", toJson s.world.compiled.size)])] |>
-          fun r => match s.world.forkedFrom with
+          fun r => (match s.world.forkedFrom with
             | some f => r.setObjVal! "forkedFrom" f
-            | none => r))
+            | none => r) |> fun r => interpretStatus s.world r (request.getObjValAs? String "principal").toOption))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-principal" => durable s (fun w => principalOp w request)
       | "world-arrive" => durable s (fun w => arriveOp w request)

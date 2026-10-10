@@ -396,7 +396,7 @@ def Proposal.digest (p : Proposal) : String :=
 def refusalClasses : List String :=
   ["staleRoot", "typeMismatch", "capacity", "outOfRange", "absentItem", "lawRefused", "unknownObject",
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
-   "keyTaken", "duplicateKey", "badSpell"]
+   "keyTaken", "duplicateKey", "badSpell", "quota"]
 
 structure Refusal where
   cls : String
@@ -411,6 +411,8 @@ structure Refusal where
   root : Option String := none
   /-- For `badSpell`: the spell the reply meant, its blanks shown, to resend. -/
   hint : Option String := none
+  /-- For `quota`: the clock at which the principal may try again. -/
+  next : Option Nat := none
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
@@ -1785,7 +1787,7 @@ def tagOf (entry : Json) : String :=
     failed, a capacity was full (pending activities and interpretations drain; a capacity
     that never drains refuses the retry again). They are journaled but do not bind the
     identity's outcome. -/
-def transientClasses : List String := ["staleRoot", "budget", "evaluation", "capacity"]
+def transientClasses : List String := ["staleRoot", "budget", "evaluation", "capacity", "quota"]
 
 def isTransient (entry : Json) : Bool :=
   tagOf entry == "refused" &&
@@ -1868,6 +1870,14 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
           | _, _ => w.handles
         | none => w.handles
       else w.handles
+    interpretsStarted := if tagOf entry != "suspended" then w.interpretsStarted else
+      match (entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "interpretation" |>.toOption),
+          (entry.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption) with
+      | some _, some p =>
+        let hour := w.clock / 60
+        let (h, n) := w.interpretsStarted.getD p (hour, 0)
+        w.interpretsStarted.insert p (hour, if h == hour then n + 1 else 1)
+      | _, _ => w.interpretsStarted
     clock := if tagOf entry == "advanced" then (entry.getObjVal? "outcome" |>.bind (·.getObjValAs? Nat "to")).toOption.getD w.clock else w.clock
     suspended := (match (entry.getObjValAs? String "resumes").toOption with
         | some h => w.suspended.filter fun s => (s.getObjValAs? String "hash").toOption != some h
@@ -1982,7 +1992,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.reason.map fun o => [("reason", toJson o)]).getD [] ++
         (r.expected.map fun e => [("expected", e)]).getD [] ++
         (r.root.map fun x => [("root", toJson x)]).getD [] ++
-        (r.hint.map fun x => [("hint", toJson x)]).getD [])
+        (r.hint.map fun x => [("hint", toJson x)]).getD [] ++
+        (r.next.map fun x => [("next", toJson x)]).getD [])
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>
@@ -2252,15 +2263,15 @@ The first open that names a clock principal or a posting quota journals a `setti
 after that both are fixed. `posted` entries record what transport published for an object,
 so a reply to that post can be routed back (`world-addressee`). -/
 
-def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener : Option String := none) :
-    Except String (World × Json) := do
-  if clock.isNone && quota.isNone && opener.isNone then return (w, Json.null)
+def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener : Option String := none)
+    (interpretQuota : Option Nat := none) : Except String (World × Json) := do
+  if clock.isNone && quota.isNone && opener.isNone && interpretQuota.isNone then return (w, Json.null)
   let clockP := clock.getD ""
   let openerP := opener.getD ""
   if w.settled then
     if (clock.isSome && clockP != w.clockPrincipal) || (quota.isSome && quota != some w.postQuota) ||
-        (opener.isSome && openerP != w.opener) then
-      throw s!"the journal records clock {w.clockPrincipal}, postQuota {w.postQuota} and opener {w.opener}; the settings differ"
+        (opener.isSome && openerP != w.opener) || (interpretQuota.isSome && interpretQuota != some w.interpretQuota) then
+      throw s!"the journal records clock {w.clockPrincipal}, postQuota {w.postQuota}, interpretQuota {w.interpretQuota} and opener {w.opener}; the settings differ"
     return (w, Json.null)
   if let some c := clock then discard <| boundedText "clock principal" Limits.maxPrincipalBytes c
   if let some o := opener then discard <| boundedText "opener" Limits.maxPrincipalBytes o
@@ -2268,8 +2279,10 @@ def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener 
   let intent := "settings"
   -- The opener is recorded only when named, so earlier settings entries keep their bytes.
   let fields := [("clock", toJson clockP), ("postQuota", toJson q)] ++
-    (if openerP.isEmpty then [] else [("opener", toJson openerP)])
-  let (w', entry) := push { w with clockPrincipal := clockP, postQuota := q, opener := openerP, settled := true }
+    (if openerP.isEmpty then [] else [("opener", toJson openerP)]) ++
+    ((interpretQuota.map fun n => [("interpretQuota", toJson n)]).getD [])
+  let (w', entry) := push { w with clockPrincipal := clockP, postQuota := q, opener := openerP, settled := true,
+                                   interpretQuota := interpretQuota.getD 48 }
     (identityKey "world" intent)
     [("identity", identityJson "world" intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson (Journal.bodyHash (Json.mkObj fields))),
@@ -2582,6 +2595,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     if w.settled then throw "settings recorded twice"
     return record { w with clockPrincipal := ← outcome.getObjValAs? String "clock",
                            postQuota := ← natField outcome "postQuota", settled := true,
+                           interpretQuota := (outcome.getObjValAs? Nat "interpretQuota").toOption.getD 48,
                            opener := (outcome.getObjValAs? String "opener").toOption.getD "" } entry key []
   | "principal" =>
     discard <| outcome.getObjValAs? String "did"
@@ -2906,6 +2920,8 @@ def publicRefusal (entry : Json) : Json :=
     -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
     else if cls == "badSpell" then
       [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
+    -- A quota: how many, and when the next may start; nothing about the turn.
+    else if cls == "quota" then ["reason", "next"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
     else if id != named then [("object", toJson named)] else []))
 
 /-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else

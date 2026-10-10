@@ -154,7 +154,8 @@ def body (w : World) : Except String Json := do
     ("libraries", Json.arr (libraries.toArray.map fun (pin, l) =>
       Json.mkObj [("pin", toJson pin), ("modules", modulesJson l.modules)])),
     ("settings", Json.mkObj ([("settled", toJson w.settled), ("clock", toJson w.clockPrincipal),
-      ("postQuota", toJson w.postQuota)] ++ (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]))),
+      ("postQuota", toJson w.postQuota), ("interpretQuota", toJson w.interpretQuota)] ++
+      (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
     ("grants", Json.arr (grants.toArray.map fun (_, g) => (g.json).setObjVal! "revoked" (toJson g.revoked))),
     ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))] ++
@@ -253,6 +254,7 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
                 settled := ← settings.getObjValAs? Bool "settled",
                 clockPrincipal := ← settings.getObjValAs? String "clock",
                 postQuota := ← natField settings "postQuota",
+                interpretQuota := (settings.getObjValAs? Nat "interpretQuota").toOption.getD 48,
                 opener := (settings.getObjValAs? String "opener").toOption.getD "" }
   let mut types : Std.HashMap String (Ty × DataBounds × Json × Bool × Bool) := {}
   for t in ← (← b.getObjVal? "types").getArr? do
@@ -457,6 +459,7 @@ def resume (b : Json) (entries : Array Json) (caches : Caches := {}) : Except St
                          cachedPackets := w.objects.fold (fun m _ o =>
                            if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {},
                          clockPrincipal := w.clockPrincipal, postQuota := w.postQuota, opener := w.opener,
+                         interpretQuota := w.interpretQuota,
                          settled := w.settled }
   for (k, v) in derived w do
     unless (b.getObjVal? k).toOption == some v do throw s!"its {k} is not the journal's"

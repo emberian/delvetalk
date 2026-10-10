@@ -74,6 +74,9 @@ inductive Abort where
   /-- The turn is refused with a named class other than `evaluation` (`typeMismatch`: the
       argument does not conform to the method's input type, `expected` what it takes). -/
   | refused (cls reason : String) (expected : Option Json := none)
+  /-- The turn's principal has started its hour's interpretations (`interpretQuota`): a transient
+      refusal of class `quota`, naming the clock at which the next may start. -/
+  | quota (reason : String) (next : Nat)
   /-- The turn awaits a slot: its activity is checkpointed and journaled. -/
   | suspend (principal intent : String) (patience : Nat) (checkpoint : Delvetalk.Turn.Checkpoint)
       (interpretation : Option Json := none) (post : Option String := none)
@@ -805,6 +808,15 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
       evaluation "offers exceed their byte capacity"
     else if s.awaits ≥ Limits.awaitsPerTurn then evaluation "turn exceeds the await capacity"
     else
+      -- Interpretations the turn's principal may start this clock hour (`interpretQuota`); the
+      -- opener and the clock principal are exempt.
+      let w := s.world
+      let hour := w.clock / 60
+      let used := match w.interpretsStarted[s.principal]? with
+        | some (h, n) => if h == hour then n else 0
+        | none => 0
+      unless s.principal == w.opener || s.principal == w.clockPrincipal || used < w.interpretQuota do
+        throw (.quota s!"interpretations: {w.interpretQuota} an hour; next at clock {(hour + 1) * 60}" ((hour + 1) * 60))
       mayWait depth self checkpoint (interpreting := true)
       let id := Journal.bodyHash (Json.arr #[toJson s.principal, toJson s.intent, toJson s.awaits])
       set { s with awaits := s.awaits + 1 }
@@ -1362,6 +1374,10 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
   | .error (.refused cls reason expected) =>
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls, reason := some reason, object := some ctx.object, expected }) (onEnd := endedIfLate)
+    return (w', turnReply w' r)
+  | .error (.quota reason next) =>
+    let (w', r) := commit w { proposal with writes := [], creates := [] } base
+      (some { cls := "quota", reason := some reason, next := some next })
     return (w', turnReply w' r)
   | .error (.suspend sp si patience checkpoint interpretation post) =>
     let interpretation := interpretation.map compactInterpretation
@@ -2168,6 +2184,7 @@ def abortText : Abort → String
   | .request m | .evaluation m => m
   | .budget r => s!"{r} budget exhausted"
   | .refused cls r _ => s!"{cls}: {r}"
+  | .quota r _ => s!"quota: {r}"
   | .suspend .. => "unexpected suspension"
 
 /-- The input type of a method: `none` when it takes none, an error when it is not a method. -/

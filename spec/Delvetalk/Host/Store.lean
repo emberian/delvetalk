@@ -383,6 +383,13 @@ structure World where
       when none was named): it alone may create an object for a named owner. -/
   opener : String := ""
   settled : Bool := false
+  /-- Interpretations one principal may start per clock hour (`world-open {interpretQuota}`, journaled
+      in `settings` when named; 48 otherwise). The opener and the clock principal are exempt. -/
+  interpretQuota : Nat := 48
+  /-- Interpretations started, by the principal of the turn that started them: the clock hour of the
+      last one and how many that hour. Derived by `record` from `suspended` entries with an
+      `interpretation`. -/
+  interpretsStarted : Std.HashMap String (Nat × Nat) := {}
   /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
       entry's `replyTo`), which `awaitPost` settles on. -/
   replies : Std.HashMap String (String × String) := {}

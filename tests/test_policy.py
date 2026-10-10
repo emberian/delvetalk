@@ -517,6 +517,8 @@ class PolicyObject(Chain):
 
     def test_interpretations_have_their_own_capacity_apart_from_awaits(self):
         """The rehearsal rerun: the ninth prose reply in a batch was refused at the await cap."""
+        # One principal starts 65 here: the hourly interpretation quota (48 by default) is lifted.
+        self.assertEqual(self.host.send(op="world-open", path=self.path, interpretQuota=1000)["status"], "opened")
         self.policy()
         self.garden("policy")
         for i in range(64):

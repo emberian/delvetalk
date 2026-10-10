@@ -385,6 +385,17 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    world 6/8/6/6 ms. Separate processes (hostd's heaps) still compile from scratch: the on-disk cache is
    queued (§7). Test: `tests/test_compile_cache.py`.
 
+60. **Interpretation quota (host9).** `world-open {interpretQuota: n}` (default 48) is journaled in the
+   `settings` entry when named (as `postQuota`; a later open naming another value is refused) and kept
+   in snapshots. `record` derives `World.interpretsStarted` (principal -> (clock hour, count)) from
+   `suspended` entries carrying an `interpretation`, by the identity's principal at the entry's clock;
+   the clock counts minutes, so the hour is `clock / 60`. An `interpret` Plan past the cap refuses the
+   whole turn with class `quota` (in `refusalClasses` and `transientClasses`, so the identity runs again
+   later), `reason` "interpretations: N an hour; next at clock M" and `next: M`, both in the public
+   projection. The opener and the clock principal are exempt. `world-status` reports `interpretQuota`,
+   and with `principal` `interpretations: {remaining, next} | "exempt"`. `tests/test_policy.py`'s
+   65-interpretation capacity test lifts the quota. Test: `tests/test_interpret_quota.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -437,12 +448,7 @@ the full `tests.run` once (1011 tests green at lane/host8's last commit).
    (re-checked by Mini, so a damaged file fails closed to a compile); (d) gate it on
    `DELVETALK_COMPILE_CACHE=<dir>` (hostd's children inherit it), default off; (e) the cache dir is in
    the TCB as the binary is: a forged packet type-checks but need not be its source's.
-5. **`world-open {interpretQuota: n}`** (default 48): interpretations one principal may start per clock hour,
-   counted from the journal (suspended entries with `interpretation`, by principal and clock); the next is a
-   journaled transient refusal, class `quota`, whose public projection carries `next: <clock>` and the message
-   "interpretations: N an hour; next at clock M"; `world-status {principal}` reports the cap and the caller's
-   remaining count; the opener and the clock principal are exempt. Test: the 49th prose turn in an hour
-   refused, the first after the hour admitted.
+5. Done on lane/host9 (5.60).
 6. **Deletion pass** (no deployed journal exists): the boolean `sync`; the `slot` tolerance in `receive`
    (`receiveArgument`); the `import … as Super` layer form (`stackForm`); `utteranceBlock` and pre-v3 block
    shapes; the ignored `compiled`/`binary` fields (`withoutCompiled`); the relative-address refusal; the index
