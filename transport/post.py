@@ -5,13 +5,14 @@ request it would send and exits 2 without reading credentials or touching the ne
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from transport.delve import Client, Failure, canonical, http_transport
-from transport.hostd import CLOCK
+from transport.host import CLOCK, HostClient
 from transport.observe import MENTION
 
 FLAG = '--i-am-ember-and-authorize-posting'
@@ -93,7 +94,7 @@ def draft_object(d):
 
 def record_posted(host, result, obj, slot=None, target=None, intent=None):
     """Tell the host a confirmed post exists: world-posted {principal, uri, cid, object, slot?, page?, section?},
-    as the clock principal hostd opens the world with (the only one that may confirm posts).
+    as the clock principal serve opens the world with (the only one that may confirm posts).
     `target` is the (page, section) an agentwiki post carried, so a reply to it routes to the page's object."""
     req = {'op': 'world-posted', 'principal': CLOCK, 'uri': result['uri'], 'cid': result['cid'], 'object': obj,
            **({'intent': intent} if intent else {})}  # the intent settles its reservation
@@ -236,7 +237,8 @@ def main(argv=None, out=None, client=None):
     p.add_argument('--intent', required=True)
     p.add_argument('--credentials', default=CREDENTIALS)
     p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
-    p.add_argument('--host-socket', metavar='PATH', help='hostd socket: reserve, read the quota, record posts')
+    p.add_argument('--host-socket', metavar='PATH', help='serve\'s socket: reserve, read the quota, record posts')
+    p.add_argument('--world', default=os.environ.get('DELVETALK_WORLD', 'town'))
     p.add_argument('--object', '--record', dest='record', metavar='OBJECT', help='the object this card addresses: after a confirmed post, world-posted {object, intent} records it and settles its reservation; required for a live post (the dry run may omit it)')
     p.add_argument('--slot', metavar='PRINCIPAL:INTENT', help='the slot the post settles, as principal:intent')
     p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
@@ -269,8 +271,7 @@ def main(argv=None, out=None, client=None):
         request = build_request(text, reply, mention_facets(reader, text))
         host = None
         if a.host_socket:
-            from transport.hostproc import HostClient
-            host = HostClient(a.host_socket)
+            host = HostClient(a.host_socket, a.world)
         try:
             if not a.authorized:
                 plan = {'dry_run': True, 'intent': a.intent, 'quota': posts(host), 'request': request}

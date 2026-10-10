@@ -9,28 +9,35 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/Dockerfile.host` | the host binary for linux/amd64; final image is the binary and glibc |
 | `deploy/Dockerfile.transport` | python 3.13 slim + the binary + `transport/`, `world/`, the guide |
 | `deploy/build.sh` | builds both, prints the binary's SHA-256, writes `deploy/out/host.sha256` |
-| `deploy/compose.yml` | `delvetalk-hostd`, `delvetalk-http`, `delvetalk-bridge`; `delvetalk-interpret` (profile `town`); `delvetalk-ops` |
-| `deploy/compose.hand.yml` | laid over compose.yml: the front with `--hand-token` and the Delve credentials directory |
+| `deploy/compose.yml` | `delvetalk-host` (`delvetalk-obend serve`), `delvetalk-http`, `delvetalk-bridge`; `delvetalk-interpret` (profile `town`); `delvetalk-ops` |
+| `deploy/compose.hand.yml` | laid over compose.yml: `delvetalk-hand`, the owner's console on its own loopback port, with the root socket and the Delve credentials directory |
 | `deploy/seed.py` | `world-create` of one object from `world/` |
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
 
 The world's opener is ember's DID, `did:plc:6amo7col5h4ciq2gpm5eur7b`, set as
-`DELVETALK_OPENER` on the hostd service (hostd's `--opener` takes it from there); only the opener may create objects with
-a named owner at genesis, change the library, and make the newcomers' objects that `world-arrive` creates.
+`DELVETALK_OPENER` in `.env` (serve's `--opener` takes it from there); only the opener may create objects with
+a named owner at genesis, change the library, and make the newcomers' objects that `world-arrive` creates. The opener
+speaks on the root socket only (below): an op naming the opener on the public socket is refused, "the opener speaks on
+the root socket", so the opener's authority is a mount, not a token (docs/ROOT.md section 1.4).
 
 ## One writer
 
 Two host processes on one journal write two entries at the same height and break
 the chain ("journal broken at height N: height out of sequence"). So exactly one
-program, `delvetalk-hostd`, spawns the host and opens the journal. It holds
-`/data/journal.lock` for its life (exit 75 if taken), restarts the host on death
-by replaying the journal, and serves the front, the bridge, the interpreter,
-`post --object` and `deploy.seed` over `/data/state/host.sock` (mode 0600). Private
-heaps live in the same daemon, addressed by a `heap: <did>` field. At a journal's first open hostd seals
-`world/lib` into it as the library (`--library`; the opener may change it, each heap's owner theirs),
-so packages import `./Plan.obend` and the rest by name. hostd seals `world/lib` together with `world/objects/{Avatar,Env,Wake}.obend` (the packages `world-arrive` creates from, `ARRIVAL` in `transport/hostproc.py`; copied to `<state>/library` at each start), or arrival creates nothing. Those programs
-are clients: stop, start or run them at any time without touching the world.
+process, `delvetalk-host` (`delvetalk-obend serve`, HOST-HANDOFF 5.125), opens the journals. It holds
+`/data/state/journal.lock` for its life (exit 75, "refusing to start a second writer", if taken), keeps every world's
+journal in `/data/state` (`town.journal`; another world's `<name>.journal`, opened at the first op that names it with
+`world: <name>`; private heaps in `heaps/`, addressed by `heap: <did>`), and serves the front, the bridge, the
+interpreter and `post --object` over `/data/state/host.sock` (mode 0600). The opener's ops, `world-root` and the root
+ops (`world-library`, `world-settings`, `world-fork`, `world-snapshot`) take the root socket,
+`/run/delvetalk-root/root.sock` on the host directory `/var/lib/delvetalk/root` (`DELVETALK_ROOT`), mounted into
+`delvetalk-host`, `delvetalk-ops` and the hand and into nothing else. At start serve rebuilds `<state>/library` from
+`--library` (the image's `world/lib`) and `world/objects/{Avatar,Env,Wake}.obend` (the packages `world-arrive` creates
+from) and seals it into each world at its first open (the opener may change it, each heap's owner theirs), so packages
+import `./Plan.obend` and the rest by name. A world idle ten minutes is closed and reopened by replay at its next op.
+The other programs are clients (`transport/host.py`, 99 lines): stop, start or run them at any time without touching
+the world.
 The lock holds where one kernel sees the file: a local Linux
 filesystem (measured on ext4). Docker Desktop's file sharing on a Mac does not
 enforce it across containers (measured), so test the stack there on a named volume.
@@ -42,11 +49,13 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
 
 | Path | `world-status` | Counter bump |
 | --- | --- | --- |
-| (a) hostd's socket, a connection per op | 0.43 to 0.46 ms | 1.27 to 1.29 ms |
-| (b) hostd's socket, one persistent connection | 0.21 ms | 1.03 to 1.08 ms |
-| (c) the raw pipe to the host process | 0.13 to 0.15 ms | 0.87 to 0.94 ms |
+| (a) serve's socket, a connection per op | 0.092 ms | 0.594 ms |
+| (b) serve's socket, one persistent connection | 0.077 ms | 0.606 ms |
+| (c) the raw pipe to a host process | 0.039 ms | 0.494 ms |
 
-`HostClient` now keeps one connection per thread, so production runs path (b) (measured through `HostClient` itself: 0.20 ms and 0.99 ms). A connection per op cost about 0.25 ms; hostd's own dispatch and the pipe add about 0.07 ms; the rest of a bump is the host.
+Measured 2026-10-11 on hbox with foundation's binary of 2026-10-10 (one run). Under `hostd.py` the same rows were 0.43, 0.21 and 0.13 ms
+for `world-status` and 1.27, 1.03 and 0.87 ms for a bump: Python's dispatch and pipe are gone. `HostClient` keeps one
+connection per thread, so production runs path (b).
 
 ## Prerequisites on the workhorse
 
@@ -109,7 +118,7 @@ On hbox (or any machine with Docker; the images are linux/amd64):
 
     deploy/build.sh            # last line: sha256:  <64 hex>  delvetalk-obend (linux/amd64)
     docker save delvetalk:<sha12> delvetalk-host:<sha12> | gzip -1 | ssh root@workhorse 'gunzip | docker load'
-    scp deploy/compose.yml deploy/compose.hand.yml root@workhorse:/opt/delvetalk/
+    scp deploy/compose.yml deploy/compose.hand.yml deploy/watch.sh deploy/delvetalk-watch.service deploy/delvetalk-watch.timer root@workhorse:/opt/delvetalk/
     scp deploy/backup.sh deploy/verify.sh deploy/restore.sh root@workhorse:/opt/delvetalk/deploy/
 
 (From hbox, which has no key for the workhorse, pipe through the laptop: `ssh hbox 'docker save ... | gzip -1' | ssh
@@ -135,9 +144,9 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     DELVETALK_HOST_IMAGE=delvetalk-host:<sha12>     # the backup timer's replay image
     DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b
     COMPOSE_FILE=compose.yml:compose.hand.yml       # once the hand is opened (below)
-    DELVETALK_HAND_TOKEN=<secret>
     DELVETALK_ORIGIN=https://gsb.fg-goose.online     # the portal, and the repository's did:web host
     DELVETALK_REPO_KEY_PATH=/etc/delvetalk/repo/town.key
+    DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc   # the watch bot's rc (owner 10425, mode 0400); "Watching"
 
 The repository key, once (`deploy.repokey` refuses an existing file; it prints the `did:key`, which
 `/.well-known/did.json` then names as `#atproto`; the front does not start without the file, so a box deployed
@@ -148,8 +157,24 @@ before the signed repository makes it the same way before its next `up`):
     docker run --rm --user 10425:10425 --network none -v /etc/delvetalk/repo:/repo "$DELVETALK_IMAGE" \
         python3 -m deploy.repokey --dir /repo --world town
 
-    docker compose up -d --wait delvetalk-hostd
-    docker compose run --rm delvetalk-ops python3 -m deploy.genesis --host-socket /data/state/host.sock
+The root socket's directory, owner 10425, mode 0700, outside the data directory so that no container mounting
+`/data` reaches it:
+
+    install -d -o 10425 -g 10425 -m 0700 /var/lib/delvetalk/root
+    # the hand's token, a file and never an argv or .env (`ps` shows argv to every local user):
+    (umask 0277; openssl rand -hex 32 > /etc/delvetalk/hand.token) && chown 10425:10425 /etc/delvetalk/hand.token
+
+Least privilege in compose: `delvetalk-host` runs with `network_mode: none` (unix sockets only); the front, the bridge
+and the interpreter mount `${DELVETALK_DATA}/state` alone, not the whole data directory; the root socket's directory
+is mounted into `delvetalk-host`, `delvetalk-ops` and `delvetalk-hand` only. All run as 10425: serve's sockets are 0600,
+so a separate uid for the hand needs serve to make the root socket group-readable first (host lane).
+
+A data directory from before `serve` (the journal at `/data/world.journal`, the lock at `/data/journal.lock`) is moved
+once, with the stack down: `mv /var/lib/delvetalk/v2/world.journal /var/lib/delvetalk/v2/state/town.journal` (serve
+journals the name `town` into it at its first open; the old `journal.lock` is no longer read).
+
+    docker compose up -d --wait delvetalk-host
+    docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock
 
 `deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/`, so it, `deploy/library-update.sh` and
 `deploy.spend` run in `delvetalk-ops`). The opener arrives first (`world-arrive`), then creates `policy`,
@@ -199,6 +224,24 @@ Post the challenge text it prints from that account, then rerun with
 `--verify at://<did>/town.delve.feed.post/<rkey>` to view as the verified DID
 and revoke the throwaway credential.
 
+Then custody and the watch, before the welcome is posted, so a fresh deploy has them from its first hour (each is
+explained in its own section below; run as root in `/opt/delvetalk`):
+
+    # 1. the backup timer ("Durability and backups"): write the two units shown there, then
+    systemctl daemon-reload && systemctl enable --now delvetalk-v2-backup.timer
+    systemctl start delvetalk-v2-backup.service && cat /var/backups/delvetalk/last-verify     # ok <stamp>
+    # 2. the pull key, one line in /root/.ssh/authorized_keys (the public half of hbox's ~/.ssh/delvetalk-backups):
+    restrict,command="/usr/bin/rrsync -ro /var/backups/delvetalk" ssh-ed25519 AAAA... delvetalk-backups-pull@hbox
+    #    and on hbox, pull.env naming this deploy's DELVETALK_HOST_IMAGE; its timer's next run pulls and verifies
+    # 3. the watch ("Watching"): the rc at $DELVETALK_WATCH_ZULIPRC, the stream delvetalk-ops with the bot subscribed
+    install -o 10425 -g 10425 -m 0400 <the bot's .zuliprc> /etc/delvetalk/watch.zuliprc
+    cp delvetalk-watch.service delvetalk-watch.timer /etc/systemd/system/ && systemctl daemon-reload
+    systemctl start delvetalk-watch.service && journalctl -u delvetalk-watch -n 20     # one run by hand, no error
+    systemctl enable --now delvetalk-watch.timer
+    # 4. one restore drill on hbox from the newest pulled tarball ("The restore drill"), and its result recorded
+
+A step skipped here is a deploy without custody or without a watch: say which in the deploy's record.
+
 ## The first welcome card
 
 Posting is a human command and is never in a container's `up`. The Delve
@@ -226,32 +269,40 @@ recorded by the bridge's next run, never posted twice.
 
 ## Open the hand
 
-The front keeps running, and the bridge and interpreter run against hostd (`bridge run --poll`, `interpret run --poll`, or
-`--once` by hand as in "First start"). The owner works the town from the hand, a console the front serves at `/hand/`
-only when it is started with a secret, and only on a listener of its own (`--hand-bind`, default 127.0.0.1, and
-`--hand-port`, default 8766), which serves nothing else; the public port never serves `/hand/`:
+The front keeps running, and the bridge and interpreter run against serve (`bridge run --poll`, `interpret run --poll`, or
+`--once` by hand as in "First start"). The owner works the town from the hand, a console of its own, never the front:
+`transport.hand serve` answers `/hand/` and nothing else on its listener (`--bind`, default 127.0.0.1, `--port`,
+default 8766), asks the secret once (read from `--token-file`, `DELVETALK_HAND_TOKEN_FILE` or `DELVETALK_HAND_TOKEN`,
+never from argv), and speaks to the host on the root socket
+(`--root-socket` or `DELVETALK_ROOT_SOCKET`), as the opener; the front has no hand at all:
 
-    python3 -m transport.http --state /data/state --hand-token <secret> --credentials /run/delve.json
+    python3 -m transport.hand serve --state /data/state --credentials /run/delve.json
 
-(in compose that is `deploy/compose.hand.yml`, named by `COMPOSE_FILE` in `.env` with `DELVETALK_HAND_TOKEN`; it mounts
-`/etc/delvetalk/delve/` (owner 10425, mode 0700) read-only, where the owner puts `credentials.json`, read only at a
-Post, and publishes the hand's port on workhorse's loopback only, `127.0.0.1:8766`, which `DELVETALK-LOCAL` keeps to root,
-so reach it by a forward as root):
+(in compose that is `delvetalk-hand` in `deploy/compose.hand.yml`, named by `COMPOSE_FILE` in `.env`, its token the
+compose secret `/etc/delvetalk/hand.token`; it mounts the root socket's directory, and `/etc/delvetalk/delve/` (owner
+10425, mode 0700) read-only, where the owner puts `credentials.json`, read only at a Post, and publishes the hand's
+port on workhorse's loopback only, `127.0.0.1:8766`, which `DELVETALK-LOCAL` keeps to root, so reach it by a forward as
+root):
 
     ssh -L 8766:127.0.0.1:8766 root@workhorse     # then open http://127.0.0.1:8766/hand/?token=<secret>
 
 The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. The page
 has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
-retries, hostd pid), a search by receipt slug (`world-resolve`), the OUTBOX and the INBOX. The outbox groups drafts by
+retries, host pid), a search by receipt slug (`world-resolve`), the OUTBOX and the INBOX. The outbox groups drafts by
 the post they answer, the post beside an editable textarea of the draft, with three buttons: **Post** runs
 `post.post_draft`, the code `post.py --draft` runs (the edited text, the owner's credentials file, `world-posted` for the
 draft's object, the draft marked posted); **Skip** marks it `skipped` with a reason and it leaves the outbox; **Hold**
 leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
 (what, who, when, draft id). A turn that suspends on an interpretation has no draft until the interpretation settles; a
 model failure is submitted to the host, which retries a transient one with backoff up to 8 attempts (`attempted` entries). Draft principals are observed, unverified DIDs.
+A turn made over HTTP (`/AGENTS.md/world/<o>/<method>` or the play page) that the host admits with a write on an object
+the public reads (`world-view` as `anonymous` answers it) is drafted here as a town reply is (`<height>-http-<hash>.json`,
+`http: {intent}`, no `replyTo`, the turn's offers or else its receipt line), once per receipt, so the owner chooses
+whether the town hears of it; a heap turn, a refusal and a write to a private object draft nothing. On Zulip the bridge
+never posts such a draft itself (it answers no message); Post sends it to Delve.
 The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport.hand <verb>
---state /data/state [--credentials FILE] [--json]` (`DELVETALK_STATE` and `DELVETALK_CREDENTIALS` stand in for the
-flags; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):
+--state /data/state [--root-socket PATH] [--world W] [--credentials FILE] [--json]` (`DELVETALK_STATE`,
+`DELVETALK_ROOT_SOCKET` and `DELVETALK_CREDENTIALS` stand in for the flags; the ops container sets the first two; `--json` prints one JSON document, otherwise readable text; each action is logged with `who: "cli"`):
 
 - `inbox [--since HEIGHT] [--kind summon|reply|post|wiki-page|wiki-edit|wiki-merge]`: observations newest first, with
   what became of each (whether a post is a spell is the host's reading, shown in its fate).
@@ -260,7 +311,7 @@ flags; `--json` prints one JSON document, otherwise readable text; each action i
 - `edit DRAFT --text-file F | --stdin`: replace the draft text, keeping the original.
 - `post DRAFT [--object ID]`: post it, record it with the host for its object (or `--object`), mark it posted.
 - `skip DRAFT --reason R` and `hold DRAFT`: take it out of the outbox with a reason, or leave it.
-- `status`: height, posts this hour, model spend, pending interpretations and retries, hostd pid.
+- `status`: height, posts this hour, model spend, pending interpretations and retries, host pid.
 - `search SLUG`: resolve a receipt slug with `world-resolve`.
 - `retry URI`: forget that the bridge skipped an observation, so the next run routes it again.
 - `reply URI --text-file F --object ID`: draft a hand-written reply to any observed post as if the object had offered it;
@@ -270,6 +321,23 @@ flags; `--json` prints one JSON document, otherwise readable text; each action i
   `world-posted {unposted: true, reason}` so replies stop routing to it, and the draft and `hand-log.jsonl` keep the fact.
   Anyone else's post is refused before any call.
 - `log [--tail N]`: the last actions in `hand-log.jsonl`.
+
+Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/root/` (a red rule
+across the top, a reason or reading required on every form, served on the hand's listener only, linked from `/hand/`):
+
+- `quiet --who P --hours N`, `unquiet --who P`, `retire|unretire|hide|show --object O`, `revoke --grant G`, `expire
+  --scratch S` (refused until scratch worlds exist), each `--reading R`: the power as a turn by the opener on
+  `world` or the card, journaled and receipted. `settings [--postQuota N] [--interpretQuota N] [--modelQuota N]
+  --reading R`: `world-settings`. `modlog [--object O] [--tail N]`: the object's `world-history`, or the journal's
+  newest root, moderated and opener entries. `find TEXT`: observed handles, object ids by prefix, a receipt by slug.
+- `root dump O`: the object as the opener reads it (view, record, sources; the page's editor saves a `set` for each
+  changed field). `root set --object O --field F --value JSON|--value-file F`, `root delete --object O`, `root as
+  --principal P --object O --method M --argument JSON --intent I`, `root settings [--clock N] [--postQuota N]
+  [--interpretQuota N] [--modelQuota N]`, `root library --dir D`, `root ignore|unignore --height N`, `root card
+  --object O [--text-file F]` (no text clears), `root quiet|hide|show|retire|unretire|revoke ...`, each `--reason R`:
+  one `world-root`, an entry marked `root` with its reason, public. `root entries [--after N] [--object O]
+  [--principal P]` pages the journal raw; `root edit N [--journal J] [--out F]` saves entry N and prints the offline
+  `root-edit rewrite`, since an entry is never edited in place.
 
 The command-line way remains: `python3 -m transport.bridge outbox --state STATE` prints each draft with its own
 `post.py` command.
@@ -293,7 +361,7 @@ in this path reads Delve credentials.
     deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20]
     deploy/playtest.sh --stop
 
-It starts hostd on a fresh journal under `~/.delvetalk-playtest/run-<stamp>/` (`--dir` or `DELVETALK_PLAYTEST_DIR`
+It starts `delvetalk-obend serve` over a fresh directory under `~/.delvetalk-playtest/run-<stamp>/state/` (`--dir` or `DELVETALK_PLAYTEST_DIR`
 moves it; earlier runs are kept), runs genesis, posts `docs/previews/zulip-welcome-v3.txt` (its `<bot name>` filled in) to the stream's `welcome`
 topic and records it against `directory`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds). The
 `.zuliprc` is the bot's: its user must be subscribed to the stream (a guest cannot create one; check `users/me/subscriptions` first, since a stream the bot cannot see answers `Invalid channel name`). With `--topic NAME` the playtest joins an existing conversation: the welcome goes to that topic instead of `welcome`, and the observer reads only that topic (the Zulip narrow `channel` + `topic`), so the world never sees the stream's other topics; replies land in the same topic. A fresh bridge observes nothing posted before its start. The model credentials are as under "Model
@@ -343,9 +411,9 @@ run by hand failed `No module named deploy.watch`. After an image from c5d4eb8 o
     python3 -m deploy.open --state /data/state --world ring --transport zulip --realm tulip.arke.me --channel ring --zuliprc ~/.zuliprc-ring
 
 writes the world's bridge row, `<state>/bridges/ring.json` (`{world, transport, realm, channel, zuliprc, topicMode}`,
-docs/FEDERATION.md section 4), and prints the commands that start it; it starts nothing. Until the host's `serve`
-lands, a world runs on a hostd of its own under `<state>/worlds/<world>/`, with its own bridge and interpreter. A
-world name is `[a-z][a-z0-9-]{0,31}`, never `did`, `zulip`, `at`, `world`, `me` or `scratch`; a second open of the
+docs/FEDERATION.md section 4), and prints the commands that start its bridge and interpreter; it starts nothing. The
+world's journal is serve's `<state>/ring.journal`, opened at the first op naming `world: ring`; its bridge and
+interpreter keep their own state under `<state>/worlds/ring/` and pass `--world ring`. A world name is `[a-z][a-z0-9-]{0,31}`, never `did`, `zulip`, `at`, `world`, `me` or `scratch`; a second open of the
 same name is refused. Genesis and the welcome follow as for the town.
 
 ## Rotating the Anthropic key
@@ -359,7 +427,7 @@ an argv.
 ## Durability and backups
 
 The host appends each step's entries and fsyncs once before it replies
-(`spec/native/sync.c`: `fsync`; `F_FULLFSYNC` only when `world-open` asks for `sync: full`, which hostd does not). That holds
+(`spec/native/sync.c`: `fsync`; `F_FULLFSYNC` only with `serve --sync full`, which compose does not pass). That holds
 only if fsync reaches the disk: use a bind mount of a local ext4 or ZFS
 directory, as here. Not NFS, not a network volume driver. Docker Desktop's
 file sharing on a Mac is for testing, not custody.
@@ -367,7 +435,7 @@ file sharing on a Mac is for testing, not custody.
     deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v2 /var/backups/delvetalk
 
 It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
-copies SQLite through its backup API, replays every journal (world and heaps)
+copies SQLite through its backup API, replays every journal (`state/*.journal` and `state/heaps/`)
 in a throwaway host with no network, and only then writes a dated tarball
 and its `.sha256`, and records `ok <stamp>` or `broken <stamp>` in `last-verify` (the watch reads it). Exit 1 means a
 journal is broken: the tarball is not made. The timer installed on the workhorse:
@@ -422,7 +490,7 @@ directory, brought up on another port.
 
     deploy/restore.sh --image delvetalk-host:<sha12> /tank/delvetalk-backups/delvetalk-<stamp>.tar.gz /tmp/drill/v2
     # .env as on the workhorse (DELVETALK_IMAGE, DELVETALK_HOST_IMAGE), with the drill's own paths; the drill makes no model call
-    DELVETALK_DATA=/tmp/drill/v2 DELVETALK_PRIVATE_IP=127.0.0.1 DELVETALK_ANTHROPIC_KEY_PATH=/tmp/drill/no.key \
+    DELVETALK_DATA=/tmp/drill/v2 DELVETALK_ROOT=/tmp/drill/root DELVETALK_PRIVATE_IP=127.0.0.1 DELVETALK_ANTHROPIC_KEY_PATH=/tmp/drill/no.key \
       docker compose -p delvetalk-drill --profile town up -d --wait      # first: touch /tmp/drill/no.key
     deploy/smoke.sh http://127.0.0.1:8765 --pin <sha256>      # the home page shows the restored entry N
     docker compose -p delvetalk-drill down
@@ -460,7 +528,7 @@ It rebuilds `<state>/library` from the image's `world/` (the library plus the ar
 `world-library` as the opener; the world law judges it, the new pin is journaled and printed. Ship the new `world/`
 first (a new image), since replay re-seals from the same bytes. Existing objects keep the pin they were compiled
 under; objects created or reprogrammed afterwards compile against the new library. The front's REPL keeps the pin it
-loaded at hostd's start until `docker compose restart delvetalk-hostd`.
+loaded at serve's start until `docker compose restart delvetalk-host`.
 
 ## When the chain breaks
 
@@ -497,23 +565,23 @@ stays red and the journal is untouched: set the old tag back and `up` again.
 The six incidents of docs/OPERATIONS.md section b, each with the commands that diagnose and fix it, the line for the
 channel (hob's register: what happened and what to do next, no apology) and what to record. Every command runs in
 `/opt/delvetalk` on the workhorse after `set -a; . ./.env; set +a`; `hand` is `docker compose --profile ops run --rm -v
-"$DELVETALK_WATCH_ZULIPRC:/run/watch/zuliprc:ro" delvetalk-ops python3 -m transport.hand` with `--state /data/state`
-after the verb (the bot's rc mounted where `unpost --zuliprc` reads it). A and F lose data if done in the wrong order: both stop the writers first. The
-moderation verbs named "when ROOT section 3 lands" (`quiet`, `retire`, `hide`, `find`, `settings`) are the host
-lane's; until then their fallback is given.
+"$DELVETALK_WATCH_ZULIPRC:/run/watch/zuliprc:ro" delvetalk-ops python3 -m transport.hand` (the ops container names the
+state and the root socket; the bot's rc is mounted where `unpost --zuliprc` reads it). A and F lose data if done in the wrong order: both stop the writers first. The
+moderation verbs (`quiet`, `retire`, `hide`, `find`, `settings`) are the hand's, over the host's powers (ROOT section 2,
+replay edition 3); root is one click further (`hand root ...`, `/hand/root/`).
 
 **A. The host will not start.** Healthcheck red; every reply "host unavailable".
 
-    docker compose logs --tail 50 delvetalk-hostd
+    docker compose logs --tail 50 delvetalk-host
 
 - `journal broken at height N: unterminated final line`: a torn tail; "A torn tail" above (backup.sh cuts it in its
   mirror and replays, restore.sh puts the verified copy back).
 - `height out of sequence`: a second writer. Find it before anything else: `docker compose ps -a`, `fuser -v
-  /var/lib/delvetalk/v2/journal.lock` (a writer elsewhere holds the lock; hostd exits 75 naming it).
+  /var/lib/delvetalk/v2/state/journal.lock` (a writer elsewhere holds the lock; serve exits 75 naming it).
 - `journal replay edition 1; this host is 2`: set the previous `DELVETALK_IMAGE`/`DELVETALK_HOST_IMAGE` back in `.env`
   and `docker compose --profile town up -d --wait`; a new edition is "A new binary" and docs/OPERATIONS.md's upgrade path.
 - `journal exceeds byte capacity`: docs/OPERATIONS.md section c, the journal bound.
-- the library's bytes differ: hostd rebuilds `<state>/library` from the image's `world/` at every start, so the image is
+- the library's bytes differ: serve rebuilds `<state>/library` from the image's `world/` at every start, so the image is
   not the commit the journal sealed. Set that commit's image back in `.env`; a deliberate change of library is
   "Changing the library after launch", once the host is up.
 
@@ -531,8 +599,7 @@ On Zulip the bot posts itself; stop it first, then withdraw what it said:
     hand unpost DRAFT --reason 'misread' --zuliprc /run/watch/zuliprc
     docker compose --profile town up -d --wait delvetalk-bridge
 
-If a card's own render is the cause, retire it (`retire`, when ROOT section 3 lands; until then stop the bridge and
-leave it stopped). Channel: `hob: the hand withdrew that; its receipt stays.` Record: the object and the receipt.
+If a card's own render is the cause, retire it: `hand retire --object OBJ --reading 'it loops'` (`unretire` reverses). Channel: `hob: the hand withdrew that; its receipt stays.` Record: the object and the receipt.
 
 **C. The model is down.** Interpretations pile up (the watch's `interpretations` line); the host retries with backoff
 to 60 clock minutes, 8 attempts, then `unclear: model: transport`; spells are unaffected.
@@ -546,21 +613,21 @@ words for now; a spell needs no reading. The cards still answer.` Record: the ho
 
 **D. A quota is exhausted.** Which one: `hand status --json` (`reservations`, `hour.refused.quota`, `model.day`).
 
-- posts on Delve (`16 of 16`, drafts held `rate_limited`): wait for `next`, or raise `postQuota` (`settings --post N`,
-  when ROOT section 3 lands).
+- posts on Delve (`16 of 16`, drafts held `rate_limited`): wait for `next`, or raise it: `hand settings --postQuota N --reading R`.
 - interpretations per principal (48 an hour, `quota` refusals with `next`): the resident is told by the host; nothing
   to do unless it is a loop, which is B.
-- the model cap per day: the world's words wait for the clock day to turn; `settings --model N` with a reading, when
-  ROOT section 3 lands. Channel: `hob: my readings for today are spent; spells run as they always do.`
+- the model cap per day: the world's words wait for the clock day to turn, or `hand settings --modelQuota N --reading
+  R`. Channel: `hob: my readings for today are spent; spells run as they always do.`
 
 Record: which quota, and whether it was a loop.
 
-**E. A resident is abusive.** `quiet WHO --hours 24 --reading R` when ROOT section 3 lands; a card that carries it is
-hidden then retired (`hide`, `retire`). What the bot already said on Zulip:
+**E. A resident is abusive.** `hand quiet --who DID --hours 24 --reading R` (their turns are refused `quiet` until the
+clock passes; `hand root quiet --principal DID --hours 0 --reason R` lifts it while the power's `unquiet` is refused by
+the host); a card that carries it is hidden then retired (`hand hide --object OBJ --reading R`, `hand retire ...`). What
+the bot already said on Zulip:
 
     hand unpost DRAFT --reason 'abuse' --zuliprc /run/watch/zuliprc
 
-Until `quiet` lands: `hand skip` their drafts on Delve, and on Zulip stop the bridge (B) while the hand decides.
 Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt.
 
 **F. The box is full.**

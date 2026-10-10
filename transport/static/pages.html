@@ -68,10 +68,21 @@
 <p class="quiet"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span class="stamp">— quiet</span>(no reply)</p>
 <!-- hand: the owner's console -->
 <h1 class="title">The hand<small>nothing is posted without a click</small></h1>{note}
-<p class="codes">{codes}</p>
+<p class="codes">{codes}</p><p class="doors"><a class="door" href="/hand/root/">ROOT: EDIT, IGNORE, ACT AS; MODERATE</a></p>
 <section><h2>Search</h2><form method="get" action="/hand/"><label>Receipt slug <input name="slug" placeholder="bofab-lukid"></label><button class="door">Resolve</button></form>{found}</section>
 <section id="outbox"><h2>Outbox</h2>{outbox}</section>
 <section><h2>Inbox</h2>{inbox}</section>
+<!-- hand_root: root, one click past moderation: every form one request on the root socket, every form a reason -->
+<hr class="root"><h1 class="title">Root<small>journaled, marked root, public; the reason is on the entry</small></h1>{note}
+<p class="codes">{codes}</p>
+<section><h2>Object</h2><form method="get" action="/hand/root/"><label>Edit <input name="object" placeholder="garden"></label><button class="door">Open</button></form>{editor}</section>
+<section><h2>Journal</h2>{entries}<p class="doors"><a class="door" href="/hand/root/?before={before}">OLDER</a></p></section>
+<section><h2>Moderation</h2>{mod}</section>
+<section><h2>Root acts</h2>{root}</section>
+<!-- hand_form: one verb; the reason or the reading is required -->
+<details class="action"><summary><span class="code">{face}</span> {verb}</summary><form method="post" action="/hand/{face}/{verb}">{inputs}<input name="{why}" required placeholder="{why} (required)"><button class="door">{verb}</button></form></details>
+<!-- hand_entry: a journal entry raw, with ignore and unignore -->
+<li class="slip {tag}"><span class="code">entry {height}</span><span class="line">{line}</span><details><summary>raw</summary><pre class="listing">{raw}</pre></details><form method="post" action="/hand/root/{verb}"><input type="hidden" name="height" value="{height}"><input name="reason" required placeholder="reason (required)"><button class="door">{verb}</button></form></li>
 <!-- hand_code -->
 <span class="code">{text}</span>
 <!-- hand_note -->
@@ -102,6 +113,10 @@
 <section><h2>Actions</h2><p>Each runs a turn as you, the same turn the play page runs; the object's law decides.</p>{forms}<form method="post" action="/play/{href}"><input type="hidden" name="text" value="delvetalk {id} ?"><button class="ask">? usage</button></form></section>
 <!-- action -->
 <details class="action"><summary><span class="code">POST</span> {method}</summary><form method="post" action="/play/{href}"><input type="hidden" name="method" value="{method}">{inputs}<button>{method}</button></form>{spell}</details>
+<!-- spells: an object's actions as spells only, for the brief text view -->
+<section><h2>Spells</h2><p>Reply with one; the object's law decides.</p>{spells}<pre class="spell">delvetalk {id} ?</pre></section>
+<!-- whole: the brief text view's way to the rest -->
+<p class="doors"><a class="door" href="{href}">THE LAW, THE SOURCE AND EVERY RECEIPT</a></p>
 <!-- spell: the same call as a spell, for a reply -->
 <pre class="spell">{spell}</pre>
 <!-- f_text -->

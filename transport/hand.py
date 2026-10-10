@@ -1,8 +1,9 @@
 """The hand: the owner's operator console, one module with two faces.
 
 Every operation is a method of Hand returning plain data (raising HandError to refuse). The web face is the front's
-/hand/ page, served only with --hand-token; the CLI face is `python3 -m transport.hand <verb> [--json]`, for the owner's
-assistant over ssh. Both read the bridge's state directory and ask hostd; nothing is posted without Post (a click, or
+/hand/ page, served by `hand serve` on a listener of its own; the CLI face is `python3 -m transport.hand <verb> [--json]`,
+for the owner's assistant over ssh. Both read the bridge's state directory and ask the host on its root socket, the
+opener's (HOST-HANDOFF 5.125), which only the hand's and the ops containers mount; nothing is posted without Post (a click, or
 the `post` verb), with the owner's credentials file. Every action appends a line to <state>/hand-log.jsonl.
 """
 import argparse
@@ -20,11 +21,10 @@ from pathlib import Path
 
 from deploy import spend
 from deploy.genesis import OPENER as OWNER
-from transport import post, pages
+from transport import post, pages, root
 from transport.bridge import all_observations, awaiting_path, skipped, uri_hash, write_atomic
 from transport.delve import Failure, canonical
-from transport.hostd import CLOCK
-from transport.hostproc import HostClient
+from transport.host import CLOCK, add_host_args, connect
 
 CLIP, HAND_COOKIE = 400, 'dt_hand'
 
@@ -79,7 +79,7 @@ class Hand:
         return {'journal height': st.get('height'), 'posts this hour': f'{delve.get("used", 0)} of {delve.get("quota", "?")}',
                 f'model spend {month}': f'${spent.get("dollars", 0):.4f} ({spent.get("calls", 0)} calls)',
                 'interpretations pending': f'{len(waiting)} ({len(retrying)} retrying)',
-                'hostd pid': pid.read_text().strip() if pid.exists() else 'none'}
+                'host pid': pid.read_text().strip() if pid.exists() else 'none', 'shadowed': len(st.get('shadowed') or [])}
 
     def probe(self, backups=None, journal=None):
         """The one monitoring probe (`status --json`, docs/OPERATIONS.md section b): plain numbers, every threshold the watch's."""
@@ -94,7 +94,7 @@ class Hand:
             hour = {'window': f'{len(entries)} newest entries', 'turns': len(entries), 'refused': dict(collections.Counter(
                 o.get('class') or '?' for o in outcomes if o.get('tag') == 'refused'))}
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
-        journal = Path(journal) if journal else self.state.parent / 'world.journal'
+        journal = Path(journal) if journal else self.state / 'town.journal'
         sizes = []
         if journal.exists():
             with open(journal, 'rb') as f:
@@ -249,6 +249,56 @@ class Hand:
         self.log('reply', name, post=uri, object=object)
         return {'drafted': name}
 
+    # ---- root and moderation (docs/ROOT.md 1.6, 2.3): one request each on the root socket, as the opener
+
+    def act(self, face, verb, given):
+        """A root act (`face` root, with a reason) or a moderation power (`mod`, with a reading); logged with its height."""
+        try:
+            req = root.request(face, verb, given, self.owner, self.clock)
+        except (ValueError, KeyError, OSError) as err:
+            raise HandError(f'{verb}: {err}') from None
+        got = self.host.send(req)
+        if got.get('status') == 'error':
+            raise HandError(f"{verb}: {got.get('message')}")
+        self.log(f'{face}:{verb}', None, reason=req.get('reason') or req.get('reading'), height=(got.get('receipt') or {}).get('height'))
+        return got
+
+    def save(self, obj, form):
+        """The object editor's Save: a `set` for each field whose text changed from the dump it was shown, one entry each."""
+        shown = json.loads(form.get('shown') or '{}')
+        changed = [k for k in shown if k in form and json.loads(form[k]) != shown[k]]
+        return {'set': [self.act('root', 'set', {'object': obj, 'field': k, 'value': form[k], 'reason': form.get('reason', '')})['status'] for k in changed]}
+
+    def root_page(self, query):
+        T, q = pages.T, lambda t: e(str(t))
+        st = self.host.send({'op': 'world-status'})
+        codes = ''.join(T['hand_code'].format(text=q(t)) for t in (f"entry {st.get('height')}", f"shadowed {len(st.get('shadowed') or [])}",
+                                                                   f"this hour {json.dumps(st.get('hour') or {}, sort_keys=True)}"))
+        editor = ''
+        if query.get('object'):
+            d = root.dump(self.host, self.owner, query['object'])
+            fields = {'state': (d['view'].get('state')), 'law': (d['record'].get('record') or {}).get('law')}
+            editor = (T['hand_card'].format(text=q(json.dumps(d, indent=1, sort_keys=True)[:6000])) +
+                      f'<form method="post" action="/hand/root/save"><input type="hidden" name="object" value="{q(query["object"])}">'
+                      f'<input type="hidden" name="shown" value="{q(json.dumps(fields))}">' +
+                      ''.join(f'<label>{k} <textarea name="{k}" rows="6">{q(json.dumps(v, indent=1))}</textarea></label>' for k, v in fields.items()) +
+                      '<input name="reason" required placeholder="reason (required)"><button class="door">Save</button></form>')
+        before = int(query['before']) if query.get('before', '').isdigit() else None
+        rows = root.entries(self.host, self.owner, limit=20) if before is None else \
+            self.host.send({'op': 'world-entries', 'principal': self.owner, 'reverse': True, 'before': before, 'limit': 20}).get('entries') or []
+        ignored = set(st.get('ignored') or [])
+        entries = '<ol class="ledger">' + ''.join(T['hand_entry'].format(
+            tag=q((r.get('outcome') or {}).get('tag')), height=q(r.get('height')), raw=q(json.dumps(r, indent=1, sort_keys=True)),
+            line=q(f"{outcome_of(r)} · {(r.get('identity') or {}).get('principal')} · {(r.get('identity') or {}).get('intent')}" + (' · root' if r.get('root') else '')),
+            verb='unignore' if r.get('height') in ignored else 'ignore') for r in rows) + '</ol>'
+        form = lambda face, verb, spec, why: T['hand_form'].format(face=face, verb=verb, why=why, inputs=''.join(
+            f'<label>{n} <textarea name="{n}" rows="3"></textarea></label>' if k == 'json' else f'<label>{n} <input name="{n}"></label>' for n, k in spec))
+        mod = ''.join(form('mod', v, spec, 'reading') for v, (_, spec) in root.POWERS.items()) + form('mod', 'settings', root.MOD_SETTINGS, 'reading')
+        note = T['hand_note'].format(text=q(query['note'])) if query.get('note') else ''
+        return pages.page('root', 'owner', T['hand_root'].format(note=note, codes=codes, editor=editor, entries=entries,
+                                                                  before=q(min([r.get('height') or 0 for r in rows] or [0])), mod=mod,
+                                                                  root=''.join(form('root', v, spec, 'reason') for v, spec in root.ROOT.items())))
+
     # ---- the web face: (method, path, cookie header, form) -> (code, html, headers)
 
     def handle(self, method, target, cookie='', form=None):
@@ -267,14 +317,23 @@ class Hand:
             except HandError as err:
                 done = {'note': str(err)}
             if done is not None:
-                note = ' '.join(str(v) for v in done.values() if isinstance(v, str))
-                return 303, '', [('Location', '/hand/?' + urllib.parse.urlencode({'note': note}) + '#outbox')]
+                note = ' '.join(str(v) for v in done.values() if isinstance(v, (str, list)))
+                back = '/hand/root/?' if path.startswith(('/hand/root', '/hand/mod')) else '/hand/?'
+                return 303, '', [('Location', back + urllib.parse.urlencode({'note': note}) + ('' if back == '/hand/root/?' else '#outbox'))]
         if method == 'GET' and path == '/hand':
             return 200, self.page(query), []
+        if method == 'GET' and path == '/hand/root':
+            return 200, self.root_page(query), []
         return 404, pages.page('not found', None, '<h1>not found</h1>'), []
 
     def web_action(self, path, form):
         """The POSTed form as one of the operations above; None for an unknown path or action."""
+        face, _, verb = path[len('/hand/'):].partition('/')
+        if path == '/hand/root/save':
+            return self.save(form.get('object', ''), form)
+        if face in ('root', 'mod') and (verb in root.ROOT if face == 'root' else verb in root.POWERS or verb == 'settings'):
+            got = self.act(face, verb, form)
+            return {'done': f"{verb}: {got.get('status')}" + (f", entry {got['receipt'].get('height')}" if got.get('receipt') else '')}
         if path.startswith('/hand/draft/'):
             i = path.rsplit('/', 1)[1]
             acts = {'post': lambda: self.post(i, form.get('text')), 'skip': lambda: self.skip(i, form.get('reason', '')), 'hold': lambda: self.hold(i)}
@@ -312,16 +371,49 @@ def text_of(data, indent=''):
     return indent + str(data)
 
 
+def given(a):
+    """A root or moderation verb's flags as the form the web face posts; `--<name>-file` gives a JSON value or a card's text."""
+    out = {k: str(v) for k, v in vars(a).items() if v is not None and not k.endswith('_file')}
+    return out | {k[:-5]: Path(v).read_text() for k, v in vars(a).items() if k.endswith('_file') and v}
+
+
+def cli_root(h, a):
+    if a.rverb == 'dump':
+        return root.dump(h.host, h.owner, a.object)
+    if a.rverb == 'entries':
+        return root.entries(h.host, h.owner, a.after, a.limit, a.object, a.principal)
+    if a.rverb == 'edit':
+        found = h.host.send({'op': 'world-entries', 'principal': h.owner, 'after': a.height - 1, 'limit': 1}).get('entries') or []
+        if not found:
+            raise HandError(f'no entry {a.height}')
+        return {'saved': a.out, 'run': root.edit_command(found[0], a.height, a.journal, a.out)}
+    return h.act('root', a.rverb, given(a))
+
+
 def zulip_client(rc):
     from transport.zulip import Client
     return Client(rc)
+
+
+def serve(a, host):
+    """The web face on its own listener, which serves /hand/ and nothing else; never the public port."""
+    from transport.http import Front
+    token = Path(a.token_file).read_text().strip() if a.token_file else os.environ.get('DELVETALK_HAND_TOKEN', '')
+    if not token:
+        raise SystemExit('hand serve: a token, from --token-file or DELVETALK_HAND_TOKEN, is required')
+    console = Front((a.bind, a.port), host, None, hand=Hand(a.state, host, token, a.credentials))
+    try:
+        console.serve_forever()
+    finally:
+        host.close()
+    return 0
 
 
 def main(argv=None, out=None, host=None, poster=post.post_draft):
     out = out or sys.stdout
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument('--state', default=os.environ.get('DELVETALK_STATE'), help='the bridge state directory (or DELVETALK_STATE)')
-    common.add_argument('--host-socket', metavar='PATH')
+    add_host_args(common, root=True)
     common.add_argument('--credentials', default=os.environ.get('DELVETALK_CREDENTIALS', post.CREDENTIALS))
     common.add_argument('--json', action='store_true', help='one JSON document instead of text')
     ap = argparse.ArgumentParser(prog='hand.py', description='the owner\'s console, command-line face')
@@ -331,25 +423,42 @@ def main(argv=None, out=None, host=None, poster=post.post_draft):
             'edit': [('draft', {}), ('--text-file', {}), ('--stdin', dict(action='store_true'))],
             'post': [('draft', {}), ('--object', {})], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],
             'unpost': [('draft', {}), ('--reason', dict(required=True)), ('--zuliprc', dict(default=os.environ.get('DELVETALK_ZULIPRC')))],
-            'status': [('--journal', dict(help='--json: the world journal (default <state>/../world.journal)')),
+            'status': [('--journal', dict(help='--json: the world journal (default <state>/town.journal)')),
                        ('--backups', dict(help='--json: the backup directory (default DELVETALK_BACKUPS or /var/backups/delvetalk)'))], 'search': [('slug', {})], 'retry': [('uri', {})],
             'reply': [('uri', {}), ('--text-file', dict(required=True)), ('--object', dict(required=True))],
-            'log': [('--tail', dict(type=int, default=20))]}
+            'log': [('--tail', dict(type=int, default=20))],
+            'serve': [('--token-file', dict(default=os.environ.get('DELVETALK_HAND_TOKEN_FILE'), help='the file holding the secret asked once (or DELVETALK_HAND_TOKEN); never argv')),
+                      ('--bind', dict(default='127.0.0.1', help='loopback, reached by an ssh forward')), ('--port', dict(type=int, default=8766))]}
+    spec |= {'modlog': [('--object', {}), ('--tail', dict(type=int, default=20))], 'find': [('text', {})]}
+    flags = lambda fields, why: [(f'--{n}', {}) for n, _ in fields] + [(f'--{n}-file', {}) for n, k in fields if k == 'json' or n == 'text'] + \
+        [(f'--{why}', dict(required=True))]
+    spec |= {v: flags(f, 'reading') for v, (_, f) in root.POWERS.items()} | {'settings': flags(root.MOD_SETTINGS, 'reading')}
     for name, args in spec.items():
         p = sub.add_parser(name, parents=[common])
+        for a, k in args:
+            p.add_argument(a, **k)
+    rp = sub.add_parser('root', parents=[common], help='root acts and reads, one click past moderation (docs/ROOT.md 1.6)').add_subparsers(dest='rverb', required=True)
+    for name, args in {**{v: flags(f, 'reason') for v, f in root.ROOT.items()}, 'dump': [('object', {})],
+                       'entries': [('--after', dict(type=int)), ('--object', {}), ('--principal', {}), ('--limit', dict(type=int, default=20))],
+                       'edit': [('height', dict(type=int)), ('--journal', dict(default='/data/state/town.journal')), ('--out', dict(default='entry.json'))]}.items():
+        p = rp.add_parser(name, parents=[common])
         for a, k in args:
             p.add_argument(a, **k)
     a = ap.parse_args(argv)
     if not a.state:
         ap.error('--state (or DELVETALK_STATE) is required')
-    h = Hand(a.state, host or HostClient(a.host_socket or Path(a.state) / 'host.sock'), credentials=a.credentials, poster=poster, who='cli')
+    if a.verb == 'serve':
+        return serve(a, host or connect(a))
+    h = Hand(a.state, host or connect(a), credentials=a.credentials, poster=poster, who='cli')
     try:
         read = lambda p: Path(p).read_text()
         data = {'inbox': lambda: h.inbox(a.since, a.kind), 'outbox': lambda: h.outbox(a.all), 'show': lambda: h.show(a.draft),
                 'edit': lambda: h.edit(a.draft, sys.stdin.read() if a.stdin else read(a.text_file)), 'post': lambda: h.post(a.draft, object=a.object),
                 'skip': lambda: h.skip(a.draft, a.reason), 'hold': lambda: h.hold(a.draft),
                 'unpost': lambda: h.unpost(a.draft, a.reason, zulip_client(a.zuliprc) if a.zuliprc else None), 'status': (lambda: h.probe(a.backups, a.journal)) if a.json else h.status, 'search': lambda: h.search(a.slug),
-                'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail)}[a.verb]()
+                'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
+                'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
+                'root': lambda: cli_root(h, a), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)
         return 1

@@ -181,9 +181,8 @@ class Run:
 
     def send(self, **request):
         self.log.append(request)
-        pid = self.town.process.proc and self.town.process.proc.pid
         reply = self.town.send(**request)
-        if pid and self.town.process.proc.pid != pid:
+        if not self.town.alive():
             self.fail("the host died on", request)
         for t in card_texts(reply):
             self.voice(t, request)

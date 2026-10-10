@@ -14,7 +14,7 @@ usage() { echo "usage: $0 (--binary PATH | --image IMAGE) DATA DEST" >&2; exit 6
 [[ $# == 4 ]] || usage
 mode=$1 host=$2 data=${3%/} dest=${4%/}
 here="$(cd "$(dirname "$0")" && pwd)"
-[[ -f $data/world.journal ]] || { echo "backup: no $data/world.journal" >&2; exit 66; }
+[[ -f $data/state/town.journal ]] || { echo "backup: no $data/state/town.journal" >&2; exit 66; }
 mkdir -p "$dest/mirror"
 chmod 700 "$dest"
 
@@ -22,7 +22,7 @@ rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' --e
 
 # A torn tail: the host was mid-append when rsync read the file.
 shopt -s nullglob
-for j in "$dest/mirror/world.journal" "$dest"/mirror/state/heaps/*.journal; do
+for j in "$dest"/mirror/state/*.journal "$dest"/mirror/state/heaps/*.journal; do
   if [[ -s $j && $(tail -c 1 "$j" | od -An -c | tr -d ' ') != '\n' ]]; then
     keep=$(( $(wc -c < "$j") - $(tail -n 1 "$j" | wc -c) ))
     echo "backup: ${j#"$dest"/mirror/}: cut a torn final line at byte $keep" >&2

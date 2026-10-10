@@ -6,26 +6,25 @@ Evidence for FOUNDATION §7, §11 (layer: transport).
 import json
 import tempfile
 import unittest
-from pathlib import Path
 
 from deploy import genesis
-from tests.host import start_hostd, stop_hostd
-from tests.test_turn_world import BINARY
-from transport.hostproc import LIBRARY, HostClient
+from tests.host import served
+from deploy.serve import LIBRARY
+from transport.host import HostClient
 from transport.identity import ORIGIN
 
 
 class Genesis(unittest.TestCase):
-    """One genesis per class: a hostd opened by the opener with the library sealed, then
+    """One genesis per class: a `serve` opened by the opener with the library sealed, then
     deploy/genesis.py's whole sequence."""
 
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.hostd = start_hostd(cls.tmp.name, BINARY, opener=genesis.OPENER, library=LIBRARY)
-        cls.addClassCleanup(stop_hostd, cls.hostd)
-        cls.host = HostClient(Path(cls.tmp.name) / 'host.sock')
+        cls.hostd = served(cls.tmp.name, opener=genesis.OPENER, library=LIBRARY)
+        cls.addClassCleanup(cls.hostd.stop)
+        cls.host = HostClient(cls.hostd.root)  # genesis is the opener's: the root socket
         cls.made, cls.refusal = genesis.run(cls.host)
 
     def test_the_whole_sequence_is_created_once_and_refused_a_second_time(self):
@@ -115,9 +114,9 @@ class MenuFromState(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.hostd = start_hostd(cls.tmp.name, BINARY, opener=genesis.OPENER, library=LIBRARY)
-        cls.addClassCleanup(stop_hostd, cls.hostd)
-        cls.host = HostClient(Path(cls.tmp.name) / 'host.sock')
+        cls.hostd = served(cls.tmp.name, opener=genesis.OPENER, library=LIBRARY)
+        cls.addClassCleanup(cls.hostd.stop)
+        cls.host = HostClient(cls.hostd.root)  # genesis is the opener's: the root socket
         cls.made, cls.refusal = genesis.run(cls.host)
 
     def say(self, who, obj, text, ident):

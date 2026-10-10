@@ -418,11 +418,12 @@ chooses roles, layouts, guards or transitions is a bug.
 | `zulip.py` | the playtest transport: one Zulip stream (or one topic) observed and answered, with no hourly cap |
 
 The principal is the DID (`zulip:<id>` in the playtest); the handle is display
-text. `transport/` is 4,233 lines on 2026-10-10 against a ceiling of 4,400, raised
-from 2,900 as the Zulip transport, the repository façade, the hand, the
-hypermedia front, the plain-text view and the delve.town login were added; the rule it must keep is
-that it decides nothing, and the way down is the host serving its own socket,
-not trimming adapters.
+text. `transport/` is 4,508 lines on 2026-10-11 (4,901 with `transport/atproto`, the signed
+repository's encoder and tree) against a ceiling of 5,000 counting both, raised
+from 2,900 as the Zulip transport, the repository and its signing, the hand and
+its root console, the hypermedia front, the plain-text view and the delve.town
+login were added, and lowered by 381 when `serve` replaced hostd; the rule it
+must keep is that it decides nothing.
 
 **Authentication.** Posting on delve.town is the authentication: the PDS
 vouches for the author and the bridge routes by DID, so no agent performs a

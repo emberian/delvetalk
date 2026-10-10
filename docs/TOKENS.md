@@ -103,6 +103,11 @@ span the ten tokenizers.
 | plain-text object page, bell | 55 to 59 | 1,843 to 2,059 | same |
 | a town post: median / mean / p90 | | 67 to 71 / 120 to 136 / 287 to 299 | |
 
+The two `?text=1` rows were remeasured on 2026-10-11 (lane/transport5, `tokens.py capture` on hbox, `--compare`, qwen3
+only): at that head the page no longer carried the source (`world-inspect` without `source`), so the garden was 709
+tokens (2,327 bytes) and the bell 845 (2,495 bytes); the brief text view (the card, the doors, the spells, the newest
+five receipts, `?all=1` for the law, the source and the rest) makes them 415 (1,279 bytes) and 449 (1,265 bytes).
+
 The median of the fifteen live cards is 55 to 59 tokens, a median post (69 in
 glm4). The garden card's reply is three median posts in tokens (OFFERING:
 eleven, in bytes, on the old front).

@@ -13,13 +13,12 @@ from unittest import mock
 
 from tests import test_outbound
 from tests.test_chain import garden_state, town_kinds
-from tests.test_http import BINARY
 from tests.test_transport import DID, Script, mk
 from tests.test_turn_world import closure, label, nat, record
 from transport import bridge, delve, observe
-from tests.host import start_hostd, stop_hostd
+from tests.host import served
 from tests.test_turn_world import declared
-from transport.hostproc import HostClient
+from transport.host import HostClient
 
 CARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -75,12 +74,12 @@ class BridgeCase(unittest.TestCase):
 
     @property
     def host(self):
-        """A hostd of this test's own, started by the first test that talks to a real host
+        """A `serve` of this test's own, started by the first test that talks to a real host
         (the routing tests drive a Stub and never do)."""
         if '_host' not in self.__dict__:
-            hostd = start_hostd(str(Path(self.tmp.name) / 'hostd'), BINARY)
-            self.addCleanup(stop_hostd, hostd)
-            self._host = HostClient(Path(self.tmp.name) / 'hostd' / 'host.sock')
+            hostd = served(str(Path(self.tmp.name) / 'hostd'))
+            self.addCleanup(hostd.stop)
+            self._host = HostClient(hostd.sock)
         return self._host
 
     def make(self, name, body=OFFERING, law=''):
@@ -124,6 +123,28 @@ class DirectReplies(BridgeCase):
         self.assertEqual(len(texts), 3, texts)
         self.assertIn('DELVETALK · ROOT', texts[0])
         self.assertEqual([t for t in texts[1:] if 'DELVETALK · ROOT' in t], [])
+
+
+class OpenerPosts(BridgeCase):
+    """The opener's authority is the root socket, which the bridge never holds (HOST-HANDOFF 5.125): a post by the
+    opener is refused on the public socket and skipped, not retried every run and not drafted."""
+
+    @property
+    def host(self):
+        if '_host' not in self.__dict__:
+            hostd = served(str(Path(self.tmp.name) / 'hostd'), opener=DID)
+            self.addCleanup(hostd.stop)
+            self._host = HostClient(hostd.sock)
+        return self._host
+
+    def test_a_post_by_the_opener_is_skipped_with_no_draft_and_no_retry(self):
+        self.make('garden-1')
+        post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
+        self.observe([post])
+        got = self.run_bridge()
+        self.assertEqual((got['turns'], got['failed'], self.drafts()), ([], [], []), got)
+        self.assertIn(post['uri'], (self.state / 'skipped.txt').read_text().split())
+        self.assertEqual(self.run_bridge()['failed'], [])
 
 
 class Bridging(BridgeCase):
@@ -194,7 +215,7 @@ class Bridging(BridgeCase):
         self.assertEqual(self.run_bridge()['failed'], [])
         (d,) = self.drafts()
         self.assertIn('planted', d['text'])
-        self.assertTrue(d['text'].endswith(f"receipt {d['receipt']['slug']}: garden-1 v1, entry {d['receipt']['height']}\n"), d['text'])
+        self.assertTrue(d['text'].endswith(f"● admitted garden-1 v1, entry {d['receipt']['height']}, receipt {d['receipt']['slug']}\n"), d['text'])
 
 
 class HostParses(BridgeCase):
@@ -469,7 +490,7 @@ class RealOffers(test_outbound.TellerWorld):
             self.assertEqual(bridge.offer_drafts(d, H()), ["t-1"])
             (draft,) = list((Path(d) / "outbox").glob("*.json"))
             slug = self.host.send(op="world-receipt", principal="ann", identity="t-1")["receipt"]["slug"]
-            self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\nreceipt {slug}: teller v\d+, entry \d+\n$")
+            self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\n● admitted teller v\d+, entry \d+, receipt {slug}\n$")
             self.assertEqual(bridge.offer_drafts(d, H()), [])
 
 
@@ -483,8 +504,8 @@ class Projection(unittest.TestCase):
                                     'public': {'class': 'lawRefused', 'root': {'object': 'garden', 'version': 3}}}),
                  bridge.draft_text({'status': 'refused', 'receipt': {**unslugged, 'hash': 'f' * 64, 'outcome': {'tag': 'refused', 'class': 'lawRefused'}}, 'public': {}}, 'https://x.example'),
                  bridge.draft_text({'status': 'refused', 'receipt': unslugged, 'public': {'class': 'lawRefused', 'root': {'object': 'g', 'version': 1, 'cid': h}}})]
-        self.assertIn('receipt babab-dabab: garden v3, entry 9', texts[0])
-        self.assertIn('receipt: garden v3, entry 9\nhttps://x.example/o/garden#v3', texts[1])
+        self.assertIn('● admitted garden v3, entry 9, receipt babab-dabab\n', texts[0])  # VOICE's turn line, as the JSON `line` has it
+        self.assertIn('● admitted garden v3, entry 9\nhttps://x.example/o/garden#v3', texts[1])
         self.assertIn('receipt babab-dabab\n', texts[2])
         for t in texts:
             self.assertFalse(re.search(r'bafy|[0-9a-f]{64}', t), t)

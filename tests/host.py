@@ -10,7 +10,6 @@
 import atexit
 import json
 import os
-import time
 import shutil
 import subprocess
 import tempfile
@@ -157,92 +156,37 @@ POLL = 0.05  # socketserver's default 0.5 s poll made every daemon's shutdown co
 
 
 def serve(server):
-    """Serve a socketserver (hostd, the HTTP front, a fake) from a daemon thread; stop with server.shutdown()."""
+    """Serve a socketserver (the HTTP front, a fake) from a daemon thread; stop with server.shutdown()."""
     import threading
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": POLL}, daemon=True).start()
     return server
 
 
-def unsynced(process):
-    """A transport.hostproc.Host whose journal opens with `sync: none`. Heaps take no sync option
-    (Hostd passes its own to the shared world only), so their processes are wrapped here."""
-    exchange = process._exchange
-
-    def opening(request):
-        if request.get("op") == "world-open":
-            request = dict(request, sync="none")
-        return exchange(request)
-    process._exchange = opening
-    return process
-
-
-def start_hostd(state, binary_path=None, opener=None, library=None):
-    """A hostd serving <state>/host.sock from a thread, over <state>/world.journal (its journals
-    unsynced). Stop with stop_hostd."""
-    from transport.hostd import Hostd
+def served(state, opener=None, library=None, extra=()):
+    """`delvetalk-obend serve` over `state` (its journals unsynced), a child of this test process (HOST-HANDOFF 5.125)."""
+    from deploy.serve import Served
     if os.environ.get("DELVETALK_SPAWN_LOG"):
         with open(os.environ["DELVETALK_SPAWN_LOG"], "a") as f:
             f.write("hostd\n")
-    d = Hostd(state, os.path.join(state, "world.journal"), binary_path or binary(), opener=opener, library=library, sync="none")
-    get = d.heaps.get
-    d.heaps.get = lambda did: unsynced(get(did)) if did not in d.heaps.pool else get(did)
-    return serve(d)
-
-
-class Served:
-    """`delvetalk-obend serve` over a state directory, as a child process (HOST-HANDOFF 5.125)."""
-
-    def __init__(self, state, opener=None, library=None, extra=()):
-        import subprocess
-        self.state = os.path.abspath(state)
-        argv = [binary(), "serve", "--state", self.state, "--sync", "none"] + (["--opener", opener] if opener else []) + \
-            (["--library", library] if library else []) + list(extra)
-        self.sock = os.path.join(self.state, "host.sock")
-        self.root = os.path.join(self.state, "root", "root.sock")
-        for p in (self.sock, self.root):
-            if os.path.exists(p):
-                os.unlink(p)
-        self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-        deadline = time.monotonic() + 120
-        while not (os.path.exists(self.sock) and os.path.exists(self.root)):
-            if self.proc.poll() is not None:
-                raise RuntimeError("serve exited %s: %s" % (self.proc.returncode, self.proc.stderr.read()))
-            if time.monotonic() > deadline:
-                self.stop()
-                raise RuntimeError("serve did not listen within 120 s")
-            time.sleep(0.02)
-
-    def stop(self):
-        if self.proc.poll() is None:
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=60)
-            except Exception:
-                self.proc.kill()
-                self.proc.wait()
-        self.proc.stderr.close()
-
-
-def stop_hostd(d):
-    d.shutdown()
-    d.close()
+    return Served(state, binary(), opener=opener, library=library, extra=extra)
 
 
 class HostdCase(unittest.TestCase):
-    """One hostd per test class, opened by OPENER with the world library sealed; tests share its
-    world, so each names its own objects."""
+    """One `serve` per test class, its town opened by OPENER with the world library sealed; tests share its
+    world, so each names its own objects. `host` is the public socket, `root` the opener's."""
     OPENER = "did:plc:" + "a" * 24
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        from transport.hostproc import LIBRARY, HostClient
+        from deploy.serve import LIBRARY
+        from transport.host import HostClient
         cls.hostd_dir = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.hostd_dir.cleanup)
-        cls.hostd = start_hostd(cls.hostd_dir.name, opener=cls.OPENER, library=LIBRARY)
-        cls.addClassCleanup(stop_hostd, cls.hostd)
-        cls.socket = os.path.join(cls.hostd_dir.name, "host.sock")
-        cls.host = HostClient(cls.socket)
+        cls.hostd = served(cls.hostd_dir.name, opener=cls.OPENER, library=LIBRARY)
+        cls.addClassCleanup(cls.hostd.stop)
+        cls.socket, cls.root_socket = cls.hostd.sock, cls.hostd.root
+        cls.host, cls.root = HostClient(cls.socket), HostClient(cls.root_socket)
 
 
 def whole(host, reply):
