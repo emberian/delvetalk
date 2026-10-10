@@ -374,18 +374,13 @@ def expectedObjects (entries : Array Json) : Std.HashMap String (Nat × String) 
   return out
 
 /-- The state CIDs the journal itself commits to, by object and version: a created state (its
-    seed is the whole state), a write's `cid` (host7), and every root read at a known version
-    (`roots[].cid`), wherever in the journal (an entry after a snapshot's height that read an object
-    commits to the state the snapshot must hold). -/
+    seed is the whole state) and a write's `cid` (host7). -/
 def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String := Id.run do
   let mut out : Std.HashMap (String × Nat) String := {}
   for entry in entries do
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (j : Json) (k : String) => ((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
-    for r in arr entry "roots" do
-      if let (.ok v, .ok c) := (r.getObjValAs? Nat "version", r.getObjValAs? String "cid") then
-        out := out.insert (text r "object", v) c
     match tagOf entry with
     | "created" =>
       if let .ok seed := outcome.getObjVal? "seed" then out := out.insert (text outcome "object", 0) (Journal.bodyHash seed)

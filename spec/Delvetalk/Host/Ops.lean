@@ -152,8 +152,6 @@ structure Proposal where
   principal : String
   intent : String
   roots : List (String × Nat)
-  /-- The CID of the state each root was read at (`stateCid`), where the reader knew it. -/
-  rootCids : List (String × String) := []
   writes : List (String × List Written)
   /-- Assigned by the host (`commit` sets it to the entry's height); never read from a client. -/
   turn : Nat := 0
@@ -203,30 +201,10 @@ def noteMinted (w : World) (id : String) : World :=
     names exactly the card version a turn was judged against. -/
 def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
 
-/-- Roots as an entry records them: object and version, and the CID of the state read where
-    `cids` knows it. A proposal's digest uses the roots without CIDs. -/
-def rootsJson (roots : List (String × Nat)) (cids : List (String × String) := []) : Json :=
-  Json.arr (roots.toArray.map fun (o, v) => Json.mkObj ([("object", toJson o), ("version", toJson v)] ++
-    ((cids.lookup o).map fun c => [("cid", toJson c)]).getD []))
-
-/-- The CIDs recorded beside roots. -/
-def parseRootCids (j : Json) : List (String × String) :=
-  ((j.getArr?.toOption).getD #[]).toList.filterMap fun r =>
-    match r.getObjValAs? String "object", r.getObjValAs? String "cid" with
-    | .ok o, .ok c => some (o, c)
-    | _, _ => none
-
-/-- The CID each root of `p` was read at: the turn's own record, else the current state's when
-    the root names the current version (a client's proposal, a law read). A root at a version the
-    world no longer or not yet holds has none. -/
-def rootCidsAt (w : World) (p : Proposal) : List (String × String) :=
-  p.roots.filterMap fun (id, v) =>
-    match p.rootCids.lookup id with
-    | some c => some (id, c)
-    | none => match w.objects[id]? with
-      | some o => if o.version == v then some (id, stateCid o.state) else none
-      | none => none
-
+/-- Roots as an entry records them: object and version. The state at that version is named by the
+    entry that wrote it (`writes[].cid`, `world-state-cid`). -/
+def rootsJson (roots : List (String × Nat)) : Json :=
+  Json.arr (roots.toArray.map fun (o, v) => Json.mkObj [("object", toJson o), ("version", toJson v)])
 
 /-- The fields recording who made each change: parallel arrays of steps, callers, kinds. -/
 def writtenFields (ws : List Written) : List (String × Json) :=
@@ -249,18 +227,6 @@ def parseRoots (j : Json) : Except String (List (String × Nat)) := do
     if out.any (·.1 == object) then throw "duplicate root"
     out := out ++ [(object, ← natField r "version")]
   return out
-
-/-- Replay's check of an entry's root CIDs: a root at the version the world holds before the
-    entry must name that state's CID. A root whose object has since moved (a commuting write
-    read an older version) is not checked: the host keeps no past states. -/
-def checkRootCids (w : World) (entry : Json) : Except String Unit := do
-  let some roots := (entry.getObjVal? "roots").toOption | return
-  let versions := (parseRoots roots).toOption.getD []
-  for (id, c) in parseRootCids roots do
-    match versions.lookup id, w.objects[id]? with
-    | some v, some o =>
-      if o.version == v && stateCid o.state != c then throw s!"root {id} names a state at version {v} the journal does not hold"
-    | _, _ => pure ()
 
 /-- Writes as a client sends them: direct, so every step has the empty caller. A client
     cannot name a caller. -/
@@ -1611,7 +1577,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     -- The turn number is the host's: the height of the entry about to be written.
     let p := { p with turn := w.height + 1 }
     let key := identityKey p.principal p.intent
-    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots (rootCidsAt w p)),
+    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots),
       ("turn", toJson p.turn), ("request", toJson p.digest)] ++
       (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++ extra
     let verdict : Except Refusal Judged :=
@@ -2133,7 +2099,6 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   let w := { w with blocks := blocks.foldl (fun m (cid, b) => m.insert cid b) w.blocks }
   checkDelivery w entry principal intent outcome
   checkSends w entry principal intent
-  checkRootCids w entry
   -- A turn answers only a post recorded for the object it ran on (its first root).
   if let some post := (entry.getObjValAs? String "replyTo").toOption then
     let first := ((entry.getObjVal? "roots").toOption.bind (·.getArr?.toOption)).bind (·[0]?)
@@ -2338,6 +2303,51 @@ def view (w : World) (j : Json) : Except String Json := do
     return Json.mkObj [("status", toJson "viewed"), ("object", toJson id),
       ("version", toJson o.version), ("state", dataJson o.state), ("pin", toJson o.pin)]
 
+/-- The CID of `id`'s state at `version`, as the journal names it: the current state's, a created
+    or child seed's (version 0), or the `cid` of the admitted write that made the version (host7; a
+    write journaled before names none). -/
+def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.run do
+  let some o := w.objects[id]? | return none
+  if o.version == version then return some (stateCid o.state)
+  for i in (w.touched[id]?).getD #[] do
+    let some entry := w.entries[i]? | continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let named := fun (j : Json) => (j.getObjValAs? String "object").toOption == some id
+    match tagOf entry with
+    | "created" =>
+      if version == 0 && named outcome then
+        if let .ok seed := outcome.getObjVal? "seed" then return some (Journal.bodyHash seed)
+    | "admitted" =>
+      for x in arr "writes" do
+        if named x && (x.getObjValAs? Nat "version").toOption == some version then
+          return (x.getObjValAs? String "cid").toOption
+      if version == 0 then
+        for c in arr "creates" do
+          if named c then
+            if let .ok seed := c.getObjVal? "seed" then return some (Journal.bodyHash seed)
+    | _ => pure ()
+  return none
+
+/-- `world-state-cid {principal, object, version}`: the CID of the object's state at that version, for
+    a reader who may view it (a CID of a state the reader may not see would let it test guesses):
+    `{status: "stateCid", object, version, cid}`, `denied`, or `unknown` (no such object, version, or
+    a version only a write from before host7 made). -/
+def stateCidOp (w : World) (j : Json) : Except String Json := do
+  let reader ← j.getObjValAs? String "principal"
+  if reader.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"principal must be at most {Limits.maxPrincipalBytes} bytes"
+  let id ← j.getObjValAs? String "object"
+  let version ← natField j "version"
+  let answer := fun (status : String) (more : List (String × Json)) =>
+    Json.mkObj ([("status", toJson status), ("object", toJson id), ("version", toJson version)] ++ more)
+  match w.objects[id]? with
+  | none => return answer "unknown" []
+  | some o =>
+    if !o.read.permits reader then return answer "denied" []
+    match stateCidAt w id version with
+    | some cid => return answer "stateCid" [("cid", toJson cid)]
+    | none => return answer "unknown" []
+
 /-- A reader may see an object's changes if it may view the object (an object no longer in
     the world is not viewable). -/
 def viewable (w : World) (reader id : String) : Bool :=
@@ -2346,11 +2356,10 @@ def viewable (w : World) (reader id : String) : Bool :=
   | none => false
 
 /-- The public projection of a refusal: observed, not committed, the class and the root it
-    names, and nothing else. `root` is `{object}`, with the `version` the turn read it at and,
-    when `reader` may view the object, the `cid` of that state (a CID of a state the reader may
-    not see would let it test guesses of the state); an `unknownObject` refusal also names the
+    names, and nothing else. `root` is `{object, version}`, the version the turn read it at (a reader
+    who may view the object reads that state's CID with `world-state-cid`); an `unknownObject` refusal also names the
     id the author wrote (as resolved, so `env` reads `env/<did>`) and where the list of cards is. -/
-def publicRefusal (w : World) (reader : String) (entry : Json) : Json :=
+def publicRefusal (entry : Json) : Json :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let named := (outcome.getObjValAs? String "object").toOption.getD ""
   -- A refusal judged against another root than the id it names (`requiredAbsence`: the creating
@@ -2359,9 +2368,7 @@ def publicRefusal (w : World) (reader : String) (entry : Json) : Json :=
   let cls := (outcome.getObjValAs? String "class").toOption.getD "unknown"
   let roots := (entry.getObjVal? "roots").toOption.getD (Json.arr #[])
   let version := ((parseRoots roots).toOption.getD []).lookup id
-  let cid := if viewable w reader id then (parseRootCids roots).lookup id else none
-  let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [] ++
-    (cid.map fun c => [("cid", toJson c)]).getD [])
+  let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [])
   -- A law's reading is the package's public text about the clause, never state.
   let reading := if cls == "lawRefused" then (outcome.getObjValAs? String "reason").toOption else none
   Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", root)] ++
@@ -2378,7 +2385,7 @@ def projectEntry (w : World) (reader : String) (entry : Json) : Json :=
   let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
   if owner == reader && !reader.isEmpty then entry
   else if tagOf entry == "refused" then
-    (publicRefusal w reader entry).setObjVal! "height" ((entry.getObjVal? "height").toOption.getD Json.null)
+    (publicRefusal entry).setObjVal! "height" ((entry.getObjVal? "height").toOption.getD Json.null)
       |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null)
   else
     let objectOf := fun (x : Json) => (x.getObjValAs? String "object").toOption.getD ""
@@ -2413,7 +2420,7 @@ def receipt (w : World) (j : Json) : Except String Json := do
   | some index =>
     let entry := w.entries[index]!
     let shown := projectEntry w reader entry
-    if owner != reader && tagOf entry == "refused" then return publicRefusal w reader entry
+    if owner != reader && tagOf entry == "refused" then return publicRefusal entry
     return Json.mkObj [("status", toJson "receipt"), ("receipt", shown)]
 
 def history (w : World) (j : Json) : Except String Json := do

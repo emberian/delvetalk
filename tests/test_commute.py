@@ -79,9 +79,9 @@ class Moved(Reflection):
         [resumed] = settled["resumed"]
         self.assertEqual(resumed["status"], "admitted", resumed)
         entry = resumed["receipt"]
-        # The root keeps the version the strike read, and the CID of that (since moved) state.
-        self.assertEqual([(r["object"], r["version"]) for r in entry["roots"]], [("bell", 0)])
-        self.assertIn("cid", entry["roots"][0])
+        # The root keeps the version the strike read; that (since moved) state's CID is the created seed's.
+        self.assertEqual(entry["roots"], [{"object": "bell", "version": 0}])
+        self.assertEqual(self.host.send(op="world-state-cid", principal="ann", object="bell", version=0)["status"], "stateCid")
         self.assertEqual(entry["outcome"]["writes"][0]["version"], 3)
         self.assertEqual(self.bell(), ("3", ["drip", "drop", "struck"]))
         # The entry replays: the same rule judges it again on reopen.

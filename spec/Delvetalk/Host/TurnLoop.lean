@@ -87,8 +87,6 @@ structure Send where
 structure TurnState where
   world : World
   roots : List (String × Nat) := []
-  /-- The CID of the committed state each root was read at. -/
-  rootCids : List (String × String) := []
   writes : List (String × List Written) := []
   /-- The turn's identity principal: it names the entry and derives send and grant ids. -/
   principal : String
@@ -149,10 +147,7 @@ def recordRoot (id : String) (version : Nat) : M Unit := do
   let s ← get
   unless s.roots.any (·.1 == id) do
     if s.roots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
-    -- Writes are staged, so what a turn reads of an object is its committed state.
-    let cid := (s.world.objects[id]?).bind fun o => if o.version == version then some (stateCid o.state) else none
-    set { s with roots := s.roots ++ [(id, version)],
-                 rootCids := s.rootCids ++ ((cid.map fun c => [(id, c)]).getD []) }
+    set { s with roots := s.roots ++ [(id, version)] }
 
 def field? (fields : List (String × Data)) (name : String) : Option Data := fields.lookup name
 
@@ -1029,7 +1024,7 @@ def turnReply (w : World) (r : Json) : Json :=
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra ++
       (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++
       -- What a refusal may say in public, for transport to draft from.
-      (if tagOf entry == "refused" then [("public", publicRefusal w "" entry)] else []))
+      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
 def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
@@ -1126,7 +1121,6 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     { principal := ctx.principal
       intent := ctx.intent
       roots := st.roots
-      rootCids := st.rootCids
       rebaseOwn := if ctx.resumes.isSome then some ctx.object else none
       writes := st.writes
       turn := w.height + 1
@@ -1168,7 +1162,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
       ("checkpoint", journaledCheckpoint.1),
-      ("roots", rootsJson st.roots st.rootCids), ("absent", toJson st.absent),
+      ("roots", rootsJson st.roots), ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
       ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
       ("extends", toJson st.layered),
@@ -1188,7 +1182,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("deadline", toJson (w.clock + patience)), ("activity", activity)] ++
       (interpretation.map fun i => [("interpretation", i)]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
-      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.rootCids),
+      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
         newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ journaledCheckpoint.2) []
     return (w', turnReply w' (reply entry))
@@ -1315,7 +1309,6 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let method ← act.getObjValAs? String "method"
   let argument ← decodeData Limits.dataDepth (← act.getObjVal? "argument")
   let roots ← parseRoots (← act.getObjVal? "roots")
-  let rootCids := parseRootCids (← act.getObjVal? "roots")
   let absent := strings (act.getObjVal? "absent").toOption
   let ticks ← natField act "ticks"
   let ledger ← ledgerOf (← sus.getObjVal? "ledger")
@@ -1354,7 +1347,6 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       { principal := principal
         intent := intent
         roots := roots
-        rootCids := rootCids
         writes := []
         turn := w.height + 1
         absent := absent }
@@ -1378,7 +1370,6 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let init : TurnState :=
     { world := w
       roots := roots
-      rootCids := rootCids
       writes := writes
       principal := principal
       intent := intent

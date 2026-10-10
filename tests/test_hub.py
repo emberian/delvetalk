@@ -108,13 +108,12 @@ class Hub(test_chain.Chain):
         second = self.say("cistern: a cistern for refused proposals (by discovery, Kimi)", GLM)
         out = second["receipt"]["outcome"]
         self.assertEqual((second["status"], out["class"], out["object"]), ("refused", "requiredAbsence", "garden/cistern"), second)
-        # The refusal commits to the root it was judged against: the creating garden, as the turn read it.
+        # The refusal names the root it was judged against: the creating garden, at the version the turn read.
         garden = self.host.send(op="world-view", principal="ember", object="garden")
         self.assertEqual(out["root"], "garden", out)
         public = second["public"]
         self.assertEqual((public["object"], public["root"]["object"], public["root"]["version"]),
                          ("garden/cistern", "garden", garden["version"]), public)
-        self.assertIn("cid", public["root"])
         usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)["offers"][0]["text"]
         self.assertIn("    delvetalk garden cistern\n    name: <text, 0 to 120 characters>\n", usage)
 

@@ -92,7 +92,7 @@ that directory, journals it on first open or refuses by name if the bytes differ
 `world-view {principal, object}`, `world-receipt {principal, identity, of?}`, `world-history {principal, object, after?, limit?}`,
 `world-offers {principal, after?}`, `world-status`,
 `world-deliver {limit}`, `world-pending`, `world-reprogram`, `world-amend`, `world-advance {height}`,
-`world-inspect {principal, object}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
+`world-inspect {principal, object}`, `world-state-cid {principal, object, version}`, `world-check {principal, modules | source, entry}` (5.28), `world-library {principal, identity}` (reload the library path; a changed pin is
 a journaled change judged by the world law), `world-interpretations`, `world-interpretation {id, reply}`.
 `world-open` also takes `verify: true` and answers `snapshot {resumed, refused [{height, reason}]}`;
 `world-open {sync: "none" | "fsync" | "full"}` picks how that process makes appends durable (default `"fsync"`,
@@ -119,8 +119,9 @@ Request errors (`Except.error`) journal nothing; refusals are receipts.
 ## 2. Journal entries
 
 One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`,
-`roots [{object, version, cid?}]` (`cid` = `stateCid` of the state the turn read; replay checks it for a root at the
-version the world holds, see 5.22), `turn`, `request` (digest), `outcome {tag, ...}`. Hash = SHA-256 of the
+`roots [{object, version}]` (the state at a version is named once, by the entry that wrote it: `writes[].cid`, or a
+created seed; `world-state-cid {principal, object, version}` answers it to a reader who may view the object; a root
+`cid` in an entry written before the hash pass is ignored), `turn`, `request` (digest), `outcome {tag, ...}`. Hash = SHA-256 of the
 compressed entry without `hash`. Genesis `previous` is 64 zeros. `identityKey` = compressed
 `[principal, intent]`; `world.receipts` maps it to the entry index (first wins, except that a suspension or a
 transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`: staleRoot,
@@ -308,7 +309,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `receipts` carry none, since the op's caller is not their addressee. Reads under authority: `world-receipt
    {principal, identity, of?}` reads identity (`of`, default the reader); `projectEntry` gives the identity's own
    principal the whole entry, anyone else a refusal as `publicRefusal` (`{status: "refused", class, root, reason?}`, root
-   `{object, version?, cid?}`; 5.22)
+   `{object, version?}`; 5.22)
    and other entries as chain fields, identity, turn, outcome tag, the roots and writes of objects the reader may
    view and an `elided` count (no result, offers, sends, sources, checkpoint). `world-history` takes a principal
    ("" = anonymous, public objects only), is `denied` for an object the reader cannot view, and projects each entry.
@@ -472,8 +473,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
      `replied {text}` (Plan.obend Response); an object whose Response cannot carry it hears `unclear`. `failed`
      resumes `unclear {needs: ["model: <reason>"]}`. Garden fits the text with its own Spell (objects lane).
    - *Silence* (finding 3). A turn that offers nothing has no `offers` field (`test_outbound` pins it).
-   - *Refusals and own cards* (finding 7). `publicRefusal w reader entry`: `{status, class, root: {object, version?,
-     cid?}}` (cid only if the reader may view the object), plus `object` and `hint` for `unknownObject`; a refused
+   - *Refusals and own cards* (finding 7). `publicRefusal entry`: `{status, class, root: {object, version?}}`, plus `object` and `hint` for `unknownObject`; a refused
      turn reply carries it as `public` (anonymous reader). `ownCards` `env`/`wake` resolve to `<name>/<principal>`
      in `runTurn` and `world-card` (`resolveCard`); the bare ids are reserved.
    - *Handles* (finding 8). `World.handles`, `handleOf`, `principalOp`.
@@ -482,9 +482,8 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
      metarule's and default law's principal.
    - *Capacity* (rerun findings). `mayWait … (interpreting := true)` counts interpretations apart;
      `transientClasses` includes `capacity`.
-   - *Root CIDs.* `recordRoot` captures `stateCid` at read (`TurnState.rootCids`, through suspensions);
-     `rootCidsAt` fills client proposals and law reads at the current version; `checkRootCids` in `replayEntry`.
-     A root that moved since (commuting writes) is not checkable on replay: no past states are kept.
+   - *Root CIDs.* Removed in host7's hash pass: roots are `{object, version}`; the state's CID lives on the write
+     that made the version (`writes[].cid`, 5.35) and `world-state-cid` reads it (`stateCidAt`, `stateCidOp`).
 
 23. **Reply-is-address (host6).** `world-turn {…, replyTo: <parent uri>}` (in the digest when given): when the parent
    is a post recorded for the turn's object, the entry journals `replyTo` and `World.replies` (built by `record`)
@@ -576,9 +575,9 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
 
 33. **A requiredAbsence names its root (host7, rehearsal run 6 finding 1).** The object whose `create` found the id taken
    (`TurnState.violator`, kept through suspensions as the activity's `violator`) is journaled as the refused outcome's
-   `root` beside `object` (the taken id); `Refusal.root`. `publicRefusal` builds its `root {object, version, cid?}` from
+   `root` beside `object` (the taken id); `Refusal.root`. `publicRefusal` builds its `root {object, version}` from
    `outcome.root` when present (the creator at the version the turn read it) and adds `object` (the taken id): a second
-   cistern reads `{class: requiredAbsence, root: {object: garden, version, cid}, object: garden/cistern}`. Tests:
+   cistern reads `{class: requiredAbsence, root: {object: garden, version}, object: garden/cistern}`. Tests:
    `test_hub` (the cistern pair).
 
 34. **Suspensions journal only what changed (host7, rehearsal run 6 finding 5; revised at foundation 6b928f6).** Checkpoint
@@ -605,8 +604,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    carries no state CID" (a snapshot written before host7: refused once, the open replays and writes a new one). Since
    a forger can recompute both, the CID is also checked against the journal: an admitted write now journals the new
    state's `cid` beside its `version` (`writes[].cid`, checked on replay when present), and `resume` compares each
-   object with `anchoredStates` (a created or child seed, a write's `cid`, or any root read at that version anywhere
-   in the journal): "the state of X is not the one the journal commits to at version V". No replay, one hash per object
+   object with `anchoredStates` (a created or child seed, or a write's `cid`): "the state of X is not the one the journal commits to at version V". No replay, one hash per object
    and per anchor. An object no entry anchors at its version (only pre-host7 writes, never read since) is checked
    against its own CID only; `verify: true` still replays everything. Tests: `test_snapshot` (stale CID, consistent
    forgery).
