@@ -59,6 +59,7 @@ def kind(k: Form.Kind) -> String:
     case text(_): "text"
     case natural(_): "natural"
     case choice(_): "choice"
+    case source(_): "source"
 def paint(state: State, input: {colour: Colour, note: String}, context: Abi.Context) -> Activity<String>:
   said(context, input.note)
 def checkAll(state: State, input: {package: String}, context: Abi.Context) -> Activity<String>:

@@ -9,6 +9,7 @@ import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Places.obend as Places
+import ./Text.obend as Text
 type Exit = Places.Exit
 type State = Places.State
 type Done = Places.Done
@@ -139,7 +140,7 @@ def setting(field: String, value: String) -> Activity<Done>:
   Card.tell(Done.done({}), Document.text("Set {field} to {value}.\n"))
 # A room is entered and left by an avatar's move, and things take and put themselves.
 def methods() -> Lists.List<String>:
-  Card.wordList("enter leave take put")
+  Text.words("enter leave take put")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: sayForm(), tail: Card.Forms.cons({head: emoteForm(), tail: Card.Forms.cons({head: whisperForm(), tail: Card.Forms.nil()})})})
 def line(prefix: String, suffix: String) -> Document.Document:
@@ -155,7 +156,7 @@ def traceLines(state: State) -> Document.Documents:
 # A reader whose avatar is here is told so.
 def hereLine(state: State, context: Abi.Context) -> Document.Documents:
   if here(context, state) then Document.Documents.cons({head: line("You are here.", ""), tail: Document.Documents.nil()}) else Document.Documents.nil()
-# Derived views (FOUNDATION §16, `viewDerived {object, view}`).
+# Derived views (FOUNDATION §9, `viewDerived {object, view}`).
 def views() -> Lists.List<String>:
   Lists.List.cons({head: "affordances", tail: Lists.List.nil({})})
 # What can be done here, as spells: this room's own forms, then for each thing lying here

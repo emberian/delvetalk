@@ -1,7 +1,7 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
-import ./Spell.obend as Spell
 import ./Scenes.obend as Scenes
+import ./Text.obend as Text
 # spween (a narrative DSL for games: ~/dev/spween) lowered to a Scene's seed.
 #
 #   ---                       frontmatter: id (the scene's name), title, cooldown,
@@ -36,9 +36,9 @@ def fenced(inner: String) -> String:
   if stop == textLength(inner) then inner else textTake(inner, stop + 1n)
 # --- text ---------------------------------------------------------------------------
 def lines(text: String) -> Lists.List<String>:
-  if text == "" then Lists.List.nil({}) else Lists.List.cons({head: Spell.trimEnd(textTake(text, textBreak(text, "\n"))), tail: lines(textDrop(text, textBreak(text, "\n") + 1n))})
+  if text == "" then Lists.List.nil({}) else Lists.List.cons({head: Text.trimEnd(textTake(text, textBreak(text, "\n"))), tail: lines(textDrop(text, textBreak(text, "\n") + 1n))})
 def trim(text: String) -> String:
-  Spell.trimEnd(Spell.trimStart(text))
+  Text.trimEnd(Text.trimStart(text))
 def indent(line: String) -> Nat:
   textSpan(line, " \t")
 def starts(text: String, prefix: String) -> Bool:
@@ -110,8 +110,8 @@ def readMeta(ls: Lists.List<String>, meta: Meta) -> MetaRead:
     case nil(_): MetaRead.ok({meta: meta})
     case cons(c): if trim(c.head) == "" || starts(trim(c.head), "#") then readMeta(c.tail, meta) else if indent(c.head) > 0n then MetaRead.bad({reason: "unexpected indentation in the frontmatter: {trim(c.head)}"}) else metaKey(keyOf(trim(c.head)), valueOf(trim(c.head)), c.tail, meta)
 def metaKey(key: String, value: String, rest: Lists.List<String>, meta: Meta) -> MetaRead:
-  if key == "id" then readMeta(rest, extend(meta, {id: unquoted(value)})) else if key == "title" then readMeta(rest, extend(meta, {title: unquoted(value)})) else if key == "cooldown" then cooled(Spell.number(value), rest, meta) else if key == "weight" then MetaRead.bad({reason: "weight: a scene is entered by name here, never drawn by weight"}) else if key == "requires" then required(value, deeper(rest, 0n), beyond(rest, 0n), meta) else readMeta(beyond(rest, 0n), meta)
-def cooled(number: Spell.Number, rest: Lists.List<String>, meta: Meta) -> MetaRead:
+  if key == "id" then readMeta(rest, extend(meta, {id: unquoted(value)})) else if key == "title" then readMeta(rest, extend(meta, {title: unquoted(value)})) else if key == "cooldown" then cooled(Text.number(value), rest, meta) else if key == "weight" then MetaRead.bad({reason: "weight: a scene is entered by name here, never drawn by weight"}) else if key == "requires" then required(value, deeper(rest, 0n), beyond(rest, 0n), meta) else readMeta(beyond(rest, 0n), meta)
+def cooled(number: Text.Number, rest: Lists.List<String>, meta: Meta) -> MetaRead:
   match number:
     case yes(y): readMeta(rest, extend(meta, {cooldown: y.value}))
     case no(_): MetaRead.bad({reason: "cooldown takes a natural number"})

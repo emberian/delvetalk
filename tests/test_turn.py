@@ -149,7 +149,7 @@ DOCUMENTS = """edition ObjectiveBend 1
 import ./Document.obend as Doc
 import ./World.obend as World
 def show(label: String) -> Activity<Nat>:
-  match world.offer(Doc.concat(Doc.text(label), Doc.quote("a", Doc.text("b")))):
+  match world.offer(Doc.concat(Doc.text(label), Doc.concat(Doc.text("a"), Doc.text("b")))):
     case back(d): Doc.size(d)
 """
 

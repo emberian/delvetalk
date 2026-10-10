@@ -9,6 +9,7 @@ import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Places.obend as Places
+import ./Text.obend as Text
 type Done = Places.Done
 type Letter = Rows.Letter
 # A note in the inbox: who it is from (a principal, or the object whose change it tells of),
@@ -249,7 +250,7 @@ form unsubscribe:
   to: text 1..160
 # Things call hold and release.
 def methods() -> Lists.List<String>:
-  Card.wordList("hold release")
+  Text.words("hold release")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: moveForm(), tail: Card.Forms.cons({head: noteForm(), tail: Card.Forms.cons({head: acceptForm(), tail: Card.Forms.cons({head: sendForm(), tail: Card.Forms.cons({head: subscribeForm(), tail: Card.Forms.cons({head: watchForm(), tail: Card.Forms.cons({head: unsubscribeForm(), tail: Card.Forms.nil()})})})})})})})
 def blurb() -> Card.Door:
@@ -270,7 +271,7 @@ def setHandle(handle: String) -> Activity<Done>:
 # of that name are answered with their ids; `look` shows the place as its reader sees it.
 # Anything else is the card default.
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
-  if mine(context) && Card.quietly(Card.unanswered(input, forms())) then scoped(input, Card.wordList(firstLine(input.text)), context, state) else answered(input, context, state)
+  if mine(context) && Card.quietly(Card.unanswered(input, forms())) then scoped(input, Text.words(firstLine(input.text)), context, state) else answered(input, context, state)
 def answered(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def firstLine(text: String) -> String:

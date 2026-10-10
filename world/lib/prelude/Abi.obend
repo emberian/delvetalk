@@ -17,22 +17,9 @@ record Context:
   height: Nat
   clock: Nat
   inputOrigin: Origin
-record Event:
-  id: String
-  source: String
-  sourceProgram: String
-  originatingPrincipal: String
-record StringField:
-  type: String
-  minLength: Nat
-  maxLength: Nat
-record NatField:
-  type: String
-  minimum: Nat
-  maximum: Nat
 # The two-tier law: a package's optional pure predicate
 #   def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict
-# judged by the host beside the law text (FOUNDATION section 13). A refusal names its
+# judged by the host beside the law text (FOUNDATION section 4). A refusal names its
 # clause and gives its reading, as a law text's does (the host copies it into the receipt's
 # `reason`).
 sum Verdict:

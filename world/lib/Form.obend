@@ -1,12 +1,13 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
 # The form a card offers, as data: the fields a spell must supply and their kinds.
-# Spell checks replies against it; Plan carries it to the interpreter.
+# The host fits a spell against it and offers it to the interpreter.
 type Names = Lists.List<String>
 sum Kind:
   text: {min: Nat, max: Nat}
   natural: {min: Nat, max: Nat}
   choice: {options: Names}
+  source: {}
 record Field:
   name: String
   kind: Kind

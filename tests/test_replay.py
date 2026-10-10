@@ -51,7 +51,6 @@ class Replay(Chain):
     # A planting spell runs `plant` directly, and a method does not see the reply's post (the bell's
     # strike awaits it): the garden takes the turn's intent, which the bridge makes the post. Expected
     # to fail until the host gives a spell's method its post (Abi.Context inputOrigin `post`).
-    @unittest.expectedFailure
     def test_1_glm_plants_a_silver_bell_and_the_child_retains_the_planter(self):
         self.make("garden", closure("Garden"), garden_seed())
         reply = self.turn("garden", "receive", self.heard(

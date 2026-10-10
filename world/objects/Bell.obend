@@ -8,6 +8,7 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
+import ./Text.obend as Text
 sum Colour:
   amber: {}
   violet: {}
@@ -88,7 +89,7 @@ form door:
 form undoor:
   label: text 1..32
 def methods() -> Lists.List<String>:
-  Card.wordList("strike")
+  Text.words("strike")
 def forms() -> Card.Forms:
   Card.Forms.cons({head: rainForm(), tail: Card.Forms.cons({head: ringForm(), tail: Card.Forms.cons({head: doorForm(), tail: Card.Forms.cons({head: undoorForm(), tail: Card.Forms.nil()})})})})
 # Doors on the bell's card are its planter's (the garden gives it one home on planting).

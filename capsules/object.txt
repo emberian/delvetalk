@@ -7,6 +7,7 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Relation.obend as Relations
 import ./Card.obend as Card
+import ./Text.obend as Text
 record Coin:
   n: Nat
   who: String
@@ -21,7 +22,7 @@ def keep() -> Edits:
 def initial() -> State:
   {owner: "", coins: Relations.empty()}
 def relations() -> Relations.Decls:
-  Relations.Decls.cons({head: {field: "coins", key: Card.wordList("n who"), limit: 64n}, tail: Relations.Decls.nil({})})
+  Relations.Decls.cons({head: {field: "coins", key: Text.words("n who"), limit: 64n}, tail: Relations.Decls.nil({})})
 law owner "anyone drops; the owner reprograms": request.kind == 0 or request.subject == new.owner
 def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {coins: insert {n: Relations.count(state.coins), who: context.principal, line: input.line}}

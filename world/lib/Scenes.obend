@@ -1,6 +1,6 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
-import ./Spell.obend as Spell
+import ./Text.obend as Text
 # A scene as data: passages, choices with their effects and guards, the scene's own
 # requirements and cooldown. world/objects/Scene.obend keeps one; world/lib/Spween.obend
 # lowers spween's text to its Seed.
@@ -50,11 +50,11 @@ def valueOf(vars: Vars, key: String) -> String:
 def truthy(value: String) -> Bool:
   value != "" && value != "0" && value != "false"
 def natural(value: String) -> Nat:
-  match Spell.number(value):
+  match Text.number(value):
     case yes(y): y.value
     case no(_): 0n
 def isNatural(value: String) -> Bool:
-  match Spell.number(value):
+  match Text.number(value):
     case yes(_): true
     case no(_): false
 def holdsClause(clause: Clause, vars: Vars) -> Bool:

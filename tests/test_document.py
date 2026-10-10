@@ -41,51 +41,17 @@ def as_list(items):
 
 # A document as a small Python tree; to_wire and to_bend are its two renderings.
 def gen(rng, depth):
-    kinds = ["text", "text", "reference", "offer", "fields", "source", "continuation"]
-    if depth > 0:
-        kinds += ["sequence", "sequence", "quote", "result"]
-    kind = rng.choice(kinds)
+    kind = rng.choice(["text", "text", "sequence", "sequence"] if depth > 0 else ["text"])
     s = lambda: "".join(rng.choice(ALPHABET) for _ in range(rng.randint(0, 4)))
     if kind == "sequence":
         return (kind, [gen(rng, depth - 1) for _ in range(rng.randint(0, 4))])
-    if kind in ("quote", "result"):
-        return (kind, s(), gen(rng, depth - 1))
-    if kind == "reference":
-        return (kind, s(), s(), s(), s())
-    if kind == "offer":
-        return (kind, s(), s(), rng.randint(0, 9), s(), s(), s())
-    if kind == "fields":
-        return (kind, [s() for _ in range(rng.randint(0, 2))])
-    if kind == "source":
-        return (kind, s(), s(), s())
-    if kind == "continuation":
-        return (kind, s(), rng.randint(0, 9), rng.randint(0, 9), s())
     return (kind, s())
 
 
-def capture(o, r, m, e, t):
-    return record(object=label(o), revision=nat(r), meaning=label(m), entry=label(e), token=label(t))
-
-
 def to_wire(d):
-    k = d[0]
-    if k == "text":
+    if d[0] == "text":
         return variant("text", value=label(d[1]))
-    if k == "sequence":
-        return variant("sequence", items=as_list([to_wire(c) for c in d[1]]))
-    if k == "quote":
-        return variant("quote", attribution=label(d[1]), body=to_wire(d[2]))
-    if k == "result":
-        return variant("result", status=label(d[1]), body=to_wire(d[2]))
-    if k == "reference":
-        return variant("reference", key=label(d[1]), label=label(d[2]), object=label(d[3]), panel=label(d[4]))
-    if k == "offer":
-        return variant("offer", label=label(d[1]), capture=capture(*d[2:3], d[3], *d[4:]))
-    if k == "fields":
-        return variant("fields", capture=capture("", 0, "", "", ""), needs=as_list([label(x) for x in d[1]]))
-    if k == "source":
-        return variant("source", language=label(d[1]), code=label(d[2]), revision=label(d[3]))
-    return variant("continuation", key=label(d[1]), after=nat(d[2]), limit=nat(d[3]), label=label(d[4]))
+    return variant("sequence", items=as_list([to_wire(c) for c in d[1]]))
 
 
 def lit(s):
@@ -93,33 +59,13 @@ def lit(s):
 
 
 def to_bend(d):
-    k = d[0]
     D = "Document.Document"
-    if k == "text":
+    if d[0] == "text":
         return f"{D}.text({{value: {lit(d[1])}}})"
-    if k == "sequence":
-        items = "Document.Documents.nil()"
-        for c in reversed(d[1]):
-            items = f"Document.Documents.cons({{head: {to_bend(c)}, tail: {items}}})"
-        return f"{D}.sequence({{items: {items}}})"
-    if k == "quote":
-        return f"{D}.quote({{attribution: {lit(d[1])}, body: {to_bend(d[2])}}})"
-    if k == "result":
-        return f"{D}.result({{status: {lit(d[1])}, body: {to_bend(d[2])}}})"
-    if k == "reference":
-        return f"{D}.reference({{key: {lit(d[1])}, label: {lit(d[2])}, object: {lit(d[3])}, panel: {lit(d[4])}}})"
-    if k == "offer":
-        return (f"{D}.offer({{label: {lit(d[1])}, capture: {{object: {lit(d[2])}, revision: {d[3]}n, "
-                f"meaning: {lit(d[4])}, entry: {lit(d[5])}, token: {lit(d[6])}}}}})")
-    if k == "fields":
-        needs = "Document.Names.nil()"
-        for x in reversed(d[1]):
-            needs = f"Document.Names.cons({{head: {lit(x)}, tail: {needs}}})"
-        return (f"{D}.fields({{capture: {{object: \"\", revision: 0n, meaning: \"\", entry: \"\", token: \"\"}}, "
-                f"needs: {needs}}})")
-    if k == "source":
-        return f"{D}.source({{language: {lit(d[1])}, code: {lit(d[2])}, revision: {lit(d[3])}}})"
-    return f"{D}.continuation({{key: {lit(d[1])}, after: {d[2]}n, limit: {d[3]}n, label: {lit(d[4])}}})"
+    items = "Document.Documents.nil()"
+    for c in reversed(d[1]):
+        items = f"Document.Documents.cons({{head: {to_bend(c)}, tail: {items}}})"
+    return f"{D}.sequence({{items: {items}}})"
 
 
 class Session:
@@ -147,7 +93,7 @@ class RenderTests(unittest.TestCase):
     def test_render_equals_bend_plain_and_lines_on_20_generated_documents(self):
         rng = random.Random(1025)
         docs = [("sequence", [])] + [gen(rng, 3) for _ in range(19)]
-        docs[1] = ("sequence", [("sequence", [("quote", "né\nw", ("sequence", [("text", "")]))]), ("text", "end\n")])
+        docs[1] = ("sequence", [("sequence", [("text", "né\nw"), ("sequence", [("text", "")])]), ("text", "end\n")])
         defs = []
         for i, d in enumerate(docs):
             defs.append(f"def d{i}() -> Document.Document:\n  {to_bend(d)}\n"
@@ -181,7 +127,7 @@ class RenderTests(unittest.TestCase):
         def nested(levels):
             d = variant("text", value=label("leaf"))
             for _ in range(levels - 1):
-                d = variant("quote", attribution=label("q"), body=d)
+                d = variant("sequence", items=as_list([d]))
             return d
         ok = self.s.render(nested(64))
         self.assertEqual(ok["status"], "rendered", ok)
@@ -200,7 +146,8 @@ class RenderTests(unittest.TestCase):
         big = variant("sequence", items=as_list([variant("text", value=label("x" * 100000)) for _ in range(11)]))
         r = self.s.render(big)
         self.assertIn("document text exceeds 1048576 bytes", r.get("message", ""), str(r)[:200])
-        for bad in (nat(1), variant("nonsense"), variant("text", value=nat(1)), variant("quote", attribution=label("a"))):
+        for bad in (nat(1), variant("nonsense"), variant("text", value=nat(1)), variant("sequence"),
+                    variant("quote", attribution=label("a"), body=variant("text", value=label("b")))):
             r = self.s.render(bad)
             self.assertEqual(r["status"], "error", r)
             self.assertIn("malformed document", r["message"])

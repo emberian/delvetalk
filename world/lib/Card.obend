@@ -4,6 +4,7 @@ import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Spell.obend as Spell
+import ./Text.obend as Text
 import ./Plan.obend as Plans
 import ./Policies.obend as Policies
 import ./Relation.obend as Relations
@@ -34,16 +35,14 @@ sum Replied:
   silent: {}
 def named(form: Form.Form, card: String) -> Form.Form:
   {card: card, action: form.action, fields: form.fields}
-# Whether text is only blanks (without measuring all of it: textLength costs its bytes).
-def blank(text: String) -> Bool:
-  textDrop(text, textSpan(text, " \n\t\r")) == ""
 def hasField(form: Form.Form, name: String) -> Bool:
   Lists.any(form.fields, fn(f: Form.Field) -> Bool: f.name == name)
 def hint(kind: Form.Kind) -> String:
   match kind:
     case text(t): "<text, {natText(t.min)} to {natText(t.max)} characters>"
     case natural(n): "<a number from {natText(n.min)} to {natText(n.max)}>"
-    case choice(c): "<{Spell.joined(c.options)}>"
+    case choice(c): "<{Text.joined(c.options)}>"
+    case source(_): "<Bend source, 1 to 16384 characters, as a <<BEND block or a ```obend block>"
 # One form as the spell a reader copies.
 def template(card: String, form: Form.Form) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\n    delvetalk {card} {form.action}\n"), tail: Lists.map(form.fields, fn(field: Form.Field) -> Document.Document: Document.text("    {field.name}: {hint(field.kind)}\n"))})})
@@ -67,16 +66,6 @@ def stripped(word: String, n: Nat) -> String:
   textDrop(core, textSpan(core, marks()))
 def marks() -> String:
   ".,:;!?\"')(*`"
-# A space-separated list of words as a list ("" between two spaces is skipped).
-def wordList(text: String) -> Lists.List<String>:
-  if text == "" then Lists.List.nil({}) else listed(textTake(text, textBreak(text, " ")), textDrop(text, textBreak(text, " ") + 1n))
-def listed(word: String, rest: String) -> Lists.List<String>:
-  if word == "" then wordList(rest) else Lists.List.cons({head: word, tail: wordList(rest)})
-# Whether `needle` stands in `text`.
-def contains(text: String, needle: String) -> Bool:
-  containsFrom(textDrop(text, textBreak(text, textTake(needle, 1n))), needle)
-def containsFrom(rest: String, needle: String) -> Bool:
-  if textLength(rest) < textLength(needle) then false else if textTake(rest, textLength(needle)) == needle then true else contains(textDrop(rest, 1n), needle)
 # A lens's value as text or as a natural (0 when the kind is not a number).
 def valueText(value: Form.Value) -> String:
   match value:
@@ -101,7 +90,6 @@ def shown(did: String, handle: String, context: Abi.Context) -> String:
   if handle != "" then handle else name(did, context)
 # What a card shows for a principal, never the raw DID: the last segment of the DID,
 # and of a long one (a real did:plc is 24 characters) only its last eight after "…".
-# The host will put the observed handle in the Context; until then this is the name.
 def handle(did: String) -> String:
   if textTake(did, 4n) == "did:" then shortened(segment(did)) else did
 def segment(did: String) -> String:
@@ -109,10 +97,18 @@ def segment(did: String) -> String:
   if at == textLength(did) then did else segment(textDrop(did, at + 1n))
 def shortened(fragment: String) -> String:
   if textLength(fragment) > 8n then "…{textDrop(fragment, textLength(fragment) - 8n)}" else fragment
-# The first `shown` lines, then "… and N more".
+# The first lines of a list, at most `shown` of them and at most `budget()` characters, then
+# "… and N more": a card stays under 1,400 characters however long its lines are.
+def budget() -> Nat:
+  1200n
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
-  let total = Lists.length(lines)
-  if total > shown then Lists.concat(Lists.take(lines, shown), Document.Documents.cons({head: Document.text("… and {natText(total - shown)} more\n"), tail: Document.Documents.nil()})) else lines
+  kept(lines, shown, budget(), Lists.length(lines))
+def kept(lines: Document.Documents, shown: Nat, room: Nat, left: Nat) -> Document.Documents:
+  match lines:
+    case nil(_): lines
+    case cons(c): keptLine(c.head, Document.size(c.head), c.tail, shown, room, left)
+def keptLine(line: Document.Document, size: Nat, rest: Document.Documents, shown: Nat, room: Nat, left: Nat) -> Document.Documents:
+  if shown == 0n || size > room then Document.Documents.cons({head: Document.text("… and {natText(left)} more\n"), tail: Document.Documents.nil()}) else Document.Documents.cons({head: line, tail: kept(rest, shown - 1n, room - size, left - 1n)})
 # Doors on any card (the convention): an object keeps `doors: Doorways` in its state and
 # its Edits (`Plans.Entries<Doorway, {}>`), offers the `door {label, to}` and `undoor
 # {label}` forms to its owner (`doorAdd`, `doorRemove`: refused by name to anyone else, and by
@@ -125,10 +121,6 @@ type Doorways = Lists.List<Doorway>
 sum DoorEdit:
   edit: {entries: Plans.Entries<Doorway, {}>}
   refused: Refusal
-def doorForm() -> Form.Form:
-  {card: "", action: "door", fields: Form.Fields.cons({head: {name: "label", kind: Form.Kind.text({min: 1n, max: 32n})}, tail: Form.Fields.cons({head: {name: "to", kind: Form.Kind.text({min: 1n, max: 160n})}, tail: Form.Fields.nil()})})}
-def undoorForm() -> Form.Form:
-  {card: "", action: "undoor", fields: Form.Fields.cons({head: {name: "label", kind: Form.Kind.text({min: 1n, max: 32n})}, tail: Form.Fields.nil()})}
 def doorAdd(doors: Doorways, owner: String, door: Doorway, context: Abi.Context) -> DoorEdit:
   if context.principal != owner then notDoorOwner(owner, context) else added(doors, door)
 def doorRemove(doors: Doorways, owner: String, label: String, context: Abi.Context) -> DoorEdit:
@@ -143,7 +135,7 @@ def removed(doors: Doorways, label: String) -> DoorEdit:
     case none(_): DoorEdit.refused({clause: "noDoor", reading: "There is no door called {label}"})
 def doorLines(doors: Doorways) -> Document.Documents:
   Lists.map(doors, fn(d: Doorway) -> Document.Document: Document.text("{d.label}: {d.to.object}\n"))
-# The page's merge (FOUNDATION section 4): its human owner replies `merge` to the posted page
+# The page's merge (FOUNDATION section 5): its human owner replies `merge` to the posted page
 # or an edit, and the object records that post as its page checkpoint. An object with a page
 # keeps `owner` and `pageCheckpoint` in state and reads isMerge(text) in its receive.
 def isMerge(text: String) -> Bool:
@@ -154,7 +146,7 @@ def notOwner(owner: String) -> String:
 # The card's line for it: "" before the first merge.
 def checkpointLine(post: String) -> String:
   if post == "" then "" else "page checkpointed at {post}\n"
-# The object-owned wiki page (FOUNDATION section 4): a list of sections, each a title
+# The object-owned wiki page (FOUNDATION section 5): a list of sections, each a title
 # and a Document. The default is the card, then how to reply; an object overrides
 # page(state, context) to add its own sections. pageText renders the agentwiki body:
 # each section as "## Title" and its text.
@@ -172,7 +164,7 @@ def pageName(page: String, word: String) -> String:
   if page == "" then word else page
 def pageText(page: Page) -> String:
   textJoin(Lists.map(page, fn(section: Section) -> String: "## {section.title}\n\n{Document.plain(section.body)}"), "\n")
-# Interpretation (FOUNDATION section 5): a card with a policy views it (Policies.State) and
+# Interpretation (FOUNDATION section 6): a card with a policy views it (Policies.State) and
 # asks `world.interpret` with `interpretation`, offering its forms; the host fits the model's
 # spell. The model's own words (`replied {text}`) read through `prose`: `unclear: not
 # addressed` (or an empty `unclear:`) is silence, any other need or words a miss. A miss is
@@ -201,9 +193,9 @@ def answerOf(text: String) -> Answer:
 def answerWord(word: String) -> Answer:
   if Lists.any(yesWords(), fn(w: String) -> Bool: w == word) then Answer.yes({}) else if Lists.any(noWords(), fn(w: String) -> Bool: w == word) then Answer.no({}) else Answer.other({})
 def yesWords() -> Lists.List<String>:
-  Lists.concat(wordList("yes Yes YES y Y yeah Yeah yep Yep ok Ok OK okay Okay sure Sure"), Lists.List.cons({head: "go ahead", tail: Lists.List.cons({head: "Go ahead", tail: Lists.List.cons({head: "do it", tail: Lists.List.cons({head: "Do it", tail: Lists.List.nil({})})})})}))
+  Lists.concat(Text.words("yes Yes YES y Y yeah Yeah yep Yep ok Ok OK okay Okay sure Sure"), Lists.List.cons({head: "go ahead", tail: Lists.List.cons({head: "Go ahead", tail: Lists.List.cons({head: "do it", tail: Lists.List.cons({head: "Do it", tail: Lists.List.nil({})})})})}))
 def noWords() -> Lists.List<String>:
-  Lists.concat(wordList("no No NO n N nope Nope cancel Cancel"), Lists.List.cons({head: "never mind", tail: Lists.List.cons({head: "Never mind", tail: Lists.List.nil({})})}))
+  Lists.concat(Text.words("no No NO n N nope Nope cancel Cancel"), Lists.List.cons({head: "never mind", tail: Lists.List.cons({head: "Never mind", tail: Lists.List.nil({})})}))
 # Whether a host verdict `unclear {needs}` says the prose was addressed to nobody.
 def notAddressed(needs: Form.Names) -> Bool:
   Lists.any(needs, fn(need: String) -> Bool: need == "not addressed")
@@ -212,7 +204,7 @@ def retried(utterance: String, needs: Form.Names) -> String:
 def missing(needs: Form.Names) -> String:
   match needs:
     case nil(_): "one spell for an offered form, or unclear: <what is missing>"
-    case cons(_): Spell.joined(needs)
+    case cons(_): Text.joined(needs)
 # Macros (the policy's, checked before the model): `expanded` is the spell text of the first
 # macro whose pattern the utterance matches (blanks and a trailing . ! or ? aside), none when
 # none does. Patterns and utterances are compared word by word; a hole takes the shortest run
@@ -222,22 +214,17 @@ record Capture:
   text: String
 type Captures = Lists.List<Capture>
 def expanded(text: String, policy: Policies.State) -> Lists.Maybe<String>:
-  expandedBy(words(endTrimmed(text)), policy.macros)
+  expandedBy(Text.words(endTrimmed(text)), policy.macros)
 def expandedBy(said: Lists.List<String>, macros: Lists.List<Policies.Macro>) -> Lists.Maybe<String>:
   match macros:
     case nil(_): Lists.Maybe.none({})
-    case cons(c): expandedWith(c.head, matched(words(c.head.pattern), said), said, c.tail)
+    case cons(c): expandedWith(c.head, matched(Text.words(c.head.pattern), said), said, c.tail)
 def expandedWith(macro: Policies.Macro, found: Lists.Maybe<Captures>, said: Lists.List<String>, rest: Lists.List<Policies.Macro>) -> Lists.Maybe<String>:
   match found:
     case some(f): Lists.Maybe.some({value: "delvetalk {filled(macro.expansion, f.value)}"})
     case none(_): expandedBy(said, rest)
 def endTrimmed(text: String) -> String:
-  let size = textLength(text)
-  if size == 0n then text else if textSpan(textDrop(text, size - 1n), " \t\r\n.!?") == 1n then endTrimmed(textTake(text, size - 1n)) else text
-def words(text: String) -> Lists.List<String>:
-  wordsFrom(textDrop(text, textSpan(text, " \t\r\n")))
-def wordsFrom(text: String) -> Lists.List<String>:
-  if text == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(text, textBreak(text, " \t\r\n")), tail: words(textDrop(text, textBreak(text, " \t\r\n")))})
+  Text.trimEndOf(text, " \t\r\n.!?")
 def isHole(word: String) -> Bool:
   textLength(word) > 2n && textTake(word, 1n) == "{{" && textDrop(word, textLength(word) - 1n) == "}}"
 def holeName(word: String) -> String:
@@ -303,7 +290,7 @@ def answerAs<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document
   let replied = unanswered(input, forms)
   if quietly(replied) then handOn(input, context, as(replied)) else tell(as(replied), answerCard(card, whyNot(replied), context, forms))
 def unanswered(input: Reply, forms: Forms) -> Replied:
-  if blank(input.text) then Replied.usage({}) else spellMissing(Spell.parse(input.text), input.fields, forms)
+  if Text.blank(input.text) then Replied.usage({}) else spellMissing(Spell.parse(input.text), input.fields, forms)
 # A spell line in a reply that ran no method is one the host found missing fields (it refuses
 # every other misfit): the card names what it still needs.
 def spellMissing(parsed: Spell.Parsed, fields: Spell.Bindings, forms: Forms) -> Replied:
@@ -329,7 +316,7 @@ def quietly(replied: Replied) -> Bool:
 # Why a card answered without acting, as its card shows it ("" for the plain usage).
 def whyNot(replied: Replied) -> String:
   match replied:
-    case unclear(u): "\nNot done: Almost. I still need: {Spell.joined(u.needs)}.\n"
+    case unclear(u): "\nNot done: Almost. I still need: {Text.joined(u.needs)}.\n"
     case refused(r): "\nrefused {r.clause}: {r.reading}\n"
     case _: ""
 # The card a reply that ran no method gets: the object's card, then why, then its forms.
@@ -374,7 +361,7 @@ def interpretation(utterance: String, forms: Forms, reference: Plans.Reference, 
 def prose(text: String) -> Fitted:
   unclearLine(textDrop(text, textSpan(text, " \n\t\r")))
 def unclearLine(text: String) -> Fitted:
-  if textTake(text, 8n) == "unclear:" then needOf(Spell.trimEnd(Spell.trimStart(textTake(textDrop(text, 8n), textBreak(textDrop(text, 8n), "\n"))))) else Fitted.miss({needs: Form.Names.nil()})
+  if textTake(text, 8n) == "unclear:" then needOf(Text.trim(textTake(textDrop(text, 8n), textBreak(textDrop(text, 8n), "\n")))) else Fitted.miss({needs: Form.Names.nil()})
 # Whether a host verdict's needs say the prose was addressed to nobody, or name nothing.
 def silentNeeds(needs: Form.Names) -> Bool:
   Lists.length(needs) == 0n || notAddressed(needs)
