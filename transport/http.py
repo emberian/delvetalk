@@ -41,7 +41,7 @@ CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
 REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to send a request; bytes of a reply; JSON nesting of a body
 WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
-ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
+ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'receipt', False): 'intent', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
           ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
 TOP_ONLY = ('repl', 'check', 'me', 'revoke')
@@ -52,7 +52,7 @@ FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)):
 
 def resolve(method, path):
     """-> (catalogue name, parameters) or (None, None). The one router: requests are answered and OPTIONS described by it."""
-    parts = [urllib.parse.unquote(p) for p in path.split('/')[1:]]
+    parts = [urllib.parse.unquote(p) for p in path.split('?')[0].split('/')[1:]]
     if parts[:1] == ['AGENTS.md']:
         rest = parts[1:]
         if (method, tuple(rest)) in FIXED:
@@ -168,17 +168,17 @@ CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it
 
 
 def turn_line(r):
-    """A turn's receipt in one line: `admitted garden v3 at height 9, receipt <slug>`, `refused owner: <reading>`, `suspended at height 9`."""
+    """A turn's receipt in one line: `admitted garden v3, entry 9, receipt <slug>`, `refused owner: <reading>`, `suspended, entry 9`."""
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
         w = (out.get('writes') or [None])[0]
-        return f"admitted {w['object']} v{w.get('version')} at height {rc.get('height')}, receipt {rc.get('slug')}" if w else \
-            f"admitted at height {rc.get('height')}, receipt {rc.get('slug')}"
+        return f"admitted {w['object']} v{w.get('version')}, entry {rc.get('height')}, receipt {rc.get('slug')}" if w else \
+            f"admitted, entry {rc.get('height')}, receipt {rc.get('slug')}"
     if r.get('status') == 'refused':
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
-    return f"suspended at height {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
+    return f"suspended, entry {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
 
 
 def digits(text):
@@ -244,7 +244,7 @@ def receipt_links(base, reply, intent=None):
     if rc.get('slug'):
         out['receipt'] = link(f"{base}/receipt/{rc['slug']}")
     elif intent and reply.get('class') == 'duplicateIdentity':
-        out['receipt'] = link(f'{base}/receipt/{urllib.parse.quote(str(intent), safe="")}')
+        out['receipt'] = link(f'{base}/receipt?{urllib.parse.urlencode({"intent": str(intent)})}')
     roots = rc.get('roots') or ([rc['root']] if isinstance(rc.get('root'), dict) else [])
     o = outcome.get('object') if outcome.get('tag') == 'created' or not roots else roots[0].get('object')  # a refusal may name no root
     if o:
@@ -664,17 +664,20 @@ class Handler(BaseHTTPRequestHandler):
             links = {**at(obj), 'world': link(base + '/world'), 'offers': link(base + '/offers')}
             return self.answer(r, keep=('pin',) if kind == 'source' else (), links=links if r.get('status') != 'unknown' else
                                {'world': link(base + '/world'), 'hint': link(base + '/world')}, acts=acts)  # `pin`: the program's name, in source
-        if kind == 'receipt':
-            if SLUG.fullmatch(obj):  # a proquint slug names a receipt; any other text is the intent
-                found = host.send({'op': 'world-resolve', 'principal': principal, 'slug': obj})
-                if 'receipt' in found:
-                    return self.answer({'status': 'receipt', 'receipt': found['receipt']}, links=receipt_links(base, found))
-                if found.get('identity'):
-                    r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': found['identity']})
-                    return self.answer(r, links=receipt_links(base, r))
-                if 'unknown' not in str(found.get('message')):
-                    return self.answer(found)
-            r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': obj})
+        if kind == 'receipt':  # by spoken name only; an intent is `?intent=`, so the two never shadow each other
+            found = host.send({'op': 'world-resolve', 'principal': principal, 'slug': obj}) if SLUG.fullmatch(obj) else \
+                {'status': 'unknown', 'message': f'{obj} is not a spoken name'}
+            if 'receipt' in found:
+                return self.answer({'status': 'receipt', 'receipt': found['receipt']}, links=receipt_links(base, found))
+            if found.get('identity'):
+                r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': found['identity']})
+                return self.answer(r, links=receipt_links(base, r))
+            if found.get('status') != 'unknown' and 'unknown' not in str(found.get('message')):
+                return self.answer(found)  # ambiguous, denied: the host's words
+            return self.answer({'status': 'unknown', 'message': f'no receipt is named {obj}'},
+                               links={'hint': link(f'{base}/receipt?{urllib.parse.urlencode({"intent": obj})}')})
+        if kind == 'intent':
+            r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': q.get('intent', '')})
             return self.answer(r, links=receipt_links(base, r))
         if kind == 'offers':
             wait, after = min(int(q['wait']), WAIT_MAX) if digits(q.get('wait', '')) else 0, {'after': q['after']} if 'after' in q else {}

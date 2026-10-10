@@ -415,7 +415,7 @@ class Turns(FrontCase):
         self.assertEqual((s, v['status'], v['version']), (200, 'viewed', 0))
         s, t = self.turn(tok, 'i1')
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
-        s, r = self.call('GET', '/AGENTS.md/receipt/i1', token=tok)
+        s, r = self.call('GET', '/AGENTS.md/receipt?intent=i1', token=tok)
         self.assertEqual(s, 200)
         self.assertEqual(r['receipt']['slug'], t['receipt']['slug'])
         self.assertEqual(r['receipt']['height'], t['receipt']['height'])
@@ -426,7 +426,7 @@ class Turns(FrontCase):
     def test_compact_turn_reply_is_four_keys_and_the_default_stays_full(self):
         tok = self.login()
         s, full = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?full=1', {'argument': record(), 'intent': 'k1'}, tok)
-        whole = self.call('GET', '/AGENTS.md/receipt/k1', token=tok)[1]['receipt']
+        whole = self.call('GET', '/AGENTS.md/receipt?intent=k1', token=tok)[1]['receipt']
         s, c = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?compact=1', {'argument': record(), 'intent': 'k1'}, tok)  # same intent: the first receipt
         self.assertEqual(s, 200)
         self.assertEqual(bare(c), {'status': 'admitted', 'outcome': whole['outcome'], 'offers': [o['text'] for o in full.get('offers') or []],
@@ -434,7 +434,7 @@ class Turns(FrontCase):
         self.assertIn('hash', full['receipt'])
         s, d = self.turn(tok, 'k1')  # the default: the line, the offers' text, the slug
         self.assertEqual((set(d), d['receipt']['slug']), ({'status', 'line', 'offers', 'receipt', '_links'}, full['receipt']['slug']))
-        self.assertTrue(d['line'].startswith(f"● admitted {self.c} v1 at height {full['receipt']['height']}"), d['line'])
+        self.assertTrue(d['line'].startswith(f"● admitted {self.c} v1, entry {full['receipt']['height']}"), d['line'])
         s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump?compact=1', {'argument': 7, 'intent': 'bad2'}, tok)
         self.assertEqual((s, e['status']), (400, 'error'))  # a host error is not compacted
 
@@ -456,21 +456,16 @@ class Turns(FrontCase):
         self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': 'ember', 'identity': 'f1'}).get('status'), 'receipt')
         self.assertNotEqual(self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': 'x'}).get('status'), 'receipt')
 
-    def test_the_receipt_route_resolves_a_slug_to_the_same_receipt_as_the_intent(self):
+    def test_a_slug_and_an_intent_are_two_routes_so_an_intent_spelled_like_an_old_slug_finds_its_own_turn(self):
         tok = self.login()
-        s, made = self.turn(tok, 'sl1')
-        by_intent = self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1]
-        real, seen = self.host.send, []
-        def send(req, *a, **k):
-            seen.append(req['op'])
-            if req['op'] == 'world-resolve':
-                return {'status': 'resolved', 'receipt': by_intent['receipt']} if req['slug'] == 'babab-dabab' else {'status': 'error', 'message': 'no such slug'}
-            return real(req, *a, **k)
-        self.host.send = send
-        by_slug = self.call('GET', '/AGENTS.md/receipt/babab-dabab', token=tok)
-        self.assertEqual((by_slug[0], bare(by_slug[1])), (200, bare(by_intent)))
-        self.assertEqual(bare(self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)[1]), bare(by_intent))  # an intent never asks to resolve
-        self.assertEqual(seen.count('world-resolve'), 1)
+        older = self.turn(tok, 'sl1')[1]['receipt']['slug']
+        mine = self.turn(tok, older)[1]['receipt']  # a new turn whose intent is the older receipt's spoken name
+        by_slug = self.call('GET', f'/AGENTS.md/receipt/{older}', token=tok)[1]['receipt']
+        by_intent = self.call('GET', f'/AGENTS.md/receipt?intent={older}', token=tok)[1]['receipt']
+        self.assertEqual((by_slug['slug'], by_intent['slug']), (older, mine['slug']))
+        self.assertEqual(self.call('GET', '/AGENTS.md/receipt?intent=sl1', token=tok)[1]['receipt']['slug'], older)
+        s, e = self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)  # a path names a slug, never an intent
+        self.assertEqual((s, e['class'], e['_links']['hint']['href']), (404, 'unknown', '/AGENTS.md/receipt?intent=sl1'))
 
     def test_a_receipt_slug_resolves_to_the_same_receipt_hash_over_http(self):
         tok = self.login()
@@ -507,9 +502,9 @@ class Turns(FrontCase):
         real = self.host.send
         held = {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended', 'activity': {'checkpoint': {'digest': 'd', 'tokens': [{'n': '1'}] * 5}}}}}
         self.host.send = lambda req: held if req['op'] == 'world-receipt' else real(req)
-        s, r = self.call('GET', '/AGENTS.md/receipt/x', token=tok)
+        s, r = self.call('GET', '/AGENTS.md/receipt?intent=x', token=tok)
         self.assertEqual(r['receipt']['outcome']['activity']['checkpoint'], {'tokens': {'elided': 5}})  # the digest is a hash: omitted by default
-        self.assertEqual(bare(self.call('GET', '/AGENTS.md/receipt/x?full=1', token=tok)[1]), held)
+        self.assertEqual(bare(self.call('GET', '/AGENTS.md/receipt?intent=x&full=1', token=tok)[1]), held)
 
 
 class Repl(FrontCase):
@@ -885,7 +880,7 @@ class Play(FrontCase):
     def test_plant_by_spell_and_read_the_receipt(self):
         s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths')
         self.assertEqual(s, 200, page)
-        line = re.search(rb'admitted garden v(\d+) at height (\d+), receipt ([a-z-]+)', page)
+        line = re.search(rb'admitted garden v(\d+), entry (\d+), receipt ([a-z-]+)', page)
         self.assertIsNotNone(line, page)
         self.assertIn(b'It lives at garden/bell/', page)
         tok = self.cookie.split('=', 1)[1]  # the session is the credential: the agent API reads the same receipt
@@ -898,7 +893,7 @@ class Play(FrontCase):
         t.start()
         self.answer('delvetalk garden plant\nseed: a bell for the owls\ncolour: violet')
         t.join(60)
-        self.assertIn(b'suspended at height', out['page'])
+        self.assertIn(b'suspended, entry', out['page'])
         self.assertIn(b'a bell for the owls', out['page'])  # the interpreter's proposal, as the offer to this turn
 
     def test_a_suspended_turn_is_a_line_under_a_kilobyte_and_its_full_reply_elides_the_blocks(self):
@@ -907,7 +902,7 @@ class Play(FrontCase):
         s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'wait-1', 'spell': 'something green perhaps'}, tok)
         self.assertEqual((s, t['status']), (200, 'suspended'), t)
         self.assertLess(len(json.dumps(t)), 1024, t)
-        self.assertTrue(t['line'].startswith('… suspended at height '), t['line'])
+        self.assertTrue(t['line'].startswith('… suspended, entry '), t['line'])
         s, whole = self.call('GET', '/AGENTS.md/receipt/' + t['receipt']['slug'], token=tok)
         self.assertNotIn('"blocks": [', json.dumps(whole))  # the receipt's blocks are counted, not shown
         self.answer('delvetalk garden plant\nseed: a bell\ncolour: violet')  # settle the pending interpretation for the next test
@@ -915,7 +910,7 @@ class Play(FrontCase):
     def test_prose_the_interpreter_never_answers_is_stated_as_no_reply(self):
         self.front.sleep = lambda seconds: None
         s, _, page = self.play('/play/garden', 'something green perhaps')
-        self.assertIn('<span class="stamp">…</span><span class="line">suspended at height'.encode(), page)
+        self.assertIn('<span class="stamp">…</span><span class="line">suspended, entry'.encode(), page)
         self.assertIn('<span class="stamp">— quiet</span>(no reply)'.encode(), page)  # silence is a state: a stamp and its word
 
     def test_the_49th_prose_reply_in_an_hour_is_refused_by_quota_with_its_next_at(self):

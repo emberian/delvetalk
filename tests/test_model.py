@@ -140,6 +140,17 @@ class Interpret(unittest.TestCase):
         self.assertEqual([s['reply']['json']['n'] for s in self.settled()], [1, 2])
         self.assertEqual(self.settled()[0]['reply']['json'], {'form': 'plant', 'n': 1})
 
+    def test_the_utterance_is_sent_once(self):
+        d = Path(self.tmp.name)
+        it = dict(item(1), policy={'model': 'claude-haiku-5-5', 'system': 'forms...\n\nParticipant: plant 1'})
+        (d / 'pending.json').write_text(json.dumps({'pending': [it]}))
+        host = Host(None, str(d / 'stub'))
+        self.addCleanup(host.close)
+        interpret.run(self.state, host, self.ask)
+        sent = self.calls[0]
+        self.assertEqual((sent['system'], sent['user']), ('forms...', 'plant 1'))  # Policy.prompt's tail is the user turn, once
+        self.assertEqual((sent['system'] + sent['user']).count('plant 1'), 1)
+
     def test_a_second_run_does_nothing(self):
         interpret.run(self.state, self.host, self.ask)
         n = len(self.calls)
@@ -292,15 +303,15 @@ class OAuth(unittest.TestCase):
 
 
 class Spend(unittest.TestCase):
-    def test_wire_never_carries_sampling_fields_and_thinking_is_opt_in(self):
+    def test_wire_never_carries_sampling_fields_and_thinking_is_off_unless_asked_for(self):
         seen = []
         t = lambda *a: seen.append(json.loads(a[3])) or (200, body('{}'))
         with mock.patch.dict(os.environ, {'DELVETALK_ANTHROPIC_KEY': 'k'}, clear=True):
             model.ask({**REQ, 'temperature': 0.2, 'top_p': 0.9, 'top_k': 3}, transport=t)
-            self.assertNotIn('thinking', seen[0])
-            os.environ['DELVETALK_MODEL_THINKING'] = 'off'
+            self.assertEqual(seen[0]['thinking'], {'type': 'disabled'})  # an interpretation spends no output on thinking
+            os.environ['DELVETALK_MODEL_THINKING'] = 'on'
             model.ask(REQ, transport=t)
-        self.assertEqual(seen[1]['thinking'], {'type': 'disabled'})
+        self.assertNotIn('thinking', seen[1])
         for wire in seen:
             self.assertEqual(set(wire) - {'thinking'}, {'model', 'max_tokens', 'system', 'messages'})
 

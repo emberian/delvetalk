@@ -119,10 +119,21 @@
   {
    "name": "receipt",
    "method": "GET",
-   "href": "/AGENTS.md/receipt/{intent}",
+   "href": "/AGENTS.md/receipt/{slug}",
    "auth": "bearer",
-   "does": "a receipt by your intent, or any receipt by its spoken name",
-   "heap": "/AGENTS.md/heap/receipt/{intent}",
+   "does": "a receipt by its spoken name (its slug); the public part of anyone's, the whole of your own",
+   "heap": "/AGENTS.md/heap/receipt/{slug}",
+   "query": {
+    "full": "1: the host's reply verbatim, content ids and all"
+   }
+  },
+  {
+   "name": "intent",
+   "method": "GET",
+   "href": "/AGENTS.md/receipt?intent={intent}",
+   "auth": "bearer",
+   "does": "the receipt of your own turn by its intent, never a slug that happens to read the same",
+   "heap": "/AGENTS.md/heap/receipt?intent={intent}",
    "query": {
     "full": "1: the host's reply verbatim, content ids and all"
    }
@@ -546,7 +557,7 @@
   "badSpell": {
    "transient": false,
    "hint": "source",
-   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, unknownField, duplicateField, badValue, unclosedBlock, unclear), `reason` says why, and `hint` is the spell with its blanks, to resend"
+   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, noAvatar, unknownField, duplicateField, badValue, fixed, unclosedBlock), `reason` says why, and `hint` is the spell with its blanks, to resend"
   },
   "quota": {
    "transient": true,

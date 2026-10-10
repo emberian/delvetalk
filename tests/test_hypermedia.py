@@ -144,7 +144,7 @@ class Controls(FrontCase):
         self.assertEqual((s, e['_links']['hint']['href'], list(e['_actions'])), (400, f'/AGENTS.md/world/{self.c}/source', ['bump']))
         self.turn(self.tok, 'dup')
         s, d = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'fields': {'a': 1}, 'intent': 'dup'}, self.tok)
-        self.assertEqual((d['class'], d['_links']['hint']['href']), ('duplicateIdentity', '/AGENTS.md/receipt/dup'), d)
+        self.assertEqual((d['class'], d['_links']['hint']['href']), ('duplicateIdentity', '/AGENTS.md/receipt?intent=dup'), d)
 
     def test_a_listing_links_each_id_and_its_next_page(self):
         s, listed = self.get('/AGENTS.md/world')
@@ -418,7 +418,7 @@ class Catalogue(unittest.TestCase):
     def test_every_route_resolves_from_its_template_to_its_own_entry(self):
         names = [e['name'] for e in CATALOGUE]
         self.assertEqual(len(names), len(set(names)))
-        fill = {'object': 'garden%2Fbell%2F1', 'method': 'plant', 'intent': 'plant-1', 'nsid': 'com.atproto.repo.describeRepo', 'file': 'style.css'}
+        fill = {'object': 'garden%2Fbell%2F1', 'method': 'plant', 'intent': 'plant-1', 'slug': 'babab-dabab', 'nsid': 'com.atproto.repo.describeRepo', 'file': 'style.css'}
         for e in CATALOGUE:
             for href in (e['href'], e.get('heap')):
                 if href:
@@ -444,6 +444,13 @@ class Catalogue(unittest.TestCase):
         names = lambda decl: set(re.findall(r'"(\w+)"', re.search(rf'def {decl} : List String :=\s*\[(.*?)\]', ops, re.S)[1]))
         self.assertEqual(set(REFUSALS), names('refusalClasses'))
         self.assertEqual({k for k, v in REFUSALS.items() if v['transient']}, names('transientClasses'))
+        host = Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Host'
+        spell, loop = (host / 'Spell.lean').read_text(), (host / 'TurnLoop.lean').read_text()
+        named = set(re.findall(r'=> "(\w+)"', re.search(r'def Clause.name.*?\n\n', spell, re.S)[0])) - {'unclear'}  # unclear is a question, never a refusal
+        literal = set(re.findall(r'\.refuse \w+ "(\w+)"|refuseSpell w req \w+ "(\w+)"', loop))
+        clauses = named | {a or b for a, b in literal}
+        listed = re.search(r'`clause` says which part \(([^)]*)\)', REFUSALS['badSpell']['means'])[1]
+        self.assertEqual(set(listed.split(', ')), clauses)
 
     def test_no_example_reply_carries_more_than_one_hash_except_a_source(self):
         """The guide's rule: one hash per reply (the receipt's own), `pin` only on /source. Outside the rule: the REPL

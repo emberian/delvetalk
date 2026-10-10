@@ -83,11 +83,11 @@ def cite(object_, version, origin=None):
 
 
 def receipt_line(receipt, origin=None):
-    """`receipt <slug>: <object> v<n> at height <h>`: the version the turn wrote, else the one it read."""
+    """`receipt <slug>: <object> v<n>, entry <h>`: the version the turn wrote, else the one it read."""
     root = ((receipt.get('outcome') or {}).get('writes') or receipt.get('roots') or [{}])[0]
     text, link = cite(root['object'], root.get('version'), origin) if root.get('object') else ('the journal', '')
     name = f"receipt {receipt['slug']}" if receipt.get('slug') else 'receipt'  # the slug is the name people and posts use
-    return f"{name}: {text} at height {receipt.get('height')}{link}\n"
+    return f"{name}: {text}, entry {receipt.get('height')}{link}\n"
 
 
 def refusal_line(outcome, fallback_class=None):
@@ -193,15 +193,15 @@ def pending_observations(state, rows=None):
                   key=lambda o: (o['createdAt'], o['uri']))
 
 
-def spelled(host, obs):
-    """The card of the post's spell as the host's parser reads it (`spell-parse`), or None. A text without `delvetalk`
-    has no spell line to read and is not sent; a wiki post is a page, never a spell."""
-    if obs['kind'].startswith('wiki') or 'delvetalk' not in obs['text']:
-        return None
+def parsed(host, obs):
+    """The host's reading of the post (`spell-parse`): {spell: {card, …}} or {notASpell}, with `bare` field lines; {} for
+    a text the parser has nothing to read in (no `delvetalk` line, no `:`) and for a wiki post, which is a page."""
+    if obs['kind'].startswith('wiki') or ('delvetalk' not in obs['text'] and ':' not in obs['text']):
+        return {}
     got = host.send({'op': 'spell-parse', 'text': obs['text']})
     if got.get('status') != 'parsed':
         raise Unread(got.get('message', got.get('status')))  # the host did not read it: the post waits for the next run
-    return (got.get('spell') or {}).get('card')
+    return got
 
 
 class Unread(Exception):
@@ -265,37 +265,56 @@ def door_rows(view):
     return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
 
 
-def names_door(host, obs):
-    """Does a summons name one of the directory's doors (its label, as a whole word)? Only then is its prose read: a
-    mention that merely contains a field word (`planted`, `colour`) is observed and not turned (GROUND.md 6, change 3)."""
-    words = set(re.findall(r"[\w'-]+", obs['text'].lower()))
-    view = host.send({'op': 'world-view', 'principal': CLOCK, 'object': 'directory'})
-    return any(str(d.get('label', '')).lower() in words for d in door_rows(view))
-
-
 def route(host, obs, known=None):
-    """-> (object, slot|None) or None. A reply to a journaled post goes to that post's addressee; the
-    card word applies only to posts with no journaled parent, and a summon with none routes to the directory
-    when it names a door."""
-    known, seen, ancestor = known or {}, set(), obs['replyTo']
-    for _ in range(MAX_HOPS):  # the nearest recorded ancestor, walking replyTo through what the observer stored
+    """-> (object, slot|None) or None: where a post reaches (FLEX.md). (a) A reply reaches the card whose recorded post
+    (the card's, or any of the world's replies under it) is its direct parent; on Zulip, where a topic is one thread, the
+    nearest recorded message above it in the topic, unless it @-mentions only other residents. (b) A spell line reaches
+    its card, as the host reads it; a summons (a mention of the world, #gsb) reaches the directory, whose interpreter
+    may answer `none`. (c) Field lines anywhere in a thread the world opened reach that thread's card, which completes
+    them, and (d) prose there that names one of the directory's doors reaches that door's card. Other prose deeper in a
+    thread, addressed to another resident, does not reach by the thread's root."""
+    zulip = obs['uri'].startswith('zulip://')
+    known, ancestor = known or {}, obs['replyTo']
+    hops = 0 if zulip and obs['mentions'] and obs['kind'] != 'summon' else MAX_HOPS if zulip else 1
+    asked = set()
+    found = walk(host, ancestor, known, hops, asked)
+    if found:
+        return found
+    read = parsed(host, obs)
+    if (read.get('spell') or {}).get('card'):
+        return read['spell']['card'], None
+    if obs['kind'] == 'summon':
+        return 'directory', None
+    if zulip or not ancestor:
+        return None
+    root = obs.get('root')  # the thread's card: its nearest recorded ancestor, or its root
+    thread = walk(host, (known.get(ancestor) or {}).get('replyTo'), known, MAX_HOPS, asked) or (lambda got: (
+        got['object'], got.get('slot')) if got.get('object') else None)(host.send({'op': 'world-addressee', 'parent': root}) if root and root != ancestor else {})
+    if not thread:
+        return None
+    if read.get('bare'):  # (c) field lines: the thread's card completes them
+        return thread
+    door = named_door(host, obs)  # (d) prose naming a door reaches that door's card
+    return (door, None) if door else None
+
+
+def named_door(host, obs):
+    """The card of the first door (of the directory's, as the host shows them) whose label the text names as a word."""
+    doors = {str(d.get('label', '')).lower(): d['to']['object'] for d in door_rows(host.send({'op': 'world-view', 'principal': CLOCK, 'object': 'directory'}))}
+    return next((doors[w] for w in re.findall(r"[\w'-]+", obs['text'].lower()) if w in doors), None)
+
+
+def walk(host, ancestor, known, hops, seen):
+    """The addressee of the nearest recorded post among `hops` ancestors, walking replyTo through what was observed;
+    `seen` holds the posts already asked about, so a cycle or a second walk never asks twice."""
+    for _ in range(hops):
         if not ancestor or ancestor in seen:
-            break
+            return None
         seen.add(ancestor)
         got = host.send({'op': 'world-addressee', 'parent': ancestor})
         if got.get('object'):
             return got['object'], got.get('slot')
         ancestor = (known.get(ancestor) or {}).get('replyTo')
-    root = obs.get('root')
-    if root and root not in seen:  # then the thread root
-        got = host.send({'op': 'world-addressee', 'parent': root})
-        if got.get('object'):
-            return got['object'], got.get('slot')
-    card = spelled(host, obs)
-    if card:
-        return card, None
-    if obs['kind'] == 'summon' and names_door(host, obs):
-        return 'directory', None
     return None
 
 

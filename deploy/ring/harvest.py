@@ -76,7 +76,6 @@ def harvest(run, cast_root=None):
     interp = [json.loads(p.read_text()) for p in (state / 'interpretations').glob('*.json')] if (state / 'interpretations').exists() else []
     awaiting = {json.loads(p.read_text())['uri'] for p in (state / 'awaiting').glob('*.json')} if (state / 'awaiting').exists() else set()
     steps, spend, hand = jsonl(run / 'bridge.log'), jsonl(state / 'model-spend.jsonl'), jsonl(state / 'hand-log.jsonl')
-    front = jsonl(run / 'front.log')
     roles = {c['handle'].lower(): c for c in (json.loads(p.read_text()) for p in Path(cast_root).glob('*/cast.json'))} if cast_root else {}
     r = {'run': str(run), 'observed': dict(collections.Counter(o['kind'] for o in obs)), 'journal': {
         'height': len(entries), 'bytes': journal.stat().st_size if journal else 0, 'outcomes': dict(tags), 'refusedByClass': dict(classes),
@@ -90,14 +89,13 @@ def harvest(run, cast_root=None):
     held = [h for s in steps for h in s.get('held') or []]
     r['bridge'] = {'steps': len(steps), 'held': dict(collections.Counter(h.get('reason') for h in held)),
                    'failed': [f for s in steps for f in s.get('failed') or []]}
-    r['interpretations'] = {'files': len(interp), 'settled': sum(1 for i in interp if i.get('settled')), 'pending': sum(1 for i in interp if not i.get('settled')),
-                            'retried': sum(1 for i in interp if i.get('attempts', 1) > 1), 'modelFailed': sum(1 for i in interp if (i.get('reply') or {}).get('status') == 'failed')}
+    r['interpretations'] = {'files': len(interp), 'settled': sum(1 for i in interp if i.get('answer')), 'pending': sum(1 for i in interp if not i.get('answer')),
+                            'modelFailed': sum(1 for i in interp if (i.get('reply') or {}).get('status') == 'failed')}  # retries are the host's `attempted` entries
     r['spend'] = {'calls': len(spend), 'inputTokens': sum(x.get('inputTokens') or 0 for x in spend), 'outputTokens': sum(x.get('outputTokens') or 0 for x in spend)}
     r['hand'] = dict(collections.Counter(h.get('what') for h in hand))
-    r['front'] = {'requests': len(front), 'status500': sum(1 for x in front if x.get('code') == 500), 'logged': bool(front)}
     r['access'] = access(state)
     answered = {d['replyTo'] for d in drafts if d.get('text') or d.get('usage')}
-    addressed = [o for o in obs if o['kind'] in ('spell', 'summon') or 'delvetalk' in o['text'].lower()]
+    addressed = [o for o in obs if o['kind'] == 'summon' or 'delvetalk' in o['text'].lower()]
     r['noReply'] = [o['uri'] for o in addressed if o['uri'] not in answered and o['uri'] not in awaiting]
     # The ring's own rows, by handle (section 5).
     by_handle = collections.defaultdict(list)
@@ -113,7 +111,7 @@ def harvest(run, cast_root=None):
         hours = collections.Counter(o['createdAt'][:13] for o in mine)
         outcomes = [(o, by_intent.get(o['uri'])) for o in mine]
         refused = [((e.get('outcome') or {}).get('class'), (e.get('outcome') or {}).get('clause')) for _, e in outcomes if e and (e.get('outcome') or {}).get('tag') == 'refused']
-        # A spell is a `delvetalk` line, as the host reads it; the observer's `kind` misses spells on child cards (garden/bell/1).
+        # A spell is a `delvetalk` line, as the host reads it; the observer records no spell kind.
         first_spell = next((o for o, e in outcomes if SPELL.search(o['text']) and e and (e.get('outcome') or {}).get('tag') == 'admitted'), None)
         before = [o for o in mine if first_spell and o['createdAt'] < first_spell['createdAt']]
         for o in mine:
@@ -161,7 +159,6 @@ def markdown(r):
         w(f'| interpretations {k} | {v} |')
     w(f"| model calls, input, output tokens | {r['spend']['calls']}, {r['spend']['inputTokens']:,}, {r['spend']['outputTokens']:,} |")
     w(f"| hand actions | {r['hand'] or 'none'} |")
-    w(f"| front requests logged, HTTP 500 | {r['front']['requests'] if r['front']['logged'] else 'not logged'}, {r['front']['status500'] if r['front']['logged'] else 'unread'} |")
     if r['access']:
         a = r['access']
         w(f"| front requests (access.log), principals seen | {a['requests']}, {a['principals']} |")

@@ -134,7 +134,8 @@ class Run:
         recorded = []
         for uri, obj in ((hub, 'directory') for hub in HUBS):
             p = posts[uri]
-            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': p['cid']}, obj)
+            post_py.reserve(self.host, 'hub:' + uri, 'delve')  # a post settles its reservation (HOST-HANDOFF 107)
+            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': p['cid']}, obj, intent='hub:' + uri)
             recorded.append({'uri': uri, 'object': obj, 'status': reply.get('status'), 'message': reply.get('message')})
             if reply.get('status') != 'posted':
                 self.errors.append({'kind': 'posted', 'uri': uri, 'reply': reply})
@@ -154,8 +155,7 @@ class Run:
         """Write a model fixture for every pending interpretation: what a careful Haiku says."""
         listed = self.host.send({'op': 'world-interpretations'})
         for item in listed.get('pending') or []:
-            policy = item['policy'] or {}
-            req = {'model': policy.get('model'), 'system': policy.get('system', ''), 'user': interpret.user_content(item)}
+            req = interpret.request(item)
             # A miss asked once more carries the post's text plus what is missing: the same post, the same careful answer.
             uri = texts.get(item['utterance']) or max(((len(t), u) for t, u in texts.items() if t and item['utterance'].startswith(t)), default=(0, None))[1]
             raw = (self.answers.get(uri) or {}).get('answer') or NOT_ADDRESSED
@@ -182,7 +182,8 @@ class Run:
             if uri not in posts:
                 self.plantings.append({'object': bell, 'uri': uri, 'status': 'planting post is not an archived post'})
                 continue
-            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': posts[uri]['cid']}, bell)
+            post_py.reserve(self.host, 'bell:' + uri, 'delve')
+            reply = post_py.record_posted(self.host, {'uri': uri, 'cid': posts[uri]['cid']}, bell, intent='bell:' + uri)
             self.plantings.append({'object': bell, 'uri': uri, 'status': reply.get('status'), 'message': reply.get('message')})
 
     def window(self, window, now, texts, posts):
@@ -433,7 +434,7 @@ def main(argv=None):
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))
     obs = [json.loads(js) for (js,) in __import__('sqlite3').connect(r.state / 'observe.sqlite').execute('SELECT json FROM observations ORDER BY seq')]
     results['observed'] = {'count': len(obs), 'kinds': dict(collections.Counter(o['kind'] for o in obs))}
-    results['observations'] = {o['uri']: {'kind': o['kind'], 'spell': o['spell'], 'replyTo': o['replyTo'], 'root': o.get('root'), 'handle': o['author']['handle']} for o in obs}
+    results['observations'] = {o['uri']: {'kind': o['kind'], 'replyTo': o['replyTo'], 'root': o.get('root'), 'handle': o['author']['handle']} for o in obs}
     skipped = (r.state / 'skipped.txt').read_text().split() if (r.state / 'skipped.txt').exists() else []
     results['skipped'] = len(skipped)
     drafts = []

@@ -262,10 +262,11 @@ Before DelveTalk goes to delve.town, residents can play it in the owner's own Zu
 transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
 would (principal `zulip:<sender id>`, the full name as handle, `replyTo` the previous message of its topic, kind
 by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
-it as ever: a reply is its parent's address, and a post with no recorded ancestor goes to the card of its spell as the
-host's parser reads it (`spell-parse`; Python only skips text without the word `delvetalk`). A summons with no
-recorded ancestor and no spell reaches the directory only when it names one of its doors (a label, as a word); one
-that merely mentions the bot is observed and not turned. Because this is
+it as on Delve (docs/FLEX.md): a message reaches the card whose recorded message is nearest above it in its topic,
+unless it @-mentions only other residents; a spell line reaches its card as the host's parser reads it (`spell-parse`);
+a mention of the bot reaches the directory, whose interpreter may answer `none`. On Delve a reply reaches by its direct
+parent only, and field lines anywhere in a thread the world opened reach that thread's card; prose deeper in a thread
+never reaches by its root. Because this is
 the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
 with no hourly cap (the host's `postQuota` is delve.town etiquette and does not apply to the owner's own Zulip), and records each post with
 `world-posted`, so a reply to it routes. The delve.town rule against automatic posting does not apply here and nothing
@@ -426,7 +427,8 @@ stays red and the journal is untouched: set the old tag back and `up` again.
   On 429 or 529 it rotates once to the next account. Results carry the account name, `rotated` and `overageInUse`, never a token.
 
 Both modes: only `model`, `max_tokens`, `system` and `messages` are sent (never `temperature`, `top_p` or `top_k`).
-`DELVETALK_MODEL_THINKING=off` adds `thinking: {"type": "disabled"}` for cheap deterministic JSON calls.
+Every interpretation call sends `thinking: {"type": "disabled"}` (adaptive thinking spent up to 337 output tokens on an
+`unclear:` line, docs/FLEX.md); `DELVETALK_MODEL_THINKING=on` leaves it out.
 With a state directory, each replied call appends `{at, model, inputTokens, outputTokens, account}` to `<state>/model-spend.jsonl`; total it against the monthly grant, since no balance endpoint exists.
 `DELVETALK_KEY_NAME` labels the key in that log. Total it with `python3 -m deploy.spend --state /data/state [--month YYYY-MM] [--grant 200]`: calls and tokens by month, dollars at Haiku 5.5's published rates ($0.10 per million input tokens, $0.50 output), and the grant remaining. Any `anthropic-ratelimit-*` response headers appear in the result as `rateLimits`.
 

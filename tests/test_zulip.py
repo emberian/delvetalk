@@ -207,6 +207,14 @@ class Bridging(ZulipCase):
         self.assertEqual(len(texts), 3, texts)
         self.assertTrue(all('garden-1 says' in t for t in texts), texts)
 
+    def test_in_a_topic_the_world_opened_a_message_mentioning_only_other_residents_is_not_read(self):
+        self.zulip.say('t', 'Alice', SPELL)
+        self.bridge()
+        self.zulip.say('t', 'Bob', '@**Alice** your fern looks well, what colour did you pick?')
+        self.assertEqual(self.bridge()['turns'], [])
+        self.zulip.say('t', 'Bob', 'and one for me too')
+        self.assertEqual(len(self.bridge()['turns']), 1)
+
     def test_a_bell_spell_in_a_new_topic_routes_to_the_bell(self):
         body = OFFERING.replace('"hello "', '"bell says "')
         r = self.host.send({'op': 'world-create', 'principal': OPENER, 'identity': 'mk-bell', 'object': 'garden/bell/1',
@@ -238,18 +246,12 @@ class Bridging(ZulipCase):
         zulip.post_drafts(self.state, self.host, client, 'delvetalk', topic='mobo')
         self.assertEqual(sent, [('delvetalk', 'mobo')])
 
-    def test_a_mention_of_the_bot_is_read_when_it_names_a_door_and_only_observed_when_it_has_field_words(self):
-        from unittest import mock
-        real = HostClient.send
-        doors = {'status': 'viewed', 'state': {'doors': [{'label': 'garden', 'to': {'object': 'garden-1'}}]}}
-        with mock.patch.object(HostClient, 'send', lambda h, req: doors if req.get('op') == 'world-view' and req.get('object') == 'directory' else real(h, req)):
-            self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** I planted a fern, what colour is it?')
-            self.assertEqual((self.bridge()['turns'], self.zulip.mine()), ([], []))  # observed, not turned: no miss card
-            self.zulip.say('other', 'Dana', f'@**{BOT["full_name"]}** which way to the garden?')
-            got = self.bridge()
+    def test_a_mention_of_the_bot_summons_the_directory_and_a_follow_up_in_its_topic_is_read(self):
+        self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** I planted a fern, what colour is it?')
+        got = self.bridge()
         self.assertEqual(len(got['posted']), 1, got)
         self.assertIn('directory says', self.zulip.mine()[0]['content'])
-        self.zulip.say('other', 'Dana', 'I planted a fern, what colour is it?')  # in the card's topic: read
+        self.zulip.say('new', 'Carol', 'and the moss too')  # in the topic the world answered: read
         self.assertEqual(len(self.bridge()['turns']), 1)
 
     def test_a_zulip_run_has_no_hourly_cap_so_the_seventeenth_draft_posts(self):
