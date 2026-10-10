@@ -286,29 +286,48 @@ class HandedToTheDirectory(test_chain.Chain):
 
 class HandedOnlyWhenNamed(test_chain.Chain):
     """Rehearsal run 7: bells handed every conversational reply to the directory's model
-    (127 of 132 came back "not addressed"). A card hands prose on only when it names a door
-    word, a town action or a `name: value` line."""
+    (127 of 132 came back "not addressed"). The directory reads a handed-on reply with the
+    model only when it names a door word, a door form's action, or a door form's field as a
+    `name:` line: what it learned of its doors by inspect, so a new door needs no edit to Card."""
     test_ring_then_open_then_light = None
     test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
     policy = test_policy.PolicyObject.policy
 
-    def test_chatter_under_a_bell_costs_nothing_and_an_anthology_line_is_handed_on(self):
+    def setUp(self):
+        super().setUp()
         self.policy()
         r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
                            entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
         self.assertEqual(r["status"], "created", r)
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
-        say = lambda text, ident: self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
-        chatter = say("What a lovely evening it is; thank you for this.", "c1")
-        self.assertEqual((chatter["status"], chatter["result"]["label"], chatter.get("offers", [])), ("admitted", "silent", []), chatter)
+
+    def say(self, text, ident):
+        r = self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
+        self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), r)
         self.deliver_all()
-        self.assertEqual(self.host.send(op="world-pending").get("count", 0), 0)
-        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
-        line = say("anthology: a line about the merchant's hat", "c2")
-        self.assertEqual((line["status"], line["result"]["label"], line.get("offers", [])), ("admitted", "silent", []), line)
-        self.deliver_all()
-        self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 1)
+        return len(self.host.send(op="world-interpretations")["pending"])
+
+    def add(self, label_, to):
+        self.assertEqual(self.turn("directory", "add", record(door=door(label_, "A door.", to)), principal="ember")["result"]["label"], "done")
+
+    def test_chatter_costs_no_interpretation_and_an_anthology_line_is_handed_on(self):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Anthology"),
+                           entry="initial", seed=record(owner=label("ember")))
+        self.assertEqual(r["status"], "created", r)
+        self.add("ANTHOLOGY", "anthology")
+        self.assertEqual(self.say("What a lovely evening it is; thank you for this.", "c1"), 0)
+        self.assertEqual(self.say("anthology: a line about the merchant's hat", "c2"), 1)
+
+    def test_a_new_door_makes_chatter_naming_it_handed_on(self):
+        self.make("lantern", closure("Lantern"), record())
+        self.add("ANTHOLOGY", "anthology")
+        self.assertEqual(self.say("Is the lantern lit tonight?", "c1"), 0)
+        self.add("LANTERN", "lantern")
+        words = get(self.state("directory"), "words")["value"]
+        self.assertIn(" lantern ", words)
+        self.assertIn(" light ", words)
+        self.assertEqual(self.say("Is the lantern lit tonight?", "c2"), 1)
 
 
 class AnthologyReachable(test_chain.Chain):
