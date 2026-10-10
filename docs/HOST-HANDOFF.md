@@ -544,6 +544,19 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    case pass with that one-line change, probed on hbox). Not carried: a delivery's post from the sending
    turn (only its own `receive` argument's); `sends` journal no post. Test: `tests/test_input_post.py`.
 
+72. **A suspension journals what it does not already say (host11; §7 item 2 of host10).** The
+   journaled checkpoint drops `object`, `principal` and `intent` when they are the activity's object
+   and the entry's identity, and its `digest`, which `expandSuspended` (Ops; replay, resumption, fork)
+   derives again from them, `packetSha256`, `rootsDigest` and the tokens (an older entry's journaled
+   digest is still checked). The activity leaves out every empty or zero field but `ticks` (`absent`,
+   `writes`, `sends`, `creates`, `programs`, `laws`, `grants`, `offers`, `awaits`, `checks`, `caller`,
+   …; `activityArray`/`activityNat` read them back) and its `roots`, which were always the entry's
+   (an older activity's own roots are read first). Measured on hbox (`tests/test_suspension_size.py`):
+   one speaker's median 5,532 -> 5,092 B, nine speakers' 7,940 -> 7,500 B. What is left of the host's:
+   `slot` beside an interpretation (its id again, ~100 B; `slot` is read in five places), `request`
+   and `turnRequest` (two digests, both checked), the argument (~300 B). The rest is the kernel's: the
+   fresh checkpoint blocks (3 KB for one speaker, more for nine) and the `tokenTree` roots (~900 B).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

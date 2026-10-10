@@ -1739,12 +1739,15 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (hoisted, argumentBlocks) := hoistLabels (dataJson ctx.argument)
     let argument := Json.mkObj [("argument", hoisted)]
     let journaledCheckpoint := compactCheckpoint w checkpoint.toJson
+      [("object", ctx.object), ("principal", ctx.principal), ("intent", ctx.intent)]
       (((interpretation.map (·.2)).getD #[]) ++ argumentBlocks)
     let interpretation := interpretation.map (·.1)
-    let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method)] ++
+    -- Only what the activity holds: an empty or zero field is left out (`activityArray`,
+    -- `activityNat` read it back), and the roots are the entry's own.
+    let activity := Json.mkObj <| (([("object", toJson ctx.object), ("method", toJson ctx.method)] ++
       ((argument.getObj?.toOption.map (·.toList)).getD []) ++ [
       ("checkpoint", journaledCheckpoint.1),
-      ("roots", allRootsJson st.roots st.fieldRoots), ("absent", toJson st.absent),
+      ("absent", toJson st.absent),
       ("writes", writesJson st.writes), ("sends", Json.arr (st.sends.toArray.map sendJson)),
       ("creates", Json.arr (st.creates.toArray.map fun (id, c) => createRecJson id c)),
       ("extends", toJson st.layered),
@@ -1758,7 +1761,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("spent", spentJson st.spent)] ++
       (if st.post.isEmpty then [] else [("post", toJson st.post)]) ++
       (if st.origin == "request" then [] else [("origin", toJson st.origin), ("command", toJson st.command)]) ++
-      (if st.violation.isSome then [("violation", toJson st.violation), ("violator", toJson st.violator)] else []))
+      (if st.violation.isSome then [("violation", toJson st.violation), ("violator", toJson st.violator)] else [])).filter
+        fun (k, v) => k == "ticks" || !(v == Json.arr #[] || v == toJson "" || v == toJson (0 : Nat)))
     -- A post await names the post; the slot it settles on is whichever reply answers it.
     let waitsOn := match post with
       | some p => ("post", toJson p)
@@ -1938,6 +1942,18 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
     let needs := strings (verdict.getObjVal? "needs").toOption
     respond bounds responseType "unclear" [.record [("needs", listData (needs.map Data.label))]]
 
+/-- A list field of a journaled activity: `[]` when left out (an empty one is not journaled). -/
+def activityArray (act : Json) (key : String) : Except String Json :=
+  match act.getObjVal? key with
+  | .ok v => pure v
+  | .error _ => pure (Json.arr #[])
+
+/-- A count of a journaled activity: 0 when left out. -/
+def activityNat (act : Json) (key : String) : Except String Nat :=
+  match act.getObjVal? key with
+  | .ok v => natOf v
+  | .error _ => pure 0
+
 /-- Continue the activity a suspension entry journaled. The turn's roots are
     re-validated first: if anything it read or required absent has moved, the whole
     turn is refused `staleRoot` and journaled under its original identity. -/
@@ -1951,8 +1967,10 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let object ← act.getObjValAs? String "object"
   let method ← act.getObjValAs? String "method"
   let argument ← decodeData Limits.dataDepth (← activityArgument w act)
-  let roots ← parseRoots (← act.getObjVal? "roots")
-  let fieldRoots ← parseFieldRoots (← act.getObjVal? "roots")
+  -- An older journal repeats the roots in the activity; they are the entry's.
+  let rootsJson := (act.getObjVal? "roots").toOption.getD ((sus.getObjVal? "roots").toOption.getD (Json.arr #[]))
+  let roots ← parseRoots rootsJson
+  let fieldRoots ← parseFieldRoots rootsJson
   let absent := strings (act.getObjVal? "absent").toOption
   let ticks ← natField act "ticks"
   let ledger ← ledgerOf (← sus.getObjVal? "ledger")
@@ -1978,7 +1996,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       rerun := (sus.getObjValAs? Bool "rerun").toOption.getD false }
   -- A moved root whose staged changes so far all commute may still commit (`judge` decides at the
   -- end); one already changed otherwise cannot, and the turn is refused now.
-  let staged ← parseRecordedWrites (← act.getObjVal? "writes")
+  let staged ← parseRecordedWrites (← activityArray act "writes")
   let stale? := (roots.find? fun (id, v) => match (w.objects[id]?).map (·.version) with
       | some now => now != v && !(v < now && ((staged.lookup id).isNone || movedRootAdmits w staged id v (id == object)))
       | none => true).map (·.1)
@@ -1996,21 +2014,21 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
         absent := absent }
     let (w', r) := commit w stalled (entryBase ctx ctx.usedBefore) (some { cls := "staleRoot", object := some id })
     return (w', turnReply w' r)
-  let writes ← parseRecordedWrites (← act.getObjVal? "writes")
-  let sends ← (← (← act.getObjVal? "sends").getArr?).toList.mapM sendOfJson
+  let writes ← parseRecordedWrites (← activityArray act "writes")
+  let sends ← (← (← activityArray act "sends").getArr?).toList.mapM sendOfJson
   let grants ← (((act.getObjVal? "grants").toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Grant.ofJson
-  let creates ← ((← (← act.getObjVal? "creates").getArr?).toList.mapM fun r => do
+  let creates ← ((← (← activityArray act "creates").getArr?).toList.mapM fun r => do
     let id ← r.getObjValAs? String "object"
     let seed ← r.getObjVal? "seed"
     let (o, sources) ← buildObject w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
       (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
     let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
     return (id, ({ object := o, sources, seed } : CreateRec)))
-  let programs ← ((← (← act.getObjVal? "programs").getArr?).toList.mapM fun r => do
+  let programs ← ((← (← activityArray act "programs").getArr?).toList.mapM fun r => do
     return (← r.getObjValAs? String "object", (← r.getObjValAs? String "source", ← r.getObjValAs? String "migration")))
-  let laws ← ((← (← act.getObjVal? "laws").getArr?).toList.mapM fun r => do
+  let laws ← ((← (← activityArray act "laws").getArr?).toList.mapM fun r => do
     return (← r.getObjValAs? String "object", ← r.getObjValAs? String "law"))
-  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← expandCheckpoint w (← act.getObjVal? "checkpoint"))
+  let checkpoint ← Delvetalk.Turn.Checkpoint.fromJson (← expandSuspended w sus)
   let init : TurnState :=
     { world := w
       roots := roots
@@ -2044,9 +2062,9 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       violation := (act.getObjValAs? String "violation").toOption
       violator := (act.getObjValAs? String "violator").toOption.getD ""
       awaited := strings (act.getObjVal? "awaited").toOption
-      awaits := ← natField act "awaits"
+      awaits := ← activityNat act "awaits"
       publishes := (((act.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).toList
-      checks := (natField act "checks").toOption.getD 0
+      checks := ← activityNat act "checks"
       post := (act.getObjValAs? String "post").toOption.getD ""
       limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
   let action : M Data := do

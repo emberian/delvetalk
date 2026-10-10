@@ -1248,9 +1248,15 @@ partial def blockTree (items : Array Json) (depth : Nat := 0)
   if names.size ≤ treeFanout then (depth + 1, names, acc ++ named)
   else blockTree names (depth + 1) (acc ++ named)
 
+/-- The checkpoint fields a suspended entry already says: the binding's object (the activity's),
+    principal and intent (the entry's identity). The digest is derived from them and the tokens. -/
+def boundFields : List String := ["object", "principal", "intent"]
+
 /-- A checkpoint as journaled: `tokens` replaced by `tokenTree`, and the blocks the world does
-    not hold yet (each once), `extra` ones (an interpretation's) among them. -/
-def compactCheckpoint (w : World) (checkpoint : Json)
+    not hold yet (each once), `extra` ones (an interpretation's) among them. The fields the entry
+    already says (`bound`: object, principal, intent) are dropped when they agree, and so is the
+    `digest`, which `expandSuspended` derives again. -/
+def compactCheckpoint (w : World) (checkpoint : Json) (bound : List (String × String))
     (extra : Array (Array Json) := #[]) : Json × List (String × Json) :=
   match (checkpoint.getObjVal? "tokens").toOption.bind (·.getArr?.toOption) with
   | none => (checkpoint, [])
@@ -1259,7 +1265,8 @@ def compactCheckpoint (w : World) (checkpoint : Json)
     let used := used ++ extra.map fun b => (Journal.bodyHash (Json.arr b), b)
     let fresh := used.foldl (fun (acc : Array (String × Array Json)) (c, b) =>
       if w.blocks.contains c || acc.any (·.1 == c) then acc else acc.push (c, b)) #[]
-    let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokens")
+    let said := fun (k : String) (v : Json) => k == "digest" || (bound.lookup k).any (toJson · == v)
+    let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter fun (k, v) => k != "tokens" && !said k v
     (Json.mkObj (fields ++ [("tokenTree", Json.mkObj [("depth", toJson depth), ("roots", Json.arr roots)])]),
      if fresh.isEmpty then [] else
        [("blocks", Json.arr (fresh.map fun (c, b) => Json.mkObj [("cid", toJson c), ("items", Json.arr b)]))])
@@ -1389,6 +1396,27 @@ partial def expandCheckpoint (w : World) (checkpoint : Json) : Except String Jso
   let tokens ← expand (← tree.getObjValAs? Nat "depth") (← (← tree.getObjVal? "roots").getArr?)
   let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokenTree")
   return Json.mkObj (fields ++ [("tokens", Json.arr tokens)])
+
+/-- A suspended entry's checkpoint whole: its tokens from the world's blocks (`expandCheckpoint`),
+    the binding fields the entry says (`boundFields`) and the digest derived again when the journal
+    left them out (`compactCheckpoint`). -/
+def expandSuspended (w : World) (entry : Json) : Except String Json := do
+  let identity ← entry.getObjVal? "identity"
+  let act ← (← entry.getObjVal? "outcome").getObjVal? "activity"
+  let c ← expandCheckpoint w (← act.getObjVal? "checkpoint")
+  let fill := fun (c : Json) (k : String) (v : Except String String) =>
+    match c.getObjVal? k, v with
+    | .error _, .ok v => c.setObjVal! k (toJson v)
+    | _, _ => c
+  let c := fill c "object" (act.getObjValAs? String "object")
+  let c := fill c "principal" (identity.getObjValAs? String "principal")
+  let c := fill c "intent" (identity.getObjValAs? String "intent")
+  if (c.getObjVal? "digest").toOption.isSome then return c
+  let tokens ← Delvetalk.Turn.tokensOfJson (← c.getObjVal? "tokens")
+  return c.setObjVal! "digest" (toJson (Delvetalk.Turn.checkpointDigest
+    (← c.getObjValAs? String "packetSha256") (← c.getObjValAs? String "object")
+    (← c.getObjValAs? String "principal") (← c.getObjValAs? String "intent")
+    (← c.getObjValAs? String "rootsDigest") tokens))
 
 /-- The sources an entry carries, checked against their CIDs. -/
 def entrySources (entry : Json) : Except String (List (String × String)) := do
@@ -2771,8 +2799,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let (page, part) ← postedPage outcome
     return record (postIndex w uri { object, slot, page, part, height := ← natField entry "height" }) entry key [object]
   | "suspended" =>
-    let activity ← outcome.getObjVal? "activity"
-    let checkpoint ← expandCheckpoint w (← activity.getObjVal? "checkpoint")
+    let checkpoint ← expandSuspended w entry
     let tokens ← Delvetalk.Turn.tokensOfJson (← checkpoint.getObjVal? "tokens")
     unless (← checkpoint.getObjValAs? String "digest") == Delvetalk.Turn.checkpointDigest
         (← checkpoint.getObjValAs? String "packetSha256") (← checkpoint.getObjValAs? String "object")
