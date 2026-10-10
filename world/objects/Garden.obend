@@ -327,7 +327,7 @@ def understand(state: State, input: Card.Heard, context: Abi.Context, found: Hel
 def unplaced(input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   if Card.handsOn(input.text, context) == false then silent(found, context) else forwarding(input, context, found)
 def forwarding(input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
-  match perform(Card.forwarding(input.text, input.post, context)):
+  match perform(Card.forwarding(input.text, input.post, Spell.bare(textTake(input.text, 2000n)), context)):
     case _: silent(found, context)
 def consulted(state: State, input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match perform(Plan.view({object: state.policy})):
