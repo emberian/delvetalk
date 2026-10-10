@@ -69,8 +69,9 @@ the library).
   it: "<handle> said: <utterance>; I could not fit it (<card>).". A host `unclear {needs}`
   (a failed model call, a JSON proposal that does not fit) is not retried. An activity
   composes only in tail position, so the object owns the loop (Directory answers a miss
-  that says the action is not offered at once, with the nearest door's usage card, and
-  does not ask again; `interpreted`/`readBack` in
+  that says the action is not offered at once and does not ask again: with the usage card
+  of a door whose form has an action resembling the miss, else "A bell's card takes rain:
+  reply to the planting post" when a kind of card under a door takes it, else no door; `interpreted`/`readBack` in
   Garden, `interpreting`/`readBack` in Directory) and Card gives the Plans, the pure
   reading and `Card.unfit` for a card with no writes of its own. A read-only root that moves
   while the interpretation waits does not make the resumption stale.

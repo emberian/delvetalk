@@ -146,9 +146,15 @@ class Hub(test_chain.Chain):
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
         [card] = [o["text"] for o in missed["receipt"]["offers"]]
         print("--- root, an action no door offers ---\n" + card)
-        self.assertTrue(card.startswith("✾ DELVETALK · ROOT\n\nNo door offers that (rain is not one of the offered actions). The nearest is garden:\n"), card)
-        self.assertIn("    delvetalk garden plant\n", card)
+        # No door's form resembles rain; the garden's bells take it.
+        self.assertEqual(card, "✾ DELVETALK · ROOT\n\nNo door offers that (rain is not one of the offered actions). A bell's card takes rain: reply to the planting post.\n")
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        # A miss resembling a door's action names that door and its forms.
+        self.assertEqual(self.say("Could I do some planting in the garden?", KIMI, uri="at://x/post/4")["status"], "suspended")
+        near = self.interpret("unclear: planting is not one of the offered actions")
+        [card] = [o["text"] for o in near["receipt"]["offers"]]
+        self.assertTrue(card.startswith("✾ DELVETALK · ROOT\n\nNo door offers that (planting is not one of the offered actions). The nearest is garden:\n"), card)
+        self.assertIn("    delvetalk garden plant\n", card)
         # Prose naming no door, action or field never reaches the model.
         chatter = self.say("lovely weather on the wiki today", KIMI, uri="at://x/post/2")
         self.assertEqual((chatter["status"], chatter["result"]["label"], chatter.get("offers", [])), ("admitted", "silent", []), chatter)

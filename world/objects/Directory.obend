@@ -267,28 +267,61 @@ def interpreting(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, 
 def readBack(state: State, input: Card.Heard, forms: Lists.List<Form.Form>, policy: Policies.State, attempt: Nat, text: String, fitted: Card.Fitted, context: Abi.Context) -> Activity<Plan, Response, Heard>:
   match fitted:
     case hit(h): if Card.confirms(policy, actionOf(h.parsed)) then askedFirst(h.card, text) else passOn(h.card, {text: text, post: input.post}, context)
-    case miss(m): if unoffered(m.needs) then nearest(input.text, text, forms, m.needs) else if attempt == 0n then interpreting(state, input, forms, policy, 1n, m.needs, context) else Card.unfit(policy, input.text, m.needs, context, needsCard(m.needs), Heard.unclear({needs: m.needs}))
+    case miss(m): if unoffered(m.needs) then nearest(state, text, forms, m.needs, context) else if attempt == 0n then interpreting(state, input, forms, policy, 1n, m.needs, context) else Card.unfit(policy, input.text, m.needs, context, needsCard(m.needs), Heard.unclear({needs: m.needs}))
     case silent(_): Heard.silent({})
 # A miss that says the action is not offered is not asked again (no attempt can offer it):
-# it is answered once with the usage card of the nearest door, the one whose card the
-# model's spell named, else the first whose action or field the utterance names, else the
-# first with forms.
+# it is answered once, naming a door only when one offers an action resembling the miss.
 def unoffered(needs: Form.Names) -> Bool:
   Lists.any(needs, fn(n: String) -> Bool: Card.contains(n, "not offered") || Card.contains(n, "not one of the offered"))
-def nearest(utterance: String, text: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Activity<Plan, Response, Heard>:
-  usageOf(nearestCard(utterance, Spell.parse(text), forms), forms, needs)
-def nearestCard(utterance: String, parsed: Spell.Parsed, forms: Lists.List<Form.Form>) -> String:
-  match parsed:
-    case spell(s): if Lists.any(forms, fn(f: Form.Form) -> Bool: f.card == s.card) then s.card else namedIn(utterance, forms)
-    case notASpell(_): namedIn(utterance, forms)
-def namedIn(utterance: String, forms: Lists.List<Form.Form>) -> String:
-  match Lists.find(forms, fn(f: Form.Form) -> Bool: Card.contains(utterance, f.action) || Lists.any(f.fields, fn(x: Form.Field) -> Bool: Card.contains(utterance, x.name))):
-    case some(f): f.value.card
-    case none(_): firstCard(forms)
-def firstCard(forms: Lists.List<Form.Form>) -> String:
-  match forms:
-    case cons(c): c.head.card
+# The missed action: the model's spell's, or the first word of its need ("rain is not one of
+# the offered actions"), or the second ("garden water is not offered").
+def missedAction(text: String, needs: Form.Names) -> String:
+  match Spell.parse(text):
+    case spell(s): s.action
+    case notASpell(_): fromNeeds(needs)
+def fromNeeds(needs: Form.Names) -> String:
+  match Lists.find(needs, fn(n: String) -> Bool: Card.contains(n, "not offered") || Card.contains(n, "not one of the offered")):
+    case some(n): wordAt(Card.wordList(n.value), if Card.contains(n.value, "is not offered") then 2n else 1n)
+    case none(_): ""
+def wordAt(words: Lists.List<String>, n: Nat) -> String:
+  match words:
     case nil(_): ""
+    case cons(c): if n <= 1n then c.head else wordAt(c.tail, n - 1n)
+def resembles(action: String, missed: String) -> Bool:
+  textLength(missed) >= 3n && (action == missed || Card.contains(action, missed) || Card.contains(missed, action) && textLength(action) >= 3n)
+# The nearest door is one whose forms have an action resembling the miss; else a kind of card
+# under a door that takes it (a garden's bell takes rain); else none is named.
+def nearest(state: State, text: String, forms: Lists.List<Form.Form>, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  nearestFor(state, missedAction(text, needs), forms, needs, context)
+def nearestFor(state: State, missed: String, forms: Lists.List<Form.Form>, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match Lists.find(forms, fn(f: Form.Form) -> Bool: resembles(f.action, missed)):
+    case some(f): usageOf(f.value.card, forms, needs)
+    case none(_): kinds(state.doors, missed, needs, context)
+def kinds(doors: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match doors:
+    case nil(_): noDoor(needs, "")
+    case cons(c): if Plans.isNobody(c.head.to) || missed == "" then kinds(c.tail, missed, needs, context) else kindListed(c.head, c.tail, missed, needs, context)
+def kindListed(door: Door, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match perform(Plan.objects({prefix: "{door.to.object}/", after: ""})):
+    case listed(l): kindFirst(l.ids, rest, missed, needs, context)
+    case _: kinds(rest, missed, needs, context)
+def kindFirst(ids: Document.Names, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match ids:
+    case nil(_): kinds(rest, missed, needs, context)
+    case cons(c): kindInspected(c.head, rest, missed, needs, context)
+def kindInspected(id: String, rest: Lists.List<Door>, missed: String, needs: Form.Names, context: Abi.Context) -> Activity<Plan, Response, Heard>:
+  match perform(Plan.inspect({object: {world: context.world, object: id}})):
+    case inspected(i): if Lists.any(i.methods, fn(f: Form.Form) -> Bool: f.action == missed) then noDoor(needs, kindLine(id, missed)) else kinds(rest, missed, needs, context)
+    case _: kinds(rest, missed, needs, context)
+# "garden/bell/3" is a bell: the next-to-last segment of its id.
+def kindOf(id: String) -> String:
+  wordAt(Lists.reverse(Card.wordList(textJoin(slashed(id), " "))), 2n)
+def slashed(id: String) -> Lists.List<String>:
+  if id == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(id, textBreak(id, "/")), tail: slashed(textDrop(id, textBreak(id, "/") + 1n))})
+def kindLine(id: String, missed: String) -> String:
+  if kindOf(id) == "bell" then " A bell's card takes {missed}: reply to the planting post." else " A {kindOf(id)}'s card takes {missed}: reply to its post."
+def noDoor(needs: Form.Names, kind: String) -> Activity<Plan, Response, Heard>:
+  Card.tell(Heard.unclear({needs: needs}), Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}).{kind}\n"))
 def usageOf(card: String, forms: Lists.List<Form.Form>, needs: Form.Names) -> Activity<Plan, Response, Heard>:
   Card.tell(Heard.unclear({needs: needs}), Document.concat(Document.text("✾ DELVETALK · ROOT\n\nNo door offers that ({Spell.joined(needs)}). The nearest is {card}:\n"), Card.usage(card, Lists.filter(forms, fn(f: Form.Form) -> Bool: f.card == card))))
 # An action the policy confirms (a give, an offer, a reprogram) is not passed on from prose:
