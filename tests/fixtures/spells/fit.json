@@ -412,8 +412,8 @@
     }
    ]
   },
-  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
-  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
+  "expected": "refused This card answers env/x plant.",
+  "parsed": "spell env/DID:plc:x seen "
  },
  {
   "text": "delvetalk env/did:plc:x? seen",
@@ -476,8 +476,8 @@
     }
    ]
   },
-  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
-  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
+  "expected": "refused This card answers env/x plant.",
+  "parsed": "spell env_did seen "
  },
  {
   "text": "delvetalk env/did:plc:x se:en",

@@ -262,7 +262,7 @@ by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons 
 it as ever: a reply is its parent's address, and a post with no recorded ancestor goes to the card of its spell as the
 host's parser reads it (`spell-parse`; Python only skips text without the word `delvetalk`). Because this is
 the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
-inside the host's `postQuota` per hour (a draft over it waits for the next round), and records each post with
+with no hourly cap (the host's `postQuota` is delve.town etiquette and does not apply to the owner's own Zulip), and records each post with
 `world-posted`, so a reply to it routes. The delve.town rule against automatic posting does not apply here and nothing
 in this path reads Delve credentials.
 

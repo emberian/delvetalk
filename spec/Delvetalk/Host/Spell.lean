@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import Compiler.ObjectiveBendDataWire
+import Delvetalk.Host.Store
 
 /-!
 The spell grammar of a card reply (docs/FOUNDATION.md section 4), ported rule for rule from
@@ -74,12 +75,12 @@ def brk (t : T) (alphabet : T) : Nat := (t.takeWhile (fun c => !alphabet.contain
 
 def blanks : T := [' ', '\t', '\r']
 def identifier : T := "abcdefghijklmnopqrstuvwxyz0123456789-".toList
-def cardAlphabet : T := "abcdefghijklmnopqrstuvwxyz0123456789-:/.".toList
+def cardAlphabet : T := Limits.nameAlphabet.toList
 def delimiterAlphabet : T := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".toList
 
 def isCardName (v : T) : Bool :=
   let size := v.length
-  decide (size > 0) && decide (size ≤ 160) && span v cardAlphabet == size
+  decide (size > 0) && decide (size ≤ Limits.maxObjectIdBytes) && span v cardAlphabet == size
 
 def isIdentifier (v : T) : Bool :=
   let size := v.length

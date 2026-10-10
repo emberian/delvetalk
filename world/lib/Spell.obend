@@ -26,11 +26,12 @@ sum Parsed:
   notASpell: {reason: String}
 def identifier() -> String:
   "abcdefghijklmnopqrstuvwxyz0123456789-"
+# The host's object-name rule (Store.lean `Limits.nameAlphabet`, 1..128): every object id is a card name.
 def cardAlphabet() -> String:
-  "abcdefghijklmnopqrstuvwxyz0123456789-:/."
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-:/._"
 def isCardName(value: String) -> Bool:
   let size = textLength(value)
-  size > 0n && size <= 160n && textSpan(value, cardAlphabet()) == size
+  size > 0n && size <= 128n && textSpan(value, cardAlphabet()) == size
 def isAction(value: String) -> Bool:
   value == "?" || isIdentifier(value)
 def isIdentifier(value: String) -> Bool:

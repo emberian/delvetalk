@@ -80,10 +80,10 @@ sum Published:
   refused: {clause: String}
 sum Programmed:
   reprogrammed: {pin: String}
-  refused: {clause: String}
+  refused: {clause: String, reading: String}
 sum Amended:
   amended: {}
-  refused: {clause: String}
+  refused: {clause: String, reading: String}
 sum Inspected:
   inspected: {pin: String, law: String, source: String, methods: Forms}
   denied: {}
