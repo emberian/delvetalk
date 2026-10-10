@@ -3,6 +3,7 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Seats.obend as Seats
 import ./Automatafl.obend as Game
@@ -26,8 +27,6 @@ record Seed:
 record Edits:
   round: Plans.Edit<Nat, Nat>
   game: Plans.Edit<Game.Result, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<Seats.State, Seats.Done>
 law rounds "rounds only go forward": monotone(round)
 law owner "only the owner reprograms or amends it; anyone plays": request.kind == 0 or request.subject == new.owner
 def defaultSeed() -> Seed:
@@ -38,42 +37,47 @@ def seeded(seed: Seed) -> State:
   {owner: "", north: seed.north, south: seed.south, round: 0n, width: 11n, height: 11n, game: opening()}
 def initial() -> State:
   seeded(defaultSeed())
+def keep() -> Edits:
+  {round: Plans.Edit.keep({}), game: Plans.Edit.keep({})}
 sum Done:
   resolved: {round: Nat, status: Nat, winner: Nat}
   refused: {reason: String}
 def ready(seat: Seats.State, round: Nat) -> Bool:
   seat.round == round && seat.opened
-def resolve(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  if state.game.winner != 0n then Done.refused({reason: "The match is finished."}) else north(state, context)
-def north(state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.view({object: state.north})):
-    case viewed(v): if ready(v.state, state.round) then south(v.state, state, context) else Done.refused({reason: "North has not opened this round."})
+# Only `resolve` plays: every helper takes the State after its own inputs, since a definition
+# whose first parameter is the State is a method any turn may run (`north` skipped the
+# finished-match check; `played` and `advanced` wrote or moved the seats with any result).
+def resolve(state: State, context: Abi.Context) -> Activity<Done>:
+  if state.game.winner != 0n then Done.refused({reason: "The match is finished."}) else north(context, state)
+def north(context: Abi.Context, state: State) -> Activity<Done>:
+  match world.view::<Seats.State>({object: state.north}):
+    case viewed(v): if ready(v.state, state.round) then south(v.state, state) else Done.refused({reason: "North has not opened this round."})
     case _: Done.refused({reason: "North's seat did not answer."})
-# south and played take the State second, so they are not methods: a turn naming `played`
-# would write any result it liked (the method table lists every definition whose first
-# parameter is the State).
-def south(n: Seats.State, state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  match perform(Plan.view({object: state.south})):
-    case viewed(v): if ready(v.state, state.round) then played(Checked.play(state.width, state.height, state.game.board, state.game.automaton, state.game.marks, n.source, n.target, v.state.source, v.state.target), state, context) else Done.refused({reason: "South has not opened this round."})
+def south(n: Seats.State, state: State) -> Activity<Done>:
+  match world.view::<Seats.State>({object: state.south}):
+    case viewed(v): if ready(v.state, state.round) then played(Checked.play(state.width, state.height, state.game.board, state.game.automaton, state.game.marks, n.source, n.target, v.state.source, v.state.target), state) else Done.refused({reason: "South has not opened this round."})
     case _: Done.refused({reason: "South's seat did not answer."})
-def played(result: Game.Result, state: State, context: Abi.Context) -> Activity<Plan, Response, Done>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {round: Plans.Edit.add({delta: 1n}), game: Plans.Edit.set({value: result})}}))
-  advanced(state, result)
-def advanced(state: State, result: Game.Result) -> Activity<Plan, Response, Done>:
-  match perform(Plan.call({object: state.north, method: "next", argument: Plans.nothing()})):
-    case _: advancedSouth(state, result)
-def advancedSouth(state: State, result: Game.Result) -> Activity<Plan, Response, Done>:
-  match perform(Plan.call({object: state.south, method: "next", argument: Plans.nothing()})):
+def played(result: Game.Result, state: State) -> Activity<Done>:
+  let written(_) = write {round: add 1n, game: set result}
+  advanced(result, state)
+def advanced(result: Game.Result, state: State) -> Activity<Done>:
+  match world.call::<Seats.Done>({object: state.north, method: "next", argument: Plans.nothing()}):
+    case _: advancedSouth(result, state)
+def advancedSouth(result: Game.Result, state: State) -> Activity<Done>:
+  match world.call::<Seats.Done>({object: state.south, method: "next", argument: Plans.nothing()}):
     case _: Done.resolved({round: state.round + 1n, status: result.status, winner: result.winner})
+# Actions without a form: anyone resolves a round; genesis publishes the page.
+def methods() -> Lists.List<String>:
+  Card.wordList("resolve publishPage")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 # The card as a public page under the door word (genesis posts one card per door).
-def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  Card.publishPagePlan(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
+def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
+  Card.publishPage(Card.pageName(input.page, blurb().word), Card.defaultPage(render(state, Card.public(context)), Card.public(context), forms()))
 def blurb() -> Card.Door:
   {word: "play", blurb: "The original two-player, 11x11 Automatafl: seal, open, resolve."}
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Replied>:
-  Card.answerPlan(Card.routeHeard(input, context, forms()), context, forms(), render(state, context))
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 def glyph(cell: Nat) -> String:
   if cell == 1n then "+" else if cell == 2n then "-" else if cell == 3n then "@" else "."
 def row(board: Nat, at: Nat, left: Nat) -> String:

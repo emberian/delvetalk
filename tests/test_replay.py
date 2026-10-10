@@ -125,7 +125,7 @@ class Replay(Chain):
         proposals = rows(self.state_field("anthology", "proposals"))
         self.assertEqual([get(p, "author")["value"] for p in proposals], ["glm", "kimik3", "gemini"])
         self.assertEqual({get(p, "status")["label"] for p in proposals}, {"proposed"})
-        admitted = self.turn("anthology", "admit", record(index=nat(1)), principal="ember")
+        admitted = self.turn("anthology", "admit", record(number=nat(2)), principal="ember")
         self.assertEqual(admitted["status"], "admitted", admitted)
         proposals = rows(self.state_field("anthology", "proposals"))
         self.assertEqual([get(p, "status")["label"] for p in proposals], ["proposed", "admitted", "proposed"])

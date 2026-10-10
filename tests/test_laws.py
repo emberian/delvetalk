@@ -84,9 +84,12 @@ class Laws(LawWorld):
         self.create("anthology", closure("Anthology"), record(owner=label(OWNER), proposals=relation()))
         self.assertEqual(self.turn("anthology", "submit", record(line=label("moths")), principal=OTHER)["status"], "admitted")
         spelled = self.turn("anthology", "receive", heard("delvetalk anthology submit\nline: lamps"), principal="did:plc:glm")
-        self.assertEqual((spelled["status"], spelled["result"]["label"]), ("admitted", "done"), spelled)
-        self.assertEqual(self.clause(self.turn("anthology", "admit", record(index=nat(0)), principal=OTHER)), "lawRefused/owner")
-        self.assertEqual(self.turn("anthology", "admit", record(index=nat(1)), principal=OWNER)["status"], "admitted")
+        self.assertEqual((spelled["status"], spelled["result"]), ("admitted", nat(2)), spelled)  # the method's own result: the count
+        # admit refuses a stranger by name before the law is asked; the law still refuses any
+        # other change of theirs (test above).
+        stranger = self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)
+        self.assertEqual((stranger["status"], stranger["result"]["label"]), ("admitted", "refused"), stranger)
+        self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
         statuses = [get(p, "status")["label"] for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(statuses, ["proposed", "admitted"])
         card = self.turn("anthology", "receive", heard(""), principal=OWNER)["offers"][0]["text"]
@@ -100,7 +103,7 @@ def tide_variant():
     """Tide whose subscribe writes another principal's subscription and whose tick skips the gap."""
     with open("world/objects/Tide.obend") as handle:
         source = handle.read()
-    source = source.replace("{who: context.principal, every: every,", '{who: "did:plc:someone-else", every: every,', 1)
+    source = source.replace("{who: context.principal, every: input.every,", '{who: "did:plc:someone-else", every: input.every,', 1)
     source = source.replace("if state.ticks > 0n && context.clock < state.last + state.gap then", "if false then", 1)
     assert source.count("did:plc:someone-else") == 1 and "if false then" in source, "Tide changed: the variant no longer skips its checks"
     return closure("Tide", override={"Tide": source})

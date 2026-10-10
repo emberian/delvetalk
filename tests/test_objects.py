@@ -173,8 +173,9 @@ CISTERN_PROBE = PROBE_HEAD % "Cistern" + """def one(n: Nat) -> String:
 """
 
 ANTHOLOGY_PROBE = PROBE_HEAD % "Anthology" + """import ./Relation.obend as Relations
+import ./Rows.obend as Rows
 def one(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Relations.Relation.rows({items: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: O.Status.proposed({}), at: 1n, n: 0n}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: O.Status.admitted({}), at: 2n, n: 1n}, tail: Lists.List::<O.Proposal>.nil()})})})}, Card.stranger()))
+  Document.plain(O.render({owner: "ember", ownerHandle: "", proposals: Relations.Relation.rows({items: Lists.List::<O.Proposal>.cons({head: {author: "glm", handle: "", line: "moths", status: Rows.Status.proposed({}), at: 1n, n: 0n}, tail: Lists.List::<O.Proposal>.cons({head: {author: "kimik3", handle: "", line: "lamps", status: Rows.Status.admitted({}), at: 2n, n: 1n}, tail: Lists.List::<O.Proposal>.nil()})})})}, Card.stranger()))
 """
 
 
@@ -198,7 +199,7 @@ class Objects(unittest.TestCase):
     def test_methods_perform_the_plans_they_claim(self):
         expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rained"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
-                    ("Cistern", "retain"): "write", ("Anthology", "submitted"): "write", ("Anthology", "admitted"): "write",
+                    ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admitted"): "write",
                     ("Card", "notified"): "send", ("Door", "opened"): "write", ("Door", "knock"): "write",
                     ("Lantern", "lit"): "write", ("Door", "watch"): "subscribe", ("Loop", "tick"): "write", ("Loop", "again"): "send"}
         for (name, entry), plan in expected.items():

@@ -301,7 +301,7 @@ class Wakes(Chain):
         post = ("delvetalk garden plant / colour: amber / seed: an example\nmine:\n"
                 "delvetalk tide subscribe / every: 1 / note: WC-01, first light")
         sub = self.turn("tide", "receive", heard(post), principal=OTHER)
-        self.assertEqual(self.label_of(sub), "done")
+        self.assertEqual(self.label_of(sub), "subscribed")  # the method's own result
         card = sub["offers"][0]["text"]
         self.assertEqual(card, (
             "Subscribed, from tick 0.\n"

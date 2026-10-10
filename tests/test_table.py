@@ -122,6 +122,8 @@ class Table(Chain):
         # nextRound took the State first, so a turn naming it moved the round past `next`'s check.
         self.assertEqual(self.turn("north", "nextRound", principal=NORTH)["status"], "refused")
         self.assertEqual(get(self.state("north"), "round"), nat(1))
+        # Nor does a turn naming the table's `north`, which would skip the finished-match check.
+        self.assertEqual(self.turn("table", "north", principal=NORTH)["status"], "refused")
 
 
 if __name__ == "__main__":
