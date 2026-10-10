@@ -23,6 +23,8 @@ import json
 import os
 import unittest
 
+from tests.host import as_owner
+
 from tests import test_chain, test_policy
 from tests.test_chain import garden_seed, reference
 from tests.test_objects import closure
@@ -167,7 +169,7 @@ class Hub(test_chain.Chain):
         self.assertEqual([o["action"] for o in pending["offers"]][:1], ["plant"], pending["offers"])
         settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "raw": raw, "model": "m"})
         self.assertEqual(settled["status"], "interpreted", settled)
-        [resumed] = settled["resumed"]
+        [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return resumed
 
     # The host fits the model's spell against the offered forms and answers `proposal {object,
@@ -395,7 +397,7 @@ class HandedToTheDirectory(test_chain.Chain):
             self.assertIn("submit", [o["action"] for o in pending["offers"]])
             settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "model": "m",
                                      "raw": "delvetalk anthology submit\nline: " + lines[who]})
-            [resumed] = settled["resumed"]
+            [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
             self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
             # The submission is answered with the anthology as it now stands, to its author.
             card = resumed["receipt"]["offers"][-1]
@@ -556,7 +558,7 @@ class AnthologyReachable(test_chain.Chain):
         self.assertIn("submit", [o["action"] for o in pending["offers"]])
         settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "model": "m",
                                  "raw": "delvetalk anthology submit\nline: a splash for every refusal"})
-        [resumed] = settled["resumed"]
+        [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
         lines = [get(p, "line")["value"] for p in rows(get(self.state("anthology"), "proposals"))]
         self.assertEqual(lines, ["the merchant tips his hat", "a splash for every refusal"])

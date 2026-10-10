@@ -301,8 +301,8 @@ def parseFieldRoots (j : Json) : Except String (List (String × String × Nat)) 
     out := out ++ [(object, field, ← natField r "version")]
   return out
 
-/-- Writes as a client sends them: direct, so every step has the empty caller. A client
-    cannot name a caller. -/
+/-- Writes as a client sends them: direct, so every step has the empty caller, and proposed (kind
+    `Law.proposedKind`): no method of the object made them. A client cannot name a caller. -/
 def parseWrites (j : Json) : Except String (List (String × List Written)) := do
   let raw ← j.getArr?
   if raw.size > Limits.maxWrites then throw "too many writes"
@@ -310,7 +310,8 @@ def parseWrites (j : Json) : Except String (List (String × List Written)) := do
   for w in raw do
     let object ← boundedText "object id" Limits.maxObjectIdBytes (← w.getObjValAs? String "object")
     if out.any (·.1 == object) then throw "duplicate write"
-    out := out ++ [(object, (← parseSteps (← w.getObjVal? "edits")).map fun step => { caller := "", edits := step })]
+    out := out ++ [(object, (← parseSteps (← w.getObjVal? "edits")).map fun step =>
+      { caller := "", kind := Law.proposedKind, edits := step })]
   return out
 
 /-- Writes as the journal records them: steps with their callers and kinds. -/
@@ -1723,6 +1724,10 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
     match w.objects[r]? with
     | some ro =>
       unless p.roots.any (·.1 == r) do return refuse "lawReads"
+      -- A law reads only what its subject may view: its verdict could disclose the rest (codex host 3).
+      unless ro.read.permits subject do
+        return some { cls := "lawRefused", clause := some "lawReads", object := some id,
+                      reason := some s!"refused lawReads: the law of {id} reads {r}, which you may not see." }
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
   let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method
@@ -1787,7 +1792,7 @@ def touchesOf (entry : Json) : List (String × Touch) :=
     let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
     let steps := (((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
     let edits : Option (List (String × Data)) :=
-      if kinds.any (fun k => k.getNat?.toOption != some 0) then none else
+      if kinds.any (fun k => !((k.getNat?.toOption.map Law.editKind).getD false)) then none else
       steps.foldlM (init := []) fun acc step => match decodeData Limits.dataDepth step with
         | .ok (.record fs) => some (acc ++ fs.filter fun (_, k) => match k with
             | .variant "keep" _ => false
@@ -1819,7 +1824,7 @@ def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : S
       | _, _ => false
   match writes.lookup id with
   | none => own && changedFields.isSome
-  | some changes => !changes.isEmpty && changes.all fun c => c.kind == 0 && c.edits.all fun e =>
+  | some changes => !changes.isEmpty && changes.all fun c => Law.editKind c.kind && c.edits.all fun e =>
       e.kind.commutes || untouched e ||
         (match changedFields with
          | some fields => !fields.contains e.field
@@ -1911,13 +1916,17 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType && stateBytes state ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
-      -- A migration may not set a fixed field: one the new code fixes keeps the value it had.
-      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
-        throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
+      -- A fixed field stays fixed: new code must fix it too (codex host 5, docs 1).
+      if let some f := o.fixed.find? (!prog.fixed.contains ·) then
+        throw (refuse "fixed" s!"{f} is fixed; it is set when {id} is made and never after, so the new code must keep it fixed")
       -- A migration's result is put in canonical form under the new code's relations.
       state ← match canonicalState prog.relations state with
         | .ok s => pure s
         | .error e => throw (refuse "migration" s!"{e}: the converted state's relations are not canonical")
+      -- No migration sets a fixed field: one fixed before, or one the new code fixes that the old
+      -- state had, keeps the value it had, judged on the state as it will be held.
+      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
+        throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,
@@ -1932,7 +1941,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- is the object whose call it was (empty when the turn's own method wrote).
     -- A change made under a grant is judged with the grantor as its subject, if the grant
     -- still stands for this object and method; otherwise the turn is refused `noGrant`.
-    let judgments := (changes.map fun c => (c.caller, c.kind, c.method, c.via)).eraseDups
+    -- The state a reprogram's migration makes is a proposed write too: judged once more as kind
+    -- `proposed`, as whoever asked for the reprogram.
+    let migrated := if ((p.programs.lookup id).map (·.2.isEmpty)) == some false then
+        (changes.filter (·.kind == 1)).map fun c => { c with kind := Law.proposedKind }
+      else []
+    let judgments := ((changes ++ migrated).map fun c => (c.caller, c.kind, c.method, c.via)).eraseDups
     for (caller, kind, method, via) in (if judgments.isEmpty then [("", 0, "", "")] else judgments) do
       let subject ← if via.isEmpty then pure p.principal else
         match grantStands w via id method with
@@ -1942,14 +1956,16 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
                                  relations := next.relations }
       if let some clause := Law.refusedBy o.law facts (some o.state) state then
         throw { cls := "lawRefused", clause, object := id, reason := readingOf o clause }
-    -- The Bend law, after the text admits: once for each ordinary change, with its argument.
+    -- The Bend law, after the text admits: once for each write of edits (the object's own or a
+    -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
+    -- law's alone: the old code's law does not read the new type.
     if o.predicate then
-      let seen := (changes.filter (·.kind == 0)).foldl (fun (acc : List (String × Written)) c =>
-        let key := (Json.arr #[toJson c.caller, toJson c.method, toJson c.via, dataJson c.argument]).compress
+      let seen := (changes.filter (Law.editKind ·.kind)).foldl (fun (acc : List (String × Written)) c =>
+        let key := (Json.arr #[toJson c.caller, toJson c.kind, toJson c.method, toJson c.via, dataJson c.argument]).compress
         if acc.any (·.1 == key) then acc else acc ++ [(key, c)]) []
       for (_, c) in seen do
         let subject := if c.via.isEmpty then p.principal else ((grantStands w c.via id c.method).map (·.grantor)).getD p.principal
-        if let some r := bendLaw w p id o state subject c.caller c.method c.argument 0 next.pin then throw r
+        if let some r := bendLaw w p id o state subject c.caller c.method c.argument c.kind next.pin then throw r
     if let some text := p.laws.lookup id then
       let refuse := fun (clause : String) => ({ cls := "lawRefused", clause := some clause, object := some id } : Refusal)
       let law ← match parseLawText text with
@@ -2441,6 +2457,8 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1) law
   let supervisor := (← optText j "supervisor").getD ""
   unless supervisor.isEmpty || w.objects.contains supervisor do throw s!"supervisor {supervisor} is not an object"
+  unless supervisor.isEmpty || ((w.objects[supervisor]?).map (·.offers "ended")).getD false do
+    throw s!"supervisor {supervisor} does not take ended: a supervisor's package declares it"
   let o := { o with supervisor }
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   discard <| pure sources
@@ -2452,6 +2470,9 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let outcome := match law with
     | some text => outcome.setObjVal! "law" (toJson text)
     | none => outcome
+  -- The law the object starts with, as it holds it: a snapshot's law is checked against the
+  -- journal's (`Snapshot.expectedLaws`), and replay against this.
+  let outcome := outcome.setObjVal! "lawText" (toJson o.lawText)
   let (w', entry) := push (noteMinted { w with objects := w.objects.insert id o } id) (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson digest), ("outcome", outcome)] ++ newSources w (inputSources inputs)) [id]
@@ -2714,7 +2735,7 @@ def changesJson (w : World) (principal intent : String) (ledger : Ledger) (used 
   let mut unserved : Array Json := #[]
   for (id, o) in updates do
     let some before := w.objects[id]? | continue
-    let touched := (((writes.lookup id).getD []).filter (·.kind == 0)).flatMap fun c =>
+    let touched := (((writes.lookup id).getD []).filter (Law.editKind ·.kind)).flatMap fun c =>
       (c.edits.filter fun e => match e.kind with | .keep => false | _ => true).map (·.field)
     for x in w.subscriptions.getD id #[] do
       unless touched.contains x.field do continue
@@ -2906,6 +2927,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     -- The pin binds the sources; the packet this compiler made of them is only counted if it differs.
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == o.pin do
       throw s!"object {id} is not the source closure its pin names"
+    if let .ok text := outcome.getObjValAs? String "lawText" then
+      unless text == o.lawText do throw s!"object {id} is not made with the law its creation journaled"
     let w := noteRecompiled w o
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
     return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]

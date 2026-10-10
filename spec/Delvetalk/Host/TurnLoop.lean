@@ -1470,7 +1470,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       refusedWith bounds responseType "requiredAbsence"
     else if s.creates.length ≥ Limits.createsPerTurn || s.absent.length ≥ Limits.maxRoots then
       refusedWith bounds responseType "capacity"
-    else if !supervisor.isEmpty && !s.world.objects.contains supervisor && supervisor != self then
+    -- A supervisor other than the creator itself must offer `ended`: the creator chooses it, not
+    -- the object told (codex host 6).
+    else if !supervisor.isEmpty && supervisor != self &&
+        !((s.world.objects[supervisor]?).map (·.offers "ended")).getD false then
       refusedWith bounds responseType "supervisor"
     else
       let some creator := s.world.objects[self]? | evaluation "the creating object vanished"
@@ -1815,10 +1818,13 @@ def blurbWord (o : Object) : M (Option String) := do
     finding 16): the host publishes the card's default page as `Card.defaultPage` wrote it, the card as
     a stranger sees it and how to reply (the host's usage of its forms and lenses), under `page`, else
     the door word `blurb()` gives, else the object's id. The result is the post id, as
-    `Card.publishPage`'s. -/
+    `Card.publishPage`'s. The page is public, so a card whose read policy names principals has none:
+    refused `noMethod` (codex host 2). -/
 def defaultPublishPage (id : String) (argument : Data) : M Data := do
   let s ← get
   let some o := s.world.objects[id]? | evaluation s!"unknown object {id}"
+  unless o.read matches .exposed do
+    throw (.refused "noMethod" s!"{id} is not public, so the host makes no page of it; only a card anyone may read has one.")
   recordRoot id o.version
   let given := match argument with
     | .record fs => ((fs.lookup "page").bind labelOf).getD ""
@@ -2174,7 +2180,8 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   let method ← d.getObjValAs? String "method"
   let senderId := (d.getObjValAs? String "sender").toOption.getD ""
   -- A change goes to the receiver its subscriber named; an activity's end to the supervisor its
-  -- object was created under. Either may be a helper: the receiving object chose it.
+  -- object was created under, which offered `ended` or was the creator. Either may be a helper then:
+  -- the receiving object chose it.
   let receiver := (d.getObjVal? "field").toOption.isSome ||
     (method == "ended" && ((w.objects[senderId]?).map (·.supervisor)) == some to)
   let how : TurnMeta :=
@@ -2227,18 +2234,30 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
         (some { cls := "badSpell", clause := some clause, object := some card, reason := some reason, hint := some hint })
     | _ => runTurnWith w req how
 
-/-- Up to `limit` deliveries, oldest first; sends of a delivery join the queue. -/
-def deliver (w : World) (limit : Nat) : Except String (World × Json) := do
+/-- A turn's reply as `reader` sees it when it ran in another op's settling pass (a resumption, a
+    delivery): whole but for its offers when `reader` is the turn's own principal, else the projection
+    of its receipt (`projectEntry`) and what a refusal may say in public (codex host 1). The offers are
+    their addressees', read with `world-offers`. -/
+def settledFor (w : World) (reader : String) (r : Json) : Json :=
+  match r.getObj?, r.getObjVal? "receipt" with
+  | .ok fields, .ok entry =>
+    let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
+    if owner == reader && !reader.isEmpty then Json.mkObj (fields.toList.filter (·.1 != "offers"))
+    else Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", projectEntry w reader entry)] ++
+      ["public", "rerunOf"].filterMap fun k => (r.getObjVal? k).toOption.map (k, ·))
+  | .ok fields, .error _ => Json.mkObj (fields.toList.filter (·.1 != "offers"))
+  | .error _, _ => r
+
+/-- Up to `limit` deliveries, oldest first; sends of a delivery join the queue. Each is shown as
+    `reader` may see it (`settledFor`). -/
+def deliver (w : World) (limit : Nat) (reader : String) : Except String (World × Json) := do
   let mut w := w
   let mut receipts : Array Json := #[]
   for _ in [0:min limit Limits.deliveriesPerCall] do
     let some d := w.pending[0]? | break
     let (w', r) ← deliverOne w d
     w := w'
-    -- A delivery's offers are its addressees' (`world-offers`), not the caller's of this op.
-    receipts := receipts.push (match r.getObj? with
-      | .ok fields => Json.mkObj (fields.toList.filter (·.1 != "offers"))
-      | .error _ => r)
+    receipts := receipts.push (settledFor w reader r)
   return (w, Json.mkObj [("status", toJson "delivered"), ("receipts", Json.arr receipts),
     ("pending", toJson w.pending.size)])
 
@@ -2355,7 +2374,9 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
-      ("forms", dataJson (listData (spellFormsData w id o)))] ++
+      ("forms", dataJson (listData (spellFormsData w id o))),
+      -- The numbers `request.kind` reads, by name (`proposed`: a write no method of the object made).
+      ("requestKinds", Json.mkObj (Law.kindNames.map fun (n, k) => (n, toJson k)))] ++
       (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)])) |> fun r =>
       -- The views its package declares (`views()`), which `viewDerived` answers.
       let init : TurnState := { world := w, principal, intent := "", subject := principal,

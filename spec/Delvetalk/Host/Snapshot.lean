@@ -429,6 +429,29 @@ def expectedObjects (entries : Array Json) : Std.HashMap String (Nat × String) 
     | _ => pure ()
   return out
 
+/-- The law text each object holds by the entries, without judging: a fork genesis's, a creation's
+    (`lawText`, or the `law` a creating turn journals), then each amendment's `new`. An object whose
+    creation journals no law (a journal from before host12) is absent. -/
+def expectedLaws (entries : Array Json) : Std.HashMap String String := Id.run do
+  let mut out : Std.HashMap String String := {}
+  for entry in entries do
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption
+    match tagOf entry with
+    | "forked" =>
+      for o in ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[] do
+        if let (some id, some law) := (text o "id", text o "law") then out := out.insert id law
+    | "created" =>
+      if let (some id, some law) := (text outcome "object", text outcome "lawText") then out := out.insert id law
+    | "admitted" =>
+      for c in arr "creates" do
+        if let (some id, some law) := (text c "object", text c "law") then out := out.insert id law
+      for a in arr "amendments" do
+        if let (some id, some law) := (text a "object", text a "new") then out := out.insert id law
+    | _ => pure ()
+  return out
+
 /-- The state CIDs the journal itself commits to, by object and version: a created state (its
     seed is the whole state) and a write's `cid` (host7). -/
 def anchoredStates (entries : Array Json) : Std.HashMap (String × Nat) String := Id.run do
@@ -474,6 +497,12 @@ def resume (b : Json) (entries : Array Json) (caches : Caches := {}) : Except St
   unless expected.size == w.objects.size do throw "its objects are not the journal's"
   for (id, o) in w.objects.toList do
     unless expected[id]? == some (o.version, o.pin) do throw s!"object {id} is not at the journal's version and pin"
+  -- Each law against the one the journal gives it (codex host 7: a forger who rewrites a law and
+  -- recomputes the snapshot's CID moves no version, pin or state).
+  let laws := expectedLaws early
+  for (id, o) in w.objects.toList do
+    if let some law := laws[id]? then
+      unless law == o.lawText do throw s!"the law of {id} is not the journal's"
   -- Each state against the CID the journal commits to at its version, where it names one.
   let anchored := anchoredStates entries
   for (id, o) in w.objects.toList do

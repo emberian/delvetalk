@@ -663,6 +663,64 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    `Cistern.lawText` this way instead of amending it in. Tests: `tests/test_law.py`
    `LawAtCreation`, `tests/test_genesis.py`.
 
+87. **A settling pass shows others' turns as their projection (host12; codex host 1).** The turns a
+   settling pass ran (`resumed`, `delivered`) and `world-deliver`'s `receipts` are shown as the op's
+   `principal` may see them (`settledFor`, TurnLoop; `durable` takes the reader): the turn's own
+   principal gets the reply whole but for `offers`; anyone else gets `status`, the receipt's
+   `projectEntry`, and `public`/`rerunOf`, never `result`, `ticksUsed`, `resumes` or offers. An op without
+   a principal (a bare `world-advance`) reads as nobody. Tests: `tests/test_await.py`
+   `test_a_settling_turn_sees_another_principals_resumption_only_as_its_projection`; the tests that read
+   another's resumed `result` read it with `world-receipt` as its principal (`tests.host.whole`).
+
+88. **No default page of a private card (host12; codex host 2).** `defaultPublishPage` refuses a card
+   whose read policy is not public, class `noMethod` ("<id> is not public, so the host makes no page of
+   it; …"), whoever asks: the page goes to `world-publications`, which every reader lists. A package's own
+   `publishPage` decides for itself. Test: `tests/test_publish.py`
+   `test_a_card_only_some_may_read_gets_no_default_page`.
+
+89. **A Bend law reads only what its subject may view (host12; codex host 3).** `bendLaw` supplies an
+   object `lawReads()` names only when that object's read policy permits the judgment's subject (the
+   principal, or a grant's grantor); otherwise the write is refused `lawRefused`, clause `lawReads`,
+   "refused lawReads: the law of <id> reads <r>, which you may not see.", since the verdict could
+   disclose the state. Test: `tests/test_law.py` `test_a_bend_law_is_given_no_object_its_subject_may_not_view`.
+
+90. **A snapshot's laws are the journal's (host12; codex host 7).** A `world-create`'s `created`
+   outcome journals `lawText`, the law the object starts with as it holds it (package, default or
+   given; replay refuses an object built with another). `Snapshot.expectedLaws` derives each object's
+   law from the entries (a fork genesis's, a creation's `lawText` or a creating turn's `law`, each
+   amendment's `new`) and `resume` refuses a snapshot holding another: "the law of <id> is not the
+   journal's", so a forger who rewrites a law and recomputes the CID gets a full replay. A creation from
+   before host12 journals no `lawText` and is not compared. Test: `tests/test_snapshot.py`
+   `test_a_snapshot_whose_law_is_not_the_journals_is_refused`.
+
+91. **A supervisor offers `ended` (host12; codex host 6).** A `createUnder` naming another object
+   than the creator as supervisor is refused `supervisor` unless that object offers `ended` (in
+   `methods()`, `~ended` too); `world-create {supervisor}` likewise is a request error "supervisor <s>
+   does not take ended: …". The creator chose the supervisor, so only one that took `ended` (or the
+   creator itself) is told; the delivery's helper exemption (5.62) stands for those. Test:
+   `tests/test_supervisors.py` `test_a_supervisor_must_offer_ended`.
+
+92. **A fixed field stays fixed (host12; codex host 5, docs 1).** A reprogram whose new code does not
+   fix every field the object fixes now is refused `programRefused`, clause `fixed` ("<f> is fixed; it
+   is set when <id> is made and never after, so the new code must keep it fixed"), with or without a
+   migration; the migration check (5.79) runs after canonicalization, on the state as it will be held.
+   Test: `tests/test_spell_turns.py` `test_a_reprogram_cannot_unfix_a_fixed_field`.
+
+93. **`proposed`, request kind 3 (host12; root decision on codex objects 1-8).** A state write no
+   method of the object made is judged with `request.kind == 3` instead of 0: a `world-propose`'s
+   writes (`parseWrites`, journaled `kinds: [3]`), and the state a reprogram's migration makes (judged
+   once more, as kind 3, beside the reprogram's kind 1, by the text law; the old code's Bend law does
+   not read the new type). So every law that admits `request.kind == 0` (the default law, the town's
+   `owner` clauses) admits only the object's own method writes; a law that wants proposals says
+   `request.kind == 3`. The Bend law runs for kinds 0 and 3, its `request.kind` saying which. The
+   conflict index, commuting and subscription changes treat a kind-3 write as edits, as a kind-0 one
+   (`Law.editKind`). `Law.kindNames` (`write` 0, `reprogram` 1, `amend` 2, `proposed` 3) is
+   `world-inspect`'s `requestKinds`. The law grammar reads the number now; the name `proposed` (and the
+   other three) waits on the kernel's line in `Compiler/ObjectiveBendLaw.lean`. Caution: a clause
+   written `request.kind == 0 implies X` no longer constrains proposals (Deal's `members`; the
+   objects lane's, `tests/test_deal.py` marker). Tests: `tests/test_law.py` `Proposed`; `test_world`,
+   `test_authority`, `test_places` updated (a stranger's proposal is the owner clause's to refuse).
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -681,8 +739,6 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
 
 - Foreign worlds: `Reference.world != ""` is refused `foreignWorld`.
 - `world-reprogram`/`amend` are gated only by the object's law.
-- A `world-propose` naming a fixed field is not refused yet (`tests/test_appointments.py`
-  `test_a_proposed_write_naming_a_fixed_field_is_refused`, an expected failure).
 - `world.call`'s `refused` carries only `clause`; run 11 wants the voiced reading beside it, so the
   Directory can pass a door's refusal on (rehearsal/REPORT.md, run 11 "What remains" 3; World.obend
   is the objects lane's).

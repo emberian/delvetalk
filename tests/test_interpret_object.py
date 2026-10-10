@@ -11,6 +11,8 @@ offer being proposed.
 """
 import unittest
 
+from tests.host import as_owner
+
 from tests.test_chain import Chain
 from tests.test_policy import PolicyObject
 from tests.test_turn_world import ON_DISK, closure, declared, label, record
@@ -80,7 +82,7 @@ class ProposalForAnotherCard(Chain):
         [pending] = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "raw": text, "model": "m"})
         self.assertEqual(settled["status"], "interpreted", settled)
-        [resumed] = settled["resumed"]
+        [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return settled, resumed
 
     def test_the_proposal_names_the_garden_and_the_hub_calls_it(self):
