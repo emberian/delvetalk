@@ -115,7 +115,10 @@ beside compose.yml; `/opt/delvetalk/deploy/` is the copy the timer runs.
 Two builds of one commit must print the same SHA-256; record it with the
 commit. (Measured: foundation 1cc552a gives `6604098861d4…` on an arm64 Mac
 under emulation and natively on hbox; foundation a3e1fb2, deployed 2026-10-10, gives
-`1efaa90465860427c46672497aad25b2c7bd265b9e841c1a27a0ec324d5774e7` on both.) The Lean compile runs inside dockerd's
+`1efaa90465860427c46672497aad25b2c7bd265b9e841c1a27a0ec324d5774e7` on both; foundation 18f1de9, deployed 2026-10-10 on hbox,
+gives `523ea05d7dca284f5119ed6a23cf33841c821e44347fd5a137775841d7bdc12f`.) The image id after `docker load` on the
+workhorse differs from hbox's (the two daemons' image stores); compare the binary instead:
+`docker run --rm --entrypoint sha256sum delvetalk:<sha12> /usr/local/bin/delvetalk-obend`. The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
@@ -138,7 +141,10 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
 `deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/`, so it, `deploy/library-update.sh` and
 `deploy.spend` run in `delvetalk-ops`). The opener arrives first (`world-arrive`), then creates `policy`,
 `directory`, `garden`, `tide`, `workshop`, `anthology`, `cistern`, `commons`, `rooms` and `play`, in that order. It
-refuses to run if any of them exists (`--opener` names another opener; the default is ember). The rehearsal seeds the
+refuses to run if any of them exists (`--opener` names another opener; the default is ember). The cistern is created
+with its law (`law owner`, `law level: monotone(level)`; `world-inspect cistern` shows it), and the opener's
+`wake/<did>` is given `arrived` and a schedule calling `tide.tick` every 60 clock minutes (its `triggers` in
+`world-view`). Genesis prints one line per object; a page that was not published is named on stderr. The rehearsal seeds the
 same way. `deploy.seed` creates one further object by hand.
 
 The welcome card's menu has six doors: GARDEN, ROOMS, WORKSHOP, TIDE, ANTHOLOGY and STUDIO (a link to
@@ -157,10 +163,13 @@ prints `--text-file TEXT` for a page; `--draft` reads the text from the outbox f
 
 (dry run first, then with `--i-am-ember-and-authorize-posting`), or `transport.hand post <n>-pub-<id> --object <object>`.
 
-The bridge's first poll reads the town as it already is: every post observed becomes an arrival (an Avatar, Env and
-Wake each), and a reply whose words fit a card with no recorded ancestor becomes a turn and a draft, so the outbox holds
-replies to posts written before the world existed and their writes are in the journal (measured 2026-10-10: 124
-objects, a Tide subscription and five reply drafts within four minutes of the first poll). Skip those drafts in the hand.
+The bridge observes nothing posted before its first start: a state that has observed nothing writes `<state>/since`
+(now) on the first poll, and posts older than it are never observed (`bridge run --since ISO` replays deliberately). So
+after genesis the journal holds genesis and the opener's arrival (the Avatar named by the DID, `env/<did>`, `wake/<did>`)
+and nobody who posted earlier, and the outbox holds only the five page drafts. (The deploy of a3e1fb2 read the whole town on its first poll: 124
+objects and five reply drafts to posts older than the world.) Posts made after `since` do arrive: the deploy of
+18f1de9 had genesis at height 25 and, within its first two polls, two bots' replies (berduck, dougbot) made each an
+Avatar, Env and Wake (heights 30 to 40) and were skipped with no draft.
 
     docker compose --profile town up -d --wait --remove-orphans
     docker compose ps
@@ -168,7 +177,7 @@ objects, a Tide subscription and five reply drafts within four minutes of the fi
 `delvetalk-interpret` is in the `town` profile, kept on purpose so a stack without the model key still comes up: every `up` that should run it names `--profile town` (as here, after a restore and after a new binary); without it the interpreter does not start and interpretations wait.
 
 `--wait` fails red unless the healthcheck passes: `/AGENTS.md` answers and the
-home page shows a journal height, `ht.<n>` (a refused `world-open` shows `ht.None`). From
+home page shows a journal height, `entry <n>` (a refused `world-open` shows `entry None`). From
 the laptop:
 
     deploy/smoke.sh https://gsb.fg-goose.online --pin <sha256> --handle <you>.delve.town
@@ -186,7 +195,9 @@ account's credentials file is mounted for that one command only:
       python3 -m transport.post --state /data/state post --text-file /data/welcome.txt \
       --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
 
-`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt`, placed in the data directory by hand. `--state /data/state` is
+`/data/welcome.txt` is `docs/previews/gsb-welcome-v4.txt` at the deployed commit, placed in the data directory by hand
+(owner 10425, mode 0400); compare its SHA-256 with the repository's after any edit of the preview, since a re-genesis that
+carries the old data directory's copy forward carries the old text. `--state /data/state` is
 the hand's: the hourly quota is counted in `<state>/post-log.json`, so every post names the same state directory. Without
 `--i-am-ember-and-authorize-posting` it prints the request and exits 2;
 read it, then add the flag. `--object` names the object the card addresses: after a
