@@ -207,5 +207,31 @@ class Readings(Reflection):
         self.assertEqual(self.refused("k4")["receipt"]["outcome"]["reason"], SAID)
 
 
+class LawAtCreation(Reflection):
+    """`world-create {law}` sets the object's law text at creation, in `world-amend`'s grammar with its
+    readings; a malformed law is refused by name and creates nothing; replay agrees."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+
+    def test_a_created_law_holds_from_the_start_and_replays(self):
+        law = 'law cap "the count stays under three": new.count <= 2\nlaw owner: request.kind == 0 or request.subject == "ember"'
+        r = self.host.send(op="world-create", principal="ember", identity="mk", object="g", source=PLAIN, entry="initial",
+                           seed=record(), law=law)
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["law"]), ("created", law), r)
+        for i in range(2):
+            self.assertEqual(self.turn("g", "poke", identity=f"b{i}")["status"], "admitted")
+        refused = self.turn("g", "poke", identity="b2")["receipt"]["outcome"]
+        self.assertEqual((refused["clause"], refused["reason"]), ("cap", "refused cap: the count stays under three"), refused)
+        self.reopen()
+        self.assertIn("new.count <= 2", self.host.send(op="world-inspect", principal="ember", object="g", source=False)["law"])
+        bad = self.host.send(op="world-create", principal="ember", identity="mk2", object="h", source=PLAIN, entry="initial",
+                             seed=record(), law="law broken: new.count <<< 2")
+        self.assertEqual(bad["status"], "error", bad)
+        self.assertTrue(bad["message"].startswith("law syntax: "), bad)
+        self.assertNotEqual(self.host.send(op="world-view", principal="ember", object="h").get("status"), "viewed")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2431,7 +2431,14 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   -- Relations are journaled in canonical form, so the seed is the state the object holds.
   let (_, state) ← relationsFor built state
   let seed := dataJson state
-  let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
+  -- A law given at creation is the object's law text from the start, in `world-amend`'s grammar
+  -- (readings included); it replaces the package's and the default law.
+  let law ← match ← optText j "law" with
+    | some text => if text.isEmpty then pure none else match parseLawText text with
+      | .ok _ => pure (some text)
+      | .error message => throw s!"law syntax: {message}"
+    | none => pure none
+  let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1) law
   let supervisor := (← optText j "supervisor").getD ""
   unless supervisor.isEmpty || w.objects.contains supervisor do throw s!"supervisor {supervisor} is not an object"
   let o := { o with supervisor }
@@ -2441,6 +2448,9 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let outcome := if supervisor.isEmpty then outcome else outcome.setObjVal! "supervisor" (toJson supervisor)
   let outcome := match owner with
     | some o => outcome.setObjVal! "owner" (toJson o)
+    | none => outcome
+  let outcome := match law with
+    | some text => outcome.setObjVal! "law" (toJson text)
     | none => outcome
   let (w', entry) := push (noteMinted { w with objects := w.objects.insert id o } id) (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
@@ -2892,6 +2902,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let owner := (outcome.getObjValAs? String "owner").toOption
     if owner.isSome && (w.opener.isEmpty || principal != w.opener) then throw "an owner named by another than the opener"
     let (o, sources, w) ← buildObjectIn w inputs (← outcome.getObjVal? "seed") (outcome.getObjVal? "read").toOption (outcome.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
+      (outcome.getObjValAs? String "law").toOption
     -- The pin binds the sources; the packet this compiler made of them is only counted if it differs.
     unless o.pin == (← outcome.getObjValAs? String "pin") && sources == o.pin do
       throw s!"object {id} is not the source closure its pin names"
