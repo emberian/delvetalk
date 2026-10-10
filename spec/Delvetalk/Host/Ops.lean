@@ -1884,6 +1884,53 @@ def principalOp (w : World) (j : Json) : Except String (World × Json) := do
      ("request", toJson (Journal.bodyHash (Json.mkObj fields))), ("outcome", Json.mkObj fields)] []
   return (w', answer (some entry))
 
+/-- A newcomer's own objects, each made from the library module of that name: the Avatar (its id
+    is the principal's DID), its Env and its Wake (`env/<did>`, `wake/<did>`, the ids `env` and
+    `wake` resolve to for that principal). -/
+def arrivals (did : String) : List (String × String) :=
+  [(did, "Avatar"), (s!"env/{did}", "Env"), (s!"wake/{did}", "Wake")]
+
+/-- `world-arrive {principal, did, handle}`: the clock principal (transport) reports a principal
+    it has verified or observed. The handle is recorded as `world-principal` does, and each of the
+    newcomer's objects (`arrivals`) that is absent is created from the world's library, by the
+    world's opener for the owner `did` (`world-create {…, owner}`), as an ordinary `created` entry
+    with identity `(opener, "arrive:<id>")`. The partial seed names, of `owner` (the DID), `handle`
+    and `env` (a Reference to `env/<did>`, which the Wake watches), the fields the package's state
+    has; the rest is `initial()`. Idempotent: a second arrival creates nothing, and a changed
+    handle is one `principal` entry. -/
+def arriveOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let did ← boundedText "did" (Limits.maxObjectIdBytes - 5) (← j.getObjValAs? String "did")
+  let handle ← j.getObjValAs? String "handle"
+  if w.clockPrincipal.isEmpty || principal != w.clockPrincipal then
+    throw s!"arrivals are reported only by the clock principal{if w.clockPrincipal.isEmpty then "; this world names none" else s!" {w.clockPrincipal}"}"
+  if w.opener.isEmpty then throw "this world names no opener to create a newcomer's objects"
+  if did == "self" || ownCards.contains did || did.any (· == '/') then throw s!"{did} cannot name a principal's objects"
+  let some lib := w.library | throw "this world has no library to make a newcomer's objects from"
+  let (w, recorded) ← principalOp w (Json.mkObj [("principal", toJson principal), ("did", toJson did), ("handle", toJson handle)])
+  let mut w := w
+  let mut made : Array Json := #[]
+  for (id, module) in arrivals did do
+    if w.objects.contains id then continue
+    let some source := lib.modules.lookup module | throw s!"the world's library has no module {module}"
+    let request := Json.mkObj [("principal", toJson w.opener), ("identity", toJson s!"arrive:{id}"),
+      ("object", toJson id), ("owner", toJson did), ("entry", toJson "initial"),
+      ("modules", modulesJson [(module, source)])]
+    let inputs ← attachLibrary w (← compileInputs request)
+    let built ← compileObject w inputs
+    let given : List (String × Data) := [("owner", .label did), ("handle", .label handle),
+      ("env", .record [("world", .label ""), ("object", .label s!"env/{did}")])]
+    let seed := match ← initialState built with
+      | .record fields => given.filter fun (k, _) => fields.any (·.1 == k)
+      | _ => []
+    let (w', r) ← create (cacheBuild w inputs built) (request.setObjVal! "seed" (dataJson (.record seed)))
+    if (r.getObjValAs? String "status").toOption != some "created" then
+      throw s!"arrival of {did}: {module} {id} was not created: {r.compress}"
+    w := w'
+    made := made.push (Json.mkObj [("object", toJson id), ("height", toJson w.height)])
+  return (w, Json.mkObj ([("status", toJson "arrived"), ("did", toJson did), ("handle", toJson handle),
+    ("created", Json.arr made)] ++ ((recorded.getObjVal? "receipt").toOption.map fun e => [("principal", e)]).getD []))
+
 /-- `world-addressee {parent}`: the object (and slot, or page and section) a post at `parent` was made for. -/
 def addressee (w : World) (j : Json) : Except String Json := do
   let uri ← j.getObjValAs? String "parent"

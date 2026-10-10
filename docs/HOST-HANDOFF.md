@@ -104,7 +104,7 @@ uses "transport") and `postQuota` (hourly posting cap, default 16, reported by `
 either journals a `settings` entry, and a later open with other values is refused by name.
 `world-open {opener}` records the world's opener in the same settings entry (only when named); the opener alone may
 `world-create {…, owner}`. `world-principal {principal, did, handle}` (clock principal only) journals a `principal`
-entry for the handle registry (5.22).
+entry for the handle registry (5.22); `world-arrive {principal, did, handle}` also creates the newcomer's Avatar, Env and Wake (5.31).
 `world-posted {principal, uri, cid, object, slot?, page?, section?}` journals a `posted` entry (identity `posted:<uri>`;
 `page`/`section` when the post carried the object's publication, section "" for the whole page) and indexes
 `world.posts` (`Post {object, slot, page, part, height}`; snapshots keep them); `world-addressee {parent}` answers
@@ -554,6 +554,18 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    change of the running object itself is judged only at the commit, as before. Tests: `test_reflection.ReprogramAnother`,
    `test_workshop.Workshop`, `test_extend.Extend`.
 
+31. **Arrival (host7).** `world-arrive {principal, did, handle}` (`arriveOp`; the clock principal only, the world must
+   name an opener and have a library) records the handle as `world-principal` does, then creates each of `arrivals did`
+   that is absent: `<did>` from the library module `Avatar`, `env/<did>` from `Env`, `wake/<did>` from `Wake`. Each is
+   `create` with principal = the opener, identity `arrive:<id>`, `owner: did`, modules = that one library module (the
+   entry stays, 5.28), and a partial seed naming, of `owner` (the DID), `handle` and `env` (Reference to `env/<did>`),
+   the fields the package's `initial()` state has. So the journal holds ordinary `created` entries (owner checked
+   against the opener on replay) and a `principal` entry; nothing new replays. Idempotent: a repeat answers
+   `{status: "arrived", did, handle, created: []}` with no entry; a new handle is one `principal` entry. The reply
+   carries `created [{object, height}]` and `principal` (the principal entry, when one was written). A missing library
+   module is a request error naming it, and nothing is journaled (the step is one durable write). GENESIS.md says when
+   transport calls it. Tests: `tests/test_arrive.py` (a library of world/lib plus Avatar, Env, Wake and Place).
+
 ## 6. Gotchas
 
 - **annotateData** (`spec/Delvetalk/Turn.lean`, mine): a state or argument containing a sum value
@@ -660,7 +672,7 @@ quotes the old metarule message.
 
 lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27);
 `world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29);
-another object's reprogram or amendment is dry-run against its law in the turn (5.30).
+another object's reprogram or amendment is dry-run against its law in the turn (5.30); `world-arrive` (5.31).
 Section 7's queue items 1 to 5 above are unchanged.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch

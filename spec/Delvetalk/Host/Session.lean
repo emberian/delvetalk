@@ -243,6 +243,7 @@ def stepWorld (session : Session) (request : Json) : IO (Session × Except Strin
           ("recompiledDifferently", toJson s.world.recompiledDifferently)]))
       | "world-posted" => durable s (fun w => postedOp w request)
       | "world-principal" => durable s (fun w => principalOp w request)
+      | "world-arrive" => durable s (fun w => arriveOp w request)
       | "world-addressee" => return (session, addressee s.world request)
       | "world-publications" => return (session, publicationsOp s.world request)
       | "world-objects" => return (session, objectsOp s.world request)
