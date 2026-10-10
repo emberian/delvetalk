@@ -22,22 +22,23 @@ def seeded(seed: Seed) -> State:
 def initial() -> State:
   seeded(defaultSeed())
 def bumped<T>(state: State, context: Abi.Context, then: Nat -> T) -> Activity<Plan, Response, T>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
-    case _: then(state.count + 1n)
+  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit.add({delta: 1n})}}))
+  then(state.count + 1n)
 def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  bumped::<Nat>(state, context, fn(count: Nat) -> Nat: count)
+  bumped(state, context, fn(count: Nat) -> Nat: count)
+form bump:
 def forms() -> Card.Forms:
-  Card.Forms.cons({head: {card: "", action: "bump", fields: Form.Fields.nil()}, tail: Card.Forms.nil()})
+  Card.Forms.cons({head: bumpForm(), tail: Card.Forms.nil()})
 def door() -> Card.Door:
   {word: "counter", blurb: "Bump it; everyone shares the count."}
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   heard(state, Card.route(input.text, context, forms()), context)
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
-    case act(a): bumped::<Card.Reply>(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: "bump"}))
-    case _: Card.answer::<Edits, State, Nat>(routed, context, forms(), render(state, context))
+    case act(a): bumped(state, context, fn(count: Nat) -> Card.Reply: Card.Reply.done({action: "bump"}))
+    case _: Card.answer(routed, context, forms(), render(state, context))
 # The card as the reader in the context sees it: the count is everyone's.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("Count: ", natText(state.count)))
+  Document.text("Count: {natText(state.count)}")
 def card(state: State) -> String:
   Document.plain(render(state, Card.stranger()))
