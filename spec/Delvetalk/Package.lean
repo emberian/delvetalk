@@ -263,31 +263,35 @@ theorem lawTable_names (laws : List String) (ast : Minidregg.Compiler.ObjectiveB
     (lawTable laws ast).map (·.1) = laws := by
   simp [lawTable, Function.comp_def]
 
-/-- The entry module's `fixed` State fields (`colour: fixed Colour`), in State order: its own
-`record State`, or the record a `type State = Alias.S` names in the module imported as `Alias`. -/
 def fixedNames (fields : List Minidregg.Compiler.ObjectiveBendSurface.Field) : List String :=
   (fields.filter (·.fixed)).map (·.name)
 
+/-- The record a State-like name resolves to from module `index`: a `record`, through `type`
+aliases (`Alias.N` names the import aliased `Alias`) however many, and for `State` in a layer
+that declares none, the State of the module below (`Super`). `fuel` bounds the chain. -/
+def stateRecordAt (modules : List SourceModule) (asts : List Minidregg.Compiler.ObjectiveBendSurface.Module) :
+    Nat → Nat → String → Option (List Minidregg.Compiler.ObjectiveBendSurface.Field)
+  | 0, _, _ => none
+  | fuel + 1, index, name => do
+    let ast ← asts[index]?
+    let module ← modules[index]?
+    let target := fun (alias : String) => (module.imports.find? (·.importAlias == alias)).map (·.target)
+    match ast.decls.find? (fun d => d.name == name && (d matches .record .. || d matches .typeAlias ..)) with
+    | some (.record _ _ fields _) => some fields
+    | some (.typeAlias _ type _) =>
+      match (Minidregg.Compiler.ObjectiveBendElaborate.trimStr type).splitOn "." with
+      | [alias, n] => stateRecordAt modules asts fuel (← target alias) n
+      | [n] => stateRecordAt modules asts fuel index n
+      | _ => none
+    | _ => if name == "State" && ast.layerOver.isSome then stateRecordAt modules asts fuel (← target "Super") "State" else none
+
+/-- The entry module's `fixed` State fields (`colour: fixed Colour`), in State order, of the
+State it runs on: its own, an alias chain's record, or a layer's inherited one. -/
 def fixedFields (modules : List SourceModule) (asts : List Minidregg.Compiler.ObjectiveBendSurface.Module) (index : Nat) :
-    List String := Id.run do
-  let some ast := asts[index]? | return []
-  for d in ast.decls do
-    match d with
-    | .record "State" _ fields _ => return fixedNames fields
-    | .typeAlias "State" type _ =>
-      let some (module : SourceModule) := modules[index]? | return []
-      let (home, name) := match (Minidregg.Compiler.ObjectiveBendElaborate.trimStr type).splitOn "." with
-        | [alias, n] => ((module.imports.find? (fun (i : LockedImport) => i.importAlias == alias)).map (fun (i : LockedImport) => i.target), n)
-        | [n] => (some index, n)
-        | _ => (none, "")
-      let some home := home | return []
-      let some other := asts[home]? | return []
-      for o in other.decls do
-        if let .record r _ fields _ := o then
-          if r == name then return fixedNames fields
-      return []
-    | _ => pure ()
-  return []
+    List String :=
+  match stateRecordAt modules asts (4 * modules.length + 4) index "State" with
+  | some fields => fixedNames fields
+  | none => []
 
 /-- The conventional declarations a host looks for in an entry module. -/
 def conventionalNames : List String :=
@@ -351,8 +355,10 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
     ("type", typeJson accepted.typed.type),
     ("methods", methods), ("law", law)]
   -- The entry module's conventional declarations, derived ones included (the host reads this,
-  -- not the source text, so it sees a derived `forms()`).
-  let artifact := artifact.setObjVal! "declares" (toJson (declaredNames prepared.decoded [entryModule.name]))
+  -- not the source text, so it sees a derived `forms()`); for a layer, its whole stack's, as
+  -- entry selection and the method table see them.
+  let declaring := if stack.isEmpty then [entryModule.name] else stack
+  let artifact := artifact.setObjVal! "declares" (toJson (declaredNames prepared.decoded declaring))
   -- A State with fixed fields lists them (no edit names one); absent otherwise.
   let fixed := fixedFields modules prepared.asts (modules.length - 1)
   let artifact := if fixed.isEmpty then artifact else artifact.setObjVal! "fixed" (toJson fixed)
@@ -873,18 +879,9 @@ def turnStartVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
   Delvetalk.Turn.start (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j) j
 
-def turnResumeVerified (j : Json) : Except String Json := do
-  let artifact ← j.getObjVal? "artifact"
-  Delvetalk.Turn.resumeTurn (← artifact.getObjVal? "packet") (← j.getObjVal? "checkpoint")
-    (← j.getObjVal? "response") (getLimits j) j
-
 def turnStart (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")
   turnStartVerified j
-
-def turnResume (j : Json) : Except String Json := do
-  verifyArtifact (← j.getObjVal? "artifact")
-  turnResumeVerified j
 
 def job (j : Json) : Except String Json := do
   match ← j.getObjValAs? String "op" with
@@ -926,7 +923,7 @@ def job (j : Json) : Except String Json := do
   | "evaluate-term" => Delvetalk.EvaluateTerm.op j
   | "render-document" => Delvetalk.Document.renderOp j
   | "turn-start" => turnStart j
-  | "turn-resume" => turnResume j
+  | "turn-resume" => throw Delvetalk.Turn.notIssued
   | "run-data-v1" => runData j
   | "run-compact" => runCompactData j
   | "encode-compact" => compactCodec j true

@@ -32,6 +32,10 @@ structure Cache where
   misses : Nat := 0
   /-- Libraries this process sealed (`library-load`), newest first, at most `maxLibraries`. -/
   libraries : List Host.Library := []
+  /-- Digests of the checkpoints this process handed out (`turn-start`, `turn-resume`), at most
+  `Bounds.issuedCheckpoints`, oldest leaving first: what `turn-resume` trusts. -/
+  issued : Std.HashSet String := {}
+  issuedOrder : Array String := #[]
 
 def modulesKey (j : Json) : Json :=
   match j.getObjVal? "modules" with
@@ -148,8 +152,21 @@ def status (cache : Cache) : Json :=
     ("entries", toJson cache.held.size), ("entryBytes", toJson cache.heldBytes),
     ("maxEntryBytes", toJson Bounds.entryCacheBytes), ("hits", toJson cache.hits), ("misses", toJson cache.misses)]
 
+/-- Remember the checkpoint a reply hands out, if any. -/
+def noteIssued (cache : Cache) (reply : Json) : Cache :=
+  match (reply.getObjVal? "checkpoint").toOption.bind (·.getObjValAs? String "digest" |>.toOption) with
+  | none => cache
+  | some digest =>
+    if cache.issued.contains digest then cache else
+    let order := cache.issuedOrder.push digest
+    if order.size ≤ Bounds.issuedCheckpoints then { cache with issued := cache.issued.insert digest, issuedOrder := order }
+    else
+      let drop := order.size - Bounds.issuedCheckpoints
+      { cache with issued := (order.extract 0 drop).foldl (·.erase ·) (cache.issued.insert digest),
+                   issuedOrder := order.extract drop order.size }
+
 /-- Runs of a held entry never decode the packet or re-check the package. -/
-def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) (world : Option Host.World := none) :
+def runHeld (cache : Cache) (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) (world : Option Host.World := none) :
     Except String Json := do
   let limits := Package.getLimits j
   if operation == "run" then
@@ -161,7 +178,7 @@ def runHeld (entry : Delvetalk.CheckedEntry) (operation : String) (j : Json) (wo
     let j ← Host.withBindingContext world entry j
     Delvetalk.Turn.startEntryJson entry (← j.getObjVal? "arguments") limits j
   else if operation == "turn-resume" then
-    Delvetalk.Turn.resumeEntryJson entry (← j.getObjVal? "checkpoint") (← j.getObjVal? "response") limits j
+    Delvetalk.Turn.resumeEntryJson entry cache.issued.contains (← j.getObjVal? "checkpoint") (← j.getObjVal? "response") limits j
   else throw "unsupported held operation"
 
 def step (cache : Cache) (request : Json) (world : Option Host.World := none) : Cache × Except String Json :=
@@ -178,7 +195,9 @@ def step (cache : Cache) (request : Json) (world : Option Host.World := none) : 
         | .error e => (cache, .error e)
         | .ok artifact =>
           let (cache, entry) := entryOf cache artifact
-          (cache, entry.bind fun entry => runHeld entry operation request world)
+          match entry.bind fun entry => runHeld cache entry operation request world with
+          | .ok reply => (noteIssued cache reply, .ok reply)
+          | .error e => (cache, .error e)
       else (cache, Package.job request)
   | .error _ => (cache, Package.job request)
 

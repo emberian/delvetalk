@@ -100,10 +100,13 @@ def variant(name, payload=None):
             "payload": payload or {"tag": "record", "fields": []}}
 
 
+NOT_ISSUED = "checkpoint was not issued by this process"
+
+
 def redigest(checkpoint):
     """Recompute a checkpoint's digest after editing it (the CID of the canonical
     DAG-CBOR of its package, binding and tokens), so a test can get past the
-    digest to the decoder or to the binding checks."""
+    digest; such a checkpoint is refused as not issued."""
     body = {k: checkpoint[k] for k in ("packetSha256", "object", "principal", "intent", "rootsDigest", "tokens")}
     checkpoint["digest"] = cid_of(body)
     return checkpoint
@@ -353,10 +356,10 @@ class TurnTests(TurnCase):
         for t in variants:
             r = h.resume(art, with_tokens(cp, t, False), variant("written"))
             self.assertEqual((r["status"], r["message"]), ("error", "checkpoint digest mismatch"), r)
-        # a forged digest gets past the digest and is then refused by the decoder
+        # a recomputed digest names no checkpoint this process issued
         for t in variants:
             r = h.resume(art, with_tokens(cp, t, True), variant("written"))
-            self.assertEqual((r["status"], r["message"]), ("error", "checkpoint does not decode"), r)
+            self.assertEqual((r["status"], r["message"]), ("error", NOT_ISSUED), r)
         # a token that is not a canonical natural never reaches the digest
         r = h.resume(art, with_tokens(cp, [1.5], False), variant("written"))
         self.assertEqual(r["message"], "checkpoint does not decode", r)
@@ -364,25 +367,25 @@ class TurnTests(TurnCase):
         for bad in ([], {"tokens": toks}, {**cp, "digest": 7}):
             self.assertEqual(h.resume(art, bad, variant("written"))["status"], "error")
 
-    def test_token_edit_that_still_decodes_is_refused_by_the_digest(self):
+    def test_a_recomputed_digest_does_not_make_an_edited_checkpoint_resumable(self):
+        # Refuted by any single-token edit that resumes once its digest is recomputed: the
+        # digest beside the tokens is the caller's, and a process resumes only checkpoints
+        # it issued (review kernel 3: an invented continuation with a recomputed digest ran).
         h = self.host()
         art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         y = h.start(art, [nat(3)])
         cp = y["checkpoint"]
         toks = cp["tokens"]
-        edited = None
+        edits = 0
         for i in range(1, len(toks)):
-            if isinstance(toks[i], int) and toks[i] > 0:  # e.g. a reference to another program term
+            if isinstance(toks[i], int) and toks[i] > 0:
                 t = copy.deepcopy(toks); t[i] = toks[i] + 1
-                probe = h.resume(art, with_tokens(cp, t, True), variant("written"))
-                if probe["status"] == "finished" and probe["value"] != nat(4):
-                    edited, forged = t, probe
-                    break
-        self.assertIsNotNone(edited, "no decodable single-token edit found")
-        self.assertNotEqual(forged["value"], nat(4))  # the edit changes behaviour...
-        r = h.resume(art, with_tokens(cp, edited, False), variant("written"))
-        self.assertEqual((r["status"], r["message"]), ("error", "checkpoint digest mismatch"), r)
-        # ... and the untouched checkpoint still works
+                forged = h.resume(art, with_tokens(cp, t, True), variant("written"))
+                self.assertEqual((forged["status"], forged.get("message")), ("error", NOT_ISSUED), (i, forged))
+                stale = h.resume(art, with_tokens(cp, t, False), variant("written"))
+                self.assertEqual((stale["status"], stale.get("message")), ("error", "checkpoint digest mismatch"), (i, stale))
+                edits += 1
+        self.assertGreater(edits, 10)
         done = h.resume(art, cp, variant("written"))
         self.assertEqual(done["value"], nat(4), done)
 
@@ -408,7 +411,9 @@ class TurnTests(TurnCase):
         done = h.resume(art, y["checkpoint"], variant("written"))
         self.assertEqual(done["status"], "finished", done)
 
-    def test_checkpoint_from_one_process_resumes_in_a_fresh_process(self):
+    def test_a_process_resumes_only_checkpoints_it_issued(self):
+        # A stateless process has no journal: what it trusts is the digests of the
+        # checkpoints it handed out. A world host resumes from its journal instead.
         first = Host()
         art = first.compile(PLANS, "twice", world=PLANS_WORLD)
         y = first.start(art, [nat(5)])
@@ -417,12 +422,13 @@ class TurnTests(TurnCase):
         second = self.host()
         art2 = second.compile(PLANS, "twice", world=PLANS_WORLD)
         self.assertEqual(art, art2)
+        r = second.resume(art2, y["checkpoint"], variant("written"))
+        self.assertEqual((r["status"], r["message"]), ("error", NOT_ISSUED), r)
+        y2 = second.start(art2, [nat(5)])
+        self.assertEqual(y2["checkpoint"], y["checkpoint"])
         mid = second.resume(art2, y["checkpoint"], variant("written"))
         self.assertEqual(mid["status"], "yielded", mid)
-        third = Host()
-        art3 = third.compile(PLANS, "twice", world=PLANS_WORLD)
-        done = third.resume(art3, mid["checkpoint"], variant("refused"))
-        third.close()
+        done = second.resume(art2, mid["checkpoint"], variant("refused"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(6)), done)
 
     def test_pure_entry_given_to_turn_start_is_refused_by_name(self):
@@ -451,8 +457,7 @@ class TurnTests(TurnCase):
         toks[spots[0]] = 1
         redigest(cp)  # the same address as an `enter` control instead
         r = h.resume(art, cp, variant("written"))
-        self.assertEqual(r["status"], "error", r)
-        self.assertIn("not a yielded state", r["message"])
+        self.assertEqual((r["status"], r["message"]), ("error", NOT_ISSUED), r)
 
     def test_recursive_list_in_a_plan_with_100_elements_yields_and_resumes(self):
         h = self.host()

@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (foundation after lane/kernel9; the queue is §16).
+State on 2026-10-10 (foundation after lane/kernel10; the queue is §16).
 
 ## Summary
 
@@ -75,7 +75,7 @@ Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"e
 | `check-package` | as compile | `{status:"checked", artifact}` or `{status:"refused", diagnostic}`. `Package.checkPackage` is the pure entry. Spanless refusals are localized by `localize` (recompiles each function alone; first with the same stage+message wins). |
 | `run` | `artifact`, `arguments`, `limits` | `{status:"finished", value, type, ticksUsed, heapCells, nodesUsed}` or `{status:"refused", failure, …}`. Entry type must be first-order data ("package result must have first-order data type"). |
 | `turn-start` | `artifact`, `arguments`, `limits?`, `object`, `principal`, `intent`, `roots` (all required) | `finished`, `yielded {plan, planType, responseType, checkpoint, ticksUsed}`, `exhausted {resource, ticksUsed}` (resource: ticks heap stack nodes bytes), or `error`. The entry must type as `Activity<A>` (plan `World.Message`, a record of data; response `Data`; each yield resumes at its site's type, §17). |
-| `turn-resume` | `artifact`, `checkpoint`, `response`, `limits?`, same binding | same replies. Checks in order: entry is an activity; `packetSha256`; digest; object; principal; intent; roots ("checkpoint belongs to another package / digest mismatch / another object / another principal / another intent / was taken under different roots"); decode ("checkpoint does not decode"); response conforms; control is yielded. The response type is re-derived from the artifact. |
+| `turn-resume` | `artifact`, `checkpoint`, `response`, `limits?`, same binding | same replies. Resumes only a checkpoint this process issued (its session keeps the digests it handed out, `Bounds.issuedCheckpoints` 65,536, oldest leaving; else "checkpoint was not issued by this process": a fresh process, or a digest recomputed over edited tokens). Then in order: entry is an activity; `packetSha256`; the tokens hash to the issued digest; object; principal; intent; roots ("checkpoint belongs to another package / digest mismatch / another object / another principal / another intent / was taken under different roots"); decode ("checkpoint does not decode"); response conforms; control is yielded. The response type is re-derived from the artifact. |
 | `evaluate-term` | `term` (array wire), `responses?`, `ticks?` | `{schema, result:{status: value\|yield\|exhausted\|stuck, shape, plans}}`. Pure reference for conformance. |
 | `render-document` | `document` (Data wire) | `{status:"rendered", text, lines, bytes}`. |
 | `canonical-encode` / `canonical-decode` | `data` or `json`, `repeat?` / `hex` | `{cid, hex, bytes, checksum}` / `{data, cid}`; decode is canonical-only. |
@@ -84,7 +84,7 @@ Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"e
 
 `"profile": true` on `run`, `turn-start`, `turn-resume` returns a tick profile (`Delvetalk/Profile.lean`).
 
-Turn API in Lean (`spec/Delvetalk/Turn.lean`): `startActivity packet args binding budgets : Except String Outcome`, `resumeActivity packet checkpoint binding response budgets`, held-entry forms `Turn.startEntry`/`resumeEntry`. `Outcome = finished | yielded | exhausted resource ticks`. `Binding.make object principal intent roots`. A checkpoint carries its binding and resumes only under the same one; the roots digest is the roots at the start of the activity. `exhaustedResource` classifies failures: ticks; capacity suspension -> heap/stack by simulating one more `stepRaw`, else bytes; `nodes`/`bytes` on a yielded Plan is exact, on a finished result a heuristic that can mislabel. `Budgets {ticks, heap, stack, nodes, bytes}`; on resume, heap is counted past the checkpoint's own heap (`limitsPast`).
+Turn API in Lean (`spec/Delvetalk/Turn.lean`): `startActivity packet args binding budgets : Except String Outcome`, held-entry forms `Turn.startEntry`/`resumeEntry entry checkpoint issued binding response budgets`. A checkpoint resumes only against `issued`, the digest its caller recorded when it was made (the host's journal; a session's issued table): the digest field beside the tokens is never trusted (review kernel 3, kernel10); the other resumption is `resumeSuspended`, a yield held in process. The packet-path `resumeActivity` is deleted. `Outcome = finished | yielded | exhausted resource ticks`. `Binding.make object principal intent roots`. A checkpoint carries its binding and resumes only under the same one; the roots digest is the roots at the start of the activity. `exhaustedResource` classifies failures: ticks; capacity suspension -> heap/stack by simulating one more `stepRaw`, else bytes; `nodes`/`bytes` on a yielded Plan is exact, on a finished result a heuristic that can mislabel. `Budgets {ticks, heap, stack, nodes, bytes}`; on resume, heap is counted past the checkpoint's own heap (`limitsPast`).
 
 Held entries (`Delvetalk/Entry.lean`): `CheckedEntry {pin, source, checked, fuel}` (`.type`, `.ofPacket`, `.apply`). `Package.prepareRequest j`, `Package.compileEntryFrom request entry` (`{artifact, entry, laws}`), `Package.compileEntry`, `Package.executeDataEntry entry args limits`, `Package.executeEntry`. None decodes the packet or re-checks the package.
 
@@ -100,7 +100,7 @@ Canonical bytes (`Delvetalk/Canonical.lean`, DAG-CBOR as AT Protocol):
 - Unsigned int, shortest head; Nat >= 2^64 a big-endian byte string; false/true = f4/f5; label = text; JSON null = f6; list = definite array; record = definite map with keys sorted by UTF-8 byte length then bytes (a repeated field keeps the first); variant = one-key map `{label: payload}`.
 - Untyped decode turns every one-key map into a record; `decodeAs bounds ty bytes` re-tags against a type. Round trip is `decode (encode d) = normalize d` for variant-free `d`, and `encode (decode b) = b` for everything; not exposed on the wire; not proved. Never `decodeAs` against `.data` expecting variants back.
 - `decode` refuses non-shortest heads, unsorted/duplicate keys, indefinite lengths, tags, floats, null, negative ints, non-canonical bignums, bad UTF-8, trailing bytes, by name ("non-canonical CBOR: …", "CBOR nesting capacity", "CBOR exceeds the node bound").
-- `encodeJson`: objects->maps, arrays, strings, bools, null, ints; a fraction is refused. `cidJson` is total (falls back to the CID of the printed text on an unencodable value).
+- `encodeJson`: objects->maps, arrays, strings, bools, null, ints; a fraction is refused, and so is a negative integer below -2^64 ("a negative integer below -2^64 has no canonical form": DAG-CBOR has no negative bignum, and the eight-byte head kept only the low 64 bits, so -2^64-1 and -2^65-1 shared `3b0000000000000000`; kernel10). `cidJson` is total (falls back to the CID of the printed text on an unencodable value).
 - CID = `"b" ++ base32lower(0x01 0x71 0x12 0x20 ++ sha256(bytes))`, 59 chars, `bafyrei…`. All 166 `record`/`cid` pairs in `tests/fixtures/delve/*.json` encode to the AppView's CID; `tests/wire.py` is an independent Python encoder.
 
 Digests:
@@ -110,7 +110,7 @@ Digests:
 
 ## 4. Limits (`spec/Delvetalk/Limits.lean`, namespace `Delvetalk.Bounds`)
 
-Per machine segment (default / ceiling): `ticks` 100,000 / 1,000,000; `heap` 100,000 / 1,000,000 (cells); `stack` 10,000 / 100,000 (frames); `nodes` 100,000 / 1,000,000 (Data nodes materialized for a result or Plan); `bytes` 1 MiB / 16 MiB (encoded result/Plan bytes and the largest single text-primitive reserve per step). `lawTicks` 100,000. `typeFuelDefault` 16384.
+Per machine segment (default / ceiling): `ticks` 100,000 / 1,000,000; `heap` 100,000 / 1,000,000 (cells); `stack` 10,000 / 100,000 (frames); `nodes` 100,000 / 1,000,000 (Data nodes materialized for a result or Plan); `bytes` 1 MiB / 16 MiB (the canonical DAG-CBOR size of a result or Plan, `Data.canonicalBytes`, `#guard`ed against `Canonical.encode` in Canonical.lean; and the largest single text-primitive reserve per step). Materialization spends each scalar's canonical bytes as it is reached and checks the whole value's size once it is whole (a list's cells cost nothing but its array head); before kernel10 it charged a legacy decimal-length encoding, so `true` needed 2 bytes (`test_tariff.CanonicalBytes`). `lawTicks` 100,000. `typeFuelDefault` 16384.
 
 Wire: `dataWireDepth` 256, `plainJsonDepth` 64, `documentWireDepth` 8192, `entryArrowDepth` 64. Packages: `maxModules` 64, `maxModuleBytes` 512 KiB, `maxPackageSourceBytes` 1 MiB (import scan only), `frontCacheSourceBytes` 8 MiB, `entryCacheBytes` 64 MiB. Documents: `documentDepth` 64, `documentNodes` 65,536, `documentOutputBytes` 1 MiB, `offersPerTurn` 16 (their text shares the 1 MiB). `Document.maxOffersPerTurn`/`maxOutputBytes` are aliases that `TurnLoop.lean` reads.
 
@@ -122,9 +122,14 @@ Every machine transition costs 1 tick. Before a text primitive runs, `forceHoste
 - `textConcat a b`: `1 + 2(|a|+|b|)`, reserves `|a|+|b|`.
 - `textTake t n`: 1 if n=0 or n>=B; else `1 + 2p`, reserves `p`.
 - `textDrop t n`: 1 if n=0 or n>=B; else `1 + 2p`, reserves `B - p` (the suffix copy is bounded in bytes, not charged in ticks, so a drop-by-one walk stays linear).
+- A take or drop whose prefix scan cannot be paid spends the whole allowance, as a failed span/break does (`preflightRemaining`; kernel10, `test_tariff.FailedPreflight`): the scan ran.
 - `textJoin list sep` (each element): `1 + 2*(bytes appended)`, reserves the new accumulator (appended in place when unique).
 - `textSpan/textBreak`: `1 + perScalar*visited`, perScalar = `2*(|alphabet|+2)`; refused up front if the cap cannot cover the scan.
-- `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`. `natText n`: `1 + bits^2`. Everything else: 1 tick.
+- `textHasAny text words`: `1 + 3(|text|+|words|)`, reserves twice those bytes: a pass over each, then a hash set of the wanted words (`textHasAnyWordFast`, `@[csimp]` equal to the list-membership reference `textHasAnyWord`) probed once per word of the text. Before kernel10 the search was list membership, 30,000 words against 30,000 took 6.8 s under a 160,001-tick charge (`test_text_words.ManyWords`).
+- `labelEqual a b` (text `==`): `1 + min(|a|,|b|)` (kernel10; it was one tick whatever the length, `test_tariff.LabelEqual`).
+- `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`. `natText n`: `1 + bits^2`.
+- Natural arithmetic (`naturalStepCost`, kernel10): 1 tick while both operands are below 2^64; past a word, with x, y the operands' bytes (`log2/8 + 1`), `1 + 2(x+y)` plus `(x/8+1)(y/8+1)` for multiply, divide and modulo, reserving the result's bound (`max+1`, `x`, `x+y`, `x`). Before it, forty squarings of 2 cost one tick each and built a 128 GiB natural; now they are refused at the first unaffordable operand (`test_tariff.NaturalArithmetic`).
+- Everything else: 1 tick.
 
 `tests/test_tariff.py` pins the bump turn (73 + 10 ticks since day 4) and `Document.plain` over 1,025 leaves (129,272); library workloads are bounded where that code is tested (`test_hub`: glm's 1,788-character reply under a bell under 20,000 ticks, the directory's reading under 250,000). Update a pin with a reason when it moves. Profile before optimizing the interpreter: the Bend spell parse was 81% text primitives, and the host parses spells now.
 
@@ -204,7 +209,7 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
   letters lowercased (`textWordsOf`); whitespace and ASCII punctuation separate. The
   elaborator lowers the call to `binary textHasAny text (textJoin words " ")`, so the
   list is walked once by the join (linear) and the primitive makes one pass over each text;
-  tariff `1 + 2 * (bytes of both)`, reserving those bytes. An 1,800-character reply checked
+  tariff `1 + 2 * (bytes of both)`, reserving those bytes (since kernel10 `1 + 3 *` and a hash set, §5). An 1,800-character reply checked
   against ten words: 3,942 ticks (the Bend walk the objects lane measured: ~200,000).
   Python, JS and C evaluators and the generator have it; the generator no longer gives the
   FIRST item of a generated join a non-text head (a join of one non-text item is that item
@@ -327,12 +332,10 @@ row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation
 `count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
 §11 says; nothing in it changes a pin of an object that does not declare relations.
 
-## 16. Queue for the successor (lane/kernel9, after foundation 3f743e2)
+## 16. Queue for the successor (lane/kernel10, after foundation 534b92c)
 
-Done: items 1-6 (kernel7, kernel8: §19-§22); item 8, the State is the schema (kernel9, §23):
-`Edits`/`keep()` derived from `State` and a hand-written pair refused, `fixed` State fields, form
-blocks declaring `NameInput` and `forms()` with the method's input enforced, `form` on method
-rows, `fixed` and `declares` in the artifact. Item 8b needed nothing in the kernel. Remaining:
+Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the ten kernel findings of the
+codex review of a3e1fb2 (kernel10, §24). Remaining:
 
 7. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a
    native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both
@@ -343,7 +346,16 @@ rows, `fixed` and `declares` in the artifact. Item 8b needed nothing in the kern
 10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
    be `F.Forms` and drop its List.obend requirement (Counter, Loop).
 11. The host reads `declares` (TurnLoop `declaredForms`, Ops `packageDeclares`) and `fixed`
-   (actions, inspect, the Workshop's `set`): host lane.
+   (actions, inspect, the Workshop's `set`): host lane. Since kernel10 both cover a layer's stack.
+12. Host lane: `Turn.resumeEntryStep entry checkpoint issued binding value b dictionary?` takes
+   the journaled digest; the two TurnLoop call sites pass `checkpoint.digest` of the journaled
+   checkpoint (and `suspension.checkpoint.digest` for the profile). `expandSuspended` recomputes a
+   digest a compacted journal entry lacks: the journal is the trust root, so that is sound, but a
+   host that ever resumes a checkpoint from outside its journal must look its digest up there.
+13. Stateless `turn-resume` resumes only checkpoints its process issued (§24): the HTTP REPL's
+   client-held checkpoints die with the repl process (transport lane, if that matters to it).
+14. The three evaluators' `textHasAny` are still list searches; they are references, not
+   budgeted, so only if conformance ever times them.
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -534,9 +546,11 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   "relations(): a limit is a Nat". The host reads them from the artifact (`declsOfArtifact`, Ops.lean; host11). Test:
   `test_sugar.Relations`.
 - `write {f: remove v}` is `removeItem {item: v}`, or `retract {key: v}` when the module's
-  `State` types `f` as a `Relation<…>` (the parser emits the marker `$remove` and
-  `parseObjective` lowers it once the declarations are read, `lowerRemove` over
-  `Decl.mapExpr`); `write {f: amend v with c}` is `amendItem {item: v, change: c}`. An index
+  `State` types `f` as a `Relation<…>` (the parser emits the marker `$remove`; since kernel10 the
+  generics pass lowers it with `lowerRemove` once `Generics.relationFields` has resolved the
+  effective State and each field's type, the relation recognised as derived Edits recognise it, so
+  `type State = Lib.State`, an aliased field type and a layer's inherited relation retract by key;
+  a marker makes a declaration take the generics pass, `declGenerics`); `write {f: amend v with c}` is `amendItem {item: v, change: c}`. An index
   (`remove {index: …}`, `amend {index: …} with …`) is refused by name ("names a position, and
   edits name items: write `f: remove ITEM` …"). Tests: `test_sugar.Writes`.
 
@@ -609,7 +623,10 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   `Edits` field or any `world.write(...)` argument (a record, or `extend(keep(), {...})`, so every
   `write {...}`) naming one: "refused (fixed): colour is fixed; no edit names it". The artifact of
   an entry whose State has fixed fields lists them, `fixed: [names]` in State order (absent
-  otherwise; `Package.fixedFields`), for the host's actions, inspect and the Workshop's `set`.
+  otherwise; `Package.fixedFields`), for the host's actions, inspect and the Workshop's `set`. Since kernel10
+  both follow the effective State: `Package.stateRecordAt` resolves `type` alias chains of any length and,
+  in a layer that declares no State, the State below (`Super`); `Generics.effectiveStateFields` makes
+  `checkFixed` refuse a layer's write naming an inherited fixed field (`test_sugar.FixedFields`).
   Pins: 0 recompiled. Tests: `test_sugar.FixedFields` (the packet equals the State-renamed module
   whose hand-written pair omits the fixed fields; the refusals).
 - Commit 3 moved 36 test files' fixtures off hand-written pairs (deleted; `test_relation`'s own
@@ -619,5 +636,33 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   derived `forms()`): every artifact lists which of `Package.conventionalNames` (forms, methods,
   relations, views, lenses, law, lawReads, initial, render, receive, blurb, page, publishPage,
   set) the entry module declares, derived declarations included (`declaredNames` over the
-  generics pass's decoded modules), in that order. The host lane switches `declaredForms` and
+  generics pass's decoded modules), in that order; for a layer, every module of its stack (kernel10:
+  a layer that wrote no `methods()` or `forms()` declared neither, so the host took inherited methods
+  for helpers and refused inherited forms). The host lane switches `declaredForms` and
   `packageDeclares` to it. Test: `test_sugar.Declares`.
+
+## 24. The codex review's kernel findings (lane/kernel10, after foundation 534b92c)
+
+One commit each, each with its failing input as a test first (all ten failed before their fix):
+1. Natural arithmetic past 2^64 is charged before the result is built (`naturalStepCost`, §5);
+   forty squarings of 2 are refused, not a 128 GiB natural. `test_tariff.NaturalArithmetic`.
+3. A checkpoint resumes only against a digest its resumer recorded (`issued`; §2, §16 item 12);
+   a stateless session keeps the digests it handed out. The packet-path `resumeActivity` is
+   deleted. `test_turn`.
+4. `textHasAny` looks words up in a hash set (`textHasAnyWordFast`, `@[csimp]` to the list
+   reference, axioms pinned) and pays a tick a byte more. `test_text_words.ManyWords`.
+7. `encodeJson` refuses a negative integer below -2^64. `test_canonical`.
+8. The byte budget is the canonical DAG-CBOR size (`Data.canonicalBytes`, §4), for results and,
+   newly, Plans; the legacy `encoded` is gone. `test_tariff.CanonicalBytes`.
+9. `labelEqual` costs `1 + min` of its operands' bytes. `test_tariff.LabelEqual`.
+10. A take/drop preflight that cannot pay spends its allowance. `test_tariff.FailedPreflight`.
+2. `fixed` follows alias chains and a layer's inherited State; `checkFixed` refuses a layer's
+   write of an inherited fixed field. `test_sugar.FixedFields`.
+5. `declares` covers a layer's stack. `test_sugar.Declares`.
+6. `write {f: remove v}` is lowered in the generics pass after the State and field types resolve.
+   `test_sugar.Writes`.
+Also, for the host lane: `request.kind == proposed` (and write, reprogram, amend) in the law
+fragment (`kindNumber`, `parse_kind_names`).
+No pinned tick count and no packet moved (pins: 0 recompiled). The three evaluators and the
+conformance generator needed nothing: no term form or primitive meaning changed, and conformance
+compares values, never costs. Full suite on hbox at the end: 1,148 tests, 0 failed.

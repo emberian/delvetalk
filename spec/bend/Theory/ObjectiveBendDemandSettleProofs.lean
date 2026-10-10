@@ -707,11 +707,10 @@ theorem agree_entered {s t : State} (agree : Agree s t) (address : Nat) :
 def recordStep (policy : State → Bool) (limits : Limits) (depth : Nat)
     (prior : List (String × Data) × State × Budget) (field : String × Nat) :
     Except (Failure × State × Budget) (List (String × Data) × State × Budget) := do
-  let bytes := field.1.utf8ByteSize+(toString field.1.utf8ByteSize).utf8ByteSize+1
-  if bytes > prior.2.2.bytes || prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
+  if prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
   let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}
   let (outcome,ticks) := forceHostedWith policy limits prior.2.2.bytes prior.2.2.ticks entered
-  let nextBudget := {prior.2.2 with ticks:=ticks,bytes:=prior.2.2.bytes-bytes}
+  let nextBudget := {prior.2.2 with ticks:=ticks}
   match outcome with
   | .finished forced retained =>
     let child ← materializeWith policy limits depth nextBudget forced retained
@@ -726,31 +725,27 @@ theorem materializeWith_record (policy : State → Bool) (limits : Limits) (dept
     materializeWith policy limits (depth+1) budget (.record fields) state = (do
       if budget.nodes = 0 then throw (.budget,state,budget)
       let remaining := {budget with nodes:=budget.nodes-1}
-      let headerBytes := (toString fields.length).utf8ByteSize+2
-      if headerBytes > remaining.bytes then throw (.budget,state,remaining)
-      let remaining := {remaining with bytes:=remaining.bytes-headerBytes}
       if (fields.map Prod.fst).eraseDups.length != fields.length then throw (.duplicateField,state,remaining)
       if fields.length > remaining.nodes then throw (.budget,state,remaining)
       let pair ← fields.foldlM (recordStep policy limits depth) ([],state,remaining)
       pure ⟨.record pair.1.reverse,pair.2.1,pair.2.2⟩) := rfl
 
-/-- The four admission checks a record passes before its fields are forced. -/
+/-- The three admission checks a record passes before its fields are forced. -/
 def RecordGate (budget : Budget) (fields : List (String × Nat)) : Prop :=
-  ¬budget.nodes = 0 ∧ ¬(toString fields.length).utf8ByteSize + 2 > budget.bytes ∧
+  ¬budget.nodes = 0 ∧
     ¬((fields.map Prod.fst).eraseDups.length != fields.length) = true ∧ ¬fields.length > budget.nodes - 1
 
-def recordStart (budget : Budget) (fields : List (String × Nat)) : Budget :=
-  {nodes := budget.nodes - 1, ticks := budget.ticks,
-   bytes := budget.bytes - ((toString fields.length).utf8ByteSize+2)}
+def recordStart (budget : Budget) (_fields : List (String × Nat)) : Budget :=
+  {nodes := budget.nodes - 1, ticks := budget.ticks, bytes := budget.bytes}
 
 theorem materializeWith_record_gate {policy : State → Bool} {limits : Limits} {depth : Nat} {budget : Budget}
     {fields : List (String × Nat)} {state : State} (gate : RecordGate budget fields) :
     materializeWith policy limits (depth+1) budget (.record fields) state =
       (fields.foldlM (recordStep policy limits depth) ([],state,recordStart budget fields) >>= fun pair =>
         pure (⟨.record pair.1.reverse,pair.2.1,pair.2.2⟩ : Result)) := by
-  obtain ⟨c1, c2, c3, c4⟩ := gate
+  obtain ⟨c1, c3, c4⟩ := gate
   rw [materializeWith_record]
-  simp only [c1, c2, c3, c4, ↓reduceIte, Bool.false_eq_true, recordStart]
+  simp only [c1, c3, c4, ↓reduceIte, Bool.false_eq_true, recordStart]
 
 theorem materializeWith_record_ok {policy : State → Bool} {limits : Limits} {depth : Nat} {budget : Budget}
     {fields : List (String × Nat)} {state : State} {r : Result}
@@ -762,13 +757,11 @@ theorem materializeWith_record_ok {policy : State → Bool} {limits : Limits} {d
     rw [materializeWith_record] at found
     by_cases c1 : budget.nodes = 0
     · simp only [c1, ↓reduceIte] at found; cases found
-    by_cases c2 : (toString fields.length).utf8ByteSize + 2 > budget.bytes
-    · simp only [c1, c2, ↓reduceIte] at found; cases found
     by_cases c3 : ((fields.map Prod.fst).eraseDups.length != fields.length) = true
-    · simp only [c1, c2, c3, ↓reduceIte] at found; cases found
+    · simp only [c1, c3, ↓reduceIte] at found; cases found
     by_cases c4 : fields.length > budget.nodes - 1
-    · simp only [c1, c2, c3, c4, ↓reduceIte] at found; cases found
-    exact ⟨c1, c2, c3, c4⟩
+    · simp only [c1, c3, c4, ↓reduceIte] at found; cases found
+    exact ⟨c1, c3, c4⟩
   refine ⟨gate, ?_⟩
   rw [materializeWith_record_gate gate] at found
   obtain ⟨pair, folded, done⟩ := (except_bind_ok _ _ _).mp found
@@ -923,14 +916,12 @@ theorem agree_completeWith {policy : State → Bool}
       obtain ⟨a', materialized', aValue, aRemaining, aAgree⟩ :=
         agree_materializeWith respects limits _ _ _ _ _ _ _ sameValue.symm agree materialized
       split at rest
-      · rename_i bytes encodedAt
-        split at rest
-        · simp at rest
-        · rename_i small
-          simp at rest; subst rest
-          refine ⟨a', ?_, aValue, aRemaining, aAgree⟩
-          simp [materialized', aValue, encodedAt, small]
       · simp at rest
+      · rename_i small
+        simp at rest; subst rest
+        refine ⟨a', ?_, aValue, aRemaining, aAgree⟩
+        have small' : ¬ budget.bytes < a'.value.canonicalBytes := by rw [aValue]; exact small
+        simp [materialized', small']
     · simp at found
 
 /-- **Plan extraction agrees.** -/
@@ -962,13 +953,18 @@ theorem agree_yieldedPlanWith {policy : State → Bool}
           cases outcome' <;>
             simp only [OutcomeAgree, eraseOutcome, Outcome.finished.injEq, reduceCtorEq] at rel
           obtain ⟨valueEq, retainedAgree⟩ := rel
-          simp at found
-          obtain ⟨a, materialized, rfl⟩ := found
+          simp only [except_bind_ok] at found
+          obtain ⟨a, materialized, rest⟩ := found
+          by_cases small : a.value.canonicalBytes > budget.bytes
+          · simp [small] at rest
+          simp [small] at rest
+          subst rest
           obtain ⟨a', materialized', aValue, aRemaining, aAgree⟩ :=
             agree_materializeWith respects limits _ _ _ _ _ _ _ valueEq retainedAgree materialized
           refine ⟨{a' with state := {a'.state with control := t.control, stack := t.stack}},
             ?_, aValue, aRemaining, Agree.mk' aAgree.heap agree.control agree.stack⟩
-          simp [materialized', controlT]
+          have small' : ¬ budget.bytes < a'.value.canonicalBytes := by rw [aValue]; exact small
+          simp [materialized', controlT, small']
       | _ => simp at found
   · simp at found
 

@@ -60,6 +60,9 @@ def frontCacheSourceBytes : Nat := 8388608
 /-- A session's cache of compiled entries held decoded and checked, indexed by
 `packetSha256`, bounded by the bytes of their artifacts. -/
 def entryCacheBytes : Nat := 67108864
+/-- The checkpoint digests a session without a journal remembers having issued, newest kept:
+`turn-resume` resumes only those (a digest is 59 bytes, so about 4 MiB). -/
+def issuedCheckpoints : Nat := 65536
 
 /-! ## Documents rendered by the host -/
 
