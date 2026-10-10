@@ -916,6 +916,21 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       match ← renderCard o reader with
       | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
       | .error clause => refusedWith bounds responseType clause
+  | .variant "viewAt" (.record f) =>
+    -- A past version of an object's state, rebuilt from the journal (`stateAt`), answered as `view`
+    -- answers the present one; the root is the object as it is NOW, so a turn that read history
+    -- still conflicts with what changed since.
+    let s ← get
+    let some version := (f.lookup "version").bind fun | .natural n => some n | _ => none
+      | evaluation "malformed viewAt plan"
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
+    | none => respond bounds responseType "denied" [emptyRecord]
+    | some (id, o) =>
+      if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
+      recordRoot id o.version
+      match stateAt s.world id version with
+      | some state => respond bounds responseType "viewed" [.record [("version", .natural version), ("state", state)]]
+      | none => refusedWith bounds responseType "version"
   | .variant "viewDerived" (.record f) =>
     -- A view the target's package derives from its state, as first-order Data, under read
     -- authority; the root is recorded as for `view`.

@@ -233,6 +233,14 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    (`viewDerived` at the end of `Plan`, `derived` at the end of `Response`) and World.obend's protocol line
    are the objects lane's, added with their pin re-record. Test: `tests/test_view_derived.py`.
 
+47. **Past versions (host8).** Plan `viewAt {object, version}` answers `viewed {version, state}` with the state
+   the object had at `version`, rebuilt by `stateAt` (Ops): the created seed (or a creating turn's), then each
+   admitted write in order, its edits re-applied under the object's relations or a reprogram's recorded
+   `result` taken, each checked against the write's recorded `cid`; refused `version` when the version is
+   past the current one, before a fork genesis, or a rebuilt state is not the journaled one. Read authority
+   as `view`; the root is recorded at the CURRENT version. Cost is linear in the object's writes up to
+   `version`. Test: `tests/test_view_at.py`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

@@ -2619,6 +2619,44 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
     | _ => pure ()
   return none
 
+/-- The object's state at `version`, rebuilt from the journal: its created seed (or a creating turn's
+    seed), then each admitted write of it in order, re-applying its edits under the object's relations
+    (or taking a reprogram's recorded result), each checked against the CID its write recorded. None
+    when the version is past the current one, the object came from a fork genesis before it, or a
+    rebuilt state is not the one the journal names (a relation declaration a reprogram changed). -/
+def stateAt (w : World) (id : String) (version : Nat) : Option Data := Id.run do
+  let some o := w.objects[id]? | return none
+  if version == o.version then return some o.state
+  if version > o.version then return none
+  let mut state : Option Data := none
+  for i in (w.touched[id]?).getD #[] do
+    let some entry := w.entries[i]? | continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+    let named := fun (j : Json) => (j.getObjValAs? String "object").toOption == some id
+    let seedOf := fun (j : Json) => (j.getObjVal? "seed").toOption.bind fun s => (decodeData Limits.dataDepth s).toOption
+    match tagOf entry with
+    | "created" => if named outcome then state := seedOf outcome
+    | "admitted" =>
+      for c in arr "creates" do
+        if named c then state := seedOf c
+      for x in arr "writes" do
+        unless named x do continue
+        let some v := (x.getObjValAs? Nat "version").toOption | return none
+        if v > version then return state
+        let some before := state | return none
+        let next? : Option Data := match (arr "reprograms").find? named with
+          | some r => (r.getObjVal? "result").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+          | none => ((x.getObjVal? "edits").toOption.bind (parseSteps · |>.toOption)).bind fun steps =>
+            (applyEdits o.relations before steps).toOption
+        let some next := next? | return none
+        if let .ok cid := x.getObjValAs? String "cid" then
+          if cid != stateCid next then return none
+        state := some next
+    | _ => pure ()
+    if version == 0 && state.isSome then return state
+  return none
+
 /-- `world-state-cid {principal, object, version}`: the CID of the object's state at that version, for
     a reader who may view it (a CID of a state the reader may not see would let it test guesses):
     `{status: "stateCid", object, version, cid}`, `denied`, or `unknown` (no such object, version, or
