@@ -394,9 +394,10 @@ class PolicyObject(Chain):
         self.policy()
         self.garden("policy")
         self.say("plant something")
-        unclear = self.interpret({"status": "failed", "reason": "rate", "detail": "429"})
+        # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF 5.107).
+        unclear = self.interpret({"status": "failed", "reason": "refused", "detail": "400"})
         self.assertEqual(unclear["status"], "admitted", unclear)
-        self.assertIn("I could not make a planting of that. I still need: model: rate", unclear["offers"][0]["text"])
+        self.assertIn("I could not make a planting of that. I still need: model: refused", unclear["offers"][0]["text"])
 
     # --- The model's own text, fitted by the garden (rehearsal finding 2) -----------------
 

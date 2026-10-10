@@ -2549,8 +2549,11 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     -- A model the Plan named takes precedence over the policy's own.
     let shown := if model.isEmpty then shown else shown.setObjVal! "model" (toJson model)
     w := w'
+    -- How many transient failures the host journaled, and the clock before which the next is not asked.
+    let (tried, next) := (w.attempts[id]?).getD (0, 0)
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
-      ("utterance", toJson utterance), ("offers", plainJson offers)])
+      ("utterance", toJson utterance), ("offers", plainJson offers), ("attempts", toJson tried),
+      ("next", if next > w.clock then toJson next else Json.null)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
 
 def abortText : Abort → String
@@ -2724,6 +2727,9 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
   | .error e => return (w, unclearVerdict [s!"the argument is not plain data: {e}"])
   | .ok (argument, _) => return proposalVerdict w object object obj suspended.bounds responseType method argument
 
+/-- The model failures the host retries rather than settles: the network or a rate limit. -/
+def transientReasons : List String := ["transport", "rate"]
+
 /-- `world-interpretation {id, reply}`: settle a pending interpretation with the model's
     reply, verbatim. The verdict is journaled; the suspended turn resumes with it. -/
 def interpretationOp (w : World) (j : Json) : Except String (World × Json) := do
@@ -2734,6 +2740,24 @@ def interpretationOp (w : World) (j : Json) : Except String (World × Json) := d
   if let some r := retained w interpretationPrincipal id digest then return (w, r)
   let some s := w.suspended.find? fun s => (interpretationOf w s).bind (·.getObjValAs? String "id" |>.toOption) == some id
     | throw s!"no pending interpretation {id}"
+  -- A transient failure is the host's to retry (HOST-HANDOFF 5.107): journaled `attempted` with the
+  -- clock the next may be asked at, the activity still waiting, until the last attempt, whose
+  -- failure is the verdict.
+  let tried := ((w.attempts[id]?).map (·.1)).getD 0
+  let transient := (replied.getObjValAs? String "status").toOption == some "failed" &&
+    transientReasons.contains ((replied.getObjValAs? String "reason").toOption.getD "")
+  if transient && tried + 1 < Limits.interpretAttempts then
+    let attempt := tried + 1
+    let next := w.clock + min Limits.interpretBackoffMax (2 ^ (attempt - 1))
+    let key := s!"{id}/attempt/{attempt}"
+    let reason := (replied.getObjValAs? String "reason").toOption.getD ""
+    let (w', entry) := push w (identityKey interpretationPrincipal key)
+      [("identity", identityJson interpretationPrincipal key), ("roots", rootsJson []),
+       ("turn", toJson (w.height + 1)), ("request", toJson digest),
+       ("outcome", Json.mkObj [("tag", toJson "attempted"), ("id", toJson id), ("attempt", toJson attempt),
+         ("reason", toJson reason), ("next", toJson next)])] []
+    return (w', Json.mkObj [("status", toJson "retrying"), ("id", toJson id), ("attempt", toJson attempt),
+      ("next", toJson next), ("receipt", slugged entry)])
   let (w, verdict) ← interpretVerdict w s replied
   let (w', entry) := push w (identityKey interpretationPrincipal id)
     [("identity", identityJson interpretationPrincipal id), ("roots", rootsJson []),
