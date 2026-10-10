@@ -675,4 +675,24 @@ fixture recorded by the foundation binary).
   (each forced cell's closure carries its subterm inline); a checkpoint-local term table
   would fix it. `Dictionary.ofProgram` runs per start/resume (not cached on
   `CheckedEntry`; suites showed no slowdown).
+- Stable checkpoint addresses (coordinator's item). `collect` numbered live cells in
+  allocation order, so a reading that walked the directory's `greeted` list further
+  moved every cell allocated after it. It now numbers them by `canonicalOrder`: depth
+  first from the roots (control, then frames), children in order, a sum value's payload
+  (a list's spine) put off to the next round. The order is untrusted: `orderValid`
+  checks it numbers every live cell once (`rank` inverts it), else `collectByAddress`
+  (the old collector) is used. `related_collect` is re-proved for both branches from the
+  checked property alone (`orderValid_spec`, `orderRenaming_live/beyond`,
+  `compactInOrder_getElem`); every downstream theorem (`checkpoint_resume_segment`,
+  `collect_resume_segment`, ...) stands unchanged. `collect_garbageExample_roots` now
+  reads Plan 2 -> 0 (the first root). `tests.test_suspension_size` (host lane): nine new
+  speakers median 24,947 (foundation) -> 15,362 (v2 codec) -> 8,959 bytes (canonical
+  order); one speaker 6,661 -> 5,093 -> 5,034. Consecutive nine-speaker checkpoints share
+  89% of tokens in 258 edit runs before, 93-99% in 7-83 runs after. What still moves: the
+  later data rounds, and a settled cell's self origin (its own absolute address); writing
+  each cell's addresses relative to its own index would fix the latter (host7's
+  `Relative` did that on v1 tokens and does not apply to v2).
+  For the host lane: `compactCheckpoint`'s `dynamic` marking looks for `{"s": text}`
+  tokens; v2 strings are bare or `str` references, so the utterance is no longer cut into
+  its own leaf (it sits in the v2 header).
 
