@@ -77,10 +77,10 @@
 <!-- hand_group: a post and the drafts that answer it -->
 <div class="entry">{original}{drafts}</div>
 <!-- hand_draft: a slip with the receipt line, the draft to edit, and the three bracketed buttons -->
-<ol class="ledger"><li class="slip {fate}"><span class="code">ht.{height}</span><span class="name">{name}</span><span class="fate">{fate}</span><span class="by">to {object}</span></li></ol>
+<ol class="ledger"><li class="slip {fate}"><span class="code">ht.{height}</span><span class="name">{name}</span><span class="stamp">{stamp}</span><span class="by">to {object}</span></li></ol>
 <form method="post" action="/hand/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="post">Post</button><button class="door" name="do" value="skip">Skip</button><button class="door" name="do" value="hold">Hold</button></p></form>
 <!-- hand_row: an observation as a slip, what became of it, and a reply by hand -->
-<div class="entry"><ol class="ledger"><li class="slip {outcome}"><span class="code">{kind}</span><span class="name">{handle}</span><span class="line">{text}</span><span class="by">{fate}</span></li></ol>{retry}<details><summary>reply by hand</summary><form method="post" action="/hand/reply"><input type="hidden" name="uri" value="{uri}"><input name="object" placeholder="object"><textarea name="text" rows="4"></textarea><button class="door">Draft</button></form></details></div>
+<div class="entry"><ol class="ledger"><li class="slip {outcome}"><span class="code">{kind}</span><span class="name">{handle}</span><span class="line">{text}</span><span class="stamp">{stamp}</span></li></ol>{retry}<details><summary>reply by hand</summary><form method="post" action="/hand/reply"><input type="hidden" name="uri" value="{uri}"><input name="object" placeholder="object"><textarea name="text" rows="4"></textarea><button class="door">Draft</button></form></details></div>
 <!-- hand_retry: a skipped row's quiet line -->
 <p class="quiet">— skipped: nobody was addressed —</p><form method="post" action="/hand/retry"><input type="hidden" name="uri" value="{uri}"><button class="door">Retry</button></form>
 <!-- world: the listing, each object a small card with its mark and its door word -->
