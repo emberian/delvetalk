@@ -147,6 +147,40 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 """)
 
 
+PROPOSER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  note: String
+def initial() -> State:
+  {note: ""}
+def propose(state: State, input: {target: String, package: String, migration: String}, context: Abi.Context) -> Activity<String>:
+  match world.reprogram({object: {world: "", object: input.target}, package: input.package, migration: input.migration}):
+    case reprogrammed(_): "reprogrammed"
+    case refused(r): textConcat(r.clause, textConcat(" | ", r.reading))
+    case _: "other"
+""")
+
+
+class ReprogramReading(Reflection):
+    """codex agent 12: a refused reprogram tells its proposer what to correct (the migration's or the
+    compiler's diagnostic), not the clause alone."""
+
+    def test_a_missing_migration_is_named_in_the_refusal(self):
+        self.open_library()
+        self.make("c", BASE, record(count=nat(0)))
+        self.make("p", PROPOSER, record(note=label("")))
+        wider = BASE.replace("  count: Nat\n", "  count: Nat\n  extra: Nat\n", 1).replace("{count: 0n}", "{count: 0n, extra: 0n}").replace(
+            "{count: state.count}", "{count: state.count, extra: 0n}")
+        self.assertNotEqual(wider, BASE)
+        r = self.turn("p", "propose", record(target=label("c"), package=label(wider), migration=label("nope")))
+        self.assertEqual(r["status"], "admitted", r)
+        said = r["result"]["value"]
+        self.assertTrue(said.startswith("migration | "), said)
+        self.assertIn("nope", said)
+
+
 class ExtensionPins(Reflection):
     """An extension's pin is its compiled closure's (docs 2): the same layer over the same base under two
     libraries is two closures and two pins."""

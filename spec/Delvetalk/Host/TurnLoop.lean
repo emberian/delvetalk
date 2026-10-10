@@ -667,16 +667,17 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
     (text and metarule; a reprogram's compile and migration too) judges that change alone, at the
     version the turn reads, now. `none` when it would admit, and always for the running object
     itself, whose change the commit judges with the rest of the turn. `change` carries the
-    proposal's `programs`/`layered` or `laws`. -/
+    proposal's `programs`/`layered` or `laws`. With the clause, the refusal's voiced reason (a
+    migration's or the compiler's diagnostic included: codex agent 12). -/
 def dryChange (w : World) (s : TurnState) (self id : String) (version : Nat) (proposer : String) (kind : Nat)
-    (change : Proposal) : Option String :=
+    (change : Proposal) : Option (String × String) :=
   if id == self then none else
   let written : Written := { caller := proposer, kind, edits := [], method := s.method, via := s.via, argument := s.argument }
   let p : Proposal := { change with principal := s.principal, intent := s.intent, roots := [(id, version)],
                                     writes := [(id, [written])], turn := w.height + 1 }
   match judge w (w.height + 1) p with
   | .ok _ => none
-  | .error r => some (r.clause.getD r.cls)
+  | .error r => some (r.clause.getD r.cls, (r.voiced.reason).getD "")
 
 /-- Why a turn naming a helper is refused (class `noMethod`). -/
 def noMethodReason (id method : String) : String :=
@@ -1345,7 +1346,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let proposer := if id == self then caller else self
     if s.programs.any (·.1 == id) then refusedWith bounds responseType "duplicate"
     else match programFor s.world o source migration extend with
-      | .error (clause, _) => refusedWith bounds responseType clause
+      | .error (clause, message) =>
+        -- What to correct goes back with the clause, where the call site's result has `reading`.
+        refusedReading bounds responseType clause
+          ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
       | .ok prog =>
         -- Another object's law is asked now, so the proposer never hears `reprogrammed` in a turn
         -- whose commit that law refuses.
@@ -1355,7 +1359,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         let change : Proposal := { principal := s.principal, intent := s.intent, roots := [], writes := [],
                                    programs := [(id, (source, migration))], layered := if extend then [id] else [] }
         match dryChange world s self id o.version proposer 1 change with
-        | some clause => refusedWith bounds responseType clause
+        | some (clause, reading) => refusedReading bounds responseType clause reading
         | none =>
         recordRoot id o.version
         if !(← ensureWrite id proposer 1) then refusedWith bounds responseType "capacity"
@@ -1378,7 +1382,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         recordRoot id o.version
         let change : Proposal := { principal := s.principal, intent := s.intent, roots := [], writes := [], laws := [(id, text)] }
         match dryChange s.world s self id o.version proposer 2 change with
-        | some clause => refusedWith bounds responseType clause
+        | some (clause, reading) => refusedReading bounds responseType clause reading
         | none =>
         recordRoot id o.version
         if !(← ensureWrite id proposer 2) then refusedWith bounds responseType "capacity"

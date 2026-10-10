@@ -796,6 +796,16 @@ Items 5.43 to 5.76 follow, numbered by the lane that wrote them (5.9 to 5.42 wer
    yet, a follow-up if it shows in timing). Tests: `tests/test_usage_voice.py` `ReaderActions`;
    `test_lenses` (a stranger sees none of the owner's policy), `test_inspect_reads` (`cap` on count 3).
 
+104. **A refused reprogram or amendment says what to correct (host12; codex agent 12).** The
+   `reprogram`/`extend`/`amend` Plans answer `refused {clause, reading}` (`refusedReading`) where
+   the call site's result has `reading`, else `refused {clause}` as before. The reading is the
+   refusal's voiced reason, the compiler's or migration's diagnostic included (`dryChange` returns it
+   beside the clause); a migration the package does not define is named ("the package defines no
+   <m>; a migration is def <m>(old: OldState) -> State"). World.obend's `Programmed` and `Amended`
+   carry `refused: {clause, reading}` (host12's two-line shape change; `tests/fixtures/pins`
+   re-recorded); the Workshop shows `r.reading` (objects lane). Test: `tests/test_extend.py`
+   `ReprogramReading`.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.

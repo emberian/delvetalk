@@ -1182,7 +1182,11 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
     else do
       unless Minidregg.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
-      let (art, mty, _) ← (Package.compileKeepingLaws (← resolved migration)).mapError (("migration", ·))
+      -- A migration the package does not define is said by name, not by the compiler's entry search.
+      let (art, mty, _) ← (Package.compileKeepingLaws (← resolved migration)).mapError fun e =>
+        if (e.splitOn "missing selected entry").length > 1 then
+          ("migration", s!"the package defines no {migration}; a migration is def {migration}(old: OldState) -> State")
+        else ("migration", e)
       let packet ← (art.getObjVal? "packet").mapError (("migration", ·))
       let md ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
       match mty with
