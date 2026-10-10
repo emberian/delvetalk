@@ -800,7 +800,7 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
           throw ("migration", "the migration must have type OldState -> NewState")
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
       pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid,
-        (Delvetalk.CheckedEntry.ofPacket packet).toOption⟩)
+        (Delvetalk.CheckedEntry.ofPacket packet).toOption, none⟩)
   -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
   -- is the stack's when a layer declares a law, else the code's below.
   let (methods, predicate, predicateReads) := artifactShape artifact
@@ -1101,7 +1101,8 @@ def compileEntryIn (w : World) (inputs : Json) (name : String) : Except String (
 
 def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
   return ⟨← c.artifact.getObjVal? "packet", c.entry.type, c.entry.source.assumptions.bounds,
-    c.entry.source.assumptions.rigid, some c.entry⟩
+    c.entry.source.assumptions.rigid, some c.entry,
+    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
 
 /-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
     machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/

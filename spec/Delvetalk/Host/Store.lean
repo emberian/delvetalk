@@ -3,6 +3,7 @@
    writer. Nothing here depends on an evaluator. -/
 import Delvetalk.Package
 import Delvetalk.Entry
+import Theory.ObjectiveBendCheckpointV2
 import Std.Data.HashMap
 
 namespace Delvetalk.Host
@@ -130,6 +131,9 @@ structure Compiled where
   /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntry`,
       `Turn.resumeEntry`, `Package.executeDataEntry`), never from the packet JSON. -/
   entry : Option Delvetalk.CheckedEntry := none
+  /-- The checkpoint dictionary of the entry's program (`Dictionary.ofProgram`), built once with it:
+      every yield encodes against it and every resumption decodes against it. -/
+  dictionary : Option Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary := none
 
 /-- Causal budget carried by a turn and inherited, decremented, by its sends. -/
 structure Ledger where
