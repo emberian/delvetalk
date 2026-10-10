@@ -243,8 +243,8 @@ def receipt_links(base, reply, intent=None):
     elif intent and reply.get('class') == 'duplicateIdentity':
         out['receipt'] = link(f'{base}/receipt/{urllib.parse.quote(str(intent), safe="")}')
     roots = rc.get('roots') or []
-    if roots or outcome.get('object'):
-        o = outcome.get('object') if outcome.get('tag') == 'created' else roots[0].get('object')
+    o = outcome.get('object') if outcome.get('tag') == 'created' or not roots else roots[0].get('object')  # a refusal may name no root
+    if o:
         out.update({'object': link(f'{base}/world/{oid(o)}'), 'source': link(f'{base}/world/{oid(o)}/source')})
     made = [c['object'] for c in outcome.get('creates') or [] if c.get('object')]
     if made:
