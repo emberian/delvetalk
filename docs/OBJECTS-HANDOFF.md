@@ -153,6 +153,13 @@ the library).
   the adopter, so the target's law admits only its owner ("Only the owner of bell-1 adopts
   #1 (refused owner)" otherwise); `withdraw / n` is the proposer's. Compile, program,
   packageBytes and migration refusals are not held.
+* **Scoped resolution** (objects5): an Avatar's own principal's prose with no spell and no
+  field lines starting with an action word names its object by the first word that is a
+  thing lying in its place (its card's first line, then its id's last segment), else an
+  object of that id (the doors: garden, rooms, play); the avatar `send`s the object
+  `delvetalk <id> <action>` with the rest of the line in the form's first field (a send,
+  not a call: the callee's result would have to fit the avatar's Response R). Two of a name
+  are answered "Which one: …?"; `look` offers `Place.render` for the reader.
 * **Hub and silence.** Directory passes a spell naming another card to its receive by
   call (its Response result is Data), greets each principal once, is silent to its
   owner, and answers a door word with that door's card. Garden ends with no offer for

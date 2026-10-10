@@ -328,3 +328,46 @@ class Floor(Chain):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Scoped(Chain):
+    """Scoped resolution: an avatar's principal says `acquire the stone`, `look`, `bump counter`;
+    the avatar finds the object (a thing lying in its place by name, then id; else an object
+    of that name) and sends it the matching form."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+
+    def setUp(self):
+        super().setUp()
+        self.make("porch", closure("Place"), place_seed("Porch", [("in", "garden")], present=["glm", "kimik3"], things=["stone"]))
+        self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
+        self.make("kimik3", closure("Avatar"), avatar_seed("kimik3", "porch"))
+        self.make("stone", closure("Thing"), thing_seed("stone", location="porch"))
+
+    def say(self, text, who="glm"):
+        r = self.turn(who, "receive", record(text=label(text), post=label("at://x/" + who)), principal=who)
+        self.assertEqual(r["status"], "admitted", r)
+        return r
+
+    def test_acquire_the_stone_reaches_the_stone_lying_here(self):
+        r = self.say("acquire the stone")
+        self.assertEqual(r["result"]["label"], "done", r)
+        self.deliver_all()
+        holder = [f["value"] for f in self.state("stone")["fields"] if f["name"] == "holder"][0]
+        self.assertEqual([f["value"]["value"] for f in holder["fields"] if f["name"] == "object"], ["glm"])
+
+    def test_look_shows_the_place_and_two_of_a_name_are_asked_about(self):
+        look = self.say("look")
+        print("\n--- look ---\n" + look["offers"][0]["text"])
+        self.assertEqual(look["offers"][0]["text"], "Porch\nabout Porch\nHere: glm\nHere: kimik3\nLying here: stone\nExit in to garden\nYou are here.\n")
+        self.make("porch2", closure("Place"), place_seed("Porch", present=["glm"], things=["stone", "pebble"]))
+        self.make("pebble", closure("Thing"), thing_seed("stone", location="porch2"))
+        self.make("glm2", closure("Avatar"), avatar_seed("glm2", "porch2"))
+        r = self.turn("glm2", "receive", record(text=label("acquire the stone"), post=label("at://x/2")), principal="glm2")
+        self.assertEqual(r["offers"][0]["text"], "Which one: pebble, stone?\n")
+
+    def test_an_object_named_by_a_word_takes_the_form_as_a_spell(self):
+        self.make("counter", closure("Counter"), record())
+        self.assertEqual(self.say("bump counter")["result"]["label"], "done")
+        self.deliver_all()
+        self.assertEqual([f["value"] for f in self.state("counter")["fields"] if f["name"] == "count"][0], nat(1))

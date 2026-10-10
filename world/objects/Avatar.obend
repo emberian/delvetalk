@@ -256,7 +256,86 @@ def movedReply(moved: Moved) -> Card.Reply:
     case moved(_): Card.Reply.done({action: "move"})
     case refused(r): Card.Reply.refused({clause: "notMoved", reading: r.reason})
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
-  heard(state, Card.routeHeard(input, context, forms()), context)
+  heardFrom(state, input, Card.routeHeard(input, context, forms()), context)
+# Scoped resolution: the avatar's own principal's prose with no spell and no field lines
+# that starts with an action word (`rain on the bell: a drizzle`, `take the stone`, `look`)
+# names its object by the first word that is a thing lying in the avatar's place (by its
+# name, then by its id's last segment), else an object of that name (a door's: garden,
+# rooms, play); the avatar sends the object the matching form as a spell, the rest of the
+# line filling its first field. Several things of that name are answered with their ids;
+# `look` shows the place as its reader sees it. Anything else is the card default.
+def heardFrom(state: State, input: Card.Heard, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match routed:
+    case quiet(q): if mine(context) then scoped(state, input, routed, Card.wordList(firstLine(q.text)), context) else heard(state, routed, context)
+    case _: heard(state, routed, context)
+def firstLine(text: String) -> String:
+  textTake(text, textBreak(text, "\n"))
+def bare(word: String) -> String:
+  Card.stripped(word, textLength(word))
+def scoped(state: State, input: Card.Heard, routed: Card.Routed, words: Lists.List<String>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match words:
+    case nil(_): heard(state, routed, context)
+    case cons(c): if bare(c.head) == "look" then looking(state, context) else placing(state, input, routed, bare(c.head), c.tail, context)
+def looking(state: State, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.view({object: state.at})):
+    case viewed(v): Card.tell(Card.Reply.done({action: "look"}), Place.render(v.state, context))
+    case _: Card.tell(Card.Reply.refused({clause: "nowhere", reading: "You are nowhere to look."}), Document.text("You are nowhere to look.\n"))
+record Named:
+  object: Plans.Reference
+  name: String
+def placing(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.view({object: state.at})):
+    case viewed(v): naming(state, input, routed, action, rest, v.state.things, Lists.List.nil(), context)
+    case _: doors(state, input, routed, action, rest, rest, context)
+# Each thing lying here by the first line of its card (its name).
+def naming(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, things: Lists.List<Plans.Reference>, named: Lists.List<Named>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match things:
+    case nil(_): nouns(state, input, routed, action, rest, rest, named, context)
+    case cons(c): carding(state, input, routed, action, rest, c.head, c.tail, named, context)
+def carding(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, thing: Plans.Reference, things: Lists.List<Plans.Reference>, named: Lists.List<Named>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.card({object: thing})):
+    case carded(c): naming(state, input, routed, action, rest, things, Lists.List.cons({head: {object: thing, name: firstLine(Document.plain(c.document))}, tail: named}), context)
+    case _: naming(state, input, routed, action, rest, things, Lists.List.cons({head: {object: thing, name: ""}, tail: named}), context)
+def suffix(id: String, word: String) -> Bool:
+  id == word || textLength(id) > textLength(word) && textDrop(id, textLength(id) - textLength(word) - 1n) == "/{word}"
+def matching(named: Lists.List<Named>, word: String) -> Lists.List<Named>:
+  if Lists.any(named, fn(n: Named) -> Bool: n.name == word) then Lists.filter(named, fn(n: Named) -> Bool: n.name == word) else Lists.filter(named, fn(n: Named) -> Bool: suffix(n.object.object, word))
+# The first word naming a thing here decides; the words after it fill the form.
+def nouns(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, words: Lists.List<String>, named: Lists.List<Named>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match words:
+    case nil(_): doors(state, input, routed, action, rest, rest, context)
+    case cons(c): chosen(state, input, routed, action, rest, c.tail, matching(named, bare(c.head)), named, context)
+def chosen(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, after: Lists.List<String>, found: Lists.List<Named>, named: Lists.List<Named>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match found:
+    case nil(_): nouns(state, input, routed, action, rest, after, named, context)
+    case cons(c): if Lists.length(c.tail) > 0n then Card.tell(Card.Reply.refused({clause: "ambiguous", reading: "Which one?"}), Document.text("Which one: {textJoin(Lists.map(found, fn(n: Named) -> String: n.object.object), \", \")}?\n")) else acting(input, routed, action, c.head.object, after, state, context)
+# Else an object named by a word (the directory's doors are named by their ids).
+def doors(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, words: Lists.List<String>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match words:
+    case nil(_): heard(state, routed, context)
+    case cons(c): doorNamed(state, input, routed, action, rest, {world: context.world, object: bare(c.head)}, c.tail, context)
+def doorNamed(state: State, input: Card.Heard, routed: Card.Routed, action: String, rest: Lists.List<String>, door: Plans.Reference, after: Lists.List<String>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.inspect({object: door})):
+    case inspected(i): if Lists.any(i.methods, fn(f: Form.Form) -> Bool: f.action == action) then sending(input, action, door, after, i.methods, context) else doors(state, input, routed, action, rest, after, context)
+    case _: doors(state, input, routed, action, rest, after, context)
+def acting(input: Card.Heard, routed: Card.Routed, action: String, object: Plans.Reference, after: Lists.List<String>, state: State, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.inspect({object: object})):
+    case inspected(i): if Lists.any(i.methods, fn(f: Form.Form) -> Bool: f.action == action) then sending(input, action, object, after, i.methods, context) else Card.tell(Card.Reply.refused({clause: "noAction", reading: "{object.object} does not take {action}"}), Document.text("{object.object} does not take {action}.\n"))
+    case _: heard(state, routed, context)
+# The form as a spell sent to the object's receive, under the speaker; its card answers.
+def sending(input: Card.Heard, action: String, object: Plans.Reference, after: Lists.List<String>, forms: Lists.List<Form.Form>, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
+  match perform(Plan.send({object: object, method: "receive", argument: {text: spellFor(action, object, filler(after), forms), post: input.post}})):
+    case _: Card.Reply.done({action: action})
+def filler(after: Lists.List<String>) -> String:
+  textJoin(after, " ")
+def spellFor(action: String, object: Plans.Reference, rest: String, forms: Lists.List<Form.Form>) -> String:
+  match Lists.find(forms, fn(f: Form.Form) -> Bool: f.action == action):
+    case some(f): "delvetalk {object.object} {action}{fieldLine(f.value.fields, rest)}"
+    case none(_): "delvetalk {object.object} {action}"
+def fieldLine(fields: Form.Fields, rest: String) -> String:
+  match fields:
+    case cons(c): if rest == "" then "" else "\n{c.head.name}: {rest}"
+    case nil(_): ""
 def heard(state: State, routed: Card.Routed, context: Abi.Context) -> Activity<Plan, Response, Card.Reply>:
   match routed:
     case act(a): if a.action == "move" then walk(state, Card.text(a.fields, "exit"), context, movedReply) else acted(state, a.action, a.fields, context)
