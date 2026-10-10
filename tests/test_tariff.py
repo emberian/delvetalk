@@ -212,5 +212,30 @@ class CanonicalBytes(unittest.TestCase):
                 self.assertEqual((short["status"], short.get("resource")), ("exhausted", "bytes"), (size, short))
 
 
+EQUAL = """edition ObjectiveBend 1
+def same(a: String, b: String) -> Bool:
+  a == b
+"""
+
+
+class LabelEqual(unittest.TestCase):
+    def test_text_equality_is_charged_by_the_bytes_it_compares(self):
+        # Refuted by a one-tick comparison of two 100,000-byte texts differing in their last
+        # byte (review kernel 9): equality scans the common prefix.
+        from tests.test_objects import compile_job, check
+        art = compile_job([{"name": "Package", "source": EQUAL}], "same")["artifact"]
+        def ran(a, b):
+            r = check({"op": "run", "artifact": art, "arguments": [{"tag": "label", "value": a},
+                       {"tag": "label", "value": b}], "limits": BIG})
+            self.assertEqual(r["status"], "finished", r)
+            return r["value"]["value"], r["ticksUsed"]
+        long_a, long_b = "x" * 99999 + "a", "x" * 99999 + "b"
+        short = ran("a", "b")
+        far = ran(long_a, long_b)
+        self.assertEqual((short[0], far[0]), (False, False))
+        self.assertGreaterEqual(far[1] - short[1], 99999)
+        self.assertEqual(ran(long_a, long_a)[0], True)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -125,6 +125,7 @@ Every machine transition costs 1 tick. Before a text primitive runs, `forceHoste
 - `textJoin list sep` (each element): `1 + 2*(bytes appended)`, reserves the new accumulator (appended in place when unique).
 - `textSpan/textBreak`: `1 + perScalar*visited`, perScalar = `2*(|alphabet|+2)`; refused up front if the cap cannot cover the scan.
 - `textHasAny text words`: `1 + 3(|text|+|words|)`, reserves twice those bytes: a pass over each, then a hash set of the wanted words (`textHasAnyWordFast`, `@[csimp]` equal to the list-membership reference `textHasAnyWord`) probed once per word of the text. Before kernel10 the search was list membership, 30,000 words against 30,000 took 6.8 s under a 160,001-tick charge (`test_text_words.ManyWords`).
+- `labelEqual a b` (text `==`): `1 + min(|a|,|b|)` (kernel10; it was one tick whatever the length, `test_tariff.LabelEqual`).
 - `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`. `natText n`: `1 + bits^2`.
 - Natural arithmetic (`naturalStepCost`, kernel10): 1 tick while both operands are below 2^64; past a word, with x, y the operands' bytes (`log2/8 + 1`), `1 + 2(x+y)` plus `(x/8+1)(y/8+1)` for multiply, divide and modulo, reserving the result's bound (`max+1`, `x`, `x+y`, `x`). Before it, forty squarings of 2 cost one tick each and built a 128 GiB natural; now they are refused at the first unaffordable operand (`test_tariff.NaturalArithmetic`).
 - Everything else: 1 tick.
