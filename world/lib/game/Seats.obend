@@ -5,11 +5,11 @@ import ./Card.obend as Card
 # seat are separate objects, so a reveal awaiting the opponent's commitment waits on a
 # turn that writes another object, and resumes on roots that are still current.
 record State:
-  table: Plans.Reference
-  seat: Nat
-  owner: String
-  opponent: String
-  rival: Plans.Reference
+  table: fixed Plans.Reference
+  seat: fixed Nat
+  owner: fixed String
+  opponent: fixed String
+  rival: fixed Plans.Reference
   round: Nat
   digest: String
   opened: Bool
