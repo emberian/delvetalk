@@ -3,8 +3,7 @@ or mistyped method is refused by name, located, with a hint.
 
 Evidence for FOUNDATION §8 Surface (layer: kernel).
 
-Protocols: `protocol P:` with `name: TYPE` methods in a library module (State, Plan and
-Response are the implementer's), and `implements P` on an object module, checked at compile:
+Protocols: `protocol P:` with `name: TYPE` methods in a library module (State is the implementer's), and `implements P` on an object module, checked at compile:
 a missing or mistyped method is refused by name, located, with a hint naming the protocol.
 The artifact lists `protocols` and each method row names its protocol.
 
@@ -19,7 +18,7 @@ import ./Abi.obend as Abi
 record Heard:
   text: String
 protocol Card:
-  receive: (State, Heard, Abi.Context) -> Activity<Plan, Response, Nat>
+  receive: (State, Heard, Abi.Context) -> Activity<Nat>
   render: (State, Abi.Context) -> String
   door: () -> String
 """
@@ -27,19 +26,19 @@ protocol Card:
 THING = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 import ./Kit.obend as Kit
 implements Kit.Card
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
 def initial() -> State:
   {count: 0n}
-def receive(state: State, input: Kit.Heard, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit.add({delta: 1n})}})):
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
+def receive(state: State, input: Kit.Heard, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit.add({delta: 1n})})):
     case _: state.count
 def render(state: State, context: Abi.Context) -> String:
   "a thing"
@@ -58,7 +57,7 @@ class Protocols(unittest.TestCase):
         cls.h.close()
 
     def modules(self, thing):
-        return library_modules("Abi", "Variant") + [{"name": "Kit", "source": KIT}, {"name": "Thing", "source": thing}]
+        return library_modules("Abi", "World") + [{"name": "Kit", "source": KIT}, {"name": "Thing", "source": thing}]
 
     def check(self, thing, entry="render"):
         return self.h.send({"op": "check-package", "entry": entry, "modules": self.modules(thing)})

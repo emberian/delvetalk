@@ -75,9 +75,9 @@ def lineHint (source line : String) : Option String :=
   else if has line "${" || has line "f\"" then
     some "text interpolation is `\"SCENE {state.title} ({natText(n)} here)\"`: an expression between braces inside an ordinary string (`{{` and `}}` for literal braces)"
   else if trimmed.startsWith "state." && (has trimmed " = " || has trimmed "+=") then
-    some "state changes only by a write the host judges: `let written(_) = perform(write {count: add 1n, items: append x})` (ops add, set, append, remove, removeItem; other fields kept)"
+    some "state changes only by a write the host judges: `let written(_) = write {count: add 1n, items: append x}` (ops add, set, append, remove, removeItem; other fields kept)"
   else if has line "halt(" then
-    some "there is no halt; to go on only with the response you expect, write `let written(_) = perform(Plan.write({...}))` and continue the block (any other response refuses the turn by name); a refusal the caller should read is a sum arm you return (`Result.refused({...})`)"
+    some "there is no halt; to go on only with the response you expect, write `let written(_) = world.write(...)` and continue the block (any other response refuses the turn by name); a refusal the caller should read is a sum arm you return (`Result.refused({...})`)"
   else if has line "Some(" || has line "None" then
     some "there is no Some/None; a sum value is `Sum.label({fields})`, for example `Maybe.some({value: v})` with `sum Maybe<T>:` declared"
   else if (has line "Maybe<" || has line "Option<") && !has source "sum Maybe" && !has source "sum Option" then
@@ -173,7 +173,7 @@ def declHint (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (d : Decl) : O
   else if f.untypedClosure then
     some (d.name, "closures are `fn(x: T) -> U: body`; parameter and result types are required")
   else if f.vars.contains "halt" then
-    some ("halt", "there is no halt; to go on only with the response you expect, write `let written(_) = perform(Plan.write({...}))` and continue the block (any other response refuses the turn by name); a refusal the caller should read is a sum arm you return (`Result.refused({...})`)")
+    some ("halt", "there is no halt; to go on only with the response you expect, write `let written(_) = world.write(...)` and continue the block (any other response refuses the turn by name); a refusal the caller should read is a sum arm you return (`Result.refused({...})`)")
   else if f.vars.contains "Some" || f.vars.contains "None" then
     some ((if f.vars.contains "Some" then "Some" else "None"),
       "there is no Some/None; a sum value is `Sum.label({fields})`, for example `Maybe.some({value: v})` with `sum Maybe<T>:` declared")

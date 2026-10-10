@@ -25,17 +25,17 @@ DID = 'did:plc:' + 'a' * 24
 TALLY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case _: state.count + 1n
 """)
 

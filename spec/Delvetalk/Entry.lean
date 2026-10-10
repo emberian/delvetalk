@@ -59,7 +59,7 @@ def messageSites (source : AnnotatedTerm) : Except String (Array (Term × Ty)) :
     | none => sites := sites.push (plan, type)
   return sites
 
-/-- The sites of an activity entry: `some` for a message activity, `none` for a sum Plan. -/
+/-- The sites of an activity entry (its Plan is a message; `none` for a Plan of another type, which the checker refuses). -/
 def sitesFor (source : AnnotatedTerm) (plan : Ty) : Except String (Option (Array (Term × Ty))) :=
   if isMessagePlan plan then some <$> messageSites source else pure none
 

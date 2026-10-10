@@ -91,9 +91,6 @@ structure State where
   /-- Instances by their fresh name. -/
   instanceByName : Std.HashMap String Nat := {}
   inferRemaining : Nat := maxInferenceSteps
-  /-- Typed foreign views met: (Plan sum's module, Plan sum's name, response label, state type
-  as the generated module spells it). -/
-  typedViews : Array (String × String × String × String) := #[]
 
 abbrev M := StateT State (Except String)
 
@@ -258,8 +255,6 @@ structure Site where
   target : String
   bindings : List (String × GType)
   lifted : Bool
-  /-- The declared result type of the definition being rewritten (for `perform`). -/
-  result : M IType := pure .unknown
 
 def spendInfer : M Unit := do
   let s ← get
@@ -523,16 +518,7 @@ def worldArgumentsOf (synth : Expr → M IType) (method : String)
     return [t]
   | _, _ => cannot
 
-/-- `write {...}` (`ObjectiveBendParse.writeMarker`) in its definition's dialect: in an
-`Activity<R>` the world call `world.write(edits)`, else the Plan
-`Plan.write({object, edits})`. -/
-def writeLowered (site : Site) : Expr → M (Option Expr)
-  | .call (.var "$write" vs) [.record fields rs] span => do
-    match (← site.result), fields.lookup "edits" with
-    | .applied "Activity" [_], some edits =>
-      return some (.call (.member (.var "world" vs) "write" vs) [edits] span)
-    | _, _ => return some (.call (.member (.var "Plan" vs) "write" vs) [.record fields rs] span)
-  | _ => pure none
+
 
 /-- The type an expression synthesizes, without rewriting or instantiating anything.
 `locals` holds each local's type, computed on demand. -/
@@ -581,13 +567,8 @@ partial def synthI (site : Site) (locals : List (String × M IType)) (e : Expr) 
         | none => worldArgumentsOf (synthI site locals) method f args
       if types.length != f.typeParameters.length then return .unknown
       return ← itypeOf origin (f.typeParameters.zip types) (worldSignature f).2
-    if let some lowered ← writeLowered site e then return ← synthI site locals lowered
     if let some name := path names callee then
       if (← resolveQuiet site.origin name).isNone then
-        if name == "perform" then
-          return match (← site.result) with
-            | .applied "Activity" [_, r, _] => r
-            | _ => .unknown
         if let some t := builtinResult name args.length then return t
     match ← calleeOf site names callee with
     | some c =>
@@ -769,24 +750,6 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
     let recurFields := fun (fs : List (String × Expr)) (fieldTypes : String → M IType) => fs.mapM fun (n, v) => do
       spendString n
       return (n, ← rewriteExpr fuel site locals (fieldTypes n) v)
-    -- A typed foreign view `P.view::<S>({object})`: the Plan `viewAs {object, as}` naming the
-    -- response arm `viewed:S`, which the package's Plan and Response instances gain (`run`).
-    if let .call (.specialize (.member planExpr "view" vspan) [stateType] _) [arg] span := e then
-      if let some c ← calleeOf site names (.member planExpr "view" vspan) then
-        if let (some "view", .app origin planName _ _) := (c.label, c.result) then
-          let g ← typeOf fuel site.origin site.bindings stateType
-          let shown ← render (← get).generatedModule g
-          -- Named by its declaring module (module names are unique in a package).
-          let label := "viewed:" ++ match g with
-            | .named m n _ => m ++ "." ++ n
-            | _ => shown
-          let module := (← originModule origin).name
-          modify fun st => { st with typedViews := st.typedViews.push (module, planName, label, shown) }
-          let lowered := Expr.call (.member planExpr "viewAs" vspan)
-            [.record [("object", .member arg "object" span), ("as", .str label span)] span] span
-          return ← rewriteExpr fuel site locals expected lowered
-    if let some lowered ← writeLowered site e then
-      return ← rewriteExpr fuel site locals expected lowered
     if let some (method, given, args) ← worldCallOf site names e then
       let (origin, f) ← tryCatch (worldMethod method) fun why => throw (why ++ " (line " ++ toString e.span.line ++ ")")
       let at_ := " (line " ++ toString e.span.line ++ ")"
@@ -814,9 +777,7 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
         let [value] := args | throw "Data.of takes exactly one value"
         return .dataOf (← rewriteType fuel site typeArgument) (← recur value) span
     if let .call callee args span := e then
-      let isPerform := path names callee == some "perform" && (← resolveQuiet site.origin "perform").isNone
-      let found ← if isPerform then pure none else calleeOf site names callee
-      if let some c := found then
+      if let some c ← calleeOf site names callee then
         if !c.typeParameters.isEmpty && c.given.isNone then
           -- Inferred: the explicit spelling's rewrite, with the arguments it would name.
           let σ := inferArguments c (← args.mapM (synthI site locals)) (← expected)
@@ -846,13 +807,6 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
         let σ := c.typeParameters.zip (c.given.getD [])
         let args ← (args.zipIdx).mapM fun (a, i) =>
           rewriteExpr fuel site locals (pure ((c.params[i]?.getD .unknown).subst σ)) a
-        return .call (← recur callee) args span
-      if isPerform then
-        let planType : M IType := do
-          return match (← site.result) with
-            | .applied "Activity" [p, _, _] => p
-            | _ => .unknown
-        let args ← args.mapM (rewriteExpr fuel site locals planType)
         return .call (← recur callee) args span
     if let .specialize target types span := e then
       let some name := path names target | throw "generic specialization requires an unshadowed declaration"
@@ -918,24 +872,10 @@ def rewriteBody : Nat → Site → List (String × M IType) → M IType → Body
     match b with
     | .expr e s => return .expr (← rewriteExpr fuel site locals expected e) s
     | .cases scrutinee branches s =>
-      let views := (← get).typedViews.size
       let scrutinee' ← rewriteExpr fuel site locals (pure .unknown) scrutinee
-      -- A match on a typed view: its `viewed` arm is the view's own arm.
-      let after ← get
-      let viewLabel : Option String := if after.typedViews.size > views then
-          match scrutinee with
-          | .call _ [.call (.specialize (.member _ "view" _) [_] _) [_] _] _ =>
-            (after.typedViews.back?).map (·.2.2.1)
-          | _ => none
-        else none
-      let branches : List (ObjectiveBendSurface.Pattern × Body × Span) := match viewLabel with
-        | some label => branches.map fun (pattern, body, span) => match pattern with
-          | ObjectiveBendSurface.Pattern.ctor "viewed" binder => (ObjectiveBendSurface.Pattern.ctor label binder, body, span)
-          | other => (other, body, span)
-        | none => branches
       let branches ← branches.mapM fun (pattern, body, span) => do
         let binder : M IType := match pattern with
-          | .ctor l _ => if l.startsWith "viewed:" then pure .unknown else do payloadOf (← synthI site locals scrutinee) l
+          | .ctor l _ => do payloadOf (← synthI site locals scrutinee) l
           | .succ _ => pure (.ground (.atom "Nat"))
           | _ => pure .unknown
         return (pattern, ← rewriteBody fuel site ((pattern.binder, binder) :: locals) expected body, span)
@@ -964,7 +904,6 @@ def rewriteDecl : Nat → Site → List (String × M IType) → Decl → M Decl
     | .function sig typeParameters body span =>
       let result := itypeAt site sig.resultType
       let sig' ← rewriteSignature fuel site sig
-      let site := { site with result }
       return .function sig' typeParameters (← rewriteBody fuel site (typed sig.params) result body) span
     | .extension name ps t body binders span =>
       let ps' ← ps.mapM (rewriteParam fuel site)
@@ -1015,7 +954,6 @@ def exprGenerics : Expr → Bool
   | .extend i fs _ => (exprGenerics i) || fieldsHaveGenerics fs
   | .member (.var "world" _) _ _ => true
   | .member t _ _ => (exprGenerics t)
-  | .call (.var "$write" _) _ _ => true
   | .call c args _ => (exprGenerics c) || listHasGenerics args
   | .compose specs _ => listHasGenerics specs
   | .fix spec inherited _ => (exprGenerics spec) || (exprGenerics inherited)
@@ -1166,31 +1104,6 @@ def run (sources : Array Source) : Except String Output := do
         if (d matches .typeAlias ..) || !d.typeParameters.isEmpty then continue
         ordinary := ordinary.push (← rewriteDecl maxNesting site [] d)
       rewritten := rewritten ++ [(source.module.name, { source.ast with decls := ordinary.toList })]
-    -- Typed foreign views widen this package's Plan and Response instances of the Plan sum's
-    -- module: Plan gains `viewAs {object, as}`, Response one `viewed:S {version, state: S}`
-    -- per viewed type. A package without typed views is untouched.
-    let views := (← get).typedViews
-    if !views.isEmpty then
-      let s ← get
-      let mut widened := s.instances
-      for index in [:widened.size] do
-        let some i := widened[index]? | continue
-        let some (.sum name cases ps span) := i.ast | continue
-        let origin := (sources[i.origin]?.map (·.module.name)).getD ""
-        let mine := views.toList.filter (·.1 == origin)
-        if mine.isEmpty then continue
-        if mine.any (·.2.1 == i.declarationName) then
-          let some view := cases.find? (·.name == "view") | continue
-          if !cases.any (·.name == "viewAs") then
-            widened := widened.set! index { i with ast := some (.sum name (cases ++ [⟨"viewAs", view.type ++ " with {as: String}", view.span, []⟩]) ps span) }
-        else if i.declarationName == "Response" then
-          let some viewed := cases.find? (·.name == "viewed") | continue
-          let mut extra : List ObjectiveBendSurface.Field := []
-          for (_, _, label, shown) in mine do
-            if !(cases ++ extra).any (·.name == label) then
-              extra := extra ++ [⟨label, "{version: Nat, state: " ++ shown ++ "}", viewed.span, []⟩]
-          widened := widened.set! index { i with ast := some (.sum name (cases ++ extra) ps span) }
-      modify fun s => { s with instances := widened }
     let state ← get
     let generated : ObjectiveBendSurface.Module := { imports := [], decls := state.instances.toList.filterMap (·.ast) }
     rewritten := rewritten ++ [(moduleName, generated)]

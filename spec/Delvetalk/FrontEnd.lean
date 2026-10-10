@@ -94,18 +94,18 @@ def prepare (modules : List SourceModule) (limits : Json) : Except Diagnostic Pr
   prepareParsed modules asts limits
 
 def Prepared.lower (p : Prepared) (entryModule : Nat) (entryDefinition : String)
-    (args projections limits : Json) (mode : String) : Except Diagnostic Lowering :=
-  (lowerElaborated p.modules p.decoded p.elaborated true entryModule entryDefinition args projections limits mode).mapError
+    (limits : Json) : Except Diagnostic Lowering :=
+  (lowerElaborated p.modules p.decoded p.elaborated true entryModule entryDefinition limits).mapError
     (instancesNote p.instances)
 
 def lowerWithInstances (modules : List SourceModule) (entryModule : Nat) (entryDefinition : String)
-    (args projections limits : Json) (mode : String) : Except Diagnostic (Lowering × Json) := do
-  discard <| options projections limits mode
+    (limits : Json) : Except Diagnostic (Lowering × Json) := do
+  discard <| options limits
   let prepared ← prepare modules limits
-  return (← prepared.lower entryModule entryDefinition args projections limits mode, prepared.instances)
+  return (← prepared.lower entryModule entryDefinition limits, prepared.instances)
 
 def lower (modules : List SourceModule) (entryModule : Nat) (entryDefinition : String)
-    (args projections limits : Json) (mode : String) : Except Diagnostic Lowering := do
-  return (← lowerWithInstances modules entryModule entryDefinition args projections limits mode).1
+    (limits : Json) : Except Diagnostic Lowering := do
+  return (← lowerWithInstances modules entryModule entryDefinition limits).1
 
 end Delvetalk.FrontEnd

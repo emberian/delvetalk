@@ -29,20 +29,20 @@ def bell_seed(post="post-1"):
 HUB = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 law cap: new.count <= 0
 def initial() -> State:
   {count: 0n}
-def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<Nat>:
   if input.text == "no" then refusing(context) else 0n
-def refusing(context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def refusing(context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case _: 1n
 """)
 
@@ -55,7 +55,7 @@ class Await(Chain):
         super().setUp()
         self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
         r = self.host.send(op="world-create", principal="ember", identity="mk-hub", object="hub",
-                           modules=closure("Variant") + [{"name": "Hub", "source": HUB}], entry="initial", seed=record(count=nat(0)))
+                           modules=closure("World") + [{"name": "Hub", "source": HUB}], entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
         self.recorded = set()
 
@@ -106,22 +106,22 @@ class Create(Await):
         maker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   made: Nat
 record Edits:
   made: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {made: Plans.Edit.keep({})}
 def initial() -> State:
   {made: 0n}
-def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.create({package: "Child", seed: if input.bad then Data.of::<{ghost: Nat}>({ghost: 1n}) else Data.of::<{n: Nat}>({n: 5n}), law: "", requireAbsent: {world: "", object: input.kid}})):
+def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) -> Activity<String>:
+  match world.create({package: "Child", seed: if input.bad then Data.of::<{ghost: Nat}>({ghost: 1n}) else Data.of::<{n: Nat}>({n: 5n}), law: "", requireAbsent: {world: "", object: input.kid}}):
     case created(_): "created"
     case refused(r): r.clause
     case _: "other"
 """)
-        modules = closure("Variant") + [{"name": "Child", "source": child}, {"name": "Maker", "source": maker}]
+        modules = closure("World") + [{"name": "Child", "source": child}, {"name": "Maker", "source": maker}]
         r = self.host.send(op="world-create", principal="ember", identity="mk", object="maker",
                            modules=modules, entry="initial", seed=record(made=nat(0)))
         self.assertEqual(r["status"], "created", r)
@@ -279,21 +279,21 @@ class Suspend(Await):
 RELAY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
-def wait(state: State, input: {post: String, text: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.awaitPost({post: input.post, patience: 8n})):
+def wait(state: State, input: {post: String, text: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.awaitPost({post: input.post, patience: 8n}):
     case reply(_): sent(input.text, context)
     case _: 0n
-def sent(text: String, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.send({object: {world: context.world, object: "bell"}, method: "rain", argument: {text: text}})):
+def sent(text: String, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: {world: context.world, object: "bell"}, method: "rain", argument: {text: text}}):
     case delivery(_): 1n
     case _: 0n
 """)
@@ -306,7 +306,7 @@ class Rains(Await):
         different keys, both admitted, both kept in key order."""
         self.bell()
         r = self.host.send(op="world-create", principal="ember", identity="mk-relay", object="relay",
-                           modules=closure("Variant") + [{"name": "Relay", "source": RELAY}], entry="initial", seed=record(count=nat(0)))
+                           modules=closure("World") + [{"name": "Relay", "source": RELAY}], entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
         for who, text in (("kimik3", "a drizzle"), ("gemini", "a squall")):
             w = self.turn("relay", "wait", record(post=label(uri("post-1")), text=label(text)), principal=who, identity="wait-" + who)

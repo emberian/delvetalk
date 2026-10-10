@@ -16,6 +16,7 @@ from tests.test_turn_world import declared
 GARDEN = declared("""edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Bell.obend as Bell
@@ -31,6 +32,7 @@ def counted(n: Nat) -> String:
 PLACE = declared("""edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Document.obend as Document
 import ./Relation.obend as Relations
@@ -63,22 +65,22 @@ class DerivedViews(Chain):
         asker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   n: Nat
 record Edits:
   n: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {n: Plans.Edit.keep({})}
 def initial() -> State:
   {n: 0n}
-def ask(state: State, context: Abi.Context) -> Activity<Plan, Response, Data>:
-  match perform(Plan.viewDerived({object: {world: context.world, object: "garden"}, view: "byColour"})):
+def ask(state: State, context: Abi.Context) -> Activity<Data>:
+  match world.viewDerived::<Data>({object: {world: context.world, object: "garden"}, view: "byColour"}):
     case derived(d): d.value
     case _: Plans.nothing()
 """)
         r = self.host.send(op="world-create", principal="ember", identity="mk-asker", object="asker",
-                           modules=closure("Variant") + [{"name": "Asker", "source": asker}], entry="initial", seed=record(n=nat(0)))
+                           modules=closure("World") + [{"name": "Asker", "source": asker}], entry="initial", seed=record(n=nat(0)))
         self.assertEqual(r["status"], "created", r)
         asked = self.turn("asker", "ask", principal="glm")
         self.assertEqual(asked["status"], "admitted", asked)

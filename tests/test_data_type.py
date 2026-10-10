@@ -1,4 +1,4 @@
-"""Data, the universal first-order type: one Plan carries any payload shape, Data.of checks its
+"""Data, the universal first-order type: one world call carries any payload shape, Data.of checks its
 declared type, nothing takes Data apart, and a malformed value is refused on every admission path.
 
 Evidence for FOUNDATION §3 (layer: kernel).
@@ -11,42 +11,50 @@ import json
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_turn import Host, TurnCase, nat, label, library_modules, variant
+from tests.test_turn import MESSAGE, Host, TurnCase, nat, label, library_modules, variant
 from tests.test_turn_world import closure
 from tests.test_turn_world import declared
 
-CALLER = """edition ObjectiveBend 1
-record Call:
+CALLER_WORLD = "edition ObjectiveBend 1\n" + MESSAGE + """record Call:
   object: String
   method: String
   argument: Data
-sum Plan:
-  call: Call
 sum Reply:
   returned: {result: Data}
   refused: {}
+protocol world:
+  call(Call) -> Reply
+"""
+
+CALLER = """edition ObjectiveBend 1
+import ./World.obend as World
 record Pair:
   a: Nat
   b: String
 sum Shade:
   dark: {}
   light: {level: Nat}
-def fan(count: Nat) -> Activity<Plan, Reply, Data>:
-  match perform(Plan.call({object: "counter", method: "add", argument: Data.of::<Nat>(count)})):
+def fan(count: Nat) -> Activity<Data>:
+  match world.call({object: "counter", method: "add", argument: Data.of::<Nat>(count)}):
     case returned(first):
-      match perform(Plan.call({object: "pairs", method: "put", argument: Data.of::<Pair>({a: count, b: "hi"})})):
+      match world.call({object: "pairs", method: "put", argument: Data.of::<Pair>({a: count, b: "hi"})}):
         case returned(second): second.result
         case refused(_): first.result
     case refused(_): Data.of::<Shade>(Shade.dark({}))
-def keep(value: Data, n: Nat) -> Activity<Plan, Reply, Data>:
-  match perform(Plan.call({object: "box", method: "put", argument: value})):
+def keep(value: Data, n: Nat) -> Activity<Data>:
+  match world.call({object: "box", method: "put", argument: value}):
     case returned(r): r.result
     case refused(_): value
-def pair(p: Pair) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.call({object: "pairs", method: "put", argument: Data.of::<Pair>(p)})):
+def pair(p: Pair) -> Activity<Nat>:
+  match world.call({object: "pairs", method: "put", argument: Data.of::<Pair>(p)}):
     case returned(_): p.a
     case refused(_): 0n
 """
+
+
+def called(plan):
+    """The Call record a yielded Message carries as its argument."""
+    return field(field(plan, "argument"), "argument")
 
 
 def field(record, name):
@@ -63,25 +71,25 @@ def record(**fields):
 class DataTypeTests(TurnCase):
 
     def test_one_activity_calls_two_objects_with_different_argument_shapes(self):
-        # Refuted if a single Plan type cannot carry a Nat and a record payload in one activity.
+        # Refuted if a single world call cannot carry a Nat and a record payload in one activity.
         h = self.host()
-        art = h.compile(CALLER, "fan")
+        art = h.compile(CALLER, "fan", world=CALLER_WORLD)
         first = h.start(art, [nat(5)])
         self.assertEqual(first["status"], "yielded", first)
-        self.assertEqual(field(first["plan"]["payload"], "argument"), nat(5))
-        self.assertEqual(first["planType"]["row"]["member"]["tail"]["tail"]["member"], {"tag": "data"})
+        self.assertEqual(called(first["plan"]), nat(5))
+        self.assertEqual(field(first["plan"], "method"), label("call"))
         second = h.resume(art, first["checkpoint"], variant("returned", record(result=nat(6))))
         self.assertEqual(second["status"], "yielded", second)
-        self.assertEqual(field(second["plan"]["payload"], "argument"), record(a=nat(5), b=label("hi")))
+        self.assertEqual(called(second["plan"]), record(a=nat(5), b=label("hi")))
 
     def test_data_field_round_trips_through_a_checkpoint(self):
         # Refuted if a Data value (here a variant inside a record) changes across yield/resume.
         h = self.host()
-        art = h.compile(CALLER, "keep")
+        art = h.compile(CALLER, "keep", world=CALLER_WORLD)
         value = record(shade=variant("light", record(level=nat(3))), tags=label("x"))
         started = h.start(art, [value, nat(0)])
         self.assertEqual(started["status"], "yielded", started)
-        self.assertEqual(field(started["plan"]["payload"], "argument"), value)
+        self.assertEqual(called(started["plan"]), value)
         echoed = variant("on", record(deep=variant("light", record(level=nat(4)))))
         done = h.resume(art, started["checkpoint"], variant("returned", record(result=echoed)))
         self.assertEqual(done["status"], "finished", done)
@@ -91,7 +99,7 @@ class DataTypeTests(TurnCase):
     def test_data_argument_with_a_repeated_field_is_refused(self):
         # Refuted if Data admits a record that is not well-formed data.
         h = self.host()
-        art = h.compile(CALLER, "keep")
+        art = h.compile(CALLER, "keep", world=CALLER_WORLD)
         bad = {"tag": "record", "fields": [{"name": "a", "value": nat(1)}, {"name": "a", "value": nat(2)}]}
         reply = h.start(art, [bad, nat(0)])
         self.assertEqual(reply["status"], "error", reply)
@@ -100,7 +108,7 @@ class DataTypeTests(TurnCase):
     def test_argument_shape_not_conforming_to_the_declared_type_is_refused(self):
         # Refuted if a Data payload of the wrong shape reaches a callee typed Pair.
         h = self.host()
-        art = h.compile(CALLER, "pair")
+        art = h.compile(CALLER, "pair", world=CALLER_WORLD)
         reply = h.start(art, [record(a=nat(1))])
         self.assertEqual(reply["status"], "error", reply)
         self.assertEqual(reply["message"], "turn refused: argument does not conform to its type")
@@ -129,27 +137,31 @@ class DataTypeTests(TurnCase):
         # costs more than linear-ish time (annotations were looked up by scanning a list).
         h = self.host()
         items = {"tag": "list", "items": [label("x%d" % i) for i in range(2500)]}
-        art = h.compile(CALLER, "keep")
+        art = h.compile(CALLER, "keep", world=CALLER_WORLD)
         started = h.start(art, [items, nat(0)])
         self.assertEqual(started["status"], "yielded", started.get("message"))
-        self.assertEqual(field(started["plan"]["payload"], "argument"), items)
+        self.assertEqual(called(started["plan"]), items)
         typed = h.send({"op": "compile", "entry": "count", "modules": library_modules("List") + [
-            {"name": "Package", "source": LONG_TYPED}]})
+            {"name": "World", "source": LONG_WORLD}, {"name": "Package", "source": LONG_TYPED}]})
         self.assertEqual(typed["status"], "compiled", typed)
         longer = {"tag": "list", "items": [label("y%d" % i) for i in range(4500)]}  # past the old four-thousand refusal
         reply = h.start(typed["artifact"], [longer, nat(3)])
         self.assertEqual(reply["status"], "yielded", reply.get("message"))
-        self.assertEqual(reply["plan"], variant("say", record(n=nat(3))))
+        self.assertEqual(field(reply["plan"], "method"), label("say"))
+        self.assertEqual(field(reply["plan"], "argument"), record(n=nat(3)))
 
+
+LONG_WORLD = "edition ObjectiveBend 1\n" + MESSAGE + """sum Reply:
+  ok: {}
+protocol world:
+  say({n: Nat}) -> Reply
+"""
 
 LONG_TYPED = """edition ObjectiveBend 1
 import ./List.obend as Lists
-sum Plan:
-  say: {n: Nat}
-sum Reply:
-  ok: {}
-def count(xs: Lists.List<String>, n: Nat) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.say({n: n})):
+import ./World.obend as World
+def count(xs: Lists.List<String>, n: Nat) -> Activity<Nat>:
+  match world.say({n: n}):
     case ok(_): n
 """
 
@@ -161,7 +173,7 @@ def count(xs: Lists.List<String>, n: Nat) -> Activity<Plan, Reply, Nat>:
 DATA_COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 import ./List.obend as Lists
 record State:
   count: Nat
@@ -171,8 +183,6 @@ record Edits:
   count: Plans.Edit<Nat, Nat>
   payload: Plans.Edit<Data, Data>
   copy: Plans.Edit<Data, Data>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 record Tagged:
   name: String
   n: Nat
@@ -182,18 +192,18 @@ def keepData() -> Plans.Edit<Data, Data>:
   Plans.Edit::<Data, Data>.keep({})
 def setData(value: Data) -> Plans.Edit<Data, Data>:
   Plans.Edit::<Data, Data>.set({value: value})
-def put(context: Abi.Context, value: Data) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.keep({}), payload: setData(value), copy: keepData()}})):
+def put(context: Abi.Context, value: Data) -> Activity<Nat>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.keep({}), payload: setData(value), copy: keepData()}):
     case written(_): 1n
     case _: 0n
-def putRecord(state: State, input: Tagged, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def putRecord(state: State, input: Tagged, context: Abi.Context) -> Activity<Nat>:
   put(context, Data.of::<Tagged>(input))
-def putList(state: State, input: {items: Lists.List<Nat>}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def putList(state: State, input: {items: Lists.List<Nat>}, context: Abi.Context) -> Activity<Nat>:
   put(context, Data.of::<Lists.List<Nat>>(input.items))
-def copyAfter(state: State, input: {principal: String, intent: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.await({slot: {principal: input.principal, intent: input.intent}, patience: 8n})):
+def copyAfter(state: State, input: {principal: String, intent: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.await({slot: {principal: input.principal, intent: input.intent}, patience: 8n}):
     case reply(_):
-      match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), payload: keepData(), copy: setData(state.payload)}})):
+      match world.write({count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), payload: keepData(), copy: setData(state.payload)}):
         case written(_): 1n
         case _: 0n
     case _: 0n

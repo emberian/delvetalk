@@ -342,16 +342,6 @@ theorem plainV2_roundTrip (d : Dictionary) (s : State) :
   exact bodyV2_roundTrip ⟨d.terms, d.findTerm, envs, fun e => envIndex[e]?, d.nameLists, fun n => d.nameHint[n]?⟩
     s _ (by simp; omega)
 
-/-- **The v2 checkpoint round trip.** A state encoded against a program's dictionary is
-restored exactly by decoding against the program's terms, strings and name lists, for
-every dictionary (its hints only find candidates; every reference is checked). -/
-theorem stateV2_roundTrip (d : Dictionary) (s : State) :
-    decodeStateV2 d.terms d.strings d.nameLists (encodeStateV2 d s) = some s := by
-  unfold decodeStateV2 encodeStateV2 internAll
-  simp only []
-  rw [strings_roundTrip]
-  exact plainV2_roundTrip d s
-
 /-! ## v3: relative addresses -/
 
 theorem unzigzagFrom_zigzagFrom (i a : Nat) : unzigzagFrom i (zigzagFrom i a) = a := by
@@ -412,6 +402,6 @@ theorem stateV3_roundTrip (d : Dictionary) (s : State) :
   rw [strings_roundTrip]
   simp only [Option.bind_some, plainV2_roundTrip, Option.map_some, absolute_relative]
 
-#assert_axioms stateV2_roundTrip stateV3_roundTrip
+#assert_axioms plainV2_roundTrip stateV3_roundTrip
 
 end Minidregg.Theory.ObjectiveBendCheckpointRoundTrip

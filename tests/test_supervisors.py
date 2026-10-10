@@ -19,7 +19,7 @@ from tests.test_turn_world import label, nat, record, declared
 SUPERVISOR = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
   how: String
@@ -30,48 +30,44 @@ record Edits:
   how: Plans.Edit<String, {}>
   class: Plans.Edit<String, {}>
   who: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
 def initial() -> State:
   {count: 0n, how: "", class: "", who: ""}
 def classOf(outcome: Plans.Outcome) -> String:
   match outcome:
     case admitted(_): "admitted"
     case refused(r): r.class
-def ended(state: State, input: {receipt: Plans.Receipt, how: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), how: Plans.Edit::<String, {}>.set({value: input.how}), class: Plans.Edit::<String, {}>.set({value: classOf(input.receipt.outcome)}), who: Plans.Edit::<String, {}>.set({value: context.caller})}})):
+def ended(state: State, input: {receipt: Plans.Receipt, how: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), how: Plans.Edit::<String, {}>.set({value: input.how}), class: Plans.Edit::<String, {}>.set({value: classOf(input.receipt.outcome)}), who: Plans.Edit::<String, {}>.set({value: context.caller})}):
     case _: 0n
 """)
 
 WORKER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {count: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}):
     case _: 1n
-def deep(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.call({object: Plans.self(context), method: "deep", argument: Plans.nothing()})):
+def deep(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.call::<Nat>({object: Plans.self(context), method: "deep", argument: Plans.nothing()}):
     case _: 0n
 def count(n: Nat) -> Nat:
   count(n + 1n)
-def spin(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: count(0n)})}})):
+def spin(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.add({delta: count(0n)})}):
     case _: 0n
-def wait(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.await({slot: {principal: "nobody", intent: "never"}, patience: 2n})):
+def wait(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.await({slot: {principal: "nobody", intent: "never"}, patience: 2n}):
     case timedOut(_): 7n
     case _: 0n
-def spawn(state: State, input: {id: String, supervisor: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.createUnder({package: "Main", seed: Data.of::<{count: Nat}>({count: 5n}), law: "", requireAbsent: {world: "", object: input.id}, supervisor: {world: "", object: input.supervisor}})):
+def spawn(state: State, input: {id: String, supervisor: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.createUnder({package: "Main", seed: Data.of::<{count: Nat}>({count: 5n}), law: "", requireAbsent: {world: "", object: input.id}, supervisor: {world: "", object: input.supervisor}}):
     case created(_): 1n
     case refused(_): 0n
     case _: 2n

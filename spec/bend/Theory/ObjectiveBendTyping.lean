@@ -343,15 +343,15 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       PartialTyping assumptions context whenTrue result tu →
       PartialTyping assumptions context whenFalse result fu →
       PartialTyping assumptions context (.ifBool condition whenTrue whenFalse) result (addUses cu (addUses tu fu))
-  /-- Yield a Plan (a sum of first-order actions, or a message record); the response is
-  data. A sum Plan's activity is resumed at `response` itself; a message's at `Data`, the
-  site's `response` being this perform's own (`Ty.performResponse`). -/
+  /-- Yield a Plan (a message record of first-order data). The site's `response` is this
+  perform's own; the activity is resumed at `Data`, so performs answered at different
+  types sequence in one activity. -/
   | perform {context : Context} {plan : Term} {planType response : Ty} {uses : Uses} :
       PartialTyping assumptions context plan planType uses →
       planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
       PartialTyping assumptions context (.perform plan)
-        (.computation planType (planType.performResponse response) response) uses
+        (.computation planType .data response) uses
   /-- Hosted extension: first-order data injected into the universal `Data`
   type. The only rule that produces `Data`; there is no elimination. The
   declarative rule takes any walk fuel (`isDataUnder` is a greatest fixed point
@@ -372,7 +372,7 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       PartialTyping assumptions context value result uses → result.isComputation = false →
       PartialTyping assumptions context (.done value) (.computation planType response result) uses
   /-- Hosted extension: refuse the turn, naming why. Only an activity refuses, at any
-  activity type over a Plan sum and a data response; it uses nothing. -/
+  activity type over a message Plan and a data response; it uses nothing. -/
   | refuse {context : Context} {reason : String} {planType response result : Ty} :
       planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
@@ -653,14 +653,13 @@ def inferAt {α : Type} (assumptions : Assumptions) (here : α → Option Lambda
       else none
   | fuel + 1, .perform plan => do
       -- The annotation at a perform's position is its effect signature:
-      -- domain = the Plan (a sum or a message), codomain = this site's response type.
+      -- domain = the Plan (a message), codomain = this site's response type.
       let annotation ← here position
       let value ← inferAt assumptions here child context (child position 0) fuel plan
       if hs : agree assumptions value.type annotation.domain = true then
         if hp : annotation.domain.isPlanUnder assumptions.bounds assumptions.rigid = true then
           if hr : annotation.codomain.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
-            some ⟨.computation annotation.domain (annotation.domain.performResponse annotation.codomain)
-                annotation.codomain, value.uses,
+            some ⟨.computation annotation.domain .data annotation.codomain, value.uses,
               .perform (.conversion value.derivation (agree_sameType hs)) hp hr⟩
           else none
         else none
@@ -1663,25 +1662,26 @@ def checkPacketFile (path : String) : IO UInt32 := do
 
 /-! ## Activities: effects as a type, never in a shared position -/
 
-def planRow : Ty := .field "write" (.field "after" .natural .emptyRow) .emptyRow
-def planType : Ty := .variant planRow
+/-- A message Plan (a record of data), a site's result, the perform's signature (the Plan
+and this site's result) and `done`'s (the Plan and the activity's response, `Data`). -/
+def messageRow : Ty := .field "method" .label .emptyRow
+def planType : Ty := messageRow
 def responseType : Ty := .variant (.field "written" .emptyRow (.field "refused" .emptyRow .emptyRow))
-def writeAction : LambdaAnnotation := ⟨.field "after" .natural .emptyRow,planType,.unrestricted,.reusable⟩
 def effectSignature : LambdaAnnotation := ⟨planType,responseType,.unrestricted,.reusable⟩
-def writePlan : Term := .inject "write" (.record [("after",.nat 1)])
-/-- Annotations for a perform at `site` (its plan injection one level down). -/
+def doneSignature : LambdaAnnotation := ⟨planType,.data,.unrestricted,.reusable⟩
+def writePlan : Term := .record [("method",.label "write")]
+/-- Annotations for a perform at `site`. -/
 def performAt (site : List Nat) (rest : Annotations) : Annotations := fun position =>
-  if position = site then some effectSignature else if position = site ++ [0] then some writeAction
-  else rest position
+  if position = site then some effectSignature else rest position
 def writeActivity (written refused : Term) : Term :=
   .case (.perform writePlan) [("written",written),("refused",refused)]
 def armsDone : Annotations := fun position =>
-  if position = [1,0] ∨ position = [1,1] then some effectSignature else none
+  if position = [1,0] ∨ position = [1,1] then some doneSignature else none
 
 /-- Perform a write, resume with its outcome, select the arm: an activity. -/
 theorem effect_case_accepted :
     (check ⟨writeActivity (.done (.nat 1)) (.done (.nat 0)),performAt [0] armsDone,{}⟩ [] 32).map
-      (fun checked => checked.type) = some (.computation planType responseType .natural) := by decide
+      (fun checked => checked.type) = some (.computation planType .data .natural) := by decide
 /-- Every arm of an effect case is an activity; a pure arm needs `done`. -/
 theorem pure_arm_without_done_refused :
     (check ⟨writeActivity (.nat 1) (.nat 0),performAt [0] armsDone,{}⟩ [] 32).isNone = true := by decide
@@ -1690,7 +1690,7 @@ refused there even for an affine (non-shareable) parameter... -/
 theorem effect_as_argument_refused :
     (check ⟨.app (.lam (.nat 0)) (.perform writePlan),
       performAt [1] (fun position => if position = [0] then
-        some ⟨.computation planType responseType responseType,.natural,.affine,.reusable⟩ else none),{}⟩ [] 32).isNone = true := by decide
+        some ⟨.computation planType .data responseType,.natural,.affine,.reusable⟩ else none),{}⟩ [] 32).isNone = true := by decide
 /-- ...while the same affine parameter accepts a pure argument. -/
 theorem pure_affine_argument_accepted :
     (check ⟨.app (.lam (.nat 0)) (.nat 3),
@@ -1703,21 +1703,27 @@ theorem effect_in_record_field_refused :
 theorem effect_in_payload_refused :
     (check ⟨.inject "later" (.perform writePlan),
       performAt [0] (fun position => if position = [] then
-        some ⟨.computation planType responseType responseType,
-          .variant (.field "later" (.computation planType responseType responseType) .emptyRow),
+        some ⟨.computation planType .data responseType,
+          .variant (.field "later" (.computation planType .data responseType) .emptyRow),
           .unrestricted,.reusable⟩ else none),{}⟩ [] 32).isNone = true := by decide
 /-- Rule effect-in-specification: specification components are shared cells. -/
 theorem effect_in_specification_refused :
     (check ⟨.specification (.perform writePlan) (.nat 0),performAt [0] (fun _ => none),{}⟩ [] 32).isNone = true := by decide
-/-- Rule plan-is-a-sum: a perform's plan is a sum of first-order actions. -/
+/-- Rule plan-is-a-message: a perform's plan is a record of first-order data... -/
 theorem scalar_plan_refused :
     (check ⟨.perform (.nat 1),fun position => if position = [] then
       some ⟨.natural,responseType,.unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
+/-- ...never a sum (the withdrawn dialect's Plan)... -/
+theorem sum_plan_refused :
+    (check ⟨.perform (.inject "write" (.record [])),fun position =>
+      if position = [] then some ⟨.variant (.field "write" .emptyRow .emptyRow),responseType,.unrestricted,.reusable⟩
+      else if position = [0] then some ⟨.emptyRow,.variant (.field "write" .emptyRow .emptyRow),.unrestricted,.reusable⟩
+      else none,{}⟩ [] 32).isNone = true := by decide
 /-- Rule response-is-data: a closure cannot be a response. -/
 theorem closure_response_refused :
     (check ⟨.perform writePlan,fun position =>
       if position = [] then some ⟨planType,.arrow .reusable .unrestricted .natural .natural,.unrestricted,.reusable⟩
-      else if position = [0] then some writeAction else none,{}⟩ [] 32).isNone = true := by decide
+      else none,{}⟩ [] 32).isNone = true := by decide
 /-- An activity is never shareable, so it is never a fix target, mix operand or
 unrestricted binder either. -/
 theorem computation_not_shareable (plan response result : Ty) (variables : List Nat) :
@@ -1741,10 +1747,10 @@ theorem data_not_eliminated :
 an arm that continues, so `let written(_) = perform(p)` types as its match... -/
 theorem refusal_arm_accepted :
     (check ⟨writeActivity (.done (.nat 1)) (.refuse "unexpected response refused"),
-      performAt [0] (fun position => if position = [1,0] then some effectSignature
-        else if position = [1,1] then some ⟨.computation planType responseType .natural,
-          .computation planType responseType .natural,.unrestricted,.reusable⟩ else none),{}⟩ [] 32).map
-      (fun checked => checked.type) = some (.computation planType responseType .natural) := by decide
+      performAt [0] (fun position => if position = [1,0] then some doneSignature
+        else if position = [1,1] then some ⟨.computation planType .data .natural,
+          .computation planType .data .natural,.unrestricted,.reusable⟩ else none),{}⟩ [] 32).map
+      (fun checked => checked.type) = some (.computation planType .data .natural) := by decide
 /-- ...a refusal is never a pure value... -/
 theorem pure_refusal_refused :
     (check ⟨.refuse "no",fun position => if position = [] then
@@ -1752,12 +1758,11 @@ theorem pure_refusal_refused :
 /-- ...and never sits in a shared position (here a record field). -/
 theorem refusal_in_field_refused :
     (check ⟨.record [("next",.refuse "no")],fun position => if position = [0] then
-      some ⟨.computation planType responseType .natural,.computation planType responseType .natural,
+      some ⟨.computation planType .data .natural,.computation planType .data .natural,
         .unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
 
 /-! Messages: a record Plan, answered at each site's own result type. -/
 
-def messageRow : Ty := .field "method" .label .emptyRow
 def viewedType : Ty := .variant (.field "viewed" .natural .emptyRow)
 def writtenType : Ty := .variant (.field "written" .emptyRow .emptyRow)
 def message (method : String) : Term := .record [("method",.label method)]
@@ -1781,22 +1786,7 @@ theorem message_closure_result_refused :
     (check ⟨viewThenWrite (.done (.bound 1)),
       viewThenWriteAt ⟨messageRow,.arrow .reusable .unrestricted .natural .natural,.unrestricted,.reusable⟩,{}⟩
       [] 32).isNone = true := by decide
-/-- ...and a sum-Plan perform does not continue a message activity (its activity is
-resumed at its one response type, not at `Data`). -/
-theorem message_then_sum_plan_refused :
-    (check ⟨.case (.perform (message "view")) [("viewed", writeActivity (.done (.nat 1)) (.done (.nat 0)))],
-      fun position =>
-        if position = [0] then some ⟨messageRow,viewedType,.unrestricted,.reusable⟩
-        else if position = [1,0,0] then some effectSignature
-        else if position = [1,0,0,0] then some writeAction
-        else if position = [1,0,1,0] ∨ position = [1,0,1,1] then some effectSignature
-        else none,{}⟩ [] 32).isNone = true := by decide
-/-- The old dialect is unchanged: a sum Plan's perform concludes at its response. -/
-theorem sum_plan_response_unchanged (row response : Ty) :
-    (Ty.variant row).performResponse response = response := rfl
-
-#assert_axioms message_sites_accepted message_closure_result_refused message_then_sum_plan_refused
-  sum_plan_response_unchanged
+#assert_axioms message_sites_accepted message_closure_result_refused
 #assert_axioms record_to_data_accepted closure_to_data_refused data_not_eliminated
 #assert_axioms refusal_arm_accepted pure_refusal_refused refusal_in_field_refused
 #assert_axioms exhaustive_case_accepted reordered_arms_accepted missing_arm_refused
@@ -1806,7 +1796,7 @@ theorem sum_plan_response_unchanged (row response : Ty) :
   nat_primitive_label_operand_refused affine_in_two_arms_refused affine_in_one_arm_accepted
   effect_case_accepted pure_arm_without_done_refused effect_as_argument_refused
   pure_affine_argument_accepted effect_in_record_field_refused effect_in_payload_refused
-  effect_in_specification_refused scalar_plan_refused closure_response_refused
+  effect_in_specification_refused scalar_plan_refused sum_plan_refused closure_response_refused
 #assert_axioms recursive_sum_list_accepted recursive_sum_ill_typed_tail_refused
 #assert_axioms canonical_agreement_loses_shareability shadowed_custody_laundering_refused
   shadowed_once_closure_laundering_refused shadowed_shareable_member_accepted

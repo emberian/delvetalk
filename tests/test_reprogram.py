@@ -17,31 +17,24 @@ ADDS_TWO = COUNTER.replace("add 1n", "add 2n").replace("state.count + 1n", "stat
 EMBER_ONLY = 'law counter: request.subject == "ember"'
 BOTH = 'law counter: request.subject == "ember" or request.subject == "kimik3"'
 
-def with_variant(modules):
-    """The Variant fixture beside the object's own modules, so a later package may import it."""
-    first = closure("Variant")
-    names = {m["name"] for m in first}
-    return first + [m for m in modules if m["name"] not in names]
-
-
 TOTALS = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
   total: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
   total: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({}), total: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n, total: 0n}
 def migrate(old: {count: Nat}) -> State:
   {count: old.count, total: old.count}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), total: Plans.Edit::<Nat, Nat>.keep({})}})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), total: Plans.Edit::<Nat, Nat>.keep({})})):
     case written(_): state.total
     case _: 0n
 """)
@@ -65,7 +58,7 @@ def pad(source, size):
 class Reprogram(TurnWorld):
     def make(self, obj="c1", source=COUNTER, principal="ember", count=0):
         r = self.host.send(op="world-create", principal=principal, identity="mk-" + obj, object=obj,
-                           modules=with_variant(closure("Counter", override={"Counter": source})), entry="initial",
+                           modules=closure("Counter", override={"Counter": source}), entry="initial",
                            seed=record(count=nat(count)))
         return r
 
@@ -258,13 +251,13 @@ class Restart(Reprogram):
         self.assertIn("height 2", r["message"])
 
 
-PLAN_FIXTURE = fixture("""def evolve(state: State, input: {package: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.reprogram({object: Plans.self(context), package: input.package, migration: ""})):
+PLAN_FIXTURE = fixture("""def evolve(state: State, input: {package: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.reprogram({object: Plans.self(context), package: input.package, migration: ""}):
     case reprogrammed(_): 1n
     case refused(r): 0n
     case _: 2n
-def widen(state: State, input: {law: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.amend({object: Plans.self(context), law: input.law})):
+def widen(state: State, input: {law: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.amend({object: Plans.self(context), law: input.law}):
     case amended(_): 1n
     case _: 0n
 """)
@@ -279,7 +272,7 @@ class PlansInTurn(Reprogram):
 
     def test_an_object_reprograms_itself_with_a_plan_and_runs_the_new_code_next_turn(self):
         fixture_source = PLAN_FIXTURE[-1]["source"]
-        newer = declared(fixture_source.split("\ndef methods()")[0] + "\ndef extra(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:\n  addSelf(context, 40n)\n")
+        newer = declared(fixture_source.split("\ndef methods()")[0] + "\ndef extra(state: State, context: Abi.Context) -> Activity<Nat>:\n  addSelf(context, 40n)\n")
         r = self.turn("p", "evolve", record(package=label(newer)))
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
         self.assertEqual(len(r["receipt"]["outcome"]["reprograms"]), 1)

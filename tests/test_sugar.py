@@ -27,19 +27,41 @@ def core(artifact):
     return hashlib.sha256(json.dumps(packet, sort_keys=True).encode()).hexdigest()
 
 
+# A stand-in for world/lib/World.obend: the message and three world methods, so a sugared and
+# an explicit spelling yield the same world calls without the world library's closure.
+SUGAR_WORLD = HEAD + """record Reference:
+  world: String
+  object: String
+record Message:
+  object: Reference
+  method: String
+  argument: Data
+record Edit:
+  field: Nat
+  after: Nat
+sum Sent:
+  delivery: {id: String}
+  refused: {clause: String}
+sum Reply:
+  written: {}
+  refused: {clause: String}
+  later: {}
+protocol world:
+  send({object: Reference, method: String, argument: Data}) -> Sent
+  put(Edit) -> Reply
+"""
+
+
+def sugar_modules(source, library=()):
+    return library_modules(*library) + [{"name": "World", "source": SUGAR_WORLD}, {"name": "Package", "source": source}]
+
+
 # A generic declaration in every package, so both spellings run the generics pass (an
 # explicit `Data.of::<T>` is a specialization, and the pass adds its generated module
 # to the package's metadata).
-DATA_PLANS = HEAD + """sum Box<T>:
+DATA_PLANS = HEAD + """import ./World.obend as World
+sum Box<T>:
   box: {value: T}
-record Reference:
-  world: String
-  object: String
-sum Plan:
-  send: {object: Reference, method: String, argument: Data}
-sum Response:
-  delivery: {id: String}
-  refused: {clause: String}
 record Note:
   text: String
   count: Nat
@@ -48,19 +70,19 @@ record Note:
 # (name, explicit, sugared, entry): each pair must compile to the same packet.
 DATA_PAIRS = [
     ("sum payload field",
-     DATA_PLANS + "def tell(text: String) -> Activity<Plan, Response, Nat>:\n"
-     "  match perform(Plan.send({object: {world: \"\", object: \"bell\"}, method: \"note\", argument: Data.of::<{text: String}>({text: text})})):\n"
+     DATA_PLANS + "def tell(text: String) -> Activity<Nat>:\n"
+     "  match world.send({object: {world: \"\", object: \"bell\"}, method: \"note\", argument: Data.of::<{text: String}>({text: text})}):\n"
      "    case _: 1n\n",
-     DATA_PLANS + "def tell(text: String) -> Activity<Plan, Response, Nat>:\n"
-     "  match perform(Plan.send({object: {world: \"\", object: \"bell\"}, method: \"note\", argument: {text: text}})):\n"
+     DATA_PLANS + "def tell(text: String) -> Activity<Nat>:\n"
+     "  match world.send({object: {world: \"\", object: \"bell\"}, method: \"note\", argument: {text: text}}):\n"
      "    case _: 1n\n",
      "tell"),
     ("named record value",
-     DATA_PLANS + "def tell(note: Note) -> Activity<Plan, Response, Nat>:\n"
-     "  match perform(Plan.send({object: {world: \"\", object: \"bell\"}, method: \"note\", argument: Data.of::<Note>(note)})):\n"
+     DATA_PLANS + "def tell(note: Note) -> Activity<Nat>:\n"
+     "  match world.send({object: {world: \"\", object: \"bell\"}, method: \"note\", argument: Data.of::<Note>(note)}):\n"
      "    case _: note.count\n",
-     DATA_PLANS + "def tell(note: Note) -> Activity<Plan, Response, Nat>:\n"
-     "  match perform(Plan.send({object: {world: \"\", object: \"bell\"}, method: \"note\", argument: note})):\n"
+     DATA_PLANS + "def tell(note: Note) -> Activity<Nat>:\n"
+     "  match world.send({object: {world: \"\", object: \"bell\"}, method: \"note\", argument: note}):\n"
      "    case _: note.count\n",
      "tell"),
     ("call argument",
@@ -79,17 +101,13 @@ DATA_PAIRS = [
 
 
 LISTS_HEAD = HEAD + """import ./List.obend as Lists
+import ./World.obend as World
 record Rain:
   author: String
   text: String
 record State:
   rains: Lists.List<Rain>
   count: Nat
-sum Plan:
-  write: {count: Nat}
-sum Response:
-  written: {}
-  refused: {clause: String}
 def line(rain: Rain) -> String:
   rain.text
 """
@@ -121,13 +139,13 @@ GENERIC_PAIRS = [
      LISTS_HEAD + "def said(text: String, state: State) -> Lists.List<Rain>:\n  Lists.List.cons({head: {author: \"me\", text: text}, tail: state.rains})\n",
      "said"),
     ("an activity's result type",
-     LISTS_HEAD + "def wrote<T>(state: State, then: Nat -> T) -> Activity<Plan, Response, T>:\n"
-     "  match perform(Plan.write({count: state.count + 1n})):\n    case _: then(state.count)\n"
-     "def bump(state: State, n: Nat) -> Activity<Plan, Response, Nat>:\n"
+     LISTS_HEAD + "def wrote<T>(state: State, then: Nat -> T) -> Activity<T>:\n"
+     "  match world.put({field: state.count + 1n, after: 0n}):\n    case _: then(state.count)\n"
+     "def bump(state: State, n: Nat) -> Activity<Nat>:\n"
      "  wrote::<Nat>(state, fn(c: Nat) -> Nat: c + n)\n",
-     LISTS_HEAD + "def wrote<T>(state: State, then: Nat -> T) -> Activity<Plan, Response, T>:\n"
-     "  match perform(Plan.write({count: state.count + 1n})):\n    case _: then(state.count)\n"
-     "def bump(state: State, n: Nat) -> Activity<Plan, Response, Nat>:\n"
+     LISTS_HEAD + "def wrote<T>(state: State, then: Nat -> T) -> Activity<T>:\n"
+     "  match world.put({field: state.count + 1n, after: 0n}):\n    case _: then(state.count)\n"
+     "def bump(state: State, n: Nat) -> Activity<Nat>:\n"
      "  wrote(state, fn(c: Nat) -> Nat: c + n)\n",
      "bump"),
     ("inside a generic body",
@@ -139,25 +157,17 @@ GENERIC_PAIRS = [
 ]
 
 
-TURN_HEAD = HEAD + """record Edit:
-  field: Nat
-  after: Nat
-sum Plan:
-  write: Edit
-sum Reply:
-  written: {}
-  refused: {clause: String}
-  later: {}
+TURN_HEAD = HEAD + """import ./World.obend as World
 """
 
-BUMP_SUGARED = TURN_HEAD + """def bump(count: Nat) -> Activity<Plan, Reply, Nat>:
-  let written(_) = perform(Plan.write({field: 0n, after: count + 1n}))
+BUMP_SUGARED = TURN_HEAD + """def bump(count: Nat) -> Activity<Nat>:
+  let written(_) = world.put({field: 0n, after: count + 1n})
   let next = count + 1n
   next
 """
 # The match the statement lowers to: one refusal arm per label it does not name.
-BUMP_EXPLICIT = TURN_HEAD + """def bump(count: Nat) -> Activity<Plan, Reply, Nat>:
-  match perform(Plan.write({field: 0n, after: count + 1n})):
+BUMP_EXPLICIT = TURN_HEAD + """def bump(count: Nat) -> Activity<Nat>:
+  match world.put({field: 0n, after: count + 1n}):
     case written(_):
       let next = count + 1n
       next
@@ -166,15 +176,15 @@ BUMP_EXPLICIT = TURN_HEAD + """def bump(count: Nat) -> Activity<Plan, Reply, Nat
 """
 
 # Two statements in a row, the second binding its payload.
-TWICE_SUGARED = TURN_HEAD + """def twice(count: Nat) -> Activity<Plan, Reply, String>:
-  let written(_) = perform(Plan.write({field: 0n, after: count}))
-  let refused(r) = perform(Plan.write({field: 1n, after: count}))
+TWICE_SUGARED = TURN_HEAD + """def twice(count: Nat) -> Activity<String>:
+  let written(_) = world.put({field: 0n, after: count})
+  let refused(r) = world.put({field: 1n, after: count})
   r.clause
 """
-TWICE_EXPLICIT = TURN_HEAD + """def twice(count: Nat) -> Activity<Plan, Reply, String>:
-  match perform(Plan.write({field: 0n, after: count})):
+TWICE_EXPLICIT = TURN_HEAD + """def twice(count: Nat) -> Activity<String>:
+  match world.put({field: 0n, after: count}):
     case written(_):
-      match perform(Plan.write({field: 1n, after: count})):
+      match world.put({field: 1n, after: count}):
         case refused(r): r.clause
         case written(_): refuse("unexpected response written")
         case later(_): refuse("unexpected response later")
@@ -193,11 +203,12 @@ class SugarTests(unittest.TestCase):
         cls.h.close()
 
     def compile(self, source, entry, library=()):
-        return self.h.compile(source, entry, library)
+        reply = self.h.send({"op": "compile", "entry": entry, "modules": sugar_modules(source, library)})
+        self.assertEqual(reply["status"], "compiled", reply)
+        return reply["artifact"]
 
     def check(self, source, entry, library=()):
-        return self.h.send({"op": "check-package", "entry": entry,
-                            "modules": library_modules(*library) + [{"name": "Package", "source": source}]})
+        return self.h.send({"op": "check-package", "entry": entry, "modules": sugar_modules(source, library)})
 
     def same(self, explicit, sugared, entry, library=()):
         a = self.compile(explicit, entry, library)
@@ -219,8 +230,8 @@ class SugarTests(unittest.TestCase):
         self.assertIn("refused (data-injection): this value is a function", reply["diagnostic"]["message"])
 
     def test_data_injection_refuses_an_activity_by_name(self):
-        source = DATA_PLANS + ("def go(n: Nat) -> Activity<Plan, Response, Nat>:\n"
-                               "  match perform(Plan.send({object: {world: \"\", object: \"b\"}, method: \"m\", argument: {}})):\n"
+        source = DATA_PLANS + ("def go(n: Nat) -> Activity<Nat>:\n"
+                               "  match world.send({object: {world: \"\", object: \"b\"}, method: \"m\", argument: {}}):\n"
                                "    case _: n\n"
                                "def wrap(d: Data, n: Nat) -> Nat:\n  n\n"
                                "def f(n: Nat) -> Nat:\n  wrap(go(n), n)\n")
@@ -243,7 +254,7 @@ class SugarTests(unittest.TestCase):
         reply = self.check(source, "zero", ("List",))
         self.assertEqual(reply["status"], "refused", reply)
         message = reply["diagnostic"]["message"]
-        self.assertIn("cannot infer the type argument T of Lists.length (line 17)", message)
+        self.assertIn("cannot infer the type argument T of Lists.length (line 13)", message)
         self.assertIn("write Lists.length::<T>(...) naming T", message)
 
     def test_a_partly_inferred_call_shows_what_was_inferred(self):
@@ -286,8 +297,8 @@ class SugarTests(unittest.TestCase):
         reply = self.h.resume(artifact, second["checkpoint"], variant("written"))
         self.assertEqual(reply["message"], "turn refused: unexpected response written")
 
-    def test_let_response_takes_a_perform(self):
-        source = TURN_HEAD + ("def pick(reply: Reply) -> Activity<Plan, Reply, Nat>:\n"
+    def test_let_response_takes_a_world_call(self):
+        source = TURN_HEAD + ("def pick(reply: World.Reply) -> Activity<Nat>:\n"
                               "  let written(_) = reply\n  1n\n")
         reply = self.check(source, "pick")
         self.assertEqual(reply["status"], "refused", reply)
@@ -298,13 +309,13 @@ class SugarTests(unittest.TestCase):
         reply = self.check(pure, "f")
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("refused (refuse-outside-activity)", reply["diagnostic"]["message"])
-        nested = TURN_HEAD + ("def g(n: Nat) -> Activity<Plan, Reply, Nat>:\n"
+        nested = TURN_HEAD + ("def g(n: Nat) -> Activity<Nat>:\n"
                               "  if refuse(\"no\") then n else 0n\n")
         reply = self.check(nested, "g")
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("refused (refuse-outside-tail)", reply["diagnostic"]["message"])
         # In both branches of a tail `if`, it is where the activity finishes.
-        branches = TURN_HEAD + ("def h(n: Nat) -> Activity<Plan, Reply, Nat>:\n"
+        branches = TURN_HEAD + ("def h(n: Nat) -> Activity<Nat>:\n"
                                 "  if n == 0n then refuse(\"zero\") else n\n")
         artifact = self.compile(branches, "h")
         self.assertEqual(self.h.start(artifact, [nat(0)])["message"], "turn refused: zero")
@@ -312,7 +323,7 @@ class SugarTests(unittest.TestCase):
 
     def test_halt_suggests_the_statement(self):
         reply = self.check(HEAD + "def stop(n: Nat) -> Nat:\n  halt(\"no\")\n", "stop")
-        self.assertIn("let written(_) = perform(Plan.write({...}))", reply["diagnostic"]["hint"])
+        self.assertIn("let written(_) = world.write(...)", reply["diagnostic"]["hint"])
 
 
 SCENE = HEAD + """record State:
@@ -351,7 +362,7 @@ FORM_SUGARED = FORM_HEAD + """form plant as planting:
 GARDEN = HEAD + """import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as P
-import ./Variant.obend as V
+import ./World.obend as World
 record State:
   planted: Nat
   children: Lists.List<P.Reference>
@@ -360,34 +371,30 @@ record Edits:
   planted: P.Edit<Nat, Nat>
   children: P.Entries<P.Reference, {}>
   note: P.Edit<String, {}>
-type Plan = V.Plan<Edits>
-type Response = V.Response<State, {}>
 def keep() -> Edits:
   {planted: P.Edit::<Nat, Nat>.keep({}), children: P.Entries::<P.Reference, {}>.keep({}), note: P.Edit::<String, {}>.keep({})}
-def plant(state: State, input: {child: P.Reference, note: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def plant(state: State, input: {child: P.Reference, note: String}, context: Abi.Context) -> Activity<Nat>:
 """
-WRITE_EXPLICIT = GARDEN + """  let written(_) = perform(Plan.write({object: P.self(context), edits: extend(keep(), {planted: P.Edit::<Nat, Nat>.add({delta: 1n}), children: P.Entries::<P.Reference, {}>.append({item: input.child}), note: P.Edit::<String, {}>.set({value: input.note})})}))
+WRITE_EXPLICIT = GARDEN + """  let written(_) = world.write(extend(keep(), {planted: P.Edit::<Nat, Nat>.add({delta: 1n}), children: P.Entries::<P.Reference, {}>.append({item: input.child}), note: P.Edit::<String, {}>.set({value: input.note})}))
   state.planted + 1n
 """
-WRITE_SUGARED = GARDEN + """  let written(_) = perform(write {planted: add 1n, children: append input.child, note: set input.note})
+WRITE_SUGARED = GARDEN + """  let written(_) = write {planted: add 1n, children: append input.child, note: set input.note}
   state.planted + 1n
 """
 
 
 COUNTER = HEAD + """import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
 law small "a counter stays at most a hundred": new.count <= 100
 def initial() -> State:
   {count: 0n}
-def bump(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  let written(_) = perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit.add({delta: input.n})}}))
+def bump(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = world.write::<Edits>({count: Plans.Edit.add({delta: input.n})})
   input.n
 """
 
@@ -492,28 +499,28 @@ class Writes(unittest.TestCase):
         cls.h.close()
 
     def test_write_is_its_plan(self):
-        a = self.h.compile(WRITE_EXPLICIT, "plant", ("Abi", "List", "Variant"))
-        b = self.h.compile(WRITE_SUGARED, "plant", ("Abi", "List", "Variant"))
+        a = self.h.compile(WRITE_EXPLICIT, "plant", ("Abi", "List", "World"))
+        b = self.h.compile(WRITE_SUGARED, "plant", ("Abi", "List", "World"))
         self.assertEqual(core(a), core(b))
 
     def test_write_names_its_operations(self):
         source = WRITE_SUGARED.replace("add 1n", "bump 1n")
         reply = self.h.send({"op": "check-package", "entry": "plant",
-                             "modules": library_modules("Abi", "List", "Variant") + [{"name": "Package", "source": source}]})
+                             "modules": library_modules("Abi", "List", "World") + [{"name": "Package", "source": source}]})
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("takes add, set, append, remove, removeItem, insert, upsert or retract, not bump", reply["diagnostic"]["message"])
 
 
     def test_relation_edits_are_their_plans(self):
         # RELATIONAL section 3: insert/upsert/retract, against world/lib/Plan.obend, which has them.
-        modules = library_modules("Abi", "List", "Variant")
+        modules = library_modules("Abi", "List", "World")
         for op, ctor, payload, value in [("insert", "insert", "row", "input.child"),
                                          ("upsert", "upsert", "row", "input.child"),
                                          ("retract", "retract", "key", "{object: input.note}")]:
             with self.subTest(op=op):
-                sugared = GARDEN + "  let written(_) = perform(write {children: %s %s})\n  state.planted\n" % (op, value)
-                explicit = GARDEN + ("  let written(_) = perform(Plan.write({object: P.self(context), edits: extend(keep(), "
-                                     "{children: P.Entries::<P.Reference, {}>.%s({%s: %s})})}))\n  state.planted\n" % (ctor, payload, value))
+                sugared = GARDEN + "  let written(_) = write {children: %s %s}\n  state.planted\n" % (op, value)
+                explicit = GARDEN + ("  let written(_) = world.write(extend(keep(), "
+                                     "{children: P.Entries::<P.Reference, {}>.%s({%s: %s})}))\n  state.planted\n" % (ctor, payload, value))
                 packets = []
                 for source in (sugared, explicit):
                     reply = self.h.send({"op": "compile", "entry": "plant",
@@ -554,7 +561,7 @@ class LawReading(TurnWorld):
     the statement form runs on the real host (a staged write is answered `written`)."""
 
     def test_a_law_with_a_reading_enforces_as_before(self):
-        self.create("c", library_modules("Abi", "Variant") + [{"name": "Package", "source": declared(COUNTER)}], 0)
+        self.create("c", library_modules("Abi", "World") + [{"name": "Package", "source": declared(COUNTER)}], 0)
         ok = self.turn("c", "bump", record(n=nat(5)))
         self.assertEqual(ok["status"], "admitted", ok)
         refused = self.turn("c", "bump", record(n=nat(150)))
@@ -564,7 +571,7 @@ class LawReading(TurnWorld):
     def test_write_runs_on_the_host(self):
         source = WRITE_SUGARED + "def initial() -> State:\n  {planted: 0n, children: Lists.List.nil({}), note: \"\"}\n"
         r = self.host.send(op="world-create", principal="ember", identity="create-g", object="g",
-                           modules=library_modules("Abi", "List", "Variant") + [{"name": "Package", "source": declared(source)}],
+                           modules=library_modules("Abi", "List", "World") + [{"name": "Package", "source": declared(source)}],
                            entry="initial", seed=record())
         self.assertEqual(r["status"], "created", r)
         child = record(world=label(""), object=label("bell-1"))
@@ -581,7 +588,7 @@ class LawReading(TurnWorld):
         self.addCleanup(h.close)
         bad = COUNTER.replace('"a counter stays at most a hundred"', "at most a hundred")
         reply = h.send({"op": "check-package", "entry": "initial",
-                        "modules": library_modules("Abi", "Variant") + [{"name": "Package", "source": bad}]})
+                        "modules": library_modules("Abi", "World") + [{"name": "Package", "source": bad}]})
         self.assertEqual(reply["status"], "refused", reply)
 
 

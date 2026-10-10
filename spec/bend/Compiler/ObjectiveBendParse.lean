@@ -457,11 +457,6 @@ def joinPieces (pieces : List Expr) (span : Span) : Expr :=
 `Plan.obend` replaces it (`parseObjective`). Not an identifier a source can spell. -/
 def writePlansAlias : String := "$plans"
 
-/-- The callee a `write {...}` names until the generics pass decides its dialect: in an
-`Activity<Plan, Response, R>` the Plan `Plan.write({object, edits})`, in an `Activity<R>`
-the world call `world.write(edits)`. Not an identifier a source can spell. -/
-def writeMarker : String := "$write"
-
 /-- `parse(minimum)`: an atom, its postfix member/call chain, then binary operators of at
 least `minimum` precedence (left-associative). -/
 def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
@@ -523,10 +518,8 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
           (.lambda parameters (String.ofList resultType) closureBody span, span)
         else
           (.extensionValue parameters (String.ofList resultType) closureBody span, span)
-    -- `write {field: op value, ...}`: the Plan that writes the running object's edits,
-    -- every other field kept (in an `Activity<R>`, the world call `world.write(edits)`;
-    -- the generics pass chooses, `writeMarker`). Lowers to
-    -- `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: E, ...})})`
+    -- `write {field: op value, ...}`: the world call that writes the running object's edits,
+    -- every other field kept. Lowers to `world.write(extend(keep(), {field: E, ...}))`
     -- with `E` = `Plans.Edit.add({delta: v})` (add), `Plans.Edit.set({value: v})` (set),
     -- `Plans.Entries.append({item: v})` (append), `Plans.Entries.remove({index: v})`
     -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem), and for a relation
@@ -560,10 +553,8 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
         let next ← take env
         if tokenText next == "}" then break
         if tokenText next != "," then throw "Error: expected , or } in write {...}"
-      let object := Expr.call (.member plans "self" span) [.var "context" span] span
       let changes := Expr.extend (.call (.var "keep" span) [] span) edits.toList span
-      result := (.call (.var writeMarker span)
-        [.record [("object", object), ("edits", changes)] span] span, span)
+      result := (.call (.member (.var "world" span) "write" span) [changes] span, span)
     else if firstText == "{" then
       let mut fields : Array (String × Expr) := #[]
       if (← peek env) != some "}" then

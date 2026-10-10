@@ -286,14 +286,14 @@ def main (args : List String) : IO Unit := do
     let elaborated ← IO.ofExcept (ObjectiveBendElaborate.elaboratePackage specialized.modules)
     let limits := Delvetalk.Package.getLimits req
     let whole := elaborated.whole
-    let lw := Lowering.make whole whole.term "" "unapplied-definition" "definition" modules limits 4096 []
+    let lw := Lowering.make whole whole.term "" modules limits 4096 []
     let pk ← IO.ofExcept (decodePacket lw.packet)
     for i in [0:n] do
       let r : Nat ← match stage with
         | "parse" => IO.ofExcept ((Delvetalk.Package.modulesAndAsts (req.setObjVal! "x" (toJson i))).map (·.1.length) |>.mapError (·.message))
         | "generics" => IO.ofExcept ((Delvetalk.Generics.run (srcs.toArray.push default |>.pop)).map (·.modules.length))
         | "elaborate" => IO.ofExcept ((ObjectiveBendElaborate.elaboratePackage (specialized.modules ++ [])).map (·.fields.length))
-        | "lower" => pure (Lowering.make whole whole.term (toString i) "unapplied-definition" "definition" modules limits 4096 []).packet.compress.length
+        | "lower" => pure (Lowering.make whole whole.term (toString i) modules limits 4096 []).packet.compress.length
         | "check" => pure (match check { pk.source with assumptions := { pk.source.assumptions with rigid := [i + 100000] } } [] pk.fuel with | some _ => 1 | none => 0)
         | _ => pure 0
       if r == 12345678 then IO.println "x"
@@ -305,7 +305,7 @@ def main (args : List String) : IO Unit := do
     let specialized ← timed "generics" fun _ => Delvetalk.Generics.run srcs.toArray
     let elaborated ← timed "elaboratePackage" fun _ => ObjectiveBendElaborate.elaboratePackage specialized.modules
     let limits := Delvetalk.Package.getLimits req
-    let (_, typeFuel) ← IO.ofExcept ((options (.arr #[]) limits "definition").mapError (·.message))
+    let typeFuel ← IO.ofExcept ((options limits).mapError (·.message))
     let whole := elaborated.whole
     timed "checkTemplates" fun _ => (checkTemplates whole typeFuel).mapError (·.message)
     let pr ← timed "  propose" fun _ => ObjectiveBendElaborate.propose whole
@@ -315,7 +315,7 @@ def main (args : List String) : IO Unit := do
     IO.println s!"  annotations {pr.annotations.length}"
     discard <| timed "whole checkDirect" fun _ => (checkDirect whole typeFuel []).mapError (·.message)
     let lw ← timed "whole lowering (proposal+packet)" fun _ => do
-      let l := Lowering.make whole whole.term "" "unapplied-definition" "definition" modules limits typeFuel []
+      let l := Lowering.make whole whole.term "" modules limits typeFuel []
       match l.proposal with | .ok _ => pure () | .error e => throw e
       pure l
     let pk ← timed "whole decodePacket" fun _ => decodePacket lw.packet
@@ -324,7 +324,7 @@ def main (args : List String) : IO Unit := do
     let request : Delvetalk.Package.PreparedRequest := ⟨prepared, sources, limits, Delvetalk.Canonical.cidJson sources⟩
     for e in entries do
       IO.println s!"  entry {e}"
-      let lowered ← timed "    select" fun _ => (prepared.lower (modules.length - 1) e (.arr #[]) (.arr #[]) limits "definition").mapError (·.message)
+      let lowered ← timed "    select" fun _ => (prepared.lower (modules.length - 1) e limits).mapError (·.message)
       discard <| timed "    proposal" fun _ => lowered.proposal
       discard <| timed "    packet json" fun _ => pure lowered.packet.compress.length
       let pk ← timed "    decodePacket" fun _ => decodePacket lowered.packet

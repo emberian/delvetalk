@@ -23,22 +23,22 @@ from tests.test_turn_world import declared
 COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 law small: new.count <= 3
 def initial() -> State:
   {count: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})}})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case written(_): state.count + 1n
     case _: 0n
-def probe(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.judge({edits: {count: Plans.Edit::<Nat, Nat>.add({delta: input.n})}})):
+def probe(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<String>:
+  match world.judge(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: input.n})})):
     case judged(j): if j.admitted then "admitted" else j.clause
     case _: "other"
 """)
@@ -47,53 +47,52 @@ def probe(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan,
 SANDBOX = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, {}>
-type Handled = Variant.Handled<Response>
+def keep() -> Edits:
+  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
-def handle(state: State, plan: Plan, context: Abi.Context) -> Handled:
-  match plan:
-    case write(_): Handled.answer({response: Response.written({})})
-    case _: Handled.pass({})
+sum Handled:
+  pass: {}
+  answer: {response: Data}
+def handle(state: State, message: World.Message, context: Abi.Context) -> Handled:
+  if message.method == "write" then Handled.answer({response: Data.of::<World.Written>(World.Written.written({}))}) else Handled.pass({})
 """)
 
-# Takes only views: a write does not conform to its input, so it passes.
+# Answers only views: a write is another method of the message, so it passes.
 VIEWS = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
-sum Views:
-  view: Variant.View
-type Response = Variant.Response<State, {}>
-type Handled = Variant.Handled<Response>
 def initial() -> State:
   {count: 0n}
-def handle(state: State, plan: Views) -> Handled:
-  Handled.answer({response: Response.denied({})})
+sum Handled:
+  pass: {}
+  answer: {response: Data}
+def handle(state: State, message: World.Message, context: Abi.Context) -> Handled:
+  if message.method == "view" then Handled.answer({response: Data.of::<World.Viewed<{}>>(World.Viewed::<{}>.denied({}))}) else Handled.pass({})
 """)
 
 RUNNER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   note: Nat
 record Edits:
   note: Plans.Edit<Nat, Nat>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
+def keep() -> Edits:
+  {note: Plans.Edit.keep({})}
 def initial() -> State:
   {note: 0n}
-def go(state: State, input: {target: String, handler: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.run({object: {world: "", object: input.target}, method: "bump", argument: Plans.nothing(), handler: {world: "", object: input.handler}})):
+def go(state: State, input: {target: String, handler: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.run::<Nat>({object: {world: "", object: input.target}, method: "bump", argument: Plans.nothing(), handler: {world: "", object: input.handler}}):
     case returned(r): r.result
     case refused(_): 99n
     case _: 98n
@@ -103,16 +102,13 @@ def go(state: State, input: {target: String, handler: String}, context: Abi.Cont
 NESTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./World.obend as World
 record State:
   n: Nat
-record Edits:
-  n: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
 def initial() -> State:
   {n: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.call({object: {world: "", object: "c"}, method: "bump", argument: Plans.nothing()})):
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.call::<Nat>({object: {world: "", object: "c"}, method: "bump", argument: Plans.nothing()}):
     case returned(r): r.result + 10n
     case _: 97n
 """)

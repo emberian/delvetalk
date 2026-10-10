@@ -20,7 +20,7 @@ PACKAGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record Rain:
   author: String
   at: Nat
@@ -45,33 +45,31 @@ record State:
 record Edits:
   count: Plans.Edit<Nat, Nat>
   rains: RowEdit
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 def relations() -> Lists.List<Decl>:
   Lists.List.cons({head: {field: "rains", key: Lists.List.cons({head: "author", tail: Lists.List.cons({head: "at", tail: Lists.List.nil({})})}), limit: LIMIT}, tail: Lists.List.nil({})})
 def initial() -> State:
   {count: 0n, rains: Relation.rows({items: Lists.List.nil({})})}
 def keep() -> Edits:
   {count: Plans.Edit::<Nat, Nat>.keep({}), rains: RowEdit.keep({})}
-def edit(context: Abi.Context, e: RowEdit) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: extend(keep(), {rains: e})})):
+def edit(context: Abi.Context, e: RowEdit) -> Activity<Nat>:
+  match world.write(extend(keep(), {rains: e})):
     case written(_): 1n
     case refused(_): 0n
     case _: 2n
-def insert(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def insert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat>:
   edit(context, RowEdit.insert({row: input}))
-def upsert(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def upsert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat>:
   edit(context, RowEdit.upsert({row: input}))
-def retract(state: State, input: Key, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def retract(state: State, input: Key, context: Abi.Context) -> Activity<Nat>:
   edit(context, RowEdit.retract({key: input}))
-def later(context: Abi.Context, e: RowEdit) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.await({slot: {principal: "ann", intent: "go"}, patience: 50n})):
+def later(context: Abi.Context, e: RowEdit) -> Activity<Nat>:
+  match world.await({slot: {principal: "ann", intent: "go"}, patience: 50n}):
     case _: edit(context, e)
-def laterInsert(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def laterInsert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat>:
   later(context, RowEdit.insert({row: input}))
-def laterUpsert(state: State, input: Rain, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def laterUpsert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat>:
   later(context, RowEdit.upsert({row: input}))
-def laterRetract(state: State, input: Key, context: Abi.Context) -> Activity<Plan, Response, Nat>:
+def laterRetract(state: State, input: Key, context: Abi.Context) -> Activity<Nat>:
   later(context, RowEdit.retract({key: input}))
 """)
 

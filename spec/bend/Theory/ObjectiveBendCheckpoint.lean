@@ -4,10 +4,11 @@ so a whole activity — in particular a QUIESCENT yielded state — is captured 
 canonical token list and restored exactly. The codec adds no constructors to the
 core; it is the persistence half of an activity (Faré C20). It carries no
 authority, generation or custody: those belong to the kernel's activity record,
-which holds this checkpoint as one artifact. The round trip
-`decodeState (encodeState s) = some s` is the obligation this module exists for;
-it is proved in Theory.ObjectiveBendCheckpointRoundTrip (`state_roundTrip`). A new
-constructor here needs its case there, or the build fails. -/
+which holds this checkpoint as one artifact. This module is the token codec of terms,
+values, data, frames and controls; the checkpoint format built on it is
+`ObjectiveBendCheckpointV2` (edition v3), whose round trip `stateV3_roundTrip` needs the
+round trips of Theory.ObjectiveBendCheckpointRoundTrip. A new constructor here needs its
+case there, or the build fails. -/
 import Theory.ObjectiveBendDemandMachine
 import Theory.ObjectiveBendDemandData
 namespace Minidregg.Theory.ObjectiveBendCheckpoint
@@ -18,8 +19,7 @@ set_option autoImplicit false
 inductive Token where
   | nat (value : Nat)
   | text (value : String)
-  /-- A string by its index in a v2 checkpoint's string table (`ObjectiveBendCheckpointV2`);
-  never in a v1 checkpoint. -/
+  /-- A string by its index in a checkpoint's string table (`ObjectiveBendCheckpointV2`). -/
   | str (index : Nat)
   deriving Repr, BEq, DecidableEq
 
@@ -331,24 +331,6 @@ def decodeDataFields : Nat → Nat → Tokens → Option (List (String × Data) 
   | _, _ + 1, _ => none
 end
 
-def encodeCell : Cell → Tokens
-  | .suspended origin => .nat 0 :: encodeClosure origin
-  | .evaluating origin => .nat 1 :: encodeClosure origin
-  | .cached origin value => .nat 2 :: (encodeClosure origin ++ encodeValue value)
-  | .native origin => .nat 3 :: encodeData origin
-  | .nativeCached origin value => .nat 4 :: (encodeData origin ++ encodeValue value)
-def decodeCell (fuel : Nat) : Tokens → Option (Cell × Tokens)
-  | .nat 0 :: rest => do let (origin, rest) ← decodeClosure fuel rest; pure (.suspended origin, rest)
-  | .nat 1 :: rest => do let (origin, rest) ← decodeClosure fuel rest; pure (.evaluating origin, rest)
-  | .nat 2 :: rest => do
-      let (origin, rest) ← decodeClosure fuel rest; let (value, rest) ← decodeValue fuel rest
-      pure (.cached origin value, rest)
-  | .nat 3 :: rest => do let (origin, rest) ← decodeData fuel rest; pure (.native origin, rest)
-  | .nat 4 :: rest => do
-      let (origin, rest) ← decodeData fuel rest; let (value, rest) ← decodeValue fuel rest
-      pure (.nativeCached origin value, rest)
-  | _ => none
-
 def encodeFrame : Frame → Tokens
   | .argument term environment => .nat 0 :: (encodeTerm term ++ encodeAddresses environment)
   | .update address => [.nat 1, .nat address]
@@ -463,41 +445,5 @@ def decodeControl (fuel : Nat) : Tokens → Option (Control × Tokens)
         pure (.nativeApplication function argument remaining, rest)
       | _ => none
   | _ => none
-
-/-- Edition tag of this checkpoint format; a changed machine shape bumps it and
-old checkpoints refuse to load. -/
-def checkpointEdition : String := "dregg.objective-bend.checkpoint.v1"
-
-def encodeState (state : State) : Tokens :=
-  [.text checkpointEdition, .nat state.heap.size] ++ state.heap.toList.flatMap encodeCell ++
-    encodeControl state.control ++ [.nat state.stack.length] ++ state.stack.flatMap encodeFrame
-
-/-- Fuel is the token count: every term constructor consumes at least one token. -/
-def decodeState (tokens : Tokens) : Option State :=
-  let fuel := tokens.length + 1
-  match tokens with
-  | .text edition :: .nat cells :: rest => do
-    if edition != checkpointEdition then none
-    let (heap, rest) ← decodeMany (decodeCell fuel) cells rest
-    let (control, rest) ← decodeControl fuel rest
-    match rest with
-    | .nat frames :: rest =>
-      let (stack, rest) ← decodeMany (decodeFrame fuel) frames rest
-      if rest.isEmpty then some ⟨heap.toArray, control, stack⟩ else none
-    | _ => none
-  | _ => none
-
-/-- Canonical bytes are the tokens' JSON; its digest is a checkpoint identity. -/
-def tokenJson : Token → Lean.Json
-  | .nat value => Lean.Json.mkObj [("n", Lean.toJson (toString value))]
-  | .text value => Lean.Json.mkObj [("s", Lean.toJson value)]
-  | .str index => Lean.Json.mkObj [("r", Lean.toJson (toString index))]
-
-/-- Executed round-trip check: re-encoding the decoded checkpoint reproduces the
-same tokens. `state_roundTrip` proves the stronger equation for every state. -/
-def roundTrips (state : State) : Bool :=
-  match decodeState (encodeState state) with
-  | some restored => encodeState restored == encodeState state
-  | none => false
 
 end Minidregg.Theory.ObjectiveBendCheckpoint

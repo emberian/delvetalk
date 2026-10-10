@@ -24,14 +24,9 @@ IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 DEF = re.compile(r"^def (\w+)(<[^>]*>)?\(.*\) -> (.*):$", re.M)
 
 
-# Fixture modules tests import beside world/'s (Variant.obend: the variant Plan dialect the host
-# still answers until its lane deletes those arms).
-FIXTURE_MODULES = os.path.join(HERE, "fixtures", "obend")
-
-
 def modules_on_disk():
     found = {}
-    for root in (os.path.join(WORLD, "lib"), os.path.join(WORLD, "objects"), FIXTURE_MODULES):
+    for root in (os.path.join(WORLD, "lib"), os.path.join(WORLD, "objects")):
         for directory, _, files in os.walk(root):
             for name in files:
                 if name.endswith(".obend"):
@@ -213,7 +208,7 @@ class Objects(unittest.TestCase):
             found = re.search(r"\ndef %s(<[^>]*>)?\(" % entry, source)
             self.assertIsNotNone(found, (name, entry))
             body = source[found.start() + 1:].split("\ndef ")[0]
-            self.assertTrue(any(form % plan in body for form in ("perform(Plan.%s(", "perform(Plans.Plan.%s(", "perform(%s {", "world.%s(", "= %s {")), (name, entry))
+            self.assertTrue(any(form % plan in body for form in ("world.%s(", "= %s {")), (name, entry))
 
     def test_garden_bell_cistern_and_anthology_cards_render_their_text(self):
         counter = run_pure("Counter", "card", record(count=nat(3)))
@@ -315,71 +310,67 @@ class Objects(unittest.TestCase):
 
 
 NEGATIVE_PRELUDE = """edition ObjectiveBend 1
+import ./World.obend as World
 record Write:
   before: Nat
   after: Nat
-sum Plan:
-  write: Write
-sum Response:
-  written: {}
-  refused: {}
 """
 
 
 class Refusals(unittest.TestCase):
     def refused(self, body, entry, *names):
-        reply = compile_job([{"name": "Bad", "source": NEGATIVE_PRELUDE + body}], entry)
+        reply = compile_job(closure("World") + [{"name": "Bad", "source": NEGATIVE_PRELUDE + body}], entry)
         self.assertEqual(reply["status"], "error", reply)
         self.assertTrue(any(n in reply["message"] for n in names), reply["message"][:400])
 
     def test_the_baseline_activity_without_nested_effects_compiles(self):
-        reply = compile_job([{"name": "Ok", "source": NEGATIVE_PRELUDE + """def bump(count: Nat) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({before: count, after: count + 1n})):
+        reply = compile_job(closure("World") + [{"name": "Ok", "source": NEGATIVE_PRELUDE + """def bump(count: Nat) -> Activity<Nat>:
+  match world.write({before: count, after: count + 1n}):
     case written(_): count + 1n
     case refused(_): count
 """}], "bump")
         self.assertEqual(reply["status"], "compiled", reply)
 
     def test_a_perform_inside_a_record_field_is_refused_as_effect_in_field(self):
-        self.refused("""def bad(count: Nat) -> Activity<Plan, Response, {seen: Response}>:
-  {seen: perform(Plan.write({before: count, after: count}))}
+        self.refused("""def bad(count: Nat) -> Activity<{seen: World.Written}>:
+  {seen: world.write({before: count, after: count})}
 """, "bad", "effect-in-field")
 
     def test_a_perform_inside_a_sum_payload_is_refused_as_effect_in_payload(self):
         self.refused("""sum Box:
-  some: Response
-def bad(count: Nat) -> Activity<Plan, Response, Box>:
-  Box.some(perform(Plan.write({before: count, after: count})))
+  some: World.Written
+def bad(count: Nat) -> Activity<Box>:
+  Box.some(world.write({before: count, after: count}))
 """, "bad", "effect-in-payload")
 
     def test_a_perform_inside_a_plan_is_refused_as_effect_in_plan(self):
-        self.refused("""def bad(count: Nat) -> Activity<Plan, Response, Nat>:
-  match perform(perform(Plan.write({before: count, after: count}))):
+        self.refused("""def bad(count: Nat) -> Activity<Nat>:
+  match world.write(world.write({before: count, after: count})):
     case written(_): count
     case refused(_): count
 """, "bad", "effect-in-plan")
 
     def test_a_perform_as_a_call_argument_is_refused_as_effect_as_argument(self):
-        self.refused("""def keep(seen: Response) -> Nat:
+        self.refused("""def keep(seen: World.Written) -> Nat:
   0n
-def bad(count: Nat) -> Activity<Plan, Response, Nat>:
-  keep(perform(Plan.write({before: count, after: count})))
+def bad(count: Nat) -> Activity<Nat>:
+  keep(world.write({before: count, after: count}))
 """, "bad", "effect-as-argument")
 
     def test_a_perform_bound_by_let_is_refused_as_effect_in_let(self):
-        self.refused("""def bad(count: Nat) -> Activity<Plan, Response, Nat>:
-  let seen = perform(Plan.write({before: count, after: count}))
+        self.refused("""def bad(count: Nat) -> Activity<Nat>:
+  let seen = world.write({before: count, after: count})
   count
 """, "bad", "effect-in-let")
 
-    def test_a_perform_outside_an_activity_is_refused_as_perform_outside_activity(self):
+    def test_a_world_call_outside_an_activity_is_refused_as_world_call_outside_activity(self):
         self.refused("""def bad(count: Nat) -> Nat:
-  perform(Plan.write({before: count, after: count}))
-""", "bad", "perform-outside-activity")
+  world.write({before: count, after: count})
+""", "bad", "world-call-outside-activity")
 
     def test_an_activity_with_no_parameters_is_refused_as_nullary_activity(self):
-        self.refused("""def bad() -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({before: 0n, after: 1n})):
+        self.refused("""def bad() -> Activity<Nat>:
+  match world.write({before: 0n, after: 1n}):
     case written(_): 1n
     case refused(_): 0n
 """, "bad", "nullary-activity")
@@ -388,17 +379,15 @@ def bad(count: Nat) -> Activity<Plan, Response, Nat>:
         """The first checker refused any recursive type inside a Plan or Response
         with 'the checker refused the front end's typed packet'. The current
         binary admits them; this pins the new behaviour."""
-        reply = compile_job([{"name": "Rec", "source": """edition ObjectiveBend 1
+        reply = compile_job(closure("World") + [{"name": "Rec", "source": """edition ObjectiveBend 1
+import ./World.obend as World
 sum L:
   nil: {}
   cons: {head: Nat, tail: L}
-sum P:
-  a: {l: L}
-sum R:
-  ok: {l: L}
-def f(n: Nat) -> Activity<P, R, Nat>:
-  match perform(P.a({l: L.nil({})})):
-    case ok(_): n
+def f(n: Nat) -> Activity<Nat>:
+  match world.call::<L>({object: {world: "", object: "x"}, method: "m", argument: {l: L.nil({})}}):
+    case returned(_): n
+    case _: 0n
 """}], "f")
         self.assertEqual(reply["status"], "compiled", reply)
 

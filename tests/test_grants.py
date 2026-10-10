@@ -21,56 +21,54 @@ from tests.test_turn_world import declared
 SCHEDULER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record Arg:
   n: Nat
 record State:
   note: String
 record Edits:
   note: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
-def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+def said(context: Abi.Context, text: String) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
-def authorize(state: State, input: {target: String, method: String, until: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.grant({to: context.object, object: {world: "", object: input.target}, method: input.method, until: input.until})):
+def authorize(state: State, input: {target: String, method: String, until: Nat}, context: Abi.Context) -> Activity<String>:
+  match world.grant({to: context.object, object: {world: "", object: input.target}, method: input.method, until: input.until}):
     case granted(g): said(context, g.id)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def authorizeBell(state: State, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.grant({to: context.object, object: {world: "", object: "bell"}, method: "ring", until: 100n})):
+def authorizeBell(state: State, context: Abi.Context) -> Activity<String>:
+  match world.grant({to: context.object, object: {world: "", object: "bell"}, method: "ring", until: 100n}):
     case granted(g): said(context, g.id)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def fire(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.sendVia({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via})):
+def fire(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<String>:
+  match world.sendVia({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via}):
     case delivery(_): said(context, "sent")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def fireThenWait(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.sendVia({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via})):
+def fireThenWait(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<String>:
+  match world.sendVia({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via}):
     case delivery(_): waited(context)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def waited(context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.await({slot: {principal: "nobody", intent: "never"}, patience: 10n})):
+def waited(context: Abi.Context) -> Activity<String>:
+  match world.await({slot: {principal: "nobody", intent: "never"}, patience: 10n}):
     case timedOut(_): said(context, "waited")
     case _: said(context, "other")
-def poke(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.callVia({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via})):
+def poke(state: State, input: {target: String, via: String}, context: Abi.Context) -> Activity<String>:
+  match world.callVia::<String>({object: {world: "", object: input.target}, method: "ring", argument: Data.of::<Arg>({n: 1n}), via: input.via}):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def cancel(state: State, input: {id: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.revoke({id: input.id})):
+def cancel(state: State, input: {id: String}, context: Abi.Context) -> Activity<String>:
+  match world.revoke({id: input.id}):
     case revoked(_): said(context, "revoked")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def relay(state: State, input: {other: String, target: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.call({object: {world: "", object: input.other}, method: "authorizeBell", argument: Data.of::<Arg>({n: 0n})})):
+def relay(state: State, input: {other: String, target: String}, context: Abi.Context) -> Activity<String>:
+  match world.call::<String>({object: {world: "", object: input.other}, method: "authorizeBell", argument: Data.of::<Arg>({n: 0n})}):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
@@ -79,7 +77,7 @@ def relay(state: State, input: {other: String, target: String}, context: Abi.Con
 BELL = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record Arg:
   n: Nat
 record State:
@@ -90,13 +88,11 @@ record Edits:
   count: Plans.Edit<Nat, Nat>
   by: Plans.Edit<String, {}>
   from: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 law registrar: request.kind == 0 implies request.subject == "registrar"
 def initial() -> State:
   {count: 0n, by: "", from: ""}
-def ring(state: State, input: Arg, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: input.n}), by: Plans.Edit::<String, {}>.set({value: context.principal}), from: Plans.Edit::<String, {}>.set({value: context.caller})}})):
+def ring(state: State, input: Arg, context: Abi.Context) -> Activity<String>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.add({delta: input.n}), by: Plans.Edit::<String, {}>.set({value: context.principal}), from: Plans.Edit::<String, {}>.set({value: context.caller})}):
     case _: "rung"
 """)
 
@@ -105,27 +101,25 @@ ROSTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   count: Nat
   members: Lists.List<String>
 record Edits:
   count: Plans.Edit<Nat, Nat>
   members: Plans.Entries<String, String>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, Nat>
 law members: request.kind == 0 implies (request.subject in new.members or request.subject == "ember")
 law rings: request.kind == 0 implies (request.method == "ring" or request.method == "admit")
 def initial() -> State:
   {count: 0n, members: Lists.List::<String>.nil({})}
-def ring(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), members: Plans.Entries::<String, String>.keep({})}})):
+def ring(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), members: Plans.Entries::<String, String>.keep({})}):
     case _: 1n
-def toll(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), members: Plans.Entries::<String, String>.keep({})}})):
+def toll(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.add({delta: 1n}), members: Plans.Entries::<String, String>.keep({})}):
     case _: 1n
-def admit(state: State, input: {who: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
-  match perform(Plan.write({object: Plans.self(context), edits: {count: Plans.Edit::<Nat, Nat>.keep({}), members: Plans.Entries::<String, String>.append({item: input.who})}})):
+def admit(state: State, input: {who: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.write({count: Plans.Edit::<Nat, Nat>.keep({}), members: Plans.Entries::<String, String>.append({item: input.who})}):
     case _: 0n
 """)
 
@@ -287,7 +281,7 @@ if __name__ == "__main__":
 LAMP = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   colour: String
   level: Nat
@@ -296,20 +290,18 @@ record Edits:
   colour: Plans.Edit<String, {}>
   level: Plans.Edit<Nat, Nat>
   by: Plans.Edit<String, {}>
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 law owner: request.kind == 0 implies request.subject == "owner"
 def initial() -> State:
   {colour: "", level: 0n, by: ""}
-def light(state: State, input: {colour: String, level: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {colour: Plans.Edit::<String, {}>.set({value: input.colour}), level: Plans.Edit::<Nat, Nat>.set({value: input.level}), by: Plans.Edit::<String, {}>.set({value: context.principal})}})):
+def light(state: State, input: {colour: String, level: Nat}, context: Abi.Context) -> Activity<String>:
+  match world.write({colour: Plans.Edit::<String, {}>.set({value: input.colour}), level: Plans.Edit::<Nat, Nat>.set({value: input.level}), by: Plans.Edit::<String, {}>.set({value: context.principal})}):
     case _: input.colour
 """)
 
 HOLDER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
-import ./Variant.obend as Variant
+import ./World.obend as World
 record State:
   note: String
 record Edits:
@@ -321,30 +313,28 @@ record Level:
 record Full:
   colour: String
   level: Nat
-type Plan = Variant.Plan<Edits>
-type Response = Variant.Response<State, String>
 def initial() -> State:
   {note: ""}
-def said(context: Abi.Context, text: String) -> Activity<Plan, Response, String>:
-  match perform(Plan.write({object: Plans.self(context), edits: {note: Plans.Edit::<String, {}>.set({value: text})}})):
+def said(context: Abi.Context, text: String) -> Activity<String>:
+  match world.write({note: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
-def authorize(state: State, input: {colour: String, uses: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.grantWith({to: context.object, object: {world: "", object: "lamp"}, method: "light", until: 100n, fixed: Data.of::<Fix>({colour: input.colour}), uses: input.uses})):
+def authorize(state: State, input: {colour: String, uses: Nat}, context: Abi.Context) -> Activity<String>:
+  match world.grantWith({to: context.object, object: {world: "", object: "lamp"}, method: "light", until: 100n, fixed: Data.of::<Fix>({colour: input.colour}), uses: input.uses}):
     case granted(g): said(context, g.id)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def dim(state: State, input: {via: String, level: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.callVia({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Level>({level: input.level}), via: input.via})):
+def dim(state: State, input: {via: String, level: Nat}, context: Abi.Context) -> Activity<String>:
+  match world.callVia::<String>({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Level>({level: input.level}), via: input.via}):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def paint(state: State, input: {via: String, colour: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.callVia({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Full>({colour: input.colour, level: 1n}), via: input.via})):
+def paint(state: State, input: {via: String, colour: String}, context: Abi.Context) -> Activity<String>:
+  match world.callVia::<String>({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Full>({colour: input.colour, level: 1n}), via: input.via}):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
-def post(state: State, input: {via: String, level: Nat}, context: Abi.Context) -> Activity<Plan, Response, String>:
-  match perform(Plan.sendVia({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Level>({level: input.level}), via: input.via})):
+def post(state: State, input: {via: String, level: Nat}, context: Abi.Context) -> Activity<String>:
+  match world.sendVia({object: {world: "", object: "lamp"}, method: "light", argument: Data.of::<Level>({level: input.level}), via: input.via}):
     case delivery(_): said(context, "sent")
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
