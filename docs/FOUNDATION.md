@@ -356,6 +356,15 @@ Decided at f178383, not built. `docs/RELATIONAL.md` is the contract.
 - Before launch: the type, the three edits, the row-rebase rule, `insertOnly`,
   and Bell, Tide, Directory, Anthology, Garden's pending, Deal. After:
   `viewField`, `On.rows`, row lenses, the rest.
+- After that slice, three additive reads that move no state shape:
+  `viewAt {object, version}` (as-of reads over the journal, so a card says
+  what changed since the reader last looked); `viewDerived {object, view}`,
+  running the target's pure `views()` under the reader's authority and budget
+  as `card` runs `render`; Wake patterns `above`, `below`, `contains` beside
+  `equals`, still closure-free.
+- No incremental or differential maintenance: a card renders at most eight
+  rows and a count under one turn's budget, and a maintained view would be
+  derived state the host owns across turns, which §2 keeps out of the store.
 - No kernel theorem moves; the new obligations are host-side.
 
 ## 10. The gate
@@ -391,16 +400,18 @@ on a probe pair). Item 4 rests on the mock's four `submit` answers.
 
 ## 11. Backlog
 
-Open before launch, from run 9 (owner, done when):
+Run 9's directory vocabulary (offered forms only), 2,000-character scan,
+Anthology owner handle and page names landed at foundation 228fb6b; run 10
+confirms them. Open before launch:
 
 | Item | Owner | Done when |
 | --- | --- | --- |
 | checkpoint blocks deduplicate again: number addresses canonically per checkpoint before `cutBlocks` | host, kernel | run 10's journal is at or under run 8's 3.3 MB |
-| the directory's vocabulary is the offered forms' actions and fields, not every public def | objects | run 10 has at most 44 interpretations, all four anthology lines kept |
-| a long post does not exhaust ticks at the directory: scan the first 2,000 characters; no draft for a `budget` refusal of a reply that named no card | objects, transport | mimo's 5,142-character post is admitted or silent |
-| the opener shows by handle on the anthology card and its page | objects, transport | no "…pm5eur7b" in any draft |
+| run 10 on 228fb6b or later | rehearsal | at most 44 interpretations, all four anthology lines kept, mimo's 5,142-character post admitted or silent |
+| no draft for a `budget` refusal of a reply that named no card (`bridge.draft_text`) | transport | run 10 drafts nothing to mimo |
+| genesis calls `publishPage` with `{page}`: since 228fb6b it takes one, and `deploy/genesis.py` still sends the empty record; `rooms` names its page | transport | five door pages admitted; `wiki: rooms`, not `wiki: scene` |
+| genesis seeds the Anthology's `ownerHandle` (`ember.delve.town`); `deploy/genesis.py` does not yet | transport | no "…pm5eur7b" in any draft |
 | run 9's wall time attributed | host | time per op in hostd for one run |
-| the Scene's page is published under its object id | objects | `wiki: rooms` |
 | relations, the before-launch half of §9 | host, objects | Bell, Tide, Directory, Anthology, Garden, Deal on `Relation<T>` |
 
 After launch, in the order the town will feel them (all owned by objects unless
