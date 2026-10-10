@@ -513,5 +513,68 @@ class HttpFront(unittest.TestCase):
         self.assertEqual(heights[0], newest)
 
 
+class StubHost:
+    def __init__(self):
+        self.ops = []
+
+    def send(self, req):
+        self.ops.append(req['op'])
+        return {'status': 'viewed', 'version': 0} if req['op'] == 'world-view' else {'status': 'ok'}
+
+    binary = BINARY
+
+
+class Concurrent(unittest.TestCase):
+    N = 20
+
+    def test_twenty_threads_verify_and_view_without_a_tear(self):
+        did = lambda i: 'did:plc:' + f'{i:024d}'.translate({48: 'a', 49: 'b', 50: 'c', 51: 'd', 52: 'e', 53: 'f', 54: 'g', 55: 'h', 56: 'i', 57: 'j'})
+        texts = {}
+
+        def provider(method, url, headers, body):
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            if 'resolveHandle' in url:
+                return 200, json.dumps({'did': did(int(q['handle'][0].split('.')[0][1:]))}).encode()
+            return 200, json.dumps({'uri': f"at://{q['repo'][0]}/town.delve.feed.post/3abc", 'cid': 'bafyx',
+                                    'value': {'text': texts[q['repo'][0]]}}).encode()
+        with tempfile.TemporaryDirectory() as tmp:
+            host = StubHost()
+            ident = identity.Identity(tmp, delve.Client(provider))
+            front = Front(('127.0.0.1', 0), host, ident, trust_proxy=True)
+            port = front.server_address[1]
+            threading.Thread(target=front.serve_forever, daemon=True).start()
+            errors, creds = [], {}
+
+            def call(method, path, i, body=None, token=None):
+                c = http.client.HTTPConnection('127.0.0.1', port, timeout=30)
+                h = {'X-Forwarded-For': f'10.0.0.{i}', **({'Authorization': 'Bearer ' + token} if token else {})}
+                c.request(method, path, json.dumps(body) if body is not None else None, h)
+                r = c.getresponse()
+                return r.status, json.loads(r.read())
+
+            def person(i):
+                try:
+                    handle = f'h{i}.delve.town'
+                    s, ch = call('POST', '/AGENTS.md/challenge', i, {'handle': handle})
+                    texts[did(i)] = ch['text']
+                    s2, v = call('POST', '/AGENTS.md/verify', i, {'handle': handle, 'uri': f'at://{did(i)}/town.delve.feed.post/3abc'})
+                    s3, w = call('GET', '/AGENTS.md/world/x', i, token=ch['credential'])
+                    creds[i] = ch['credential']
+                    assert (s, s2, s3, v['status'], w['status']) == (200, 200, 200, 'verified', 'viewed'), (s, s2, s3, v, w)
+                except BaseException as e:
+                    errors.append(repr(e))
+            threads = [threading.Thread(target=person, args=(i,)) for i in range(self.N)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+            front.shutdown()
+            front.server_close()
+            self.assertEqual(errors, [])
+            self.assertEqual(len(creds), self.N)
+            self.assertEqual([len(front.used(c)) for c in creds.values()], [1] * self.N)
+            self.assertEqual(host.ops.count('world-arrive'), self.N)
+            self.assertEqual(host.ops.count('world-view'), self.N)
+            self.assertEqual(sorted(ident.authenticate(c)['did'] for c in creds.values()), sorted(did(i) for i in range(self.N)))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -123,18 +123,21 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
         self.heaps, self.repl, self.trust_proxy, self.sleep = heaps, repl, trust_proxy, sleep
-        self.hits, self.nonce = {}, secrets.token_hex(4)
+        self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         self.host_sha256 = (hashlib.sha256(Path(host.binary).read_bytes()).hexdigest() if hasattr(host, 'binary')
                             else host.send({'op': 'hostd-info'}).get('hostSha256', 'unknown'))
 
     def used(self, credential):
         now = self.clock()
-        return [t for t in self.hits.get(credential, []) if now - t < WINDOW]
+        with self.hits_lock:
+            return [t for t in self.hits.get(credential, []) if now - t < WINDOW]
 
     def limited(self, key, rate=RATE):
-        hits = self.used(key)
-        self.hits[key] = hits + [self.clock()]
+        with self.hits_lock:  # read, test and append as one step
+            now = self.clock()
+            hits = [t for t in self.hits.get(key, []) if now - t < WINDOW]
+            self.hits[key] = hits + [now]
         return len(hits) >= rate
 
     def record_handle(self, did, handle):
