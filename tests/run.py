@@ -6,14 +6,17 @@
 ones hostd starts) and the hostd daemons started, and prints the twenty slowest classes with both.
 
 The host binary is copied once and the copy shared with the workers. Each class gets its own
-process (and so its own host process), preserving class-level sharing and journal isolation.
+process (and so its own host process), preserving class-level sharing and journal isolation; a
+class declaring `independent = True` measured over SPLIT seconds is dealt into chunks instead.
 Slowest classes start first (measured times persist in tests/.timings.json). A class runs in
-the module that defines it, never again where it is imported.
+the module that defines it, never again where it is imported. The run ends with the tests per
+layer (each module's docstring names its layer) and the five slowest classes.
 """
 import concurrent.futures
 import importlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -26,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 TIMINGS = HERE / '.timings.json'
 
 
+LAYERS = ['kernel', 'host', 'objects', 'transport', 'rehearsal']  # each module's docstring names its own
 SPLIT = 8.0  # seconds: a fresh-world class measured slower than this runs in that many parallel chunks
 
 
@@ -124,11 +128,12 @@ def main(argv):
         TIMINGS.write_text(json.dumps({**known, **{k: round(v, 2) for k, v in per_class.items()}}, indent=1))
     except OSError:
         pass
-    per = {}
-    for name, secs in took.items():
-        mod = name.split('.')[1]
-        per[mod] = max(per.get(mod, 0), secs)
-    print('slowest classes: ' + ', '.join(f'{n.split(".", 1)[1]} {took[n]:.1f}s' for n in sorted(took, key=took.get)[-3:]))
+    counts = {}
+    for key, names in found.items():
+        layer = re.search(r'\(layer: (\w+)\)', importlib.import_module(key.rsplit('.', 1)[0]).__doc__ or '')
+        counts[layer.group(1) if layer else 'unlayered'] = counts.get(layer.group(1) if layer else 'unlayered', 0) + len(names)
+    print('by layer: ' + ', '.join(f'{layer} {counts[layer]}' for layer in LAYERS + ['unlayered'] if layer in counts))
+    print('slowest classes: ' + ', '.join(f'{n.split(".", 1)[1]} {took[n]:.1f}s' for n in sorted(took, key=took.get, reverse=True)[:5]))
     if profile:
         print(f'{"class":52} {"tests":>5} {"secs":>6} {"hosts":>5} {"hostd":>5}')
         table = {n: (len(work[n]) if '#' in n else len(found[n]), round(took[n], 1), *spawn_counts(spawns, n)) for n in took}
