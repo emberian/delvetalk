@@ -981,3 +981,17 @@ class Declares(unittest.TestCase):
         plain = h.compile(FORM_STATE.replace("PlantInput", "{count: Nat}").replace("WaterInput", "{note: String}"),
                           "plant", ("List", "Form"))
         self.assertEqual(plain["declares"], [])
+
+    def test_a_layer_declares_what_its_stack_declares(self):
+        # Refuted by a layer that writes no forms() or initial() declaring neither, though both
+        # are inherited from the module below (review kernel 5): the host reads `declares`.
+        h = Host()
+        self.addCleanup(h.close)
+        base = FORM_STATE + FORM_BLOCKS + "def initial() -> State:\n  {planted: 0n}\ndef methods() -> Nat:\n  0n\n"
+        layer = "layer over ./Base.obend\n" + HEAD + "def extra(n: Nat) -> Nat:\n  n\n"
+        for entry in ("extra", "plant"):
+            with self.subTest(entry=entry):
+                reply = h.send({"op": "compile", "entry": entry, "modules": library_modules("List", "Form") +
+                                [{"name": "Base", "source": base}, {"name": "Package", "source": layer}]})
+                self.assertEqual(reply["status"], "compiled", reply)
+                self.assertEqual(reply["artifact"]["declares"], ["forms", "methods", "initial"])

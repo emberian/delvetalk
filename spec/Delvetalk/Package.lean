@@ -355,8 +355,10 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
     ("type", typeJson accepted.typed.type),
     ("methods", methods), ("law", law)]
   -- The entry module's conventional declarations, derived ones included (the host reads this,
-  -- not the source text, so it sees a derived `forms()`).
-  let artifact := artifact.setObjVal! "declares" (toJson (declaredNames prepared.decoded [entryModule.name]))
+  -- not the source text, so it sees a derived `forms()`); for a layer, its whole stack's, as
+  -- entry selection and the method table see them.
+  let declaring := if stack.isEmpty then [entryModule.name] else stack
+  let artifact := artifact.setObjVal! "declares" (toJson (declaredNames prepared.decoded declaring))
   -- A State with fixed fields lists them (no edit names one); absent otherwise.
   let fixed := fixedFields modules prepared.asts (modules.length - 1)
   let artifact := if fixed.isEmpty then artifact else artifact.setObjVal! "fixed" (toJson fixed)

@@ -627,5 +627,7 @@ Day 4 (§21) deleted every sum-Plan half described below: what stands is the mes
   derived `forms()`): every artifact lists which of `Package.conventionalNames` (forms, methods,
   relations, views, lenses, law, lawReads, initial, render, receive, blurb, page, publishPage,
   set) the entry module declares, derived declarations included (`declaredNames` over the
-  generics pass's decoded modules), in that order. The host lane switches `declaredForms` and
+  generics pass's decoded modules), in that order; for a layer, every module of its stack (kernel10:
+  a layer that wrote no `methods()` or `forms()` declared neither, so the host took inherited methods
+  for helpers and refused inherited forms). The host lane switches `declaredForms` and
   `packageDeclares` to it. Test: `test_sugar.Declares`.
