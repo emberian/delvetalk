@@ -7,7 +7,9 @@ with `lake build compile-profile`.
     compile-profile REQUEST.json loop STAGE N    one stage N times (parse, generics,
                                                  elaborate, lower, check), for perf
     compile-profile self-check                   tokenLength vs tokenRe and splitTop vs its
-                                                 List definition on 300,000 random strings each
+                                                 List definition on 300,000 random strings each;
+                                                 SHA-256 on the FIPS 180-4 vectors and against
+                                                 the stored-schedule reference
     compile-profile sha                          SHA-256 throughput on 1 MB
     compile-profile replay LINES DIR FILTER R    host requests (one JSON per line, as the
                                                  binary reads them) through
@@ -103,6 +105,41 @@ def replay (lines : Array String) (dir : String) (filter : String) (repeats : Na
     if cls.startsWith filter || ns > 100000000 then
       IO.println s!"{cls}\t{n}\t{ns / 1000000}\t{t}\t{rate}"
 
+/-! SHA-256 as it was written before the unboxed-window rounds (the reference for
+`Sha256.digest` in `self-check`): the schedule stored in an `Array`. -/
+namespace ShaRef
+open Minidregg.Compiler.Sha256
+def schedule (bytes : ByteArray) (offset : Nat) : Array UInt32 := Id.run do
+  let mut w : Array UInt32 := Array.mkEmpty 64
+  for t in [0:16] do w := w.push (word bytes (offset + 4 * t))
+  for t in [16:64] do
+    let x := w[t - 15]!
+    let y := w[t - 2]!
+    let s0 := rotr x 7 ^^^ rotr x 18 ^^^ (x >>> 3)
+    let s1 := rotr y 17 ^^^ rotr y 19 ^^^ (y >>> 10)
+    w := w.push (w[t - 16]! + s0 + w[t - 7]! + s1)
+  return w
+def rounds (w : Array UInt32) (t : Nat) (a b c d e f g h : UInt32) : UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 × UInt32 :=
+  if t < 64 then
+    let t1 := h + (rotr e 6 ^^^ rotr e 11 ^^^ rotr e 25) + ((e &&& f) ^^^ (~~~e &&& g)) + k[t]! + w[t]!
+    let t2 := (rotr a 2 ^^^ rotr a 13 ^^^ rotr a 22) + ((a &&& b) ^^^ (a &&& c) ^^^ (b &&& c))
+    rounds w (t + 1) (t1 + t2) a b c (d + t1) e f g
+  else (a, b, c, d, e, f, g, h)
+termination_by 64 - t
+def compress (state : Array UInt32) (bytes : ByteArray) (offset : Nat) : Array UInt32 :=
+  let (a, b, c, d, e, f, g, h) := rounds (schedule bytes offset) 0
+    state[0]! state[1]! state[2]! state[3]! state[4]! state[5]! state[6]! state[7]!
+  #[state[0]! + a, state[1]! + b, state[2]! + c, state[3]! + d,
+    state[4]! + e, state[5]! + f, state[6]! + g, state[7]! + h]
+def digest (message : ByteArray) : Array UInt32 := Id.run do
+  let full := message.size / 64
+  let mut state := initial
+  for block in [0:full] do state := compress state message (64 * block)
+  let tail := padTail (message.extract (64 * full) message.size) message.size
+  for block in [0:tail.size / 64] do state := compress state tail (64 * block)
+  return state
+end ShaRef
+
 def main (args : List String) : IO Unit := do
   if args[0]! == "replay" then
     let lines := (← IO.FS.lines args[1]!)
@@ -144,7 +181,29 @@ def main (args : List String) : IO Unit := do
         bad := bad + 1
         if bad < 10 then IO.println s!"differ on {repr (String.ofList str)}: {viaRe} vs {Minidregg.Compiler.ObjectiveBendParse.tokenLength str}"
     IO.println s!"tokenLength mismatches {bad}"
-    if splitBad + bad > 0 then IO.Process.exit 1
+    let tokenBad := bad
+    -- SHA-256: FIPS 180-4 vectors, then the reference on every length 0..400 and 1 MB
+    bad := 0
+    for (text, expected) in [("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+        ("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+        ("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+          "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")] do
+      if Minidregg.Compiler.Sha256.hexString text != expected then
+        bad := bad + 1
+        IO.println s!"sha256 {repr text} is {Minidregg.Compiler.Sha256.hexString text}"
+    seed := 4242
+    for len in [0:401] do
+      let mut bytes := ByteArray.empty
+      for _ in [0:len] do
+        seed := (seed * 1103515245 + 12345) % 2147483648
+        bytes := bytes.push (UInt8.ofNat (seed % 256))
+      if Minidregg.Compiler.Sha256.digest bytes != ShaRef.digest bytes then
+        bad := bad + 1
+        if bad < 10 then IO.println s!"sha256 differs at length {len}"
+    let big := (String.ofList (List.replicate 1000000 'a')).toUTF8
+    if Minidregg.Compiler.Sha256.digest big != ShaRef.digest big then bad := bad + 1
+    IO.println s!"sha256 mismatches {bad}"
+    if splitBad + tokenBad + bad > 0 then IO.Process.exit 1
     return
   if args[0]! == "wire" then
     let line := (← IO.FS.readFile args[1]!).trimRight
