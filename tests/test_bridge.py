@@ -146,7 +146,8 @@ class DirectReplies(BridgeCase):
                                'modules': closure('Directory'), 'entry': 'initial', 'seed': record(owner=label('ember'))})
         self.assertEqual(made['status'], 'created', made)
         hub = 'at://did:plc:ember/town.delve.feed.post/hub'
-        recorded = self.host.send({'op': 'world-posted', 'principal': 'transport', 'uri': hub, 'cid': 'bafyhub', 'object': 'directory'})
+        self.host.send({'op': 'world-post-reserve', 'principal': 'transport', 'intent': hub, 'source': 'test'})
+        recorded = self.host.send({'op': 'world-posted', 'principal': 'transport', 'uri': hub, 'cid': 'bafyhub', 'object': 'directory', 'intent': hub})
         self.assertNotEqual(recorded.get('status'), 'error', recorded)
         posts = [mk(n, text, parent=hub) for n, text in enumerate(('hello, what is this?', 'lovely evening', 'thanks all'), 1)]
         for n, p in enumerate(posts):

@@ -964,6 +964,17 @@ Items 5.43 to 5.110 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    revoked. `?` lists `lend` where the speaker may run some offered method. Test: `tests/test_extend.py`
    `test_lend_grants_a_method_until_a_clock_and_the_borrower_runs_it_as_the_lender`.
 
+116. **Prose with a colon ends the fields (host12; docs/FLEX.md §4 host 1).** `Spell.binding` takes a
+   line as a field only when it `looksLikeField` (`name: value`, the name an identifier), as `bareT`
+   does; any other line ends the fields as prose. The playtest's 68673 and 68675 (a clean, indented
+   planting with a sentence like "First-pass read while I'm at it: …" after it, refused `unknownField`
+   twice) are parse fixtures and plant. A misspelt or capitalised name (`Seed:`, `see d:`) is now prose
+   too, so the spell is `unclear` naming what it lacks instead of `unknownField` (FLEX host 2 folds case).
+   `world/lib/Spell.obend` has no field-line reader to mirror (deleted with its parser, lane/objects9);
+   its inline reader already checks `looksLikeField`. Five fixture rows re-recorded, two added. Tests:
+   `tests/test_spell.py` `test_a_prose_line_with_a_colon_after_the_fields_ends_them`,
+   `test_a_name_outside_the_identifier_alphabet_is_no_field_and_ends_the_fields`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

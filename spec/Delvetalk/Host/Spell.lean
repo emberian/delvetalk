@@ -233,7 +233,9 @@ partial def classify (line first rest : T) : Fields2 :=
 partial def binding (line rest : T) : Fields2 :=
   let colon := brk line [':']
   let name := line.take colon
-  if colon == 0 || name == line then .stray [] rest
+  -- A line is a field only when it looks like one (`name: value`, the name an identifier), as
+  -- `bareT` reads them: prose with a colon after the fields ends them (docs/FLEX.md §4 host 1).
+  if colon == 0 || name == line || !looksLikeField line then .stray [] rest
   else if opens ((line.drop (colon + 1)).take 3) then valued (str name) (trimStart (line.drop (colon + 1))) rest
   else consed ⟨str name, str (trimStart (line.drop (colon + 1)))⟩ (fieldLines rest)
 
