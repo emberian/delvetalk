@@ -134,12 +134,13 @@ WORLD_LIB = os.path.join(ROOT, "world", "lib")
 
 
 def library_modules(*names):
-    """Library modules (imports first) read from world/lib, as supplied modules."""
+    """Library modules (imports first) read from world/lib and tests/fixtures/obend, as supplied modules."""
     found = {}
-    for directory, _, files in os.walk(WORLD_LIB):
-        for f in files:
-            if f.endswith(".obend"):
-                found[f[:-6]] = os.path.join(directory, f)
+    for root in (WORLD_LIB, os.path.join(ROOT, "tests", "fixtures", "obend")):
+        for directory, _, files in os.walk(root):
+            for f in files:
+                if f.endswith(".obend"):
+                    found[f[:-6]] = os.path.join(directory, f)
     out, seen = [], set()
 
     def visit(name):

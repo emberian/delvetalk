@@ -26,13 +26,14 @@ record State:
 VIEWER = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./Pond.obend as Pond
 record State:
   seen: Nat
 record Edits:
   seen: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def peek(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
   match perform(Plan.view::<Pond.State>({object: {world: "", object: "pond"}})):
     case viewed(v): v.state.count
@@ -51,7 +52,7 @@ class TypedView(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.h = Host()
-        modules = library_modules("Abi", "Plan") + [{"name": "Pond", "source": POND}, {"name": "Viewer", "source": VIEWER}]
+        modules = library_modules("Abi", "Variant") + [{"name": "Pond", "source": POND}, {"name": "Viewer", "source": VIEWER}]
         cls.modules = modules
 
     @classmethod

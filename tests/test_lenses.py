@@ -3,11 +3,11 @@ every form and lens.
 
 Evidence for FOUNDATION §5 Spell grammar (layer: objects).
 
-Lenses: an object's exposed scalar fields as Form.Lens {field,
-form, put}. Card's answerLensed answers `delvetalk <card> set` with one `<field>: <value>` line by
-judging the value against the lens's kind and writing the lens's put; `delvetalk <card> ?` answers
-the usage card: every form, then every lens. Policy's model, escalate and system and an Avatar's
-handle are lenses; Policy.setModel is gone.
+Lenses: an object's exposed scalar fields, listed by `lenses()` as Form.Fields. The host answers
+`delvetalk <card> set` with one `<field>: <value>` line by judging the value against the field's
+kind and running the object's `set {field, value}` (which refuses a stranger by name; the law
+judges the write); `delvetalk <card> ?` answers the usage card: every form, then every lens.
+Policy's model, escalate and system and an Avatar's handle are lenses; Policy.setModel is gone.
 
 Refuted by: a stranger's set changing the policy, a value outside its kind being written, a set of
 two fields, a field without a lens, or `?` omitting a lens.

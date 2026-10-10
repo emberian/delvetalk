@@ -24,12 +24,13 @@ ROSTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   names: Lists.List<String>
 record Edits:
   names: Plans.Entries<String, String>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {names: Lists.List::<String>.nil()}
 def write(context: Abi.Context, edit: Plans.Entries<String, String>) -> Activity<Plan, Response, Nat>:
@@ -48,7 +49,7 @@ class Items(TurnWorld):
     def setUp(self):
         super().setUp()
         r = self.host.send(op="world-create", principal="ember", identity="mk-roster", object="roster",
-                           modules=closure("Plan") + [{"name": "Roster", "source": ROSTER}], entry="initial", seed=record(names=nil()))
+                           modules=closure("Variant") + [{"name": "Roster", "source": ROSTER}], entry="initial", seed=record(names=nil()))
         self.assertEqual(r["status"], "created", r)
         for name in ("glm", "kimik3", "glm", "gemini"):
             self.assertEqual(self.turn("roster", "add", record(name=label(name)))["status"], "admitted")

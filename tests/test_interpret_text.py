@@ -7,9 +7,10 @@ The garden reads the model's own words (rehearsal findings 2 and 3, objects side
 Card's interpretation default.
 
 The host resumes an interpretation whose reply carries no `{method, argument}` json with
-`replied {text}`; Card.fitting fits the text with Spell against the offered forms: a spell that
-fits is a hit, `unclear: not addressed` is silence, and a spell that does not fit, any other
-`unclear: <need>` or words that are no spell are a miss with what is missing. A miss is asked
+`replied {text}` when the model's words hold no spell the host could fit (a spell that fits is
+the host's `proposal`); Card.prose reads those words: `unclear: not addressed` (or an empty
+`unclear:`) is silence, any other `unclear: <need>` or words that are no spell are a miss with
+what is missing. A miss is asked
 once more, the utterance with "missing: <needs>" and the policy's escalate model; a second miss
 offers the needs card to the speaker and a short copy to the policy's escalateTo principal.
 
@@ -27,8 +28,7 @@ SPELL = "delvetalk garden plant / colour: silver / seed: a fern that remembers"
 
 PROBE = PROBE_HEAD_G + """import ./Spell.obend as Spell
 def back(text: String) -> String:
-  match Card.fitting(text, Card.Forms.cons({head: Card.named(O.planting(), "garden"), tail: Card.Forms.nil()})):
-    case hit(_): "spell"
+  match Card.prose(text):
     case miss(m): textConcat("miss ", Spell.joined(m.needs))
     case silent(_): "silent"
 """
@@ -40,15 +40,11 @@ class Classified(unittest.TestCase):
         self.assertEqual(out["status"], "finished", out)
         return out["value"]["value"]
 
-    def test_the_models_words_are_a_spell_a_need_or_silence(self):
-        self.assertEqual(self.back(SPELL), "spell")
-        self.assertEqual(self.back("Here you go:\n" + SPELL), "spell")
+    def test_the_models_words_are_a_need_or_silence(self):
         self.assertEqual(self.back("unclear: colour"), "miss colour")
         self.assertEqual(self.back("  unclear:   seed  \nmore"), "miss seed")
         self.assertEqual(self.back("unclear: not addressed"), "silent")
         self.assertEqual(self.back("unclear:"), "silent")
-        self.assertEqual(self.back("delvetalk garden plant / seed: a fern"), "miss colour")
-        self.assertEqual(self.back("delvetalk garden water / seed: a fern"), "miss garden water is not offered")
         self.assertEqual(self.back("I think they are just chatting."), "miss ")
 
 

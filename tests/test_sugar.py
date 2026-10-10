@@ -351,6 +351,7 @@ FORM_SUGARED = FORM_HEAD + """form plant as planting:
 GARDEN = HEAD + """import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as P
+import ./Variant.obend as V
 record State:
   planted: Nat
   children: Lists.List<P.Reference>
@@ -359,8 +360,8 @@ record Edits:
   planted: P.Edit<Nat, Nat>
   children: P.Entries<P.Reference, {}>
   note: P.Edit<String, {}>
-type Plan = P.Plan<Edits>
-type Response = P.Response<State, {}>
+type Plan = V.Plan<Edits>
+type Response = V.Response<State, {}>
 def keep() -> Edits:
   {planted: P.Edit::<Nat, Nat>.keep({}), children: P.Entries::<P.Reference, {}>.keep({}), note: P.Edit::<String, {}>.keep({})}
 def plant(state: State, input: {child: P.Reference, note: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -375,12 +376,13 @@ WRITE_SUGARED = GARDEN + """  let written(_) = perform(write {planted: add 1n, c
 
 COUNTER = HEAD + """import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 law small "a counter stays at most a hundred": new.count <= 100
 def initial() -> State:
   {count: 0n}
@@ -467,21 +469,21 @@ class Writes(unittest.TestCase):
         cls.h.close()
 
     def test_write_is_its_plan(self):
-        a = self.h.compile(WRITE_EXPLICIT, "plant", ("Abi", "List", "Plan"))
-        b = self.h.compile(WRITE_SUGARED, "plant", ("Abi", "List", "Plan"))
+        a = self.h.compile(WRITE_EXPLICIT, "plant", ("Abi", "List", "Variant"))
+        b = self.h.compile(WRITE_SUGARED, "plant", ("Abi", "List", "Variant"))
         self.assertEqual(core(a), core(b))
 
     def test_write_names_its_operations(self):
         source = WRITE_SUGARED.replace("add 1n", "bump 1n")
         reply = self.h.send({"op": "check-package", "entry": "plant",
-                             "modules": library_modules("Abi", "List", "Plan") + [{"name": "Package", "source": source}]})
+                             "modules": library_modules("Abi", "List", "Variant") + [{"name": "Package", "source": source}]})
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("takes add, set, append, remove, removeItem, insert, upsert or retract, not bump", reply["diagnostic"]["message"])
 
 
     def test_relation_edits_are_their_plans(self):
         # RELATIONAL section 3: insert/upsert/retract, against world/lib/Plan.obend, which has them.
-        modules = library_modules("Abi", "List", "Plan")
+        modules = library_modules("Abi", "List", "Variant")
         for op, ctor, payload, value in [("insert", "insert", "row", "input.child"),
                                          ("upsert", "upsert", "row", "input.child"),
                                          ("retract", "retract", "key", "{object: input.note}")]:
@@ -529,7 +531,7 @@ class LawReading(TurnWorld):
     the statement form runs on the real host (a staged write is answered `written`)."""
 
     def test_a_law_with_a_reading_enforces_as_before(self):
-        self.create("c", library_modules("Abi", "Plan") + [{"name": "Package", "source": declared(COUNTER)}], 0)
+        self.create("c", library_modules("Abi", "Variant") + [{"name": "Package", "source": declared(COUNTER)}], 0)
         ok = self.turn("c", "bump", record(n=nat(5)))
         self.assertEqual(ok["status"], "admitted", ok)
         refused = self.turn("c", "bump", record(n=nat(150)))
@@ -539,7 +541,7 @@ class LawReading(TurnWorld):
     def test_write_runs_on_the_host(self):
         source = WRITE_SUGARED + "def initial() -> State:\n  {planted: 0n, children: Lists.List.nil({}), note: \"\"}\n"
         r = self.host.send(op="world-create", principal="ember", identity="create-g", object="g",
-                           modules=library_modules("Abi", "List", "Plan") + [{"name": "Package", "source": declared(source)}],
+                           modules=library_modules("Abi", "List", "Variant") + [{"name": "Package", "source": declared(source)}],
                            entry="initial", seed=record())
         self.assertEqual(r["status"], "created", r)
         child = record(world=label(""), object=label("bell-1"))
@@ -556,7 +558,7 @@ class LawReading(TurnWorld):
         self.addCleanup(h.close)
         bad = COUNTER.replace('"a counter stays at most a hundred"', "at most a hundred")
         reply = h.send({"op": "check-package", "entry": "initial",
-                        "modules": library_modules("Abi", "Plan") + [{"name": "Package", "source": bad}]})
+                        "modules": library_modules("Abi", "Variant") + [{"name": "Package", "source": bad}]})
         self.assertEqual(reply["status"], "refused", reply)
 
 

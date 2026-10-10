@@ -53,6 +53,7 @@ def seed(paths=None, presence=()):
 DOOR = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   crossings: Nat
 record Edits:
@@ -60,8 +61,8 @@ record Edits:
 sum Done:
   moved: {from: String, to: String}
   refused: {clause: String, reading: String}
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Done>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Done>
 def initial() -> State:
   {crossings: 0n}
 def cross(state: State, input: {to: String}, context: Abi.Context) -> Activity<Plan, Response, String>:
@@ -95,7 +96,7 @@ class Commons(TurnWorld):
 
     def door(self, name):
         r = self.host.send(op="world-create", principal=OWNER, identity="mk-" + name, object=name,
-                           modules=closure("Plan") + [{"name": "Door", "source": DOOR}], entry="initial",
+                           modules=closure("Variant") + [{"name": "Door", "source": DOOR}], entry="initial",
                            seed=record(crossings={"tag": "natural", "value": "0"}))
         self.assertEqual(r["status"], "created", r)
 

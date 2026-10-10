@@ -20,12 +20,13 @@ GUARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 law small: new.count <= 100
 def initial() -> State:
   {count: 0n}
@@ -49,12 +50,13 @@ def lawReads() -> Lists.List<String>:
 GATE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   open: Nat
 record Edits:
   open: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {open: 0n}
 def open(state: State, context: Abi.Context) -> Activity<Plan, Response, Nat>:
@@ -142,14 +144,15 @@ class TwoTier(Reflection):
 READ = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   owner: String
   count: Nat
 record Edits:
   owner: Plans.Edit<String, {}>
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 law owner "only the owner may count": not (request.kind == 0) or request.subject == new.owner
 law small: new.count <= 100
 def initial() -> State:

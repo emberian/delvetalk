@@ -24,10 +24,15 @@ IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 DEF = re.compile(r"^def (\w+)(<[^>]*>)?\(.*\) -> (.*):$", re.M)
 
 
+# Fixture modules tests import beside world/'s (Variant.obend: the variant Plan dialect the host
+# still answers until its lane deletes those arms).
+FIXTURE_MODULES = os.path.join(HERE, "fixtures", "obend")
+
+
 def modules_on_disk():
     found = {}
-    for sub in ("lib", "objects"):
-        for directory, _, files in os.walk(os.path.join(WORLD, sub)):
+    for root in (os.path.join(WORLD, "lib"), os.path.join(WORLD, "objects"), FIXTURE_MODULES):
+        for directory, _, files in os.walk(root):
             for name in files:
                 if name.endswith(".obend"):
                     assert name not in found, "module names are flat: " + name
@@ -200,7 +205,7 @@ class Objects(unittest.TestCase):
         expected = {("Counter", "bump"): "write", ("Garden", "grow"): "create", ("Garden", "counted"): "write", ("Garden", "cistern"): "create",
                     ("Bell", "rain"): "write", ("Bell", "awaitPlanting"): "awaitPost", ("Bell", "rang"): "write",
                     ("Cistern", "retain"): "write", ("Anthology", "submit"): "write", ("Anthology", "admitted"): "write",
-                    ("Card", "notified"): "send", ("Door", "opened"): "write", ("Door", "knock"): "write",
+                    ("Door", "opened"): "write", ("Door", "knock"): "write",
                     ("Lantern", "lit"): "write", ("Door", "watch"): "subscribe", ("Loop", "tick"): "write", ("Loop", "again"): "send"}
         for (name, entry), plan in expected.items():
             with open(MODULES[name]) as handle:

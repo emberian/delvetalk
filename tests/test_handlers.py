@@ -23,12 +23,13 @@ from tests.test_turn_world import declared
 COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 law small: new.count <= 3
 def initial() -> State:
   {count: 0n}
@@ -46,13 +47,14 @@ def probe(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Plan,
 SANDBOX = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 record Edits:
   count: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
-type Handled = Plans.Handled<Response>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
+type Handled = Variant.Handled<Response>
 def initial() -> State:
   {count: 0n}
 def handle(state: State, plan: Plan, context: Abi.Context) -> Handled:
@@ -65,12 +67,13 @@ def handle(state: State, plan: Plan, context: Abi.Context) -> Handled:
 VIEWS = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   count: Nat
 sum Views:
-  view: Plans.View
-type Response = Plans.Response<State, {}>
-type Handled = Plans.Handled<Response>
+  view: Variant.View
+type Response = Variant.Response<State, {}>
+type Handled = Variant.Handled<Response>
 def initial() -> State:
   {count: 0n}
 def handle(state: State, plan: Views) -> Handled:
@@ -80,12 +83,13 @@ def handle(state: State, plan: Views) -> Handled:
 RUNNER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   note: Nat
 record Edits:
   note: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 def initial() -> State:
   {note: 0n}
 def go(state: State, input: {target: String, handler: String}, context: Abi.Context) -> Activity<Plan, Response, Nat>:

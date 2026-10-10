@@ -21,6 +21,7 @@ LEDGER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record Out:
   text: String
   n: Nat
@@ -36,8 +37,8 @@ record Edits:
   lastBy: Plans.Edit<String, {}>
   entries: Plans.Entries<String, String>
   planting: Plans.Edit<String, {}>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Out>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Out>
 def initial() -> State:
   {count: 0n, lastBy: "", entries: Lists.List::<String>.nil(), planting: ""}
 def keep() -> Edits:
@@ -107,7 +108,7 @@ def ledger(law="", comment=""):
 
 
 def modules(law="", comment=""):
-    return closure("Plan") + [{"name": "Ledger", "source": ledger(law, comment)}]
+    return closure("Variant") + [{"name": "Ledger", "source": ledger(law, comment)}]
 
 
 def seed(count=0, last_by="ember", entries=None, planting=""):

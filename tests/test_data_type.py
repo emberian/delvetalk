@@ -161,6 +161,7 @@ def count(xs: Lists.List<String>, n: Nat) -> Activity<Plan, Reply, Nat>:
 DATA_COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 import ./List.obend as Lists
 record State:
   count: Nat
@@ -170,8 +171,8 @@ record Edits:
   count: Plans.Edit<Nat, Nat>
   payload: Plans.Edit<Data, Data>
   copy: Plans.Edit<Data, Data>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, Nat>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, Nat>
 record Tagged:
   name: String
   n: Nat

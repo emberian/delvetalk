@@ -1,51 +1,51 @@
 # Objects handoff
 
-State on 2026-10-10 (foundation f178383; §1a and the relational lines by lane/objects6 on foundation 613639d; the Wholeness migration section by lane/objects8 on foundation b44440e).
+State on 2026-10-10 (foundation f178383; §1a and the relational lines by lane/objects6 on foundation 613639d; the Wholeness migration by lane/objects8 on b44440e and lane/objects9 on 3dc374d, which finished it).
 
 ## Summary
 
-World objects are `.obend` files in `world/objects/` (24 objects: Anthology, Appointment, Appointments, Avatar, Bell, Cistern, Commons, Counter, Deal, Directory, Door, Env, Garden, Lantern, Loop, Place, Policy, Scene, Seat, Table, Thing, Tide, Wake, Workshop). Libraries are flat-named modules in `world/lib`, `world/lib/prelude`, `world/lib/document`, `world/lib/game`; an object imports them by basename. Every object follows the card protocol (`world/lib/Card.obend`).
+World objects are `.obend` files in `world/objects/` (24 objects: Anthology, Appointment, Appointments, Avatar, Bell, Cistern, Commons, Counter, Deal, Directory, Door, Env, Garden, Lantern, Loop, Place, Policy, Scene, Seat, Table, Thing, Tide, Wake, Workshop). Libraries are flat-named modules in `world/lib`, `world/lib/prelude`, `world/lib/document`, `world/lib/game`; an object imports them by basename. Every object speaks the message dialect: `Activity<A>` over `world.*` (World.obend), the host parses spells and runs the method a spell names, and `receive(state, input: Card.Reply, context)` gets what runs no method.
 
-- Needed first: `Plan.obend` (the host contract; `write {field: op value}` sugar), `Card.obend` (route/answer/lenses/interpretation), `Spell.obend` (spell grammar), `Policies.obend` (policy state; lives in lib because Policy declares a law and cannot be imported).
+- Needed first: `World.obend` (the protocol), `Plan.obend` (references, `Edit`/`Entries`, receipts: what messages carry), `Card.obend` (answer, tell, names, doors, pages, interpretation and macro helpers), `Policies.obend` (policy state), `Places.obend` (a place's State/Exit/Done, so Place can declare its law). `Spell.obend` keeps only the spell line's card, action and inline fields. `tests/fixtures/obend/Variant.obend` is the variant Plan dialect, for the tests of the host arms that still answer it (the host lane deletes them with those arms).
 - Run: `make check`; narrow `DELVETALK_OBEND=<binary> python3 -W ignore -m tests.run test_objects test_spell …`. Compile-only: put a `delvetalk-obend` binary in `DELVETALK_OBEND`; never run `lake`, never commit the binary.
 - Tests: 896 `def test_` across `tests/test_*.py`. `tests/host.py` fails any host reply whose card or offer text contains `bafy` (no hash in a card; cite `<object> v<n>`).
 - Tick budgets that tests pin: Bell card of 1,025 rains 76,511 (`test_tariff`; 76,485 before the rains were a relation); 64-field spell parse 79,583 (`test_tariff`); glm's 1,788-character reply under a bell under 20,000 ticks and the directory's reading under 250,000 (`test_hub`); `test_places` under 100,000.
-- Lawful objects (declare `law`): Anthology, Commons, Deal, Directory, Env, Garden, Policy, Scene, Table, Thing, Tide, Wake. A creator cannot import a lawful module; their owners make them with `world-create`.
+- Lawful objects (declare `law`): Anthology, Commons, Deal, Directory, Env, Garden, Place, Policy, Scene, Table, Thing, Tide, Wake. A creator cannot import a lawful module; their owners make them with `world-create`.
 - Open: section 4.
 
 ## 1. Conventions
 
 - **State, Seed, seeded, initial.** `record State`, `record Seed` (or `type Seed = {}`), `defaultSeed()`, `seeded(seed) -> State`, `initial() = seeded(defaultSeed())`. The host's `create` lays the seed (a record naming some State fields) over `initial()`; it does not call `seeded`. `world-create` takes a whole State. The host fills a text `owner` from the creating principal when the seed names none.
-- **Card protocol.** Every object has `render(state, context) -> Document` (the card as the reader sees it; `Card.stranger()` is a nobody Context), `forms() -> Card.Forms`, `blurb()`, and `receive(state, input: Card.Heard, context)` with `Heard = {text, post}` (a turn's argument may carry `slot`; the record reads only these two, and the host drops or fills `slot` by the declared type). Usual receive: `Card.route(text, context, forms())` (`Card.routeHeard(input, …)` keeps the post), `act` dispatched by action, anything else `Card.answer(routed, context, forms(), render(state, context))`. `Routed`: act, usage, unclear, refused, set, help, quiet.
+- **Card protocol.** Every object has `render(state, context) -> Document` (`Card.stranger()` is a nobody Context), `forms() -> Card.Forms` (the host reads their bounds, HOST-HANDOFF 5.69), `blurb()`, `methods()` (the State-first defs that are public beside its forms, 5.62) and `receive(state, input: Card.Reply, context)` with `Reply = {text, post, fields}`. The host runs a spell's method, answers `?` and `set`, and refuses misfits `badSpell`; receive sees blank text, prose, a spell missing fields and field lines naming no form, and `Card.answer` (or `answerAs` for an own result type) offers the card or hands prose to the directory.
 - **Handles and the clock.** `Card.name(did, context)` shows the reader's own observed handle (`context.handle`) and anyone else as `Card.handle`: never a raw DID, a long fragment is `…` and its last eight. A handle stored when the host knew it shows by `Card.shown`. Deadlines compare `context.clock`, which only `world-advance` moves.
 - **Reader-specific cards.** `Card.reads(principal, context)`, `Card.mine(principal, context)` (" (yours)"). A member sees more: an Env's events, a Wake's triggers, an Avatar's notes and follows, a Deal's countersign spell, a Policy's teaching card, a Scene passage, a Commons' gates.
-- **Spell shape.** A card name is `[a-z0-9:/.-]+`, at most 160 bytes; actions and fields `[a-z0-9-]+`; `?` is an action. Fields follow the action separated by ` / ` or commas. The spell is the post's last delvetalk line that is not quotation (indented four or a tab; `>` and fence lines are never spell lines). Block values: `field: <<DELIM` (1 to 32 of A-Z 0-9 _) takes the following lines up to a line that is exactly DELIM; unclosed is refused by name ("the block <<BEND for source is never closed by a line BEND"). Workshop reads `source:` as its code. A literal brace in Bend source is `{{`/`}}`.
-- **Lenses.** `Form.Lens<E>.lens {field, form: Form.Kind, put}`; an object exports `lenses()` and answers with `Card.answerLensed(routed, context, forms(), lenses(), guard, card)` (`answerLensedAs` for an own result type). `delvetalk <card> set` plus one `<field>: <value>` line is judged against the kind and written through `put` (a non-empty guard refuses by name first; the law judges the write); `?` answers the usage card. Lenses: Policy (model, system, escalate), Avatar (handle), Place and Thing (name/description), Garden (confirm). Workshop has none. `Card.valueText/valueNatural` read a Value.
-- **Interpretation (Garden, Directory).** A card with a policy views it (`Plan.view`, state type `Policies.State`) and asks with `Card.asking(utterance, forms, reference, policy, attempt, needs)`. `Card.fitting(text, forms)` reads the reply `replied {text}`: `hit {card, parsed}`, `silent` (`unclear: not addressed` or empty), else `miss {needs}`. A first miss is asked once more (utterance plus `\n\nmissing: <needs>`, `model:` the policy's `escalate`); a second offers the needs card and, when `escalateTo` names a principal, `Card.escalation`'s copy to it. A host `unclear {needs}` is not retried. An activity composes only in tail position, so the object owns the loop (`interpreted`/`readBack` in Garden, `interpreting`/`readBack` in Directory); Card gives the Plans, the reading and `Card.unfit`. A read-only root that moves while the interpretation waits does not make the resumption stale.
+- **Spell shape** (the host's grammar, FOUNDATION §5). A card name is `[a-z0-9:/.-]+`, at most 160 bytes; actions and fields `[a-z0-9-]+`; `?` is an action. Fields follow the action separated by ` / ` or commas, or on field lines. The spell is the post's last delvetalk line that is not quotation (indented four or a tab; `>` and fence lines are never spell lines). Block values: `field: <<DELIM` … `DELIM`; unclosed is refused `unclosedBlock`. A `source` field the spell lacks takes the reply's first ```obend fence (5.69). A literal brace in Bend source is `{{`/`}}`.
+- **Lenses.** `def lenses() -> Lists.List<Form.Field>` (data) and `set(state, input: {field, value: Form.Value}, context)`: the host judges the value against the field's kind and runs `set`, which refuses a stranger by name (the law judges the write); `?` lists the lenses. Lenses: Policy (model, escalate, escalate-to, system), Avatar (handle), Place (name, description), Thing (copyable, name, description), Garden (confirm). `Card.valueText` reads a Value.
+- **Interpretation (Garden, Directory).** A card with a policy views it (`world.view::<Policies.State>`) and asks `world.interpret::<T>(Card.interpretation(utterance, forms, reference, policy, attempt, needs))`. The host fits the model's spell and answers `proposal {object, method, argument}` (the Directory calls that door's method) or `unclear {needs}`; `replied {text}` reads through `Card.prose`: `not addressed` or empty needs are silence, others a miss, asked once more (escalate model), then `Card.unfitted` (the needs card, and the escalateTo copy). An activity composes only in tail position, so the object owns the loop.
 - **Confirmation per action.** `Policies.State.confirmFor` (default reprogram, amend, offer; owner's `delvetalk policy confirm / action: plant / ask: yes|no`) names what an interpreted proposal waits for a yes before (`Card.confirms`). Garden keeps its own `confirmFor` (its `confirm` lens adds or drops plant). Directory shows a confirmed action's spell back instead of passing it on. A card holding a proposal for its speaker reads a bare answer first, with no model call: `Card.answerOf(text)` is yes (yes, y, yeah, yep, ok, okay, sure, go ahead, do it) or no (no, n, nope, cancel, never mind), in the case people write them, a closing `.` or `!` aside; Garden answers a bare yes or no with nothing of the speaker waiting `refused nothingWaiting` instead of interpreting it.
-- **Completing a spell.** An unclear spell is held for its speaker (Garden `Pending {principal, spell, needs}`; empty needs = waiting for yes); a reply of only `name: value` lines (`Card.onlyFields`) is appended (`Card.completed`) and judged again. Directory passes field-only lines whose first name is a field of a door's form to that door as they are.
+- **Completing a spell.** An unclear spell is held for its speaker (Garden `Pending {principal, spell, needs}`; empty needs = waiting for yes); a reply whose `Reply.fields` name the held planting's fields completes it (Garden `completing`). Directory passes field-only lines whose first name is a field of a door's form to that door as they are.
 - **Macros.** Policy `macros` (owner: `delvetalk policy macro / name: … / pattern: moth for {who} / expansion: garden plant / colour: violet`; a same-named macro is replaced; sixteen; a pattern starts with a word). Garden and Directory check `Card.expanded(text, policy)` before the model: words compared exactly (a trailing `.!?` dropped), a `{hole}` takes the shortest run of one or more words that lets the rest match; a hit is dispatched as a typed spell with no interpret. Garden's `?` appends `Card.macroUsage`.
-- **Handed to the directory.** Quiet prose is sent by Card's default (`Card.forwarded`) to `directory` (`Card.directory`, the genesis id) as `receive {text, post}` under the speaker; the card offers nothing. A turn some object started forwards nothing. The directory keeps `words` (door labels and ids, form actions) and `fields` (form fields), learned by inspect when a door is added or on the first handed-on reply after a seeded genesis (`writeOnce`), and sends to the model only prose that `Card.mentions` (a word, or a field as `name:`), scanning the first 2,000 characters. At judgement it counts only methods that take fields, as offered forms do (the method table also lists helpers such as here, guard, reading); a bell's `rain` is always known (`knownFields`). It also reads the first object under each door (`objects {prefix}`, then inspect), and a handed-on reply does not count its caller's family. A door added before its object exists learns only its label and id. A card cannot `view directory` (a view answers in the card's own state type); the hand-off is a send, not a call.
+- **Handed to the directory.** Prose `Card.answer` does not take is sent to `directory` (`Card.directory`) as `receive {text, post, fields}` under the speaker; the card offers nothing. A turn some object started forwards nothing. The directory keeps `words` and `fields` (learned by inspect) and sends to the model only prose its own `mentions` scan finds naming one (the first 2,000 characters).
 - **Admitted act answers with its card.** A rain from a reply (`Bell.rainedCard`) and a submission (`Anthology.submittedCard`) offer the card as the write leaves it; the direct `rain` and `submit` answer only their count.
 - **Link doors.** A Directory door whose `to` is nobody (genesis's STUDIO) answers its word with `<label>\n<description>` and is skipped when field lines and the model look for forms.
 - **Env.** `Env.receive` from anyone but the owner is taken in as a `mention` event (`Event.handle`); the law admits that receive (kind 0, method receive, owner/handle/seen/subscribers unchanged). Arrival seeds `handle`; the card reads "ENV of <handle>" with the newest eight events, one line each (first line, 100 characters). An Env lives at `Events.envOf(did)` = `env/<did>`; one elsewhere refuses publish. Its buffer holds 256 (the host drops the oldest).
 - **Workshop.** Views its target (state type `Data`) and says "Was: bell-1 v1 / Now: bell-1 v2". A `propose` the target's law refuses is held as `{n, target, package, migration, proposer, proposerHandle}` (sixteen; a seventeenth drops the oldest); `adopt / n` runs the reprogram under the adopter, so the target's law admits only its owner; `withdraw / n` is the proposer's. Compile, program, packageBytes and migration refusals are not held.
-- **Scoped resolution (Avatar).** An Avatar's own principal's prose with no spell names its object by the first word that is a thing lying in its place, else an object of that id (the doors: garden, rooms, play); the avatar `send`s `delvetalk <id> <action>` with the rest of the line in the form's first field. Two of a name are answered "Which one: …?".
-- **Place.** Forms `say {line}`, `emote {line}`, `whisper {to, line}`: offered under the speaker's name to every avatar present (in key order, at most 32); someone not present is refused by name (`notPresent`). Each enter, leave, take, put and talk is traced, admitted or refused, as `Trace {who, handle, action, clause, at, n}`, 64 kept by the host (the card shows the newest eight); a refusal therefore writes a trace.
+- **Scoped resolution (Avatar).** An Avatar's own principal's prose with no spell names its object by the first word that is a thing lying in its place (by its card's first line, then its id's last segment), else an object of that id (the doors: garden, rooms, play); the avatar sends `receive {text: "delvetalk <id> <action>\n<field>: <rest>", post}`, which the host reads as a spell (5.63). Two of a name are answered "Which one: …?"; `look` offers the place's card (`world.card`).
+- **Place.** Its State, Exit and Done are `Places.obend`'s; it declares `law owner` (only the owner renames, redescribes, reprograms; anyone's kind-0 write keeps owner, name, description, exits). `say {line}`, `emote {line}`, `whisper {to, line}` offer the line under the speaker's name to every avatar present (in key order, at most 32); someone not present is refused `notPresent` by name. Each enter, leave, take and put is traced, admitted or refused, as `Rows.Trace`, 64 kept by the host (the card shows the newest eight).
 - **Thing.** `copyable` (default true; owner's lens). The Workshop's `create / like: <thing>` sends `copy`; the thing creates a Thing from its own package with its state minus holder, offer and owner (the host fills owner with the creating principal). Not copyable is refused by name.
 - **Doors on any card.** `Card.Doorway {label, to}`, `doors: Card.Doorways`, `Card.doorForm()`/`undoorForm()`, `Card.dooring` (owner's; eight at most; `doorTaken`, `doorsFull`), `Card.doorLines`. Bell has them; Garden plants each bell with `garden: <garden>`.
-- **Wake.** `On.writes {object, field, above}`; `watch` with it sends the watched object `observe {object: wake, method: "written"}`. Garden keeps observers and tells them `{field: "planted", value}` after each planting; `Wake.written` fires when the value passes `above`. A Wake is also a rule over rows (RELATIONAL §7): `On.rows {object, field, where: [Where], atLeast}`, a `Where` one of `equals {column, equals: Relations.Cell}` (canonical bytes), `above {column, above: Nat}`, `below {column, below: Nat}` and `contains {column, contains: String}` (a whole word, by `textHasAny`); `watch` sends `observe {object: wake, method: "rows"}`; the observed object tells observers whose method is `rows` what a write inserted (`Card.notifyRows(observers, field, rows, then)`, `{field, rows}`, each row `Card.Row`, its columns by name with natural or text values, since Bend cannot read Data), and `Wake.rows` fires a trigger once when at least `atLeast` (at least one) rows match every pattern. Every other observer gets the object's own message (`Card.ownObservers`), so a door told on a ring is never sent rows. Bell tells of each rain; Garden's planted count goes only to its own observers.
+- **Wake.** Subscribes with typed receivers: `On.writes {object, field, above}` to a scalar (`changedNat`), `On.rows` to a relation (one receiver per `Rows` type; `Rows.*Columns` projections for its patterns: `equals`, `above`, `below`, `contains`), and its env's `buffer` (`changedSensed`). Receivers are helpers and check `context.caller`.
 - **Deal.** `amendment {object, law}` (object "" for none). The countersignature that brings the deal to rest performs `amend` with the deal as caller, judged by the object's own law; a refusal is answered `amendRefused`, the signature standing.
 - **Hub.** Directory passes a spell naming another card to its receive by call, greets each principal once, is silent to its owner, answers a door word with that door's card. Garden ends with no offer for prose the model calls `not addressed`. Tide answers subscribe and tick with its card.
-- **publishPage.** `Card.publishPage(name, page)` performs `publish {page: name, section: "", body}`, where `name` is the one given or "" for the door word. Garden, Scene, Table, Workshop, Anthology and Tide expose `publishPage` (every door object publishes a page); the host lists the publication (`world-publications`).
-- **Pages.** An object with a page keeps `owner` and `pageCheckpoint`; `Card.isMerge` and `Card.merge` record the owner's `merge` reply (Garden).
+- **Pages.** The host publishes a default page (`## Card`, `## How to reply`) for `publishPage {page}` to a card that declares none (5.68); Garden keeps its own (`page`, `Card.defaultPage`, `Card.pageText`).
+- **Merge.** An object with a page keeps `owner` and `pageCheckpoint`; `Card.isMerge` reads the owner's `merge` reply (Garden).
 - **Anthology.** Owner admits. The owner's handle is seeded as `ownerHandle` and stored at each admission.
-- **Laws that guard fields** read `owner: request.subject == new.owner or (request.kind == 0 and unchanged(…))`; without the kind, anyone's reprogram or amendment (which change no field) passes. The host prints a law fully parenthesised. `world-amend` does not parse a law text with a reading ("law syntax"): amend with `law NAME: EXPR`. `law(old, new, request)` Bend predicates run after the text admits a kind-0 write (Tide: self, tooSoon; Wake: owner); `tests/test_laws.py` shows them biting. Scene's cooldown is a Bend `law` over `context.clock` with no law text. Scene and Table keep `owner` and `law owner "...": request.kind == 0 or request.subject == new.owner`.
+- **Laws that guard fields** read `owner: request.subject == new.owner or (request.kind == 0 and unchanged(…))`; without the kind, anyone's reprogram or amendment (which change no field) passes. The host prints a law fully parenthesised. `world-amend` takes `law NAME: EXPR`. `law(old, new, request)` Bend predicates run after the text admits a kind-0 write and may give a reading (`Abi.Verdict.refused {clause, reading}`, 5.67): Thing (custody), Tide (self, tooSoon), Wake (owner); Scene's cooldown is a Bend law over `context.clock`. Insert-only relations are law text: Deal `law signed: insertOnly(signatures)`, Directory `law greeted: request.subject == new.owner or insertOnly(greeted)` (with a limit, insertOnly refuses an insert that drops a row, so the Directory stops greeting at 4,096 in Bend).
 - **List edits by item.** The index forms are gone from Plan.obend (objects6): `amendItem {item, change}` and `removeItem {item}` address the first item with the same canonical bytes (`absentItem` when none); find the stored item with `Lists.find`.
 - **Composition.** An activity composes only in tail position; a reusable method takes `then: Result -> T`. No `else match`: put the match in its own def. Payloads are Data: give the value where Data is expected; `Plans.nothing()` is the empty payload.
 - **Idioms.** No `::<…>` (type arguments are inferred; a definition whose parameter appears in no argument needs a smaller signature). Self-write `write {field: add n | set v | append x | removeItem x | insert r | upsert r | retract k, …}` (the kernel's `remove i` lowers to a constructor Plan.obend no longer has) (amendItem, keep-only and computed Entries stay `Plan.write(...)`); bind a write's answer with `let written(_) = perform(…)`. Forms are `form ACTION [as NAME]:` blocks. Strings are interpolated (`"{expr}"`; an `if` inside a string is a `let` first). Every law has a reading: `law owner "only …": …`.
-- **Refusals are sums.** `Card.Refusal {clause, reading}` is the payload of `Card.Reply.refused` and `Card.Routed.refused`; a card shows `refused <clause>: <reading>`. Protocol clauses: otherCard, noAction, oneField, spell, notSettable, noField, notOwner, badValue, noPost. A `sum Why` (one arm per refusal), `why(w)`, `clause(w)` and `refused(w)` builder: Thing, Place (its Done is Thing's and Avatar's), Garden (`world {clause}` keeps a host clause such as requiredAbsence), Tide, Wake, Deal, Policy. Scene, Commons, Avatar (Mailed), Anthology, Appointments give a clause at each site. `{reason}` payloads remain in Directory's `Heard.refused`, Seat and Table `Done`, Env `Done`, Appointment, Workshop's `Verdict`, Avatar's `Moved`, and `Card.Change`.
-- **Observers and mailbox.** `Card.observing` (16) and `Card.observingUpTo(…, cap)`; `Card.broadcast`. An Avatar's mailing list holds 32 (the host's `sendsPerTurn`; a turn past it is refused whole, "turn exceeds the send capacity"); its inbox keeps 64.
+- **Refusals are sums.** `Card.Refusal {clause, reading}`; a card shows `refused <clause>: <reading>` or `Not done: <reading>`. One `refusal(w) -> Card.Refusal` match per object: Thing, Place, Avatar (WORLD-REVIEW 6 for the rest: Garden, Tide, Wake, Deal, Policy still pair `why`/`clause`). `{reason}` payloads remain in Directory's `Heard.refused`, Seat and Table `Done`, Env `Done`, Appointment, Workshop's `Verdict`.
+- **Mailbox.** An Avatar's `send` inserts a `Rows.Letter {handle, text, at, n}` into its `outbox` (keyed {at, n}, 64); `subscribe {to}` is the host subscription to another avatar's outbox, delivered to `mailed`; `watch {to, field}` follows any field (a bell's `rung`), delivered to `news` ("news from <object>"); `unsubscribe {to}` ends either. It follows at most 32; the host serves at most 32 subscribers a turn (`unserved`) and 64 an object. Its inbox is a relation keyed {at, from, n}, 64 kept. There are no observers anywhere.
 - **Layers.** `world-reprogram {mode: extend}` with a module `type State = Super.State` overrides what it defines; `tests/test_layers.py` (Louder over Bell) keeps rain; `tests/test_extend.py` LouderBell grafts `layer over ./Bell.obend` by the `extend` Plan and a rain reply's card starts LOUDER.
 - **Scenes.** `world/lib/Scenes.obend` is the data (Choice {label, to, effects, guard}, Effect set/add/sub, Clause, Seed {title, start, passages, cooldown, requires}); `world/lib/Spween.obend` lowers spween to it (refusing weight, `~ call`, has: by name); a ```spween block posted to a Scene makes `<scene>/<id>` (id's `_` become `-`). Scene has guards, effect lists, END, `requires` and a cooldown.
 
@@ -67,8 +67,7 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   key first, so `{author, at, n}` sorts by `n`, then `at`, then `author`; a text by byte
   length, then bytes; it is written out from the type, any first-order type, monomorphised
   in generic definitions). `Relations.Cell` (natural or text) stays as the value a Wake
-  pattern names and an observer's row column carries. `insertedOnly(old, new, keyOf)`
-  compares whole rows with it.
+  pattern names and a `Rows.Column` carries.
 * **Edits** (`Plans.Entries`): `insert {row}`, `upsert {row}`, `retract {key: Data}` (the key
   projection as a record) beside the six; a self-write of one is `write {rains: insert rain}`
   (`upsert row`, `retract key`); a computed or mixed edit stays `Plan.write(...)`.
@@ -92,8 +91,7 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   4,096; Env `buffer` {at, actor, uri, n} 256 (rows `Env.Sensed`, an Event with `n`; the
   host drops the oldest, so the Env no longer removes its own); Place `present` and
   `things` {object} 256 and `traces` {at, who, action, n} 64 (the card shows the newest
-  eight). Thing and Avatar declare `relations()` of none, because they import Place (see
-  "Against the host"). Still lists: observers and doors on every card. Records by design: RELATIONAL §9 "Stays a
+  eight). Avatar `inbox` {at, from, n} and `outbox` {at, n}, 64 each. Still lists: doors on every card. Records by design: RELATIONAL §9 "Stays a
   record".
 * **What the cards show now.** Bell, Anthology (n first: the order of falling, so a line's
   number is unchanged) and Garden (`garden/bell/<n>` sorts by length then bytes, so in
@@ -105,10 +103,8 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   (`doors(state)`). `add {door: Door}` is unchanged; `remove` is a `retract {label}`.
 * **Laws.** Tide's `ownSubs` is one merge of old and new rows: every key added, replaced or
   retracted must be the requester's (`tests/test_wakes.py` checks the four cases).
-  `insertOnly` parses now (kernel) but the host's Law.lean denotes it false (fail closed)
-  until relations day 2, so Directory's greeted and Deal's signatures say it in the Bend
-  predicate, `Relations.insertedOnly(old, new, keyOf)` (one merge; clauses `greeted`,
-  `signed`), with a TODO(insertOnly) beside each to move it into the law text then.
+  Directory's greeted and Deal's signatures are `insertOnly` in the law text (objects9;
+  `Relations.insertedOnly` is gone).
 * **Seeds on the wire.** A relation seed is the `rows` variant (`tests.test_turn_world.relation(*rows)`,
   rows in key order); `deploy/genesis.py` seeds the directory's doors that way with places.
 * **Against the host** (host7, foundation 613639d). The edits, canonical order, keys and
@@ -117,9 +113,9 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   upserts that speaker's pending row) cost a second interpretation of the later one
   (`test_policy ...checkpoint_blocks_once`). Two host behaviours to know: (1) a package
   any of whose modules declares `relations()` has the ENTRY module's `relations()`
-  compiled, so a package importing a module that declares relations (Thing and Avatar import
-  Place) or an object made from such a chain (a Cistern dug from Garden's) must declare its
-  own (they declare none), else creation fails "missing selected entry"; (2) that compile
+  compiled, so a package importing a module that declares relations or an object made from
+  such a chain (a Cistern dug from Garden's) must declare its own, else creation fails
+  "missing selected entry"; (2) that compile
   runs at every creation: 20 bells 6.7 s with `relations()` and 0.31 s without (the test
   lane has since dropped `test_journal.Maximum`'s wall-clock bound). Wire: a relation is
   `{"tag": "variant", "label": "rows", "payload": {items: [...]}}`; `tests.test_replay.rows`
@@ -151,63 +147,34 @@ World objects are `.obend` files in `world/objects/` (24 objects: Anthology, App
   message-dialect object and runs it through the host: a write, a subscription and its
   `changed` delivery, `viewAt` and `viewDerived`.
 
-### Wholeness migration: where it stands (lane/objects8 stopped here; a successor starts from this)
+### Wholeness migration: done (lane/objects9)
 
-lane/objects8 (on foundation b44440e, tested against the host10 binary that adds called-receive
-reading, `proposal {object}`, Verdict readings and the default page) moved, one commit each:
-Scene, Workshop, Directory, Bell, Env and Wake together (coupled), Garden and Policy. It also added
-Lantern/Door `watch` and Commons `allow` to `methods()`, changed the Directory's `remove` to
-`{door: {label}}`, gave `Abi.Verdict.refused` a `reading`, and deleted the five pasted
-`publishPage`s. Seventeen objects now speak the message dialect. Still in the Plan dialect: **Place,
-Thing, Avatar** (and Seats/Encounter libraries they use).
+Every object speaks the message dialect (objects8: Scene, Workshop, Directory, Bell, Env, Wake,
+Garden, Policy; objects9: Thing ad9d3b8, Avatar 818ff46, Place d822edc). The deletion pass
+removed Card's Plan-dialect helpers (`Heard`, `Routed`, route/routeHeard/withBare/bareSpell,
+answerLensed*, tellPlan, answerPlan/answerAsPlan, forwarding/forwarded/sending/offering, merge,
+checkpointed, fitting, asking, unfit, escalation, onlyFields, completed, spellText, `text`,
+`natural`, valueNatural), the observer convention (Observer, observing, broadcast, notified,
+Change, Column/Row, notifyRows), `Form.Lens`, Spell.obend's parser (fit, judge, bare, blocks,
+field lines; the host's `spell-parse` is the grammar, tests/test_spell.py and
+tests/test_host_spell.py test it against fixtures recorded from the Bend parser, which agreed on
+every row), `Relations.insertedOnly`, and Plan.obend's `Plan`/`Response`/`Handled` sums with their
+payload records (now `tests/fixtures/obend/Variant.obend`). `Card.mentions` moved into the
+Directory, its one user. `Replied` stays: it is what every `receive` and `Card.answer` return.
 
-**What the moved objects settled (read the commits for the detail).**
-* A spell's method cannot see the reply's post. The Garden plants with `context.intent` as the
-  planting post when `inputOrigin.kind == "spell"` (the bridge names a turn by its post). Host item:
-  `Abi.Context.inputOrigin.post`. Deal's countersign still cites the post through `receive`.
-* A form-expressible method input becomes a host form, and the host routes a reply's first bare
-  field line to it. So a method that is not meant as a spell takes a nested record (Directory
-  `add {door}`, `remove {door: {label}}`). A form's fields are exactly what the host accepts: extra
-  lines are `unknownField`. Policy's macro expansion is therefore one field line that keeps its
-  slashes.
-* `?`, `set` routing, kind checks (`badValue`), unknown or extra lens fields, unclosed blocks and
-  unknown cards are the host's (badSpell). `receive` sees blank text, prose, spells missing fields
-  (with `fields`), and bare field lines naming no form. Blank-reply cards may add what the host's
-  `?` cannot know (Garden's shortcuts from its policy).
-* Interpretation: `world.interpret::<T>` with `Card.interpretation(...)`. A `proposal {object,
-  method, argument}` runs (the Directory calls the door's method). `unclear` needs that are
-  `not addressed` or empty mean silence; `model: …` means answer at once; any other is a miss
-  asked once more (escalate model), then `Card.unfitted`. A `replied` text reads through
-  `Card.prose` (`unclear: …` lines).
-* Subscriptions replace observers: Door/Lantern on `rung`/`open`; Wake on env `buffer`
-  (`changedSensed`), a scalar (`changedNat`, fires when the old value was at most `above` and the
-  new is over it) and relations (one receiver per Rows type; `Rows.*Columns` projections).
-  Receivers are helpers (the host delivers to them; no turn may name them) and check
-  `context.caller`.
-* Env takes mentions on `mention {text, post}`; `receive` would let the host retarget a quoted
-  spell. Transport item: `bridge.py` `mention_turns` must send `mention`.
-* Transport items left expectedFailure: http.py gives no `spell` template for a form with a choice
-  field (test_hypermedia ×2); the play page does not render the host's `?` usage reply
-  (test_http directory card).
-
-**Remaining, in order.**
-1. `git merge foundation` once the host10 merge lands. The expectedFailures it answers are already
-   flipped (df72541, green against its binary); test_outbound's slot case comes with that merge.
-2. Place, Thing, Avatar together (Thing and Avatar import Place's State/Done; WORLD-REVIEW 20
-   moves those types to a library so Place can declare `law owner`). Lenses as data plus `set`
-   (Place and Thing: name/description; Avatar: handle; Thing: copyable). Avatar's mailing list
-   becomes an `outbox` relation (insert on `send`, limit with drop-oldest), followed by
-   subscription. test_mailbox's bell follower is expectedFailure until then. host10 declared
-   `methods()` for Place ("enter leave take put"), Thing ("transfer copy drop") and Avatar
-   ("observe unobserve notice hold release"); keep the names whose methods remain.
-3. With the last of them, the deletions: Card's `…Plan` helpers, `Routed`, `route`/`routeHeard`/
-   `withBare`/`bareSpell`/`fitting`/`asking`/`unfit`/`escalation`/`onlyFields`/`completed`/
-   `spellText`, observers (`Observer`, `observing`, `broadcast`, `notified`, `Change`,
-   `Column`/`Row` and `notifyRows`), `forwarding`/`forwarded`/`sending`/`offering`/
-   `answerLensed*`/`merge`/`checkpointed`, `Replied` (once nothing returns it), Spell.obend's
-   parser apart from what `spellAction` and the Garden's and Directory's macros need, and
-   Plan.obend's `Plan`/`Response` sums. Move Directory's and Deal's insert-only predicates into
-   the law text (`insertOnly(greeted)` keeps the Bend 4,096 check: WORLD-REVIEW 10's trap).
+**Remaining.**
+1. `Form.Kind` gains `source: {}` (host 5.69 reads it as text of 1 to 16,384) and the Workshop
+   declares `check {target, source}` / `propose {target, migration, source}` forms of that kind
+   (then `withFence` and the Workshop's own fence reading go; tests/test_form_bounds.py shows it
+   with a fixture). Card.hint, Card.valueText and Policy.kindText each need the case.
+2. Host: a spell's method cannot see the reply's post (Garden plants with `context.intent`;
+   `Abi.Context.inputOrigin.post`); two expectedFailures (test_principal, test_replay) wait.
+3. Transport: hostproc.py's ARRIVAL need not copy Place (the Avatar imports only world/lib);
+   bridge.py must send mentions to Env's `mention`; http.py's spell template for a choice field
+   (test_hypermedia x2) and the play page's `?` usage (test_http) are expectedFailure.
+4. Host/kernel day 4: delete the variant arms and the three-argument Activity, and with them
+   Variant.obend and the fixtures that use it.
+5. WORLD-REVIEW 4 to 6, 12 (Door knocks, Cistern entries), 14, 22 to 25 are untouched.
 ## 2. Limits found
 
 - An await only proves that some turn with that identity was admitted. A turn suspended on an object resumes refused `staleRoot` if anything wrote that object meanwhile, unless its writes are all keep/add/append (they commute).
@@ -221,7 +188,6 @@ Counter, Garden, Bell, Cistern, Anthology (owner admits), Directory (owner adds 
 
 ## 4. Open
 
-- Place cannot declare a law while Thing and Avatar import it for State and Done (both still `import ./Place.obend`). Closes when those types move to a library module, as Seats did.
 - An addressee `slot` reaches receive but no object reads it (`Heard` is `{text, post}`).
 - A Scene passage is not editable once made; spween `tags`, custom fields, floats and negative numbers are skipped or compared as text; a scene near the 16 x 8 limit has not been measured.
 - A kernel word-set builtin would remove the per-word loop cost of `Card.mentions`.

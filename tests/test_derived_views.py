@@ -63,12 +63,13 @@ class DerivedViews(Chain):
         asker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
+import ./Variant.obend as Variant
 record State:
   n: Nat
 record Edits:
   n: Plans.Edit<Nat, Nat>
-type Plan = Plans.Plan<Edits>
-type Response = Plans.Response<State, {}>
+type Plan = Variant.Plan<Edits>
+type Response = Variant.Response<State, {}>
 def initial() -> State:
   {n: 0n}
 def ask(state: State, context: Abi.Context) -> Activity<Plan, Response, Data>:
@@ -77,7 +78,7 @@ def ask(state: State, context: Abi.Context) -> Activity<Plan, Response, Data>:
     case _: Plans.nothing()
 """)
         r = self.host.send(op="world-create", principal="ember", identity="mk-asker", object="asker",
-                           modules=closure("Plan") + [{"name": "Asker", "source": asker}], entry="initial", seed=record(n=nat(0)))
+                           modules=closure("Variant") + [{"name": "Asker", "source": asker}], entry="initial", seed=record(n=nat(0)))
         self.assertEqual(r["status"], "created", r)
         asked = self.turn("asker", "ask", principal="glm")
         self.assertEqual(asked["status"], "admitted", asked)
