@@ -4,6 +4,7 @@
 import Delvetalk.Host.Store
 import Delvetalk.Host.Journal
 import Delvetalk.Host.Law
+import Delvetalk.Host.Relative
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
@@ -860,12 +861,24 @@ def cutHash (item : Json) : Nat :=
   item.compress.toUTF8.foldl (fun h b => ((h ^^^ b.toNat) * 16777619) % 4294967296) 2166136261
 
 /-- Cut items into blocks: after at least `low` items, where the hash of the last four items
-    together is 0 mod `every` (a window, so runs of common tokens still vary), never past `high`. -/
-def cutBlocks (items : Array Json) (low high every : Nat) : Array (Array Json) := Id.run do
+    together is 0 mod `every` (a window, so runs of common tokens still vary), never past `high`.
+    An item whose compressed form is `big` bytes or more (a source text an `inspect` answered, a
+    long utterance), or that `dynamic` marks (the turn's own argument and utterance), is a block
+    of its own, cut before and after, so the run around it dedups whatever it holds and the cells
+    that change every turn cost only their own bytes. `big` 0 turns the rule off. -/
+def cutBlocks (items : Array Json) (low high every : Nat) (big : Nat := 0)
+    (dynamic : Json → Bool := fun _ => false) : Array (Array Json) := Id.run do
   let mut out : Array (Array Json) := #[]
   let mut cur : Array Json := #[]
   let mut window : List Nat := []
   for item in items do
+    let text := item.compress
+    if (big != 0 && text.utf8ByteSize ≥ big) || dynamic item then
+      if !cur.isEmpty then out := out.push cur
+      out := out.push #[item]
+      cur := #[]
+      window := []
+      continue
     cur := cur.push item
     window := (cutHash item :: window).take 4
     let mixed := window.foldl (fun h x => ((h ^^^ x) * 16777619) % 4294967296) 2166136261
@@ -877,29 +890,80 @@ def cutBlocks (items : Array Json) (low high every : Nat) : Array (Array Json) :
 
 def treeFanout : Nat := 16
 
-/-- The tree of a token array: its depth, its root names, and every block it uses. -/
-partial def blockTree (items : Array Json) (depth : Nat := 0) (acc : Array (String × Array Json) := #[]) :
-    Nat × Array Json × Array (String × Array Json) :=
-  let (low, high, every) := if depth == 0 then (32, 1024, 64) else (4, 64, 16)
-  let blocks := cutBlocks items low high every
+/-- Leaves of at most 256 tokens; a token of 256 bytes or more is a leaf of its own. -/
+def leafLow : Nat := 32
+def leafHigh : Nat := 256
+def leafEvery : Nat := 64
+def leafBig : Nat := 256
+
+/-- The tree of a token array: its depth, its root names, and every block it uses. `dynamic`
+    marks the leaf tokens that are cut out on their own (`cutBlocks`). -/
+partial def blockTree (items : Array Json) (dynamic : Json → Bool := fun _ => false) (depth : Nat := 0)
+    (acc : Array (String × Array Json) := #[]) : Nat × Array Json × Array (String × Array Json) :=
+  let blocks := if depth == 0 then cutBlocks items leafLow leafHigh leafEvery leafBig dynamic
+    else cutBlocks items 2 16 4
   let named := blocks.map fun b => (Journal.bodyHash (Json.arr b), b)
   let names := named.map fun (c, _) => toJson c
   if names.size ≤ treeFanout then (depth + 1, names, acc ++ named)
-  else blockTree names (depth + 1) (acc ++ named)
+  else blockTree names dynamic (depth + 1) (acc ++ named)
+
+/-- The text leaves of a Data value: the cells a turn's own argument puts in its checkpoint. -/
+partial def dataTexts : Data → List String
+  | .label s => if s.isEmpty then [] else [s]
+  | .record fs => fs.flatMap fun (_, v) => dataTexts v
+  | .variant _ p => dataTexts p
+  | _ => []
 
 /-- A checkpoint as journaled: `tokens` replaced by `tokenTree`, and the blocks the world does
-    not hold yet (each once). -/
-def compactCheckpoint (w : World) (checkpoint : Json) : Json × List (String × Json) :=
+    not hold yet (each once). `dynamic` are the texts that change with every turn (the argument's
+    and the utterance): each token carrying one is a leaf of its own. -/
+def compactCheckpoint (w : World) (checkpoint : Json) (dynamic : List String := [])
+    (extra : Array (Array Json) := #[]) : Json × List (String × Json) :=
   match (checkpoint.getObjVal? "tokens").toOption.bind (·.getArr?.toOption) with
   | none => (checkpoint, [])
   | some tokens =>
-    let (depth, roots, used) := blockTree tokens
+    let marked := fun (t : Json) => match t.getObjValAs? String "s" with
+      | .ok text => dynamic.contains text
+      | .error _ => false
+    -- Addresses relative to their cells (`Relative`), so a heap that moved in one place dedups elsewhere.
+    let (tokens, relative) := match Relative.relativeTokens tokens with
+      | some r => (r, true)
+      | none => (tokens, false)
+    let (depth, roots, used) := blockTree tokens (if dynamic.isEmpty then fun _ => false else marked)
+    let used := used ++ extra.map fun b => (Journal.bodyHash (Json.arr b), b)
     let fresh := used.foldl (fun (acc : Array (String × Array Json)) (c, b) =>
       if w.blocks.contains c || acc.any (·.1 == c) then acc else acc.push (c, b)) #[]
     let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokens")
-    (Json.mkObj (fields ++ [("tokenTree", Json.mkObj [("depth", toJson depth), ("roots", Json.arr roots)])]),
+    (Json.mkObj (fields ++ [("tokenTree", Json.mkObj ([("depth", toJson depth), ("roots", Json.arr roots)] ++
+        (if relative then [("relative", toJson true)] else [])))]),
      if fresh.isEmpty then [] else
        [("blocks", Json.arr (fresh.map fun (c, b) => Json.mkObj [("cid", toJson c), ("items", Json.arr b)]))])
+
+/-- The CID a one-item block of `item` is journaled under. -/
+def blockCid (item : Json) : String := Journal.bodyHash (Json.arr #[item])
+
+/-- An interpretation as journaled: its `offers` (the same forms in every reading of one card)
+    and its `utterance` (already a leaf of the checkpoint, `cutBlocks`) are one-item blocks named
+    by CID (`offersBlock`, `utteranceBlock`), so a reading costs only what is new in it. The
+    blocks to journal with it are the second component. -/
+def compactInterpretation (i : Json) : Json × Array (Array Json) :=
+  match i.getObjVal? "offers", i.getObjValAs? String "utterance" with
+  | .ok offers, .ok utterance =>
+    let said := Json.mkObj [("s", toJson utterance)]
+    let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) => k != "offers" && k != "utterance"
+    (Json.mkObj (rest ++ [("offersBlock", toJson (blockCid offers)), ("utteranceBlock", toJson (blockCid said))]),
+     #[#[offers], #[said]])
+  | _, _ => (i, #[])
+
+/-- An interpretation with its `offers` and `utterance` restored from the world's blocks; one
+    journaled whole (before host7) is as it was. -/
+def expandInterpretation (w : World) (i : Json) : Option Json := do
+  let some cid := (i.getObjValAs? String "offersBlock").toOption | return i
+  let offers ← (w.blocks[cid]?).bind (·[0]?)
+  let utterance ← ((i.getObjValAs? String "utteranceBlock").toOption.bind (w.blocks[·]?)).bind (·[0]?)
+  let said ← (utterance.getObjValAs? String "s").toOption
+  let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) => k != "offersBlock" && k != "utteranceBlock"
+  return Json.mkObj (rest ++ [("offers", offers), ("utterance", toJson said)])
 
 /-- The blocks an entry carries, checked against their CIDs. -/
 def entryBlocks (entry : Json) : Except String (List (String × Array Json)) := do
@@ -922,6 +986,8 @@ partial def expandCheckpoint (w : World) (checkpoint : Json) : Except String Jso
       out := out ++ items
     expand (depth - 1) out
   let tokens ← expand (← tree.getObjValAs? Nat "depth") (← (← tree.getObjVal? "roots").getArr?)
+  let tokens ← if (tree.getObjValAs? Bool "relative").toOption == some true then Relative.absoluteTokens tokens
+    else pure tokens
   let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokenTree")
   return Json.mkObj (fields ++ [("tokens", Json.arr tokens)])
 

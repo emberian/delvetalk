@@ -17,9 +17,10 @@ Run tests with `python3 -W error -m unittest tests.test_X` (the whole set takes 
 
 ## 1. Module map
 
-Import order: Store, Journal, Law, Ops, TurnLoop, Snapshot, Session; `PackageSession.lean`
+Import order: Store, Journal, Law, Relative, Ops, TurnLoop, Snapshot, Session; `PackageSession.lean`
 imports Session and `PackageMain.lean` drives it.
 
+- **Relative.lean**: checkpoint tokens with heap addresses relative to their cells (5.34); imported by Ops.
 - **Store.lean** (263): `Limits` namespace (all numbers), `Law` (= `List (String x LawExpr)`),
   `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey`. Pure data.
 - **Journal.lean** (33): `bodyHash (body : Json) : String` (SHA-256 of `body.compress`; Lean orders
@@ -499,7 +500,7 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    not held by an object, this turn's creates, or a suspended turn's `absent`. Every creation of an id of that
    shape, named or minted, raises its parent's counter (`noteMinted`, at commit, world-create and replay);
    snapshots keep `minted`. A named `requireAbsent` behaves as before.
-25. **Checkpoint blocks (host6).** The kernel already collects before encoding (`Turn.conclude`:
+25. **Checkpoint blocks (host6; cut and addressed anew in 5.34).** The kernel already collects before encoding (`Turn.conclude`:
    `checkpoint = collect (settle state)`); what remained was the program's own terms in every checkpoint. A
    suspended entry's `checkpoint.tokens` is journaled as `tokenTree {depth, roots}` over content-defined blocks
    (`cutBlocks`: windowed FNV cut, leaves 32..1024 tokens, inner 4..64 names, at most 16 roots), each block a
@@ -581,6 +582,29 @@ End of a segment (`finishTurn`): `.suspend` -> a `suspended` entry; `.evaluation
    `outcome.root` when present (the creator at the version the turn read it) and adds `object` (the taken id): a second
    cistern reads `{class: requiredAbsence, root: {object: garden, version, cid}, object: garden/cistern}`. Tests:
    `test_hub` (the cistern pair).
+
+34. **Suspensions journal only what changed (host7, rehearsal run 6 finding 5).** Measured on the rehearsal's own journal
+   (foundation b530dbf's `rehearse.py`, 95 directory suspensions): before, 5.94 MB, median 51,858 B, ten of 150 to 160 KB.
+   What the bytes were: (a) one checkpoint leaf of about 32 KB that changed every time held a 27 KB token, the Garden's
+   source as the directory's `inspect` answered it, next to the turn's own cells; (b) the entry body (13 KB) carried the
+   interpretation's `offers` (9 KB, the same doors' forms every time) and the utterance three times; (c) the ten large
+   ones are each a principal's FIRST prose reading: the directory walks `greeted` to the speaker, so the speaker's place
+   decides how many list cells are materialized and every heap address after them moves; a later reading by a speaker
+   at a known place dedups. Changes: `cutBlocks` leaves are at most 256 tokens (`leafHigh`), a token of 256 bytes or more
+   is a leaf of its own (`leafBig`), and the tokens carrying the turn's argument texts and utterance are leaves of their
+   own (`compactCheckpoint … dynamic`); inner nodes cut at 2..16 names (every 4); the interpretation journals `offers` and
+   `utterance` as one-item blocks by CID (`offersBlock`, `utteranceBlock`; `compactInterpretation`,
+   `expandInterpretation`, and `interpretationOf w s` restores them; old entries carry them inline and read as before);
+   and checkpoint tokens are journaled with every heap address relative to the cell holding it
+   (`Host/Relative.lean`: decode with the kernel's `decodeState`, rename addresses zigzag-relative to the cell's index,
+   the control's and stack's to the heap size, re-encode; the writer checks the inverse reproduces the tokens and else
+   journals them plain; `tokenTree.relative: true`; `expandCheckpoint` inverts, and the checkpoint digest stays over the
+   kernel's tokens, so replay checks it as before). After: 1.57 MB, median 10,090 B, the ten first readings 42 to 50 KB.
+   Without relative addresses the median is 9,073 B but the first readings stay at 90 to 98 KB (1.93 MB): relative
+   addressing pays as the town grows. Old journals replay unchanged (any cut reassembles). Further cuts need the kernel:
+   a collector that orders cells so a walked list's materialized prefix does not renumber the rest. Synthetic gate:
+   `tests/test_suspension_size.py` (nine prose replies: one speaker median 6.7 KB, nine new speakers 24.9 KB; both were
+   about 64 KB).
 
 ## 6. Gotchas
 
@@ -689,7 +713,7 @@ quotes the old metarule message.
 lane/host7 (based on foundation 4068305) did, one commit each: the binding fills a REPL turn's Context (5.27);
 `world-check`, `library: <pin>` and `library-load` (5.28); `typeMismatch` carries `expected` (5.29);
 another object's reprogram or amendment is dry-run against its law in the turn (5.30); `world-arrive` (5.31); law readings in refusals (5.32);
-from rehearsal run 6: a `requiredAbsence` names its root (5.33).
+from rehearsal run 6: a `requiredAbsence` names its root (5.33); suspensions journal only what changed (5.34).
 Section 7's queue items 1 to 5 above are unchanged.
 
 What was wrong in the previous version of this file: section 7 queued snapshots, section 13 and the kernel batch

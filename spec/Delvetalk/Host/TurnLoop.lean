@@ -1156,7 +1156,11 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (some { cls, reason := some reason, object := some ctx.object, expected }) (onEnd := endedIfLate)
     return (w', turnReply w' r)
   | .error (.suspend sp si patience checkpoint interpretation post) =>
-    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson
+    let utterance := (interpretation.bind fun i => (i.getObjValAs? String "utterance").toOption).toList
+    let interpretation := interpretation.map compactInterpretation
+    let journaledCheckpoint := compactCheckpoint w checkpoint.toJson (dataTexts ctx.argument ++ utterance)
+      ((interpretation.map (·.2)).getD #[])
+    let interpretation := interpretation.map (·.1)
     let activity := Json.mkObj ([("object", toJson ctx.object), ("method", toJson ctx.method),
       ("argument", dataJson ctx.argument),
       ("checkpoint", journaledCheckpoint.1),
@@ -1677,8 +1681,9 @@ def policyJson (w : World) (id : String) (offers : Data) (utterance : String) : 
     | _ => (Json.null, w)
   | none => (Json.null, w)
 
-def interpretationOf (s : Json) : Option Json :=
-  (s.getObjVal? "outcome").toOption.bind fun o => (o.getObjVal? "interpretation").toOption
+/-- A suspension's interpretation, with what it journals by block restored (`expandInterpretation`). -/
+def interpretationOf (w : World) (s : Json) : Option Json :=
+  ((s.getObjVal? "outcome").toOption.bind fun o => (o.getObjVal? "interpretation").toOption).bind (expandInterpretation w)
 
 /-- `world-interpretations`: every `interpret` still waiting for a reply. The world returned
     carries only the compiled prompts it cached; nothing is journaled. -/
@@ -1687,7 +1692,7 @@ def interpretationsReply (w : World) : World × Json := Id.run do
   let mut pending : Array Json := #[]
   for s in w.suspended do
     let item : Option (String × String × String × Data × String) := do
-      let i ← interpretationOf s
+      let i ← interpretationOf w s
       let id ← (i.getObjValAs? String "id").toOption
       guard (settled w interpretationPrincipal id).isNone
       let deadline ← ((s.getObjVal? "outcome").toOption.bind (·.getObjValAs? Nat "deadline" |>.toOption))
@@ -1729,7 +1734,7 @@ def unclearVerdict (needs : List String) : Json :=
     grammar; an object whose Response cannot carry it hears `unclear`. A failed call is
     `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
-  let some i := interpretationOf s | throw "not an interpretation"
+  let some i := interpretationOf w s | throw "not an interpretation"
   let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
   let object ← act.getObjValAs? String "object"
   let suspendedMethod ← act.getObjValAs? String "method"
@@ -1792,7 +1797,7 @@ def interpretationOp (w : World) (j : Json) : Except String (World × Json) := d
   if replied.compress.utf8ByteSize > Limits.maxReplyBytes then throw "reply exceeds its byte capacity"
   let digest := Journal.bodyHash replied
   if let some r := retained w interpretationPrincipal id digest then return (w, r)
-  let some s := w.suspended.find? fun s => (interpretationOf s).bind (·.getObjValAs? String "id" |>.toOption) == some id
+  let some s := w.suspended.find? fun s => (interpretationOf w s).bind (·.getObjValAs? String "id" |>.toOption) == some id
     | throw s!"no pending interpretation {id}"
   let (w, verdict) ← interpretVerdict w s replied
   let (w', entry) := push w (identityKey interpretationPrincipal id)
