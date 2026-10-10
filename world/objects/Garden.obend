@@ -302,7 +302,7 @@ def understand(state: State, input: Card.Heard, context: Abi.Context, found: Hel
 # With no policy, prose the garden cannot place goes to the directory's reading (Card's
 # default), and the garden offers nothing.
 def unplaced(input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
-  if context.caller != "" then silent(found, context) else forwarding(input, context, found)
+  if Card.handsOn(input.text, context) == false then silent(found, context) else forwarding(input, context, found)
 def forwarding(input: Card.Heard, context: Abi.Context, found: Held) -> Activity<Plan, Response, Reply>:
   match perform(Card.forwarding(input.text, input.post, context)):
     case _: silent(found, context)

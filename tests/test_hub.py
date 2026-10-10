@@ -280,6 +280,33 @@ class HandedToTheDirectory(test_chain.Chain):
         self.assertEqual(submitted, [(KIMI, lines[KIMI]), (GLM, lines[GLM])])
 
 
+class HandedOnlyWhenNamed(test_chain.Chain):
+    """Rehearsal run 7: bells handed every conversational reply to the directory's model
+    (127 of 132 came back "not addressed"). A card hands prose on only when it names a door
+    word, a town action or a `name: value` line."""
+    test_ring_then_open_then_light = None
+    test_a_tick_cycle_ends_in_a_budget_exhausted_refusal = None
+    policy = test_policy.PolicyObject.policy
+
+    def test_chatter_under_a_bell_costs_nothing_and_an_anthology_line_is_handed_on(self):
+        self.policy()
+        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
+                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
+        self.assertEqual(r["status"], "created", r)
+        silver = {"tag": "variant", "label": "silver", "payload": record()}
+        self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
+        say = lambda text, ident: self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident)
+        chatter = say("What a lovely evening it is; thank you for this.", "c1")
+        self.assertEqual((chatter["status"], chatter["result"]["label"], chatter.get("offers", [])), ("admitted", "silent", []), chatter)
+        self.deliver_all()
+        self.assertEqual(self.host.send(op="world-pending").get("count", 0), 0)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        line = say("anthology: a line about the merchant's hat", "c2")
+        self.assertEqual((line["status"], line["result"]["label"], line.get("offers", [])), ("admitted", "silent", []), line)
+        self.deliver_all()
+        self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 1)
+
+
 class AnthologyReachable(test_chain.Chain):
     """Run 5, finding 4: the anthology has a door, forms (submit {line}; admit {number}, the
     owner's) and receive, so a submit line or the model's submit spell reaches it."""

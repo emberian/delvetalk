@@ -96,7 +96,9 @@ the library).
   post}; objects route with `Card.routeHeard(input, …)`) is sent by Card's default
   (`Card.forwarded`; Garden without a policy too) to `directory` (`Card.directory`, the
   genesis id) as `receive {text, post}` under the speaker; the card still offers nothing.
-  A turn some object started forwards nothing. The directory reads a handed-on reply with
+  A turn some object started forwards nothing, and only prose that names a door word, a
+  town action or a `name: value` line is handed on (`Card.handsOn`, a fixed word list in
+  Card.obend: keep it in step with the directory's doors). The directory reads a handed-on reply with
   no menu, its field lines as usual, and with a policy the model; the owner's handed-on
   replies are read too. A send, not a call: a call's result must fit the caller's Response
   R, which the directory's Heard does not.
