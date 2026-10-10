@@ -37,7 +37,7 @@ class Wakes(Chain):
         self.assertEqual(r["status"], "created", r)
 
     def env(self):
-        self.create("env/" + OWNER, "Env", record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()), by=OWNER)
+        self.create("env/" + OWNER, "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()), by=OWNER)
         return "env/" + OWNER
 
     def wake(self):
@@ -67,7 +67,7 @@ class Wakes(Chain):
         first = self.turn(env, "publish", record(event=event(text="one")), principal=OWNER)
         self.assertEqual(self.label_of(first), "done")
         self.turn(env, "publish", record(event=event(kind="reply", text="two", reply_to="at://x/p/0")), principal=OWNER)
-        buffer = items(get(self.state(env), "buffer"))
+        buffer = rows(get(self.state(env), "buffer"))
         self.assertEqual([get(e, "text")["value"] for e in buffer], ["one", "two"])
         heights = [int(get(e, "at")["value"]) for e in buffer]
         self.assertLess(heights[0], heights[1])          # `at` is the host's height, not the client's 0
@@ -88,13 +88,13 @@ class Wakes(Chain):
     def test_an_env_is_named_by_its_did_in_a_spell_and_lives_at_env_slash_did(self):
         env = self.env()
         self.turn(env, "publish", record(event=event(text="one")), principal=OWNER)
-        at = int(get(items(get(self.state(env), "buffer"))[0], "at")["value"])
+        at = int(get(rows(get(self.state(env), "buffer"))[0], "at")["value"])
         r = self.turn(env, "receive", heard("delvetalk env/%s seen\nat: %d" % (OWNER, at)), principal=OWNER)
         self.assertEqual(self.label_of(r), "done")
         self.assertEqual(get(self.state(env), "seen"), nat(at))
         self.assertIn("    delvetalk env/did:plc:inkling seen\n", self.turn(env, "receive", heard(""), principal=OTHER)["offers"][0]["text"])
         # An env made at any other id takes nothing in.
-        self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()), by=OWNER)
+        self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()), by=OWNER)
         r = self.turn("env/elsewhere", "publish", record(event=event()), principal=OWNER)
         self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("An env lives at env/did:plc:inkling"))
         self.assertEqual(self.version("env/elsewhere"), 0)
@@ -109,7 +109,7 @@ class Wakes(Chain):
     def test_the_opener_creates_an_env_for_its_owner_who_alone_may_amend_it(self):
         """Rehearsal finding 10: genesis seeds each principal's Env as the world's opener."""
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="ember")["status"], "opened")
-        seed = record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil())
+        seed = record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil())
         create = lambda by, ident: self.host.send(op="world-create", principal=by, identity=ident, object="env/" + OWNER,
                                                   modules=closure("Env"), entry="initial", seed=seed, owner=OWNER)
         stranger = create("mallory", "mk-m")
@@ -153,7 +153,7 @@ class Wakes(Chain):
 
     def test_an_env_installed_by_someone_else_is_refused_for_want_of_an_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-x", object="env/x", modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(OWNER), buffer=nil(), seen=nat(0), subscribers=nil()))
+                           entry="initial", seed=record(owner=label(OWNER), buffer=relation(), seen=nat(0), subscribers=nil()))
         self.assertEqual(r["status"], "error", r)
         self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 

@@ -86,15 +86,15 @@ class ObjectsWriteByItem(TurnWorld):
         text = json.dumps(reply["receipt"]["outcome"]["writes"])
         return {l for l in ("removeItem", "amendItem", "remove", "amend", "insert", "upsert", "retract") if '"label": "%s"' % l in text}
 
-    def test_a_place_removes_who_leaves_by_item(self):
+    def test_a_place_retracts_who_leaves_by_key(self):
         from tests.test_chain import Chain
         from tests.test_places import place_seed
         Chain.make(self, "porch", closure("Place"), place_seed("Porch", present=["glm", "kimik3", "gemini"]))
         r = self.turn("porch", "leave", principal="kimik3")
         self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.labels(r), {"removeItem"})
+        self.assertEqual(self.labels(r), {"retract", "insert"})   # who left, and the trace
         state = self.host.send(op="world-view", principal="ember", object="porch")["state"]
-        self.assertEqual([get(p, "object")["value"] for p in items(get(state, "present"))], ["glm", "gemini"])
+        self.assertEqual([get(p, "object")["value"] for p in rows(get(state, "present"))], ["glm", "gemini"])
 
     def test_a_tide_resubscription_upserts_the_subscribers_own_row(self):
         from tests.test_chain import nil as empty

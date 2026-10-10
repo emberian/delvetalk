@@ -7,6 +7,7 @@ end to end.
 """
 import unittest
 
+from tests.test_turn_world import relation
 from tests.test_chain import Chain, boolean, nil, reference
 from tests.test_objects import check, closure, compile_job, computation, row_names
 from tests.test_turn_world import label, nat, record
@@ -21,8 +22,13 @@ def listing(items):
 def place_seed(name, exits=(), present=(), things=(), owner="ember"):
     return record(owner=label(owner), name=label(name), description=label("about " + name),
                   exits=listing([record(label=label(l), to=reference(t)) for l, t in exits]),
-                  present=listing([reference(p) for p in present]),
-                  things=listing([reference(t) for t in things]))
+                  present=relation(*[reference(p) for p in keyed(present)]),
+                  things=relation(*[reference(t) for t in keyed(things)]))
+
+
+def keyed(ids):
+    """Object ids in the order of their key {object}: canonical text order, length then bytes."""
+    return sorted(ids, key=lambda i: (len(i.encode()), i.encode()))
 
 
 def thing_seed(name, holder="", location="", owner="ember"):
@@ -34,7 +40,8 @@ def avatar_seed(handle, at="", holding=()):
 
 
 def names(wire):
-    return [[f["value"]["value"] for f in item["fields"] if f["name"] == "object"][0] for item in wire["items"]]
+    rows = wire["payload"]["fields"][0]["value"]["items"] if wire.get("tag") == "variant" else wire["items"]
+    return [[f["value"]["value"] for f in item["fields"] if f["name"] == "object"][0] for item in rows]
 
 
 class Types(unittest.TestCase):
@@ -395,9 +402,9 @@ class Talk(Chain):
     def test_say_emote_and_whisper(self):
         said = self.say("delvetalk porch say / line: the lamp is lit", "glm")
         self.assertEqual(said["result"]["label"], "done", said)
-        # The newest arrival first; each avatar's principal gets the line.
+        # In key order (who is here is keyed by object id); each avatar's principal gets the line.
         offers = [(o["to"], o["text"]) for o in said["receipt"]["offers"]]
-        self.assertEqual(offers, [("kimik3", "glm: the lamp is lit\n"), ("glm", "glm: the lamp is lit\n")])
+        self.assertEqual(offers, [("glm", "glm: the lamp is lit\n"), ("kimik3", "glm: the lamp is lit\n")])
         emoted = self.say("delvetalk porch emote / line: waves", "kimik3")
         self.assertEqual([o["text"] for o in emoted["receipt"]["offers"]], ["* kimik3 waves\n", "* kimik3 waves\n"])
         whispered = self.say("delvetalk porch whisper / to: kimik3 / line: psst", "glm")
