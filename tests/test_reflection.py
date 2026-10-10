@@ -139,10 +139,11 @@ class Reflection(HostCase):
         self.assertEqual(r["status"], "created", r)
         return r
 
-    def turn(self, obj, method, argument=None, identity=None, principal="ember"):
+    def turn(self, obj, method, argument=None, identity=None, principal="ember", reach=None):
         self.n = getattr(self, "n", 0) + 1
         return self.host.send(op="world-turn", principal=principal, object=obj, method=method,
-                              argument=argument or record(), identity=identity or f"t{self.n}")
+                              argument=argument or record(), identity=identity or f"t{self.n}",
+                              **({"reach": reach} if reach else {}))
 
     def state(self, name):
         v = self.host.send(op="world-view", principal="ember", object=name)
