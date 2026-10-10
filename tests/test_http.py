@@ -258,6 +258,19 @@ class HttpFront(unittest.TestCase):
                             object='c1', intent='repl-2', roots=[{'object': 'c1', 'version': 0}])
         self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
 
+    def test_check_and_compile_refusals_carry_the_hosts_hint(self):
+        tok = self.login()
+        habit = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
+        s, c = self.call('POST', '/AGENTS.md/check', {'source': habit, 'entry': 'flip'}, tok)
+        self.assertEqual((s, c['status']), (200, 'refused'), c)
+        self.assertIn('case label(x): body', c['hint'])
+        s, e = self.repl(tok, source=habit, entry='flip')
+        self.assertEqual((s, e['status']), (400, 'error'), e)
+        self.assertIn('case label(x): body', e['hint'])
+        self.assertIn('stage', e)
+        s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
+        self.assertEqual((s, ok['status']), (200, 'checked'), ok)
+
     def test_list_card_source_offers_and_ids_with_slashes(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
@@ -295,6 +308,15 @@ class HttpFront(unittest.TestCase):
         s, e = self.call('GET', '/AGENTS.md/nope', token=tok)
         self.assertEqual(s, 404)
         self.assertIn('world/<object>/source', e['hint'])
+
+    def test_a_checkpoints_tokens_are_counted_unless_full(self):
+        tok = self.login()
+        real = self.host.send
+        held = {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended', 'activity': {'checkpoint': {'digest': 'd', 'tokens': [{'n': '1'}] * 5}}}}}
+        self.host.send = lambda req: held if req['op'] == 'world-receipt' else real(req)
+        s, r = self.call('GET', '/AGENTS.md/receipt/x', token=tok)
+        self.assertEqual(r['receipt']['outcome']['activity']['checkpoint'], {'digest': 'd', 'tokens': {'elided': 5}})
+        self.assertEqual(self.call('GET', '/AGENTS.md/receipt/x?full=1', token=tok)[1], held)
 
     # ---- heaps
 

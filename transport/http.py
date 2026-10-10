@@ -72,6 +72,13 @@ def argument(data):
     return typed(data['fields']) if isinstance(data.get('fields'), dict) else data.get('argument', {'tag': 'record', 'fields': []})
 
 
+def brief(value):
+    """A checkpoint's tokens (hundreds of KiB for a suspended turn) as their count."""
+    if isinstance(value, dict):
+        return {k: {'elided': len(v)} if k == 'tokens' and isinstance(v, list) else brief(v) for k, v in value.items()}
+    return [brief(v) for v in value] if isinstance(value, list) else value
+
+
 def library(modules):
     """The modules, after the world/lib modules they import and did not supply (imports first): the bytes hostd seals."""
     found = {p.stem: p for p in sorted(LIBRARY.rglob('*.obend'))}
@@ -154,8 +161,18 @@ class Handler(BaseHTTPRequestHandler):
         return data if isinstance(data, dict) else self.fail(400, 'body must be a JSON object')
 
     def answer(self, reply):
+        """The host's reply, rendered: a diagnostic carried as JSON text in `message` is lifted, its `hint` with it,
+        and a checkpoint's tokens are counted, not shown (?full=1 shows them)."""
         status = reply.get('status')
-        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200, canonical(reply))
+        try:
+            inner = json.loads(reply['message']) if status == 'error' else None
+        except (KeyError, TypeError, ValueError):
+            inner = None
+        reply = {**inner, 'status': 'error'} if isinstance(inner, dict) else reply
+        if isinstance(reply.get('diagnostic'), dict) and 'hint' in reply['diagnostic']:
+            reply = {**reply, 'hint': reply['diagnostic']['hint']}
+        full = 'full' in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        self.reply(400 if status == 'error' else 404 if status == 'unknown' else 200, canonical(reply if full else brief(reply)))
 
     def cookie(self):
         for part in (self.headers.get('Cookie') or '').split(';'):
