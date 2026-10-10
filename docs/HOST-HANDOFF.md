@@ -447,6 +447,20 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
    `HandedToTheDirectory`, `AnthologyReachable` (the Directory's call of the anthology's `receive`),
    `tests/test_places.py` `Scoped` (an avatar's send to a counter); their `expectedFailure`s are gone.
 
+64. **A proposal names its card (host10; root decision).** A message-dialect object's interpretation may
+   offer forms of several cards (the Directory offers its doors'). The model's spell is fitted against
+   the offered forms (`spellVerdict`, which now returns the form's `card`) and the proposal checked
+   against the object that card names (an id, else `resolveCard` for the asking principal): the
+   method must be one it offers (5.62) and the argument fit its input. `Interpreted.proposal` gains
+   `object: String`; whether the call site's type has it is decided where the kernel reports that type,
+   at the `interpret` yield (`proposalNamesObject`), and journaled as the interpretation's `named: true`.
+   A named verdict carries `object` and resumes `proposal {object, method, argument}`; an unnamed one
+   is the old `proposal {method, argument}` and only for the asking object itself (another card is
+   `unclear`). A JSON proposal `{method, argument}` is for the asking object. Test:
+   `tests/test_interpret_object.py` (a hub whose World copy carries the new line proposes `g plant`
+   and calls it; a form naming a method its card does not offer is `unclear`). The World.obend line
+   and the Directory's `world.call::<Data>({object, method, argument})` are the objects lane's.
+
 ## 6. Gotchas
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
