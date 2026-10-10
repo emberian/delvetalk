@@ -1030,6 +1030,9 @@ def markHelpers (methods : Json) (exposed : List String) : Json :=
     match (m.getObjValAs? String "name").toOption with
     | some name =>
       if exposed.contains name then m
+      -- `~name` in `methods()`: public, but offered to nobody (no usage, form, action or spell),
+      -- as a method a bridge or another object calls.
+      else if exposed.contains ("~" ++ name) then m.setObjVal! "unoffered" (toJson true)
       else if conventionalMethods.contains name then m.setObjVal! "protocol" (toJson true)
       else m.setObjVal! "helper" (toJson true)
     | none => m)
@@ -1038,6 +1041,7 @@ def markHelpers (methods : Json) (exposed : List String) : Json :=
 def declaredRows (methods : Json) : List String :=
   ((methods.getArr?.toOption).getD #[]).toList.filterMap fun m =>
     if (m.getObjValAs? Bool "helper").toOption == some true || (m.getObjValAs? Bool "protocol").toOption == some true then none
+    else if (m.getObjValAs? Bool "unoffered").toOption == some true then ("~" ++ ·) <$> (m.getObjValAs? String "name").toOption
     else (m.getObjValAs? String "name").toOption
 
 /-- Is a method table row a helper (not callable from outside the object)? -/
@@ -1045,12 +1049,18 @@ def isHelperRow (m : Json) : Bool := (m.getObjValAs? Bool "helper").toOption == 
 
 /-- Is a method table row an action a card offers as a form: declared public, or `receive`? -/
 def isActionRow (m : Json) : Bool :=
-  !isHelperRow m && ((m.getObjValAs? Bool "protocol").toOption != some true ||
+  !isHelperRow m && (m.getObjValAs? Bool "unoffered").toOption != some true && ((m.getObjValAs? Bool "protocol").toOption != some true ||
     (m.getObjValAs? String "name").toOption == some "receive")
 
 /-- The rows of a method table a turn, a call, a send or a delivery may name. -/
 def publicRows (methods : Json) : Json :=
   Json.arr (((methods.getArr?.toOption).getD #[]).filter (!isHelperRow ·))
+
+/-- The public rows a reader is shown (`world-inspect`, `world-objects {methods}`): not the
+    unoffered ones (`~name`), which stay callable. -/
+def offeredRows (methods : Json) : Json :=
+  Json.arr (((methods.getArr?.toOption).getD #[]).filter fun m =>
+    !isHelperRow m && (m.getObjValAs? Bool "unoffered").toOption != some true)
 
 /-- Does `o` offer `method` to a turn, a call, a send or a delivery: a row of its method table not
     marked a helper? A definition that is no method (the State not first, or more than one input)
@@ -3016,7 +3026,7 @@ def objectsOp (w : World) (j : Json) : Except String Json := do
   let listed := [("status", toJson "listed"), ("ids", toJson ids), ("more", toJson more)]
   if !withMethods then return Json.mkObj listed
   -- The turnable method names (those that take a context) of each listed object.
-  let names := fun (o : Object) => (((publicRows o.methods).getArr?.toOption).getD #[]).toList.filterMap fun m =>
+  let names := fun (o : Object) => (((offeredRows o.methods).getArr?.toOption).getD #[]).toList.filterMap fun m =>
     if (m.getObjValAs? Bool "context").toOption == some true then (m.getObjValAs? String "name").toOption else none
   return Json.mkObj (listed ++ [("methods", Json.mkObj (ids.filterMap fun id =>
     (w.objects[id]?).map fun o => (id, toJson (names o))))])
