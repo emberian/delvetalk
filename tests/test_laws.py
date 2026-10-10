@@ -103,9 +103,9 @@ def wake_variant():
     """Wake whose law text admits any ordinary write and whose watch skips the owner check."""
     with open("world/objects/Wake.obend") as handle:
         source = handle.read()
-    source = source.replace("law owner: new.owner == request.subject", "law owner: request.kind == 0 or request.subject == new.owner", 1)
-    source = source.replace("if context.principal != state.owner then then(notOwner(state)) else if Lists.length::<Trigger>(state.triggers) < 32n",
-                            "if Lists.length::<Trigger>(state.triggers) < 32n", 1)
+    source = source.replace('law owner "only its owner writes it": request.subject == new.owner', "law owner: request.kind == 0 or request.subject == new.owner", 1)
+    source = source.replace("if context.principal != state.owner then then(notOwner(state)) else if Lists.length(state.triggers) < 32n",
+                            "if Lists.length(state.triggers) < 32n", 1)
     return closure("Wake", override={"Wake": source})
 
 
