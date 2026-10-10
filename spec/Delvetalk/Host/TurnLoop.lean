@@ -807,24 +807,33 @@ def spellArgumentFor (w : World) (o : Object) (method : String) (entries : List 
 def bindingsData (bs : List Spell.Binding) : Data :=
   listData (bs.map fun b => .record [("name", .label b.name), ("value", .label b.value)])
 
-/-- `receive`'s argument with the bare field lines added when the method declares `fields`. -/
+/-- A misfit spell as a card's `receive` takes it (docs/FLEX.md §4 host 4): `{clause, reason}`, both
+    "" when the reply was no misfit. -/
+def misfitData (clause reason : String) : Data := .record [("clause", .label clause), ("reason", .label reason)]
+
+/-- `receive`'s argument with what the host fills, as the method declares it: the bare field lines as
+    `fields`, then also `misfit` (`misfitOnly`: only the shape with `misfit`). -/
+def heardArgument (w : World) (o : Object) (argument : Data) (fields : List Spell.Binding)
+    (misfit : Data := misfitData "" "") (misfitOnly := false) : Option Data :=
+  match argument, ((compiledMethod o "receive").run.run (scratchState w)).1 with
+  | .record fs, .ok c =>
+    let base := fs.filter (fun (k, _) => k != "fields" && k != "misfit") ++ [("fields", bindingsData fields)]
+    let shapes := (if misfitOnly then [] else [Data.record base]) ++ [Data.record (base ++ [("misfit", misfit)])]
+    shapes.find? (argumentFits c)
+  | _, _ => none
+
+/-- `receive`'s argument with the bare field lines added when the method declares `fields` (and an
+    empty `misfit` when it declares that too). -/
 def withFields (w : World) (o : Object) (argument : Data) (fields : List Spell.Binding) : Data :=
-  match argument with
-  | .record fs =>
-    let candidate := Data.record (fs.filter (·.1 != "fields") ++ [("fields", bindingsData fields)])
-    match ((compiledMethod o "receive").run.run (scratchState w)).1 with
-    | .ok c => if argumentFits c candidate then candidate else argument
-    | .error _ => argument
-  | other => other
+  (heardArgument w o argument fields).getD argument
 
 /-- Does a `receive` argument fit the card's own `receive` input, with or without the `fields` the
     host fills? A reply carrying another field (a forged `who`) is not read as a spell: `receive`
     runs as asked and its type refuses it (`typeMismatch`), as any other method's would. -/
 def heardFits (w : World) (o : Object) (argument : Data) : Bool :=
-  match argument, ((compiledMethod o "receive").run.run (scratchState w)).1 with
-  | .record fs, .ok c =>
-    argumentFits c argument || argumentFits c (.record (fs.filter (·.1 != "fields") ++ [("fields", bindingsData [])]))
-  | _, _ => false
+  match ((compiledMethod o "receive").run.run (scratchState w)).1 with
+  | .ok c => argumentFits c argument || (heardArgument w o argument []).isSome
+  | .error _ => false
 
 /-- `formsOf` outside a turn, without the package's `views()` entries: a derived view is read
     (`viewDerived`), not cast. -/
@@ -2179,6 +2188,10 @@ def reachOf (w : World) (req : TurnRequest) : String :=
     | .spell .. => "spell"
     | _ => req.reach
 
+/-- The misfits a card's `receive` may take instead of a refusal: what hob can read past. A duplicate
+    field, an unclosed block, `fixed` and the host spells' own stay refusals: their hint is the fix. -/
+def misfitClauses : List String := ["unknownField", "noAction", "badValue", "otherCard"]
+
 /-- A direct turn's `receive` read as a spell (`routeSpell`); `none` when the host leaves the turn as asked. -/
 def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) :=
   match routeSpell w req.principal req.object req.method req.argument true (req.reach == "direct" || req.reach == "reply") with
@@ -2192,7 +2205,15 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
   | .usage object text =>
     some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object),
       ("text", toJson (hobTail w req.principal text hobUsageLine))]))
-  | .refuse object clause reason hint => some (refuseSpell w req object clause reason (hobTail w req.principal hint hobHintLine))
+  | .refuse object clause reason hint =>
+    -- A misfit a card's `receive` takes goes to it with the clause, for the card to ask hob (docs/FLEX.md
+    -- §4 host 4); a call's or a delivery's misfit still refuses (5.63).
+    match (if misfitClauses.contains clause then w.objects[object]? else none).bind fun o =>
+        heardArgument w o req.argument (Spell.bare (heardText req.method req.argument)) (misfitData clause reason) true with
+    | some argument =>
+      some (runTurnWith w { req with object, method := "receive", argument, post := (heardPost req.method req.argument).getD "" }
+        { via := lentVia w req.principal object "receive" })
+    | none => some (refuseSpell w req object clause reason (hobTail w req.principal hint hobHintLine))
   | .host object action fields => some (hostSpell w req object action fields)
 
 /-- A direct turn; `env` and `wake` name the principal's own (`resolveCard`), refused

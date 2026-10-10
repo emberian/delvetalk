@@ -331,6 +331,60 @@ def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activ
 """).replace("import ./World.obend as World", "import ./Form.obend as Form\nimport ./World.obend as World")
 
 
+HEARING = GARDEN.replace(
+    "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:\n"
+    "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: input.text}), fields: Plans.Edit.set({value: Lists.length::<Binding>(input.fields)})}))",
+    "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>, misfit: {clause: String, reason: String}}, context: Abi.Context) -> Activity<Nat>:\n"
+    "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: textConcat(input.misfit.clause, textConcat(\"|\", input.misfit.reason))}), fields: Plans.Edit.set({value: Lists.length::<Binding>(input.fields)})}))")
+
+
+class Misfits(Reflection):
+    """docs/FLEX.md §4 host 4: a direct turn's misfit spell (unknownField, noAction, badValue,
+    otherCard) goes to the card's `receive` with `fields` and `misfit {clause, reason}` when that
+    `receive` takes a misfit, so the card can ask hob; a card whose `receive` takes none refuses as
+    before, and a duplicate field or an unclosed block is refused whatever the card takes."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.assertNotEqual(HEARING, GARDEN)
+        for name, source in (("garden", HEARING), ("plain", GARDEN)):
+            r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
+                               modules=[{"name": "Garden", "source": declared(source)}], entry="initial", seed=record())
+            self.assertEqual(r["status"], "created", r)
+
+    def say(self, text, card="garden", identity=None):
+        return self.turn(card, "receive", record(text=label(text), post=label("")), principal="glm", identity=identity)
+
+    def heard(self, card="garden"):
+        return {f["name"]: f["value"] for f in self.state(card)["fields"]}["heard"]["value"]
+
+    def test_the_four_misfits_reach_receive_with_the_clause_and_reason(self):
+        cases = [("delvetalk garden plant\ncolour: gold\nseed: fern", "badValue|colour is one of: amber, violet, silver"),
+                 ("delvetalk garden plant\ncadence: daily", "unknownField|No field cadence in this spell; it takes colour, seed."),
+                 ("delvetalk garden rain\ncard: garden/bell/1", "noAction|garden has no spell rain; it has these:"),
+                 ("delvetalk nowhere plant", "otherCard|There is no card nowhere; the directory lists the doors.")]
+        for i, (text, heard) in enumerate(cases):
+            r = self.say(text, identity="m%d" % i)
+            self.assertEqual((r["status"], r["result"]), ("admitted", nat(2)), r)
+            self.assertEqual(self.heard(), heard, text)
+            # The field lines go with it (`card: …` on the rain, `cadence: …` on the subscribe).
+            fields = {f["name"]: f["value"] for f in self.state("garden")["fields"]}["fields"]
+            self.assertEqual(fields, nat(text.count(": ")), text)
+        # A spell that fits still runs its method, and prose still reaches receive with no misfit.
+        self.assertEqual(self.say("delvetalk garden plant\ncolour: amber\nseed: moss")["result"], nat(1))
+        self.say("lovely evening")
+        self.assertEqual(self.heard(), "|")
+
+    def test_a_card_that_takes_no_misfit_and_the_strict_clauses_still_refuse(self):
+        r = self.say("delvetalk plain water", card="plain")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["clause"]), ("refused", "noAction"), r)
+        for i, (text, clause) in enumerate((("delvetalk garden plant\ncolour: amber\ncolour: amber\nseed: x", "duplicateField"),
+                                            ("delvetalk garden plant\nseed: <<END\nfern\n", "unclosedBlock"))):
+            r = self.say(text, identity="s%d" % i)
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["clause"]), ("refused", clause), r)
+
+
 class Interpreted(Reflection):
     """The model's text fitted as a spell against the offered forms (WHOLENESS §2, "Interpretation"):
     a fitting spell is the form's proposal, a misfit or a spell missing fields is `unclear` naming why,
