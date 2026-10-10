@@ -444,13 +444,13 @@ def localStrings (d : Dictionary) (plain : Tokens) : Array String :=
 
 /-- `plain` with its strings interned: the edition, the strings the dictionary does not
 hold, then the tokens with every string a reference into the dictionary's and those. -/
-def internAll (d : Dictionary) (plain : Tokens) : Tokens :=
+def internAll (d : Dictionary) (plain : Tokens) (edition : String := checkpointEditionV2) : Tokens :=
   let locals := localStrings d plain
   let table := d.strings ++ locals
   let localIndex : Std.HashMap String Nat :=
     locals.foldl (fun (m, i) x => (m.insert x i, i + 1)) ({}, d.strings.size) |>.1
   let find := fun (x : String) => (d.stringHint[x]?).orElse fun _ => localIndex[x]?
-  .text checkpointEditionV2 :: .nat locals.size :: (locals.toList.map .text ++ plain.map (internString table find))
+  .text edition :: .nat locals.size :: (locals.toList.map .text ++ plain.map (internString table find))
 
 /-- A v2 checkpoint. -/
 def encodeStateV2 (d : Dictionary) (s : State) : Tokens := internAll d (encodePlainV2 d s)
@@ -463,24 +463,111 @@ def decodePlainV2 (terms : Array Term) (nameLists : Array (List String)) (plain 
     decodeBodyV2 terms envs.toArray nameLists (plain.length + 1) rest
   | _ => none
 
-/-- Decode a v2 checkpoint against the program's terms, strings and name lists. -/
-def decodeStateV2 (terms : Array Term) (strings : Array String) (nameLists : Array (List String))
-    (tokens : Tokens) : Option State :=
+/-- A checkpoint's plain tokens: the edition checked, its strings resolved. -/
+def decodeStrings (edition : String) (strings : Array String) (tokens : Tokens) : Option Tokens :=
   match tokens with
-  | .text edition :: .nat count :: rest => do
-    if edition != checkpointEditionV2 then none
+  | .text e :: .nat count :: rest => do
+    if e != edition then none
     let locals ← (rest.take count).mapM fun t => match t with
       | .text x => some x
       | _ => none
     if locals.length != count then none
-    decodePlainV2 terms nameLists ((rest.drop count).map (resolveString (strings ++ locals.toArray)))
+    some ((rest.drop count).map (resolveString (strings ++ locals.toArray)))
   | _ => none
 
-/-- Decode a checkpoint of either edition: v2 against the program's dictionary. -/
+/-- Decode a v2 checkpoint against the program's terms, strings and name lists. -/
+def decodeStateV2 (terms : Array Term) (strings : Array String) (nameLists : Array (List String))
+    (tokens : Tokens) : Option State :=
+  (decodeStrings checkpointEditionV2 strings tokens).bind (decodePlainV2 terms nameLists)
+
+/-! ## v3: addresses relative to their holders
+
+A checkpoint's cells are numbered by the collector's canonical traversal, so a cell keeps
+its number only until a turn makes the part before it longer; then every later absolute
+address moves, and a journal's blocks stop matching between suspensions. v3 writes every
+address a cell holds relative to that cell's own number, and those the control and stack
+hold relative to the heap's end (`relativeState`, inverted by `absoluteState`), then
+encodes as v2: a region that moved as a whole encodes identically. -/
+
+def checkpointEditionV3 : String := "dregg.objective-bend.checkpoint.v3"
+
+/-- Address `a` seen from `i`, zigzagged: 0, 2, 4, … at or before `i`; 1, 3, … after. -/
+def zigzagFrom (i a : Nat) : Nat := if a ≤ i then 2 * (i - a) else 2 * (a - i) - 1
+def unzigzagFrom (i r : Nat) : Nat := if r % 2 == 0 then i - r / 2 else i + (r + 1) / 2
+
+/-- An address as its holder writes it: relative to the holder (odd) when that is the
+shorter, else absolute (even). The skeleton the collector numbers first (the knot, the
+state) stays absolute from anywhere, so it does not move when data after it grows; data
+pointing at its neighbours is relative, so a region that moved as a whole stays the same. -/
+def toRelative (i a : Nat) : Nat := if zigzagFrom i a < a then 2 * zigzagFrom i a + 1 else 2 * a
+def ofRelative (i r : Nat) : Nat := if r % 2 == 1 then unzigzagFrom i (r / 2) else r / 2
+
+section
+variable (f : Address → Address)
+
+def mapValueAddresses : RuntimeValue → RuntimeValue
+  | .closure body environment => .closure body (environment.map f)
+  | .record fields => .record (fields.map fun (n, a) => (n, f a))
+  | .specification m e => .specification (f m) (f e)
+  | .prototype sp t => .prototype (f sp) (f t)
+  | .variant l p => .variant l (f p)
+  | other => other
+
+def mapCellAddresses : Cell → Cell
+  | .suspended c => .suspended { c with environment := c.environment.map f }
+  | .evaluating c => .evaluating { c with environment := c.environment.map f }
+  | .cached c v => .cached { c with environment := c.environment.map f } (mapValueAddresses f v)
+  | .native d => .native d
+  | .nativeCached d v => .nativeCached d (mapValueAddresses f v)
+
+def mapFrameAddresses : Frame → Frame
+  | .argument t e => .argument t (e.map f)
+  | .update a => .update (f a)
+  | .extend fs e => .extend fs (e.map f)
+  | .condition z sb e => .condition z sb (e.map f)
+  | .binaryLeft p rt e => .binaryLeft p rt (e.map f)
+  | .binaryRight p v => .binaryRight p (mapValueAddresses f v)
+  | .case arms e => .case arms (e.map f)
+  | .ifBool t u e => .ifBool t u (e.map f)
+  | .joinSeparator l e => .joinSeparator l (e.map f)
+  | .joinHead sep acc first tail => .joinHead sep acc first (f tail)
+  | other => other
+
+def mapControlAddresses : Control → Control
+  | .evaluate t e => .evaluate t (e.map f)
+  | .enter a => .enter (f a)
+  | .blackhole a => .blackhole (f a)
+  | .returned v => .returned (mapValueAddresses f v)
+  | .complete v => .complete (mapValueAddresses f v)
+  | .yielded a => .yielded (f a)
+  | other => other
+end
+
+/-- Rename every address: a cell's by its own index, the control's and stack's by the
+heap's size. -/
+def mapStateAddresses (g : Nat → Address → Address) (s : State) : State :=
+  ⟨s.heap.mapIdx fun i c => mapCellAddresses (g i) c, mapControlAddresses (g s.heap.size) s.control,
+   s.stack.map (mapFrameAddresses (g s.heap.size))⟩
+
+def relativeState (s : State) : State := mapStateAddresses toRelative s
+def absoluteState (s : State) : State := mapStateAddresses ofRelative s
+
+/-- A v3 checkpoint. -/
+def encodeStateV3 (d : Dictionary) (s : State) : Tokens :=
+  internAll d (encodePlainV2 d (relativeState s)) checkpointEditionV3
+
+/-- Decode a v3 checkpoint. -/
+def decodeStateV3 (terms : Array Term) (strings : Array String) (nameLists : Array (List String))
+    (tokens : Tokens) : Option State :=
+  ((decodeStrings checkpointEditionV3 strings tokens).bind (decodePlainV2 terms nameLists)).map absoluteState
+
+/-- Decode a checkpoint of any edition: v2 and v3 against the program's dictionary. -/
 def decodeStateAny (d : Dictionary) (tokens : Tokens) : Option State :=
   match tokens with
-  | .text edition :: _ => if edition == checkpointEditionV2 then decodeStateV2 d.terms d.strings d.nameLists tokens
-      else decodeState tokens
+  | .text edition :: _ =>
+    if edition == checkpointEditionV3 then decodeStateV3 d.terms d.strings d.nameLists tokens
+    else if edition == checkpointEditionV2 then decodeStateV2 d.terms d.strings d.nameLists tokens
+    else decodeState tokens
   | _ => none
 
 end Minidregg.Theory.ObjectiveBendCheckpoint

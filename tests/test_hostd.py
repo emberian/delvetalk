@@ -157,6 +157,50 @@ class Hostd(unittest.TestCase):
             finally:
                 stop_hostd(dd)
 
+    def test_one_client_keeps_a_connection_per_thread_and_survives_a_hostd_restart(self):
+        import tempfile as tf
+        import threading
+        with tf.TemporaryDirectory() as d2:
+            dd = start_hostd(d2, opener=DID)
+            try:
+                client = HostClient(Path(d2) / 'host.sock')
+                self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')
+                held = client.local.conn[0]
+                self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')
+                self.assertIs(client.local.conn[0], held)  # the same connection served both ops
+                seen = []
+                t = threading.Thread(target=lambda: seen.append((client.send({'op': 'world-status'})['status'], client.local.conn[0] is held)))
+                t.start()
+                t.join()
+                self.assertEqual(seen, [('world', False)])  # another thread has its own
+            finally:
+                stop_hostd(dd)
+            dd = start_hostd(d2, opener=DID)  # a new hostd behind the same path
+            try:
+                self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')
+                self.assertIsNot(client.local.conn[0], held)
+            finally:
+                stop_hostd(dd)
+
+    def test_a_write_op_on_a_broken_connection_is_not_re_sent_but_a_read_is(self):
+        import tempfile as tf
+        with tf.TemporaryDirectory() as d2:
+            dd = start_hostd(d2, opener=DID)
+            try:
+                client = HostClient(Path(d2) / 'host.sock')
+                seen = []
+                real = dd.dispatch
+                dd.dispatch = lambda req: (seen.append(req['op']), real(req))[1]
+                client.send({'op': 'world-status'})
+                client.local.conn[0].shutdown(2)  # the held connection breaks under the client
+                self.assertEqual(client.send({'op': 'world-advance', 'principal': 'transport', 'height': 1})['message'], 'hostd unavailable')
+                self.assertEqual(seen, ['world-status'])  # the write never reached hostd again
+                client.send({'op': 'world-status'})
+                client.local.conn[0].shutdown(2)
+                self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')  # a read is retried on a new connection
+            finally:
+                stop_hostd(dd)
+
     def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_world_and_in_a_heap(self):
         import tempfile as tf
         from transport.hostproc import LIBRARY

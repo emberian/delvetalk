@@ -18,6 +18,11 @@ inductive Primitive where
   | add | multiply | equal | conjunction | labelEqual
   | subtract | divide | less | lessEqual | modulo
   | textConcat | textTake | textDrop | textSpan | textBreak
+  /-- Hosted: whether any word of the right text is a word of the left (`textWordsOf`). -/
+  | textHasAny
+  /-- Hosted: the canonical (DAG-CBOR) order of two texts: by UTF-8 byte length, then by
+  bytes; 0 less, 1 equal, 2 greater. -/
+  | textCanonicalCompare
   deriving Repr, DecidableEq
 
 /-- DelveTalk hosted text extension; not part of the pinned upstream edition. -/
@@ -240,6 +245,17 @@ def textPrefixScan (alphabet : String) (member : Bool) :
           textPrefixScan alphabet member remaining cursor.next (count + 1) (visited + 1)
         else (count, visited + 1, true)
 
+/-- A word character: an ASCII letter or digit, or any non-ASCII scalar. -/
+def textWordChar (c : Char) : Bool := c.isAlphanum || c.toNat ≥ 128
+
+/-- The words of a text: its maximal runs of word characters, ASCII letters lowercased.
+Whitespace and ASCII punctuation separate words. -/
+def textWordsOf (s : String) : List String :=
+  let (words, current) := s.toList.foldl (fun (acc : List String × List Char) c =>
+    if textWordChar c then (acc.1, c.toLower :: acc.2)
+    else if acc.2.isEmpty then acc else (String.ofList acc.2.reverse :: acc.1, [])) ([], [])
+  (if current.isEmpty then words else String.ofList current.reverse :: words).reverse
+
 def primitiveResult : Primitive → Term → Term → Option Term
   | .add, .nat a, .nat b => some (.nat (a + b))
   | .multiply, .nat a, .nat b => some (.nat (a * b))
@@ -252,6 +268,12 @@ def primitiveResult : Primitive → Term → Term → Option Term
   | .lessEqual, .nat a, .nat b => some (.boolean (decide (a ≤ b)))
   | .modulo, .nat a, .nat b => some (.nat (a % b))
   | .textConcat, .label a, .label b => some (.label (a ++ b))
+  | .textCanonicalCompare, .label a, .label b =>
+      some (.nat (if a.utf8ByteSize < b.utf8ByteSize then 0 else if b.utf8ByteSize < a.utf8ByteSize then 2
+        else if a == b then 1 else if decide (a < b) then 0 else 2))
+  | .textHasAny, .label text, .label words =>
+      let wanted := textWordsOf words
+      some (.boolean ((textWordsOf text).any wanted.contains))
   | .textSpan, .label text, .label alphabet =>
       some (.nat (textPrefixScan alphabet true text.utf8ByteSize (String.Legacy.iter text) 0 0).1)
   | .textBreak, .label text, .label alphabet =>

@@ -172,6 +172,252 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
 - Name a prepared package by its sources CID instead of resending it per request (a request carries the whole 78 KB Garden package: about 4 ms of line reading, parsing and reply rendering with no compilation). Closes when the wire accepts `{sourcesSha256}` alone.
 - Parse is the largest front-end stage (13 ms for Garden at 7d90f1b): a direct scanner per line regex, checked against the `Re` values the way `tokenLength` was (`compile-profile self-check`).
 - An activity entry's packet is 200-250 KB that must be rendered, hashed, decoded and checked per entry.
-- A checkpoint-local term table (edition v3) was built and measured: no gain on forced literal lists, worse nine-prose dedup; not committed.
-- Writing each settled cell's addresses relative to its own index would stabilize checkpoint tokens further (the host's `Relative` did this on v1 and was deleted).
+- A checkpoint-local term table was built and measured: no gain on forced literal lists, worse nine-prose dedup; not committed (the edition name v3 now means relative addresses, §14).
 - The `Not proved` list in section 1.
+
+## 14. Surface types (lane/kernel5 after foundation 99c6dff)
+
+- Typed foreign views. `P.view::<S>({object})` (P the object's Plan alias; S any type its
+  closure names) is lowered by the generics pass (`rewriteExpr`, `Generics.State.typedViews`)
+  to `P.viewAs({object, as: "viewed:M.S"})`, and a match on that perform has its `viewed`
+  arm renamed to `viewed:M.S` (also through `let viewed(v) = ...`). At the end of the pass
+  the package's instances of the Plan sum gain `viewAs: View with {as: String}` and its
+  module's `Response` instances gain `viewed:M.S: {version: Nat, state: S}` per viewed type,
+  so the arm is typed by S everywhere it reaches and the activity's response type (which the
+  host re-derives from the artifact) holds it. One activity's response type has one arm per
+  viewed type; no core rule changed (no per-perform response types). A package without
+  typed views is untouched (pins: 0 recompiled). Plan.obend is unchanged: the untyped
+  `view`/`viewed` (the viewer's own state) and `viewData` stay. For the host lane: answer
+  `viewAs {object, as}` by looking `as` up in the activity's response row, checking the
+  object's state with `conformsUnder` against that arm's `state` type, and answering the
+  variant `as` {version, state}, `typeMismatch` when it does not conform (the kernel
+  refuses a non-conforming response anyway: "response does not conform"). Test:
+  `tests/test_typed_view.py`.
+- Protocols. `protocol P:` (a declaration, indented `name: TYPE` lines; `(A, B) -> R` is
+  read `A -> B -> R`, `() -> R` as `R`) and `implements P` (or `implements Alias.P`; `P`
+  alone is looked up in the module, the import aliased `P`, then any import). State, Plan
+  and Response in a protocol's types are the implementer's: the generics pass leaves them
+  as names, and `checkProtocols` (after every declaration is typed) resolves them as
+  placeholder variables that `matchProtocol` binds once per claim, so every method must
+  agree on them. Missing method: "refused (protocol): M implements P but defines no m",
+  at the `implements` line; mistyped: "refused (protocol): M.m is ..., but protocol P
+  declares m: ...", at the method's body, `expected` the declared text, `found` the
+  method's type; both hint the protocol. The artifact gains `protocols: [P]` and the
+  method rows of protocol methods `protocol: P`, only for a module that claims one
+  (others unchanged; pins: 0 recompiled). Surface `Decl.protocol` keeps the declared texts
+  (`shown`) for messages beside the rewritten ones. The objects lane writes `protocol
+  Card` into Card.obend and `implements Card` into objects (world/ is theirs); the host can
+  then refuse a door to a module whose artifact lacks `Card`. Test: `tests/test_protocols.py`.
+- Fixed on the way: `Surface.Module.mapSpans` (document-literal span remapping) rebuilt
+  the module from imports and decls only, dropping `layerOver`; it keeps every field now.
+  `tests.test_extend.LouderBell` (Louder grafted over Bell through the host, Bell's
+  `receive` rendering Louder's card) was marked an expected failure and now passes; the
+  marker is removed.
+- `textHasAny(text, words: List<String>) -> Bool` (hosted primitive `Primitive.textHasAny`,
+  checkpoint code 16): whether a word of the list is a whole word of the text. Words are
+  maximal runs of ASCII letters, digits and non-ASCII scalars (`textWordChar`), ASCII
+  letters lowercased (`textWordsOf`); whitespace and ASCII punctuation separate. The
+  elaborator lowers the call to `binary textHasAny text (textJoin words " ")`, so the
+  list is walked once by the join (linear) and the primitive makes one pass over each text;
+  tariff `1 + 2 * (bytes of both)`, reserving those bytes. An 1,800-character reply checked
+  against ten words: 3,942 ticks (the Bend walk the objects lane measured: ~200,000).
+  Python, JS and C evaluators and the generator have it; the generator no longer gives the
+  FIRST item of a generated join a non-text head (a join of one non-text item is that item
+  in the reference expansion but refused by the machine, an untyped-only divergence the
+  new primitive's shifted random stream exposed). Conformance 1500: 1435 agree per
+  evaluator, 65 known, 0 unexpected. Test: `tests/test_text_words.py`.
+  Not done: `textWords(s) -> List<String>`. A primitive returning a list needs a new term
+  form (the machine allocating a native list cell, typed by its annotation like `refuse`),
+  the full `textJoin`-scale change across the core, machine, Fast and collector proofs and
+  both codecs; the directory check only needs `textHasAny`. Queued for decision.
+- Checkpoint edition v3 (rehearsal run 9, finding 1): v2 with every address written
+  relative to its holder. `relativeState` renames each cell's addresses by `toRelative i`
+  (i the cell's number), the control's and stack's by the heap size; v3 encodes that state
+  as v2 and decodes with `absoluteState` after. `toRelative i a` is `2*zigzag(i,a)+1` when
+  that is shorter than `2*a`, else `2*a`: the skeleton the collector numbers first (knot,
+  state) is written absolute from everywhere, data near its holder relative, so a region
+  that moved as a whole encodes the same. Proofs: `ofRelative_toRelative`,
+  `mapValue/Cell/Frame/Control_inverse`, `absolute_relative`, `stateV3_roundTrip`
+  (`ObjectiveBendCheckpointV2RoundTrip.lean`); v2 still decodes. Measured:
+  `tests.test_suspension_size` nine speakers median 11,440 -> 10,223 bytes, edit runs
+  between consecutive checkpoints 21-107 -> 15-22; one speaker 7,101 -> 8,161 (the
+  same 4-6 edits; checkpoints are 8% more tokens, so its fresh blocks are larger). The
+  offline rehearsal (`rehearsal/rehearse.py`, same fixtures, both binaries): journal
+  6,130,497 -> 5,454,097 bytes, suspended entries median 52,050 -> 41,023. What keeps them
+  large: every suspension is the directory's `receive`, and its word check walks the
+  reply with `textDrop`, leaving every SUFFIX of the reply as a cached string in the
+  heap (the local string table holds them all, quadratic in the reply); a 1,500-character
+  reply is ~1 MB of suffixes in the worst case, and the addresses of everything after
+  the walk shift by the walk's cell count. `textHasAny` (above) removes both once the
+  objects lane switches the check to it; measure the rehearsal again then.
+- Relational day 1 (docs/RELATIONAL.md §2, §3, §5). Law grammar (`ObjectiveBendLaw`):
+  `insertOnly(F)`, `count(new.F) <= INT`, `count(new.F) <= count(old.F) + INT` (the two
+  fields must be the same) and `REF in new.F.COL` (subject or caller; one column), as
+  `LawExpr.insertOnly/countLe/countGrowth/memberColumn`, each refused by name when
+  misshapen, compiled to `Pred.any []` like `appendOnly`/`member`; `parse_relational` and
+  `parse_refuses_relational` (native_decide) are the parse tests. `Host/Law.lean` gained
+  fail-closed cases (false) for the four so the tree builds: the host lane denotes them
+  (day 2). The `write {...}` atom takes `insert row`, `upsert row`, `retract key`
+  (`Plans.Entries.insert({row})`, `.upsert({row})`, `.retract({key})`; the Plan.obend
+  constructors are the objects lane's, `test_sugar ...test_relation_edits_are_their_plans`
+  compares against a Plan library that has them). `Package.relationsOf`: when the entry
+  module declares a nullary `relations()`, `compileEntryFrom` compiles and runs it once and
+  the artifact carries `relations: [{field, key: [columns]}]` (refusals name
+  `relations():`); `compileEntryCore` is the compile without it (check-package's path).
+  Test: `test_sugar.Relations`.
+
+- `canonicalCompare(a, b) -> Nat` (relational day 1): 0/1/2 by the canonical DAG-CBOR
+  bytes of two values of ONE first-order type. Not a core form: the elaborator writes the
+  comparison out from the type as Bend (`cmpTerm`, `canonicalComparator`), mirroring
+  `Delvetalk.Canonical`: Nat numerically (shortest heads and big-endian bignums order so),
+  `false < true`, text by UTF-8 byte length then bytes (the new scalar primitive
+  `textCanonicalCompare`, checkpoint code 17, all three evaluators and the generator), a
+  record field by field in map-key order, a sum by label (same order) then payload, a
+  list-shaped sum (`nil: {}`, `cons: {head, tail: itself}`, an array on the wire) by
+  length first, then item by item (one `fix` with an accumulator); recursive types are a
+  `fix` per type variable. Refused by name: `Data` (Bend cannot read its shape), functions,
+  activities, a sum with nil/cons beside other cases (its nil values encode as arrays).
+  So the machine, codecs and proofs are untouched; the tariff is the generated term's
+  ticks, linear in the values' size. The Data signature the brief named is refused: a Data
+  value has no shape Bend can read, and a generic `Relation<T>` is monomorphised before
+  elaboration, so `T` is always known where `canonicalCompare` is written. Test:
+  `tests/test_canonical_compare.py` (a hundred random records against `canonical-encode`).
+  Conformance 1500: 1432 agree per evaluator, 68 known, 0 unexpected.
+
+## 15. Design note: lazy state (RELATIONAL §11 item 4)
+
+**Today.** A turn's state argument is admitted whole as native cells: `Cell.native d` holds
+admitted Data, and forcing it allocates its immediate children as native cells and caches
+the WHNF (`nativeCached d v`). That is lazy in conversion, not in loading: the host has already materialised every row. `nativeCached` is not a host thunk: its origin is the Data.
+
+**What the machine needs.** One cell kind and one control, no change to `stepRaw`'s
+signature: `Cell.stored (h : Handle)`, `Handle = {object, version, field, row : Option key,
+size : Nat}`. Entering a stored cell sets `control := .awaitingStore h addr` (one tick),
+exactly as `perform` yields, but the *runner* answers it inside the segment:
+`forceHostedFrom` calls the host's `fetch : Handle → Option Data` (a parameter, like
+`policy`), charges the row, and `supply h d state` overwrites the cell with `native d`
+and re-enters it. A relation's `items` becomes a stored spine: forcing the spine cell of
+position k yields `cons {head: stored row k, tail: stored spine k+1}` without the row's
+data; forcing `head` fetches that row. Two primitives answer from the handle without
+forcing: `relationCount(r)` (the handle's `size`; on an ordinary list a walk, as
+`textJoin` walks) and `relationLookup(r, key)` (the host's canonical index: one fetch).
+`fetch` reads the version the turn read, so replay is deterministic.
+
+**What the proofs say.** `stepRaw`, `resume`, `settle` and the collector see a stored cell
+as a leaf holding no address (as `native`): `cellAddresses (.stored _) = []`,
+`renameCell` the identity, a codec tag in v2/v3 (`Handle` encodes as its fields).
+`related_stepRaw` gains the enter case (control changes, heap does not);
+`supply` needs its own lemma `related_supply` (heap agreement after overwriting one
+cell with the same Data on both sides), the shape of `related_resume`.
+`checkpoint_resume_segment` stays true for any fixed `fetch` (both runs ask the same function): its proof gains a parameter, not an idea. `stateV2/V3_roundTrip` gain one
+codec case each. `state_roundTrip` (v1) is untouched: v1 never holds a stored cell.
+
+**Across a suspension.** A yield happens only at a `perform`, never at `awaitingStore`
+(the runner answers before continuing), so a checkpoint never stops mid-fetch. A turn
+that forced half a list checkpoints forced rows as `nativeCached` (their data inline,
+the "forced cells only" the brief asks) and unforced ones as handles naming the version
+read at the turn's start. On resume an unforced row is fetched at that version: the host
+must answer old versions (it can: `world-object {version}`, HOST-HANDOFF 5.42) or, more
+simply, treat a resumed fetch of a row changed since as a stale root and refuse/re-run
+the turn, as a moved root does today.
+
+**Roots.** The host records each fetch `(object, field, key, version)`: a turn conflicts only with writes to the keys it forced (or any insert/retract if it called `relationCount`), §3's `keysChangedSince` rule applied to reads.
+
+**Evaluators.** None see stores: a term with a stored state is, by definition, the term
+with the Data substituted, which is what they evaluate today. They gain the two
+primitives over list literals (`relationCount` = length, `relationLookup` = first row
+whose key projection equals the key, by canonical bytes), the generator emits them, and
+`evaluate-term` gains an optional `store` table so the machine path with stored cells is
+compared against the substituted term.
+
+**Cost per forced row.** One tick to enter, one to supply, and the row's admission work
+(`nodes + bytes`, as `prepareNative` charges) plus `1 + 2 * bytes` for the copy, so a
+lookup of a 200-byte row is about 450 ticks against today's whole-relation load. A
+`count` is one tick. Only forced rows are allocated.
+
+**Estimate.** Kernel: cell, control, `supply`, runner, two primitives, codec cases, the
+Fast mirror, collector and settle lemmas, evaluators and generator: 3 lane-days.
+Host: `Handle` minting on admission, `fetch` over the store with the canonical key index,
+row roots in `judge`, the version-or-stale rule: 3 lane-days. Objects: `Relation.obend`
+`count`/`lookup` onto the primitives: half a day. About 6.5 lane-days, after launch as
+§11 says; nothing in it changes a pin of an object that does not declare relations.
+
+## 16. Queue for the successor (lane/kernel5 at 9a29080, after foundation b47046b)
+
+Done on this lane and committed (each green on hbox, details in §14 and §15): typed views
+(9c5af54), protocols (b1fe9f8), `textHasAny` (d8929d9), checkpoint v3 relative addresses
+(e6b6b86), relational grammar atoms + `write` insert/upsert/retract + `relations` in the
+artifact (b05234d), the lazy-state note §15 (b00b32d), `canonicalCompare` (5994055).
+Nothing of the Wholeness kernel work is started; the tree is clean. Run in this order:
+
+1. **`textWords(s) -> List<String>`** (not done). Needs a list-producing term form: on a
+   label value the machine allocates one native cell holding the words' Data list and
+   enters it; typed by its annotation's codomain (`isTextList`), like `refuse`; checkpoint
+   tag in v1 and v2/v3 codecs, `related_stepRaw` case (a native allocation, as
+   `forceNative`), Fast `sizesAfter`, the three evaluators (`["textWords", x]` steps to a
+   list literal), the generator. Words as `textWordsOf` (OpenRecursion). Only if the
+   objects lane still needs it after switching to `textHasAny`.
+2. **Wholeness kernel day 1** (WHOLENESS §1, §4). Fixed shapes and what the contract gets
+   wrong or leaves open, as found reading the code:
+   - `Ty.isPlanUnder` admits a record row of data (`.field`/`.emptyRow`, or a variable
+     bound to one) beside a variant.
+   - `PartialTyping.perform` concludes `computation planType (performResponse planType T) T`
+     with `performResponse` = `.data` when the plan type is a row (message dialect), else
+     `T` (old dialect: `T` is the activity's `R`, so every old packet and the decided
+     examples at Typing ~1550-1600 are unchanged). The checker's perform case already takes
+     `T` from the annotation's codomain; only the conclusion's middle type changes.
+   - Surface `Activity<A>` = `computation Message .data A`, `Message` resolved as the record
+     `Message` of the module named `World` (refuse by name when the closure has none).
+     `St.effect` is then `(Message, .data)`.
+   - World calls: lower in the generics pass (it is the only place type arguments
+     instantiate): `world.X::<T>(arg)` / `world.X(arg)` → a NEW Surface/core Expr
+     `typedPerform (resultType : String) (plan : Expr)` with plan
+     `{object: {world: "", object: "world"}, method: "X", argument: Data.of::<Input[T]>(arg)}`
+     and `resultType` the rendered `Result[T]`; the elaborator emits
+     `ATerm.perform Message ResultT planTerm` (its `response` field becomes the site type,
+     `annotate` already writes it as the codomain). `isPerform` must accept it (for
+     `let label(x) =` and `noActivity`). Infer `T` only when the method's input is exactly
+     the type parameter (`write<E>`, `judge<E>`); otherwise require `::<T>`.
+   - The `protocol world:` lines are SIGNATURE form `name<Ps>(INPUT) -> RESULT`, unlike
+     this lane's `name: TYPE` protocol lines: extend `Surface.Decl.protocol` with per-method
+     type parameters, parse both line forms, and in `Generics.rewriteDecl` bind each
+     method's parameters (and State/Plan/Response) as atoms. `implements` (this lane)
+     stays for the `name: TYPE` form.
+   - `write {…}` relowering to `world.write(extend(keep(), {...}))`: decide by dialect (the
+     parser does not know it); suggested: the parser emits a marker callee and the generics
+     pass picks `Plan.write` when the module has a `Plan` type alias, else `world.write`.
+   - Surface `perform(...)` inside an `Activity<A>` body: refuse by name ("an Activity<A>
+     yields only world calls"); keep it for the old dialect until day 4.
+3. **Wholeness kernel day 2.** Site types at a yield and a resume (the contract's
+   "annotation at the preorder index of the yielded perform"): at a yield the plan cell
+   holds the perform's argument subterm, but `settle` replaces every cached origin with a
+   self origin, so the term is gone in the checkpoint. Fix found: make `settleCell` keep,
+   for the yielded plan cell only, `⟨planTerm, []⟩` (environment emptied, so collection
+   retains nothing); `settle_heap_erased`/`agree_settle` hold unchanged because `Agree` is
+   equality up to cached origins (`eraseCell`). Then `Turn.conclude` and
+   `resumeActivity`/`resumeEntry` find the site: plan cell origin term → its index by
+   `Dictionary.findTerm` → a map index → `T` built once per entry by walking the entry
+   term in `Dictionary.addTerm`'s preorder with the checker's positions (`lam [0]`, `app
+   [0][1]`, record field `i`, `extend`/`case` `[1, i]`, …) and reading each `perform`'s
+   annotation codomain. Report it as the yield's `responseType` and check the response
+   against it (message dialect only; old dialect keeps `R`).
+   Artifact: `dialect: "message"` when the entry's activity is `computation Message …`
+   (absent otherwise, so old artifacts are byte-identical), `world: [method names]` the
+   entry's packet performs (scan its `ATerm.perform` plans for the `method` label), and
+   the World module's source sha256 as `worldProtocol`. Tests: `test_sugar` (world-call
+   lowering against the explicit `typedPerform` spelling is impossible in source, so
+   compare packets of `world.view::<S>` with a hand-built expected plan JSON), new
+   `test_world_calls` (turn-start yields the Message; `responseType` is `Viewed<S>`;
+   turn-resume with `viewed {version, state}` finishes; a non-conforming response is
+   refused). Re-record `tests/fixtures/pins/artifacts.json` only if a world packet moves
+   (it should not until objects migrate). KERNEL-HANDOFF gets the section.
+4. **Day 4 (after the objects lane):** refuse `Activity<P, R, A>` and variant Plans by
+   name; delete the old perform dialect.
+
+Contract notes. `canonicalCompare` was asked as `(Data, Data)`; it is `(T, T)` for one
+first-order `T` (Data has no shape Bend can read; generic `Relation<T>` is monomorphised).
+RELATIONAL §5's atoms compile to `Pred.any []`; the host's `Law.lean` fails closed on them
+until it denotes them. The rehearsal's large suspensions come mostly from the directory's
+word walk leaving every suffix of the reply in the heap (§14), which `textHasAny` removes
+once the objects lane switches.
+

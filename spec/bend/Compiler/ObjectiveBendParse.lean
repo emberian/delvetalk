@@ -523,7 +523,9 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
     -- `Plan.write({object: Plans.self(context), edits: extend(keep(), {field: E, ...})})`
     -- with `E` = `Plans.Edit.add({delta: v})` (add), `Plans.Edit.set({value: v})` (set),
     -- `Plans.Entries.append({item: v})` (append), `Plans.Entries.remove({index: v})`
-    -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem); `Plans` is the module's
+    -- (remove), `Plans.Entries.removeItem({item: v})` (removeItem), and for a relation
+    -- `Plans.Entries.insert({row: v})` (insert), `Plans.Entries.upsert({row: v})` (upsert),
+    -- `Plans.Entries.retract({key: v})` (retract); `Plans` is the module's
     -- alias of Plan.obend (`writePlansAlias`, resolved after parsing) and the type
     -- arguments are inferred from the object's Edits.
     else if firstText == "write" && (← peek env) == some "{" then
@@ -544,7 +546,10 @@ def parseExpr (env : ExprEnv) : Nat → Nat → EP (Expr × Span)
           | "append" => pure ("Entries", "append", "item")
           | "remove" => pure ("Entries", "remove", "index")
           | "removeItem" => pure ("Entries", "removeItem", "item")
-          | other => throw ("Error: write {field: op value} takes add, set, append, remove or removeItem, not " ++ other)
+          | "insert" => pure ("Entries", "insert", "row")
+          | "upsert" => pure ("Entries", "upsert", "row")
+          | "retract" => pure ("Entries", "retract", "key")
+          | other => throw ("Error: write {field: op value} takes add, set, append, remove, removeItem, insert, upsert or retract, not " ++ other)
         edits := edits.push (tokenText name, .call (lib type ctor) [.record [(payload, value)] span] span)
         let next ← take env
         if tokenText next == "}" then break
@@ -915,9 +920,57 @@ def sourceLines (source : String) : Except Diagnostic (Array Line) := do
     number := number + 1
   return lines
 
-def declarations (lines : Array Line) : PS (Array Import × Array Decl × Option (String × Span)) := do
+def trimText (s : String) : String := String.ofList (jsTrim s.toList)
+
+/-- Split at top-level occurrences of `sep` (outside brackets). -/
+def splitTopAt (s : String) (sep : String) : List String := Id.run do
+  let chars := s.toList
+  let sepChars := sep.toList
+  let mut depth : Int := 0
+  let mut current : List Char := []
+  let mut parts : List String := []
+  let mut rest := chars
+  for _ in [0:chars.length + 1] do
+    match rest with
+    | [] => break
+    | c :: tail =>
+      if depth == 0 && rest.take sepChars.length == sepChars then
+        parts := parts ++ [String.ofList current]
+        current := []
+        rest := rest.drop sepChars.length
+        continue
+      if c == '(' || c == '<' || c == '{' || c == '[' then depth := depth + 1
+      if c == ')' || (c == '>' && !(current.getLast? == some '-')) || c == '}' || c == ']' then depth := depth - 1
+      current := current ++ [c]
+      rest := tail
+  return parts ++ [String.ofList current]
+
+def splitTopComma (s : String) : List String := splitTopAt s ","
+
+/-- `PARAMS -> RESULT` at the first top-level arrow. -/
+def splitArrow (s : String) : Option (String × String) :=
+  match splitTopAt s "->" with
+  | first :: second :: more => some (trimText first, trimText ("->".intercalate (second :: more)))
+  | _ => none
+
+/-- A protocol method's type as the elaborator reads it: `(A, B) -> R` curried to
+`A -> B -> R`, `() -> R` to `R`. -/
+def protocolType (text : String) : String :=
+  let t := trimText text
+  match splitArrow t with
+  | some (params, result) =>
+    if params.startsWith "(" && params.endsWith ")" then
+      let inner := trimText ((params.drop 1).dropRight 1).toString
+      if inner.isEmpty then result
+      else " -> ".intercalate ((splitTopComma inner).map trimText) ++ " -> " ++ result
+    else t
+  | none => t
+
+def declarations (lines : Array Line) :
+    PS (Array Import × Array Decl × Option (String × Span) × Array (String × Span)) := do
   let fuel := lines.size + 1
   let mut layer : Option (String × Span) := none
+  let mut implements : Array (String × Span) := #[]
   let mut imports : Array Import := #[]
   let mut decls : Array Decl := #[]
   for _ in [0:lines.size] do
@@ -934,6 +987,32 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl × Option
       unless path.startsWith "./" && path.endsWith ".obend" && !path.any (· == ' ') do
         fail line "a layer is declared `layer over ./NAME.obend`"
       layer := some (path, line.span)
+      continue
+    if startsWith line.text "implements " then
+      let name := String.ofList (jsTrim (line.text.drop 11))
+      unless !name.isEmpty && name.all (fun c => c.isAlphanum || c == '_' || c == '.') do
+        fail line "a module claims a protocol as `implements NAME` (or `implements Alias.NAME`)"
+      implements := implements.push (name, line.span)
+      continue
+    if startsWith line.text "protocol " && line.text.getLast? == some ':' then
+      let name := String.ofList (jsTrim ((line.text.drop 9).dropLast))
+      unless isIdent name.toList do fail line "a protocol is declared `protocol NAME:`"
+      let mut methods : Array Field := #[]
+      for _ in [0:lines.size] do
+        let j ← get
+        let some member := lines[j]? | break
+        if member.indent == 0 then break
+        set (j + 1)
+        let text := String.ofList member.text
+        match text.splitOn ":" with
+        | m :: rest =>
+          let m := trimText m
+          let type := trimText (":".intercalate rest)
+          unless isIdent m.toList && !type.isEmpty do fail member "a protocol method is `name: TYPE`"
+          methods := methods.push ⟨m, protocolType type, member.span⟩
+        | [] => fail member "a protocol method is `name: TYPE`"
+      if methods.isEmpty then fail line "a protocol declares at least one method"
+      decls := decls.push (.protocol name methods.toList (methods.toList.map (·.type)) line.span)
       continue
     if let some (_, caps) ← matchAt line namedImportRe line.text then
       imports := imports.push ⟨cap line.text caps 2, cap line.text caps 1, line.span⟩
@@ -1086,12 +1165,12 @@ def declarations (lines : Array Line) : PS (Array Import × Array Decl × Option
       decls := decls.push (.function sig none functionBody line.span)
       continue
     fail line "unsupported Objective Bend declaration"
-  return (imports, decls, layer)
+  return (imports, decls, layer, implements)
 
 /-- Parse one module's source text. -/
 def parseObjective (source : String) : Except Diagnostic Module := do
   let lines ← sourceLines source
-  let ((imports, decls, layer), _) ← (declarations lines).run 0
+  let ((imports, decls, layer, implements), _) ← (declarations lines).run 0
   -- `write {...}` names the Plan library by placeholder; it becomes the module's alias.
   let plans := ((imports.find? (·.path.endsWith "Plan.obend")).map (·.importAlias)).getD "Plans"
   let decls := decls.map (·.mapVars fun n => if n == writePlansAlias then plans else n)
@@ -1101,7 +1180,7 @@ def parseObjective (source : String) : Except Diagnostic Module := do
       if imports.any (fun i => i.importAlias == "Super" && i.path == path) then imports
       else #[(⟨path, "Super", span⟩ : Import)] ++ imports
     | none => imports
-  return ⟨imports.toList, decls.toList, layer.map (·.1)⟩
+  return ⟨imports.toList, decls.toList, layer.map (·.1), implements.toList⟩
 
 /-- Strict UTF-8 decoding as `new TextDecoder("utf-8",{fatal:true})`: invalid bytes refuse and a
 leading byte-order mark is consumed. -/

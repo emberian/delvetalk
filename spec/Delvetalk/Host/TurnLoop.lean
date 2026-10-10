@@ -345,17 +345,16 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
     (height : Nat) : Except (String × String) (CreateRec × Built) := do
   let inputs ← creationInputs creator package
   let built ← (compileObject w inputs).mapError (("compile", ·))
-  let packet ← (built.artifact.getObjVal? "packet").mapError (("compile", ·))
-  let initial ← match Package.executeDataValues packet #[] (Json.mkObj []) with
-    | .ok (.finished v _ _ _) => pure v
-    | _ => throw ("compile", "initial() did not evaluate")
+  let initial ← (initialState built).mapError (("compile", ·))
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
   let state := withOwner state seed principal
+  let (relations, state) ← (relationsFor w inputs built state).mapError fun e =>
+    (if e.startsWith "duplicateKey" then "duplicateKey" else "key", e)
   let lawText := if lawArg.startsWith "law " then some lawArg else none
   let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
     (fun e => (if isAmendmentRefusal e then "law"
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
-  return ({ object, sources, seed := dataJson state }, built)
+  return ({ object := { object with relations }, sources, seed := dataJson state }, built)
 
 /-- The subject a call or send of `method` on `callee` by the running object `self` acts
     with, and the argument it runs with: the running frame's own subject and the argument when
@@ -552,7 +551,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
     let entry ← entryOf compiled
-    let started ← kernelRefusal (Delvetalk.Turn.startEntry entry arguments binding b) (some expected)
+    let started ← kernelRefusal (Delvetalk.Turn.startEntry entry arguments binding b compiled.dictionary) (some expected)
     noteProfile fun _ => (Delvetalk.Turn.prepareStartEntry entry arguments |>.map fun (applied, _) =>
       Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial applied.source.term))
     drive depth id caller compiled binding started 0
@@ -596,7 +595,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
         | none => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
     let entry ← entryOf compiled
-    let next ← liftEval (Delvetalk.Turn.resumeEntry entry checkpoint binding response b)
+    let next ← liftEval (Delvetalk.Turn.resumeEntry entry checkpoint binding response b compiled.dictionary)
     noteProfile fun _ => (Delvetalk.Turn.prepareResumeEntry entry checkpoint binding response |>.map fun (_, _, _, _, st, resumed) =>
       Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ st) b.bytes b.ticks resumed)
     drive depth self caller compiled binding next 0
@@ -1429,7 +1428,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
     let binding := Delvetalk.Turn.Binding.make object principal intent
       (roots.filter (·.1 == object))
     let b ← budgetsNow
-    let next ← liftEval (Delvetalk.Turn.resumeEntry (← entryOf compiled) checkpoint binding response b)
+    let next ← liftEval (Delvetalk.Turn.resumeEntry (← entryOf compiled) checkpoint binding response b compiled.dictionary)
     drive 0 object ctx.caller compiled binding next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st

@@ -21,12 +21,12 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import pages
+from transport import hand, pages, post
 from transport.hostd import CLOCK
 from transport.hostproc import HOST_TIMEOUT, HostClient, RemoteHeaps, add_host_args
 from transport.delve import Client, canonical, http_transport
 from transport.identity import Identity, IdentityError, ORIGIN
-from transport.repo import XRPC_ERRORS, Repo
+from transport.repo import Repo
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
@@ -46,56 +46,6 @@ TOP_ONLY = ('repl', 'check', 'me', 'revoke')
 ROUTE_HINT = 'GET /AGENTS.md/api lists every route; OPTIONS on a path answers its entries'
 FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)): 'examples',
          ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify'}
-
-
-def route_entry(name, method, href, does, auth='bearer', heap=False, query=None, body=None):
-    return {'name': name, 'method': method, 'href': href, 'auth': auth, 'does': does,
-            **({'heap': PREFIX + '/heap' + href[len(PREFIX):]} if heap else {}), **({'query': query} if query else {}), **({'body': body} if body else {})}
-
-
-INTENT = 'text: names your turn, unique per principal; the same intent again returns the first receipt'
-FULL = {'full': "1: the host's reply verbatim, content ids and all"}
-CATALOGUE = (
-    route_entry('guide', 'GET', PREFIX, 'this API in prose (text/plain); with Accept: application/json, this catalogue', 'none'),
-    route_entry('api', 'GET', PREFIX + '/api', 'this catalogue', 'none'),
-    route_entry('examples', 'GET', PREFIX + '/examples', 'three worked sessions with real replies (text/plain)', 'none'),
-    route_entry('challenge', 'POST', PREFIX + '/challenge', 'a challenge: post `text` exactly, as the whole of a public post from the '
-                'handle, then verify within 15 minutes; keep `credential` secret', 'none', body={'handle': 'text: your account handle'}),
-    route_entry('verify', 'POST', PREFIX + '/verify', 'checks the post; the challenge\'s `credential` then authenticates you',
-                'none', body={'handle': 'text: the handle challenged', 'uri': 'text: the at:// URI of the post'}),
-    route_entry('world', 'GET', PREFIX + '/world', 'ids of the objects you may view, 64 a page', heap=True,
-                query={'prefix': 'text: only ids that start with it', 'after': 'text: the last id of the previous page'}),
-    route_entry('object', 'GET', PREFIX + '/world/{object}', "an object's state and version; `_actions` are its methods", heap=True),
-    route_entry('card', 'GET', PREFIX + '/world/{object}/card', "the object's card as you see it", heap=True),
-    route_entry('source', 'GET', PREFIX + '/world/{object}/source', 'law, source, pin, pinSlug and forms', heap=True, query=FULL),
-    route_entry('action', 'POST', PREFIX + '/world/{object}/{method}', 'a turn: runs the method; a refusal is a receipt, not an error',
-                heap=True, query={'compact': '1: status, outcome, offer texts, receipt position', **FULL},
-                body={'intent': INTENT, 'spell': 'text: a reply to the card, for `receive`', 'fields': 'object: a form as plain JSON',
-                      'argument': 'typed data; one of spell, fields, argument (default the empty record)'}),
-    route_entry('receipt', 'GET', PREFIX + '/receipt/{intent}', "a receipt by your intent, or any receipt's slug", heap=True, query=FULL),
-    route_entry('offers', 'GET', PREFIX + '/offers', 'cards objects made for you', heap=True,
-                query={'after': 'height: only newer', 'wait': f'seconds, at most {WAIT_MAX}: hold until one arrives',
-                       'compact': '1: {status, offers: [text], height}'}),
-    route_entry('pending', 'GET', PREFIX + '/pending', 'queued sends', heap=True),
-    route_entry('deliver', 'POST', PREFIX + '/deliver', f'run up to {DELIVER_LIMIT} queued sends (the host runs them after every turn)', heap=True),
-    route_entry('create', 'POST', PREFIX + '/heap/objects', 'create an object in your private heap',
-                body={'intent': INTENT, 'object': 'text: its id', 'source': 'text: one module', 'modules': '[{name, source}]',
-                      'entry': 'text: `initial`', 'seed': 'object: a partial state over initial(), plain or typed', 'law': 'text'}),
-    route_entry('repl', 'POST', PREFIX + '/repl', 'compile and run an entry; an Activity yields its first plan and a checkpoint',
-                body={'source': 'text: one module', 'modules': '[{name, source}]', 'entry': 'text', 'arguments': '[typed data]',
-                      'object': 'text: binds an activity', 'intent': 'text', 'roots': '[{object, version}]',
-                      'checkpoint': 'as returned, to resume', 'response': 'typed data: the answer to the plan', 'limits': 'object'}),
-    route_entry('check', 'POST', PREFIX + '/check', "check modules against the world's library; a refusal names stage, line and span",
-                body={'source': 'text', 'modules': '[{name, source}]', 'entry': 'text'}, query=FULL),
-    route_entry('me', 'GET', PREFIX + '/me', 'your principal, handle and remaining rate'),
-    route_entry('revoke', 'POST', PREFIX + '/revoke', 'this credential answers 401 from now on'),
-    route_entry('xrpc', 'GET', '/xrpc/{nsid}', 'the journal as AT Protocol records, read only (docs/REPO.md)', 'optional'),
-    route_entry('did', 'GET', '/.well-known/did.json', "the repository's DID document", 'none'),
-    route_entry('home', 'GET', '/', 'HTML for people', 'cookie'),
-    route_entry('find', 'GET', '/o', 'redirects ?object=<id> to its page', 'none', query={'object': 'text'}),
-    route_entry('page', 'GET', '/o/{object}', "HTML: an object's state, card and last 20 receipts; a / in the id is %2F", 'cookie'),
-    route_entry('spell', 'POST', '/o/{object}/spell', 'HTML form: sends `text` to receive', 'cookie', body={'text': 'text: a spell'}),
-    route_entry('static', 'GET', '/static/{file}', 'style.css, theme.js', 'none'))
 
 
 def resolve(method, path):
@@ -198,45 +148,10 @@ def compact_offers(reply):
     return {'status': reply['status'], 'offers': [o['text'] for o in offers], **({'height': offers[-1]['height']} if offers else {})}
 
 
-# Refusal classes (a refused turn's receipt) and the link relation an agent reads next for each.
-REFUSALS = {'staleRoot': (True, 'self', 'something the turn read moved before it committed'),
-            'budget': (True, 'receipt', 'the turn ran out of ticks, heap or bytes; `reason` names which'),
-            'evaluation': (True, 'source', 'the program refused or a Plan was malformed; `reason` says which'),
-            'capacity': (True, 'receipt', 'a host limit is full; `reason` or `object` names it'),
-            'typeMismatch': (False, 'source', "the argument does not fit the method's input; `expected` shows the form"),
-            'lawRefused': (False, 'source', "the object's law refused the change; `clause` names the law line"),
-            'unknownObject': (False, 'world', 'no such object, or not yours to see'),
-            'programRefused': (False, 'source', "a reprogram's package: `clause` is packageBytes, compile, stateType, migration or law syntax"),
-            'outOfRange': (False, 'receipt', 'a list edit named an index past the end'),
-            'absentItem': (False, 'receipt', 'a list edit named an item not there'),
-            'requiredAbsence': (False, 'receipt', 'a `create` found the object already there; `root` names where'),
-            'budgetExhausted': (False, 'receipt', 'a chain of sends spent its ledger (`depth`, `work` or `storage`)'),
-            'duplicateIdentity': (False, 'receipt', 'the same intent with a different request: not a receipt; `original` is the first')}
 
-# Every error the front answers: class -> (HTTP code, envelope status, when). `refused` is the host saying no.
-ERRORS = {'badRequest': (400, 'error', 'the request line or a header is malformed, or Content-Length is not a number'),
-          'badJson': (400, 'error', f'the body is not a JSON object, or nests deeper than {MAX_DEPTH}'),
-          'badModules': (400, 'error', f'`modules` is not a list of at most {MAX_MODULES} objects'),
-          'identity': (400, 'error', 'a challenge or verification failed; `message` is the reason'),
-          'hostRequest': (400, 'error', "the host refused the request as malformed; `message` (and a compile error's stage, module, span, hint) are the host's"),
-          'unauthenticated': (401, 'error', 'the credential is missing, unverified or revoked'),
-          'denied': (403, 'refused', 'the host says you may not read it'),
-          'unknown': (404, 'refused', 'the host knows nothing by that name that you may see'),
-          'unknownRoute': (404, 'error', 'no route here; the catalogue lists them'),
-          'methodNotAllowed': (405, 'error', 'the route takes another method; `Allow` names it'),
-          'requestTimeout': (408, 'error', f'the request did not arrive within {REQUEST_TIMEOUT} seconds'),
-          'ambiguous': (409, 'refused', 'a slug names more than one receipt; cite it by CID'),
-          'bodyTooLarge': (413, 'error', f'the body is over {MAX_BODY} bytes'),
-          'moduleTooLarge': (413, 'error', f'a module sent is over {MAX_SOURCE} bytes (the library is not sent)'),
-          'uriTooLong': (414, 'error', 'the request line is over 65536 bytes'),
-          'rateLimited': (429, 'error', 'over a rate limit; `Retry-After` says when to come back'),
-          'headersTooLarge': (431, 'error', 'a header line is over 65536 bytes, or there are over 100'),
-          'internal': (500, 'error', 'the front failed; nothing was decided'),
-          'notImplemented': (501, 'error', 'an HTTP method no route takes'),
-          'replyTooLarge': (502, 'error', f'the reply would be over {MAX_REPLY} bytes; ask for less (compact, a page)'),
-          'hostUnavailable': (503, 'error', 'hostd is not answering connections'),
-          'hostTimeout': (504, 'error', 'hostd accepted the request and did not answer in time'),
-          'httpVersion': (505, 'error', 'the HTTP version is not 1.0 or 1.1')}
+# The catalogue's text, loaded once: routes, conventions, the envelope, the error, XRPC error and refusal classes.
+API = json.loads((STATIC / 'catalogue.json').read_text())
+CATALOGUE, ERRORS, REFUSALS = API['routes'], API['errors'], API['refusals']
 
 
 def digits(text):
@@ -313,8 +228,8 @@ def receipt_links(base, reply, intent=None):
         h = rc['height']
         out['offers'] = link(f'{base}/offers?after={h}&wait={WAIT_MAX}' if reply.get('status') == 'suspended' else f'{base}/offers?after={h - 1}')
     refusal = outcome.get('class') if outcome.get('tag') == 'refused' else reply.get('class')
-    if refusal in REFUSALS and REFUSALS[refusal][1] in out:
-        out['hint'] = out[REFUSALS[refusal][1]]
+    if refusal in REFUSALS and REFUSALS[refusal]['hint'] in out:
+        out['hint'] = out[REFUSALS[refusal]['hint']]
     elif refusal == 'unknownObject':
         out['hint'] = link(base + '/world')
     return out
@@ -324,10 +239,10 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep):
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None):
         super().__init__(address, Handler)
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy, self.sleep = heaps, repl, trust_proxy, sleep
+        self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps, repl, trust_proxy, sleep, hand
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
@@ -364,21 +279,8 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         return self.host.send({'op': 'world-arrive', 'principal': CLOCK, 'did': did, 'handle': handle})
 
     def catalogue(self, here):
-        """Every route, the error envelope, the error and refusal classes and the limits, as data."""
-        return {'status': 'catalogue', 'origin': self.origin, 'routes': list(CATALOGUE),
-                'conventions': {'auth': 'Authorization: Bearer <credential>, from challenge then verify; your DID is your principal',
-                                'heap': "a route with `heap` also runs in your private heap at that href",
-                                'links': '_links: relation -> {href} or [{href, name}], on every JSON reply; relations are route names',
-                                'actions': '_actions on object, card and source replies: {name, method, href, fields: [{name, kind, bounds}], '
-                                           'body, spell?, input?}, one per method of the host\'s method table a turn can run',
-                                'typedData': '{tag: natural|label|boolean, value} {tag: record, fields: [{name, value}]} '
-                                             '{tag: list, items} {tag: variant, label, payload}',
-                                'hashes': 'replies omit content ids except a receipt\'s own hash and a source\'s pin; ?full=1 shows them'},
-                'envelope': {'status': 'error | refused', 'class': 'a key of errors', 'message': 'text', 'hint': 'text, optional',
-                             '_links': '{self, api, hint?}', 'more': "a host's reply keeps its own fields (object, stage, module, span, diagnostic)"},
-                'errors': {k: {'code': c, 'status': st, 'when': w} for k, (c, st, w) in ERRORS.items()},
-                'xrpcErrors': {k: {'code': c, 'when': w} for k, (c, w) in XRPC_ERRORS.items()},
-                'refusals': {k: {'transient': t, 'hint': h, 'means': m} for k, (t, h, m) in REFUSALS.items()},
+        """Every route, the error envelope, the error and refusal classes (static/catalogue.json) and the limits, as data."""
+        return {'status': 'catalogue', 'origin': self.origin, **API,
                 'limits': {'bodyBytes': MAX_BODY, 'moduleBytes': MAX_SOURCE, 'modules': MAX_MODULES, 'bodyDepth': MAX_DEPTH,
                            'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'hostSeconds': self.host_timeout,
                            'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
@@ -417,7 +319,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def fail(self, cls, message=None, hint=None, links=None, more=None, acts=None, headers=()):
         """The one error envelope: {status, class, message, hint?, _links} over the host's own fields, if any (`more`)."""
-        code, status, when = ERRORS[cls]
+        code, status, when = ERRORS[cls]['code'], ERRORS[cls]['status'], ERRORS[cls]['when']
         body = {**(more or {}), 'status': status, 'class': cls, 'message': message or when, **({'hint': hint} if hint else {}),
                 '_links': {'self': link(self.path), 'api': link(PREFIX + '/api'), **(links or {})}, **({'_actions': acts} if acts else {})}
         self.reply(code, canonical(body), headers=headers)
@@ -508,6 +410,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def route(self, method):
         path = urllib.parse.urlsplit(self.path).path
+        if path.split('/')[1:2] == ['hand'] and self.server.hand:  # the owner's console, not in the catalogue; without --hand-token an unknown route
+            form = self.body() if method == 'POST' else None
+            if method == 'POST' and form is None:
+                return
+            code, body, headers = self.server.hand.handle(method, self.path, self.headers.get('Cookie') or '', form)
+            return self.html(code, body, headers)
         name, p = resolve(method, path)
         if name is None:
             allow = [m for m in ('GET', 'POST') if resolve(m, path)[0]]
@@ -799,12 +707,15 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=8080)
     ap.add_argument('--bind', default='127.0.0.1')
     ap.add_argument('--origin', default=ORIGIN)
+    ap.add_argument('--hand-token', metavar='SECRET', help='serve the owner\'s console at /hand/ (needs the token once); for an ssh forward, never public')
+    ap.add_argument('--credentials', default=post.CREDENTIALS, help='the Delve credentials file the hand posts with')
     ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
     a = ap.parse_args(argv)
     sock = a.host_socket or Path(a.state) / 'host.sock'
     host, heaps, repl = HostClient(sock), RemoteHeaps(sock, Path(a.state) / 'heaps'), HostClient(sock, stateless=True)
     front = Front((a.bind, a.port), host, Identity(a.state, Client(http_transport), a.origin), a.origin,
-                  heaps=heaps, repl=repl, trust_proxy=a.trust_proxy)
+                  heaps=heaps, repl=repl, trust_proxy=a.trust_proxy,
+                  hand=hand.Hand(a.state, host, a.hand_token, a.credentials) if a.hand_token else None)
     try:
         front.serve_forever()
     finally:

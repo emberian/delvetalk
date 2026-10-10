@@ -77,6 +77,12 @@ inductive EditKind where
       `amend`/`remove` with an `item` payload), kept so the journal records what was written. -/
   | amendBy (label : String) (item change : Data)
   | removeBy (label : String) (item : Data)
+  /-- Relation edits (RELATIONAL.md §3), on a field the package declares a relation: a row added
+      under its key (`insert` refuses a taken key with another row, `upsert` replaces it), or the row
+      of a key removed (`retract`; an absent key is no change). -/
+  | insert (row : Data)
+  | upsert (row : Data)
+  | retract (key : Data)
 
 structure Edit where
   field : String
@@ -95,6 +101,9 @@ def EditKind.data : EditKind → Data
   | .remove i => .variant "remove" (.record [("index", .natural i)])
   | .amendBy l item c => .variant l (.record [("item", item), ("change", c)])
   | .removeBy l item => .variant l (.record [("item", item)])
+  | .insert row => .variant "insert" (.record [("row", row)])
+  | .upsert row => .variant "upsert" (.record [("row", row)])
+  | .retract key => .variant "retract" (.record [("key", key)])
 
 /-- Edits that commute with any other change of the same kinds: `keep`, `add`, `append`. A root
     whose every change in a proposal is made of them commits against the root as it is now. -/
@@ -120,6 +129,9 @@ def parseKind : Data → Option EditKind
       | none, some item, some c => some (.amendBy "amend" item c)
       | _, _, _ => none
   | .variant "removeItem" (.record f) => (f.lookup "item").map (.removeBy "removeItem")
+  | .variant "insert" (.record f) => (f.lookup "row").map .insert
+  | .variant "upsert" (.record f) => (f.lookup "row").map .upsert
+  | .variant "retract" (.record f) => (f.lookup "key").map .retract
   | .variant "amendItem" (.record f) => match f.lookup "item", f.lookup "change" with
       | some item, some c => some (.amendBy "amendItem" item c)
       | _, _ => none
@@ -328,7 +340,8 @@ def Proposal.digest (p : Proposal) : String :=
 /-- The closed set of refusal classes. -/
 def refusalClasses : List String :=
   ["staleRoot", "typeMismatch", "capacity", "outOfRange", "absentItem", "lawRefused", "unknownObject",
-   "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence"]
+   "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
+   "keyTaken", "duplicateKey"]
 
 structure Refusal where
   cls : String
@@ -391,11 +404,104 @@ partial def editByItem (item : Data) (change : Option Data) : Data → EditResul
     else pure (.variant "cons" (.record [("head", head), ("tail", ← editByItem item change tail)]))
   | _ => throw "typeMismatch"
 
-/-- All edits of a step read the state before the step. -/
-def applyStep (fields : List (String × Data)) (step : Step) : EditResult (List (String × Data)) :=
+/-! ## Relations (RELATIONAL.md §2, §3)
+
+A relation is a state field the package declares in `relations()`: `rows {items: List<T>}` of records
+`T`, kept sorted by the canonical bytes of each row's key projection, no two rows sharing a key, and
+at most its declared number of rows (the oldest by key order dropped). The host keeps that form:
+`canonicalRelation` on seeds, migration results and every write; the three edits in `applyStep`. -/
+
+partial def listOf : Data → Option (List Data)
+  | .variant "nil" _ => some []
+  | .variant "cons" (.record f) => do
+    let head ← f.lookup "head"
+    return head :: (← listOf (← f.lookup "tail"))
+  | _ => none
+
+def ofList (items : List Data) : Data :=
+  items.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record []))
+
+/-- A relation value's rows. -/
+def relationRows : Data → EditResult (List Data)
+  | .variant "rows" (.record f) => match (f.lookup "items").bind listOf with
+    | some rows => pure rows
+    | none => throw "typeMismatch"
+  | _ => throw "typeMismatch"
+
+def relationOf (rows : List Data) : Data := .variant "rows" (.record [("items", ofList rows)])
+
+/-- A row's key: its key columns, in the declaration's order, as a record. -/
+def keyOf (d : RelDecl) : Data → EditResult Data
+  | .record cols => do
+    return .record (← d.key.mapM fun k => match cols.lookup k with
+      | some v => pure (k, v)
+      | none => throw "typeMismatch")
+  | _ => throw "typeMismatch"
+
+/-- A key as the edit gives it, put in the declaration's column order. -/
+def keyAsDeclared (d : RelDecl) (key : Data) : EditResult Data := keyOf d key
+
+def bytesLt (a b : ByteArray) : Bool := Id.run do
+  for i in [0:min a.size b.size] do
+    if a[i]! != b[i]! then return a[i]! < b[i]!
+  return a.size < b.size
+
+/-- Rows sorted by their keys' canonical bytes, no key twice (`duplicateKey`), the oldest by key
+    order dropped past the declared limit. -/
+def canonicalRows (d : RelDecl) (rows : List Data) : EditResult (List Data) := do
+  let keyed ← rows.mapM fun r => do return (Delvetalk.Canonical.encode (← keyOf d r), r)
+  let sorted := (keyed.toArray.qsort fun a b => bytesLt a.1 b.1).toList
+  let mut prev : Option ByteArray := none
+  for (k, _) in sorted do
+    if prev == some k then throw "duplicateKey"
+    prev := some k
+  return (sorted.drop (sorted.length - d.cap)).map (·.2)
+
+def canonicalRelation (d : RelDecl) (v : Data) : EditResult Data := do
+  return relationOf (← canonicalRows d (← relationRows v))
+
+/-- Every declared relation of a state record in canonical form. -/
+def canonicalState (decls : List RelDecl) : Data → EditResult Data
+  | .record fields => do
+    return .record (← fields.mapM fun (k, v) => match decls.find? (·.field == k) with
+      | some d => do return (k, ← canonicalRelation d v)
+      | none => pure (k, v))
+  | other => if decls.isEmpty then pure other else throw "typeMismatch"
+
+/-- One relation edit on a canonical relation (the table of RELATIONAL.md §3):
+
+    | edit    | key absent | key present, same row | key present, other row |
+    | insert  | add        | no change             | refused `keyTaken`     |
+    | upsert  | add        | no change             | replace                |
+    | retract | no change  | remove                | remove                 | -/
+def relationEdit (d : RelDecl) (old : Data) (kind : EditKind) : EditResult Data := do
+  let rows ← relationRows old
+  let keyed ← rows.mapM fun r => do return (Delvetalk.Canonical.encode (← keyOf d r), r)
+  let others := fun (k : ByteArray) => (keyed.filter (·.1 != k)).map (·.2)
+  match kind with
+  | .insert row | .upsert row =>
+    let k := Delvetalk.Canonical.encode (← keyOf d row)
+    match keyed.find? (·.1 == k) with
+    | none => canonicalRelation d (relationOf (rows ++ [row]))
+    | some (_, r) =>
+      if Delvetalk.Canonical.encode r == Delvetalk.Canonical.encode row then pure old
+      else match kind with
+        | .insert _ => throw "keyTaken"
+        | _ => canonicalRelation d (relationOf (others k ++ [row]))
+  | .retract key =>
+    let k := Delvetalk.Canonical.encode (← keyAsDeclared d key)
+    if keyed.any (·.1 == k) then pure (relationOf (others k)) else pure old
+  | _ => throw "typeMismatch"
+
+/-- All edits of a step read the state before the step. A relation field takes `insert`, `upsert`,
+    `retract` (`relationEdit`); any other edit of it is followed by putting it back in canonical form. -/
+def applyStep (decls : List RelDecl) (fields : List (String × Data)) (step : Step) : EditResult (List (String × Data)) :=
   step.foldlM (init := fields) fun acc e => do
     let some old := fields.lookup e.field | throw "typeMismatch"
-    let put := fun (v : Data) => pure (replaceField acc e.field v)
+    let decl := decls.find? (·.field == e.field)
+    let put := fun (v : Data) => match decl with
+      | some d => do return replaceField acc e.field (← canonicalRelation d v)
+      | none => pure (replaceField acc e.field v)
     match e.kind with
     | .keep => pure acc
     | .set v => put v
@@ -407,9 +513,12 @@ def applyStep (fields : List (String × Data)) (step : Step) : EditResult (List 
     | .remove i => put (← removeItem i old)
     | .amendBy _ item c => put (← editByItem item (some c) old)
     | .removeBy _ item => put (← editByItem item none old)
+    | .insert _ | .upsert _ | .retract _ => match decl with
+      | some d => pure (replaceField acc e.field (← relationEdit d old e.kind))
+      | none => throw "typeMismatch"
 
-def applyEdits : Data → List Step → EditResult Data
-  | .record fields, steps => (steps.foldlM applyStep fields).map .record
+def applyEdits (decls : List RelDecl) : Data → List Step → EditResult Data
+  | .record fields, steps => (steps.foldlM (applyStep decls) fields).map .record
   | _, _ => throw "typeMismatch"
 
 /-! ## Law as state, and programs -/
@@ -500,11 +609,16 @@ def sealLibrary (files : List (String × String)) : Except String Library := do
   return { pin := libraryDigest placed, modules := placed }
 
 /-- The library modules a set of module sources needs, transitively, in library order. -/
-def libraryClosure (lib : Library) (sources : List String) : List (String × String) :=
-  let wanted := (List.range (lib.modules.length + 1)).foldl (fun need _ =>
-    (need ++ need.flatMap fun n => ((lib.modules.lookup n).map importsOf).getD []).eraseDups)
-    (sources.flatMap importsOf).eraseDups
-  lib.modules.filter fun (n, _) => wanted.contains n
+def libraryClosure (lib : Library) (sources : List String) : List (String × String) := Id.run do
+  -- A worklist: each library module's imports are read once, when it is first wanted.
+  let mut wanted : Std.HashSet String := {}
+  let mut todo := (sources.flatMap importsOf).eraseDups
+  for _ in [0:lib.modules.length + 1] do
+    let fresh := todo.filter (!wanted.contains ·)
+    if fresh.isEmpty then break
+    wanted := fresh.foldl (·.insert ·) wanted
+    todo := (fresh.flatMap fun n => ((lib.modules.lookup n).map importsOf).getD []).eraseDups
+  return lib.modules.filter fun (n, _) => wanted.contains n
 
 /-- A package's own modules over a library, as the compiler is given them: the library modules
     they import (transitively, in library order), then the own modules that are not the library's
@@ -755,6 +869,76 @@ def artifactShape (artifact : Json) : Json × Bool × Bool :=
   ((artifact.getObjVal? "methods").toOption.getD (Json.arr #[]),
    (law.getObjValAs? Bool "present").toOption.getD false, (law.getObjValAs? Bool "reads").toOption.getD false)
 
+/-- The sources an object's compile inputs carry. -/
+def inputSources (inputs : Json) : List String :=
+  let modules := match inputs.getObjVal? "modules" with
+    | .ok (.arr ms) => ms.toList.filterMap fun m => (m.getObjValAs? String "source").toOption
+    | _ => []
+  modules ++ ((inputs.getObjValAs? String "source").toOption.map ([·])).getD []
+
+/-- The fields of a record type, through the packet's bounds; none for any other type. -/
+partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
+  | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (recordFieldTypes bounds (fuel - 1))
+  | .field n m tail => ((n, m) :: ·) <$> recordFieldTypes bounds fuel tail
+  | .emptyRow => some []
+  | _ => none
+
+/-- Does a package declare `relations()`? Read from its own modules' sources, so a package without
+    one compiles nothing more. -/
+def declaresRelations (inputs : Json) : Bool :=
+  (inputSources inputs).any fun src => (src.splitOn "\n").any (·.startsWith "def relations(")
+
+/-- The relation declarations `relations()` returned (a list of `{field, key, limit?, retain?}`). -/
+def parseDecls (value : Data) : Except String (List RelDecl) := do
+  let some items := listOf value | throw "relations() must return a list of Decl"
+  items.mapM fun d => do
+    let .record f := d | throw "a relation Decl is a record"
+    let some (.label field) := f.lookup "field" | throw "a relation Decl names its field"
+    let some keys := (f.lookup "key").bind listOf | throw s!"relation {field} declares no key list"
+    let key ← keys.mapM fun k => match k with
+      | .label c => pure c
+      | _ => throw s!"relation {field}'s key names columns by text"
+    if key.isEmpty then throw s!"key: relation {field} declares an empty key"
+    let limit := match f.lookup "limit" with
+      | some (.natural n) => n
+      | _ => 0
+    match f.lookup "retain" with
+    | some (.label r) => unless r.isEmpty || r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
+    | some (.variant r _) => unless r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
+    | _ => pure ()
+    return { field, key, limit }
+
+/-- The relations a compiled `relations()` entry declares, run as a pure entry. -/
+def declsOfEntry (entry : Delvetalk.CheckedEntry) : Except String (List RelDecl) := do
+  match Package.executeDataEntry entry #[] (Json.mkObj [("ticks", toJson (toString Delvetalk.Bounds.lawTicks))]) with
+  | .ok (.finished value _ _ _) => parseDecls value
+  | _ => throw "relations() did not evaluate"
+
+/-- The cases of a sum type (through the bounds): its labels and payload types. -/
+partial def variantCases (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
+  | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (variantCases bounds (fuel - 1))
+  | .variant r => recordFieldTypes bounds (bounds.length + 1) r
+  | _ => none
+
+/-- The columns of a relation field's rows, read from the state type: `rows {items: List<T>}` with `T` a record. -/
+def rowColumns (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBendTypes.Ty) (field : String) : Option (List String) := do
+  let fuel := bounds.length + 1
+  let fieldTy ← (← recordFieldTypes bounds fuel stateType).lookup field
+  let payload ← (← variantCases bounds fuel fieldTy).lookup "rows"
+  let items ← (← recordFieldTypes bounds fuel payload).lookup "items"
+  let cons ← (← variantCases bounds fuel items).lookup "cons"
+  let head ← (← recordFieldTypes bounds fuel cons).lookup "head"
+  return (← recordFieldTypes bounds fuel head).map (·.1)
+
+/-- A package's relations against its state type: each a relation field whose rows have every key
+    column; refused by name (`key: …`) otherwise. -/
+def checkRelations (decls : List RelDecl) (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Unit := do
+  for d in decls do
+    let some cols := rowColumns bounds stateType d.field
+      | throw s!"key: {d.field} is not a Relation<T> field of a record T"
+    for k in d.key do
+      unless cols.contains k do throw s!"key: relation {d.field} names column {k}, which its rows lack"
+
 /-- Compile a replacement for an object's entry module (its imports stay as
     sealed at creation). Failures are `(clause, message)`. -/
 def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false) :
@@ -795,14 +979,18 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
           throw ("migration", "the migration must have type OldState -> NewState")
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
       pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid,
-        (Delvetalk.CheckedEntry.ofPacket packet).toOption⟩)
+        (Delvetalk.CheckedEntry.ofPacket packet).toOption, none⟩)
   -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
   -- is the stack's when a layer declares a law, else the code's below.
   let (methods, predicate, predicateReads) := artifactShape artifact
   let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
     else (o.predicate, o.predicateReads)
+  let relations ← if !declaresRelations inputs then pure [] else do
+    let compiled ← (Package.compileEntry (← resolved "relations")).mapError (("key", ·.render))
+    (declsOfEntry compiled.entry).mapError (("key", ·))
+  (checkRelations relations assumptions.bounds ty).mapError (("key", ·))
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
-           methods, predicate, predicateReads, packet }
+           methods, predicate, predicateReads, packet, relations }
 
 def programKey (o : Object) (source migration : String) (extend : Bool := false) : String :=
   o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "")
@@ -824,13 +1012,6 @@ source carries it in its `sources [{cid, source}]` field, and compile inputs in 
 name it as `{name, cid}` (or `sourceCid`). Objects keep the full inputs in memory. -/
 
 def sourceCid (source : String) : String := Journal.bodyHash (toJson source)
-
-/-- The sources an object's compile inputs carry. -/
-def inputSources (inputs : Json) : List String :=
-  let modules := match inputs.getObjVal? "modules" with
-    | .ok (.arr ms) => ms.toList.filterMap fun m => (m.getObjValAs? String "source").toOption
-    | _ => []
-  modules ++ ((inputs.getObjValAs? String "source").toOption.map ([·])).getD []
 
 /-- Compile inputs as journaled: every source replaced by its CID. -/
 def compactInputs (inputs : Json) : Json :=
@@ -1096,7 +1277,8 @@ def compileEntryIn (w : World) (inputs : Json) (name : String) : Except String (
 
 def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
   return ⟨← c.artifact.getObjVal? "packet", c.entry.type, c.entry.source.assumptions.bounds,
-    c.entry.source.assumptions.rigid, some c.entry⟩
+    c.entry.source.assumptions.rigid, some c.entry,
+    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
 
 /-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
     machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/
@@ -1151,6 +1333,23 @@ def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
     | none => throw "lawReads must return a List<String>"
   | .error _ => throw "lawReads did not finish"
 
+/-- The relations a package declares: its `relations()` compiled as a held entry and run. No
+    declaration: none. -/
+def relationDecls (w : World) (inputs : Json) : Except String (List RelDecl) := do
+  if !declaresRelations inputs then return []
+  let (c, _) ← compileEntryIn w inputs "relations"
+  declsOfEntry c.entry
+
+/-- A built package's relations, checked, and a state put in canonical form under them
+    (`duplicateKey` refused by name). -/
+def relationsFor (w : World) (inputs : Json) (b : Built) (state : Data) : Except String (List RelDecl × Data) := do
+  let decls ← relationDecls w inputs
+  checkRelations decls b.assumptions.bounds b.ty
+  match canonicalState decls state with
+  | .ok s => return (decls, s)
+  | .error "duplicateKey" => throw "duplicateKey: two rows of a relation share a key"
+  | .error e => throw s!"{e}: a relation field does not hold rows"
+
 /-- The proposal with the objects the Bend laws of its written objects read added as roots. -/
 def withLawReads (w : World) (p : Proposal) : Proposal :=
   p.writes.foldl (fun p (id, _) => match w.objects[id]? with
@@ -1178,13 +1377,6 @@ def contextData (id principal handle caller intent : String) (height clock : Nat
     ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false)])]
-
-/-- The fields of a record type, through the packet's bounds; none for any other type. -/
-partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
-  | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (recordFieldTypes bounds (fuel - 1))
-  | .field n m tail => ((n, m) :: ·) <$> recordFieldTypes bounds fuel tail
-  | .emptyRow => some []
-  | _ => none
 
 /-- A record the host builds (a Context, a law's Request) as the receiving code's own library
     declares it: the fields its type names, in its order, each fitted alike. An object compiled
@@ -1350,7 +1542,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   let mut amendments : List Json := []
   for (id, changes) in writes do
     let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
-    let written ← match applyEdits o.state (changes.map (·.edits)) with
+    let written ← match applyEdits o.relations o.state (changes.map (·.edits)) with
       | .ok d => pure d
       | .error clause => throw { cls := clause, object := id }
     unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
@@ -1375,9 +1567,13 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType && (dataJson state).compress.utf8ByteSize ≤ Limits.maxStateBytes do
         throw (refuse "migration" "the converted state does not conform to the new state type")
+      -- A migration's result is put in canonical form under the new code's relations.
+      state ← match canonicalState prog.relations state with
+        | .ok s => pure s
+        | .error e => throw (refuse "migration" s!"{e}: the converted state's relations are not canonical")
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
-                       predicate := prog.predicate, predicateReads := prog.predicateReads }
+                       predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),
@@ -1728,8 +1924,9 @@ def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) 
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) :
     Except String (Object × String × World) := do
   let built ← compileObject w inputs
-  let (o, sources) ← makeObject built inputs (← decodeData Limits.dataDepth seed) read chain creator height lawText
-  return (o, sources, cacheBuild w inputs built)
+  let (relations, state) ← relationsFor w inputs built (← decodeData Limits.dataDepth seed)
+  let (o, sources) ← makeObject built inputs state read chain creator height lawText
+  return ({ o with relations }, sources, cacheBuild w inputs built)
 
 def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) : Except String (Object × String) := do
@@ -1798,6 +1995,8 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let given ← decodeData Limits.dataDepth (← j.getObjVal? "seed")
   let state ← (mergeSeed (← initialState built) given built.assumptions.bounds built.ty).mapError (s!"typeMismatch: {·}")
   let state := withOwner state given (owner.getD principal)
+  -- Relations are journaled in canonical form, so the seed is the state the object holds.
+  let (_, state) ← relationsFor w inputs built state
   let seed := dataJson state
   let (o, sources, w) ← buildObjectIn (cacheBuild w inputs built) inputs seed (j.getObjVal? "read").toOption (j.getObjVal? "chain").toOption (owner.getD principal) (w.height + 1)
   let supervisor := (← optText j "supervisor").getD ""

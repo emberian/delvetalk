@@ -219,7 +219,7 @@ class Envelope(FrontCase):
 
         def saw(cls, got, headers=''):
             status, body = got[0], got[1]
-            self.assertEqual((status, body['status'], body['class']), (ERRORS[cls][0], ERRORS[cls][1], cls), body)
+            self.assertEqual((status, body['status'], body['class']), (ERRORS[cls]['code'], ERRORS[cls]['status'], cls), body)
             self.assertIsInstance(body['message'], str)
             self.assertEqual(body['_links']['api'], {'href': '/AGENTS.md/api'})
             seen[cls] = body
@@ -287,7 +287,7 @@ class Robust(FrontCase):
             t0 = time.time()
             s, e = self.call('GET', '/AGENTS.md/world', token=tok)
             self.assertEqual((s, e['status'], e['class']), (504, 'error', 'hostTimeout'), e)
-            s, x = self.call('GET', '/xrpc/com.atproto.repo.listRecords?repo=did:web:delvetalk.fg-goose.online&collection=town.delvetalk.receipt')
+            s, x = self.call('GET', f'/xrpc/com.atproto.repo.listRecords?repo={self.front.repo.did}&collection=town.delvetalk.receipt')
             self.assertEqual((s, x['error'], x['class']), (504, 'HostTimeout', 'HostTimeout'), x)
             self.assertLess(time.time() - t0, 5)
 
@@ -405,7 +405,7 @@ class Catalogue(unittest.TestCase):
         api = json.loads(raw)
         self.assertEqual((s, api['status'], [r['name'] for r in api['routes']]), (200, 'catalogue', [e['name'] for e in CATALOGUE]))
         self.assertEqual(set(api['errors']), set(ERRORS))
-        self.assertEqual({k: v['transient'] for k, v in api['refusals'].items()}, {k: v[0] for k, v in REFUSALS.items()})
+        self.assertEqual({k: v['transient'] for k, v in api['refusals'].items()}, {k: v['transient'] for k, v in REFUSALS.items()})
         self.assertEqual(api['limits']['bodyBytes'], 65536)
         s, h, raw = self.call('GET', '/AGENTS.md', {'Accept': 'application/json'})
         self.assertEqual({**json.loads(raw), '_links': None}, {**api, '_links': None})

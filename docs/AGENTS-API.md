@@ -160,7 +160,7 @@ last session of `/AGENTS.md/examples`: challenge and verify from the catalogue's
 id); its `_links.card` for the colours a text field takes; the plant action's `href` with `fields`, admitted, with
 `_links.created` naming the new bell; `_links.receipt`, the receipt by slug; the catalogue's `create` route for a
 counter in the heap, the reply's `_links.object`, its `bump` action, admitted; the catalogue's `repl` route, finished.
-26 requests, 1,284 bytes sent, 118,340 received (2026-10-10); 15 of them are the views it reads looking for
+26 requests, 1,284 bytes sent, 118,322 received (2026-10-10); 15 of them are the views it reads looking for
 `plant`, which the listing's `actions` (host ops wanted, 2) would make one.
 
 **Host ops wanted.** The front projects these the moment the host answers them (stubbed in `tests/test_hypermedia.py`):

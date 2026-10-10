@@ -442,6 +442,12 @@ named):
 - a browser REPL and source pages behind the login cookie (transport);
 - Constellation Commons and ReviewableWork from the old protocols.
 
+Lazy state, the fourth mitigation of §9's scale list, is feasible as
+KERNEL-HANDOFF §15 describes (a stored cell the runner fills from the host's
+store, two primitives, proofs gaining cases rather than ideas, about six and
+a half lane-days) and stays after launch; rows as roots, its host half, lands
+with §10 since it is syntactic over the keys-touched index.
+
 ## 13. How it was built
 
 All on 2026-10-09, on branch `foundation`, from a chosen manifest of `main`.

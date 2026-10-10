@@ -62,7 +62,7 @@ static void validate(J *t) {
  else if(tag(t,"get")) { if(n!=3||!isstr(AT(t,2))) fail("invalid get"); validate(a); }
  else if(tag(t,"inject")) { if(n!=3||!isstr(a)) fail("invalid inject"); validate(AT(t,2)); }
  else if(tag(t,"binary")) {
-  if(n!=4||!named(a,"add multiply equal conjunction labelEqual subtract divide less lessEqual modulo textConcat textTake textDrop textSpan textBreak")) fail("invalid primitive"); validate(AT(t,2)); validate(AT(t,3));
+  if(n!=4||!named(a,"add multiply equal conjunction labelEqual subtract divide less lessEqual modulo textConcat textTake textDrop textSpan textBreak textHasAny textCanonicalCompare")) fail("invalid primitive"); validate(AT(t,2)); validate(AT(t,3));
  } else if(tag(t,"unary")) {
   if(n!=3||!named(a,"natText textLength sha256Text")) fail("invalid unary primitive"); validate(AT(t,2));
  } else if(tag(t,"ifZero")||tag(t,"ifBool")) { if(n!=4) fail("wrong condition arity"); validate(a); validate(AT(t,2)); validate(AT(t,3)); }
@@ -119,7 +119,37 @@ static void sha256_hex(const unsigned char *msg,size_t len,char out[65]) {
  }
  free(m); for(int i=0;i<8;i++) sprintf(out+8*i,"%08x",h[i]);
 }
+/* Words: maximal runs of ASCII letters and digits and non-ASCII bytes, ASCII lowercased. */
+static int word_byte(unsigned char c) { return c>=0x80||(c>='0'&&c<='9')||(c>='a'&&c<='z')||(c>='A'&&c<='Z'); }
+static unsigned char lower_byte(unsigned char c) { return (c>='A'&&c<='Z')?(unsigned char)(c+32):c; }
+/* Whether the word x[i..i+n) (lowercased) is among the words of y. */
+static int has_word(const char *x,size_t n,const char *y,size_t yn) {
+ size_t j=0;
+ while(j<yn) {
+  while(j<yn&&!word_byte((unsigned char)y[j])) j++;
+  size_t start=j; while(j<yn&&word_byte((unsigned char)y[j])) j++;
+  if(j-start==n&&n>0) { size_t k=0; while(k<n&&lower_byte((unsigned char)x[k])==lower_byte((unsigned char)y[start+k])) k++; if(k==n) return 1; }
+ }
+ return 0;
+}
 static J *text_primitive(const char *op,J *a,J *b) {
+ if(!strcmp(op,"textCanonicalCompare")) {
+  if(!tag(a,"label")||!tag(b,"label")) return NULL;
+  const char *x=str(AT(a,1)),*y=str(AT(b,1)); size_t xn=(size_t)json_object_get_string_len(AT(a,1)),yn=(size_t)json_object_get_string_len(AT(b,1));
+  int c=xn!=yn?(xn<yn?-1:1):memcmp(x,y,xn); c=c<0?0:c==0?1:2;
+  return nat_u64((uint64_t)c);
+ }
+ if(!strcmp(op,"textHasAny")) {
+  if(!tag(a,"label")||!tag(b,"label")) return NULL;
+  const char *x=str(AT(a,1)),*y=str(AT(b,1)); size_t xn=(size_t)json_object_get_string_len(AT(a,1)),yn=(size_t)json_object_get_string_len(AT(b,1));
+  size_t i=0; int found=0;
+  while(i<xn&&!found) {
+   while(i<xn&&!word_byte((unsigned char)x[i])) i++;
+   size_t start=i; while(i<xn&&word_byte((unsigned char)x[i])) i++;
+   if(i>start&&has_word(x+start,i-start,y,yn)) found=1;
+  }
+  return one("boolean",json_object_new_boolean(found));
+ }
  if(!strcmp(op,"textConcat")||!strcmp(op,"textSpan")||!strcmp(op,"textBreak")) {
   if(!tag(a,"label")||!tag(b,"label")) return NULL;
   const char *x=str(AT(a,1)),*y=str(AT(b,1)); size_t xn=(size_t)json_object_get_string_len(AT(a,1)),yn=(size_t)json_object_get_string_len(AT(b,1));
@@ -180,7 +210,7 @@ static int reducible(J *t) {
   if(!value(right)) return reducible(right);
   if(!strcmp(str(a),"conjunction")) return tag(b,"boolean")&&tag(right,"boolean");
   if(!strcmp(str(a),"labelEqual")) return tag(b,"label")&&tag(right,"label");
-  if(!strcmp(str(a),"textConcat")||!strcmp(str(a),"textSpan")||!strcmp(str(a),"textBreak")) return tag(b,"label")&&tag(right,"label");
+  if(!strcmp(str(a),"textConcat")||!strcmp(str(a),"textSpan")||!strcmp(str(a),"textBreak")||!strcmp(str(a),"textHasAny")||!strcmp(str(a),"textCanonicalCompare")) return tag(b,"label")&&tag(right,"label");
   if(!strcmp(str(a),"textTake")||!strcmp(str(a),"textDrop")) return tag(b,"label")&&tag(right,"nat");
   return tag(b,"nat")&&tag(right,"nat");
  }
