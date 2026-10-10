@@ -356,6 +356,11 @@
    "status": "refused",
    "when": "a spoken name names more than one receipt; ask with ?full=1 and cite the full id"
   },
+  "replRestarted": {
+   "code": 409,
+   "status": "error",
+   "when": "the REPL restarted; start the module again (a checkpoint lives as long as the host)"
+  },
   "bodyTooLarge": {
    "code": 413,
    "status": "error",
