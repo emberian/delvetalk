@@ -91,8 +91,6 @@ import ./World.obend as World
 import ./Document.obend as Document
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<String>:
@@ -189,8 +187,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<String>:
@@ -233,8 +229,6 @@ record Said:
   text: String
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {note: ""}
 def said(context: Abi.Context, text: String) -> Activity<String>:
@@ -526,8 +520,6 @@ import ./World.obend as World
 import ./Document.obend as Document
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {note: ""}
 def who(state: State, context: Abi.Context) -> Activity<String>:
@@ -594,8 +586,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {note: ""}
 def noted(text: String, context: Abi.Context) -> Activity<String>:
@@ -684,8 +674,6 @@ import ./World.obend as World
 import ./Child.obend as Child
 record State:
   made: Nat
-record Edits:
-  made: Plans.Edit<Nat, Nat>
 def initial() -> State:
   {made: 0n}
 def made(target: Plans.Reference) -> Activity<String>:
@@ -745,8 +733,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   note: String
-record Edits:
-  note: Plans.Edit<String, {}>
 def initial() -> State:
   {note: ""}
 def who(state: State, context: Abi.Context) -> Activity<String>:

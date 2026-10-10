@@ -1277,6 +1277,16 @@ def parseObjective (source : String) : Except Diagnostic Module := do
   let declaresState := decls.any fun d => match d with
     | .record "State" .. | .typeAlias "State" .. => true
     | _ => false
+  -- One schema: beside a State, `Edits` and a nullary `keep() -> Edits` are the derived ones.
+  if declaresState then
+    for d in decls do
+      match d with
+      | .record "Edits" _ _ span =>
+        throw ⟨"refused (derived-edits): Edits is derived from State; delete this declaration", some span⟩
+      | .function sig _ _ span =>
+        if sig.name == "keep" && sig.params.isEmpty && (String.ofList (jsTrim sig.resultType.toList)) == "Edits" then
+          throw ⟨"refused (derived-edits): keep() is derived from State; delete this declaration", some span⟩
+      | _ => pure ()
   if declaresState && !imports.any (·.path.endsWith "Plan.obend") && !decls.any (·.name == "keep") then
     let marked : Expr → Expr := fun e => match e with
       | .call (.var "keep" _) [] s => .call (.var removeMarker s) [] s

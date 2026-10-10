@@ -47,13 +47,8 @@ import ./World.obend as World
 record State:
   planted: Nat
   last: String
-record Edits:
-  planted: Plans.Edit<Nat, Nat>
-  last: Plans.Edit<String, {}>
 def initial() -> State:
   {planted: 0n, last: ""}
-def keep() -> Edits:
-  {planted: Plans.Edit.keep({}), last: Plans.Edit.keep({})}
 def plant(state: State, input: {seed: String}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {planted: add 1n, last: set input.seed}
   state.planted + 1n

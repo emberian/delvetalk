@@ -24,11 +24,6 @@ import ./World.obend as World
 record State:
   count: Nat
   total: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-  total: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({}), total: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n, total: 0n}
 def migrate(old: {count: Nat}) -> State:

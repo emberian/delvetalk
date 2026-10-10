@@ -18,10 +18,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def initial() -> State:
   {count: 0n}
 def bump(state: State, context: Abi.Context) -> Activity<Nat>:

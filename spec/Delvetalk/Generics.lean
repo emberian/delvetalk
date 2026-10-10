@@ -1081,10 +1081,6 @@ modules), and the types the module did not write itself are spelled through its 
 /-- The file an import path names (`./lib/List.obend` names `List.obend`). -/
 def fileOf (path : String) : String := ((path.splitOn "/").getLast?).getD path
 
-/-- Whether module `origin` is the library `file`: some import edge of the package names it by that file. -/
-def isLibrary (origin : Nat) (file : String) : M Bool := do
-  return (← get).sources.any fun s => s.module.imports.any fun e => e.target == origin && fileOf e.path == file
-
 /-- A declaration of module `home` as module `origin` writes its name. -/
 def spellName (origin home : Nat) (name : String) : M (Option String) := do
   if origin == home then return some name
@@ -1118,15 +1114,21 @@ partial def spell (origin : Nat) (g : GType) : M (Option String) := do
     let (some a, some b) := (← spell origin a, ← spell origin b) | return none
     return some (a ++ " with " ++ b)
 
-/-- The item type of a `List.List<X>` or `Relation.Relation<X>` (the library sums, by module and name). -/
+/-- The item type of a `List<X>` or `Relation<X>`: an instance of a one-parameter sum named `List`
+with the cases `nil` and `cons`, or named `Relation` with the one case `rows` (the library's, or a
+package's own of that shape). -/
 def entriesItem (g : GType) : M (Option GType) := do
   let .named m n _ := g | return none
   let s ← get
   if m != s.generatedModule then return none
   let some i := (s.instanceByName[n]?).bind (s.instances[·]?) | return none
   let [x] := i.arguments | return none
-  if (i.declarationName == "List" && (← isLibrary i.origin "List.obend")) ||
-     (i.declarationName == "Relation" && (← isLibrary i.origin "Relation.obend")) then return some x
+  let home ← originModule i.origin
+  let some d := s.byName[(home.name, i.declarationName)]? | return none
+  let .sum _ cases [_] _ := d.ast | return none
+  let labels := cases.map (·.name)
+  if (i.declarationName == "List" && labels == ["nil", "cons"]) ||
+     (i.declarationName == "Relation" && labels == ["rows"]) then return some x
   return none
 
 def derivedRefusal (module message : String) (tag := "derived-edits") : String :=
@@ -1194,16 +1196,13 @@ def declWritten : Decl → List String
   | .spec sp => sp.methods.flatMap (bodyWritten ·.body)
   | _ => []
 
-/-- Refuse a write, or a hand-written `Edits`, that names a fixed State field of module `index`. -/
+/-- Refuse a write that names a fixed State field of module `index`. -/
 def checkFixed (index : Nat) : M Unit := do
   let some source := (← get).sources[index]? | return
   let some (fields, _, _) ← tryCatch (stateFields index source.ast) (fun _ => pure none) | return
   let fixed := (fields.filter (·.fixed)).map (·.name)
   if fixed.isEmpty then return
-  let edits := source.ast.decls.flatMap fun d => match d with
-    | .record "Edits" _ fs _ => fs.map (·.name)
-    | _ => []
-  for name in edits ++ source.ast.decls.flatMap declWritten do
+  for name in source.ast.decls.flatMap declWritten do
     if fixed.contains name then
       throw (derivedRefusal source.module.name (name ++ " is fixed; no edit names it") "fixed")
 

@@ -11,6 +11,7 @@ so two spellings are compared on the packet without that one field; everything e
     python3 -m unittest tests.test_sugar -v
 """
 import hashlib
+import re
 import json
 import unittest
 
@@ -369,15 +370,9 @@ record State:
   planted: Nat
   children: Lists.List<P.Reference>
   note: String
-record Edits:
-  planted: P.Edit<Nat, Nat>
-  children: P.Entries<P.Reference, {}>
-  note: P.Edit<String, {}>
-def keep() -> Edits:
-  {planted: P.Edit::<Nat, Nat>.keep({}), children: P.Entries::<P.Reference, {}>.keep({}), note: P.Edit::<String, {}>.keep({})}
 def plant(state: State, input: {child: P.Reference, note: String}, context: Abi.Context) -> Activity<Nat>:
 """
-WRITE_EXPLICIT = GARDEN + """  let written(_) = world.write(extend(keep(), {planted: P.Edit::<Nat, Nat>.add({delta: 1n}), children: P.Entries::<P.Reference, {}>.append({item: input.child}), note: P.Edit::<String, {}>.set({value: input.note})}))
+WRITE_EXPLICIT = GARDEN + """  let written(_) = world.write(extend(keep(), {planted: P.Edit::<Nat, Nat>.add({delta: 1n}), children: P.Entries::<P.Reference, P.Reference>.append({item: input.child}), note: P.Edit::<String, {}>.set({value: input.note})}))
   state.planted + 1n
 """
 WRITE_SUGARED = GARDEN + """  let written(_) = write {planted: add 1n, children: append input.child, note: set input.note}
@@ -390,8 +385,6 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
 law small "a counter stays at most a hundred": new.count <= 100
 def initial() -> State:
   {count: 0n}
@@ -598,6 +591,19 @@ class FormInputs(unittest.TestCase):
         self.assertIn("refused (form-kind): form water offers shade: Mixed, which is not a closed sum of empty cases",
                       reply["diagnostic"]["message"])
 
+    def test_a_method_takes_its_form_blocks_input(self):
+        reply = self.send("check-package", FORM_STATE.replace("input: PlantInput", "input: {count: Nat}") + FORM_BLOCKS, "plant")
+        self.assertEqual(reply["status"], "refused", reply)
+        d = reply["diagnostic"]
+        self.assertIn("refused (form-input): plant has a form block, so its input is PlantInput", d["message"])
+        self.assertEqual((d["definition"], d["expected"], d["found"]), ("Package.plant", "PlantInput", "{count: Nat}"))
+        # A block without fields: the method takes no input, or `{}`; one with fields needs its input.
+        ring = FORM_STATE + FORM_BLOCKS + "form ring:\ndef ring(state: State) -> Nat:\n  0n\n"
+        self.assertEqual(self.send("check-package", ring, "ring")["status"], "checked")
+        self.assertEqual(self.send("check-package", ring.replace("ring(state: State)", "ring(state: State, input: {})"), "ring")["status"], "checked")
+        none = FORM_STATE.replace("def water(state: State, input: WaterInput)", "def water(state: State)").replace("textLength(input.note)", "0n")
+        self.assertIn("so its input is WaterInput", self.send("check-package", none + FORM_BLOCKS, "water")["diagnostic"]["message"])
+
     def test_a_declared_input_beside_its_form_block_is_refused_by_name(self):
         source = FORM_STATE + FORM_BLOCKS + "record PlantInput:\n  count: Nat\n"
         reply = self.send("check-package", source, "plant")
@@ -636,7 +642,7 @@ class Writes(unittest.TestCase):
             with self.subTest(op=op):
                 sugared = GARDEN + "  let written(_) = write {children: %s %s}\n  state.planted\n" % (op, value)
                 explicit = GARDEN + ("  let written(_) = world.write(extend(keep(), "
-                                     "{children: P.Entries::<P.Reference, {}>.%s({%s: %s})}))\n  state.planted\n" % (ctor, payload, value))
+                                     "{children: P.Entries::<P.Reference, P.Reference>.%s({%s: %s})}))\n  state.planted\n" % (ctor, payload, value))
                 packets = []
                 for source in (sugared, explicit):
                     reply = self.h.send({"op": "compile", "entry": "plant",
@@ -654,15 +660,15 @@ class Writes(unittest.TestCase):
 
     def test_remove_and_amend_name_items(self):
         # Plan.obend lost the index forms: `remove ITEM` is removeItem, `amend ITEM with CHANGE` amendItem.
-        for sugared, explicit in [("children: remove input.child", "children: P.Entries::<P.Reference, {}>.removeItem({item: input.child})"),
-                                  ("children: amend input.child with {}", "children: P.Entries::<P.Reference, {}>.amendItem({item: input.child, change: {}})")]:
+        for sugared, explicit in [("children: remove input.child", "children: P.Entries::<P.Reference, P.Reference>.removeItem({item: input.child})"),
+                                  ("children: amend input.child with input.child", "children: P.Entries::<P.Reference, P.Reference>.amendItem({item: input.child, change: input.child})")]:
             with self.subTest(edit=sugared):
                 self.assertEqual(self.compiled_core(GARDEN + "  let written(_) = write {%s}\n  state.planted\n" % sugared),
                                  self.compiled_core(GARDEN + "  let written(_) = world.write(extend(keep(), {%s}))\n  state.planted\n" % explicit))
 
     def test_remove_on_a_relation_is_a_retract_by_key(self):
         sugared = ROWS + "  let written(_) = write {rows: remove {at: input.at}}\n  0n\n"
-        explicit = ROWS + "  let written(_) = world.write(extend(keep(), {rows: P.Entries::<Row, {}>.retract({key: {at: input.at}})}))\n  0n\n"
+        explicit = ROWS + "  let written(_) = world.write(extend(keep(), {rows: P.Entries::<Row, Row>.retract({key: {at: input.at}})}))\n  0n\n"
         library = ("Abi", "List", "World", "Relation")
         self.assertEqual(self.compiled_core(sugared, library), self.compiled_core(explicit, library))
 
@@ -685,10 +691,6 @@ record Row:
   text: String
 record State:
   rows: Relations.Relation<Row>
-record Edits:
-  rows: P.Entries<Row, {}>
-def keep() -> Edits:
-  {rows: P.Entries::<Row, {}>.keep({})}
 def plant(state: State, input: {at: Nat}, context: Abi.Context) -> Activity<Nat>:
 """
 
@@ -812,6 +814,12 @@ def plant(state: State, input: {child: P.Reference, at: Nat, name: String}, cont
 DERIVED_LIBRARY = ("Abi", "List", "World", "Relation")
 
 
+def without_state(source):
+    """The module with its State renamed (and nothing fixed), so a hand-written Edits and keep()
+    are its own: the explicit spelling a derived pair is compared against."""
+    return re.sub(r"(?<![.\w])State\b", "Shape", source).replace(": fixed ", ": ")
+
+
 class DerivedEdits(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -832,7 +840,7 @@ class DerivedEdits(unittest.TestCase):
 
     def test_derived_edits_are_the_pair_written_at_the_end(self):
         derived = DERIVED_HEAD + DERIVED_REST
-        written = DERIVED_HEAD + DERIVED_REST + DERIVED_PAIR
+        written = without_state(DERIVED_HEAD + DERIVED_REST + DERIVED_PAIR)
         for entry in ("plant", "keep", "initial"):
             with self.subTest(entry=entry):
                 self.assertEqual(core(self.compiled(derived, entry)), core(self.compiled(written, entry)))
@@ -846,10 +854,15 @@ class DerivedEdits(unittest.TestCase):
         self.assertTrue(all(f["value"] == {"tag": "variant", "label": "keep", "payload": {"tag": "record", "fields": []}}
                             for f in fields), fields)
 
-    def test_a_hand_written_pair_is_still_accepted(self):
-        partial = DERIVED_HEAD + "record Edits:\n  planted: P.Edit<Nat, Nat>\ndef keep() -> Edits:\n  {planted: P.Edit.keep({})}\n" + \
-            "def bump(state: State, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {planted: add 1n}\n  0n\n"
-        self.assertEqual(self.send("check-package", partial, "bump")["status"], "checked")
+    def test_a_hand_written_pair_beside_state_is_refused_by_name(self):
+        bump = "def bump(state: State, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {planted: add 1n}\n  0n\n"
+        for declared, name in (("record Edits:\n  planted: P.Edit<Nat, Nat>\n", "Edits is"),
+                               ("def keep() -> Edits:\n  {planted: P.Edit.keep({})}\n", "keep() is")):
+            with self.subTest(declared=name):
+                reply = self.send("check-package", DERIVED_HEAD + declared + bump, "bump")
+                self.assertEqual(reply["status"], "refused", reply)
+                self.assertIn("refused (derived-edits): " + name + " derived from State; delete this declaration",
+                              reply["diagnostic"]["message"])
 
     def test_a_state_named_from_another_module_derives_in_its_own_terms(self):
         # `type State = Lib.State`: the items of Lib's fields are spelled through the import of Lib.
@@ -859,7 +872,7 @@ class DerivedEdits(unittest.TestCase):
             "import ./World.obend as World\nimport ./Lib.obend as Lib\ntype State = Lib.State\n" \
             "def go(state: State, input: {label: String}, context: Abi.Context) -> Activity<Nat>:\n" \
             "  let written(_) = write {exits: append {label: input.label}, count: add 1n, name: set input.label}\n  0n\n"
-        written = package + ("record Edits:\n  exits: P.Entries<Lib.Exit, Lib.Exit>\n  count: P.Edit<Nat, Nat>\n"
+        written = without_state(package) + ("record Edits:\n  exits: P.Entries<Lib.Exit, Lib.Exit>\n  count: P.Edit<Nat, Nat>\n"
                              "  name: P.Edit<String, {}>\ndef keep() -> Edits:\n"
                              "  {exits: P.Entries.keep({}), count: P.Edit.keep({}), name: P.Edit.keep({})}\n")
         extra = [{"name": "Lib", "source": lib}]
@@ -915,14 +928,14 @@ class FixedFields(unittest.TestCase):
         for entry in ("plant", "keep", "initial"):
             with self.subTest(entry=entry):
                 derived = self.compiled(FIXED_HEAD + DERIVED_REST, entry)
-                written = self.compiled(FIXED_HEAD + DERIVED_REST + FIXED_PAIR, entry)
+                written = self.compiled(without_state(FIXED_HEAD + DERIVED_REST + FIXED_PAIR), entry)
                 self.assertEqual(core(derived), core(written))
                 self.assertEqual(derived["fixed"], ["note", "owner"])
         self.assertNotIn("fixed", self.compiled(DERIVED_HEAD + DERIVED_REST, "plant"))
 
     def test_a_write_naming_a_fixed_field_is_refused_by_name(self):
         for source in (FIXED_HEAD + DERIVED_REST.replace("open: set true}", "open: set true, note: set input.name}"),
-                       FIXED_HEAD + DERIVED_REST + FIXED_PAIR.replace("  open: P.Edit<Bool, {}>\n", "  open: P.Edit<Bool, {}>\n  note: P.Edit<String, {}>\n")):
+                       FIXED_HEAD + DERIVED_REST.replace("let written(_) = write {", "let written(_) = world.write({note: P.Edit.set({value: \"\"})})\n  let again(_) = write {")):
             reply = self.send("check-package", source, "plant")
             self.assertEqual(reply["status"], "refused", reply)
             self.assertIn("refused (fixed): note is fixed; no edit names it", reply["diagnostic"]["message"])
@@ -931,3 +944,16 @@ class FixedFields(unittest.TestCase):
         source = DERIVED_HEAD.replace("  text: String\n", "  text: fixed String\n") + DERIVED_REST
         reply = self.send("check-package", source, "plant")
         self.assertIn("refused (fixed): only a State field is fixed; text is a field of Row", reply["diagnostic"]["message"])
+
+
+class Declares(unittest.TestCase):
+    """The artifact names the entry module's conventional declarations, derived ones included."""
+
+    def test_declares_lists_derived_and_written_conventions(self):
+        h = Host()
+        self.addCleanup(h.close)
+        derived = h.compile(FORM_STATE + FORM_BLOCKS + "def initial() -> State:\n  {planted: 0n}\n", "plant", ("List", "Form"))
+        self.assertEqual(derived["declares"], ["forms", "initial"])
+        plain = h.compile(FORM_STATE.replace("PlantInput", "{count: Nat}").replace("WaterInput", "{note: String}"),
+                          "plant", ("List", "Form"))
+        self.assertEqual(plain["declares"], [])

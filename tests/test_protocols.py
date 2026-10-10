@@ -31,12 +31,8 @@ import ./Kit.obend as Kit
 implements Kit.Card
 record State:
   count: Nat
-record Edits:
-  count: Plans.Edit<Nat, Nat>
 def initial() -> State:
   {count: 0n}
-def keep() -> Edits:
-  {count: Plans.Edit.keep({})}
 def receive(state: State, input: Kit.Heard, context: Abi.Context) -> Activity<Nat>:
   match world.write(extend(keep(), {count: Plans.Edit.add({delta: 1n})})):
     case _: state.count
@@ -93,7 +89,7 @@ class Protocols(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
         d = reply["diagnostic"]
         self.assertIn("refused (protocol): Thing.render", d["message"])
-        self.assertEqual((d["module"], d["span"]["line"]), ("Thing", 19))
+        self.assertEqual((d["module"], d["span"]["line"]), ("Thing", 15))
         self.assertEqual(d["expected"], "State -> Abi.Context -> String")
         self.assertTrue(d["found"].endswith("-> Nat"), d)
         self.assertIn("protocol Card", d["hint"])
