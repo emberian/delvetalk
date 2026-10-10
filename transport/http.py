@@ -203,10 +203,10 @@ def oid(obj):
 
 
 def shown(kind):
-    """A form field's kind as a spell line shows it."""
+    """A form field's kind as a spell line shows its value: a choice names its options, the rest their bounds."""
     if kind.get('tag') == 'choice':
-        return ' | '.join(kind.get('options') or [])
-    return f"{kind.get('tag')} {kind.get('min')}..{kind.get('max')}"
+        return 'one of ' + ', '.join(kind.get('options') or [])
+    return f"<{kind.get('tag')} {kind.get('min')}..{kind.get('max')}>"
 
 
 def actions(base, obj, inspected, only=None):
@@ -227,7 +227,7 @@ def actions(base, obj, inspected, only=None):
         if m['name'] == 'receive':
             out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'spell': "text: any action's spell, or prose"}})
             continue
-        spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: <{shown(f['kind'])}>\n" for f in form['fields'])
+        spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: {shown(f['kind'])}\n" for f in form['fields'])
         out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
                     **({'spell': spell} if 'receive' in forms else {})})
     return out
@@ -718,8 +718,11 @@ class Handler(BaseHTTPRequestHandler):
                 if offers:
                     break
                 self.server.sleep(WAIT_STEP)
-            said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), line=html.escape(turn_line(r)),
-                                       offers=''.join(pages.T['offer'].format(text=html.escape(t)) for t in offers) or pages.T['quiet'])
+            if r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
+                said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
+            else:
+                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), line=html.escape(turn_line(r)),
+                                              offers=''.join(pages.T['offer'].format(text=html.escape(t)) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))

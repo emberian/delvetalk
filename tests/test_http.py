@@ -531,6 +531,8 @@ class Pages(FrontCase):
         self.assertEqual(s, 200)
         self.assertIn(b'2 planted, newest first:', page)
         self.assertIn(b'href="/play/plot"', page)
+        self.assertIn(b'colour: one of amber, violet, silver\nseed: &lt;text 1..80&gt;', page)
+        self.assertIn(b'name="text" value="delvetalk plot ?"', page)  # the usage button, answered as a card by /play/  # the plant form, as a spell
         self.assertIn(b'prefers-color-scheme', self.request('GET', '/static/style.css')[2])
         self.assertEqual(self.request('GET', '/o/nowhere')[0], 404)
         self.assertEqual(self.request('POST', '/o/plot/spell', raw='text=x', headers={'Content-Type': FORM})[0], 404)  # speaking is /play/
@@ -633,6 +635,12 @@ class Play(FrontCase):
         self.assertIn(b'value="delvetalk garden ?"', garden)
         s, _, usage = self.play('/play/garden', 'delvetalk garden ?')
         self.assertIn(b'Reply with a spell:', usage)
+        said = self.host.send({'op': 'world-turn', 'principal': DID, 'object': 'directory', 'method': 'receive', 'identity': 'usage-direct',
+                               'argument': record(text=label('delvetalk directory ?'), post=label(''))})
+        self.assertEqual(said['status'], 'usage', said)  # the host's own answer for a card of the message dialect
+        _, _, asked = self.play('/play/directory', 'delvetalk directory ?')
+        self.assertIn(b'<figure class="frame usage"><pre class="card">' + html.escape(said['text']).encode() + b'</pre></figure>', asked)
+        self.assertNotIn(b'class="slip', asked)  # a usage is no turn: no receipt line
 
     def test_plant_by_spell_and_read_the_receipt(self):
         s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths')
