@@ -887,40 +887,21 @@ partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theo
   | .emptyRow => some []
   | _ => none
 
-/-- Does a package's entry module (the last of its modules, or its one `source`) declare
-    `relations()`? Only the entry module's declaration counts: a package whose other modules
-    declare one, and its entry module none, has no relations. -/
-def entryDeclaresRelations (inputs : Json) : Bool :=
-  let src := match inputs.getObjVal? "modules" with
-    | .ok (.arr ms) => (ms.back?.bind fun m => (m.getObjValAs? String "source").toOption).getD ""
-    | _ => (inputs.getObjValAs? String "source").toOption.getD ""
-  (src.splitOn "\n").any (·.startsWith "def relations(")
-
-/-- The relation declarations `relations()` returned (a list of `{field, key, limit?, retain?}`). -/
-def parseDecls (value : Data) : Except String (List RelDecl) := do
-  let some items := listOf value | throw "relations() must return a list of Decl"
-  items.mapM fun d => do
-    let .record f := d | throw "a relation Decl is a record"
-    let some (.label field) := f.lookup "field" | throw "a relation Decl names its field"
-    let some keys := (f.lookup "key").bind listOf | throw s!"relation {field} declares no key list"
-    let key ← keys.mapM fun k => match k with
-      | .label c => pure c
-      | _ => throw s!"relation {field}'s key names columns by text"
-    if key.isEmpty then throw s!"key: relation {field} declares an empty key"
-    let limit := match f.lookup "limit" with
-      | some (.natural n) => n
-      | _ => 0
-    match f.lookup "retain" with
-    | some (.label r) => unless r.isEmpty || r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
-    | some (.variant r _) => unless r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
-    | _ => pure ()
-    return { field, key, limit }
-
-/-- The relations a compiled `relations()` entry declares, run as a pure entry. -/
-def declsOfEntry (entry : Delvetalk.CheckedEntry) : Except String (List RelDecl) := do
-  match Package.executeDataEntry entry #[] (Json.mkObj [("ticks", toJson (toString Delvetalk.Bounds.lawTicks))]) with
-  | .ok (.finished value _ _ _) => parseDecls value
-  | _ => throw "relations() did not evaluate"
+/-- The relations an artifact lists (`relations [{field, key, limit, retain?}]`, the value of the
+    entry module's `relations()`, which the kernel evaluates once per prepared closure); `none` when
+    the entry module declares none. An empty key or a retention other than `dropOldest` refuses. -/
+def declsOfArtifact (artifact : Json) : Except String (Option (List RelDecl)) := do
+  let some raw := (artifact.getObjVal? "relations").toOption | return none
+  let items ← raw.getArr?
+  some <$> items.toList.mapM fun d => do
+    let field ← d.getObjValAs? String "field"
+    let key ← d.getObjValAs? (List String) "key"
+    if key.isEmpty then throw s!"relation {field} declares an empty key"
+    let limit := (d.getObjValAs? Nat "limit").toOption.getD 0
+    match (d.getObjValAs? String "retain").toOption with
+    | some r => unless r.isEmpty || r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
+    | none => pure ()
+    return ({ field, key, limit } : RelDecl)
 
 /-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
     machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/
@@ -1099,7 +1080,11 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
         pure (replaced.setObjVal! "library" (toJson lib.pin)) else pure replaced
     | none => pure replaced)
   let resolved := fun (entry : String) => (resolveInputs w (inputs.setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
-  let (artifact, ty, _) ← (Package.compileKeepingLaws (← resolved "initial")).mapError (("compile", ·))
+  -- One prepared closure for the entry, its declared methods and (in the artifact) its relations.
+  let entryInputs ← resolved "initial"
+  let request ← (Package.prepareRequest entryInputs).mapError (("compile", ·.render))
+  let c ← (Package.compileEntryFrom request "initial").mapError fun d => ("compile", (Package.withHint entryInputs d).render)
+  let (artifact, ty) := (c.artifact, c.entry.type)
   let decoded ← (do
     Minidregg.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
   let assumptions := decoded.source.assumptions
@@ -1130,17 +1115,16 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
   -- is the stack's when a layer declares a law, else the code's below.
   let (methods, predicate, predicateReads) := artifactShape artifact
-  let exposed ← (publicMethods inputs fun name => do
-    let c ← (Package.compileEntry (← (resolved name).mapError (·.2))).mapError (·.render)
-    pure c.entry).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
+  let exposed ← (publicMethods inputs fun name =>
+    ((Package.compileEntryCore request name).mapError (·.render)).map (·.entry)).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
   -- A layer keeps what the code below it declared public and may declare more.
   let methods := markHelpers methods (if extend then exposed ++ declaredRows o.methods else exposed)
   let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
     else (o.predicate, o.predicateReads)
   -- A layer that declares no relations keeps the relations of the code below it, as it keeps its law.
-  let relations ← if !entryDeclaresRelations (← resolved "initial") then pure (if extend then o.relations else []) else do
-    let compiled ← (Package.compileEntry (← resolved "relations")).mapError (("key", ·.render))
-    (declsOfEntry compiled.entry).mapError (("key", ·))
+  let relations ← match ← (declsOfArtifact artifact).mapError (("key", ·)) with
+    | some ds => pure ds
+    | none => pure (if extend then o.relations else [])
   (checkRelations relations assumptions.bounds ty).mapError (("key", ·))
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
            methods, predicate, predicateReads, packet, relations }
@@ -2252,16 +2236,14 @@ def compileObject (w : World) (inputs : Json) : Except String Built := do
   let resolved ← resolveInputs w inputs
   -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
   let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
-  let c ← (Package.compileEntryCore request (← resolved.getObjValAs? String "entry")).mapError
+  let c ← (Package.compileEntryFrom request (← resolved.getObjValAs? String "entry")).mapError
     fun d => (Package.withHint resolved d).render
   let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
   unless stateTypeOk decoded.source.assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
-  let relations ← if !entryDeclaresRelations resolved then pure [] else do
-    let r ← (Package.compileEntryCore request "relations").mapError fun d => s!"key: relations(): {d.render}"
-    declsOfEntry r.entry
+  let relations := ((← (declsOfArtifact artifact).mapError (s!"key: " ++ ·))).getD []
   let exposed ← publicMethods inputs fun name =>
     ((Package.compileEntryCore request name).mapError Package.Diagnostic.render).map (·.entry)
   return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations, exposed }
