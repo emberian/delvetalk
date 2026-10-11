@@ -1,7 +1,6 @@
 /- Meaning of the enforced law fragment (`Compiler/ObjectiveBendLaw.lean`) over
-   old and new state `Data` plus request facts. Ported from Mini's
-   `Kernel/ObjectLaw.lean` `LawExpr.denote`; the one extension is that a
-   principal is text: `subject` and `caller` read as a number when the principal
+   old and new state `Data` plus request facts: the one judge of every clause.
+   A principal is text: `subject` and `caller` read as a number when the principal
    is a decimal numeral and as text otherwise, so `request.subject ==
    request.caller` holds for any principal while order and constants need
    numerals. Absent or mistyped readings fail closed. -/

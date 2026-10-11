@@ -1,9 +1,5 @@
-/- SHA-256 (FIPS 180-4) over bytes, for byte FINGERPRINTS: the captured source
-fingerprints of the Objective front end and the front-end identity. Not an
-identity hash of the protocol (those are cSHAKE256, `Sp800185Cshake256`). The
-known-answer vectors are FIPS 180-4 / NIST CAVP values, asserted as compiled
-theorems in `Compiler.Sha256Vectors` (kept out of this module so the front end's
-run-time closure stays free of the audit machinery and Mathlib). -/
+/- SHA-256 (FIPS 180-4) over bytes: the digest of canonical CIDs (`Delvetalk.Canonical`), packet
+and source fingerprints, and the front end's identity. -/
 namespace Minidregg.Compiler.Sha256
 set_option autoImplicit false
 
