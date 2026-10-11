@@ -49,6 +49,9 @@ Done (67184b62 H1, ad6baf8b inspirit, da3f45cc the silent turns and the library'
 - **The `blurb()` sweep** (the commit after da3f45cc): `blurb()` and `Card.Door` are gone from every object, body,
   fixture and automatafl module; the host's default page falls back to the object's id (genesis names every page);
   Workshop's page is "workshop". The host's `blurbWord` (TurnLoop ~2262) is now dead: the host lane's to delete.
+- **A made kind is sent no `made`** (the host lane's finding): Kind's `finished` sends `made` only to a made record
+  (a kind has no such method, so every kind creation journaled a delivered `noMethod`); test_kinds asserts a
+  resident's `kinds make` and a make on that kind deliver no refusal.
 - **Library `laws` follows `under`**: a clause `under "<object>"` is followed to that object's `law` field (a made
   thing's kind), whose clauses follow the card's own ("Under kind/bell's law:"), expressions dropped when the whole
   passes the clip. The miss line names the commonplace, not the directory.

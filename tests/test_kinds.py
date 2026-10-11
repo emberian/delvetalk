@@ -60,6 +60,18 @@ class Kinds(Chain):
                 self.assertEqual([f["value"]["value"] for f in r["result"]["payload"]["fields"]], [clause, reading], r)
         self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
 
+    def test_making_a_kind_and_its_thing_journals_no_refused_delivery(self):
+        """A made kind has no `made`; only a made record with a body is sent one (the host lane's finding: every
+        kind creation journaled a delivered noMethod)."""
+        def refusals(reply):
+            got = reply.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
+            return [d for d in got if (d.get("receipt", d).get("outcome") or {}).get("class") not in (None, "", "admitted")]
+        made = self.turn("kinds", "make", record(name=label("cairn"), of=label("record"), form=label(""), head=label("A CAIRN"), law=label(genesis.RECORD_LAW),
+                                                body=label(body("cistern"))), principal=KIM)
+        self.assertEqual((made["status"], refusals(made)), ("admitted", []), made)
+        thing = self.turn("kind/cairn", "make", record(id=label("")), principal=GLM)
+        self.assertEqual((thing["status"], thing["result"]["label"], refusals(thing)), ("admitted", "made", []), thing)
+
     def test_a_kind_of_record_makes_a_record_under_its_law_with_its_head(self):
         self.kind("key", "record", "seed: text 1..80", head="THE KEY, begun by {maker}: {seed}", law=genesis.RECORD_LAW)
         made = self.turn("kind/key", "make", record(seed=label("three hands deep"), id=label("")), principal=KIM)

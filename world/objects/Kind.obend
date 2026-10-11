@@ -115,14 +115,16 @@ def counted(state: State, id: String, quiet: Bool, layer: String, context: Abi.C
 def toldUnless(quiet: Bool, state: State, id: String, context: Abi.Context) -> Activity<Done>:
   if quiet then Done.made({object: id}) else told(state, id, context)
 # The layer laid into the making, in the same turn (HOST-HANDOFF 5.122): a made kind's make, or a
-# thing's body, judged by the made thing's law; refused, nothing is made. Then the made thing's
-# `made`, sent so it runs once the turn is committed (a body that watches something subscribes
+# thing's body, judged by the made thing's law; refused, nothing is made. Then a made record's
+# `made` (a made kind has none), sent so it runs once the turn is committed (a body that watches something subscribes
 # there, which needs its receiver in place).
 def laid(state: State, id: String, quiet: Bool, layer: String, context: Abi.Context) -> Activity<Done>:
   match world.extend({object: {world: context.world, object: id}, package: layer, migration: ""}):
     case reprogrammed(_): finished(state, id, quiet, context)
     case refused(_): refuse("what was made could not be given its body, so nothing was made")
 def finished(state: State, id: String, quiet: Bool, context: Abi.Context) -> Activity<Done>:
+  if state.of == "kind" then toldUnless(quiet, state, id, context) else madeSent(state, id, quiet, context)
+def madeSent(state: State, id: String, quiet: Bool, context: Abi.Context) -> Activity<Done>:
   match world.send({object: {world: context.world, object: id}, method: "made", argument: {}}):
     case _: toldUnless(quiet, state, id, context)
 # What is laid on what this kind makes: a kind's make from the form it is made with, a thing's body.
