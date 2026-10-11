@@ -10,12 +10,14 @@ and the sending object as the delivered turn's caller.
 Each case is named by the defect that would make it fail. The library is world/lib (or a copy
 of it); packages import it by name and carry none of it.
 """
+import json
 import os
 import atexit
 import shutil
 import tempfile
 import unittest
 
+from transport.journal import entries as journal_entries
 from tests.host import HostCase
 from tests.wire import field, label, nat, record
 from tests.bend import declared
@@ -162,8 +164,7 @@ class Reflection(HostCase):
         return field(self.state(name), "seen")["value"]
 
     def lines(self):
-        with open(self.path) as handle:
-            return handle.read().splitlines()
+        return [json.dumps(e, separators=(",", ":")) for e in journal_entries(self.path)]
 
 
 class Library(Reflection):

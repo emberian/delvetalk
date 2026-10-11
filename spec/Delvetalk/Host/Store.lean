@@ -3,6 +3,7 @@
    writer. Nothing here depends on an evaluator. -/
 import Delvetalk.Package
 import Delvetalk.Entry
+import Delvetalk.Host.Blocks
 import Theory.ObjectiveBendCheckpointV2
 import Std.Data.HashMap
 
@@ -52,15 +53,13 @@ def maxIntentBytes : Nat := 256
 def maxRoots : Nat := 64
 def maxWrites : Nat := 64
 def maxEditsPerWrite : Nat := 256
-/-- One compressed journal line. -/
+/-- One entry's canonical record in the block store. -/
 def maxEntryBytes : Nat := 1048576
 def maxJournalEntries : Nat := 1000000
-/-- A journal's bytes. Not raised with the snapshot's tail replay: every entry is still parsed and held
-    in memory at open (`World.entries`), measured on hbox at about 10.4 bytes of resident memory per
-    journal byte plus 60 MB, and 0.43 s per MB to open (an 18 MB journal of 20,000 turns: 250 MB peak,
-    7.7 s), so 256 MiB is about 2.7 GB and two minutes; 4 GiB would be 43 GB. It is met at append
-    (`durable`), never first at a restart. -/
-def maxJournalBytes : Nat := 268435456
+/-- A journal's bytes, its chain and its block store (OPERATIONS §c 1). An open holds the chain and
+    reads only the snapshot and the entries after it (`Blocks`, `Snapshot.reopen`), so the bound is
+    the disk's, not memory's. It is met at append (`durable`), never first at a restart. -/
+def maxJournalBytes : Nat := 4294967296
 /-- The last bytes under `maxJournalBytes` that only refusals are written into: an append that would
     reach them is refused `capacity` (`maxJournalBytes`), and that refusal fits. -/
 def journalHeadroom : Nat := 1048576
@@ -395,14 +394,14 @@ def Subscription.ofJson (j : Json) : Except String Subscription := do
 def Subscription.sameAs (x y : Subscription) : Bool :=
   x.subscriber == y.subscriber && x.object == y.object && x.field == y.field
 
-/-- One admitted write of an object, as the moved-root rule reads it (`Ops.movedRootAdmits`): the
-    version it produced and, for a write of edits (kinds 0 and 3, `Law.editKind`) whose steps decode,
-    every edit other than `keep` as `(field, edit)` in step order, then a `retract` of each key the
-    declared retention evicted (the write's `evicted`); none otherwise. Derived by `record` from
-    `writes[]`, so replay and snapshot resume rebuild it and nothing is journaled twice. -/
+/-- One change of an object's version, as the moved-root rule reads it (`Ops.movedRootAdmits`): the
+    version it produced and the height of the entry that made it. Its edits are read from that entry
+    when asked (`Ops.touchEdits`): a write of edits (kinds 0 and 3, `Law.editKind`) whose steps decode
+    gives every edit other than `keep`, then a `retract` of each key the declared retention evicted;
+    any other change (a reprogram, an amendment, a root `set`) gives none. -/
 structure Touch where
   version : Nat
-  edits : Option (List (String × Data))
+  height : Nat
   deriving Inhabited
 
 /-- One object's change at a height (`World.changes`): the version it reached and the principal whose
@@ -413,6 +412,15 @@ structure Change where
   version : Nat
   principal : String
   deriving Inhabited
+
+/-- Where the journal says what an object is: the heights of the entries that set its version, its
+    pin and its law text, as they stand (`Ops.anchorsAfter`). A snapshot's objects are checked against
+    them at open, so a forger who recomputes a snapshot's CIDs still meets the chain. -/
+structure Anchor where
+  version : Nat := 0
+  pin : Nat := 0
+  law : Nat := 0
+  deriving Inhabited, BEq
 
 /-- The clock hour's counts (`world-status.hour`, docs/ROOT.md §2.3): turns journaled (admitted,
     refused, suspended), refusals by class, interpretations started and model attempts. Derived by
@@ -429,6 +437,20 @@ def HourCounts.json (h : HourCounts) : Json :=
     ("refused", Json.mkObj (h.refused.map fun (c, n) => (c, toJson n))),
     ("interpretations", toJson h.interpretations), ("attempts", toJson h.attempts)]
 
+def Reservation.json (r : Reservation) : Json :=
+  Json.mkObj [("source", toJson r.source), ("hour", toJson r.hour), ("released", toJson r.released),
+    ("posted", toJson r.posted), ("round", toJson r.round)]
+
+def Reservation.ofJson (j : Json) : Except String Reservation := do
+  return { source := ← j.getObjValAs? String "source", hour := ← j.getObjValAs? Nat "hour",
+           released := ← j.getObjValAs? Bool "released", posted := ← j.getObjValAs? Bool "posted",
+           round := ← j.getObjValAs? Nat "round" }
+
+def HourCounts.ofJson (j : Json) : Except String HourCounts := do
+  return { hour := ← j.getObjValAs? Nat "hour", turns := ← j.getObjValAs? Nat "turns",
+           refused := ← (← (← j.getObjVal? "refused").getObj?).toList.mapM fun (c, n) => do return (c, ← n.getNat?),
+           interpretations := ← j.getObjValAs? Nat "interpretations", attempts := ← j.getObjValAs? Nat "attempts" }
+
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),
       and the text of the world law that judges a library change. -/
@@ -439,8 +461,8 @@ structure World where
   /-- Number of journal entries; the last entry's height. -/
   height : Nat := 0
   head : String := Limits.genesis
-  /-- Entry `h` is at index `h - 1`. -/
-  entries : Array Json := #[]
+  /-- The journal: the chain in memory, each entry read from the block store when asked (`Blocks`). -/
+  entries : Entries := {}
   /-- Identity key (principal, intent) to entry index. The first entry wins. -/
   receipts : Std.HashMap String Nat := {}
   /-- Object id to indices of admitted or creating entries touching it. -/
@@ -448,6 +470,8 @@ structure World where
   /-- Per object, its admitted writes in version order (`Touch`): what changed since a version is
       read from the newest back, never by scanning the journal. -/
   touches : Std.HashMap String (Array Touch) := {}
+  /-- Per object, the entries that set its version, pin and law (`Anchor`). Derived by `record`. -/
+  anchors : Std.HashMap String Anchor := {}
   /-- Every object change in height order, the inverse of `touches` (height to objects): an admitted
       entry's creations and writes, a `created` entry's object, a root write of state. Derived by `record`. -/
   changes : Array Change := #[]
@@ -499,9 +523,9 @@ structure World where
   /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
       entry's `replyTo`), which `awaitPost` settles on. -/
   replies : Std.HashMap String (String × String) := {}
-  /-- Checkpoint blocks by CID, from entries' `blocks`: a suspension journals each block of its
-      checkpoint's tokens once, and names the rest (`tokenTree`). Derived by `record`. -/
-  blocks : Std.HashMap String (Array Json) := {}
+  /-- Checkpoint blocks by CID, as the index of the entry whose `blocks` carries each: a suspension
+      journals each block of its checkpoint's tokens once, and names the rest (`tokenTree`). Derived by `record`. -/
+  blocks : Std.HashMap String Nat := {}
   /-- Memory only: the packet digest a resumed snapshot cached for each compile inputs key; a
       rebuild by this binary that differs is counted in `recompiledDifferently`. -/
   cachedPackets : Std.HashMap String String := {}
@@ -512,9 +536,9 @@ structure World where
   recompiledDifferently : Nat := 0
   /-- The principal registry: display handle by principal, from `principal` entries. -/
   handles : Std.HashMap String String := {}
-  /-- Source modules by CID, from `module` entries: the journal carries each source once and
-      compile inputs name it by `cid`. -/
-  modules : Std.HashMap String String := {}
+  /-- Source modules by CID, as the index of the entry whose `sources` carries each: the journal
+      carries each source once and compile inputs name it by `cid`. Derived by `record`. -/
+  modules : Std.HashMap String Nat := {}
   /-- Offers admitted turns retained, by addressee: (entry index, ordinal in the entry). -/
   outbox : Std.HashMap String (Array (Nat × Nat)) := {}
   /-- Publications admitted turns retained, for transport to post: (entry index, ordinal). -/
@@ -535,7 +559,8 @@ structure World where
   /-- Objects hidden (`hide`): the read policy `show` restores. Derived by `record`. -/
   hidden : Std.HashMap String Json := {}
   /-- Heights this world replays as refused (docs/ROOT.md §1.3): the ignore set of the whole journal,
-      found before replay starts (`ignoreSet`) and kept by every `ignore`/`unignore`. -/
+      found before replay starts (`Snapshot.ignoresFrom`), kept in a snapshot, and re-derived after every
+      `ignore`/`unignore`. -/
   ignoring : List Nat := []
   /-- Every height an `ignore` or `unignore` of the journal names: after the lowest, an entry that no
       longer replays is shadowed, since an unignored entry changes later ones as an ignored one does. -/

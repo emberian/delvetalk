@@ -12,6 +12,7 @@ spell whose Context names another post, or none.
 import json
 import unittest
 
+from transport.journal import entries as journal_entries
 from tests.test_reflection import Reflection
 from tests.wire import label, record
 from tests.bend import declared
@@ -103,7 +104,7 @@ class InputPost(Reflection):
         self.assertEqual(r["status"], "created", r)
 
     def entries(self):
-        return [json.loads(line) for line in self.lines()]
+        return journal_entries(self.path)
 
     def field(self, name, card="garden"):
         return {f["name"]: f["value"] for f in self.state(card)["fields"]}[name]

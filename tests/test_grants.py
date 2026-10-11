@@ -13,6 +13,7 @@ ring on the registrar's behalf, and the bell's law names only the registrar.
 import json
 import unittest
 
+from transport.journal import entries as journal_entries
 from tests.host import whole
 
 from tests.test_reflection import Reflection
@@ -328,8 +329,7 @@ class Attenuation(Reflection):
         self.use("dim", g, level=nat(3))
         [listed] = self.host.send(op="world-grants", principal="anonymous")["grants"]
         self.assertEqual((listed["id"], listed["object"], listed["uses"], listed["revoked"]), (g, "lamp", 1, False), listed)
-        with open(self.path) as f:
-            made = [json.loads(line) for line in f if g in line and '"grants"' in line][0]
+        made = [e for e in journal_entries(self.path) if g in json.dumps(e) and '"grants"' in json.dumps(e)][0]
         self.assertEqual((listed["height"], listed["hash"]), (made["height"], made["hash"]))
         self.host.send(op="world-revoke", principal="owner", identity="rv", grant=g)
         [after] = self.host.send(op="world-grants", principal="", reverse=True)["grants"]

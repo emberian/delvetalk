@@ -22,7 +22,8 @@ requests=""
 i=0
 for j in "${journals[@]}"; do
   cp "$j" "$work/$i.journal"
-  chmod a+rw "$work/$i.journal"
+  cp "$j.blocks" "$work/$i.journal.blocks"  # the block store the chain's links point into
+  chmod a+rw "$work/$i.journal" "$work/$i.journal.blocks"
   i=$((i + 1))
 done
 chmod a+rwx "$work"

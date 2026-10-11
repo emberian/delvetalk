@@ -12,6 +12,7 @@ rows; `insert`, `upsert`, `retract` follow the nine-cell table. Each case names 
 import os
 import unittest
 
+from transport.journal import entries as journal_entries
 from tests.host import as_owner
 
 from tests.test_reflection import LIBRARY, Reflection
@@ -326,8 +327,7 @@ class Moved(RelationCase):
         # never saw, so it is staleRoot (transient) and the turn is re-run on the rows now.
         resumed = self.pair("laterRetract", key("old", 0), "upsert", rain("old", 0, "changed"))
         self.assertIn("rerunOf", resumed)
-        with open(self.path) as f:
-            refused = [e for e in map(__import__("json").loads, f.read().splitlines()) if e["hash"] == resumed["rerunOf"]][0]
+        refused = [e for e in journal_entries(self.path) if e["hash"] == resumed["rerunOf"]][0]
         self.assertEqual((refused["outcome"]["class"], refused["outcome"]["object"]), ("staleRoot", "b"))
         self.assertEqual((resumed["status"], resumed["receipt"].get("rerun")), ("admitted", True), resumed)
         # The re-run read the current row and retracted it.

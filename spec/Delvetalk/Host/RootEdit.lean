@@ -195,9 +195,8 @@ def deleteWorld (state : System.FilePath) (name reason : String) : IO UInt32 := 
   unless ← journal.pathExists do return ← fail s!"no journal {journal}"
   let lock ← IO.FS.Handle.mk (state / "journal.lock") .append
   unless ← lock.tryLock (exclusive := true) do return ← fail s!"{state} is held by a running serve; stop it first" 75
-  let content ← IO.FS.readFile journal
-  let head := match Snapshot.entriesOf content with
-    | .ok es => ((es.back?).bind fun e => (e.getObjValAs? String "hash").toOption).getD Limits.genesis
+  let head := match ← Snapshot.openEntries journal.toString with
+    | .ok es => (es.hashAt? (es.count - 1)).getD Limits.genesis
     | .error _ => ""
   let stamp := toString (← IO.monoMsNow)
   let deleted := state / "deleted"
@@ -205,6 +204,11 @@ def deleteWorld (state : System.FilePath) (name reason : String) : IO UInt32 := 
   let target := deleted / s!"{name}-{stamp}.journal"
   IO.FS.rename journal target
   let mut moved : Array String := #[target.toString]
+  let store := Snapshot.storeOf journal.toString
+  if ← System.FilePath.pathExists store then
+    let to := Snapshot.storeOf target.toString
+    IO.FS.rename store to
+    moved := moved.push to
   for (_, path) in ← Snapshot.files journal.toString do
     let base := ((path : System.FilePath).fileName.getD path)
     let to := deleted / s!"{name}-{stamp}{(base.drop (name.length + ".journal".length)).toString}"
@@ -231,7 +235,7 @@ def main (args : List String) : IO UInt32 := do
   if ← (outPath : System.FilePath).pathExists then return ← fail s!"{outPath} exists: root-edit writes a new file"
   let handle ← IO.FS.Handle.mk journal .read
   unless ← handle.tryLock (exclusive := true) do return ← fail s!"{journal} is open in another process: close it first" 75
-  let old ← match Snapshot.entriesOf (← IO.FS.readFile journal) with
+  let old ← match ← Snapshot.journalEntries journal with
     | .ok es => pure es
     | .error e => return ← fail s!"{journal} does not verify: {e}"
   let oldHead := ((old.back?).bind fun e => (e.getObjValAs? String "hash").toOption).getD Limits.genesis
@@ -242,14 +246,15 @@ def main (args : List String) : IO UInt32 := do
   let sealed ← match reseal old edit marker with
     | .ok s => pure s
     | .error e => return ← fail e
-  -- The new journal replays in full, or nothing is written.
-  let text := String.join (sealed.entries.toList.map (·.compress ++ "\n"))
-  match Snapshot.entriesOf text with
-  | .error e => return ← fail s!"the edited journal does not chain: {e}"
-  | .ok es => match Snapshot.replayAll es with
-    | .error e => return ← fail s!"the edited journal does not replay: {e}"
-    | .ok _ => pure ()
-  IO.FS.writeFile outPath text
+  -- The new journal chains and replays in full, or nothing is written.
+  let mut previous := ((sealed.entries[0]?).bind fun e => (e.getObjValAs? String "previous").toOption).getD Limits.genesis
+  for (e, i) in sealed.entries.zipIdx do
+    if let .error err := Journal.verify (i + 1) previous e then
+      return ← fail s!"the edited journal does not chain: {err}"
+    previous := (e.getObjValAs? String "hash").toOption.getD ""
+  if let .error e := Snapshot.replayAll (Entries.ofArray sealed.entries) then
+    return ← fail s!"the edited journal does not replay: {e}"
+  if let .error e ← Snapshot.writeJournal outPath sealed.entries then return ← fail e
   -- Snapshots before the edit still describe the new journal's prefix.
   let mut copied : Array Nat := #[]
   for (h, path) in ← Snapshot.files journal do
@@ -268,3 +273,43 @@ def main (args : List String) : IO UInt32 := do
   return 0
 
 end Delvetalk.Host.RootEdit
+
+namespace Delvetalk.Host.Migrate
+open Lean (Json toJson)
+
+/-- The one reader of the line format (every entry inline, one per line, before the block store):
+    each line parsed and checked against the chain. -/
+def lineEntries (content : String) : Except String (Array Json) := do
+  let lines := content.splitOn "\n"
+  let (complete, tail) := (lines.dropLast, lines.getLast?.getD "")
+  let mut out : Array Json := #[]
+  let mut head := Limits.genesis
+  for line in complete do
+    let height := out.size + 1
+    let entry ← match Json.parse line with
+      | .ok e => pure e
+      | .error _ => throw s!"journal broken at height {height}: unparsable line"
+    -- A fork's genesis chains to the forked world's entry, which it names.
+    if height == 1 && tagOf entry == "forked" then head := (entry.getObjValAs? String "previous").toOption.getD ""
+    Journal.verify height head entry
+    head := (entry.getObjValAs? String "hash").toOption.getD ""
+    out := out.push entry
+  unless tail.isEmpty do throw s!"journal broken at height {out.size + 1}: unterminated final line"
+  return out
+
+/-- `delvetalk-obend migrate --journal OLD --out NEW`: a journal in the line format written as a chain
+    and a block store (`Snapshot.writeJournal`), every entry and hash as it was. OLD is never written;
+    NEW must not exist. Its snapshots are not carried: the first open replays NEW and writes them. -/
+def main (args : List String) : IO UInt32 := do
+  let fail := fun (m : String) (code : UInt32) => do (← IO.getStderr).putStrLn s!"migrate: {m}"; return code
+  let some journal := RootEdit.textArg args "--journal" | fail "usage: migrate --journal OLD --out NEW" 64
+  let some out := RootEdit.textArg args "--out" | fail "usage: migrate --journal OLD --out NEW" 64
+  let entries ← match lineEntries (← IO.FS.readFile journal) with
+    | .ok es => pure es
+    | .error e => return ← fail s!"{journal} does not verify: {e}" 1
+  if let .error e ← Snapshot.writeJournal out entries then return ← fail e 1
+  RootEdit.printJson (Json.mkObj [("status", toJson "migrated"), ("out", toJson out), ("height", toJson entries.size),
+    ("head", toJson ((entries.back?.bind fun e => (e.getObjValAs? String "hash").toOption).getD Limits.genesis))])
+  return 0
+
+end Delvetalk.Host.Migrate
