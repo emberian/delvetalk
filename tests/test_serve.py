@@ -141,7 +141,7 @@ class Serve(unittest.TestCase):
         client = HostClient(self.sock)
         client.send({'op': 'world-status'})
         client.local.conn[0].shutdown(2)
-        self.assertTrue(client.send({'op': 'world-advance', 'principal': 'transport', 'height': 1})['message'].startswith(f'hostd unavailable at {self.sock} after '))
+        self.assertTrue(client.send({'op': 'world-advance', 'principal': 'transport', 'height': 1})['message'].startswith(f'the host is unavailable at {self.sock} after '))
         client.send({'op': 'world-status'})
         client.local.conn[0].shutdown(2)
         self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')
@@ -295,7 +295,7 @@ class Startup(unittest.TestCase):
             self.assertEqual(HostClient(path).send({'op': 'hostd-info'}), {'status': 'hostd'})
             t.join()
             gone = HostClient(Path(d) / 'never.sock').send({'op': 'world-status'})
-            self.assertRegex(gone['message'], r'^hostd unavailable at .*/never\.sock after [2-9]\.\d s$')
+            self.assertRegex(gone['message'], r'^the host is unavailable at .*/never\.sock after [2-9]\.\d s$')
 
     def test_two_towns_started_together_on_a_slow_start_each_answer_their_first_op(self):
         with tempfile.TemporaryDirectory() as d:
