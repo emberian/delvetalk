@@ -903,7 +903,7 @@ def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
-   "objects", "changed", "card", "subscribe", "unsubscribe"]
+   "objects", "changed", "card", "subscribe", "unsubscribe", "principal"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
@@ -1747,6 +1747,14 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         let names := ("offered", listData (offered.map (Data.label ∘ formAction)))
         respond bounds responseType "inspected"
           [.record (shown ++ [methods, laws, names]), .record (shown ++ [methods]), .record shown]
+  -- `principal {handle}`: the principal the registry names by a handle (`me`, the turn's subject), so `offer`
+  -- and `lend` to a handle work from Bend.
+  | .variant "principal" (.record f) =>
+    let some handle := (f.lookup "handle").bind labelOf | evaluation "malformed principal plan"
+    let s ← get
+    match if handle == meCard then some s.subject else principalNamed s.world handle with
+    | some did => respond bounds responseType "named" [.record [("principal", .label did)]]
+    | none => respond bounds responseType "unknown" [emptyRecord]
   | .variant "objects" (.record f) =>
     let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed objects plan"
     let some after := (f.lookup "after").bind labelOf | evaluation "malformed objects plan"
@@ -2416,7 +2424,7 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
   | "quiet" | "unquiet" =>
     let some name := value "who" | refuseSpell w req id "missingField" s!"{action} takes who: a handle." template
     let who := if name == meCard then req.principal else
-      (w.handles.fold (fun acc did h => if acc.isNone && h == name then some did else acc) none).getD name
+      (principalNamed w name).getD name
     if action == "unquiet" then
       unless (w.quiets[who]?).any (·.1 > w.clock) do
         return ← refuseSpell w req id "badValue" s!"{name} is not quieted." template
@@ -2524,7 +2532,7 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
       | refuseSpell w req id "badValue" "until takes +<clock units>, plain digits." template
     -- `me`, a handle the registry knows, or a principal as written.
     let to := if toName == meCard then req.principal else
-      (w.handles.fold (fun acc did h => if acc.isNone && h == toName then some did else acc) none).getD toName
+      (principalNamed w toName).getD toName
     unless o.offers m do
       return ← refuseSpell w req id "noAction" s!"{id} has no method {m} to lend." template
     unless methodAdmits w o req.principal m id == Json.bool true do

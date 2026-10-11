@@ -1550,6 +1550,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    derives the kept send: edition 6. Tests: `test_deliveries.Redelivery` (a spinning receiver refused `budget`,
    unlocked, delivered when the clock moves, a reopen; a send refused every time dropped after four).
 
+151. **`world.principal {handle}` (host18; the objects lane's `offer / to:` and `lend / to:` a handle).** World.obend's
+   protocol gains `principal({handle}) -> Named` (`named {principal}` or `unknown {}`): the registry's principal
+   for a handle, case folded as a DNS name is (`Ops.principalNamed`, which the host's `quiet`/`unquiet` and
+   `lend` spells now share), `me` the turn's subject. A read: no root, nothing journaled beyond the turn. Test:
+   `test_world_object.PrincipalByHandle`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

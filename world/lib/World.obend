@@ -112,6 +112,10 @@ sum Granted:
 sum Revoked:
   revoked: {}
   refused: {clause: String}
+# The principal a handle names in the registry (`me`: the asker), or none.
+sum Named:
+  named: {principal: String}
+  unknown: {}
 sum Listed:
   listed: {ids: Document.Names, more: Bool}
   refused: {clause: String}
@@ -166,3 +170,4 @@ protocol world:
   card({object: Plans.Reference}) -> Carded
   subscribe({object: Plans.Reference, field: String, method: String}) -> Subscribed
   unsubscribe({object: Plans.Reference, field: String, method: String}) -> Subscribed
+  principal({handle: String}) -> Named

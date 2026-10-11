@@ -1872,6 +1872,11 @@ def withLawReads (w : World) (p : Proposal) : Proposal :=
 def handleOf (w : World) (principal : String) : String :=
   (w.handles[principal]?).getD ""
 
+/-- The principal the registry names by `handle` (case folded, as a DNS name is), if one. -/
+def principalNamed (w : World) (handle : String) : Option String :=
+  let h := handle.toLower
+  w.handles.fold (fun acc did name => if acc.isNone && name.toLower == h then some did else acc) none
+
 /-- What the host tells a running method about itself, built here and nowhere else.
     `handle` is the principal's display handle from the registry (`world-principal`), ""
     when unknown; `caller` is the calling object's id (empty for the turn's own method),
