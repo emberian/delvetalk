@@ -103,8 +103,7 @@ class FrontCase(ServeCase):
             from transport.config import LIBRARY
             self.state_dir = tempfile.TemporaryDirectory()
             self.addCleanup(self.state_dir.cleanup)
-            self.server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
-            self.addCleanup(self.server.stop)
+            self.server = served(self.state_dir.name, cleanup=self.addCleanup, opener=self.OPENER, library=LIBRARY)
             self.socket, self.root = self.server.sock, HostClient(self.server.root)
         self.provider = Provider()
         self.now = [1000.0]
@@ -490,8 +489,7 @@ class Repl(FrontCase):
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
         from transport.config import LIBRARY
         self.server.stop()  # a restart of serve: a new stateless session, which issued nothing
-        type(self).server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
-        type(self).addClassCleanup(type(self).server.stop)
+        type(self).server = served(self.state_dir.name, cleanup=type(self).addClassCleanup, opener=self.OPENER, library=LIBRARY)
         s, e = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
         self.assertEqual((s, e['class'], e['message'], e['_links']['repl']), (409, 'replRestarted', 'the REPL restarted; start the module again',
                                                                               {'href': '/AGENTS.md/repl'}), e)

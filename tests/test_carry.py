@@ -211,7 +211,7 @@ class StateDirectory(unittest.TestCase):
         from transport.host import HostClient
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        town = Town(os.path.join(tmp.name, "v1"))
+        town = Town(os.path.join(tmp.name, "v1"), cleanup=self.addCleanup)
         town.close()
         old = town.state
         os.makedirs(os.path.join(old, "worlds", "town", "awaiting"), exist_ok=True)
@@ -238,8 +238,7 @@ class StateDirectory(unittest.TestCase):
         with open(os.path.join(new, "worlds", "town", "awaiting", "x.json")) as f:
             self.assertEqual(json.load(f)["height"], 1)
         self.assertFalse(os.path.exists(os.path.join(new, "journal.lock")))
-        server = served(new, opener=genesis.OPENER, library=LIBRARY)
-        self.addCleanup(server.stop)
+        server = served(new, cleanup=self.addCleanup, opener=genesis.OPENER, library=LIBRARY)
         root = HostClient(server.root)
         self.addCleanup(root.close)
         status = root.send({"op": "world-status"})
