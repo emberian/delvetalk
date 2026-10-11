@@ -46,7 +46,9 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
 from transport import delve, identity
 from tests.host import ServeCase, serve, served
 from transport.host import HostClient
+from transport.config import Config
 from transport.http import CATALOGUE, AccessLog, Front
+from transport.state import State
 
 HANDLE = 'talkie.delve.town'
 DID = 'did:plc:' + 'a' * 24
@@ -98,7 +100,7 @@ class FrontCase(ServeCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         if self.fresh_world:
-            from deploy.serve import LIBRARY
+            from transport.config import LIBRARY
             self.state_dir = tempfile.TemporaryDirectory()
             self.addCleanup(self.state_dir.cleanup)
             self.server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
@@ -107,10 +109,10 @@ class FrontCase(ServeCase):
         self.provider = Provider()
         self.now = [1000.0]
         self.host = HostClient(self.socket)  # a test may replace its send
-        ident = identity.Identity(self.tmp.name, delve.Client(self.provider), clock=lambda: self.now[0])
-        self.outbox = Path(self.tmp.name) / 'outbox'  # the hand's: an HTTP turn that writes a public object drafts here
-        self.front = serve(Front(('127.0.0.1', 0), self.host, ident, clock=lambda: self.now[0],
-                                 repl=HostClient(self.socket, stateless=True), outbox=self.outbox))
+        st = State(self.tmp.name, config=Config(host_socket=self.socket))
+        ident = identity.Identity(st, delve.Client(self.provider), clock=lambda: self.now[0])
+        self.outbox = st.outbox  # the hand's: an HTTP turn that writes a public object drafts here
+        self.front = serve(Front(st, self.host, ident, ('127.0.0.1', 0), clock=lambda: self.now[0]))
         self.addCleanup(self.front.server_close)
         self.addCleanup(self.front.shutdown)
         self.port = self.front.server_address[1]
@@ -272,7 +274,7 @@ class Claim(FrontCase):
 class Access(FrontCase):
     def test_one_line_per_request_with_the_principal_and_never_a_token_or_a_body(self):
         log = Path(self.tmp.name) / 'access.log'
-        self.front.access = AccessLog(log)
+        self.front.access = AccessLog(log, 'town')
         self.request('GET', '/AGENTS.md/api')
         tok = self.login()
         self.call('GET', '/AGENTS.md/me?x=secret-query', token=tok)
@@ -285,7 +287,7 @@ class Access(FrontCase):
         api = [l for l in lines if l[2] == '/AGENTS.md/api']  # a line is written after its reply, so two requests may swap
         self.assertEqual([(l[1], l[3], l[5]) for l in api], [('GET', '200', '-')])
         me = [l for l in lines if l[2] == '/AGENTS.md/me'][0]
-        self.assertEqual((me[3], me[5]), ('200', DID))
+        self.assertEqual((me[3], me[5], me[6]), ('200', DID, 'town'))  # the world after the DID (docs/FEDERATION.md section 5)
         self.assertGreater(int(me[4]), 50)
         self.assertEqual([l[3] for l in lines if l[2] == '/AGENTS.md/world/nowhere'], [str(s)])
         text = log.read_text()
@@ -426,7 +428,7 @@ class Repl(FrontCase):
         mods = closure('World') + [{'name': 'Package', 'source': PLANS}]
         s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)], **self.BIND)
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
-        from deploy.serve import LIBRARY
+        from transport.config import LIBRARY
         self.server.stop()  # a restart of serve: a new stateless session, which issued nothing
         type(self).server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
         type(self).addClassCleanup(type(self).server.stop)
@@ -734,8 +736,9 @@ class Concurrent(unittest.TestCase):
                                     'value': {'text': texts[q['repo'][0]]}}).encode()
         with tempfile.TemporaryDirectory() as tmp:
             host = StubHost()
-            ident = identity.Identity(tmp, delve.Client(provider))
-            front = Front(('127.0.0.1', 0), host, ident, trust_proxy=True)
+            st = State(tmp, config=Config(trust_proxy=True))
+            ident = identity.Identity(st, delve.Client(provider))
+            front = Front(st, host, ident, ('127.0.0.1', 0))
             port = front.server_address[1]
             serve(front)
             errors, creds = [], {}
@@ -776,7 +779,8 @@ class Slow(unittest.TestCase):
     def front(self, **kw):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        front = serve(Front(('127.0.0.1', 0), StubHost(), identity.Identity(tmp.name, delve.Client(None)), **kw))
+        st = State(tmp.name)
+        front = serve(Front(st, StubHost(), identity.Identity(st, delve.Client(None)), ('127.0.0.1', 0), **kw))
         self.addCleanup(front.server_close)
         self.addCleanup(front.shutdown)
         return front

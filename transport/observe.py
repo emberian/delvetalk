@@ -1,13 +1,11 @@
-#!/usr/bin/env python3
-"""Read-only watcher: pages #gsb search and the feed, stores each post once, and
-emits one canonical observation per new post. It classifies by surface form only.
+"""Read-only watcher: pages #gsb search and the feed and stores each post once with its canonical observation, which
+the bridge reads. It classifies by surface form only.
 """
 import hashlib
 import re
 import sqlite3
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from transport.delve import Failure, canonical
 
@@ -20,8 +18,7 @@ MENTION = re.compile(r'(?<![\w.])@((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2
 TAG = re.compile(r'(?<![\w#])#([^\W\d_][\w-]*)')
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS posts(uri TEXT PRIMARY KEY, cid TEXT, hash TEXT, body TEXT);
-CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, uri TEXT UNIQUE,
-  json TEXT, emitted INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, uri TEXT UNIQUE, json TEXT);
 '''
 
 
@@ -101,27 +98,26 @@ def instant(stamp):
     return datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
 
 
-def start_cursor(state_dir, explicit=None, now=None):
-    """The state's `since`: where this bridge's observing begins. An explicit time (a deliberate replay) is written and
-    wins; else the file the state already holds; else, for a state that has observed nothing yet, now. A state that already
-    has observations and no `since` predates the cursor and observes everything it is shown. -> ISO time or None."""
-    path = Path(state_dir) / 'since'
+def start_cursor(st, explicit=None, now=None):
+    """The world's `since`: where its observing begins. An explicit time (a deliberate replay) is written and wins; else
+    the file the world already holds; else, for a world that has observed nothing yet, now. A world that already has
+    observations and no `since` predates the cursor and observes everything it is shown. -> ISO time or None."""
+    path = st.since
     if explicit:
         instant(explicit)  # refuses what is not a time
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.write_text(explicit + '\n')
-    elif not path.exists() and not (Path(state_dir) / 'observe.sqlite').exists():
+    elif not path.exists() and not st.observed.exists():
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.write_text(datetime.fromtimestamp(now if now is not None else time.time(), tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') + '\n')
     return path.read_text().strip() if path.exists() else None
 
 
 class Observer:
-    def __init__(self, state_dir, client, since=None):
-        self.dir = Path(state_dir)
-        self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    def __init__(self, st, client, since=None):
+        st.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.since = instant(since) if since else None  # posts created before it are not observed
-        self.db = sqlite3.connect(self.dir / 'observe.sqlite', isolation_level=None)
+        self.db = sqlite3.connect(st.observed, isolation_level=None)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('PRAGMA synchronous=NORMAL')
         self.db.executescript(SCHEMA)
@@ -169,10 +165,3 @@ class Observer:
                 if not cursor or not fresh:
                     break
 
-    def drain(self, emit):
-        """Emit every observation not yet emitted, marking each only after emit returns."""
-        rows = self.db.execute('SELECT seq,json FROM observations WHERE emitted=0 ORDER BY seq').fetchall()
-        for seq, js in rows:
-            emit(js)
-            self.db.execute('UPDATE observations SET emitted=1 WHERE seq=?', (seq,))
-        return len(rows)

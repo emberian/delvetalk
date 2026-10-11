@@ -20,6 +20,7 @@ from pathlib import Path
 from tests.test_chain import town_garden
 from tests.test_http import PEOPLE, REPL_COUNTER, FrontCase, StubHost
 import transport.http
+from transport.state import State
 from transport import delve, identity
 from transport.host import HostClient
 from transport.http import CATALOGUE, ERRORS, EXAMPLES, GUIDE, REFUSALS, Front
@@ -335,7 +336,8 @@ class Catalogue(unittest.TestCase):
     """The catalogue against a stub host: routes as data, and the router that answers them is the one that describes them."""
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.front = Front(('127.0.0.1', 0), StubHost(), identity.Identity(self.tmp.name, delve.Client(lambda *a: (404, b''))))
+        st = State(self.tmp.name)
+        self.front = Front(st, StubHost(), identity.Identity(st, delve.Client(lambda *a: (404, b''))), ('127.0.0.1', 0))
         threading.Thread(target=self.front.serve_forever, daemon=True).start()
 
     def tearDown(self):

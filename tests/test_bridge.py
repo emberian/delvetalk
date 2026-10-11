@@ -3,7 +3,6 @@ recorded ancestor, and drafts each offer once, never posting.
 
 Evidence for FOUNDATION §7 (layer: transport).
 """
-import io
 import json
 import re
 import tempfile
@@ -19,7 +18,10 @@ from tests.test_chain import town_garden
 from tests.test_transport import DID, Script, mk
 from transport import bridge, delve, observe
 from tests.host import served
+from transport.config import Config
 from transport.host import HostClient
+from transport.hand import Hand
+from transport.state import State
 from tests.wire import label, listing, nat, record
 from tests.bend import closure, declared
 
@@ -64,11 +66,14 @@ def summon_post(n, ts):
     return p
 
 
+LOOPBACK = Config(origin='http://127.0.0.1:8765')  # a front only this machine opens: drafts cite no link (bridge.reachable)
+
+
 class BridgeCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.state = Path(self.tmp.name) / 'state'
+        self.state = State(Path(self.tmp.name) / 'state', config=LOOPBACK)
 
     @property
     def host(self):
@@ -93,7 +98,7 @@ class BridgeCase(unittest.TestCase):
         ob.db.close()
 
     def drafts(self):
-        return [json.loads(p.read_text()) for p in sorted((self.state / 'outbox').glob('*.json'),
+        return [json.loads(p.read_text()) for p in sorted(self.state.outbox.glob('*.json'),
                                                          key=lambda p: int(p.name.split('-')[0]))]
 
     def run_bridge(self):
@@ -146,7 +151,7 @@ class OpenerPosts(BridgeCase):
         self.observe([post])
         got = self.run_bridge()
         self.assertEqual((got['turns'], got['failed']), ([post['uri']], []), got)
-        skipped = self.state / 'skipped.txt'
+        skipped = self.state.skipped
         self.assertFalse(skipped.exists() and post['uri'] in skipped.read_text().split())
         self.assertEqual(self.run_bridge()['turns'], [])
 
@@ -175,7 +180,7 @@ class Bridging(BridgeCase):
     def test_crash_between_turn_and_draft_recovers_with_the_same_receipt(self):
         self.make('garden-1')
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
-        with mock.patch.object(bridge, 'write_atomic', side_effect=RuntimeError('crash')):
+        with mock.patch.object(State, 'write', side_effect=RuntimeError('crash')):
             with self.assertRaises(RuntimeError):
                 self.run_bridge()
         self.assertEqual(self.drafts(), [])
@@ -307,7 +312,7 @@ class Routing(BridgeCase):
         self.assertEqual(turns['000001']['replyTo'], parent)
         self.assertNotIn('replyTo', turns['000004'])  # a top-level summon answers no post
         self.assertEqual(len(r['turns']), 3)
-        self.assertIn(orphan_reply['uri'], (self.state / 'skipped.txt').read_text())
+        self.assertIn(orphan_reply['uri'], (self.state.skipped).read_text())
         n = len([o for o in stub.ops if o['op'] == 'world-addressee'])
         bridge.run(self.state, stub)
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), n)  # drafts and skips are remembered
@@ -421,7 +426,7 @@ class Mentions(BridgeCase):
         arrivals = [o['did'] for o in stub.ops if o['op'] == 'world-arrive']
         self.assertEqual(sorted(arrivals), sorted([DID, self.GLM]))  # every observed author, once; never the unseen kimi
         self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{self.GLM}'])
-        self.assertIn(f"{post['uri']}#mention:{self.KIMI}", (self.state / 'skipped.txt').read_text().split())
+        self.assertIn(f"{post['uri']}#mention:{self.KIMI}", (self.state.skipped).read_text().split())
         self.assertEqual(r['failed'], [])
         before = len(stub.ops)
         bridge.run(self.state, stub)
@@ -468,12 +473,9 @@ class Silence(BridgeCase):
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(len(bridge.run(self.state, stub)['turns']), 1)
         self.assertEqual(bridge.run(self.state, stub)['turns'], [])  # journaled once, not re-run
-        out = io.StringIO()
-        bridge.main(['outbox', '--state', str(self.state)], out)
-        self.assertEqual(out.getvalue(), '')
-        out = io.StringIO()
-        bridge.main(['outbox', '--state', str(self.state), '--all'], out)
-        self.assertIn('=== reply to:', out.getvalue())
+        hand = Hand(self.state, stub)
+        self.assertEqual(hand.outbox(), [])
+        self.assertEqual(len(hand.outbox(all=True)[0]['drafts']), 1)
 
 
 class RealOffers(test_outbound.TellerWorld):
@@ -481,7 +483,8 @@ class RealOffers(test_outbound.TellerWorld):
         self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
         self.assertIsInstance(self.host.send(op="world-offers", principal="ann")["offers"][0]["identity"], dict)
         with tempfile.TemporaryDirectory() as d:
-            bridge.write_atomic(bridge.awaiting_path(d, "t-1"), {"uri": "t-1", "principal": "ann", "replyHandle": "ann.delve.town",
+            d = State(d, config=LOOPBACK)
+            d.write(bridge.awaiting_path(d, "t-1"), {"uri": "t-1", "principal": "ann", "replyHandle": "ann.delve.town",
                                                                  "object": "teller", "slot": None, "height": 0})
             outer = self
 
@@ -489,7 +492,7 @@ class RealOffers(test_outbound.TellerWorld):
                 def send(self, req):
                     return outer.host.send(**req)
             self.assertEqual(bridge.offer_drafts(d, H()), ["t-1"])
-            (draft,) = list((Path(d) / "outbox").glob("*.json"))
+            (draft,) = list(d.outbox.glob("*.json"))
             slug = self.host.send(op="world-receipt", principal="ann", identity="t-1")["receipt"]["slug"]
             self.assertRegex(json.loads(draft.read_text())["text"], rf"^hello\n● admitted teller v\d+, entry \d+, receipt {slug}\n$")
             self.assertEqual(bridge.offer_drafts(d, H()), [])
@@ -542,6 +545,7 @@ class RealAwaitPost(test_outbound.PostWaiterWorld):
         t = Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': [reply]}),
                       'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
         with tempfile.TemporaryDirectory() as d:
+            d = State(d)
             observe.Observer(d, delve.Client(t)).poll()
             result = bridge.run(d, H(), now=60)  # the clock stays inside the waiter's patience
         self.assertEqual(result["turns"], [reply["uri"]], result)
@@ -552,13 +556,15 @@ class Daemon(unittest.TestCase):
     def test_a_live_pid_file_blocks_a_second_daemon(self):
         import os
         with tempfile.TemporaryDirectory() as d:
-            Path(d, 'bridge.pid').write_text(str(os.getpid()))
+            st = State(d, config=Config(poll=0))
+            st.home.mkdir(parents=True)
+            st.pidfile('bridge').write_text(str(os.getpid()))
             with self.assertRaises(SystemExit):
-                bridge.daemon(d, 'bridge', 0, lambda: None)
-            Path(d, 'bridge.pid').write_text('999999')  # stale
+                st.daemon('bridge', lambda: None)
+            st.pidfile('bridge').write_text('999999')  # stale
             import threading
             stop = threading.Event()
-            bridge.daemon(d, 'bridge', 0, stop.set, stop)
+            st.daemon('bridge', stop.set, stop)
 
 
 if __name__ == '__main__':

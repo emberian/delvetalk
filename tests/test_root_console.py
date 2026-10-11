@@ -10,13 +10,14 @@ import io
 import json
 import tempfile
 import unittest
-from pathlib import Path
 
 from deploy.genesis import OPENER
 from tests.host import ServeCase
 from tests.test_hand import TOKEN, HandCase, StubHost
 from tests.test_turn_world import counter_modules, label, nat, record
 from transport import hand
+from transport.__main__ import main
+from transport.state import State
 
 EMPTY = {'tag': 'record', 'fields': []}
 
@@ -27,22 +28,22 @@ class Shapes(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.state, self.host = Path(self.tmp.name), StubHost()
+        self.state, self.host = State(self.tmp.name), StubHost()
 
     def run_hand(self, *argv):
         out = io.StringIO()
         with contextlib.redirect_stderr(io.StringIO()):
-            code = hand.main([*argv, '--state', str(self.state)], out, host=self.host)
+            code = main(['hand', *argv, '--state', self.tmp.name], out, host=self.host)
         return code, self.host.ops[-1] if self.host.ops else None
 
     def root(self, verb, *flags):
         return self.run_hand('root', verb, *flags)[1]
 
     def test_each_root_act_is_one_world_root_with_its_reason(self):
-        lib = self.state / 'lib'
+        lib = self.state.root / 'lib'
         lib.mkdir()
         (lib / 'Tiny.obend').write_text('edition ObjectiveBend 1\n')
-        (self.state / 'card.txt').write_text('a card the hand wrote')
+        (self.state.root / 'card.txt').write_text('a card the hand wrote')
         cases = [
             (('set', '--object', 'garden', '--field', 'state', '--value', json.dumps(EMPTY)), {'kind': 'set', 'object': 'garden', 'field': 'state', 'value': EMPTY}),
             (('delete', '--object', 'garden/bell/1'), {'kind': 'delete', 'object': 'garden/bell/1'}),
@@ -51,13 +52,13 @@ class Shapes(unittest.TestCase):
             (('settings', '--clock', '5', '--modelQuota', '10'), {'kind': 'settings', 'clock': 5, 'modelQuota': 10}),
             (('library', '--dir', str(lib)), {'kind': 'library', 'modules': [{'name': 'Tiny', 'source': 'edition ObjectiveBend 1\n'}]}),
             (('ignore', '--height', '7'), {'kind': 'ignore', 'height': 7}), (('unignore', '--height', '7'), {'kind': 'unignore', 'height': 7}),
-            (('card', '--object', 'garden', '--text-file', str(self.state / 'card.txt')), {'kind': 'card', 'object': 'garden', 'text': 'a card the hand wrote'}),
+            (('card', '--object', 'garden', '--text-file', str(self.state.root / 'card.txt')), {'kind': 'card', 'object': 'garden', 'text': 'a card the hand wrote'}),
             (('card', '--object', 'garden'), {'kind': 'card', 'object': 'garden', 'text': None}),
             (('quiet', '--principal', 'did:plc:x', '--hours', '0'), {'kind': 'quiet', 'principal': 'did:plc:x', 'hours': 0}),
             (('hide', '--object', 'garden'), {'kind': 'hide', 'object': 'garden'}), (('revoke', '--grant', 'g1'), {'kind': 'revoke', 'grant': 'g1'})]
         for flags, act in cases:
             self.assertEqual(self.root(*flags, '--reason', 'because'), {'op': 'world-root', 'principal': OPENER, 'reason': 'because', 'act': act}, flags)
-        logged = [json.loads(l) for l in (self.state / 'hand-log.jsonl').read_text().splitlines()]
+        logged = [json.loads(l) for l in self.state.hand_log.read_text().splitlines()]
         self.assertEqual([l['what'] for l in logged][:2], ['root:set', 'root:delete'])
         self.assertEqual({l['reason'] for l in logged}, {'because'})
 
@@ -131,7 +132,7 @@ class Live(ServeCase):
         assert made['status'] == 'created', made
 
     def setUp(self):
-        self.hand = hand.Hand(self.tmp.name, self.root, who='cli')
+        self.hand = hand.Hand(State(self.tmp.name), self.root, who='cli')
 
     def bump(self, who, intent):
         return self.host.send({'op': 'world-turn', 'principal': who, 'object': 'tally', 'method': 'bump', 'argument': record(), 'identity': intent})

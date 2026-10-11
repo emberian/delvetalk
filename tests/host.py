@@ -169,13 +169,13 @@ def serve(server):
     return server
 
 
-def served(state, opener=None, library=None, extra=()):
+def served(state, **settings):
     """`delvetalk-obend serve` over `state` (its journals unsynced), a child of this test process (HOST-HANDOFF 5.125)."""
     from deploy.serve import Served
     if os.environ.get("DELVETALK_SPAWN_LOG"):
         with open(os.environ["DELVETALK_SPAWN_LOG"], "a") as f:
             f.write("serve\n")
-    return Served(state, binary(), opener=opener, library=library, extra=extra)
+    return Served(state, binary(), **settings)
 
 
 class ServeCase(unittest.TestCase):
@@ -186,7 +186,7 @@ class ServeCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        from deploy.serve import LIBRARY
+        from transport.config import LIBRARY
         from transport.host import HostClient
         cls.state_dir = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.state_dir.cleanup)
