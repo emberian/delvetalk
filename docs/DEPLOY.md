@@ -61,10 +61,10 @@ connection per thread, so production runs path (b).
 ## Prerequisites on the workhorse
 
 - Docker with compose v2, as for `/opt/dregg-edge`; `rsync` and `python3` for backups.
-- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v6` since the fourth fresh genesis of 2026-10-11 (103837ce,
-  replay edition 8; the worlds before it stay unserved: edition 1 in `v2`, then b14df72e's `v3`, 6cd1f491's `v4` and
-  89abbd8d's `v5`), owner `10425:10425`, mode 0700 (the image's uid, next in the edge's series), with `state/` inside it
-  made the same way. compose's default is `v6` too; `.env` names it anyway. On ext4 or ZFS, local disk: see "Durability".
+- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v7` since the fifth fresh genesis of 2026-10-11 (7300d494,
+  replay edition 8; the worlds before it stay unserved: edition 1 in `v2`, then b14df72e's `v3`, 6cd1f491's `v4`,
+  89abbd8d's `v5` and 103837ce's `v6`), owner `10425:10425`, mode 0700 (the image's uid, next in the edge's series), with
+  `state/` inside it made the same way. compose's default is `v7` too; `.env` names it anyway. On ext4 or ZFS, local disk: see "Durability".
 - `/etc/delvetalk/anthropic.key`: the key alone, owner 10425, mode 0400.
 - `/etc/delvetalk/repo/town.key`: the repository's signing key (docs/REPO.md "The key"), made at first start
   (below), owner 10425, mode 0400, in a directory owner 10425, mode 0700. Never printed, never in a backup tarball.
@@ -144,7 +144,8 @@ sha256sum'`. Foundation 2f0e25f4 gives `1f31a920642a707f1619dac217fd79b5f7a9ce05
 deployed 2026-10-11, `e853262ec0bb6a68287e757f284296661c42df9a77d914694455e793b3fe8116` (hbox); 6cd1f491, deployed the same
 day, `91238c0cb0d6692810d7113f99fd651a5b01e4949c691493b2ca0182fcd65a0e` (hbox); 89abbd8d, deployed the same day,
 `ef8f709e7a76b7f56142ed3b6fff51bae7791862393d17a2bfba786698c91320` (hbox); 103837ce, deployed the same day,
-`a4280f4c79b829b8faa2ae4b70a73878c9fc97ca38e77bbe6f77d16e8cc62376` (hbox). The Lean compile runs inside dockerd's
+`a4280f4c79b829b8faa2ae4b70a73878c9fc97ca38e77bbe6f77d16e8cc62376` (hbox); 7300d494, deployed the same day,
+`9790175f9dc0cf4ea2da63bd576cf3eb63328715f8cddaa9d372864ba4d15f37` (hbox). The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
@@ -160,14 +161,14 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b
     COMPOSE_FILE=compose.yml:compose.hand.yml
     DELVETALK_ORIGIN=https://gsb.fg-goose.online
-    DELVETALK_DATA=/var/lib/delvetalk/v6
+    DELVETALK_DATA=/var/lib/delvetalk/v7
     DELVETALK_REPO_KEYS=/etc/delvetalk/repo
     DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc
 
 `DELVETALK_REPO_KEYS` is the directory of `<world>.key`, the repositories' signing keys. No comment after a value: compose
 and the shell strip one, but systemd's `EnvironmentFile=` (the backup unit) keeps it as part of the value, and the backup
 then failed `docker: invalid reference format` (2026-10-11, this template's own inline comments). compose's default data
-directory is `v6`, the workhorse's since 2026-10-11; `.env` names it anyway. The hand's token is a file (below), never a line here; the
+directory is `v7`, the workhorse's since 2026-10-11; `.env` names it anyway. The hand's token is a file (below), never a line here; the
 deploy of 18f1de9 had it inline.
 
 Every path and port has a variable whose default is the workhorse's; a rehearsal or drill on another box sets them in the
@@ -248,7 +249,7 @@ at the bridge's first poll; on 103837ce the same seventeen lines in 22 s, height
 
 Genesis is not one transaction: if it stops partway (a traceback, a refused create), the objects it made stay and a
 second run refuses ("genesis has already run here: ..."). Before anything is posted, start again: `docker compose down`,
-move `state/` aside (`mv /var/lib/delvetalk/v6/state /var/lib/delvetalk/v6/state.failed-<stamp>`), fix the cause, and
+move `state/` aside (`mv /var/lib/delvetalk/v7/state /var/lib/delvetalk/v7/state.failed-<stamp>`), fix the cause, and
 run this section from `up -d --wait delvetalk-host`.
 
 The commonplace cites eight doors: GARDEN, ROOMS, WORKSHOP, TIDE, PORCH, ANTHOLOGY, KINDS and STUDIO (a link to
@@ -546,7 +547,7 @@ only if fsync reaches the disk: use a bind mount of a local ext4 or ZFS
 directory, as here. Not NFS, not a network volume driver. Docker Desktop's
 file sharing on a Mac is for testing, not custody.
 
-    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v6 /var/backups/delvetalk
+    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v7 /var/backups/delvetalk
 
 It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
 copies SQLite through its backup API, replays every journal (`state/*.journal`; `state/scratch/` is not custody and is left out of the backup)
@@ -629,13 +630,13 @@ within a poll), and its interpreter would spend.
 Restore on the workhorse:
 
     docker compose down
-    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v6
+    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v7
     docker compose --profile town up -d --wait
 
 A tarball pulled off the box comes back the same way (`scp` it beside its `.sha256` into `/var/backups/delvetalk`).
 
 `restore.sh` (as root) checks the checksum and replays before touching the data, refuses
-while the lock is held, gives the tree to 10425, and moves the current data to `v6.before-<stamp>`.
+while the lock is held, gives the tree to 10425, and moves the current data to `v7.before-<stamp>`.
 
 **A torn tail.** A journal is its chain (`<world>.journal`, one link a line) and its block store
 (`<world>.journal.blocks`, the entries' records; HOST-HANDOFF 5.137); an append syncs the records before the
@@ -646,8 +647,8 @@ Recover through a verified copy; it loses only the entry that was never
 acknowledged, since the host replies after fsync:
 
     docker compose down
-    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v6 /var/backups/delvetalk
-    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v6
+    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v7 /var/backups/delvetalk
+    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v7
     docker compose --profile town up -d --wait
 
 `backup.sh` prints `cut a torn final line at byte N` for each journal it cut in its mirror, then replays the mirror
@@ -668,13 +669,13 @@ loaded at serve's start until `docker compose restart delvetalk-host`.
 The healthcheck goes red and every host reply is "host unavailable".
 
 1. `docker compose down`. Never edit the journal in place.
-2. `deploy/verify.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v6` names the
+2. `deploy/verify.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v7` names the
    journal and the height ("journal broken at height N: ...").
 3. Entries before N are a valid prefix. Copy the directory, keep lines 1..N-1
    of the copy's journal, and verify the copy. Compare it with the newest
    verified backup and restore the longer good one with `restore.sh`.
 4. Everything at height N and after is lost to the world; the broken directory
-   stays under `v6.before-<stamp>` as evidence. Find the second writer before
+   stays under `v7.before-<stamp>` as evidence. Find the second writer before
    starting again.
 
 ## A new binary
@@ -695,7 +696,7 @@ stays red and the journal is untouched: set the old tag back and `up` again.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
-    cd /var/lib/delvetalk/v6/state && mkdir -p worlds/town && mv observe.sqlite* since outbox awaiting principals.txt \
+    cd /var/lib/delvetalk/v7/state && mkdir -p worlds/town && mv observe.sqlite* since outbox awaiting principals.txt \
       mentioned.txt skipped.txt publications.after posting interpretations watch.jsonl alerted.json worlds/town/
 
 (only the names that exist), and `.env`'s `DELVETALK_REPO_KEY_PATH` (a file) becomes `DELVETALK_REPO_KEYS` (its
@@ -718,7 +719,7 @@ replay edition 3); root is one click further (`hand root ...`, `/hand/<world>/ro
 - `journal broken at height N: unterminated final line`: a torn tail; "A torn tail" above (backup.sh cuts it in its
   mirror and replays, restore.sh puts the verified copy back).
 - `height out of sequence`: a second writer. Find it before anything else: `docker compose ps -a`, `fuser -v
-  /var/lib/delvetalk/v6/state/journal.lock` (a writer elsewhere holds the lock; serve exits 75 naming it).
+  /var/lib/delvetalk/v7/state/journal.lock` (a writer elsewhere holds the lock; serve exits 75 naming it).
 - `journal replay edition 1; this host is 2`: set the previous `DELVETALK_IMAGE`/`DELVETALK_HOST_IMAGE` back in `.env`
   and `docker compose --profile town up -d --wait`; a new edition is "A new binary" and docs/OPERATIONS.md's upgrade path.
 - `journal exceeds byte capacity`: docs/OPERATIONS.md section c, the journal bound.
@@ -775,7 +776,7 @@ Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on 
 
     df -h /var/lib/delvetalk /var/backups
     docker compose stop delvetalk-bridge delvetalk-interpret     # the host keeps answering reads
-    du -sk /var/backups/delvetalk /var/lib/delvetalk/v6/state/scratch /var/lib/delvetalk/v6/state/access.log* | sort -n
+    du -sk /var/backups/delvetalk /var/lib/delvetalk/v7/state/scratch /var/lib/delvetalk/v7/state/access.log* | sort -n
     docker image ls 'delvetalk*'
 
 Remove only what the puller already holds: compare `ls /var/backups/delvetalk` with hbox's
