@@ -25,9 +25,15 @@
    converts it, the old state read through `migrate`'s argument type. The genesis lists each move (`moved
    [{object, from, to, migration, before, after}]`, pins and state CIDs) and the moved object's version moves
    once; its suspensions (taken in the code before) are dropped, their supervisors told. An object whose
-   package does not compile against the image, or whose state does not conform and has no `migrate`, refuses
-   the carry by name, or is carried retired under `--leave`, its old pin kept. One whose package needs a
-   library module the image no longer ships (Wake, Env) is left without being named, its reading saying which. Without `--library` the
+   move refuses (its package does not compile against the image, or its state does not conform and it has
+   no `migrate`, or `migrate` refuses) is carried retired at its old pin, the refusal its reading; so is one
+   whose own package the image no longer ships (Wake, Env), and one the owner names with `--leave`. Only an
+   object that does not rebuild under its own pin refuses the carry, by name.
+
+   A thing's body is a layer, and the image's bodies are genesis's (`--body OBJ=FILE`, which
+   transport/carry.py derives from `deploy/genesis.py`'s KINDS): a kind takes FILE as its `body`, and each
+   thing whose `kind` names it takes FILE as its first layer, as the commonplace takes its own; each such
+   change is a move (`body: true`). Without `--library` the
    world's library and every pin are carried as they were.
 
    The old journal is only read: J must verify as a chain, not be open, and OUT must not exist. The new
@@ -104,11 +110,13 @@ def resumable (w : World) (e : Json) : Except String World := do
     throw "its checkpoint does not decode under this host's kernel"
   return w
 
-/-- The packages the image ships: the library sealed from `--library DIR`, and the modules of
-    `DIR/../objects` by name. -/
+/-- The packages the image ships: the library sealed from `--library DIR`, the modules of
+    `DIR/../objects` by name, and the bodies `--body OBJ=FILE` names (genesis's, from transport/carry.py):
+    a kind's, set as its `body` and laid over every thing of that kind, or a thing's own. -/
 structure Shipped where
   library : Library
   objects : List (String × String)
+  bodies : List (String × String) := []
 
 /-- An object's move: its pin before and after, the migration that converted its state ("" when the state
     conformed), and the state's CID before and after. -/
@@ -119,10 +127,13 @@ structure Moved where
   migration : String
   stateBefore : String
   stateAfter : String
+  /-- The image's body it took: as its layer (a thing of a kind, the commonplace) or as its `body` (a kind). -/
+  body : Bool := false
 
 def Moved.json (m : Moved) : Json :=
-  Json.mkObj [("object", toJson m.object), ("from", toJson m.before), ("to", toJson m.after),
-    ("migration", toJson m.migration), ("before", toJson m.stateBefore), ("after", toJson m.stateAfter)]
+  Json.mkObj ([("object", toJson m.object), ("from", toJson m.before), ("to", toJson m.after),
+    ("migration", toJson m.migration), ("before", toJson m.stateBefore), ("after", toJson m.stateAfter)] ++
+    (if m.body then [("body", toJson true)] else []))
 
 /-- What a carry made of a world: the world as this binary holds it, the objects left (retired, with the
     reading), the objects moved to the image's packages, the suspensions dropped (the entry and why), and what
@@ -139,14 +150,19 @@ def dependsOn (source : String) : List String :=
   importsOf source ++ ((source.splitOn "\n").head?.bind fun l =>
     (l.trimAscii.toString.dropPrefix? "layer over ./").bind fun r => (r.toString.splitOn ".obend").head?).toList
 
-/-- `inputs` as the image ships them: the library its new pin, each own module the image names its source,
-    and before each the image's modules it newly needs (neither the library's nor already its own). Inputs
-    naming no library are as they were. -/
-def movedInputs (s : Shipped) (inputs : Json) : Except String Json := do
+/-- `inputs` as the image ships them: the library its new pin, each own module the image names its source, the
+    first layer `body` when one is given, and before each the image's modules it newly needs (neither the
+    library's nor already its own). Inputs naming no library are as they were. -/
+def movedInputs (s : Shipped) (inputs : Json) (body : Option String := none) : Except String Json := do
   unless (inputs.getObjValAs? String "library").toOption.isSome do return inputs
   let .ok m := inputs.getObjVal? "modules" | return inputs.setObjVal! "library" (toJson s.library.pin)
   let image := fun (n : String) => (s.library.modules.lookup n).orElse fun _ => s.objects.lookup n
-  let own := (← parseModules m).map fun (n, src) => (n, (image n).getD src)
+  let modules ← parseModules m
+  -- A body laid again is laid as extend lays one: over the module below it (`Ops.layerLine`).
+  let laid := fun (below src : String) =>
+    if (src.splitOn "\n").head?.map (·.trimAscii.toString) == some (layerLine below) then src else layerLine below ++ "\n" ++ src
+  let own := (modules.zip (("" :: modules.map (·.1)).take modules.length)).map fun ((n, src), below) =>
+    (n, if n == "Layer1" then ((body.map (laid below)).getD src) else (image n).getD src)
   let mut out : Array (String × String) := #[]
   for (n, src) in own do
     -- What the image's source newly imports, depth first, each once.
@@ -162,25 +178,34 @@ def movedInputs (s : Shipped) (inputs : Json) : Except String Json := do
     out := out ++ needed |>.push (n, src)
   return (inputs.setObjVal! "modules" (modulesJson out.toList)).setObjVal! "library" (toJson s.library.pin)
 
-/-- The library modules `o`'s package needs (its own modules that are its library's, and those they
-    import) that the image no longer ships, neither in its library nor among its packages. -/
-def gone (w : World) (s : Shipped) (o : Object) : List String := Id.run do
-  let some pin := (o.inputs.getObjValAs? String "library").toOption | return []
-  let some lib := w.libraries[pin]? | return []
-  let own := match o.inputs.getObjVal? "modules" with
-    | .ok m => (parseModules m).toOption.getD []
-    | .error _ => []
-  let needed := (own.filter fun (n, _) => (lib.modules.lookup n).isSome).map (·.1) ++
-    (libraryClosure lib (own.map (·.2))).map (·.1)
-  return needed.eraseDups.filter fun n => (s.library.modules.lookup n).isNone && (s.objects.lookup n).isNone
+/-- The package `o` was made from (its entry module, below any layers), when it was its library's and the
+    image ships it no longer, in its library or among its packages (Wake, Env): the object has nothing to move to. -/
+def gone (w : World) (s : Shipped) (o : Object) : Option String := do
+  let pin ← (o.inputs.getObjValAs? String "library").toOption
+  let lib ← w.libraries[pin]?
+  let own ← (o.inputs.getObjVal? "modules").toOption.bind (parseModules · |>.toOption)
+  let (name, _) ← own[own.length - layersOf o.inputs - 1]?
+  if (lib.modules.lookup name).isSome && (s.library.modules.lookup name).isNone && (s.objects.lookup name).isNone then
+    some name else none
 
 /-- `o` (built as `old` under its own pin) moved to the image's packages, or none when its closure there is
     its pin's; else why it cannot move. -/
 def moved (w : World) (s : Shipped) (id : String) (o : Object) : Except String (Option (Object × Built × Moved)) := do
-  let inputs ← movedInputs s o.inputs
+  -- Its body: a kind (holding a `body`) takes its own as that field; a thing of a kind takes its kind's, and
+  -- the commonplace its own, laid as its first layer.
+  let kind := match Law.rawField "kind" o.state with
+    | some (.label k) => some k
+    | _ => none
+  let held := (s.bodies.lookup id).filter fun _ => (Law.rawField "body" o.state).isSome
+  let layer := if layersOf o.inputs == 0 || held.isSome then none
+    else (s.bodies.lookup id).orElse fun _ => kind.bind fun k => s.bodies.lookup k
+  let inputs ← movedInputs s o.inputs layer
   let b ← compileObject w inputs |>.mapError (s!"its package does not compile against the library this host ships: " ++ ·)
   let pin ← b.artifact.getObjValAs? String "sourcesSha256"
-  if pin == o.pin then return none
+  let relaid := held.any fun src => match Law.rawField "body" o.state with
+    | some (.label b) => b != src
+    | _ => true
+  if pin == o.pin && !relaid then return none
   let (state, migration) ← if o.state.conformsUnder b.assumptions.bounds b.ty then pure (o.state, "") else do
     let m ← compileMigration w inputs "migrate" b.ty (fun dom bounds => o.state.conformsUnder bounds dom)
         "its migrate does not read the state as it was"
@@ -189,6 +214,9 @@ def moved (w : World) (s : Shipped) (id : String) (o : Object) : Except String (
     unless next.conformsUnder b.assumptions.bounds b.ty do
       throw "its migrate's result does not conform to the new state type"
     pure (next, "migrate")
+  let state := match held, state with
+    | some src, .record fs => .record (fs.map fun (k, v) => if k == "body" then (k, .label src) else (k, v))
+    | _, st => st
   let (relations, state) ← relationsFor b state |>.mapError (s!"its state under the new relations: " ++ ·)
   if let some cell := Delvetalk.Turn.cellOverBound (cellDecls relations) state then
     throw (((cellRefusal id cell).reason).getD "a cell passes maxCellBytes")
@@ -202,7 +230,8 @@ def moved (w : World) (s : Shipped) (id : String) (o : Object) : Except String (
                      bounds := b.assumptions.bounds, methods, predicate, predicateReads, relations, fixed,
                      packet := ← b.artifact.getObjValAs? String "packetSha256", declares := declaresOf b.artifact }
   return some (o', b, { object := id, before := o.pin, after := pin, migration,
-                        stateBefore := stateCid o.state, stateAfter := stateCid state })
+                        stateBefore := stateCid o.state, stateAfter := stateCid state,
+                        body := layer.isSome || relaid })
 
 /-- Every object rebuilt and, with the image's packages, moved to them; every suspension checked. An
     object named in `leave` is carried retired whether or not it fails, at its own pin, and its suspensions
@@ -217,39 +246,37 @@ def carryWorld (w : World) (leave : List String) (reason : String) (shipped : Op
   let mut c : Carried := { world := w }
   let opener := if w.opener.isEmpty then w.clockPrincipal else w.opener
   let retire := fun (o : Object) (why : String) => { o with lawText := (retiredLaw o.lawText why opener).getD o.lawText }
-  -- Left: what the owner names, and each object whose package needs a module the image no longer ships.
-  let leaving : List (String × String) := (w.objects.toList.filterMap fun (id, o) =>
+  -- Left: what the owner names, each object whose package the image no longer ships, and each whose move to
+  -- the image's packages refuses (its compile or its migration), at its own pin, the refusal its reading.
+  let named : List (String × String) := (w.objects.toList.filterMap fun (id, o) =>
       if leave.contains id then some (id, s!"left at the carry: {reason}") else do
-        let s ← shipped
-        let missing := gone w s o
-        if missing.isEmpty then none
-        else some (id, s!"left at the carry: its package needs {", ".intercalate missing}, which this host no longer ships"))
-  let leave := leaving.map (·.1)
+        let name ← gone w (← shipped) o
+        some (id, s!"left at the carry: its package {name} is no longer shipped"))
   for (id, o) in Snapshot.sortedBy w.objects.toList (·.1) do
-    let built := do
-      let (o', b) ← rebuilt c.world o
-      if leave.contains id then return (o', b, none)
-      match shipped with
-      | none => return (o', b, none)
-      | some s => match ← moved c.world s id o' with
-        | some (o'', b', m) => return (o'', b', some m)
-        | none => return (o', b, none)
-    match built with
-    | .ok (o', b, m) =>
-      let why := reading ((leaving.lookup id).getD "")
-      let o' := if leave.contains id then retire o' why else o'
-      c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o' } o'.inputs b,
-                    moved := c.moved ++ m.toList }
-      if leave.contains id then c := { c with left := c.left ++ [(id, why)] }
+    match rebuilt c.world o with
     | .error e =>
-      if leave.contains id then
+      if let some _ := named.lookup id then
         let why := reading s!"carried retired: {e}"
         c := { c with world := { c.world with objects := c.world.objects.insert id (retire o why) }, left := c.left ++ [(id, why)] }
       else c := { c with refused := c.refused ++ [(id, e)] }
+    | .ok (o', b) =>
+      let step : Except String (Option (Object × Built × Moved)) := match named.lookup id, shipped with
+        | some why, _ => .error why
+        | none, none => .ok none
+        | none, some s => (moved c.world s id o').mapError (s!"left at the carry: " ++ ·)
+      match step with
+      | .ok (some (o'', b', m)) =>
+        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o'' } o''.inputs b', moved := c.moved ++ [m] }
+      | .ok none =>
+        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o' } o'.inputs b }
+      | .error why =>
+        let why := reading why
+        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id (retire o' why) } o'.inputs b,
+                      left := c.left ++ [(id, why)] }
   let mut kept : Array Json := #[]
   for e in w.suspended do
     let id := Snapshot.suspendedObject e
-    if leave.contains id then
+    if c.left.any (·.1 == id) then
       c := { c with dropped := c.dropped ++ [(e, "its object was left")] }
       continue
     if let some m := c.moved.find? (·.object == id) then
@@ -310,7 +337,7 @@ def fail (message : String) (code : UInt32 := 1) : IO UInt32 := do
   return code
 
 def usage : String :=
-  "usage: delvetalk-obend carry --from J --out J2 --reason R [--library DIR] [--leave OBJ]...\n" ++
+  "usage: delvetalk-obend carry --from J --out J2 --reason R [--library DIR [--body OBJ=FILE]...] [--leave OBJ]...\n" ++
   "       J's snapshot at its head, written by the binary of J's edition, is read; J2 must not exist"
 
 def main (args : List String) : IO UInt32 := do
@@ -360,7 +387,12 @@ def main (args : List String) : IO UInt32 := do
         for f in ← objects.readDir do
           if f.fileName.endsWith ".obend" then
             packages := packages ++ [((f.fileName.dropEnd 6).toString, ← IO.FS.readFile f.path)]
-      pure (some ({ library, objects := packages } : Shipped))
+      let mut bodies : List (String × String) := []
+      for spec in allArgs args "--body" do
+        let some (obj, file) := (match spec.splitOn "=" with | [o, f] => some (o, f) | _ => none)
+          | return ← fail s!"--body {spec}: a body is OBJ=FILE" 64
+        bodies := bodies ++ [(obj, ← IO.FS.readFile file)]
+      pure (some ({ library, objects := packages, bodies } : Shipped))
   let carried ← match carryWorld w leave reason shipped with
     | .ok c => pure c
     | .error e => return ← fail e 64
