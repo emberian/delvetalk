@@ -1,8 +1,8 @@
-"""The owner's console at /hand/ over a real front, with a stub host and a stub poster.
+"""The owner's console at /hand/<world>/ over a real front, with a stub host and a stub poster; Speak against a real
+`serve` after genesis: the plan's seeds cast as the opener, the invitations drafted, each post waiting for Post.
 
-Evidence for FOUNDATION §7 (layer: transport).
-
-The hand: the owner's console at /hand/, over a real front with a stub host and a stub poster.
+Evidence for FOUNDATION §7 and docs/PLAYTEST-2.md §2, §3 (layer: transport). Refuted by a page without the token, a post
+without a click, a seed cast twice, a spell drafted that the host refused, or a hand draft the Zulip bridge posts itself.
 
     python3 -W ignore -m tests.run test_hand
 """
@@ -19,7 +19,7 @@ from pathlib import Path
 from transport.journal import records, size
 from tests.test_bridge import spell_post
 from tests.wire import write_journal
-from transport import delve, hand, identity, observe, watch
+from transport import delve, hand, identity, observe, post, watch
 from transport.__main__ import main
 from transport.http import Front
 from transport.state import State
@@ -43,6 +43,9 @@ class StubHost:
         if req['op'] == 'world-resolve':
             return {'status': 'resolved', 'slug': req['slug'], 'kind': 'receipt', 'cid': 'c'}
         return {'status': 'ok'}
+
+    def at(self, world):
+        return self
 
 
 class Poster:
@@ -83,7 +86,7 @@ class HandCase(unittest.TestCase):
         r = c.getresponse()
         return r.status, r.read().decode(), dict(r.getheaders())
 
-    def get(self, path='/hand/'):
+    def get(self, path='/hand/town/'):
         return self.req('GET', path, cookie=f'dt_hand={TOKEN}')
 
     def logged(self):
@@ -94,24 +97,26 @@ class Hand(HandCase):
     def test_without_the_token_the_page_is_404_and_a_query_token_sets_the_cookie(self):
         self.assertEqual(self.req('GET', '/hand/')[0], 404)
         self.assertEqual(self.req('GET', '/hand/?token=wrong')[0], 404)
-        self.assertEqual(self.req('POST', '/hand/draft/7-aaaa', {'do': 'post'})[0], 404)
+        self.assertEqual(self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'post'})[0], 404)
         code, _, headers = self.req('GET', '/hand/?token=' + TOKEN)
         self.assertEqual(code, 302)
         self.assertIn('dt_hand=' + TOKEN, headers['Set-Cookie'])
         self.assertEqual(self.poster.calls, [])
+        self.assertEqual(self.get('/hand/')[2]['Location'], '/hand/town/')  # the hand opens on its own world
+        self.assertEqual(self.get('/hand/nowhere/')[0], 404)  # a world serve does not hold
 
     def test_post_calls_the_poster_once_with_the_edited_text_and_logs_it(self):
-        code, _, headers = self.req('POST', '/hand/draft/7-aaaa', {'do': 'post', 'text': 'edited words'}, f'dt_hand={TOKEN}')
+        code, _, headers = self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'post', 'text': 'edited words'}, f'dt_hand={TOKEN}')
         self.assertEqual(code, 303)
         self.assertEqual(self.poster.calls, [('7-aaaa', 'edited words', f'{self.tmp.name}/creds.json')])
         (line,) = self.logged()
         self.assertEqual((line['what'], line['who'], line['draft'], line['edited']), ('post', 'owner', '7-aaaa', True))
 
     def test_skip_and_hold_never_post(self):
-        self.req('POST', '/hand/draft/7-aaaa', {'do': 'hold'}, f'dt_hand={TOKEN}')
+        self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'hold'}, f'dt_hand={TOKEN}')
         self.assertEqual(self.poster.calls, [])
         self.assertIn('planted', self.get()[1])
-        self.req('POST', '/hand/draft/7-aaaa', {'do': 'skip', 'reason': 'off topic'}, f'dt_hand={TOKEN}')
+        self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'skip', 'reason': 'off topic'}, f'dt_hand={TOKEN}')
         self.assertEqual(self.poster.calls, [])
         d = json.loads((self.state.outbox / '7-aaaa.json').read_text())
         self.assertEqual((d['posted'], d['skipped'], d['reason']), (False, True, 'off topic'))
@@ -298,6 +303,96 @@ class Cli(HandCase):
         self.assertEqual((w.sent[1][1]['record']['text'], w.sent[1][1]['record']['reply']['parent']['uri']), ('a word by hand', self.uri))
         self.assertEqual([(o['object'], o['uri']) for o in self.host.ops if o['op'] == 'world-posted'], [('garden-1', 'at://did:plc:x/town.delve.feed.post/r9')])
         self.assertEqual(self.cmd('reply', 'at://nope', '--text-file', str(f), '--object', 'x')[0], 1)
+
+
+class Plan(unittest.TestCase):
+    """docs/PLAYTEST-2.md as the hand reads it at its start."""
+
+    def test_the_plan_gives_four_seeds_and_eight_invitations_each_with_its_spells(self):
+        p = hand.plan(Path(__file__).resolve().parent.parent / 'docs' / 'PLAYTEST-2.md')
+        self.assertEqual(len(p['seeds']), 4)
+        self.assertTrue(all(s.startswith('delvetalk ') for s in p['seeds']))
+        self.assertEqual(p['seeds'][0], "delvetalk kind/room make / name: The Bellfounder's Porch")
+        self.assertEqual([r['minute'] for r in p['invitations']], [0, 15, 30, 45, 60, 75, 90, 105])
+        self.assertTrue(all(r['spells'] and r['answered'] for r in p['invitations']))
+        zulip = hand.invitation_text(p['invitations'][0], 'zulip')
+        self.assertTrue(zulip.startswith('@**Claude** @**Yuè月** @**Kestrel** the world is new.'), zulip)
+        self.assertIn('\n\n    delvetalk kinds make / name: <yours>', zulip)  # quoted: four spaces, so no bridge runs it
+        self.assertTrue(hand.invitation_text(p['invitations'][0], 'delve').startswith('@Claude @Yuè月 @Kestrel the world'))
+        self.assertEqual(hand.plan('/nonexistent'), {'path': '/nonexistent', 'seeds': [], 'invitations': []})
+
+
+class Speak(unittest.TestCase):
+    """Speak over a real `serve` after genesis, the world a Zulip channel: a seed is cast once as the opener, the card
+    and receipt come back, and the post that says so waits for Post into its topic, recorded for the thing it made."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.town import Town
+        cls.dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.dir.cleanup)
+        cls.town = Town(cls.dir.name)
+        cls.addClassCleanup(cls.town.close)
+        cls.st = State(cls.town.state)
+        cls.st.write(cls.st.row, {'world': 'town', 'transport': 'zulip', 'realm': 'tulip.example', 'channel': 'delvetalk', 'zuliprc': None})
+        cls.hand = hand.Hand(cls.st, cls.town.client, TOKEN)
+
+    def test_a_seed_is_cast_once_as_the_opener_and_its_post_waits_for_post_in_its_topic(self):
+        spell = self.hand.plan['seeds'][0]
+        came = self.hand.cast(spell, intent=self.hand.seed_intent(spell))
+        self.assertEqual((came['outcome'], came['object']), ('admitted', 'room/1'), came)
+        self.assertIn('Made, at room/1', came['text'])
+        _, d = self.hand.draft(came['drafted'])
+        self.assertEqual((d['topic'], d['replyTo'], d['object'], d['posted'], d['hand']), ('welcome', None, 'room/1', False, True))
+        self.assertTrue(d['text'].startswith("    delvetalk kind/room make / name: The Bellfounder's Porch\n\n"), d['text'])
+        entry = self.town.send(op='world-receipt', principal=self.hand.owner, identity=self.hand.seed_intent(spell))
+        self.assertEqual(entry['receipt']['identity']['principal'], self.hand.owner)
+        again = self.hand.cast(spell, intent=self.hand.seed_intent(spell))  # the same intent: the first receipt, the first draft
+        self.assertEqual((again['height'], again['drafted']), (came['height'], came['drafted']))
+        self.assertEqual(sum(1 for i, _, _ in self.hand.drafts() if '-speak-' in i), 1)
+        seed = self.hand.spoken()['seeds'][0]
+        self.assertEqual((seed['cast']['height'], seed['cast']['state']), (came['height'], 'waiting for Post'))
+        from transport import zulip
+        sent = []
+        bot = type('Bot', (), {'newest': lambda s, stream: 0, 'sent_after': lambda s, *a: None,
+                               'send': lambda s, stream, topic, text: sent.append((stream, topic, text)) or {'id': 501}})()
+        self.assertEqual(zulip.post_drafts(self.st, self.town.client, bot), {'posted': []})  # the bridge leaves the hand's own
+        h = hand.Hand(self.st, self.town.client, TOKEN, poster=lambda path, st, host, text=None: post.post_draft(path, st, host, text, zulip=bot))
+        h.post(came['drafted'])
+        self.assertEqual(sent[0][:2], ('delvetalk', 'welcome'))
+        uri = json.loads((self.st.outbox / f"{came['drafted']}.json").read_text())['sent']['uri']
+        self.assertEqual(self.town.send(op='world-addressee', parent=uri).get('object'), 'room/1')  # a reply to the post reaches the porch
+
+    def test_a_refused_spell_drafts_nothing_and_words_are_no_spell(self):
+        came = self.hand.cast('delvetalk room/99 write / text: nobody here')
+        self.assertEqual((came['outcome'], came['drafted']), ('unknownObject', None), came)
+        with self.assertRaises(hand.HandError):
+            self.hand.cast('could the porch have a bell')
+
+    def test_the_speak_page_offers_the_plan_and_a_cast_comes_back_on_it(self):
+        cookie = f'dt_hand={TOKEN}'
+        code, page, _ = self.hand.handle('GET', '/hand/town/speak', cookie)
+        self.assertEqual(code, 200)
+        for text in ("The hand's seeds", 'seed 4', 'T+105', 'answered when', 'Topic of #delvetalk', 'name="intent"'):
+            self.assertIn(text, page)
+        code, _, headers = self.hand.handle('POST', '/hand/town/speak', cookie, {'spell': 'delvetalk garden plant / colour: amber / seed: a speak test',
+                                                                                'intent': 'hand:speak:test-1', 'topic': 'welcome'})
+        self.assertEqual(code, 303)
+        spoken = urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['spoken'][0]
+        code, page, _ = self.hand.handle('GET', '/hand/town/speak?spoken=' + spoken, cookie)
+        self.assertIn('Came back', page)
+        self.assertIn('garden/bell/', page)
+
+    def test_an_invitation_is_drafted_once_with_its_spell_quoted(self):
+        got = self.hand.invite(30)
+        _, d = self.hand.draft(got['drafted'])
+        self.assertEqual((d['topic'], d['object'], d['speak']), ('welcome', None, {'invitation': 30}))
+        self.assertIn('\n    delvetalk garden/bell/1 rain / text: …', d['text'])
+        with self.assertRaises(hand.HandError):
+            self.hand.invite(30)
+        with self.assertRaises(hand.HandError):
+            self.hand.invite(31)
+        self.assertEqual(next(r for r in self.hand.spoken()['invitations'] if r['minute'] == 30)['draft']['state'], 'waiting for Post')
 
 
 if __name__ == '__main__':

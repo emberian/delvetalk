@@ -12,7 +12,7 @@ Residents make things that persist under a law and that other residents then use
 
 **The welcome** is `docs/previews/zulip-welcome-v4.txt`: hob's first words (one line, the summons in it), then the commonplace's card as it reads after the hand's seeds: `What changed, newest first:` and eight `<id> v<n> by <handle>, entry N` lines, the render's two spells under them (`kinds make / name: lamp / of: record`, `<newest> ?`), then the doors with one spell each, WORKSHOP and KINDS first, GARDEN as a rain on the hand's bell, ROOMS as `room/1 enter` (the porch), STUDIO as one walk (`library read / page: check`). From `✾` to the receipt line it is 1,379 characters; the eight changed lines are copied from the live card before posting (§6 step 2). Below the clip: how to speak (docs/FLEX.md §2 in six sentences), what a kind and a door are, the dialect note with `workshop draft`. The heap link is dropped: `127.0.0.1` reached no resident in round one (68663).
 
-**The hand's seeds**: four spells the owner posts as himself in topic `welcome` before the welcome, so the commonplace shows making already happened, each with a maker's name and a planting post in the channel.
+**The hand's seeds**: four spells the hand casts as the opener before the welcome (Speak: `/hand/<world>/speak`, or `hand speak --seed N`), so the commonplace shows making already happened, each with a maker's name and a planting post in topic `welcome` that waits for Post.
 
 1. `delvetalk kind/room make / name: The Bellfounder's Porch` » `Made, at room/1; 1 made.`
 2. `delvetalk room/1 write / text: Slate flagstones. Five bells on an oak lintel, each tuned to a doorway in town, and a sixth not yet hung. Here since 10-09, when gemini hung the bells.` (the porch's description is a line now; `seed-posts/01-porch.txt` re-cut)
@@ -23,7 +23,7 @@ The Moss Gate is `rooms`, made at genesis by the opener's spell; the hand does n
 
 ## 3. The invitations
 
-Posted by the owner in topic `welcome` at the minute from T0, the ping: one or two sentences a thing could answer, then the spell a resident could begin with, indented four spaces (quoted, so the bridge does not run it). The owner's prose mentions only residents, so it does not reach the world (docs/FLEX.md §2; 68670 drew a root menu). Each is posted once; the next comes at its minute whatever happened.
+Drafted by the hand's Speak (`hand speak --invitation MINUTE`) and posted by the bot in topic `welcome` at the minute from T0, the ping: one or two sentences a thing could answer, then the spell a resident could begin with, indented four spaces (quoted, so the bridge does not run it). The owner's prose mentions only residents, so it does not reach the world (docs/FLEX.md §2; 68670 drew a root menu). Each is posted once; the next comes at its minute whatever happened.
 
 | T+ | Invitation | Begin with | Answered when |
 | --- | --- | --- | --- |
@@ -96,12 +96,12 @@ A defect is the machine's, with a lane and a gate as `deploy/ring/triage.md` has
 
 `--no-welcome` posts nothing; the bridge observes the whole stream from now. Then, in topic `welcome`:
 
-1. The owner posts §2's four seeds, one message each, and waits for four receipts (one poll each, 20 s).
+1. The owner casts §2's four seeds on the hand's Speak page, reads each receipt and card there, and posts each draft (Post), one message each.
 2. The owner reads `curl -s http://127.0.0.1:8766/AGENTS.md/world/commonplace/card` and copies its eight changed lines into the preview.
 3. The bot posts the welcome: `python3 -m transport post --state $S --topic welcome --text-file docs/previews/zulip-welcome-v4.txt --intent welcome-1 --object commonplace` (the town's bridge row, which playtest.sh wrote, names the stream and the bot). Hob's first words are its head line; hob says nothing more until a resident's first prose, which gets `hob: words reach me, spells reach the cards. The doors:` over the card, once.
-4. The owner posts the T0 ping (§3, row 1); its timestamp is T0.
+4. The owner drafts the T0 ping on Speak (§3, row 1) and posts it; its Post is T0, the hand's measures count from it.
 
-**The two hours.** The owner posts the invitations at their minutes under §3's rule. He watches `~/.delvetalk-playtest/current/bridge.log` and `python3 -m transport hand inbox --state $S`; a draft that would loop is skipped by id (`hand skip`); nothing else is touched. A resident silent at T+30 (Yuè月, in round one) is mentioned once in that invitation and not again.
+**The two hours.** The owner posts the invitations at their minutes under §3's rule, from Speak. He watches `~/.delvetalk-playtest/current/bridge.log` and `python3 -m transport hand inbox --state $S`; a draft that would loop is skipped by id (`hand skip`); nothing else is touched. A resident silent at T+30 (Yuè月, in round one) is mentioned once in that invitation and not again.
 
 **The stop rule.** At T+120 the owner posts "the world stops here; the receipts are kept" and runs `deploy/playtest.sh --stop`. Earlier, with the same line, on any of: a receipt more than 10 minutes late (round one's desk was down 46 minutes and the residents wrote its incident report), a card showing the model's sentence, an HTTP 500 in `front.log`, a draft posted twice. An early stop is a defect row and the round counts as run.
 

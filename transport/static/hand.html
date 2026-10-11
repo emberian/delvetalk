@@ -1,0 +1,62 @@
+<!-- shell: every page of the hand; {css} is the stylesheet inlined (the hand's listener serves /hand/ and nothing else), {refresh} a meta refresh or nothing -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{refresh}
+<title>{title} · the hand</title><style>{css}</style></head><body>
+<header><a class="mark" href="/hand/">the hand</a><nav>{nav}</nav><span class="who">{world}</span></header>
+<main>{body}</main><footer>The owner's console. Nothing reaches a town without Post; every act is a line in the hand's log, every root act an entry in the journal.</footer></body></html>
+<!-- nav: one world's pages -->
+<a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a>
+<!-- console: one world's outbox and inbox -->
+<h1 class="title">{world}<small>the outbox and the inbox; nothing is posted without a click</small></h1>{note}
+<p class="codes">{codes}</p>
+<section><h2>Search</h2><form method="get" action="{base}/"><label>Receipt slug <input name="slug" placeholder="bofab-lukid"></label><button class="door">Resolve</button></form>{found}</section>
+<section id="outbox"><h2>Outbox</h2>{outbox}</section>
+<section><h2>Inbox</h2>{inbox}</section>
+<!-- speak: a spell cast as the opener, and the plan's seeds and invitations -->
+<h1 class="title">Speak<small>a spell cast as the opener into {world}; the card and the receipt come back, and the post that says so waits in the outbox for Post</small></h1>{note}{spoken}
+<section><h2>A spell</h2><form method="post" action="{base}/speak"><input type="hidden" name="intent" value="{intent}"><label>Spell <textarea name="spell" rows="4" required placeholder="delvetalk garden plant / colour: silver / seed: …"></textarea></label>{where}<button class="door">Cast</button></form></section>
+<section><h2>The hand's seeds</h2><p>From {plan} §2, before the welcome; each cast once, as the opener.</p><ol class="receipts">{seeds}</ol></section>
+<section><h2>The invitations</h2><p>From {plan} §3, one at its minute from T0; drafted for the bot, the spell quoted so the bridge does not run it.</p><ol class="receipts">{invitations}</ol></section>
+<!-- where_zulip: a Zulip world's post goes to a topic of its channel -->
+<label>Topic of #{channel} <input name="topic" value="{topic}" required></label>
+<!-- where_delve: a Delve world's post starts a thread, or answers one -->
+<label>In reply to <small>an at:// post; empty starts a thread</small><input name="replyTo" value=""></label>
+<!-- seed: one of the plan's spells, cast or not -->
+<li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">seed {n}</span><span class="line">{spell}</span><span class="by">{done}</span>{cast}</li>
+<!-- seed_cast: the seed's own form -->
+<form method="post" action="{base}/speak"><input type="hidden" name="intent" value="{intent}"><input type="hidden" name="spell" value="{spell}">{where}<button class="door">Cast</button></form>
+<!-- invitation: one row of the plan's table, drafted or not -->
+<li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">T+{minute}</span><span class="line">{text}</span><span class="by">answered when {answered}{done}</span>{draft}</li>
+<!-- invitation_draft: the invitation's own form -->
+<form method="post" action="{base}/invite"><input type="hidden" name="minute" value="{minute}">{where}<button class="door">Draft</button></form>
+<!-- spoken: what a cast came back with -->
+<section><h2>Came back</h2><ol class="receipts"><li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">entry {height}</span><span class="name">{slug}</span><span class="by">to {object}</span></li></ol>{card}</section>
+<!-- root: root, one click past moderation: every form one request on the root socket, every form a reason -->
+<hr class="root"><h1 class="title">Root<small>journaled, marked root, public; the reason is on the entry</small></h1>{note}
+<p class="codes">{codes}</p>
+<section><h2>Object</h2><form method="get" action="{base}/root/"><label>Edit <input name="object" placeholder="garden"></label><button class="door">Open</button></form>{editor}</section>
+<section><h2>Journal</h2>{entries}<p class="doors"><a class="door" href="{base}/root/?before={before}">OLDER</a></p></section>
+<section><h2>Moderation</h2>{mod}</section>
+<section><h2>Root acts</h2>{acts}</section>
+<!-- editor: an object's fields as the opener reads them, each editable; Save sets those that changed -->
+<form method="post" action="{base}/root/save"><input type="hidden" name="object" value="{object}"><input type="hidden" name="shown" value="{shown}">{fields}<input name="reason" required placeholder="reason (required)"><button class="door">Save</button></form>
+<!-- form: one verb; the reason or the reading is required -->
+<details class="action"><summary><span class="code">{face}</span> {verb}</summary><form method="post" action="{base}/{face}/{verb}">{inputs}<input name="{why}" required placeholder="{why} (required)"><button class="door">{verb}</button></form></details>
+<!-- entry: a journal entry raw, with ignore and unignore -->
+<li class="slip {tag}"><span class="code">entry {height}</span><span class="line">{line}</span><details><summary>raw</summary><pre class="listing">{raw}</pre></details><form method="post" action="{base}/root/{verb}"><input type="hidden" name="height" value="{height}"><input name="reason" required placeholder="reason (required)"><button class="door">{verb}</button></form></li>
+<!-- code -->
+<span class="code">{text}</span>
+<!-- note -->
+<p class="hint">{text}</p>
+<!-- card -->
+<figure class="frame"><pre class="card">{text}</pre></figure>
+<!-- group: a post and the drafts that answer it -->
+<div class="entry">{original}{drafts}</div>
+<!-- draft: a slip with the receipt line, the draft to edit, and the three bracketed buttons -->
+<ol class="receipts"><li class="slip {fate}"><span class="code">entry {height}</span><span class="name">{name}</span><span class="stamp">{stamp}</span><span class="by">to {object}</span></li></ol>
+<form method="post" action="{base}/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="post">Post</button><button class="door" name="do" value="skip">Skip</button><button class="door" name="do" value="hold">Hold</button></p></form>
+<!-- row: an observation as a slip, what became of it, and a reply by hand -->
+<div class="entry"><ol class="receipts"><li class="slip {outcome}"><span class="code">{kind}</span><span class="name">{handle}</span><span class="line">{text}</span><span class="stamp">{stamp}</span></li></ol>{retry}<details><summary>reply by hand</summary><form method="post" action="{base}/reply"><input type="hidden" name="uri" value="{uri}"><input name="object" placeholder="object"><textarea name="text" rows="4"></textarea><button class="door">Draft</button></form></details></div>
+<!-- retry: a skipped row's quiet line -->
+<p class="quiet">— skipped: nobody was addressed —</p><form method="post" action="{base}/retry"><input type="hidden" name="uri" value="{uri}"><button class="door">Retry</button></form>
+<!-- missing -->
+<h1 class="title">Not here<small>{text}</small></h1>

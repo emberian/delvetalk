@@ -100,21 +100,21 @@ class Page(HandCase):
     """/hand/root/ behind the hand's token, on the hand's listener only (test_hand.Listener: the public front has no /hand/)."""
 
     def test_the_root_page_has_its_rule_its_forms_and_each_form_needs_its_reason(self):
-        s, page, _ = self.get('/hand/root/')
+        s, page, _ = self.get('/hand/town/root/')
         self.assertEqual(s, 200)
         self.assertIn('<hr class="root">', page)
         for verb in ('set', 'delete', 'as', 'ignore', 'card', 'library', 'settings', 'quiet', 'retire', 'hide', 'revoke', 'expire'):
             self.assertIn(f'/{verb}"', page, verb)
         self.assertEqual(page.count('required placeholder="reason (required)"') + page.count('required placeholder="reading (required)"'),
                          page.count('<form method="post"'))
-        self.assertEqual(self.req('GET', '/hand/root/')[0], 404)  # no token, no page
+        self.assertEqual(self.req('GET', '/hand/town/root/')[0], 404)  # no token, no page
         before = len(self.host.ops)
-        s, _, h = self.req('POST', '/hand/root/delete', {'object': 'garden'}, cookie=f'dt_hand={TOKEN}')
+        s, _, h = self.req('POST', '/hand/town/root/delete', {'object': 'garden'}, cookie=f'dt_hand={TOKEN}')
         self.assertEqual((s, [o for o in self.host.ops[before:] if o['op'] == 'world-root']), (303, []))
         self.assertIn('needs+a+reason', h['Location'])
-        self.req('POST', '/hand/root/delete', {'object': 'garden', 'reason': 'squatted'}, cookie=f'dt_hand={TOKEN}')
+        self.req('POST', '/hand/town/root/delete', {'object': 'garden', 'reason': 'squatted'}, cookie=f'dt_hand={TOKEN}')
         self.assertEqual(self.host.ops[-1], {'op': 'world-root', 'principal': OPENER, 'reason': 'squatted', 'act': {'kind': 'delete', 'object': 'garden'}})
-        self.req('POST', '/hand/mod/hide', {'object': 'garden', 'reading': 'abusive'}, cookie=f'dt_hand={TOKEN}')
+        self.req('POST', '/hand/town/mod/hide', {'object': 'garden', 'reading': 'abusive'}, cookie=f'dt_hand={TOKEN}')
         self.assertEqual((self.host.ops[-1]['object'], self.host.ops[-1]['method']), ('garden', 'hide'))
 
 

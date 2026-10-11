@@ -6,6 +6,7 @@ import json
 import time
 from pathlib import Path
 
+from transport.http import typed
 from transport.identity import SLUG
 
 # verb -> (fields, the request it sends). A field is (name, kind): text, int, json (a value), or ? after it when optional.
@@ -68,7 +69,6 @@ def request(face, verb, given, opener, clock=time.time):
     on, spec = POWERS[verb]
     got = fields(spec, given)
     target = got.pop('object') if on == 'object' else 'world'
-    from transport.http import typed
     return {'op': 'world-turn', 'principal': opener, 'object': target, 'method': verb, 'identity': f'hand:{verb}:{int(clock() * 1000)}',
             'argument': typed({**got, 'reading': given['reading'].strip()})}
 

@@ -7,7 +7,15 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
 
-T = dict(re.findall(r'<!-- (\w+)[^>]*-->\n(.*?)(?=\n<!--|\Z)', (Path(__file__).resolve().parent / 'static' / 'pages.html').read_text(), re.S))
+STATIC = Path(__file__).resolve().parent / 'static'
+
+
+def sections(name):
+    """A markup file of static/ as its named sections: `<!-- name: what it is -->` then the markup, up to the next."""
+    return dict(re.findall(r'<!-- (\w+)[^>]*-->\n(.*?)(?=\n<!--|\Z)', (STATIC / name).read_text(), re.S))
+
+
+T = sections('pages.html')
 
 
 def page(title, who, body):

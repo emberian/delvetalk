@@ -142,7 +142,7 @@ chain, the slug cost printed.
 
 ### 1.6 The hand's root page and CLI
 
-`/hand/root/` (and `hand root <verb>`), behind the same token, with a red
+`/hand/<world>/root/` (and `hand root <verb>`), behind the same token, with a red
 rule across the top and the reason box on every form:
 
 - **The object editor**: `hand root dump OBJ` prints the object's record as

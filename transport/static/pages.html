@@ -66,38 +66,6 @@
 <p class="hob"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span>{text}</span></p>
 <!-- quiet: silence is a deliberate state, and the frog's -->
 <p class="quiet"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span class="stamp">— quiet</span>(no reply)</p>
-<!-- hand: the owner's console -->
-<h1 class="title">The hand<small>nothing is posted without a click</small></h1>{note}
-<p class="codes">{codes}</p><p class="doors"><a class="door" href="/hand/root/">ROOT: EDIT, IGNORE, ACT AS; MODERATE</a></p>
-<section><h2>Search</h2><form method="get" action="/hand/"><label>Receipt slug <input name="slug" placeholder="bofab-lukid"></label><button class="door">Resolve</button></form>{found}</section>
-<section id="outbox"><h2>Outbox</h2>{outbox}</section>
-<section><h2>Inbox</h2>{inbox}</section>
-<!-- hand_root: root, one click past moderation: every form one request on the root socket, every form a reason -->
-<hr class="root"><h1 class="title">Root<small>journaled, marked root, public; the reason is on the entry</small></h1>{note}
-<p class="codes">{codes}</p>
-<section><h2>Object</h2><form method="get" action="/hand/root/"><label>Edit <input name="object" placeholder="garden"></label><button class="door">Open</button></form>{editor}</section>
-<section><h2>Journal</h2>{entries}<p class="doors"><a class="door" href="/hand/root/?before={before}">OLDER</a></p></section>
-<section><h2>Moderation</h2>{mod}</section>
-<section><h2>Root acts</h2>{root}</section>
-<!-- hand_form: one verb; the reason or the reading is required -->
-<details class="action"><summary><span class="code">{face}</span> {verb}</summary><form method="post" action="/hand/{face}/{verb}">{inputs}<input name="{why}" required placeholder="{why} (required)"><button class="door">{verb}</button></form></details>
-<!-- hand_entry: a journal entry raw, with ignore and unignore -->
-<li class="slip {tag}"><span class="code">entry {height}</span><span class="line">{line}</span><details><summary>raw</summary><pre class="listing">{raw}</pre></details><form method="post" action="/hand/root/{verb}"><input type="hidden" name="height" value="{height}"><input name="reason" required placeholder="reason (required)"><button class="door">{verb}</button></form></li>
-<!-- hand_code -->
-<span class="code">{text}</span>
-<!-- hand_note -->
-<p class="hint">{text}</p>
-<!-- hand_card -->
-<figure class="frame"><pre class="card">{text}</pre></figure>
-<!-- hand_group: a post and the drafts that answer it -->
-<div class="entry">{original}{drafts}</div>
-<!-- hand_draft: a slip with the receipt line, the draft to edit, and the three bracketed buttons -->
-<ol class="receipts"><li class="slip {fate}"><span class="code">entry {height}</span><span class="name">{name}</span><span class="stamp">{stamp}</span><span class="by">to {object}</span></li></ol>
-<form method="post" action="/hand/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="post">Post</button><button class="door" name="do" value="skip">Skip</button><button class="door" name="do" value="hold">Hold</button></p></form>
-<!-- hand_row: an observation as a slip, what became of it, and a reply by hand -->
-<div class="entry"><ol class="receipts"><li class="slip {outcome}"><span class="code">{kind}</span><span class="name">{handle}</span><span class="line">{text}</span><span class="stamp">{stamp}</span></li></ol>{retry}<details><summary>reply by hand</summary><form method="post" action="/hand/reply"><input type="hidden" name="uri" value="{uri}"><input name="object" placeholder="object"><textarea name="text" rows="4"></textarea><button class="door">Draft</button></form></details></div>
-<!-- hand_retry: a skipped row's quiet line -->
-<p class="quiet">— skipped: nobody was addressed —</p><form method="post" action="/hand/retry"><input type="hidden" name="uri" value="{uri}"><button class="door">Retry</button></form>
 <!-- world: the listing, each object a small card with its mark and its door word -->
 <h1 class="title">The world<small>the objects you may read, each with its door word when the commonplace names one</small></h1>
 <ul class="cards">{items}</ul>{more}

@@ -322,8 +322,9 @@ root):
 
     ssh -L 8766:127.0.0.1:8766 root@workhorse     # then open http://127.0.0.1:8766/hand/?token=<secret>
 
-The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. The page
-has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
+The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. `/hand/`
+opens on the town; `/hand/<world>/` is any world `serve` holds, with the same pages (`--world W` on the command line). A
+world's console has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
 retries, host pid), a search by receipt slug (`world-resolve`), the OUTBOX and the INBOX. The outbox groups drafts by
 the post they answer, the post beside an editable textarea of the draft, with three buttons: **Post** runs
 `post.post_draft`, the code `post.py --draft` runs (the edited text, the owner's credentials file, `world-posted` for the
@@ -359,9 +360,17 @@ The same operations have a command-line face for the owner's assistant over ssh:
   `world-posted {unposted: true, reason}` so replies stop routing to it, and the draft and `hand-log.jsonl` keep the fact.
   Anyone else's post is refused before any call.
 - `log [--tail N]`: the last actions in `hand-log.jsonl`.
+- `speak SPELL | --spell-file F | --seed N` and `speak --invitation MINUTE` (`/hand/<world>/speak`): cast a spell as the
+  opener on the root socket, as the bridge turns a post (`receive` on the card the host reads in it), and see the
+  receipt and the card; an admitted one is drafted as the post that says so (the spell quoted, then the card and its
+  receipt line), recorded at Post for the thing it made, into `--topic` of a Zulip world (default its one topic, else
+  `welcome`) or under `--reply-to` a Delve thread. `--seed N` is the plan's seed N (`plan`, config `plan`, default
+  docs/PLAYTEST-2.md §2) under an intent of its own, so a second cast is the first receipt; `--invitation MINUTE` drafts
+  §3's invitation at T+MINUTE for the bot, its spells quoted, once. The hand's own drafts wait for Post on Zulip too.
+- `plan`: the plan's seeds, each with its cast, and its invitations, each with its draft.
 
-Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/root/` (a red rule
-across the top, a reason or reading required on every form, served on the hand's listener only, linked from `/hand/`):
+Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/<world>/root/` (a red
+rule across the top, a reason or reading required on every form, served on the hand's listener only, linked from every page):
 
 - `quiet --who P --hours N`, `unquiet --who P`, `retire|unretire|hide|show --object O`, `revoke --grant G`, `expire
   --scratch S` (refused until scratch worlds exist), each `--reading R`: the power as a turn by the opener on
@@ -628,7 +637,7 @@ channel (hob's register: what happened and what to do next, no apology) and what
 delvetalk-ops python3 -m transport hand` (the ops container names the state and the root socket; a Zulip world's `unpost`
 also needs the bot's rc, which the world's bridge row names by path: add `-v RC:RC:ro` for that path). A and F lose data if done in the wrong order: both stop the writers first. The
 moderation verbs (`quiet`, `retire`, `hide`, `find`, `settings`) are the hand's, over the host's powers (ROOT section 2,
-replay edition 3); root is one click further (`hand root ...`, `/hand/root/`).
+replay edition 3); root is one click further (`hand root ...`, `/hand/<world>/root/`).
 
 **A. The host will not start.** Healthcheck red; every reply "host unavailable".
 
