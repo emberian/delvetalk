@@ -218,6 +218,8 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
     match who, (rawField field new).bind rowsOf with
     | some w, some rows => rows.any fun r => (rawField column r).map canon == some (canon (.label w))
     | _, _ => false
+  -- The kernel's grammar (docs/LAW.md §4 B); the host lane denotes it. Until then it fails closed.
+  | .changed _ _ _ => false
   | .not body => !denote facts old new body
   | .and left right => denote facts old new left && denote facts old new right
   | .or left right => denote facts old new left || denote facts old new right

@@ -16,6 +16,8 @@ The fragment, exactly (G1B-ENFORCED-LAW-DESIGN; anything else refuses
             | appendOnly(FIELD) | unchanged(FIELD) | REF in new.FIELD
             | insertOnly(FIELD) | REF in new.FIELD.COLUMN
             | count(new.FIELD) <= INT | count(new.FIELD) <= count(old.FIELD) + INT
+            | changed(new.FIELD.COLUMN) by WHO
+    WHO   ::= request.subject | request.caller
     REF   ::= new.FIELD | old.FIELD | request.subject | request.caller | request.height
             | request.turn | request.pin | request.kind | request.method | request.clock
             | request.object
@@ -30,7 +32,13 @@ write, in minutes; `request.object` the written object's own id (LAW §4 A, H). 
 predicate reads the clock and the object as slots; an atom reading `old.F`, and the three-slot
 bound `REF <= REF + REF`, compile to `any []` and the host judges them, as it judges relations. `appendOnly` holds when the new list is the old list with zero or more items appended;
 `unchanged` when the field is equal in old and new. `new.F == request.subject` compares a
-text field with the principal. -/
+text field with the principal.
+
+`changed(new.F.COL) by WHO` (LAW §4 B) ranges over the write's own difference: every row of the
+relation F that the write inserted, replaced or retracted (the rows of old absent from new and the
+rows of new absent from old, compared whole by canonical bytes, less the rows the declared
+retention evicted) has COL equal to the fact; at creation every row counts. A replaced row
+contributes both its rows, so a write replaces only the fact's row with the fact's row. -/
 import Theory.AssertCompiled
 import Pred.Core
 namespace Minidregg.Compiler.ObjectiveBendLaw
@@ -92,6 +100,10 @@ inductive LawExpr where
   /-- `REF in new.FIELD.COLUMN`: the text fact is the COLUMN of some row of the relation
   (relations, host extension). -/
   | memberColumn (ref : LawRef) (field column : String)
+  /-- `changed(new.FIELD.COLUMN) by WHO`: every row of the relation this write inserted, replaced or
+  retracted, less the evicted, has COLUMN equal to WHO, `request.subject` or `request.caller`
+  (relations, host extension; LAW §4 B). -/
+  | changed (field column : String) (who : LawRef)
   | not (body : LawExpr)
   | and (left right : LawExpr)
   | or (left right : LawExpr)
@@ -109,7 +121,7 @@ def LawExpr.fields : LawExpr → List String
   | .leRSum left right addend => left.fields ++ right.fields ++ addend.fields
   | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => [field]
   | .member ref field | .memberColumn ref field _ => ref.fields ++ [field]
-  | .insertOnly field | .countLe field _ | .countGrowth field _ => [field]
+  | .insertOnly field | .countLe field _ | .countGrowth field _ | .changed field _ _ => [field]
   | .not body => body.fields
   | .and left right | .or left right | .implies left right => left.fields ++ right.fields
 
@@ -133,6 +145,7 @@ def LawExpr.fieldsPlain : LawExpr → Bool
   | .member ref field => ref.plain && plainName field
   | .memberColumn ref field column => ref.plain && plainName field && plainName column
   | .insertOnly field | .countLe field _ | .countGrowth field _ => plainName field
+  | .changed field column _ => plainName field && plainName column
   | .not body => body.fieldsPlain
   | .and left right | .or left right | .implies left right => left.fieldsPlain && right.fieldsPlain
 
@@ -177,7 +190,7 @@ def compile : LawExpr → Pred
   -- Lists and equality of whole fields are beyond the kernel predicate: host laws judge them.
   | .appendOnly _ | .unchanged _ | .member _ _ => Pred.any []
   -- Relations are lists of records: the host judges these too (RELATIONAL §5).
-  | .insertOnly _ | .countLe _ _ | .countGrowth _ _ | .memberColumn _ _ _ => Pred.any []
+  | .insertOnly _ | .countLe _ _ | .countGrowth _ _ | .memberColumn _ _ _ | .changed _ _ _ => Pred.any []
   | .not body => .not (compile body)
   | .and left right => Pred.all [compile left, compile right]
   | .or left right => Pred.any [compile left, compile right]
@@ -222,6 +235,7 @@ def LawExpr.render : LawExpr → String
   | .countLe field bound => s!"count(new.{field}) <= {bound}"
   | .countGrowth field offset => s!"count(new.{field}) <= count(old.{field}) + {offset}"
   | .memberColumn ref field column => s!"{ref.render} in new.{field}.{column}"
+  | .changed field column who => s!"changed(new.{field}.{column}) by {who.render}"
   | .not body => s!"not ({body.render})"
   | .and left right => s!"({left.render}) and ({right.render})"
   | .or left right => s!"({left.render}) or ({right.render})"
@@ -458,6 +472,13 @@ def parseUnary : Nat → List Tok → Except String (LawExpr × List Tok)
             let (k, after) ← parseInt offset
             return (.countGrowth field k, after)
         | _ => refuse "a count bound is count(new.FIELD) <= INT or count(new.FIELD) <= count(old.FIELD) + INT"
+    | .ident "changed" :: .sym "(" :: .ident "new" :: .sym "." :: .ident field :: .sym "." :: .ident column :: .sym ")"
+        :: .ident "by" :: more => do
+      let (who, after) ← parseRef more
+      match who with
+      | .subject | .caller => return (.changed field column who, after)
+      | _ => refuse ("changed(…) by " ++ who.render ++ " (the rows a write changed belong to request.subject or request.caller)")
+    | .ident "changed" :: _ => refuse "changed reads one column of a relation the write changed: changed(new.FIELD.COLUMN) by request.subject or request.caller"
     | .ident "count" :: _ => refuse "a count bound is count(new.FIELD) <= INT or count(new.FIELD) <= count(old.FIELD) + INT"
     | .ident "unchanged" :: .sym "(" :: .ident field :: .sym ")" :: after => .ok (.unchanged field, after)
     | .ident "appendOnly" :: _ => refuse "appendOnly takes one top-level field name: appendOnly(FIELD)"
@@ -547,6 +568,27 @@ theorem compile_clock_old_object :
       some "request.clock <= old.tended + new.gap" := by
   native_decide
 
+/-- LAW §4 B: the rows a write changed belong to the requester. Tide's `self` and Deal's `signer`
+as one line each; the column is named, the field is a top-level relation, the fact is the subject
+or the caller; it is the host's to judge, and it renders back to itself. -/
+theorem parse_changed :
+    (parse "changed(new.subs.who) by request.subject").toOption = some (.changed "subs" "who" .subject) ∧
+    (parse "insertOnly(signatures) and changed(new.signatures.principal) by request.caller").toOption =
+      some (.and (.insertOnly "signatures") (.changed "signatures" "principal" .caller)) ∧
+    (parse "changed(new.subs) by request.subject").toBool = false ∧
+    (parse "changed(new.subs.who.x) by request.subject").toBool = false ∧
+    (parse "changed(old.subs.who) by request.subject").toBool = false ∧
+    (parse "changed(new.subs.who) by request.height").toBool = false ∧
+    (parse "changed(new.subs.who) by new.owner").toBool = false ∧
+    (parse "changed(new.subs.who)").toBool = false ∧
+    (LawExpr.changed "subs" "who" .subject).fields = ["subs"] ∧
+    (LawExpr.changed "subs" "who" .subject).fieldsPlain = true ∧
+    (LawExpr.changed "subs" "a/b" .subject).fieldsPlain = false ∧
+    compile (.changed "subs" "who" .subject) = Pred.any [] ∧
+    (parse "(changed(new.lines.author) by request.subject) and (insertOnly(lines))").toOption.map LawExpr.render =
+      some "(changed(new.lines.author) by request.subject) and (insertOnly(lines))" := by
+  native_decide
+
 end Minidregg.Compiler.ObjectiveBendLaw
 
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_tally
@@ -557,3 +599,4 @@ end Minidregg.Compiler.ObjectiveBendLaw
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_refuses_relational
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_clock_old_object
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.compile_clock_old_object
+#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_changed
