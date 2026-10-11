@@ -164,12 +164,12 @@ def stance(context: Abi.Context, state: State) -> String:
   "I only propose. A card asks the speaker first before: {first}.\n{escalation}{told}"
 def teaching() -> String:
   "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nTo teach a shortcut no model is asked about:\n\n    delvetalk policy macro\n    name: moth-bell\n    pattern: moth for {{who}}\n    expansion: garden plant / colour: violet / seed: a bell for {{who}}\n\nWhat I know:\n"
-# The policy as a card, including how to teach it; its words, examples and macros take what
-# is left of 1,400 characters.
+# The policy as a card, including how to teach it; its words, examples and macros take what the
+# head leaves of Card.limit(), one budget across the card as every card keeps.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let how = if Card.reads(state.owner, context) then teaching() else "\nOnly its owner, {Card.name(state.owner, context)}, teaches it.\n\nWhat I know:\n"
   let head = Document.text("✾ INTERPRETATION POLICY\n\nModel: {state.model}\n{stance(context, state)}{how}")
   let terms = Lists.map(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map(state.examples, exampleCard)
   let macros = Lists.map(state.macros, fn(m: Macro) -> Document.Document: Document.text("Macro {m.name}: {m.pattern}\n  means: delvetalk {m.expansion}\n"))
-  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clippedWithin(Lists.concat(Lists.concat(terms, shown), macros), 48n, 1350n - Document.size(head))})})
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clippedWithin(Lists.concat(Lists.concat(terms, shown), macros), 48n, Card.left(Document.size(head)))})})
