@@ -12,7 +12,7 @@ The host is one Lean process holding a world of durable objects. Every state cha
 - Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); subscriptions deliver `changed` to typed receivers (5.50, 5.53); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
 - An object's pin is the CID of its sealed source closure, never a compiler output. A `fixed` State field is set at creation only (5.76).
 - Laws: a text law (`law NAME "reading": EXPR`) judges every change; `request.kind` is `write` 0, `reprogram` 1, `amend` 2 or `proposed` 3, a write no method of the object made (5.93); an optional Bend `law(old, new, request)` runs after it for kinds 0 and 3 and may give a reading (5.67).
-- Refusals are receipts with a class from `refusalClasses` (17); every `reason` is written by `Refusal.voiced` (5.75). `staleRoot`, `budget`, `evaluation`, `capacity` and `quota` are transient (a retry with the same identity runs again).
+- Refusals are receipts with a class from `refusalClasses` (18, `quiet` the newest, 5.126); every `reason` is written by `Refusal.voiced` (5.75). `staleRoot`, `budget`, `evaluation`, `capacity` and `quota` are transient (a retry with the same identity runs again).
 - Ops in section 2. Limits in section 4 (`Store.lean`, namespace `Limits`).
 - Run: `make check` (parallel runner `tests/run.py`), `make smoke` (`test_turn_world test_chain`). Narrow: `DELVETALK_OBEND=<binary> python3 -W ignore -m tests.run test_x`. `tests/host.py` opens test journals with `sync: "none"`.
 - Posting and model retries are host decisions (5.107): `world-post-reserve` counts delve.town posts against `postQuota`; a transient model failure is journaled `attempted` with a backoff. `make` creates from a resident's source with `madeFrom` lineage.
@@ -21,7 +21,7 @@ The host is one Lean process holding a world of durable objects. Every state cha
 
 ## 1. Module map
 
-Import order: Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapshot, Session. Snapshot imports Ops only; Spell imports no host module.
+Import order: Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapshot, Root, Session; `Serve.lean` and `PackageSession.lean` sit above them. Snapshot imports Ops only; Spell imports only Store; Root imports TurnLoop and Snapshot.
 
 - `Store.lean`: `Limits`, `Law`, `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey` (compressed `[principal, intent]`). Pure data.
 - `Journal.lean`: `bodyHash` (CID of the body's canonical bytes), `sealEntry`, `verify height previous entry`.
@@ -32,6 +32,8 @@ Import order: Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapsh
 - `TurnLoop.lean`: `M` monad (`ExceptT Abort (StateM TurnState)`), `runMethod`, `drive`, `answer`, `finishTurn`, `runTurnWith`, `resumeOne`, `settle`, `deliver`, `reprogramOp`, `amendOp`.
 - `Snapshot.lean`: snapshot bytes, `openContent`, fork genesis. It does IO (snapshot files).
 - `Session.lean`: `Open {world, path, handle, report, sync, snapshotAt}`, `openWorld`, `durable`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
+- `Root.lean`: `rootKinds`, `rootFieldsOf`, `rootOp`, `worldSettingsOp` (5.126).
+- `Serve.lean` and `spec/native/serve.c`: the directory of worlds and its two sockets (5.125, 5.131). `PackageSession.lean` is the per-process session above Session.
 
 Durability is fsync, not a full barrier: an entry may be lost on power loss inside the OS write-back window. The chain verifies on reopen, and a journal whose last line is torn is refused by name (`journal broken at height N: unterminated final line`, `Snapshot.lean`, `Ops.lean`); the host never cuts its own file. Recovery is a verified copy: `deploy/backup.sh` cuts the torn line in its mirror and replays it, `deploy/restore.sh` installs the tarball (DEPLOY "Durability and backups", "A torn tail"). `world-open {sync: "none" | "fsync" | "full"}` picks the mode per process (default `fsync`; `full` = F_FULLFSYNC; anything else, a boolean too, is refused). Never journaled; `world-status` reports `sync`. `openWorld` takes an exclusive flock and refuses "journal is open in another process".
 
@@ -87,7 +89,7 @@ Outcomes:
 
 - `created`: `{object, pin, sourcesSha256, compile, seed, read, chain, supervisor?, owner?}`; `roots []`, `turn 0`. Replay recompiles, requires the pin to match the source closure, the seed to conform and the amendment dry run to pass at the entry's height.
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
-- `refused`: `{class, clause?, object?, reason?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a text-law refusal with a reading journals `reason: "refused <name>: <reading>"`. Replay checks only that the class is known; `publicRefusal` shows the reason.
+- `refused`: `{class, clause?, object?, reason?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a text-law refusal with a reading journals `reason: "refused <name>: <reading>"`. Replay checks only that the class is known; `publicRefusal` shows the reason.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
@@ -264,11 +266,13 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    state}` with one field when its value conforms to the call site's type (`typeMismatch` otherwise,
    `field` for a missing field); read authority and root as `view`. Test: `tests/test_world_object.py`.
 
-49. **The host reads spells (host8; WHOLENESS §2, host day 2).** `Host/Spell.lean` is Spell.obend's grammar in
-   Lean, rule for rule (`parse`, `bare`, `fit`, reasons verbatim, plus a `Clause`: `otherCard`, `noAction`,
+49. **The host reads spells (host8; WHOLENESS §2, host day 2).** `Host/Spell.lean` is the spell grammar, ported
+   from Spell.obend in Lean rule for rule and now the only complete one (Spell.obend keeps a reduced reader of the last spell
+   line, its card, action and inline fields, which `Card.unanswered` and `spellAction` still call: a second reading of
+   one grammar until `Heard` carries the card and action) (`parse`, `bare`, `fit`, reasons verbatim, plus a `Clause`: `otherCard`, `noAction`,
    `unknownField`, `duplicateField`, `badValue`, `unclosedBlock`, `unclear`); the stateless op `spell-parse
    {text, form?}` answers `{status: "parsed", spell | notASpell, fit?, bare}`; `tests/test_host_spell.py` runs
-   116 fixtures (`tests/fixtures/spells/`) through both parsers and they agree. `runTurn` sends a direct
+   116 fixtures (`tests/fixtures/spells/`, recorded while both parsers agreed, lane/objects9) through the host's. `runTurn` sends a direct
    `receive {text, post}` to a card through `spellTurn`: the spell's card resolves (`resolveCard`) and the turn is
    retargeted to it (same principal, identity, `replyTo`); `?` answers `{status: "usage", object, text}` and
    journals nothing; the action is looked up in the card's `methodForms`; a fitting spell runs the method with
@@ -1100,7 +1104,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_journal_bound.py`.
 
 125. **`serve`: the host holds its directory and its sockets (host13; docs/FEDERATION.md §1, docs/ROOT.md
-   §1.4).** `delvetalk-obend serve --state DIR [--root-socket PATH] [--opener DID] [--library DIR]
+   §1.4).** `delvetalk-obend serve --state DIR [--socket PATH] [--root-socket PATH] [--root-group GROUP] [--opener DID] [--library DIR]
    [--sync none|fsync|full] [--clock P] [--home NAME]` (`Delvetalk/Serve.lean`, `spec/native/serve.c`)
    replaces `transport/hostd.py` and `hostproc.py`'s process management.
    - *Lock.* `flock` on `DIR/journal.lock` before anything else, held for the process's life (the
@@ -1118,7 +1122,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `stateless: true` the journal-less session. `serve-status` lists the open worlds; `world-open` over a
      socket is refused ("serve opens its worlds").
    - *Sockets.* `DIR/host.sock` and the root socket (default `DIR/root/root.sock`; deploy passes the
-     `/data/root` volume's path), both 0600 under umask 0177, backlog 128. The C shim accepts every
+     `/data/root` volume's path), the public socket 0600 and the root socket 0660 (its group `--root-group`, 5.131) under umask 0177, backlog 128. The C shim accepts every
      connection, reads newline-framed lines (16 MiB) and hands Lean the next completed line in order with
      its connection and socket; one thread answers it. SIGTERM/SIGINT end the loop after the op in hand,
      removing the sockets and pid file. The public socket refuses `rootOps` (`world-root`, `world-library`,
@@ -1127,11 +1131,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    - *Gone.* hostd's 120 s kill-and-respawn: in one process it would lose every world's store; ops are
      bounded by ticks, heap, ledger and entry bounds, and `HostClient`'s timeout still answers
      `hostTimeout`. The clock stays the bridge's `tick` (hostd ran none). `hostd-info` adds `replay`.
-   - *For the transport lane:* `tests/host.py` `Served` starts it; point `HostdCase`, the programs and
-     deploy's units at `serve` (with `--root-socket` on the root volume) and delete hostd.py and
-     hostproc.py's `Host`/`Heaps`; the bridge's turns for the opener as a resident now need the root
-     socket. Tests: `tests/test_serve.py` (test_hostd's cases against the Lean server, named worlds, the
-     root socket).
+   - *Landed in the transport (5.131):* `tests/host.py` `Served` starts it; `transport/` holds no hostd.py or
+     hostproc.py; the opener's ordinary turns go on the public socket (`resident`, 5.131). Tests:
+     `tests/test_serve.py` (the old hostd cases against the Lean server, named worlds, the root socket).
 
 126. **ROOT and MODERATION in one edition (host14; docs/ROOT.md §1 to §3; replay edition 3).**
    - *`world-root {principal, reason, act}`* (`Host/Root.lean`, `rootOp`): the opener only (`serve` keeps it to
@@ -1288,9 +1290,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 134. **The package bound is the kernel's (host15; KERNEL-HANDOFF §25 item 1).** `Limits.maxPackageBytes` and
    `formSourceMax` are `Bounds.maxPackageBytes` (131,072); the four refusals (`creationInputs`, `buildCreated`,
    `checkSource`, `prepareProgram`) read "package source exceeds maxPackageBytes (131072 bytes)". Tests:
-   `test_form_bounds`, `test_reprogram` Maximum. Not the host's: Card.obend's and Policy.obend's "1 to 16384
-   characters" (objects lane); the front's `moduleTooLarge` at 16,384 bytes in catalogue.json (transport lane);
-   `test_relation_limits` keeps 16,384-byte packages in the Workshop's `held` until the per-cell bound (§15
+   `test_form_bounds`, `test_reprogram` Maximum. Landed in the other lanes since: Card.obend's and Policy.obend's literal (Bend cannot read the bound) and the
+   front's `moduleTooLarge` read 131072 too. Still 16,384: `test_relation_limits` keeps 16,384-byte packages in the Workshop's `held` until the per-cell bound (§15
    step 4) replaces `maxStateBytes`.
 
 ## 6. Gotchas
@@ -1375,7 +1376,9 @@ hash and handed-on reach (5.127).
    - The bridge must state `reach` (5.118; 5.127 makes a handed-on reply keep it) and, on Zulip, pass the
      recorded ancestor as `replyTo`; the hand's root console and moderation verbs (ROOT §1.6, §2.3) are the
      transport lane's over `world-root`, `world-settings`, `world-turn` on `world`, and `world-status.hour`.
-   - Objects lane: World.obend's `interpret` gains `held` and `misfit` (5.117), Card's `receive` takes
-     `misfit` (5.121), Library's laws page reads `i.laws` with `source: false` and Card's usage `i.offered`
-     (5.123), Kind's graft becomes create-then-extend (5.122) and names `c.object.object` under a minted
-     prefix (5.127), Spell.obend's inline reader is not case-folded (5.119).
+   - Objects lane, still to do: Kind grafts by a self-sent `graft` after its `create` (not the same-turn
+     create-then-extend 5.122 allows) and names its own `<under>/<name>/<count + 1>` id instead of asking for a
+     prefix mint (5.127), so `test_await`'s expected failure stands; Workshop's `adopt` still passes
+     `madeFrom.receipt: ""` though an await's receipt carries `hash` (5.127). Landed: World.obend's `interpret`
+     `held` and `misfit` (5.117), Card's `receive` `misfit` (5.121), Library's `laws` page reading `i.laws` with
+     `source: false` and Card's usage `i.offered` (5.123), Spell.obend's case folding (5.119).
