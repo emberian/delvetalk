@@ -211,7 +211,7 @@ class Changes(Reflection):
         [resumed] = self.turn("bell", "name", record(who=label("kim")), principal="ann", identity="go1")["resumed"]
         self.assertEqual((resumed["status"], whole(self.host, resumed)["result"]), ("admitted", nat(0)), resumed)
         self.assertNotIn("rerunOf", resumed)
-        self.assertIn({"object": "bell", "field": "rung", "key": "*", "version": 0}, resumed["receipt"]["roots"])
+        self.assertIn({"object": "bell", "version": 0, "fields": ["rung"]}, resumed["receipt"]["roots"])
         self.make2("r2", READER)
         self.assertEqual(self.turn("r2", "later", record(other=label("bell"), slot=label("go2")), identity="w2")["status"], "suspended")
         [stale] = self.turn("bell", "ring", record(), principal="ann", identity="go2")["resumed"]

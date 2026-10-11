@@ -20,6 +20,7 @@ class ReplayEdition(HostCase):
                            modules=counter_modules(), entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
         edition = self.host.send(op="world-status")["replay"]
+        self.assertEqual(edition, 4)
         with open(self.path) as f:
             [first] = [json.loads(line) for line in f]
         self.assertEqual(first["replay"], edition)

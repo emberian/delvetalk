@@ -320,14 +320,14 @@ it, in ticks or in host work: the kernel holds `(field, n)` and nothing else. `c
 `joinOn` and a card render fetch exactly the rows whose fields they read; `lookup` (a Bend
 walk) fetches the rows before the one it finds, since it compares their keys.
 
-**The runner.** New entry points in `Turn.lean`, beside the quoted ones (which stay, unchanged
-in ticks, until the host has switched; then they are deleted):
+**The runner.** The entry points in `Turn.lean` (host16 switched the host and deleted the quoted
+ones, `quoteAt` and their preparation, renaming these from `…Stored`):
 - `structure StoredRelation where field : String; size : Nat; key : List String`
 - `structure Store where relations : List StoredRelation; fetch : String → Nat → Option Data`
   (`Store.empty`: no relations, every fetch `none`).
-- `startEntryStored (entry : CheckedEntry) (arguments : List Data) (store : Store) (binding : Binding) (b : Budgets) (dictionary : Option Dictionary := none) : Except String (Step × Reads)`
-- `resumeSuspendedStored (entry) (suspension : Suspension) (store : Store) (binding) (value : Data) (b) : Except String (Step × Reads)`
-- `resumeEntryStepStored (entry) (checkpoint : Checkpoint) (issued : String) (binding) (value : Data) (b) (store : Store) (dictionary := none) : Except String (Step × Reads)`
+- `startEntry (entry : CheckedEntry) (arguments : List Data) (store : Store) (binding : Binding) (b : Budgets) (dictionary : Option Dictionary := none) : Except String (Step × Reads)`
+- `resumeSuspended (entry) (suspension : Suspension) (store : Store) (binding) (value : Data) (b) : Except String (Step × Reads)`
+- `resumeEntry (entry) (checkpoint : Checkpoint) (issued : String) (binding) (value : Data) (b) (store : Store) (dictionary := none) : Except String (Step × Reads)`
 
 The stored path takes every argument natively, like a card (`nativeApplication`; no
 `quoteAt`, no `checkAt` per turn: each data argument is admitted by `conformsUnder`, which
@@ -337,7 +337,7 @@ the empty relation `rows {items: []}` (so the check walks the scalars only), and
 enters as one `stored (object fields stored) none` cell. The rows themselves are not
 re-checked: the host checked each when it was written (RELATIONAL §11 item 2). Ticks of the
 stored path differ from the quoted path's (a native argument is one tick a node where a
-quoted one is three), so `test_tariff`'s pins move when the host switches, not before.
+quoted one is three); no `test_tariff` pin moved when the host switched (host16).
 
 **Reads.** `structure Read where field : String; key : Data; bytes : Nat` (a forced row: its
 key projection onto `StoredRelation.key`, as a record of those columns, and its canonical
@@ -445,7 +445,7 @@ REQUEST ROWS R` runs `tests/test_stored.py`'s `third` (a write, then row 3's tex
 ROWS rains, quoted and stored. At 2,048 rows the start and resume take 2,853 us quoted and 45 us
 stored (0 rows: 32 and 29 us); ticks 81 + 168 quoted, 79 + 208 stored (the fetched row is
 `1 + 2b`); one row forced; the suspension's checkpoint is 45,357 canonical bytes quoted and 540
-stored (557 and 538 at 0 rows). The host still runs the quoted path, so the rehearsal replay
+stored (557 and 538 at 0 rows). Before host16 switched the host, the rehearsal replay
 (18,183 captured requests, `compile-profile replay … "world-turn directory receive" 1`) writes a
 byte-identical journal on both binaries (median suspension entry 3,895 bytes over its 43, the
 same ticks per class) in 84.75 G user instructions against 84.53 G (within the 5% run-to-run
@@ -453,9 +453,10 @@ noise; directory `receive` 1,501 ms against 1,511). The Counter bump replay (R =
 three): 120 us a bump on both, 102 ticks, 21.73 G instructions on both. `fetchable` is
 `@[inline]` so the hosted runner's fetch test costs nothing on a run without stored cells.
 
-**The host's entry points (lane/host14).** All in `Delvetalk.Turn` unless named:
-`Store`, `StoredRelation`, `Store.bounded`, `startEntryStored`, `resumeSuspendedStored`,
-`resumeEntryStepStored` (each `Except String (Step × Reads)`), `Package.executeDataEntryStored`
+**The host's entry points (switched by lane/host16, HOST-HANDOFF 5.136).** All in `Delvetalk.Turn`
+unless named: `Store`, `StoredRelation`, `Store.bounded`, `startEntry`, `resumeSuspended`,
+`resumeEntry`, `materializeStored` (a checkpoint kept past the process, its unforced stored cells
+made native) (each `Except String (Step × Reads)`), `Package.executeDataEntryStored`
 for cards and views, `Read`/`Reads`/`Reads.toJson`, `keyProjection`, `scalarPart`,
 `relationRows`, `cellOverBound`, `changedCellBytes`, `Bounds.maxCellBytes`, and `storeOfState state
 [{field, key}]` (a `Store` over the state's own rows, as the tests and the profile build it). The host builds a
@@ -507,9 +508,6 @@ checkpoint digest the TurnLoop call sites pass). Remaining, in order:
 12. (Done; the standing caveat.) `expandSuspended` recomputes a digest a compacted journal entry lacks:
    the journal is the trust root, so that is sound, but a host that ever resumes a checkpoint from
    outside its journal must look its digest up there.
-14. After the host's switch to the stored path (lane/host14 and after): delete
-   `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt` for state,
-   and move `test_tariff`'s pins in that commit.
 17. `Package.localize` (check-package) still recompiles each function alone for a spanless refusal:
    2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
    are elaborator refusals without a span; find them by making `localize` count its calls in
