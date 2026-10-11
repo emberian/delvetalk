@@ -23,10 +23,10 @@ def asking() -> Lists.List<String>:
 def hob() -> String:
   "hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; the card and its law decide what is admitted, never you."
 def initial() -> State:
-  {owner: "", model: "", system: hob(), lexicon: Lists.List.nil(), examples: Lists.List.nil(), macros: Lists.List.nil({}), confirmFor: asking()}
+  {owner: "", ownerHandle: "", model: "", system: hob(), lexicon: Lists.List.nil(), examples: Lists.List.nil(), macros: Lists.List.nil({}), confirmFor: asking()}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
 # stranger by name before writing.
-law owner "the owner never changes, and only the owner teaches it": unchanged(owner) and request.subject == new.owner
+law owner "the owner never changes, and only the owner teaches it": unchanged(owner) and unchanged(ownerHandle) and request.subject == new.owner
 sum Taught:
   taught: {count: Nat}
   refused: Card.Refusal
@@ -128,6 +128,11 @@ def termLine(term: Term) -> String:
   "- {term.word}: {term.meaning}\n"
 def exampleLine(example: Example) -> String:
   "Said: {example.utterance}\n{example.spell}\n\n"
+# On the card a taught spell is indented, typed back whole and never cast from a quoting post.
+def exampleCardLine(example: Example) -> String:
+  "Said: {example.utterance}\n{indented(example.spell)}"
+def indented(text: String) -> String:
+  textJoin(Lists.map(Document.lines(Document.text(text)), fn(l: String) -> String: "    {l}\n"), "")
 def many(forms: Lists.List<Form.Form>) -> Lists.List<String>:
   match forms:
     case nil(_): Lists.List.nil()
@@ -170,17 +175,17 @@ def draftPrompt() -> String:
 def jar() -> String:
   "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Coin:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  coins: Relations.Relation<Coin>\ndef initial() -> State:\n  {{owner: \"\", coins: Relations.empty()}}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {{field: \"coins\", key: Text.words(\"n who\"), limit: 64n}})\nlaw owner \"anyone drops; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform drop:\n  line: text 1..140\ndef drop(state: State, input: {{line: String}}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {{coins: insert {{n: Relations.count(state.coins), who: context.principal, line: input.line}}}}\n  Relations.count(state.coins) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{{natText(Relations.count(state.coins))}} coins\\n\")\n"
 def exampleCard(example: Example) -> Document.Document:
-  Document.text(exampleLine(example))
+  Document.text(exampleCardLine(example))
 def stance(state: State) -> String:
   let first = if Lists.length(state.confirmFor) == 0n then "nothing" else Text.joined(state.confirmFor)
-  "I only propose. A card asks the speaker first before: {first}.\n"
+  "hob reads words with it into spells; a spell hob reads runs at once, except: {first}, which ask the speaker first.\n"
 def teaching() -> String:
-  "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nTo teach a shortcut no model is asked about:\n\n    delvetalk policy macro\n    name: moth-bell\n    pattern: moth for {{who}}\n    expansion: garden plant / colour: violet / seed: a bell for {{who}}\n\nWhat I know:\n"
+  "\nTeach a phrase:\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\nDefine a word:\n    delvetalk policy define / word: moth / meaning: a seed\nTeach a shortcut no model is asked about:\n    delvetalk policy macro\n    name: moth-bell\n    pattern: moth for {{who}}\n    expansion: garden plant / colour: violet / seed: a bell for {{who}}\n» each is in every reading after it\n\nTaught:\n"
 # The policy as a card, including how to teach it; its words, examples and macros take what the
 # head leaves of Card.limit(context), one budget across the card as every card keeps.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let how = if Card.reads(state.owner, context) then teaching() else "\nOnly its owner, {Card.name(state.owner, context)}, teaches it.\n\nWhat I know:\n"
-  let head = Document.text("✾ INTERPRETATION POLICY\n\nModel: {state.model}\n{stance(state)}{how}")
+  let how = if Card.reads(state.owner, context) then teaching() else "Only its owner, {Card.shown(state.owner, state.ownerHandle, context)}, teaches it.\n\nTaught:\n"
+  let head = Document.text("✾ INTERPRETATION POLICY, model {state.model}\n{stance(state)}{how}")
   let terms = Lists.map(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map(state.examples, exampleCard)
   let macros = Lists.map(state.macros, fn(m: Macro) -> Document.Document: Document.text("Macro {m.name}: {m.pattern}\n  means: delvetalk {m.expansion}\n"))

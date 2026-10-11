@@ -1,0 +1,12 @@
+hob: five replies, two another's; at the end your kind has two things, each under your law.
+  delvetalk kinds make / name: lamp / of: record / form: light: text 1..80 / law: law maker "only its maker writes": request.subject == new.maker
+  » kind/lamp, yours; its law is read now
+  delvetalk kind/lamp make / light: moth glow
+  » lamp/1, yours
+  other: delvetalk kind/lamp make / light: owl glow
+  » lamp/2, theirs, under the same law
+  other: delvetalk lamp/1 write / text: mine now
+  » refused maker: only its maker writes
+  delvetalk lamp/1 write / text: lit
+  » #1 on lamp/1
+Changed: kind/lamp, with lamp/1 yours and lamp/2 theirs; each writes only its maker's.

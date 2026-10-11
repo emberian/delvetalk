@@ -155,7 +155,7 @@ class Resumed(test_chain.Chain):
         [card] = [o["text"] for o in asked["receipt"]["offers"]]
         self.assertTrue(card.startswith("hob: that asks first; send it filled:\n\n    delvetalk garden plant\n"), card)
         card = self.turn("policy", "receive", record(text=label(""), post=label("")), principal="glm")["offers"][0]["text"]
-        self.assertIn("A card asks the speaker first before: reprogram, amend, offer, plant.\n", card)
+        self.assertIn("runs at once, except: reprogram, amend, offer, plant, which ask the speaker first.\n", card)
         self.assertEqual(self.things(), [])
 
 

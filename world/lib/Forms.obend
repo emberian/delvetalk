@@ -44,7 +44,17 @@ def caseLine(option: String) -> String:
 def formLine(s: Spec) -> String:
   "  {s.name}: {s.kind}\n"
 def spellField(s: Spec) -> String:
-  " / {s.name}: <{s.kind}>"
+  " / {s.name}: <{blank(s.kind)}>"
+# A field's blank as a card says it (docs/VOICE.md): `1 to 80 characters`, `up to 200 characters`,
+# `amber, violet or silver`, `a number from 1 to 9`.
+def blank(kind: String) -> String:
+  if isChoice(kind) then choiceWords(options(kind)) else if isNatural(kind) then "a number from {natText(low(kind))} to {natText(high(kind))}" else if Text.starts(kind, "text") then textBlank(low(kind), high(kind)) else kind
+def textBlank(low: Nat, high: Nat) -> String:
+  if low == 0n then "up to {natText(high)} characters" else "{natText(low)} to {natText(high)} characters"
+def choiceWords(options: Lists.List<String>) -> String:
+  match Lists.reverse(options):
+    case cons(c): if Lists.length(c.tail) == 0n then c.head else "{textJoin(Lists.reverse(c.tail), \", \")} or {c.head}"
+    case nil(_): ""
 # Whether a field line is safe to write into generated source: a name of letters and digits
 # that begins with a letter, and a kind of letters, digits, spaces, `.` and `|`. A form comes
 # from a kind's owner, and its graft runs with the kind's authority.
