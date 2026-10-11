@@ -15,6 +15,7 @@ from datetime import datetime
 from transport import journal
 from transport.bridge import plain
 
+SPELL = re.compile(r'^\s*delvetalk\s+\S', re.M)  # a spell at a line's start, as the host casts one
 GENESIS = re.compile(r'^(?:did:|zulip:|env/|wake/)')  # a principal's own objects, made at its arrival
 
 
@@ -74,11 +75,22 @@ def t0(st):
     return next((l['at'] for l in lines if l.get('what') == 'post' and l.get('draft') in zero and l.get('world') == st.world), None)
 
 
+def no_reply(st, observed, entries):
+    """Posts addressed to the world (a summons, or a spell at a line's start, as the host casts one) that it heard (a turn
+    under the post's own uri) and answered with nothing: no draft with text replies, and the turn is not still waiting on
+    hob. Prose in a thread that hob reads as `none` is quiet by design, and residents talking to each other reach only
+    each other's avatars (`<uri>#env:`)."""
+    last = {(x.get('identity') or {}).get('intent'): (x.get('outcome') or {}).get('tag') for x in entries}
+    said = {d.get('replyTo') for _, d in st.drafts() if d.get('text')} if st.outbox.exists() else set()
+    asked = [o for o in observed if o['kind'] == 'summon' or SPELL.search(o.get('text') or '')]
+    return [o['uri'] for o in asked if o['uri'] in last and o['uri'] not in said and last[o['uri']] != 'suspended']
+
+
 def measures(st, entries=None):
     """§4's table for `st`'s world. `entries` (default the journal, read whole) for a caller that holds them."""
     entries = journal.entries(st.journal) if entries is None else entries
     c = st.config
-    names, minute, settings = {}, {}, {}
+    names, settings = {}, {}
     for x in entries:
         out = x.get('outcome') or {}
         if out.get('tag') == 'principal':
@@ -91,6 +103,15 @@ def measures(st, entries=None):
     staff = {c.opener, settings.get('clock') or 'transport', 'world', *c.owner_principals.split()}
     resident = lambda p: bool(p) and p not in staff
     who = lambda p: names.get(p) or p
+    # Wall time: a turn's is the post it answers (the transport's timestamp); the clock's minutes only stand in for a turn
+    # no post made. T0 and every first are wall time, so a make 21 s after T0 is 21 s, never a minute's rounding.
+    posted_at = {o['uri']: when(o['createdAt']) for o in obs}
+    first = {}
+    for o in sorted(obs, key=lambda o: o['createdAt']):
+        if resident(o['author']['did']):
+            first.setdefault(o['author']['did'], when(o['createdAt']))
+    start = t0(st)
+    start = start if start is not None else min(first.values(), default=None)
 
     makers, made, used, written, adopted, cites, named, refusals, unposted = {}, [], {}, [], [], [], [], [], []
     by_identity, moved, now_clock = {}, set(), 0
@@ -100,7 +121,6 @@ def measures(st, entries=None):
         by_identity[(p, ident.get('intent'))] = height
         if tag == 'advanced':
             now_clock = out.get('to') or now_clock
-        minute[height] = now_clock
         direct = 'delivery' not in x
         creates = [out] if tag == 'created' else out.get('creates') or []
         for cr in creates:
@@ -110,15 +130,17 @@ def measures(st, entries=None):
             maker = p if direct else ((x.get('delivery') or {}).get('from') or {}).get('principal', p)
             makers[obj] = maker
             if resident(maker) and not GENESIS.match(obj):
-                made.append({'object': obj, 'kind': kind_of(obj, seed), 'maker': who(maker), 'height': height, 'clock': now_clock, 'principal': maker})
+                made.append({'object': obj, 'kind': kind_of(obj, seed), 'maker': who(maker), 'height': height, 'principal': maker,
+                             'at': posted_at.get(ident.get('intent'), now_clock * 60)})
                 if obj.startswith('kind/') and isinstance(seed, dict) and str(seed.get('law') or '').strip():
                     written.append({'object': obj, 'maker': who(maker), 'height': height, 'law': str(seed['law']).split('\n')[0][:200]})
-        # The clock moves the world with nobody posting: a clock-resumed turn, and every turn delivered from one.
+        # The clock moves the world with nobody posting: a delivered turn the clock resumed (a wake's due tick; a turn
+        # resumed by hob's reading answers a post, and has no delivery), and every turn delivered from one; from T0 on.
         sender = by_identity.get((((x.get('delivery') or {}).get('from') or {}).get('principal'), ((x.get('delivery') or {}).get('from') or {}).get('intent')))
-        if x.get('resumes') or (sender is not None and sender in moved):
+        if (x.get('resumes') and 'delivery' in x) or (sender is not None and sender in moved):
             moved.add(height)
             wrote = [w.get('object') for w in out.get('writes') or [] if w.get('object') and not str(w.get('object')).startswith('wake/')]
-            if wrote:
+            if wrote and (start is None or now_clock >= start // 60):
                 unposted.append({'height': height, 'objects': wrote, 'notes': sum(1 for o in wrote if str(o).startswith(('did:', 'zulip:')))})
         if not direct or not resident(p):
             continue
@@ -148,12 +170,6 @@ def measures(st, entries=None):
 
     count = lambda rows, key: dict(sorted(((k, sum(1 for r in rows if r[key] == k)) for k in {r[key] for r in rows}), key=lambda kv: (-kv[1], kv[0])))
     theirs = [u for u in used.values() if u['residentMade']]
-    start = t0(st)
-    first = {}
-    for o in sorted(obs, key=lambda o: o['createdAt']):
-        if resident(o['author']['did']):
-            first.setdefault(o['author']['did'], when(o['createdAt']))
-    start = start if start is not None else min(first.values(), default=None)
     makes = {}
     for m in made:
         makes.setdefault(m['principal'], m)
@@ -172,8 +188,9 @@ def measures(st, entries=None):
                             'toJudge': [{'object': i.get('object'), 'said': (i.get('reply') or {}).get('raw', '').strip().split('\n')[0][:200]}
                                         for i in interps if verdict(i) in ('spell', 'none')]},
         'refusals': {'count': len(refusals), 'byClass': count(refusals, 'class'), 'rows': refusals},
-        'firstMade': {'minutesFromT0': round((minute[made[0]['height']] * 60 - start) / 60, 1) if made and start is not None else None,
-                      'byResident': {who(p): round((minute[m['height']] * 60 - first[p]) / 60, 1) if p in first else None for p, m in makes.items()}},
+        'firstMade': {'secondsFromT0': round(made[0]['at'] - start) if made and start is not None else None,
+                      'byResident': {who(p): round(m['at'] - first[p]) if p in first else None for p, m in makes.items()}},
+        'noReply': no_reply(st, obs, entries),
         'goNoGo': {'used by another, at least 3 by at least 2 makers': len(theirs) >= 3 and len({u['maker'] for u in theirs}) >= 2}}
 
 
@@ -194,6 +211,7 @@ def table(m):
         ('rain that fell with nobody posting', rain['count'], f"{counted(rain['notes'], 'note')} on avatars", [f"entry {r['height']}: {', '.join(r['objects'])}" for r in rain['rows']]),
         ('interpretations', i['count'], split(i['byVerdict']) or 'none', [f"{r['object']}: {r['said']}" for r in i['toJudge']]),
         ('refusals by class', ref['count'], split(ref['byClass']) or 'none', [f"{r['class']} by {r['by']}, entry {r['height']}: {r['reason']}" for r in ref['rows']]),
-        ('minutes to the first resident-made thing', first['minutesFromT0'], f"T0 {m['T0'] or 'not yet'}",
-         [f"{h}: {v} minutes from their first post" for h, v in first['byResident'].items()]),
+        ('seconds to the first resident-made thing', first['secondsFromT0'], f"T0 {m['T0'] or 'not yet'}",
+         [f"{h}: {v} s from their first post" for h, v in first['byResident'].items()]),
+        ('addressed posts with no reply', len(m['noReply']), 'heard by the world, answered with nothing', m['noReply']),
     ]
