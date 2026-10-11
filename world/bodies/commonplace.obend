@@ -45,7 +45,7 @@ def greetedBefore(principal: String, state: State) -> Bool:
     case none(_): false
 # The card without what changed (render is pure): the doors, with the spell that asks.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Menu.trie(state.cites, "  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n", "")
+  Menu.trie(state.cites, "  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n", "", context)
 # What changed since an entry, over the doors.
 def since(state: State, input: SinceInput, context: Abi.Context) -> Activity<Card.Replied>:
   withChanges(Card.Replied.done({action: "since"}), "", input.entry, "", context, state)
@@ -114,8 +114,8 @@ def welcomed(greet: Bool, first: String, result: Card.Replied, context: Abi.Cont
 # envs, wakes), which a card never names.
 def withChanges(result: Card.Replied, line: String, since: Nat, first: String, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.changed({since: since, prefix: "", after: ""}):
-    case changed(c): Card.tell(result, Menu.trieUnder(line, state.cites, Menu.changes(Lists.filter(c.items, fn(i: World.Change) -> Bool: i.object.object != context.object && Text.contains(i.object.object, "did:") == false)), first))
-    case denied(_): Card.tell(result, Menu.trieUnder(line, state.cites, Menu.changes(Lists.List.nil()), first))
+    case changed(c): Card.tell(result, Menu.trieUnder(line, state.cites, Menu.changes(Lists.filter(c.items, fn(i: World.Change) -> Bool: i.object.object != context.object && Text.contains(i.object.object, "did:") == false)), first, context))
+    case denied(_): Card.tell(result, Menu.trieUnder(line, state.cites, Menu.changes(Lists.List.nil()), first, context))
 def toldThen(document: Document.Document, result: Card.Replied, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.offer({to: "", document: document}):
     case _: welcomed(greet, "", result, context, state)
@@ -222,7 +222,7 @@ def hobbed(hob: Card.Hob, input: Card.Heard, read: Reading, policy: Policies.Sta
     case ask(a): toldThen(asking(a.needs, input, read, context, state), Card.Replied.unclear({needs: a.needs}), greet, context, state)
 # hob's lines are fixed (VOICE's second miss), with only the fields the forms name.
 def asking(needs: Form.Names, input: Card.Heard, read: Reading, context: Abi.Context, state: State) -> Document.Document:
-  if read.card == "" then Menu.pruned(missLine(needs), nearest(input, read.learned, state), menu(state)) else Card.askCard(needs, read.card, read.forms)
+  if read.card == "" then Menu.pruned(missLine(needs), nearest(input, read.learned, state), menu(state), context) else Card.askCard(needs, read.card, read.forms)
 def missLine(needs: Form.Names) -> String:
   if Lists.length(needs) == 0n then "hob: no door takes that as said. The nearest:" else "hob: no door takes that as said; still needs {Text.joined(needs)}. The nearest:"
 def nearest(input: Card.Heard, learned: Learning, state: State) -> Lists.List<Door>:
@@ -270,7 +270,7 @@ def quiet(greet: Bool, input: Card.Heard, learned: Learning, context: Abi.Contex
 def heardNothing(touched: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   let all = menu(state)
   let written(_) = write {missed: upsert {principal: context.principal, at: context.clock}}
-  Card.tell(Card.Replied.usage({}), Menu.pruned(Menu.nothingHead(), if Lists.length(touched) == 0n then Lists.filter(all, fn(d: Door) -> Bool: Menu.isArc(all, d) == false) else touched, all))
+  Card.tell(Card.Replied.usage({}), Menu.pruned(Menu.nothingHead(), if Lists.length(touched) == 0n then Lists.filter(all, fn(d: Door) -> Bool: Menu.isArc(all, d) == false) else touched, all, context))
 def missedLately(context: Abi.Context, state: State) -> Bool:
   match Relations.lookup(state.missed, {principal: context.principal}, missedKey):
     case some(m): context.clock < m.value.at + 60n

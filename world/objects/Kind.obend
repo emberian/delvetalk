@@ -168,4 +168,4 @@ def render(state: State, context: Abi.Context) -> Document.Document:
   let comes = if state.of == "kind" then "kind/<name>, a kind anyone makes" else "{state.name}/N, yours"
   let spell = spellLine(id, Forms.specs(state.form))
   let head = Document.text("KIND {state.name}: makes a {state.of}{bodied}; {natText(state.count)} made. Make one:\n  {spell}\n» {comes}\nNewest first:\n")
-  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clippedWithin(Lists.map(newest(state), madeLine), 8n, Card.left(Document.size(head)))})})
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clippedWithin(Lists.map(newest(state), madeLine), 8n, Card.left(context, Document.size(head)))})})

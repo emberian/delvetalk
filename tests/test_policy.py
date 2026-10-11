@@ -99,8 +99,11 @@ class PolicyObject(Chain):
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
         card = self.card("policy")
         owners = self.card("policy", "ember")
-        for spell in ("teach", "define", "macro", "confirm"):
+        for spell in ("teach", "define", "macro"):
             self.assertIn("\n    delvetalk policy %s\n" % spell, owners)
+        # The rest of the owner's spells would pass what the receipt line under the card leaves of 1,400
+        # (Card.limit: 2 x 6 + 120 for `policy`), so the card names `?` instead.
+        self.assertTrue(owners.endswith("\nIts spells: delvetalk policy ?\n") and len(owners) <= 1400 - 132, owners)
         self.assertNotIn("Reply with a spell", card)  # a stranger is offered none of the owner's spells: no usage
         self.assertIn("Model: claude-sonnet", card)
         self.assertIn("When unsure I escalate to claude-opus.\nWhat a card cannot fit twice goes to …r4keeper.\n", card)

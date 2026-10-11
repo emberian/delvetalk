@@ -120,12 +120,19 @@ def shortened(fragment: String) -> String:
 # lines are.
 def budget() -> Nat:
   1200n
-# What readers see of a card: a renderer gives its lists what its fixed parts leave of this,
-# one budget across the whole card (`left`).
-def limit() -> Nat:
+# What readers see of a reply is 1,400 characters: the card and the receipt line the host stamps
+# under it (transport/bridge.py `receipt_line`: `● admitted <id> v<n>, entry <n>, receipt <slug>`
+# and the link `<origin>/o/<id>#v<n>`, the id twice; 120 covers the rest with an origin of up to
+# 60). A card takes what its receipt leaves (`limit`); a renderer gives its lists what its fixed
+# parts leave of that, one budget across the whole card (`left`).
+def post() -> Nat:
   1400n
-def left(used: Nat) -> Nat:
-  if used >= limit() then 0n else limit() - used
+def receipt(object: String) -> Nat:
+  2n * textLength(object) + 120n
+def limit(context: Abi.Context) -> Nat:
+  if receipt(context.object) >= post() then 0n else post() - receipt(context.object)
+def left(context: Abi.Context, used: Nat) -> Nat:
+  if used >= limit(context) then 0n else limit(context) - used
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
   clippedWithin(lines, shown, budget())
 # The same, within `room` characters (a card whose head is long gives its lists less).
@@ -438,14 +445,14 @@ def whyNot(replied: Replied) -> String:
     case refused(r): "\nrefused {r.clause}: {r.reading}\n"
     case _: ""
 # The card a reply that ran no method gets: the object's card, then why, then its forms, all
-# within one budget: forms that would pass Card.limit() are the one line naming `?` instead (or
+# within one budget: forms that would pass Card.limit(context) are the one line naming `?` instead (or
 # nothing, when even that would pass it), and a card named by another's DID prints no spells.
 def answerCard(card: Document.Document, why: String, context: Abi.Context, forms: Forms) -> Document.Document:
   let name = spellName(context.object, context)
   let spells = if printable(name) then usage(name, forms) else Document.text("")
   let used = Document.size(card) + textLength(why)
   let short = Document.text("\nIts spells: delvetalk {name} ?\n")
-  let tail = if used + Document.size(spells) <= limit() then spells else if printable(name) && used + Document.size(short) <= limit() then short else Document.text("")
+  let tail = if used + Document.size(spells) <= limit(context) then spells else if printable(name) && used + Document.size(short) <= limit(context) then short else Document.text("")
   Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why), tail: Document.Documents.cons({head: tail, tail: Document.Documents.nil()})})})})
 # Refuses by name: the card with `refused <clause>: <reading>` and its forms.
 def answerRefused<T>(refusal: Refusal, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
