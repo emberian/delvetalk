@@ -122,6 +122,42 @@ class Genesis(unittest.TestCase):
         self.assertNotIn('mine', self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text'])
 
 
+class Rows(unittest.TestCase):
+    """PLAYTEST-2 T+90: a resident's wake counts the rains on someone else's bell (`wake rows`, a bell's `lines`
+    being public) and notes its avatar at the seventh."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name)
+        for did, handle in (('did:plc:glm', 'glm.delve.town'), ('did:plc:kim', 'kimik3.delve.town')):
+            cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
+
+    def say(self, who, obj, text, ident):
+        got = self.town.send(op='world-turn', principal=who, object=obj, method='receive',
+                             argument=record(text=label(text), post=label('at://x/p/' + ident)), identity=ident)
+        self.assertEqual(got['status'], 'admitted', got)
+        return got
+
+    def test_a_residents_wake_counts_seven_rains_on_anothers_bell_and_fires(self):
+        glm, kim = 'did:plc:glm', 'did:plc:kim'
+        early = self.say(kim, 'wake', 'delvetalk wake rows / object: garden/bell/1 / field: lines / where: / count: 7', 'too-early')
+        self.assertIn('There is no card garden/bell/1 that you may see (yet): nothing to watch.', json.dumps(early))
+        self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for lost moths / colour: amber', 'plant')
+        watch = self.say(kim, 'wake', 'delvetalk wake rows / object: garden/bell/1 / field: lines / where: / count: 7', 'rows')
+        self.assertNotIn('cannot be watched', json.dumps(watch), watch)
+        for i in range(7):
+            self.say(glm if i % 2 else genesis.OPENER, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: drop %d' % i, 'rain%d' % i)
+            for _ in range(16):
+                self.town.send(op='world-deliver', principal='transport', limit=64)
+                if not self.town.send(op='world-pending').get('count'):
+                    break
+        avatar = self.town.send(op='world-view', principal=kim, object=kim)
+        inbox = [f for f in avatar['state']['fields'] if f['name'] == 'inbox'][0]
+        self.assertTrue(json.dumps(inbox).count('garden/bell/1') >= 1, inbox)
+
+
 class Weather(unittest.TestCase):
     """docs/METAPHYSICS.md §7.4: the hand's weather watches the tide's ticks and, at each, rains on every bell the garden
     holds and writes the garden's weather line; the opener's wake ticks the tide every hour with nobody posting."""

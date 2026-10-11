@@ -60,6 +60,16 @@ class Kinds(Chain):
                 self.assertEqual([f["value"]["value"] for f in r["result"]["payload"]["fields"]], [clause, reading], r)
         self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
 
+    def test_a_kind_is_shaped_once(self):
+        """The live redeploy: `kinds shape` a second time laid a layer over the package's module, which a shaped
+        kind no longer runs, and the compile refused it. A shaped kind, or one `kinds` made, is refused by name."""
+        for target in ("kinds", "kind/key"):
+            if target == "kind/key":
+                self.kind("key", "record", "seed: text 1..80", law=genesis.RECORD_LAW)
+            again = self.turn(target, "shape", record(object=label(target)))
+            self.assertEqual((again["status"], again["result"]["label"]), ("admitted", "refused"), again)
+            self.assertTrue(text(again).startswith("refused shaped: Already shaped; its make stands\n"), text(again))
+
     def test_making_a_kind_and_its_thing_journals_no_refused_delivery(self):
         """A made kind has no `made`; only a made record with a body is sent one (the host lane's finding: every
         kind creation journaled a delivered noMethod)."""

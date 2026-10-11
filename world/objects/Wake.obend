@@ -85,7 +85,7 @@ def refusal(w: Why) -> Card.Refusal:
     case schedulesFull(_): {clause: "schedulesFull", reading: "Eight standing schedules is the most a wake holds."}
     case never(_): {clause: "never", reading: "A schedule needs a time after now: at, or every from now."}
     case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads lines, marks, buffer, greeted, presence, subs and things)."}
-    case unwatched(u): {clause: "unwatched", reading: "{u.object}.{u.field} cannot be watched ({u.clause})."}
+    case unwatched(u): {clause: "unwatched", reading: if u.clause == "denied" then "There is no card {u.object} that you may see (yet): nothing to watch." else "{u.object}.{u.field} cannot be watched ({u.clause})."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
 def notOwner(state: State) -> Done:
