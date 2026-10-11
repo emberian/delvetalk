@@ -35,31 +35,34 @@ FIELDS = ["a", "b", "c"]
 
 
 def size(term):
-    if not isinstance(term, list) or not term or not isinstance(term[0], str):
-        return 0
-    total = 1
-    for child in term[1:]:
-        if isinstance(child, list) and child and isinstance(child[0], str) and child[0] in TAGS:
-            total += size(child)
-        elif isinstance(child, list):
-            for field in child:
-                if isinstance(field, list) and len(field) == 2:
-                    total += size(field[1])
+    """Constructor count (iterative: a 2,048-row literal nests about 8,000 deep)."""
+    total, pending = 0, [term]
+    while pending:
+        term = pending.pop()
+        if not isinstance(term, list) or not term or not isinstance(term[0], str):
+            continue
+        total += 1
+        for child in term[1:]:
+            if isinstance(child, list) and child and isinstance(child[0], str) and child[0] in TAGS:
+                pending.append(child)
+            elif isinstance(child, list):
+                pending.extend(field[1] for field in child if isinstance(field, list) and len(field) == 2)
     return total
 
 
 def tags(term, out=None):
+    """The constructors (and `binary:`/`unary:` primitives) a term uses (iterative, as `size`)."""
     out = set() if out is None else out
-    if isinstance(term, list) and term and isinstance(term[0], str) and term[0] in TAGS:
-        out.add(term[0])
-        if term[0] in ("binary", "unary"):
-            out.add(term[0] + ":" + term[1])
-        for child in term[1:]:
-            tags(child, out)
-    elif isinstance(term, list):
-        for field in term:
-            if isinstance(field, list) and len(field) == 2:
-                tags(field[1], out)
+    pending = [term]
+    while pending:
+        term = pending.pop()
+        if isinstance(term, list) and term and isinstance(term[0], str) and term[0] in TAGS:
+            out.add(term[0])
+            if term[0] in ("binary", "unary"):
+                out.add(term[0] + ":" + term[1])
+            pending.extend(term[1:])
+        elif isinstance(term, list):
+            pending.extend(field[1] for field in term if isinstance(field, list) and len(field) == 2)
     return out
 
 
