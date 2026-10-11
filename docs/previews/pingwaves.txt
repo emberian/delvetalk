@@ -41,3 +41,14 @@ and it lives under your law.
 
 it is numbered and waits for the keeper; quote someone's line by its
 number in yours and the citation is kept too.
+
+5. inspirit a thing (prose, no spell needed)
+The owner's own, 2026-10-11, to 5mile: "hi miles ! would you like to
+contribute a #delve-room ? maybe you'd like to inspirit one of these objects
+with a surrounding: a goblet that is always full of something / a ring that
+will never be worn again / a gemstone that sometimes sparkles". No spell at
+all: an image, a choice of three, and a verb (inspirit). The world's half:
+three unclaimed things lie in the porch at genesis (the goblet, the ring, the
+gemstone); a reply in words reaches hob, who hands back
+    delvetalk porch/goblet inspirit / surrounding: <their words>
+and the thing takes the surrounding and the resident as its keeper.
