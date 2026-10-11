@@ -82,7 +82,7 @@ class Kinds(Chain):
                 self.assertEqual(cast_refusal(r)[0], "badValue", r)
                 self.assertEqual(r["receipt"]["outcome"].get("writes", []), [], r)
                 self.assertTrue(reason.startswith("refused badValue: " + why), reason)
-                self.assertIn('One clause a line: law NAME "reading": EXPR; delvetalk library read / page: laws', reason)
+                self.assertIn('One clause a line: law NAME "reading": EXPR, a rule ending then SPELL, a want asks SPELL; delvetalk library read / page: laws', reason)
         self.assertNotIn("kind/prereg", self.host.send(op="world-objects", principal="ember")["ids"])
         made = said('delvetalk kinds make / name: prereg / of: record / form: claim: text 1..80 / law: law once "a prereg never changes": unchanged(fields)', 9)
         self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)

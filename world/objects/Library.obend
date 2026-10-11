@@ -25,7 +25,7 @@ record State:
   owner: String
   ownerHandle: String
   pages: Relations.Relation<Page>
-law owner "only the owner shelves a page; anyone reads": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(pages))
+law owner "only the owner shelves a page; anyone reads, and places rules, wants and verbs on it": request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(owner) and unchanged(pages))
 def initial() -> State:
   {owner: "", ownerHandle: "", pages: Relations.empty()}
 # 32 pages of at most 1,266 characters (what a reply leaves after the library's receipt line,

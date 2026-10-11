@@ -27,7 +27,7 @@ record State:
 law clock "ticks only count up": monotone(ticks)
 law last "the last tick only moves forward": monotone(last)
 law gap "the gap never changes": unchanged(gap)
-law owner "the owner never changes; only the owner reprograms or amends it; anyone ticks and subscribes": unchanged(owner) and (request.kind == 0 or request.subject == new.owner)
+law owner "the owner never changes; only the owner reprograms or amends it; anyone ticks and subscribes, and places rules, wants and verbs on it": unchanged(owner) and (request.kind == 0 or request.kind == rule or request.subject == new.owner)
 law tooSoon "A tick may not come sooner than the gap after the last.": new.ticks <= old.ticks or old.ticks == 0 or request.clock == old.last + old.gap or not (request.clock <= old.last + old.gap)
 law self "Only you change your own subscription.": changed(new.subs.who) by request.subject
 law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))

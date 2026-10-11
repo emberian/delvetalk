@@ -120,8 +120,8 @@ def page_body(name):
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
 # package it makes; its creator passes it (tests/test_genesis.py compares the two).
-RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells": '
-              'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(policy) and unchanged(cites) '
+RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it": '
+              'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(policy) and unchanged(cites) '
               'and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\n'
               'law kept "a line, an admission, a mark or a greeting is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
@@ -132,15 +132,15 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
 # Kind.lawText() (tests/test_kinds.py compares the two).
 KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
-KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head or the body; anyone makes": '
-            'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(form) and unchanged(law) '
+KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head or the body; anyone makes, and places rules, wants and verbs on it": '
+            'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(form) and unchanged(law) '
             'and unchanged(head) and unchanged(body)))')
 
 
 # Tending (world/bodies/bell.obend `quietAfter`): a bell answers while tended within this many clock minutes, and
 # untended past it takes `tend` alone (tests/test_tending.py compares the two).
 QUIET_AFTER = 1440
-ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": request.method == "tend" or request.clock <= old.tended + {QUIET_AFTER}'
+ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": request.method == "tend" or request.kind == rule or request.clock <= old.tended + {QUIET_AFTER}'
 # A bond's countersignatures are marks whose `who` is the signer (world/bodies/bond.obend).
 SIGNER_LAW = 'law signer "a party signs only for themselves": changed(new.marks.who) by request.subject'
 

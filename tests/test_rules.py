@@ -134,8 +134,11 @@ class Placing(Bell):
         self.assertEqual(self.rules(), {})
 
     def test_the_card_law_judges_a_placement(self):
-        # The town's bell law admits only its owner's changes but its spells; a stranger's rule is refused by it.
-        refused = self.place("rule / name: mine / when: %s / then: delvetalk me note / text: mine" % TWO, who=KIM)
+        # The town's bell law admits a reader's rule (`or request.kind == rule`); the policy's law is its owner's alone.
+        placed = self.place("rule / name: mine / when: %s / then: delvetalk me note / text: mine" % TWO, who=KIM)
+        self.assertEqual(placed["status"], "admitted", placed)
+        refused = self.town.send(op="world-turn", principal=KIM, object="policy", method="receive", identity="kim-policy-rule",
+                                 argument={"tag": "record", "fields": [{"name": "text", "value": {"tag": "label", "value": "delvetalk policy rule / name: mine / when: request.method == \"confirm\" / then: delvetalk me note / text: mine"}}, {"name": "post", "value": {"tag": "label", "value": ""}}]})
         self.assertEqual((refused["receipt"]["outcome"]["class"], refused["receipt"]["outcome"]["clause"]), ("lawRefused", "owner"), refused)
 
 

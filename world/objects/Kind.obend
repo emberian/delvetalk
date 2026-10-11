@@ -51,7 +51,7 @@ def madeKey(m: Made) -> {object: String}:
   {object: m.object}
 # A kind's own law: the owner stays and alone changes what the kind makes; anyone makes.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the form, the law, the head or the body; anyone makes\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(form) and unchanged(law) and unchanged(head) and unchanged(body)))"
+  "law owner \"the owner stays; only the owner changes the form, the law, the head or the body; anyone makes, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(form) and unchanged(law) and unchanged(head) and unchanged(body)))"
 sum Done:
   made: {object: String}
   refused: Card.Refusal
@@ -107,11 +107,12 @@ def kindId(name: String) -> String:
 # a kind's law that does not read is refused before the kind is made.
 def making(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
   if valueOf(fields, "id") != "" && context.principal != state.owner then refused(context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} places what this kind makes at an id; make it, and it is named"}) else if state.of == "kind" then lawChecked(state, fields, under, context, Text.trim(valueOf(fields, "law"))) else scened(state, fields, under, context, valueOf(fields, "spween"))
-# The law a kind will hold for what it makes, read as the host will read it: one `law NAME
-# "reading": EXPR` a line, each checked as a package's law is (`world.check`), so a law that
-# would refuse every make never stands.
+# The text a kind will hold for what it makes, read as the host will read it: one clause a line,
+# a law, a rule or a want, each checked as a package's clauses are (`world.check`), so a text that
+# would refuse every make never stands. What it makes cites it (`under`), so its rules fire and its
+# wants pose on every instance, owned by the kind's owner.
 def lawChecked(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context, law: String) -> Activity<Done>:
-  match Lists.find(clauseLines(law), fn(line: String) -> Bool: Text.starts(line, "law ") == false):
+  match Lists.find(clauseLines(law), fn(line: String) -> Bool: clause(line) == false):
     case some(l): unlawful("`{l.value}` is no clause", context)
     case none(_): if law == "" then creating(state, fields, under, context) else lawRead(state, fields, under, context, law)
 def lawRead(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context, law: String) -> Activity<Done>:
@@ -123,7 +124,10 @@ def lawDiagnosed(state: State, fields: Lists.List<Rows.Field>, under: String, co
     case nil(_): creating(state, fields, under, context)
     case cons(c): unlawful(diagnosis(c.head), context)
 def unlawful(why: String, context: Abi.Context) -> Activity<Done>:
-  refused(context, {clause: "badValue", reading: "law: {why}. One clause a line: law NAME \"reading\": EXPR; delvetalk library read / page: laws"})
+  refused(context, {clause: "badValue", reading: "law: {why}. One clause a line: law NAME \"reading\": EXPR, a rule ending then SPELL, a want asks SPELL; delvetalk library read / page: laws"})
+# A line in one of the three modalities: a law refuses, a rule fires, a want poses (OVERHAUL §2).
+def clause(line: String) -> Bool:
+  Text.starts(line, "law ") || Text.starts(line, "rule ") || Text.starts(line, "want ")
 def clauses(law: String) -> String:
   textJoin(clauseLines(law), "\n")
 def clauseLines(law: String) -> Lists.List<String>:

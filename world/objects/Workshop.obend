@@ -33,7 +33,7 @@ sum Verdict:
   usage: {}
   refused: Card.Refusal
   silent: {}
-law owner "only its owner reprograms or amends it; anyone uses its spells": unchanged(owner) and (request.kind == 0 or request.subject == new.owner)
+law owner "only its owner reprograms or amends it; anyone uses its spells and places rules, wants and verbs on it": unchanged(owner) and (request.kind == 0 or request.kind == rule or request.subject == new.owner)
 law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
 def initial() -> State:
   {owner: "", title: "Workshop", held: Relations.empty(), next: 1n, policy: Plans.nobody()}
