@@ -372,6 +372,12 @@ The same operations have a command-line face for the owner's assistant over ssh:
   the journal, or one object's `world-history`, and the outbox together, newest first; each entry with its
   principal's handle, the turn as it was typed (the observed post's spell line, or the hand's own), the first line of
   the card it offered, links to its receipt and to the object in the root editor, and the drafts it made.
+- `/hand/<world>/measure`, and `python3 -m transport status --playtest` as JSON: docs/PLAYTEST-2.md §4 counted live
+  from the journal by transport/measure.py (things made by residents by kind and maker, things used by another,
+  laws written or adopted, citations, rain with nobody posting, interpretations, refusals by class, minutes from T0,
+  the Post of the T+0 invitation, to the first resident-made thing), each count with the ids behind it; the ring's
+  harvest prints the same table, so the operator and the lessons file read one set of numbers. A resident is any
+  principal but the opener, the clock and config `owner_principals` (the owner's Zulip user).
 
 Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/<world>/root/` (a red
 rule across the top, a reason or reading required on every form, served on the hand's listener only, linked from every page):

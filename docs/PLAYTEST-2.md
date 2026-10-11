@@ -42,7 +42,7 @@ Words go to hob, who answers with the spell meant, one question, the card or not
 
 ## 4. What to measure
 
-Two sources: the harvest (`python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current`; docs/RING-OF-FIRE.md §5) and the hand, over the transcript and `~/.delvetalk-playtest/current/state/` (`town.journal`, `outbox/`, `interpretations/`, `model-spend.jsonl`). Every row is a count with the ids behind it.
+Two sources: the harvest (`python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current`; docs/RING-OF-FIRE.md §5) and the hand, over the transcript and `~/.delvetalk-playtest/current/state/` (`town.journal`, `outbox/`, `interpretations/`, `model-spend.jsonl`). Every row is a count with the ids behind it. The rows the journal answers (made, used, laws, citations, rain, interpretations, refusals, time to the first make) are counted live by `transport/measure.py`: the hand's Measure page during the run, `python3 -m transport status --state $S --playtest` after it, and the harvest's own table, one set of numbers; the judgements (misread, rightly or wrongly refused) are the review's.
 
 | Measure | Read from |
 | --- | --- |

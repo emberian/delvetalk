@@ -38,6 +38,12 @@
 <!-- watched: one entry, or one draft of the hand's own -->
 <li class="slip {tag}"><span class="stamp">{stamp}</span><span class="code">{height}</span><span class="name">{who}</span><span class="line">{turn}
 {first}</span><span class="by">{links}</span></li>
+<!-- measure: the playtest's measures, from the journal -->
+<h1 class="title">Measures<small>{plan} §4, counted from the journal of {world} at entry {height}; <code>status --playtest</code> and the harvest print these same numbers</small></h1>
+<p class="codes">{codes}</p>
+<ol class="receipts">{rows}</ol>
+<!-- measured: one measure, the number first, the ids behind it folded -->
+<li class="slip {fate}"><span class="stamp">{count}</span><span class="name">{name}</span><span class="by">{of}</span><details class="line"><summary>{behind}</summary><pre class="listing">{ids}</pre></details></li>
 <!-- root: root, one click past moderation: every form one request on the root socket, every form a reason -->
 <hr class="root"><h1 class="title">Root<small>journaled, marked root, public; the reason is on the entry</small></h1>{note}
 <p class="codes">{codes}</p>

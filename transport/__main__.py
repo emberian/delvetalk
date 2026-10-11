@@ -86,8 +86,9 @@ def parser():
     p.add_argument('--unhealthy', nargs='*', default=[], metavar='SERVICE', help='compose services not running or unhealthy')
     p.add_argument('--dry-run', action='store_true', help='print the lines; post nothing, remember nothing')
     add('repokey', "make the world's repository signing key").add_argument('--curve', default='secp256k1', choices=('secp256k1', 'secp256r1'))
-    add('status', 'one probe of the world, as JSON').add_argument('--health', choices=('host', 'http', 'hand', 'bridge', 'interpret'),
-                                                                  help='exit 0 if the service is healthy (a compose healthcheck)')
+    p = add('status', 'one probe of the world, as JSON')
+    p.add_argument('--health', choices=('host', 'http', 'hand', 'bridge', 'interpret'), help='exit 0 if the service is healthy (a compose healthcheck)')
+    p.add_argument('--playtest', action='store_true', help="the playtest's measures from the journal (docs/PLAYTEST-2.md section 4)")
     return ap
 
 

@@ -441,5 +441,85 @@ class Speak(unittest.TestCase):
         self.assertEqual(next(r for r in self.hand.spoken()['invitations'] if r['minute'] == 30)['draft']['state'], 'waiting for Post')
 
 
+class Measure(unittest.TestCase):
+    """docs/PLAYTEST-2.md §4 counted from a real journal: a short playtest in which two residents make kinds and things,
+    use, cite and name each other's, one law refuses, the owner's own make is not a resident's, and the clock rains."""
+    M0 = 29336333  # unix minutes: the bridge's clock
+    A, B, OWNER = 'did:plc:' + 'k' * 24, 'did:plc:' + 'y' * 24, 'zulip:tulip.example:7'
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.town import Town
+        cls.dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.dir.cleanup)
+        cls.town = t = Town(cls.dir.name)
+        cls.addClassCleanup(t.close)
+        (Path(t.state) / 'delvetalk.toml').write_text(f'owner_principals = "{cls.OWNER}"\n')
+        cls.st, S0 = State(t.state), cls.M0 * 60
+        for did, handle in ((cls.A, 'kestrel'), (cls.B, 'yue'), (cls.OWNER, 'Hyphaed Biscuit')):
+            t.send(op='world-arrive', principal=CLOCK, did=did, handle=handle)
+        t.send(op='world-advance', principal=CLOCK, height=cls.M0)
+        h = hand.Hand(cls.st, t.client, TOKEN, poster=lambda *a, **k: {'uri': 'zulip://delvetalk/welcome/1', 'cid': '1'}, clock=lambda: S0)
+        h.post(h.invite(0)['drafted'])  # T0: the invitation's Post
+        observed(cls.st, 'zulip://delvetalk/welcome/2', cls.A, 'kestrel', 'hello', time_of(S0 + 60))
+        observed(cls.st, 'zulip://delvetalk/welcome/3', cls.B, 'yue', 'hi', time_of(S0 + 120))
+        t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 3)
+        kind = lambda name, law='': f'delvetalk kinds make / name: {name} / of: record / form: text: text 1..80 / head: {name}: {{text}} / law: {law} / body:'
+        for n, (who, text) in enumerate([
+                (cls.A, kind('lamp')), (cls.A, 'delvetalk kind/lamp make / text: a small light'), (cls.B, 'delvetalk lamp/1 write / text: brighter'),
+                (cls.B, kind('sealed', 'law maker "only its maker writes": request.subject == new.maker')), (cls.B, 'delvetalk kind/sealed make / text: mine'),
+                (cls.A, 'delvetalk sealed/1 write / text: yours?'), (cls.B, 'delvetalk sealed/1 door / label: lamp / to: lamp/1'),
+                (cls.A, 'delvetalk anthology write / text: seal: what sealed/1 keeps'), (cls.A, 'delvetalk kind/sealed make / text: hers'),
+                (cls.B, 'delvetalk kind/lamp make / text: a second light'), (cls.OWNER, kind('hyphae'))]):
+            cast(t, who, text, f'post-{n}')
+        t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 130)  # the tide's hour: the opener's wake ticks it
+        cls.st.interpretations.mkdir(parents=True, exist_ok=True)
+        for i, raw in enumerate(('delvetalk garden plant / colour: amber / seed: x', 'none')):
+            (cls.st.interpretations / f'{i}.json').write_text(json.dumps({'id': str(i), 'object': 'garden', 'reply': {'status': 'replied', 'raw': raw}}))
+        from transport import measure
+        cls.m = measure.measures(cls.st)
+
+    def test_things_made_are_the_residents_by_kind_and_maker(self):
+        made = self.m['made']
+        self.assertEqual([r['object'] for r in made['rows']], ['kind/lamp', 'lamp/1', 'kind/sealed', 'sealed/1', 'sealed/2', 'lamp/2'])
+        self.assertEqual(made['byKind'], {'kind': 2, 'lamp': 2, 'sealed': 2})
+        self.assertEqual(made['byMaker'], {'kestrel': 3, 'yue': 3})  # the owner's kind/hyphae is no resident's
+
+    def test_use_by_another_citations_laws_and_refusals(self):
+        used = {(r['object'], r['by']) for r in self.m['used']['rows'] if r['residentMade']}
+        self.assertEqual(used, {('lamp/1', 'yue'), ('kind/sealed', 'kestrel'), ('kind/lamp', 'yue')})
+        self.assertEqual((self.m['used']['makers'], self.m['goNoGo']), (2, {'used by another, at least 3 by at least 2 makers': True}))
+        self.assertEqual([(r['object'], r['maker']) for r in self.m['laws']['written']], [('kind/sealed', 'yue')])
+        self.assertTrue(self.m['laws']['written'][0]['law'].startswith('law maker "only its maker writes"'))
+        self.assertEqual([(r['from'], r['to'], r['toResident']) for r in self.m['citations']['doors']], [('sealed/1', 'lamp/1', True)])
+        self.assertEqual([(r['in'], r['names'], r['by']) for r in self.m['citations']['named']], [('anthology', 'sealed/1', 'kestrel')])
+        self.assertEqual(self.m['refusals']['byClass'], {'lawRefused': 1})
+
+    def test_time_rain_and_interpretations(self):
+        self.assertEqual(self.m['T0'], time_of(self.M0 * 60))
+        self.assertEqual(self.m['firstMade'], {'minutesFromT0': 3.0, 'byResident': {'kestrel': 2.0, 'yue': 1.0}})
+        self.assertGreaterEqual(self.m['unposted']['count'], 1)
+        self.assertIn('tide', [o for r in self.m['unposted']['rows'] for o in r['objects']])
+        self.assertEqual((self.m['interpretations']['count'], self.m['interpretations']['byVerdict']), (2, {'none': 1, 'spell': 1}))
+
+    def test_the_page_status_and_harvest_read_the_same_numbers(self):
+        out = io.StringIO()
+        self.assertEqual(main(['status', '--state', self.town.state, '--playtest'], out), 0)
+        self.assertEqual(json.loads(out.getvalue()), json.loads(json.dumps(self.m)))
+        code, page, _ = hand.Hand(self.st, self.town.client, TOKEN).handle('GET', '/hand/town/measure', f'dt_hand={TOKEN}')
+        self.assertEqual(code, 200)
+        for text in ('things made by residents', 'by kind: kind 2, lamp 2, sealed 2', 'holds', 'sealed/1 -&gt; lamp/1 by yue'):
+            self.assertIn(text, page)
+        from deploy.ring import harvest
+        r = harvest.harvest(self.dir.name)
+        self.assertEqual(r['playtest']['made'], self.m['made'])
+        self.assertIn('| things made by residents | 6 |', harvest.markdown(r))
+
+
+def time_of(seconds):
+    import time
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(seconds))
+
+
 if __name__ == '__main__':
     unittest.main()

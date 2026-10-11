@@ -17,7 +17,7 @@ import urllib.parse
 from html import escape as e
 from pathlib import Path
 
-from transport import bridge, model, post, pages, root
+from transport import bridge, measure, model, post, pages, root
 from transport.bridge import all_observations, awaiting_path, uri_hash
 from transport.delve import Failure, canonical
 from transport.host import CLOCK
@@ -469,7 +469,7 @@ class Hand:
                 back = {'root': '/root/?', 'mod': '/root/?', 'speak': '/speak?', 'invite': '/speak?'}.get(rest.partition('/')[0], '/?')
                 more = {'spoken': done['drafted']} if rest == 'speak' and done.get('drafted') else {}
                 return 303, '', [('Location', base + back + urllib.parse.urlencode({'note': note, **more}) + ('#outbox' if back == '/?' else ''))]
-        page = {'': h.page, 'speak': h.speak_page, 'watch': h.watch_page, 'root': h.root_page}.get(rest) if method == 'GET' else None
+        page = {'': h.page, 'speak': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page}.get(rest) if method == 'GET' else None
         if page is None:
             return 404, shell('not here', world, H['missing'].format(text=e(f'no page {rest} in the hand'))), []
         return 200, page(query), []
@@ -563,6 +563,17 @@ class Hand:
             pace=q('held still' if still else f'every {every} seconds'),
             toggle=f'<a class="door" href="{q(here)}">FOLLOW</a>' if still else f'<a class="door" href="{q(here + ("&" if obj else "?") + "still=1")}">HOLD STILL</a>'),
             refresh=0 if still else every)
+
+    def measure_page(self, query):
+        """The playtest's measures (docs/PLAYTEST-2.md §4) as transport/measure.py counts them from the journal."""
+        q, m = lambda t: e(str(t)), measure.measures(self.st)
+        rows = ''.join(H['measured'].format(fate='admitted' if n else '', count=q('none' if n is None else n), name=q(name), of=q(of),
+                                            behind=q(f'{len(ids)} behind it' if ids else 'nothing behind it'), ids=q('\n'.join(ids)))
+                       for name, n, of, ids in measure.table(m))
+        codes = self.codes([f"entry {m['height']}", f"clock {m['clock']}", f"T0 {m['T0'] or 'not yet'}"] +
+                           [f"{k}: {'holds' if v else 'not yet'}" for k, v in m['goNoGo'].items()])
+        return shell('measure', self.st.world, H['measure'].format(world=q(self.st.world), plan=q(Path(self.plan['path']).name), height=q(m['height']),
+                                                                   codes=codes, rows=rows))
 
     def root_page(self, query):
         q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
