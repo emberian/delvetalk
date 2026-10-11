@@ -463,5 +463,40 @@ class Atoms(Reflection):
         self.assertEqual(clause(put("ann", "ann", 6)), ("refused", "quorum"))
 
 
+SEALED = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Document.obend as Document
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  count: Nat
+law once "written once": new.count <= 1
+def initial() -> State:
+  {count: 0n}
+def write(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
+    case _: told(state.count + 1n)
+def told(n: Nat) -> Activity<Nat>:
+  match world.offer({to: "", document: Document.text("#1 is written")}):
+    case _: n
+""")
+
+
+class RefusedOffers(Reflection):
+    """A refused turn offers nothing: its offers were the turn's, and the turn did not happen (the objects lane's
+    `sealed/1 write`, refused, still told the resident "#1 is written")."""
+
+    def test_a_refused_turn_carries_no_offer(self):
+        self.open_library()
+        self.make("sealed", SEALED, record(count=nat(0)))
+        first = self.turn("sealed", "write")
+        self.assertEqual((first["status"], [o["text"] for o in first.get("offers", [])]), ("admitted", ["#1 is written"]), first)
+        again = self.turn("sealed", "write")
+        self.assertEqual((again["status"], again["receipt"]["outcome"].get("clause")), ("refused", "once"), again)
+        self.assertNotIn("offers", again)
+        self.assertNotIn("offers", again["receipt"])
+        offered = self.host.send(op="world-offers", principal="ember")["offers"]
+        self.assertEqual([o["text"] for o in offered], ["#1 is written"], offered)
+
 if __name__ == "__main__":
     unittest.main()

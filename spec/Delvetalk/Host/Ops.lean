@@ -2832,6 +2832,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.root.map fun x => [("root", toJson x)]).getD [] ++
         (r.hint.map fun x => [("hint", toJson x)]).getD [] ++
         (r.next.map fun x => [("next", toJson x)]).getD [])
+      -- What the turn offered and published happened only if it is admitted: a refusal carries neither.
+      let base := base.filter fun (k, _) => k != "offers" && k != "publishes"
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>

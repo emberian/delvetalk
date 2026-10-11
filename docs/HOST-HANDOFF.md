@@ -1501,6 +1501,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    literal spells of one post in order (now the last at the margin is cast); Bend's reduced reader is the objects
    lane's to delete (H1).
 
+144. **A refused turn offers nothing (host18; the objects lane's `sealed/1 write`).** A turn's offers and publishes
+   happen only if it is admitted: `commit` drops `offers` and `publishes` from a refused entry, so the resident
+   hears the refusal line and the card as it stood, never "#1 is written". No replay edition change (what replay
+   derives from an existing entry is unchanged; new refused entries carry less). Test: `tests/test_law.py`
+   `RefusedOffers`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
