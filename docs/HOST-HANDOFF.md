@@ -1495,48 +1495,63 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host17's item 5.137, in order (numbers kept as the coordinator named them). The owner's standing order binds every item: "maturify and take forward
-everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
-together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things',
-no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
-describes only what is.
+The queue after host17 (5.137 to 5.141; host16's items 2, 3, 4, 5 and 6 are done), in order. The owner's standing
+order binds every item: "maturify and take forward everything that we've started and bring it to its full
+sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
+called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
+replaces in the same commit, and this file describes only what is.
 
-3a. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (§2, a suspension resumed by the target's
-   receipt; row 6); `inspect` and `viewField` of a foreign object (only `view` and `card` cross now); the REPL
-   and `check` in a scratch (`/scratch/<name>/repl`; they still run in the stateless session, `replRestarted`);
-   the `delvetalk world expire / scratch:` spell (only the root act exists); `world-history` and receipts
-   across worlds; the hand's SCRATCHES page.
-7. **Routed by the fungus review** (docs/review/fungus-2026-10-11.md §1, §3), folded into the items above
-   where they touch the same code, else after item 3, each deleting the old path in its commit: `world-history`
-   takes `reverse` (T28); a host reach rule, `reach-of {text, replyTo, thread}`, so the bridge relays the
-   host's answer (T30); `hostd-info` folded into `serve-status` and `hostd.pid` renamed (T25); REPL refusals as
-   classes, never text the front matches (T29, `replRestarted`); `serve-status` answers the kernel and host
-   bounds so the front and tests stop restating them (T27, S12); TurnLoop's older payload-shape ladders (H2,
-   with item 5); the JSON model-reply branch beside spell text (H3); root acts and moderation powers as one
-   table (H7); `Store.lean` literals that repeat `Limits.lean` (H12); reads of older journals (H16: a journal
-   below the edition is refused by name and nothing else reads it).
-8. **The stored path's remainder (5.136):** a write still costs O(state): `conformsUnder` of the whole written
-   state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed
-   from cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel
-   primitives (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
-8a. **The block store's remainder (5.137):** `world-sources`, `world-grants` and `world-resolve` (`slugTargets`) read
-   every record per call: index sources, grants by height and slugs (as `anchors` is) so they read only what they
-   answer; about 1.4 KB a held entry at open (the chain's CIDs as text, the receipt and change indexes, the
-   snapshot's index decoded whole): CIDs as bytes and a streamed index decode; a record is encoded twice (its hash,
-   then the store): keep the bytes `sealEntry` hashed; `maxJournalEntries` against 4 GiB; `serve` has no
-   `--snapshot-every` (only `world-open` does).
-9. Smaller, standing:
-   - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new
-     `root:<n>`; `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the
-     method as named. `root-edit` does not rewrite CIDs quoted inside checkpoints and states (an await's
-     `Receipt.hash`).
+1. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1 T25 to T33, §3 H1 to H19; H9 and H19 are
+   done by 5.140 and 5.136, H2's older shapes by 5.141), one commit each, each deleting the old path:
+   - T25 with the coordinator's request: `serve-status` answers what `hostd-info` answers (sha, pid, replay,
+     library) and, per world, its `replay` edition and `snapshot {resumed}` (the height it reopened from, so the
+     live service shows a snapshot open); `hostd-info` deleted, `hostd.pid` becomes `serve.pid`, and the readers
+     (`http.py` `sync_library`, `hand.py`, `deploy/serve.py`, `deploy/playtest.sh`) move in the same commit.
+   - T27/S12: `serve-status` answers the kernel's and the host's bounds (`maxPackageBytes`, `maxModules`, frame,
+     entry); the front's `MAX_SOURCE`/`MAX_MODULES` and the catalogue read them.
+   - T28: `world-history` through `pageByHeight` (`reverse`, `cursor`); the front's widening loop goes.
+   - T29: the REPL's two prose refusals (`unknown library pin`, `not issued by this process`) as classes.
+   - T30: `world-reach {post, parent, root, text, mentions}` answering `{object, slot, how}`; `bridge.py`'s
+     `route`, `walk`, `named_door` go.
+   - T32: `world-status.suspendedBytes {median}` (the hand's probe now reads the block store's tail, 5.137).
+   - T33/H17: `world-inspect` answers each form's usage text; the front's `actions` and Card's templates copy it.
+   - H2's remainder: `respond` with one payload per method (the `refused` and `inspected` ladders).
+   - H3: the model's JSON `{method, argument}` reply branch and `model.extract`.
+   - H4: `reprogram {mode: "extend"}` beside `extend`.
+   - H5/H6 with the kernel: dispatch on `(method, argument)`; the `plan` wire names.
+   - H7/H8: root acts and moderation powers as one table; settings reach the journal one way (`settingsChange`).
+   - H10: `sealLibrary` reads `Ops.arrivals`. H11: `serve.c` says root; the frame bound checked once.
+   - H12/H13/H14/H15: `Limits` reference `Bounds`; `compressedSize`; `statusOf`; one list codec.
+   - H16: reads of older journals (an edition below 5 is refused by name, nothing else reads it).
+   - H1/H18 with the objects lane: the host's spell grammar the one reader; a host `fit {form, fields}`.
+2. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (§2, a suspension resumed by the target's
+   receipt; row 6); `inspect` and `viewField` of a foreign object (only `view` and `card` cross now); the REPL and
+   `check` in a scratch (`/scratch/<name>/repl`; they still run in the stateless session); the `delvetalk world
+   expire / scratch:` spell (only the root act exists); `world-history` and receipts across worlds; the hand's
+   SCRATCHES page; `world-cite` has no front route.
+3. **The stored path's remainder (5.136):** a write still costs O(state): `conformsUnder` of the whole written
+   state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed from
+   cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel primitives
+   (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
+4. **The block store's remainder (5.137):** `world-sources`, `world-grants` and `world-resolve` (`slugTargets`)
+   read every record per call: index sources, grants by height and slugs (as `anchors` is) so they read only what
+   they answer; about 1.4 KB a held entry at open (the chain's CIDs as text, the receipt and change indexes, the
+   snapshot's index decoded whole): CIDs as bytes and a streamed index decode; a record is encoded twice (its
+   hash, then the store): keep the bytes `sealEntry` hashed; `maxJournalEntries` (1,000,000) binds before 4 GiB
+   for small entries; `serve` has no `--snapshot-every` (only `world-open` does); a held world is never closed now
+   (5.140), so memory grows with the worlds and scratches served.
+5. **The law atoms' remainder (5.139):** `world-inspect`'s `cites` lists the closure, not per clause; the objects
+   lane's Tide, Deal, Record and Kind laws move to the atoms (KERNEL-HANDOFF §25 M, last item) once this binary
+   is deployed.
+6. Smaller, standing:
+   - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new `root:<n>`;
+     `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the method as
+     named. `root-edit` does not rewrite CIDs quoted inside checkpoints and states (an await's `Receipt.hash`).
    - `openerActs` (5.131): the opener's interpret-quota exemption (TurnLoop ~1425) ignores `resident`; decide.
-   - Not the host's, found here: the policy card renders past the clip (1,889 characters; EveryMethod's
-     only remaining finding before foundation fixed it: re-check), Card.obend's and Policy.obend's "1 to 16384
-     characters" (objects lane, 5.134), the front's `moduleTooLarge` 16,384 in catalogue.json (transport).
-   - `test_zulip.Bridging` once saw "hostd unavailable" in `setUp` under a loaded full run; it passed alone
+   - `test_zulip.Bridging` once saw "host unavailable" in `setUp` under a loaded full run; it passed alone
      twice. Watch it.
-   - Deploy: edition 3 needs a new genesis for every world.
+   - Deploy: edition 5 and the block store need a new genesis for every world (or `delvetalk-obend migrate` of an
+     edition-5 line journal).
    - `readerActions` compiles `actions` per read; warm it as `warmLaws` warms `law` if it shows in
      `DELVETALK_TIMING`. `methodAdmits` judges on the state as it stands. hob's tail line always names
      `page: spells`. A `call` or `write` to an object created in the same turn is `unknownObject` (5.122 covers
