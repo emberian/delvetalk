@@ -991,21 +991,28 @@ def bindingsData (bs : List Spell.Binding) : Data :=
     "" when the reply was no misfit. -/
 def misfitData (clause reason : String) : Data := .record [("clause", .label clause), ("reason", .label reason)]
 
+/-- The spell the host read in a reply, as `receive` hears it (`spell {card, action}`; "" for none): what a card
+    completes when the spell lacked fields, so no card reads the spell line again. -/
+def castData (card action : String) : Data := .record [("card", .label card), ("action", .label action)]
+
+/-- The spell line of a reply's text, as the host reads it: its card and action, or none. -/
+def castOf (method : String) (argument : Data) : Data :=
+  match Spell.parse (heardText method argument) with
+  | .spell card action _ => castData card action
+  | _ => castData "" ""
+
 /-- `receive`'s argument with what the host fills, as the method declares it: the bare field lines as
-    `fields`, then also `misfit` (`misfitOnly`: only the shape with `misfit`). -/
+    `fields`, the spell it read as `spell` (`cast`, else read from the text), then also `misfit`
+    (`misfitOnly`: only the shapes with `misfit`). -/
 def heardArgument (w : World) (o : Object) (argument : Data) (fields : List Spell.Binding)
-    (misfit : Data := misfitData "" "") (misfitOnly := false) : Option Data :=
+    (misfit : Data := misfitData "" "") (misfitOnly := false) (cast : Option Data := none) : Option Data :=
   match argument, ((compiledMethod o "receive").run.run (scratchState w)).1 with
   | .record fs, .ok c =>
-    let base := fs.filter (fun (k, _) => k != "fields" && k != "misfit") ++ [("fields", bindingsData fields)]
-    let shapes := (if misfitOnly then [] else [Data.record base]) ++ [Data.record (base ++ [("misfit", misfit)])]
-    shapes.find? (argumentFits c)
+    let base := fs.filter (fun (k, _) => k != "fields" && k != "misfit" && k != "spell") ++ [("fields", bindingsData fields)]
+    let spell := ("spell", cast.getD (castOf "receive" argument))
+    let shapes := (if misfitOnly then [] else [base, base ++ [spell]]) ++ [base ++ [("misfit", misfit)], base ++ [spell, ("misfit", misfit)]]
+    (shapes.map Data.record).find? (argumentFits c)
   | _, _ => none
-
-/-- `receive`'s argument with the bare field lines added when the method declares `fields` (and an
-    empty `misfit` when it declares that too). -/
-def withFields (w : World) (o : Object) (argument : Data) (fields : List Spell.Binding) : Data :=
-  (heardArgument w o argument fields).getD argument
 
 /-- Does a `receive` argument fit the card's own `receive` input, with or without the `fields` the
     host fills? A reply carrying another field (a forged `who`) is not read as a spell: `receive`
@@ -1120,8 +1127,9 @@ inductive SpellRoute where
   | host (object action : String) (fields : List Spell.Binding)
 
 /-- `receive` with the bare field lines (`Heard.fields`): completion is the card's policy. -/
-def receiveHeard (w : World) (id : String) (o : Object) (argument : Data) (fields : List Spell.Binding) : SpellRoute :=
-  .run id "receive" (withFields w o argument fields) ""
+def receiveHeard (w : World) (id : String) (o : Object) (argument : Data) (fields : List Spell.Binding)
+    (cast : Option Data := none) : SpellRoute :=
+  .run id "receive" ((heardArgument w o argument fields (cast := cast)).getD argument) ""
 
 /-- `delvetalk <card> set` with one `<field>: <value>` line: the value is judged against the lens's
     kind (`badValue`) and the card's `set {field, value: Form.Value}` method runs with it
@@ -1264,7 +1272,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   | .proposal _ _ entries => match spellArgumentFor w target action entries with
     | .ok a => return .run id action a (spellLine card action)
     | .error reason => return .refuse id "badValue" reason (blankedTemplate shown form fields)
-  | .unclear _ => return receiveHeard w id target argument fields
+  | .unclear _ => return receiveHeard w id target argument fields (castData card action)
   | .refused clause reason => return .refuse id clause.name reason (blankedTemplate shown form fields)
 
 /-- A `receive {text, …}` to `id`, read as a spell by the host when the card speaks the message
@@ -2259,19 +2267,10 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         changesJson w ctx.principal ctx.intent ctx.ledger used st.sends.length updates proposal.allWrites) endedIfLate
     return (w', turnReply w' r)
 
-/-- The door word a card's pure `blurb()` gives (`Card.Door {word, blurb}`), if it has one. -/
-def blurbWord (o : Object) : M (Option String) := do
-  if !o.declaresDef "blurb" then return none
-  let some c ← tryCatch (some <$> compiledMethod o "blurb") (fun _ => pure none) | return none
-  let some entry := c.entry | return none
-  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
-  | .ok (.record fs) => return (fs.lookup "word").bind labelOf
-  | _ => return none
-
 /-- `publishPage {page}` asked of a card whose package declares no `publishPage` (WORLD-REVIEW
     finding 16): the host publishes the card's default page as `Card.defaultPage` wrote it, the card as
     a stranger sees it and how to reply (the host's usage of its forms and lenses), under `page`, else
-    the door word `blurb()` gives, else the object's id. The result is the post id, as
+    the object's id. The result is the post id, as
     `Card.publishPage`'s. The page is public, so a card whose read policy names principals has none:
     refused `noMethod` (codex host 2). -/
 def defaultPublishPage (id : String) (argument : Data) : M Data := do
@@ -2283,8 +2282,7 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
   let given := match argument with
     | .record fs => ((fs.lookup "page").bind labelOf).getD ""
     | _ => ""
-  let word := (← blurbWord o).getD id
-  let title := if given.isEmpty then word else given
+  let title := if given.isEmpty then id else given
   let card ← match ← renderCard id o (fun m => cardContext s.world id "" "" s.intent s.world.height m) with
     | .ok doc => liftEval (Delvetalk.Document.render doc)
     | .error clause => evaluation s!"publishPage: the card does not render ({clause})"

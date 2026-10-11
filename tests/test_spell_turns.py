@@ -115,6 +115,23 @@ class SpellTurns(Reflection):
         self.assertEqual(self.say("delvetalk garden plant / colour: amber / seed: y", identity="post-2")["status"], "admitted")
         self.assertEqual(self.say(post, identity="post-2")["class"], "duplicateIdentity")
 
+    def test_a_spell_missing_fields_reaches_receive_with_its_card_and_action(self):
+        # The host's reading of the spell, so no card reads the spell line again (fungus H1).
+        source = declared(GARDEN.replace(
+            "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:\n"
+            "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: input.text}),",
+            "record Cast:\n  card: String\n  action: String\n"
+            "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>, spell: Cast}, context: Abi.Context) -> Activity<Nat>:\n"
+            "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: textConcat(input.spell.card, textConcat(\" \", input.spell.action))}),"))
+        made = self.host.send(op="world-create", principal="ember", identity="mk-cast", object="cast",
+                              modules=[{"name": "Garden", "source": source}], entry="initial", seed=record())
+        self.assertEqual(made["status"], "created", made)
+        r = self.say("delvetalk Cast plant\nseed: fern", card="cast")  # colour missing (a derived String field is text 0..N: optional)
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(2)), r)
+        self.assertEqual(self.field("heard", "cast"), label("Cast plant"))
+        self.say("just words", card="cast")
+        self.assertEqual(self.field("heard", "cast"), label(" "))
+
     def test_missing_fields_and_prose_reach_receive_with_the_bare_fields(self):
         r = self.say("delvetalk garden plant\nseed: fern")
         self.assertEqual(r["result"], nat(2), r)

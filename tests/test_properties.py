@@ -147,7 +147,7 @@ def malformed(t, rng):
 
 # Names the host answers on every card whatever the package declares (HOST-HANDOFF 5.62, 5.68: a
 # public card's `publishPage` is the host's default page), so a direct turn naming one is not a helper.
-CONVENTIONAL = {"receive", "render", "blurb", "forms", "lenses", "set", "publishPage", "page", "relations",
+CONVENTIONAL = {"receive", "render", "forms", "lenses", "set", "publishPage", "page", "relations",
                 "methods", "law", "lawReads", "views", "initial"}
 
 class Run:

@@ -1073,7 +1073,7 @@ def runPure (entry : Delvetalk.CheckedEntry) (arguments : List Data) (ticks : Na
     (HOST-HANDOFF 5.62). Every other definition whose first parameter is the State is a helper unless
     `forms()`, `methods()` or `views()` names it. -/
 def conventionalMethods : List String :=
-  ["receive", "render", "blurb", "forms", "lenses", "set", "publishPage", "page", "relations", "methods",
+  ["receive", "render", "forms", "lenses", "set", "publishPage", "page", "relations", "methods",
    "law", "lawReads", "views", "initial"]
 
 /-- The conventional definitions an artifact says its entry module declares, derived ones included

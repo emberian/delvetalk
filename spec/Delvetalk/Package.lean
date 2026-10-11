@@ -285,7 +285,7 @@ def fixedFields (modules : List SourceModule) (asts : List Delvetalk.Compiler.Ob
 /-- The conventional declarations a host looks for in an entry module. -/
 def conventionalNames : List String :=
   ["forms", "methods", "relations", "views", "lenses", "law", "lawReads", "initial", "render", "receive",
-    "blurb", "page", "publishPage", "set"]
+    "page", "publishPage", "set"]
 
 /-- Which conventional declarations the modules declare, derived ones included (the decoded
 modules are the generics pass's output), in `conventionalNames` order. -/
