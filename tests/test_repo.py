@@ -30,8 +30,9 @@ from pathlib import Path
 from tests.host import serve, served
 from tests.test_chain import garden_state, town_kinds
 from tests.test_http import DID, Provider
+from transport.state import State
 from transport import delve, identity
-from deploy.serve import LIBRARY
+from transport.config import LIBRARY
 from transport.atproto import sign
 from transport.atproto.cbor import CID, block, decode, encode, read_car
 from transport.atproto.mst import Tree, common_prefix, layer
@@ -115,9 +116,9 @@ class Repository(unittest.TestCase):
         sock = cls.server.sock
         cls.host = HostClient(sock)
         cls.now, cls.token = [1000.0], None
-        ident = identity.Identity(cls.tmp.name, delve.Client(cls.provider), clock=lambda: cls.now[0])
-        cls.front = Front(('127.0.0.1', 0), cls.host, ident, clock=lambda: cls.now[0],
-                          repl=HostClient(sock, stateless=True))
+        st = State(cls.tmp.name)
+        ident = identity.Identity(st, delve.Client(cls.provider), clock=lambda: cls.now[0])
+        cls.front = Front(st, cls.host, ident, ('127.0.0.1', 0), clock=lambda: cls.now[0])
         cls.port = cls.front.server_address[1]
         serve(cls.front)
         send = cls.host.send
@@ -417,16 +418,16 @@ class Vectors(unittest.TestCase):
         import contextlib
         import io
         import os
-        from deploy import repokey
-        with tempfile.TemporaryDirectory() as d:
+        from unittest import mock
+        from transport.__main__ import main
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {'DELVETALK_REPO_KEYS': d}):
             out = io.StringIO()
-            with contextlib.redirect_stdout(out):
-                self.assertEqual(repokey.main(['--dir', d, '--world', 'town']), 0)
+            self.assertEqual(main(['repokey', '--state', d], out), 0)
             path = Path(d) / 'town.key'
             self.assertEqual(os.stat(path).st_mode & 0o777, 0o400)
             self.assertEqual(out.getvalue(), f'{path}: {sign.Key.load(path).did_key}\n')
             with contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(repokey.main(['--dir', d, '--world', 'town']), 1)
+                self.assertEqual(main(['repokey', '--state', d], io.StringIO()), 1)
             self.assertEqual(Repo(ORIGIN, sign.Key.load(path)).did_document()['verificationMethod'][0]['publicKeyMultibase'],
                              sign.Key.load(path).did_key.removeprefix('did:key:'))
 
@@ -478,8 +479,9 @@ class SignedRepository(unittest.TestCase):
         for i in range(10):
             cls.world.append(*(('clock', 'advance:29000000') if i == 4 else (OWNER, f'turn-{i}')))
         cls.now = [1000.0]
-        ident = identity.Identity(cls.tmp.name, delve.Client(Provider()), clock=lambda: cls.now[0])
-        cls.front = Front(('127.0.0.1', 0), cls.world, ident, clock=lambda: cls.now[0])
+        st = State(cls.tmp.name)
+        ident = identity.Identity(st, delve.Client(Provider()), clock=lambda: cls.now[0])
+        cls.front = Front(st, cls.world, ident, ('127.0.0.1', 0), clock=lambda: cls.now[0])
         cls.front.repo = Repo(ORIGIN, cls.key)
         cls.port = cls.front.server_address[1]
         serve(cls.front)

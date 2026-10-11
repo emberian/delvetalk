@@ -12,7 +12,8 @@
 # names, so the Caddy route needs no change; the old systemd
 # delvetalk-proxy.socket listens on the same address and must be stopped first.
 #
-# ONE WRITER PER DIRECTORY. `delvetalk-host` is `delvetalk-obend serve`, the
+# ONE WRITER PER DIRECTORY. `delvetalk-host` is `delvetalk-obend serve` (`python3 -m transport serve`
+# execs it with the config's sockets, opener and library), the
 # only process that opens a journal. It holds /data/state/journal.lock for its
 # life (exit 75 if taken), keeps every world's journal in /data/state
 # (`town.journal`, `<world>.journal`, scratch/) and serves the HTTP front, the
@@ -22,9 +23,20 @@
 # a separate host directory mounted into delvetalk-host, delvetalk-ops and the
 # hand (compose.hand.yml) and into nothing else: the opener's authority is a mount.
 #
+# ONE CONFIG. Every service is `python3 -m transport <command>` over /data/state, configured by
+# /data/state/delvetalk.toml (the operator's choices; optional) and the DELVETALK_<FIELD> variables below,
+# which say only what is a fact of the containers (mount paths, secret files, listening addresses) or comes
+# from .env (origin, opener, ports). transport/config.py lists every field.
+#
 # Every shell `$` in this file would be compose's; there are no shell bodies.
 
 name: delvetalk
+
+x-env: &env
+  DELVETALK_STATE: /data/state
+  DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
+  DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
+  DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
 
 x-service: &service
   image: ${DELVETALK_IMAGE:-delvetalk:current}
@@ -37,14 +49,13 @@ x-service: &service
   cap_drop: ["ALL"]
   init: true
   stop_grace_period: 30s
-  environment:
-    DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}  # .env names the portal for every program (transport/identity.py ORIGIN)
+  environment: *env
   volumes:
     # The clients (front, bridge, interpreter) mount state/ only: serve's
     # directory (town.journal, journal.lock, scratch/, library/, host.sock) and
-    # their own files (identity.sqlite, outbox/, observe.sqlite, interpretations/,
-    # pid files). The host and ops mount all of /data. A host path, not a named
-    # volume, as the edge keeps /var/lib/dregg/<service>: it is what
+    # the transport's files (transport/state.py: identity.sqlite, access.log,
+    # worlds/<world>/). The host and ops mount all of /data. A host path, not a
+    # named volume, as the edge keeps /var/lib/dregg/<service>: it is what
     # deploy/backup.sh reads.
     - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}/state:/data/state
   logging:
@@ -55,8 +66,7 @@ services:
   # The single writer: every world's journal and every principal's scratch worlds, in one process.
   delvetalk-host:
     <<: *service
-    command: ["delvetalk-obend", "serve", "--state", "/data/state", "--root-socket", "/run/delvetalk-root/root.sock",
-              "--opener", "${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}", "--library", "/app/world/lib"]
+    command: ["python3", "-m", "transport", "serve"]
     network_mode: none  # unix sockets only: the host never opens a network connection
     volumes:
       - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}:/data
@@ -69,9 +79,8 @@ services:
     cpus: 1.0
     pids_limit: 128
     healthcheck:
-      # The question only a live host can answer: its journal height from world-status
-      # (the host has no height when world-open refused the journal).
-      test: ["CMD", "python3", "-c", "import sys; from transport.host import HostClient; sys.exit(not isinstance(HostClient('/data/state/host.sock').send({'op': 'world-status'}).get('height'), int))"]
+      # The question only a live host can answer: its journal height (none when world-open refused the journal).
+      test: ["CMD", "python3", "-m", "transport", "status", "--health", "host"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -79,62 +88,50 @@ services:
 
   # The HTTP front: /AGENTS.md for agents, / and /o/<object> for people.
   # 0.0.0.0 inside the container; the port mapping binds the private address
-  # only. --trust-proxy keys the unauthenticated limits on the last
+  # only. trust_proxy keys the unauthenticated limits on the last
   # X-Forwarded-For entry, which Caddy on the anchor sets; anything else on
-  # 10.10.1.0/24 that reaches :8765 directly can choose that entry.
+  # 10.10.1.0/24 that reaches the port directly can choose that entry.
   delvetalk-http:
     <<: *service
-    command:
-      - python3
-      - -m
-      - transport.http
-      - --state
-      - /data/state
-      - --bind
-      - 0.0.0.0
-      - --port
-      - "8765"
-      - --origin
-      - ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
-      - --trust-proxy
+    command: ["python3", "-m", "transport", "http"]
     environment:
-      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}  # the repository's did:web host
-      DELVETALK_REPO_KEY_FILE: /run/secrets/repo_key  # the town's signing key (docs/REPO.md "The key")
-    secrets: [repo_key]
+      <<: *env
+      DELVETALK_HTTP_BIND: 0.0.0.0
+      DELVETALK_HTTP_PORT: ${DELVETALK_HTTP_PORT:-8765}  # another port: a drill or rehearsal beside a live stack
+      DELVETALK_TRUST_PROXY: "on"
+    volumes:
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}/state:/data/state
+      # The repositories' signing keys, <world>.key (`transport repokey`; docs/REPO.md "The key"), at the config's default path.
+      - ${DELVETALK_REPO_KEYS:-/etc/delvetalk/repo}:/etc/delvetalk/repo:ro
     ports:
-      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_PORT:-8765}:8765/tcp"  # DELVETALK_PORT: a drill or rehearsal beside a live stack
+      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_HTTP_PORT:-8765}:${DELVETALK_HTTP_PORT:-8765}/tcp"
     depends_on:
       delvetalk-host: { condition: service_healthy }
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 64
     healthcheck:
-      # The question a visitor asks first, then the one only a live host can
-      # answer: /AGENTS.md is served without the host, so a broken chain would
-      # still pass it; the home page shows the journal height from world-status
-      # as `entry <n>` (pages.html), and `entry None` when world-open refused the journal.
-      test: ["CMD", "python3", "-c", "import re,urllib.request as u; u.urlopen('http://127.0.0.1:8765/AGENTS.md', timeout=5).read(); assert re.search(rb'class=.code.>entry [0-9]+<', u.urlopen('http://127.0.0.1:8765/', timeout=30).read())"]
+      # The guide, then the question only a live host can answer: the home page's `entry <n>`.
+      test: ["CMD", "python3", "-m", "transport", "status", "--health", "http"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 120s
 
-  # Observe the town, run a turn per new spell or reply, write drafts to
-  # /data/state/outbox. Reads the AppView and PDS only: transport/delve.py
-  # refuses every non-GET unless built for post.py, and no posting
-  # credential is mounted here.
+  # Observe the town, run a turn per new spell or reply, write drafts to the
+  # world's outbox. Reads the AppView and PDS only: transport/delve.py refuses
+  # every non-GET unless built for posting, and no posting credential is mounted here.
   delvetalk-bridge:
     <<: *service
-    command: ["python3", "-m", "transport.bridge", "run", "--state", "/data/state", "--poll", "60"]
+    command: ["python3", "-m", "transport", "bridge"]
     depends_on:
       delvetalk-host: { condition: service_healthy }
     mem_limit: 1g
     cpus: 0.5
     pids_limit: 64
     healthcheck:
-      # daemon() touches its pid file after every finished step: older than
-      # three polls means the loop is stuck, even if the process is alive.
-      test: ["CMD", "python3", "-c", "import os,sys,time; p='/data/state/bridge.pid'; os.kill(int(open(p).read()), 0); sys.exit(time.time() - os.stat(p).st_mtime > 180)"]
+      # The daemon touches its pid file after every finished step: older than three polls means the loop is stuck.
+      test: ["CMD", "python3", "-m", "transport", "status", "--health", "bridge"]
       interval: 60s
       timeout: 10s
       retries: 3
@@ -144,43 +141,35 @@ services:
   delvetalk-interpret:
     <<: *service
     profiles: ["town"]
-    command: ["python3", "-m", "transport.interpret", "run", "--state", "/data/state", "--poll", "60"]
+    command: ["python3", "-m", "transport", "interpret"]
     environment:
-      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
+      <<: *env
       DELVETALK_ANTHROPIC_KEY_FILE: /run/secrets/anthropic_key
-      DELVETALK_MODEL_THINKING: "off"  # cheap deterministic JSON calls (docs/GENESIS.md)
     secrets: [anthropic_key]
     mem_limit: 1g
     cpus: 0.5
     pids_limit: 64
     healthcheck:
-      test: ["CMD", "python3", "-c", "import os,sys,time; p='/data/state/interpret.pid'; os.kill(int(open(p).read()), 0); sys.exit(time.time() - os.stat(p).st_mtime > 180)"]
+      test: ["CMD", "python3", "-m", "transport", "status", "--health", "interpret"]
       interval: 60s
       timeout: 10s
       retries: 3
       start_period: 180s
 
-  # Operator commands, never started by `up`; the root socket is mounted here:
+  # Operator commands, never started by `up`; the root socket and the key directory are mounted here:
   #   docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock
-  #   docker compose run --rm delvetalk-ops python3 -m transport.bridge outbox --state /data/state
+  #   docker compose run --rm delvetalk-ops python3 -m transport hand outbox
   delvetalk-ops:
     <<: *service
     profiles: ["ops"]
     restart: "no"
-    command: ["python3", "-c", "print('give a command')"]
-    environment:
-      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
-      DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
-      DELVETALK_STATE: /data/state
-      DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
+    command: ["python3", "-m", "transport", "--help"]
     volumes:
       - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}:/data
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
+      - ${DELVETALK_REPO_KEYS:-/etc/delvetalk/repo}:/etc/delvetalk/repo
 
 secrets:
-  repo_key:
-    # deploy/repokey.py made it at first start (docs/DEPLOY.md): 0400, owner 10425, in a 0700 directory.
-    file: ${DELVETALK_REPO_KEY_PATH:-/etc/delvetalk/repo/town.key}
   anthropic_key:
     # Outside the repository and outside /data, readable by uid 10425 only.
     file: ${DELVETALK_ANTHROPIC_KEY_PATH:-/etc/delvetalk/anthropic.key}

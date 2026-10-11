@@ -39,8 +39,8 @@ PY
 done
 
 # SQLite files copied while open may be mid-transaction; take SQLite's backup instead.
-for db in "$data"/state/*.sqlite; do
-  python3 - "$db" "$dest/mirror/state/${db##*/}" <<'PY'
+for db in "$data"/state/*.sqlite "$data"/state/worlds/*/*.sqlite; do
+  python3 - "$db" "$dest/mirror/${db#"$data"/}" <<'PY'
 import sqlite3, sys
 src = sqlite3.connect(f'file:{sys.argv[1]}?mode=ro', uri=True)
 dst = sqlite3.connect(sys.argv[2])
@@ -50,7 +50,7 @@ src.close()
 PY
 done
 
-# The watch reads the last verify (transport.hand status --json): ok, or broken with its stamp.
+# The watch's probe (`python3 -m transport status`) reads the last verify: ok, or broken with its stamp.
 if ! "$here/verify.sh" "$mode" "$host" "$dest/mirror"; then
   echo "broken $(date -u +%Y%m%dT%H%M%SZ)" > "$dest/last-verify"
   exit 1

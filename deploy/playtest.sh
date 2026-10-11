@@ -4,14 +4,17 @@
 #   deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20] [--no-welcome] [--port 8765] [--dir DIR]
 #   deploy/playtest.sh --stop [--dir DIR]
 #
-# Starts `delvetalk-obend serve` over a FRESH directory (DIR/run-<stamp>/state, the town's journal state/town.journal; DIR/current points at it; older runs are left in place),
-# runs genesis, posts docs/previews/zulip-welcome-v3.txt (STUDIO pointing at the local front on --port) to the stream's `welcome` topic (or --topic NAME, the only topic then observed and answered in) and records it against
-# `commonplace`, then runs the local front, the bridge (--source zulip: observe, turn, post drafts back automatically) and the
-# interpreter, each every --poll seconds. The bot is the .zuliprc's user; it must be subscribed to the stream.
-# DELVETALK_OBEND names the host binary; the interpreter needs the model credentials docs/DEPLOY.md describes.
+# A FRESH state directory (DIR/run-<stamp>/state; DIR/current points at it; older runs are left in place) whose
+# delvetalk.toml names the local front's origin and port and the poll, and whose town is opened on the stream
+# (`transport open --transport zulip`, its bridge row). Then serve, genesis, the config's `welcome` (STUDIO pointing at
+# the local front) posted to the stream's `welcome` topic (or --topic NAME, the only topic then observed and answered
+# in) and recorded against `commonplace`, then the front, the bridge (observe, turn, post drafts back) and the
+# interpreter. Each detached job writes DIR/run-<stamp>/<name>.pid, which --stop reads. The bot is the .zuliprc's
+# user; it must be subscribed to the stream. DELVETALK_OBEND names the host binary; the interpreter needs the model
+# credentials docs/DEPLOY.md describes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-stream=delvetalk topic= nowelcome= poll=20 port=8765 dir=${DELVETALK_PLAYTEST_DIR:-$HOME/.delvetalk-playtest} rc= stop=
+stream=delvetalk topic= nowelcome= poll=20 port=8765 dir=$HOME/.delvetalk-playtest rc= stop=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --zuliprc) rc=$2; shift 2;;
@@ -22,17 +25,16 @@ while [[ $# -gt 0 ]]; do
     --dir) dir=$2; shift 2;;
     --no-welcome) nowelcome=1; shift;;
     --stop) stop=1; shift;;
-    *) sed -n 2,13p "$0" >&2; exit 64;;
+    *) sed -n 2,15p "$0" >&2; exit 64;;
   esac
 done
 
 if [[ -n $stop ]]; then
   [[ -L $dir/current ]] || { echo "playtest: nothing running under $dir" >&2; exit 1; }
-  state=$(cd "$dir/current" && pwd -P)/state
-  for name in bridge interpret front serve; do  # the host last (serve writes serve.pid itself): the clients are its tenants
-    pidfile=$state/$name.pid
-    [[ -f $pidfile ]] || continue
-    pid=$(cat "$pidfile")
+  run=$(cd "$dir/current" && pwd -P)
+  for name in bridge interpret front host; do  # the host last: the clients are its tenants
+    [[ -f $run/$name.pid ]] || continue
+    pid=$(cat "$run/$name.pid")
     if kill -0 "$pid" 2>/dev/null; then kill "$pid"; for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done; fi
     echo "playtest: stopped $name ($pid)"
   done
@@ -46,34 +48,36 @@ run=$dir/run-$(date +%Y%m%d-%H%M%S)
 state=$run/state
 mkdir -p -m 700 "$state"
 ln -sfn "$run" "$dir/current"
-export PYTHONPATH=$PWD
+export PYTHONPATH=$PWD DELVETALK_STATE=$state
 log() { echo "$run/$1.log"; }
+start() { local name=$1; shift; nohup "$@" >"$(log "$name")" 2>&1 & echo $! >"$run/$name.pid"; }
 
-nohup "${DELVETALK_OBEND:-delvetalk-obend}" serve --state "$state" --opener "$(python3 -c 'from deploy.genesis import OPENER; print(OPENER)')" \
-  --library world/lib >"$(log host)" 2>&1 &
+printf 'origin = "http://127.0.0.1:%s"\nhttp_port = %s\npoll = %s\n' "$port" "$port" "$poll" >"$state/delvetalk.toml"
+realm=$(sed -n 's#^site *= *https*://\([^/]*\).*#\1#p' "$rc")
+python3 -m transport open --transport zulip --realm "$realm" --channel "$stream" --zuliprc "$rc" ${topic:+--topic "$topic"} >/dev/null
+start host python3 -m transport serve
 for _ in $(seq 600); do [[ -S $state/host.sock && -S $state/root/root.sock ]] && break; sleep 0.2; done
 [[ -S $state/root/root.sock ]] || { echo "playtest: serve did not come up; see $(log host)" >&2; exit 1; }
 
 python3 -m deploy.genesis --root-socket "$state/root/root.sock"
 if [[ -z $nowelcome ]]; then
-sed "s#http://127.0.0.1:8765#http://127.0.0.1:$port#" docs/previews/zulip-welcome-v3.txt >"$run/welcome.txt"
-python3 -m transport.zulip post --state "$state" --zuliprc "$rc" --stream "$stream" --topic "${topic:-welcome}" \
-  --text-file "$run/welcome.txt" --object commonplace --host-socket "$state/host.sock"
+  welcome=$(python3 -c 'from transport.config import Config; import sys; print(Config.load(sys.argv[1]).welcome)' "$state")
+  sed "s#http://127.0.0.1:8765#http://127.0.0.1:$port#" "$welcome" >"$run/welcome.txt"
+  python3 -m transport post --topic "${topic:-welcome}" --text-file "$run/welcome.txt" --object commonplace --intent welcome-1
 else  # the stream already holds the welcome and the page cards: make the page drafts, mark them posted, post nothing
-  python3 - "$state" <<'PY'
-import sys
-from transport.bridge import mark_posted, publication_drafts, unposted
-from transport.host import HostClient
-state = sys.argv[1]
-publication_drafts(state, HostClient(f'{state}/host.sock'))
-for path, d in unposted(state):
+  python3 - <<'PY'
+import os
+from transport.bridge import publication_drafts
+from transport.state import State
+st = State(os.environ['DELVETALK_STATE'])
+publication_drafts(st, st.host())
+for path, d in st.unposted():
     if 'publication' in d:
-        mark_posted(path)
+        st.mark_posted(path)
 PY
 fi
 
-nohup python3 -m transport.bridge run --state "$state" --source zulip --zuliprc "$rc" --stream "$stream" ${topic:+--topic "$topic"} --poll "$poll" --origin "http://127.0.0.1:$port" >"$(log bridge)" 2>&1 &
-nohup python3 -m transport.http --state "$state" --port "$port" --origin "http://127.0.0.1:$port" >"$(log front)" 2>&1 &
-echo $! >"$state/front.pid"
-nohup python3 -m transport.interpret run --state "$state" --poll "$poll" >"$(log interpret)" 2>&1 &
+start bridge python3 -m transport bridge
+start front python3 -m transport http
+start interpret python3 -m transport interpret
 echo "playtest: running in #$stream${topic:+ > $topic}; state $state; logs $run/*.log; stop with: deploy/playtest.sh --stop"

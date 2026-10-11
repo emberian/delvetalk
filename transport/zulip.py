@@ -1,17 +1,12 @@
-#!/usr/bin/env python3
-"""The Zulip transport: an observer and a poster for one stream of the owner's own Zulip.
+"""The Zulip transport: an observer and a poster for one channel of the owner's own Zulip, a world whose bridge row
+(`open --transport zulip`) names it.
 
-The observer turns each message of the stream into the observation record observe.py produces for a Delve post
-(principal `zulip:<sender id>`, the sender's full name as handle, `replyTo` the previous message of the topic,
+The observer turns each message of the channel into the observation record observe.py produces for a Delve post
+(principal `zulip:<realm>:<sender id>`, the sender's full name as handle, `replyTo` the previous message of the topic,
 which is a thread), classified by observe.classify. The poster puts a draft into its topic as a message. Neither
 decides anything: routing, quota and admission stay with the bridge and the host.
-
-    python3 -m transport.zulip observe --state DIR --zuliprc PATH [--stream delvetalk] [--topic T]
-    python3 -m transport.zulip post --state DIR --zuliprc PATH --topic T --text-file F --object O --host-socket S
 """
-import argparse
 import configparser
-import hashlib
 import json
 import re
 import sys
@@ -19,13 +14,10 @@ import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from transport.bridge import unposted, write_atomic
 from transport.delve import Failure, canonical, http_transport
-from transport.observe import MAX_TEXT, TAG, Observer, classify, wiki_target
-from transport.host import HostClient, add_host_args
-from transport.post import draft_object, ledger, record_posted, reserve, slot_record
+from transport.observe import MAX_TEXT, TAG, Observer, classify
+from transport.post import ledger, post_draft, reserve
 
-STREAM = 'delvetalk'
 BATCH = 100
 MENTION = re.compile(r'@_?\*\*([^*|\n]+?)(?:\|\d+)?\*\*')
 SCHEMA = '''
@@ -132,8 +124,8 @@ class ZulipObserver(Observer):
     """Observer over one stream. Same tables as Observer (posts, observations, emitted); a topic's last message is
     kept for replyTo, and the owner's own messages (drafts we posted) extend the thread but are never observed."""
 
-    def __init__(self, state_dir, client, stream=STREAM, since=None, topic=None):
-        super().__init__(state_dir, client, since)
+    def __init__(self, st, client, stream, since=None, topic=None):
+        super().__init__(st, client, since)
         self.stream, self.topic, self.me = stream, topic, None
         self.db.executescript(SCHEMA)
 
@@ -198,91 +190,44 @@ class ZulipObserver(Observer):
                 return
 
 
-def deliver(state, host, client, stream, topic, text, obj=None, slot=None, intent=None):
-    """Post `text` to stream>topic once per intent, then tell the host the post exists for
-    `obj` (world-posted), so replies in the topic route to it. The stream's newest id is persisted before the send; a retry
-    adopts our message with this text after it rather than sending again. The host's `postQuota` is delve.town etiquette and does
-    not apply to the owner's own Zulip: nothing is held here for rate. -> {uri, cid, recorded}. Raises Failure."""
-    intent = intent or f'zulip:{stream}/{topic}/' + hashlib.sha256(text.encode()).hexdigest()[:16]
-    path, got = ledger(state, intent)
+def deliver(st, host, client, stream, topic, text, intent):
+    """Post `text` to stream>topic once per intent (reserved with the host as a `zulip` post, which no quota holds: the
+    hour's quota is delve.town etiquette). The stream's newest id is persisted before the send; a retry adopts our
+    message with this text after it rather than sending again. -> {uri, cid}. Raises Failure."""
+    path, got = ledger(st, intent)
     if got is None:
-        reserve(host, intent, 'zulip')  # journaled, never refused: the quota is delve.town's
+        reserve(host, intent, 'zulip')
         got = {'after': client.newest(stream)}
-        write_atomic(path, got)
+        st.write(path, got)
     if not got.get('result'):
         mid = client.sent_after(stream, topic, text, got['after']) or client.send(stream, topic, text)['id']
         got = dict(got, result={'uri': uri_of(stream, topic, mid), 'cid': str(mid)})
-        write_atomic(path, got)
-    return {**got['result'], 'recorded': record_posted(host, got['result'], obj, slot, wiki_target(text), intent) if obj else None}
+        st.write(path, got)
+    return dict(got['result'])
 
 
-def post_drafts(state, host, client, stream, topic=None):
-    """Post every unposted draft with text, oldest first, with no hourly cap; record each with the host.
-    A reply draft goes to its post's topic, addressed to its author; a page publication to a topic named for the page
-    (a section edit waits until its page is recorded and the bridge has given it the page post to reply to).
-    With `topic` the playtest lives in that one topic: a page publication goes there too, and nothing is posted elsewhere."""
+def target(d, row):
+    """(stream, topic) of a draft on the world `row` names: a reply goes to its post's topic; a page publication to a topic
+    named for the page; a section edit waits until the bridge has given it its page's post to reply to. With a `topic` in
+    the row the world lives in that one topic, and nothing is posted elsewhere."""
+    where = parse_uri(d.get('replyTo'))
+    if where:
+        stream, topic = where[:2]
+    elif 'publication' in d and not d['section']:
+        stream, topic = row['channel'], row.get('topic') or d['page']
+    else:
+        raise Failure('waits_for_its_page')
+    if row.get('topic') and topic != row['topic']:
+        raise Failure('outside_topic')
+    return stream, topic
+
+
+def post_drafts(st, host, client):
+    """Post every unposted draft with text, oldest first, with no hourly cap, each recorded with the host."""
     sent, held = [], []
-    for path, d in unposted(state):
-        if not d['text']:
-            continue
-        if d.get('replyTo'):
-            where = parse_uri(d['replyTo'])
-            target = (where[0], where[1]) if where else None
-            text = f"@**{d['replyHandle']}**\n{d['text']}" if 'publication' not in d else d['text']
-        else:
-            target, text = ((stream, topic or d['page']) if 'publication' in d and not d['section'] else None), d.get('text')
-        if target is not None and topic and target[1] != topic:
-            held.append({'file': path.name, 'reason': 'outside_topic'})
-            continue
-        if target is None:
-            continue
-        obj = draft_object(d)
+    for path, d in st.unposted():
         try:
-            got = deliver(state, host, client, target[0], target[1], text, obj, slot_record(d['slot']) if d.get('slot') else None,
-                          intent=f'zulip-{path.stem}')
+            sent += [post_draft(path, st, host, zulip=client)['uri']] if d['text'] else []
         except Failure as f:
-            held.append({'file': path.name, 'reason': f.code})
-            continue
-        recorded = got.pop('recorded')
-        write_atomic(path, dict(d, posted=True, sent=got, intent=f'zulip-{path.stem}', **({'recorded': recorded} if recorded else {})))
-        sent.append(got['uri'])
+            held += [] if f.code == 'waits_for_its_page' else [{'file': path.name, 'reason': f.code}]
     return {'posted': sent, **({'held': held} if held else {})}
-
-
-def main(argv=None, out=None, transport=http_transport):
-    out = out or sys.stdout
-    ap = argparse.ArgumentParser(prog='zulip.py')
-    sub = ap.add_subparsers(dest='cmd', required=True)
-    for name in ('observe', 'post'):
-        p = sub.add_parser(name)
-        p.add_argument('--state', required=True)
-        p.add_argument('--zuliprc', required=True, metavar='PATH')
-        p.add_argument('--stream', default=STREAM)
-    p.add_argument('--topic', required=True, help='post: the topic to post in; observe: only this topic is read (default: every topic)')
-    p.add_argument('--text-file', required=True)
-    p.add_argument('--object', help='the object the post addresses: world-posted is called for it')
-    p.add_argument('--slot', metavar='PRINCIPAL:INTENT')
-    add_host_args(p)
-    a = ap.parse_args(argv)
-    try:
-        client = Client(a.zuliprc, transport)
-        if a.cmd == 'observe':
-            ob = ZulipObserver(a.state, client, a.stream, topic=a.topic)
-            ob.poll()
-            ob.drain(lambda js: (out.write(js + '\n'), out.flush()))
-            return 0
-        host = HostClient(a.host_socket, a.world) if a.host_socket else None
-        if a.object and not host:
-            raise Failure('record_needs_journal')
-        text = Path(a.text_file).read_text().replace('<bot name>', client.me()['full_name'])  # a card may name the bot it is posted by
-        result = deliver(a.state, host, client, a.stream, a.topic, text, a.object,
-                         slot_record(a.slot) if a.slot else None)
-    except (Failure, OSError) as e:
-        print(canonical({'error': getattr(e, 'code', type(e).__name__), 'detail': getattr(e, 'detail', '')}), file=sys.stderr)
-        return 1
-    out.write(canonical(result) + '\n')
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

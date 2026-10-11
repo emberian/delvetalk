@@ -9,8 +9,9 @@ import subprocess
 import time
 from pathlib import Path
 
-BINARY = os.environ.get('DELVETALK_OBEND', 'delvetalk-obend')
-LIBRARY = Path(__file__).resolve().parent.parent / 'world' / 'lib'
+from transport.config import Config
+from transport.state import State
+
 READY = 30  # seconds a started serve has to answer its first op
 _pins = {}
 
@@ -28,21 +29,22 @@ def pin_cache(state, binary):
 
 
 class Served:
-    def __init__(self, state, binary=BINARY, opener=None, library=None, sync='none', extra=()):
-        self.state = Path(state).resolve()
-        given = dict(zip(extra[::2], extra[1::2])) if len(extra) % 2 == 0 else {}
-        self.sock = given.get('--socket', str(self.state / 'host.sock'))
-        self.root = given.get('--root-socket', str(self.state / 'root' / 'root.sock'))
+    """serve over `state` with the config's settings, except that it seals no library and names no opener unless given
+    (`opener`, `library`, any other field), and appends unsynced unless `sync` says otherwise."""
+
+    def __init__(self, state, binary=None, sync='none', opener='', library='', **settings):
+        settings = dict(settings, sync=sync, opener=opener, library=str(library or ''), **({'obend': str(binary)} if binary else {}))
+        self.place = State(Path(state).resolve(), config=Config.load(Path(state), **settings))
+        self.state, binary = self.place.root, self.place.config.obend
+        self.sock, self.root = str(self.place.host_socket), str(self.place.root_socket)
         for p in (self.sock, self.root):
             if os.path.exists(p):
                 os.unlink(p)
-        argv = [str(binary), 'serve', '--state', str(self.state), '--sync', sync] + (['--opener', opener] if opener else []) + \
-            (['--library', str(library)] if library else []) + list(extra)
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if os.path.sep in str(binary):
+        if os.path.sep in binary:
             pin_cache(self.state, binary)
         self.log = open(self.state / 'serve.log', 'w')  # a file, not a pipe: a chatty serve (DELVETALK_TIMING) never blocks on it
-        self.proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=self.log)
+        self.proc = subprocess.Popen(self.place.serve_argv(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=self.log)
         deadline = time.monotonic() + 120
         while not (os.path.exists(self.sock) and os.path.exists(self.root)):
             if self.proc.poll() is not None:
@@ -52,8 +54,7 @@ class Served:
                 self.stop()
                 raise RuntimeError('serve did not listen within 120 s')
             time.sleep(0.02)
-        from transport.host import HostClient
-        ready, client = time.monotonic() + READY, HostClient(self.sock, None)
+        ready, client = time.monotonic() + READY, self.place.host(world=None)
         try:  # a socket file is not yet a server answering: the first op waits for `serve-status` (under load it lags the file)
             while (got := client.send({'op': 'serve-status'})).get('status') != 'serve':
                 if self.proc.poll() is not None or time.monotonic() > ready:
@@ -79,8 +80,8 @@ class Pipe:
     """A host process of a script's own on stdin and stdout, one JSON line each way, over `journal` when given (a
     probe on a copy, the bench's raw path); never a world's writer."""
 
-    def __init__(self, binary=BINARY, journal=None, **opening):
-        self.proc = subprocess.Popen([str(binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+    def __init__(self, binary=None, journal=None, **opening):
+        self.proc = subprocess.Popen([str(binary or Config.load().obend)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         if journal:
             opened = self.send({'op': 'world-open', 'path': str(journal), 'sync': 'none', **opening})
             assert opened.get('status') == 'opened', opened

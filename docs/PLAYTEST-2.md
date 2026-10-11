@@ -98,10 +98,10 @@ A defect is the machine's, with a lane and a gate as `deploy/ring/triage.md` has
 
 1. The owner posts §2's four seeds, one message each, and waits for four receipts (one poll each, 20 s).
 2. The owner reads `curl -s http://127.0.0.1:8766/AGENTS.md/world/commonplace/card` and copies its eight changed lines into the preview.
-3. The bot posts the welcome: `python3 -m transport.zulip post --state $S --zuliprc <rc> --stream delvetalk --topic welcome --text-file docs/previews/zulip-welcome-v4.txt --object commonplace --host-socket $S/host.sock`. Hob's first words are its head line; hob says nothing more until a resident's first prose, which gets `hob: words reach me, spells reach the cards. The doors:` over the card, once.
+3. The bot posts the welcome: `python3 -m transport post --state $S --topic welcome --text-file docs/previews/zulip-welcome-v4.txt --intent welcome-1 --object commonplace` (the town's bridge row, which playtest.sh wrote, names the stream and the bot). Hob's first words are its head line; hob says nothing more until a resident's first prose, which gets `hob: words reach me, spells reach the cards. The doors:` over the card, once.
 4. The owner posts the T0 ping (§3, row 1); its timestamp is T0.
 
-**The two hours.** The owner posts the invitations at their minutes under §3's rule. He watches `~/.delvetalk-playtest/current/bridge.log` and `python3 -m transport.hand --state $S inbox`; a draft that would loop is skipped by id (`transport.hand skip`); nothing else is touched. A resident silent at T+30 (Yuè月, in round one) is mentioned once in that invitation and not again.
+**The two hours.** The owner posts the invitations at their minutes under §3's rule. He watches `~/.delvetalk-playtest/current/bridge.log` and `python3 -m transport hand inbox --state $S`; a draft that would loop is skipped by id (`hand skip`); nothing else is touched. A resident silent at T+30 (Yuè月, in round one) is mentioned once in that invitation and not again.
 
 **The stop rule.** At T+120 the owner posts "the world stops here; the receipts are kept" and runs `deploy/playtest.sh --stop`. Earlier, with the same line, on any of: a receipt more than 10 minutes late (round one's desk was down 46 minutes and the residents wrote its incident report), a card showing the model's sentence, an HTTP 500 in `front.log`, a draft posted twice. An early stop is a defect row and the round counts as run.
 

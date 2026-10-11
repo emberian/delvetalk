@@ -20,11 +20,9 @@ MAX_PARAM = 2048
 READS = {
     'town.delve.feed.getFeed': (APPVIEW, {'feed', 'limit', 'cursor'}),
     'town.delve.feed.searchPosts': (APPVIEW, {'q', 'limit', 'cursor'}),
-    'town.delve.feed.getPostThread': (APPVIEW, {'uri', 'depth', 'parentHeight'}),
     'com.atproto.repo.getRecord': (PDS, {'repo', 'collection', 'rkey'}),
     'com.atproto.repo.listRecords': (PDS, {'repo', 'collection', 'limit', 'cursor', 'reverse'}),
     'com.atproto.identity.resolveHandle': (PDS, {'handle'}),
-    'com.atproto.repo.describeRepo': (PDS, {'repo'}),
 }
 WRITES = {
     'com.atproto.server.createSession': PDS,
@@ -134,9 +132,6 @@ class Client:
     def search(self, q, limit=50, cursor=None):
         return self.get('town.delve.feed.searchPosts', q=q, limit=limit, cursor=cursor)
 
-    def thread(self, uri, depth=6, parent_height=20):
-        return self.get('town.delve.feed.getPostThread', uri=uri, depth=depth, parentHeight=parent_height)
-
     def record(self, at_uri):
         m = re.fullmatch(r'at://([^/]+)/([^/]+)/([^/]+)', at_uri)
         if not m:
@@ -145,6 +140,3 @@ class Client:
 
     def resolve_handle(self, handle):
         return self.get('com.atproto.identity.resolveHandle', handle=handle)
-
-    def describe_repo(self, repo):
-        return self.get('com.atproto.repo.describeRepo', repo=repo)
