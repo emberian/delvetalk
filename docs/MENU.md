@@ -8,6 +8,18 @@ authors) and `rehearsal/REPORT.md` run 11. Tokens are `deploy/tokens.py
 --compare` over the nine vocabularies of docs/TOKENS.md. The texts are
 `docs/previews/gsb-root-menu-v3.txt` and `gsb-welcome-v5.txt`.
 
+**As built, 2026-10-11** (foundation b3855b91). The root card is the commonplace, not a Directory: a RECORD with
+`world/bodies/commonplace.obend`, its doors its `cites` (`Card.Doorway {label, to, description, examples}`), drawn as
+the trie by `world/lib/Menu.obend` (`docs/previews/commonplace-card.txt` is the render; the v3, v4 and v5 previews
+named here are gone). What differs from the design below: door lines carry the label alone (`GARDEN`, no live count;
+rule 3 and §1.4's `news` were not built: what changed is `delvetalk commonplace since / entry: N`, from
+`world.changed`, a principal's own cards left out); eight doors in the order KINDS, WORKSHOP, GARDEN, ROOMS, TIDE,
+PORCH, ANTHOLOGY, then STUDIO (a link) and YOURS, the card clipping whole branches from the end; the welcome and the
+card head are `gsb-welcome.txt` and `zulip-welcome.txt`. Of §2.2: several spells a post are split by the host
+(`Spell.segments`, at most three, a turn each) and the model may answer up to three; the miss card is the pruned trie
+(`Menu.pruned`, `commonplace.missLine`); `Directory.*` names below are the commonplace's body or Menu now. The
+interpreter's answers are FLEX §2's five (spells, `ask:`, `card`, `say:`, `none`).
+
 ## 1. The trie
 
 ### 1.1 Shape

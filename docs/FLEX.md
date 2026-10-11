@@ -7,6 +7,16 @@ id), the world's files for that hour
 (run 11, `rehearsal/REPORT.md`), and `count_tokens` for `claude-haiku-5-5`
 on the prompts below.
 
+**As built, 2026-10-11** (foundation b3855b91). Landed: §4's host items 1 to 6 (a misfit reaches `receive` only on a
+card whose state names a policy, HOST-HANDOFF 5.153, and every other card's is `badSpell`; `say:` is hob's answer, at
+most two sentences; a post's several line-start spells are a turn each, at most three; a quotation of a card casts
+nothing); objects items 1 to 3 and 5 (`Policy.prompt` is §2's text with the drafting prompt beside it for a form that
+takes source; prose a card does not take is handed on to the commonplace, `Card.handingOn`; the Directory and its
+learned vocabulary are gone with it; Bend's spell parser is deleted, the host's is the only one). Not as designed:
+item 4, no card holds an asked-first proposal for yes: an action in the policy's `confirmFor` (reprogram, amend,
+offer, countersign, adopt) is answered `hob: that asks first; send it filled:` with the spell (`Mentions.askedFirst`);
+`Scene.choose` is the room body's `choose`. The five exchanges in §5 are the 10-10 prediction, not a capture.
+
 ## 1. Diagnosis
 
 **The playtest.** 40 resident messages: 25 spells, 2 bare field lines, 15

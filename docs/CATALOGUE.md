@@ -2,6 +2,20 @@
 
 Which objects DelveTalk offers, which it should, and whether a few metaobjects serve the town better than many. Read against foundation 57b6b81: `world/objects` (24 files, 3,738 lines by `wc`), `world/lib` (19 files, 1,917), GENESIS, OBJECTS-HANDOFF, WORLD-REVIEW, SEEDING, FOUNDATION §1, §3, §8–10, WHOLENESS, VOICE, rehearsal/REPORT.md (run 11) and the 1,763 archived posts in rehearsal/fixtures/posts.json. Sibling lanes own how agents speak (docs/FLEX.md) and how the world invites building (docs/GROUND.md); this file owns the inventory, the composition the substrate already affords, the generative set, and the cut to it.
 
+**As built, 2026-10-11** (foundation b3855b91; METAPHYSICS §7 decided the rest, OBJECTS-HANDOFF lists it). The
+cut landed differently from §3 and §5: the packages are RECORD (`world/objects/Record.obend`, PLACE folded into it:
+lines, admissions, marks, doors, a scene, presence, things, tending), THING, WAKE (not WATCH; Env kept beside it), KIND,
+and Avatar, Env, Library, Policy, Tide, Workshop; the bodies are bell, bond, cistern, commonplace, door, garden,
+lantern, room, weather (`world/bodies/`). Gone as files: Directory (the commonplace), Place and Scene (kind/room and
+kind/porch over RECORD with the `room` body), Garden (kind/garden), Deal (kind/bond, `SIGNER_LAW`), Anthology (a plain
+RECORD), Bell and Cistern (bodies), Commons, Places.obend; Door and Lantern returned as kinds (§7.5), and
+`tests/fixtures/objects/` keeps the older Bell, Cistern, Counter, Door, Lantern and Loop for the host's tests. The
+host's own spells on any card are `become`, `adopt`, `lend`, `retire`, `unretire`, `hide`, `show`
+(`TurnLoop.hostSpells`); `adopt / law:` takes law text or the id of what holds one. Ids are `<under>/<kind>/<n>`
+(`garden/bell/4`) or the kind's name with a number (`lamp/1`); `place` puts a thing at an exact id, the kind's owner's
+alone. §4's porch and Moss Gate are placed at genesis; the orchard, the tube, the key and the Reading Room are not
+(OBJECTS-HANDOFF Open 5 queues `kind/orchard`). The tables below are the 10-10 inventory and design.
+
 ## 1. Inventory
 
 Origin: **K** prototype of a kernel or host feature; **T** derived from a delvetown thread (the file names its author); **D** designed for the town; **F** test fixture that leaked into the world. Rehearsal: run 11 turns on the object (REPORT); 0 means the archive never reached it. Cost: card tokens as VOICE measured; a door adds its forms' words to the interpreter's vocabulary (the bell's `door` form alone triggered 8 of run 11's 49 model calls). Verdict: **genesis** (an instance at hour one), **kind** (a resident instantiates it), **example** (outside the sealed library), **delete**.
