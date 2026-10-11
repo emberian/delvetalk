@@ -8,7 +8,6 @@ the `post` verb), with the owner's credentials file. Every action appends a line
 """
 import argparse
 import calendar
-import collections
 import hmac
 import json
 import os
@@ -75,11 +74,10 @@ class Hand:
         spent = spend.totals(self.state, month).get(month, {})
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
         retrying = [p for p in waiting if p.get('next') is not None]  # the host's backoff
-        pid = self.state / 'hostd.pid'
         return {'journal height': st.get('height'), 'posts this hour': f'{delve.get("used", 0)} of {delve.get("quota", "?")}',
                 f'model spend {month}': f'${spent.get("dollars", 0):.4f} ({spent.get("calls", 0)} calls)',
                 'interpretations pending': f'{len(waiting)} ({len(retrying)} retrying)',
-                'host pid': pid.read_text().strip() if pid.exists() else 'none', 'shadowed': len(st.get('shadowed') or [])}
+                'host pid': self.host.send({'op': 'hostd-info'}).get('pid', 'none'), 'shadowed': len(st.get('shadowed') or [])}
 
     def probe(self, backups=None, journal=None):
         """The one monitoring probe (`status --json`, docs/OPERATIONS.md section b): plain numbers, every threshold the watch's."""
@@ -87,12 +85,6 @@ class Hand:
         rows = [l.split() for p in (self.state / 'access.log.1', self.state / 'access.log') if p.exists() for l in p.read_text().splitlines()]
         when = lambda x: calendar.timegm(time.strptime(x[0], '%Y-%m-%dT%H:%M:%SZ'))
         recent = lambda secs: [x for x in rows if len(x) >= 4 and now - when(x) < secs]
-        hour = st.get('hour')  # the host's counters for the clock hour, when it keeps them (ROOT section 4)
-        if hour is None:  # until then the newest hundred entries
-            entries = self.host.send({'op': 'world-entries', 'principal': self.owner, 'reverse': True, 'limit': 100}).get('entries') or []
-            outcomes = [(e.get('outcome') or {}) for e in entries]
-            hour = {'window': f'{len(entries)} newest entries', 'turns': len(entries), 'refused': dict(collections.Counter(
-                o.get('class') or '?' for o in outcomes if o.get('tag') == 'refused'))}
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
         journal = Path(journal) if journal else self.state / 'town.journal'
         sizes = []
@@ -106,7 +98,7 @@ class Hand:
         disk = {str(p): round(shutil.disk_usage(p).free / shutil.disk_usage(p).total, 3) for p in (self.state, backups) if p.exists()}
         return {'at': int(now), 'front': {'requests5m': len(recent(300)), '5xx5m': sum(1 for x in recent(300) if x[3].startswith('5')),
                                           '5xxHour': sum(1 for x in recent(3600) if x[3].startswith('5'))},
-                'hour': hour, 'model': {'hour': spend.since(self.state, now - 3600), 'day': spend.since(self.state, now - 86400)},
+                'hour': st.get('hour'), 'model': {'hour': spend.since(self.state, now - 3600), 'day': spend.since(self.state, now - 86400)},
                 'reservations': next((s for s in (st.get('posts') or {}).get('sources') or [] if s.get('source') == 'delve'), {}),
                 'interpretations': {'pending': len(waiting), 'maxAttempts': max([p.get('attempts') or 0 for p in waiting] or [0])},
                 'journal': {'height': st.get('height'), 'bytes': journal.stat().st_size if journal.exists() else None,

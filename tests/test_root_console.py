@@ -88,7 +88,7 @@ class Shapes(unittest.TestCase):
     def test_the_reads_ask_as_the_opener(self):
         self.root('dump', 'garden')
         self.assertEqual([(o['op'], o['principal'], o['object']) for o in self.host.ops],
-                         [('world-view', OPENER, 'garden'), ('world-object', OPENER, 'garden'), ('world-inspect', OPENER, 'garden')])
+                         [('world-view', OPENER, 'garden'), ('world-object', OPENER, 'garden'), ('world-inspect', OPENER, 'garden'), ('world-dump', OPENER, 'garden')])
         self.run_hand('modlog', '--object', 'garden')
         self.assertEqual(self.host.ops[-1], {'op': 'world-history', 'principal': OPENER, 'object': 'garden'})
         self.run_hand('find', 'gard')
