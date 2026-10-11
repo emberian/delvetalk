@@ -83,26 +83,32 @@ def resolve(method, path):
 
 
 
-def follow(host, principal, intent, reply, sleep=time.sleep):
+def follow(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
     """The texts offered to `principal` by a turn and every turn it handed on (its `sends`, delivered under the same
     principal with the send's id as intent: a card handing prose to the commonplace, hob's planting sent to the garden),
-    waiting up to WAIT_MAX seconds while any of them is suspended on hob or not yet delivered: the play page's turn and
+    waiting up to `wait` seconds while any of them is suspended on hob or not yet delivered: the play page's turn and
     the hand's Speak."""
+    return trace(host, principal, intent, reply, sleep, wait)[0]
+
+
+def trace(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
+    """`follow`'s texts, and whether any turn of the chain is still waiting (on hob, or for its delivery) when `wait`
+    seconds are spent; with `wait` 0, one look at the chain as it stands (a page that refreshes itself)."""
     watch = {intent}
     done = {} if reply.get('status') == 'suspended' else {intent: reply['receipt']}  # the turn as it answered
     watch |= {s['id'] for r in done.values() for s in r.get('sends') or [] if s.get('id')}
     after = reply['receipt']['height'] - 1
-    for _ in range(WAIT_MAX + 1):
+    for waited in range(0, wait + 1, WAIT_STEP):
         for i in sorted(watch - set(done)):
             got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': i}).get('receipt') or {}
             if ((got.get('outcome') or {}).get('tag') or 'suspended') != 'suspended':
                 done[i] = got
                 watch |= {s['id'] for s in got.get('sends') or [] if s.get('id')}
-        if watch <= set(done):
+        if watch <= set(done) or waited + WAIT_STEP > wait:
             break
         sleep(WAIT_STEP)
     seen = host.send({'op': 'world-offers', 'principal': principal, 'after': after}).get('offers') or []
-    return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch]
+    return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch], not watch <= set(done)
 
 
 def typed(value):

@@ -21,7 +21,7 @@ from transport import bridge, measure, model, post, pages, root
 from transport.bridge import all_observations, awaiting_path, uri_hash
 from transport.delve import Failure, canonical
 from transport.host import CLOCK
-from transport.http import follow, typed
+from transport.http import WAIT_MAX, trace, typed
 from transport.measure import counted
 from transport.state import State
 
@@ -220,7 +220,7 @@ class Hand:
     def seed_intent(self, spell):
         return 'hand:seed:' + hashlib.sha256(spell.encode()).hexdigest()[:16]
 
-    def cast(self, spell, topic=None, reply_to=None, intent=None, to=None):
+    def cast(self, spell, topic=None, reply_to=None, intent=None, to=None, wait=WAIT_MAX):
         """Cast `spell` as the opener on the root socket, as the bridge turns a post: `receive` on the card the host reads
         in it. -> what came back (receipt, card, and the draft of the post that says so, admitted only). A repeated intent
         is the first receipt and the first draft. Words that are no spell are asked of the card `to` (`ask`)."""
@@ -230,7 +230,7 @@ class Hand:
         read = self.host.send({'op': 'spell-parse', 'text': spell})
         card = (read.get('spell') or {}).get('card')
         if not card:
-            return self.ask(spell, to, intent)
+            return self.ask(spell, to, intent, wait)
         where, intent = self.where(topic, reply_to), (intent or '').strip() or f'hand:speak:{int(self.clock() * 1000)}'
         reply = self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent,
                                 'argument': typed({'text': spell, 'post': intent})})
@@ -253,23 +253,38 @@ class Hand:
         self.log('speak', name, intent=intent, spell=spell, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'], object=obj)
         return {**came, 'intent': intent, 'drafted': name}
 
-    def ask(self, words, card=None, intent=None):
+    def ask(self, words, card=None, intent=None, wait=WAIT_MAX):
         """Words that are no spell, to `card` (default the commonplace) as a resident's direct prose, the turn the play page
         sends (`receive` with `reach: direct`), followed through every turn it handed on to hob's answer, waiting while hob
-        reads. -> the receipt and what came back, as the town would hear it; nothing is drafted, the hand's log keeps it."""
+        reads up to `wait` seconds (`came` follows it on from there). -> the receipt and what came back, as the town would
+        hear it; nothing is drafted, the hand's log keeps it."""
         card, intent = (card or '').strip() or 'commonplace', (intent or '').strip() or f'hand:ask:{int(self.clock() * 1000)}'
         reply = self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent, 'reach': 'direct',
                                 'argument': typed({'text': words, 'post': ''})})
         receipt = reply.get('receipt')
         if not receipt:
             raise HandError(f"{card}: {reply.get('message') or reply.get('status')}")
-        said = follow(self.host, self.owner, intent, reply, self.sleep)
+        said, waiting = trace(self.host, self.owner, intent, reply, self.sleep, wait)
         came = {'card': card, 'object': reply.get('object') or card, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
                 'line': bridge.receipt_line(receipt, None, reply.get('object') or card).strip(), 'text': '\n'.join(t.rstrip('\n') for t in said), 'drafted': None,
-                'intent': intent, 'waiting': not said and outcome_of(receipt) == 'suspended'}
+                'intent': intent, 'waiting': waiting}
         self.log('ask', None, intent=intent, words=words, card=card, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'],
-                 object=card, said=came['text'])
+                 object=card)
         return came
+
+    def came(self, intent):
+        """What came back to the turn the hand made under `intent`, as it stands now: a spell's drafted post, or the words'
+        answers followed through every turn they were handed on to (one look; `waiting` while hob still reads). None for an
+        intent the hand's log does not hold."""
+        line = next((l for l in reversed(self.tail(10 ** 6)) if l.get('intent') == intent and l.get('world') == self.st.world), None)
+        if line is None:
+            return None
+        text, waiting = self.draft(line['draft'])[1]['text'] if line.get('draft') else '', False
+        if line['what'] == 'ask':
+            rc = self.host.send({'op': 'world-receipt', 'principal': self.owner, 'identity': intent}).get('receipt') or {}
+            said, waiting = trace(self.host, self.owner, intent, {'status': outcome_of(rc), 'receipt': rc}, wait=0) if rc else ([], True)
+            text = '\n'.join(t.rstrip('\n') for t in said)
+        return {**line, 'text': text, 'waiting': waiting}
 
     def invite(self, minute, topic=None, reply_to=None):
         """Draft the plan's invitation at T+`minute` for the bot to post, once."""
@@ -564,7 +579,7 @@ class Hand:
             act = acts.get(form.get('do'))
         else:
             act = {'retry': lambda: self.retry(form.get('uri', '')), 'reply': lambda: self.reply(form.get('uri', ''), form.get('text', ''), form.get('object', '')),
-                   'speak': lambda: self.spoke(self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'), form.get('to'))),
+                   'speak': lambda: self.spoke(self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'), form.get('to'), wait=0)),
                    'invite': lambda: self.invite(form.get('minute', ''), form.get('topic'), form.get('replyTo'))}.get(rest)
         return act and act()
 
@@ -609,16 +624,16 @@ class Hand:
             text=q(r['words'] + ''.join('\n    ' + s for s in r['spells'])), answered=q(r['answered']),
             draft='' if r['draft'] else H['invitation_draft'].format(base=base, minute=r['minute'], where=where)) for r in said['invitations']) \
             or '<li class="quiet">— the plan names no invitations —</li>'
-        spoken = ''
-        line = next((l for l in reversed(self.tail(10 ** 6)) if l.get('intent') == query.get('came') and l.get('world') == self.st.world), None) if query.get('came') else None
-        if line:  # what came back: the drafted post of a spell, hob's answer to words
-            text = line.get('said') if line['what'] == 'ask' else self.draft(line['draft'])[1]['text'] if line.get('draft') else ''
-            spoken = H['spoken'].format(fate=q(line.get('outcome')), stamp=q(pages.stamp(line.get('outcome') or '')), height=q(line.get('height')),
-                                        slug=q(line.get('slug') or ''), object=q(line.get('object')),
-                                        card=H['card'].format(text=q(text)) if text else H['note'].format(text='— quiet: nothing came back yet —'))
+        spoken, came = '', self.came(query['came']) if query.get('came') else None
+        if came:  # what came back: the drafted post of a spell, hob's answer to words, followed while hob reads
+            quiet = '— hob is reading; this page looks again every few seconds —' if came['waiting'] else '— quiet: nothing came back —'
+            spoken = H['spoken'].format(fate=q(came.get('outcome')), stamp=q(pages.stamp(came.get('outcome') or '')), height=q(came.get('height')),
+                                        slug=q(came.get('slug') or ''), object=q(came.get('object')),
+                                        card=(H['card'].format(text=q(came['text'])) if came['text'] else '') + (H['note'].format(text=quiet) if came['waiting'] or not came['text'] else ''))
         return shell('speak', self.st.world, H['speak'].format(base=base, world=q(self.st.world), note=self.note(query), spoken=spoken,
                                                                intent=q(f'hand:speak:{int(self.clock() * 1000)}'), where=where,
-                                                               plan=q(Path(self.plan['path']).name), seeds=seeds, invitations=invitations))
+                                                               plan=q(Path(self.plan['path']).name), seeds=seeds, invitations=invitations),
+                     refresh=3 if came and came['waiting'] else 0)
 
     def links(self, r):
         """A row's foot: its receipt, its object in the root editor, the drafts it made."""

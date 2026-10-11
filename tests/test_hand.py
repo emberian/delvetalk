@@ -7,6 +7,7 @@ without a click, a seed cast twice, a spell drafted that the host refused, or a 
     python3 -W ignore -m tests.run test_hand
 """
 import contextlib
+import html
 import http.client
 import io
 import json
@@ -490,6 +491,25 @@ class Speak(unittest.TestCase):
         self.assertIn(f'/hand/town/root/?object={urllib.parse.quote(bell, safe="")}', page)
         self.assertIn(f"receipt {came['slug']}", page)
         self.assertNotIn('http-equiv="refresh"', self.hand.handle('GET', '/hand/town/watch?still=1', f'dt_hand={TOKEN}')[1])
+
+    def test_came_follows_words_until_hob_answers_and_looks_again_while_it_waits(self):
+        from transport import interpret
+        model = lambda req: {'status': 'replied', 'json': None, 'raw': 'delvetalk library read / page: spells', 'model': 'mock', 'usage': {}}
+        h, cookie = hand.Hand(self.st, self.town.client, TOKEN, sleep=lambda s: None), f'dt_hand={TOKEN}'  # nobody reads while the hand waits
+        code, _, headers = h.handle('POST', '/hand/town/speak', cookie, {'spell': 'what lies behind the moss gate?', 'to': 'kinds', 'intent': 'hand:ask:late'})
+        self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['came'], ['hand:ask:late'])
+        before = h.came('hand:ask:late')
+        self.assertTrue(before['waiting'], before)  # handed on from the kinds card to hob, who has not read it yet
+        page = h.handle('GET', '/hand/town/speak?came=hand:ask:late', cookie)[1]
+        self.assertIn('<meta http-equiv="refresh" content="3">', page)
+        self.assertIn('hob is reading', page)
+        self.assertTrue(interpret.run(self.st, self.town.client, model)['settled'])  # hob answers, later
+        after = h.came('hand:ask:late')
+        self.assertFalse(after['waiting'], after)
+        self.assertNotEqual(after['text'], before['text'])
+        page = h.handle('GET', '/hand/town/speak?came=hand:ask:late', cookie)[1]
+        self.assertNotIn('http-equiv="refresh"', page)
+        self.assertIn(html.escape(after['text'].strip().split('\n')[0]), page)
 
     def test_an_invitation_is_drafted_once_with_its_spell_quoted(self):
         row = self.hand.plan['invitations'][-1]  # the plan's last: no other test drafts it
