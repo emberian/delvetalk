@@ -2,15 +2,16 @@
 """The town's genesis (docs/GENESIS.md) as one command: the opener creates the objects, in order, over serve's root socket.
 
   python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --towns /towns [--opener did:plc:...]
+  python3 -m deploy.genesis refresh --root-socket /run/delvetalk-root/root.sock --state /data/state
 
 The world is never wiped (docs/TENURE.md section 1): a genesis while a town journal lives anywhere under `--towns` (the
 directory holding every data directory, `/var/lib/delvetalk`, mounted read-only into the ops container at `/towns`;
 `DELVETALK_TOWNS`) begins a world that abandons that one, so it is refused, naming each journal and its height, unless
 `--wipe-with-the-owners-word R` carries the owner's word. Then R is the town's first line: written on the commonplace
 and admitted by the opener before anything else, and the first line of the welcome. A world changing hosts is carried
-(`python3 -m transport carry`), never begun again. Refuses to run twice: if any genesis object already exists
-(`world-objects`), it creates nothing and exits 1. rehearsal/rehearse.py calls `run`, so the rehearsal and production
-seed the same world. Seeds name only the fields genesis decides; the host lays them over each package's own initial().
+(`python3 -m transport carry`), never begun again, and `refresh` then gives it genesis's laws as they stand (`refresh`
+below). Refuses to run twice: if any genesis object already exists (`world-objects`), it creates nothing and exits 1.
+rehearsal/rehearse.py calls `run`, so the rehearsal and production seed the same world. Seeds name only the fields genesis decides; the host lays them over each package's own initial().
 """
 import argparse
 import json
@@ -326,6 +327,141 @@ def run(host, opener=OPENER):
     return made, None
 
 
+# The refresh (docs/GENESIS.md "A carried town"): a carried town keeps the laws genesis gave it when it was made, so
+# the opener re-writes each to genesis's text as it stands, each an ordinary journaled amendment. Its slots are an
+# object's own law (`law`, by world-amend) and a town kind's `law` and `voice` fields (`.law`, `.voice`, by the
+# owner's proposal), which every instance follows by `under`. A slot whose text is not the one genesis last gave it
+# (read from the journals: genesis's own turns and earlier refreshes) was changed since by another turn, and is left
+# and named; so is a slot whose making is in no journal read. `python3 -m transport carry` runs it at its end
+# (`carried`); `genesis.py refresh` runs it on a living town through serve's root socket.
+def texts(opener):
+    """{(object, slot): genesis's text today}, slot `law` an object's law and `.law`/`.voice` a kind's fields."""
+    out = {(name, 'law'): law for name, package, _ in seeds(opener) for law in [LAWS.get(package, lambda _: None)(opener)] if law}
+    out |= {('kinds', '.law'): KIND_LAW, ('kinds', '.voice'): ''}
+    for name, _, _, _, law, _ in KINDS:
+        out |= {('kind/' + name, '.law'): law, ('kind/' + name, '.voice'): VOICES.get(name, '')}
+    return out
+
+
+def ancestry(path):
+    """The journal at `path` and, through each carried genesis's `carriedFrom.world`, the journals it was carried from,
+    oldest first, as far as each is on this disk (a relative `world` is read beside the journal, then as given)."""
+    from transport import journal
+    chain, seen = [], set()
+    while path and os.path.exists(path) and os.path.realpath(path) not in seen:
+        seen.add(os.path.realpath(path))
+        chain.insert(0, path)
+        first = journal.read(path, journal.links(path)[:1])
+        origin = ((first[0]['outcome'] if first else {}).get('carriedFrom') or {}).get('world') or ''
+        path = next((p for p in (os.path.join(os.path.dirname(path), origin), origin) if origin and os.path.exists(p)), None)
+    return chain
+
+
+def given(journals, opener):
+    """{(object, slot): the text genesis or a refresh last gave it}, from the opener's `genesis-*` and `refresh-*`
+    turns in `journals` (oldest first): a creation's law and a kind seed's `law` and `voice` (none: ""), a refresh's
+    amendment and its write on a kind."""
+    from transport import journal
+    gave = {}
+
+    def made(obj, law, seed):
+        if law:
+            gave[(obj, 'law')] = law
+        fields = {f['name']: f['value'].get('value', '') for f in ((seed or {}).get('fields') or [])}
+        if 'law' in fields and 'form' in fields:  # a kind's seed
+            gave.update({(obj, '.law'): fields['law'], (obj, '.voice'): fields.get('voice', '')})
+
+    for path in journals:
+        for e in journal.entries(path):
+            who = e.get('identity') or {}
+            if who.get('principal') != opener or not who.get('intent', '').startswith(('genesis-', 'refresh-')):
+                continue
+            o = e.get('outcome') or {}
+            if o.get('tag') == 'created':
+                made(o.get('object'), o.get('law'), o.get('seed'))
+            for c in o.get('creates') or []:
+                made(c.get('object'), c.get('law'), c.get('seed'))
+            for law in o.get('laws') or []:
+                gave[(law['object'], 'law')] = law['law']
+            for w in o.get('writes') or []:
+                for edit in w.get('edits') or []:
+                    for f in edit.get('fields') or []:
+                        if f['name'] in ('law', 'voice') and f['value'].get('label') == 'set':
+                            gave[(w['object'], '.' + f['name'])] = dict((g['name'], g['value']) for g in f['value']['payload']['fields'])['value']['value']
+    return gave
+
+
+def standing(host, opener, obj):
+    """(version, {slot: text}) of `obj` as it stands, or None when the world holds no such object."""
+    record = host.send({'op': 'world-object', 'principal': opener, 'object': obj}).get('record')
+    if not record:
+        return None
+    state = host.send({'op': 'world-view', 'principal': opener, 'object': obj}).get('state') or {}
+    fields = {f['name']: f['value'].get('value', '') for f in (state.get('fields') or [])}
+    return int(record['version']), {'law': record.get('law') or '', '.law': fields.get('law', ''), '.voice': fields.get('voice', '')}
+
+
+def refresh(host, opener, journals):
+    """Re-writes every slot genesis made to its text today, as the opener: an object's law by one amendment, a kind's
+    fields by one write. -> [{object, slot, status, reading?, reply?}] in genesis's order: `refreshed`, `current`
+    (genesis's text already), `left` (the reading says why), `absent`, or the host's status for a turn not admitted."""
+    gave, today, out = given(journals, opener), texts(opener), []
+    for obj in dict.fromkeys(o for o, _ in today):
+        now = standing(host, opener, obj)
+        if now is None:
+            out.append({'object': obj, 'status': 'absent'})
+            continue
+        version, slots = now
+        rows = {}
+        for slot in [s for o, s in today if o == obj]:
+            text = today[(obj, slot)]
+            rows[slot] = ({'status': 'current'} if slots[slot] == text else
+                          {'status': 'left', 'reading': 'its making is in no journal read'} if (obj, slot) not in gave else
+                          {'status': 'left', 'reading': 'changed since genesis gave it'} if gave[(obj, slot)] != slots[slot] else
+                          {'status': 'stale', 'text': text})
+        stale = {slot: r.pop('text') for slot, r in rows.items() if r['status'] == 'stale'}
+        if 'law' in stale:
+            reply = host.send({'op': 'world-amend', 'principal': opener, 'identity': f'refresh-{obj}-law-{version}', 'object': obj,
+                               'version': version, 'law': stale.pop('law')})
+            rows['law'] = done(reply)
+            version += reply.get('status') == 'admitted'
+        if stale:
+            reply = host.send({'op': 'world-propose', 'principal': opener, 'identity': f'refresh-{obj}-kind-{version}',
+                               'roots': [{'object': obj, 'version': version}],
+                               'writes': [{'object': obj, 'edits': [rec(**{slot[1:]: {'tag': 'variant', 'label': 'set', 'payload': rec(value=lab(text))}
+                                                                           for slot, text in stale.items()})]}]})
+            rows |= {slot: done(reply) for slot in stale}
+        out += [{'object': obj, 'slot': slot, **row} for slot, row in rows.items()]
+    return out
+
+
+def done(reply):
+    """A refresh turn's row: `refreshed`, or the host's status with its reply."""
+    return {'status': 'refreshed'} if reply.get('status') == 'admitted' else {'status': reply.get('status'), 'reply': reply}
+
+
+def opener_of(path):
+    """The world's opener, from its journal's first entry: the settings, or a carried genesis's settings."""
+    from transport import journal
+    first = journal.read(path, journal.links(path)[:1])[0]['outcome']
+    return (first.get('state') or {}).get('settings', first).get('opener') or OPENER
+
+
+def carried(obend, path):
+    """The refresh of the journal a carry just wrote at `path`, opened by the host binary `obend` as `python3 -m
+    transport carry` leaves it (serve not yet started on it), as the world's opener. -> refresh's rows."""
+    from types import SimpleNamespace
+    from transport.carry import Driver
+    driver = Driver(obend)
+    try:
+        opened = driver.send(op='world-open', path=path)
+        if opened.get('status') != 'opened':
+            raise RuntimeError(f'the carried journal does not open: {opened}')
+        return refresh(SimpleNamespace(send=lambda request: driver.send(**request)), opener_of(path), ancestry(path))
+    finally:
+        driver.close()
+
+
 def towns(root, own):
     """Every world journal under `root` that holds a world, other than `own` (the journal this genesis writes): a data
     directory's `*/state/*.journal`, an older layout's `*/*.journal`, a playtest run's `run-*/state/*.journal`, the
@@ -352,7 +488,28 @@ def wipe(host, opener, word):
     return turned('the owner\'s word admitted', said(host, opener, 'commonplace', 'admit', [('number', '1')], 'genesis-wipe-admit')['reply'])
 
 
+def refresh_main(argv):
+    ap = argparse.ArgumentParser(prog='genesis.py refresh')
+    ap.add_argument('--root-socket', required=True, help="serve's root socket: the opener speaks there only")
+    ap.add_argument('--world', default='town')
+    ap.add_argument('--state', default=os.environ.get('DELVETALK_STATE'), required=not os.environ.get('DELVETALK_STATE'),
+                    help="the state directory holding the world's journal (DELVETALK_STATE)")
+    a = ap.parse_args(argv)
+    path = os.path.join(a.state, f'{a.world}.journal')
+    host = HostClient(a.root_socket, a.world)
+    try:
+        rows = refresh(host, opener_of(path), ancestry(path))
+    finally:
+        host.close()
+    for row in rows:
+        print(json.dumps(row, sort_keys=True))
+    return 0 if all(r['status'] in ('refreshed', 'current', 'left') for r in rows) else 1
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ['refresh']:
+        return refresh_main(argv[1:])
     ap = argparse.ArgumentParser(prog='genesis.py')
     ap.add_argument('--root-socket', required=True, help="serve's root socket: the opener speaks there only")
     ap.add_argument('--world', default='town')

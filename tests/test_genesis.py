@@ -227,6 +227,63 @@ class Checked(unittest.TestCase):
         self.assertIn('No object called ghost', json.dumps(got))
 
 
+class Refresh(unittest.TestCase):
+    """`refresh` on a town genesis made with older texts (a record law with no `pending` want, a bell kind with no rules
+    or wants, no voices), as a carried town keeps them: the opener re-writes each slot to genesis's text today, each a
+    journaled turn; a slot another hand changed since is left and named; a second refresh finds every slot current."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        old_record = genesis.RECORD_LAW.rsplit('\nwant pending', 1)[0]
+        old_kinds = [(n, of, form, head, law.replace(genesis.RECORD_LAW, old_record).split('\nrule seven', 1)[0], body)
+                     for n, of, form, head, law, body in genesis.KINDS]
+        with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}):
+            cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
+        cls.send = cls.town.send
+        # Another hand since genesis: the anthology's law gains a clause, kind/door's law field loses its want.
+        version = int(cls.send(op='world-object', principal=genesis.OPENER, object='anthology')['record']['version'])
+        cls.amended = old_record + '\nlaw quiet "nothing after midnight": request.clock >= 0'
+        assert cls.send(op='world-amend', principal=genesis.OPENER, identity='hand-anthology', object='anthology', version=version,
+                        law=cls.amended)['status'] == 'admitted'
+        door = cls.send(op='world-object', principal=genesis.OPENER, object='kind/door')['record']['version']
+        cls.door = old_record
+        assert cls.send(op='world-propose', principal=genesis.OPENER, identity='hand-door', roots=[{'object': 'kind/door', 'version': int(door)}],
+                        writes=[{'object': 'kind/door', 'edits': [record(law={'tag': 'variant', 'label': 'set', 'payload': record(value=label(cls.door))})]}]
+                        )['status'] == 'admitted'
+        cls.rows = genesis.refresh(cls.town.client, genesis.OPENER, genesis.ancestry(cls.town.journal))
+
+    def status(self, rows, obj, slot):
+        [row] = [r for r in rows if (r['object'], r.get('slot')) == (obj, slot)]
+        return row['status'], row.get('reading')
+
+    def test_each_slot_genesis_made_is_its_text_today_and_another_hands_change_is_left_and_named(self):
+        for obj, slot in (('commonplace', 'law'), ('kind/record', '.law'), ('kind/bell', '.law'), ('kind/bell', '.voice'),
+                          ('kind/garden', '.law'), ('kind/porch', '.voice')):
+            with self.subTest(obj=obj, slot=slot):
+                self.assertEqual(self.status(self.rows, obj, slot), ('refreshed', None))
+        self.assertEqual(self.status(self.rows, 'kinds', 'law'), ('current', None))  # KIND_LAW did not change
+        self.assertEqual(self.status(self.rows, 'anthology', 'law'), ('left', 'changed since genesis gave it'))
+        self.assertEqual(self.status(self.rows, 'kind/door', '.law'), ('left', 'changed since genesis gave it'))
+        self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='commonplace')['record']['law'], genesis.RECORD_LAW)
+        self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='anthology')['record']['law'], self.amended)
+        kind = {f['name']: f['value']['value'] for f in self.send(op='world-view', principal=genesis.OPENER, object='kind/bell')['state']['fields']
+                if f['name'] in ('law', 'voice')}
+        self.assertEqual(kind, {'law': dict((k[0], k[4]) for k in genesis.KINDS)['bell'], 'voice': genesis.VOICES['bell']})
+        door = [f['value']['value'] for f in self.send(op='world-view', principal=genesis.OPENER, object='kind/door')['state']['fields'] if f['name'] == 'law']
+        self.assertEqual(door, [self.door])
+
+    def test_the_bell_genesis_placed_carries_the_kinds_rules_now_and_a_second_refresh_changes_nothing(self):
+        got = self.send(op='world-rules', principal=genesis.OPENER, object='bell/1')
+        self.assertEqual(sorted((r['name'], r['from']) for r in got['rows']), [('rang', 'kind/bell'), ('seven', 'kind/bell')], got)
+        height = self.send(op='world-status')['height']
+        again = genesis.refresh(self.town.client, genesis.OPENER, genesis.ancestry(self.town.journal))
+        self.assertEqual({r['status'] for r in again} - {'current'}, {'left'}, again)
+        self.assertEqual(sorted((r['object'], r['slot']) for r in again if r['status'] == 'left'), [('anthology', 'law'), ('kind/door', '.law')])
+        self.assertEqual(self.send(op='world-status')['height'], height)
+
+
 class Weather(unittest.TestCase):
     """docs/METAPHYSICS.md §7.4: the weather's rule on the tide rains, at every twenty-fourth tick while the garden is
     tended, on every bell the garden holds and writes the garden's weather line."""
