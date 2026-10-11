@@ -55,7 +55,8 @@ class Shapes(unittest.TestCase):
             (('card', '--object', 'garden', '--text-file', str(self.state.root / 'card.txt')), {'kind': 'card', 'object': 'garden', 'text': 'a card the hand wrote'}),
             (('card', '--object', 'garden'), {'kind': 'card', 'object': 'garden', 'text': None}),
             (('quiet', '--principal', 'did:plc:x', '--hours', '0'), {'kind': 'quiet', 'principal': 'did:plc:x', 'hours': 0}),
-            (('hide', '--object', 'garden'), {'kind': 'hide', 'object': 'garden'}), (('revoke', '--grant', 'g1'), {'kind': 'revoke', 'grant': 'g1'})]
+            (('hide', '--object', 'garden'), {'kind': 'hide', 'object': 'garden'}), (('revoke', '--grant', 'g1'), {'kind': 'revoke', 'grant': 'g1'}),
+            (('expire', '--principal', 'did:plc:x', '--scratch', 'junk'), {'kind': 'expire', 'principal': 'did:plc:x', 'scratch': 'junk'})]
         for flags, act in cases:
             self.assertEqual(self.root(*flags, '--reason', 'because'), {'op': 'world-root', 'principal': OPENER, 'reason': 'because', 'act': act}, flags)
         logged = [json.loads(l) for l in self.state.hand_log.read_text().splitlines()]
@@ -82,7 +83,6 @@ class Shapes(unittest.TestCase):
         for power in ('retire', 'unretire', 'hide', 'show'):
             self.assertEqual(turn(power, '--object', 'counter', '--reading', 'r'), ('counter', power, record(reading=label('r'))))
         self.assertEqual(turn('revoke', '--grant', 'g1', '--reading', 'not mine'), ('world', 'revoke', record(grant=label('g1'), reading=label('not mine'))))
-        self.assertEqual(turn('expire', '--scratch', 'junk', '--reading', 'r'), ('world', 'expire', record(scratch=label('junk'), reading=label('r'))))
         code, req = self.run_hand('settings', '--modelQuota', '500', '--interpretQuota', '24', '--reading', 'a quiet week')
         self.assertEqual(req, {'op': 'world-settings', 'principal': OPENER, 'reading': 'a quiet week', 'modelQuota': 500, 'interpretQuota': 24})
 
@@ -169,9 +169,27 @@ class Live(ServeCase):
         self.assertEqual(s['status'], 'settings', s)
         self.assertEqual(self.host.send({'op': 'world-status'})['modelQuota']['quota'], 700)
 
-    @unittest.expectedFailure
-    def test_expire_a_scratch(self):  # a request error until FEDERATION's scratch worlds are built (HOST-HANDOFF 5.126)
-        self.assertEqual(self.hand.act('mod', 'expire', {'scratch': 'junk', 'reading': 'full of junk'})['status'], 'moderated')
+    def test_the_worlds_page_lists_every_world_and_each_scratch_with_its_owner_and_root_expires_one(self):
+        self.assertEqual(self.host.send({'op': 'world-status', 'world': 'ring'})['status'], 'world')  # naming a world opens it
+        owner = 'did:plc:' + 's' * 24
+        self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': owner, 'handle': 'sorrel'})
+        self.assertEqual(self.host.send({'op': 'world-scratch', 'principal': owner, 'name': 'junk'})['status'], 'scratch')
+        w = self.hand.worlds()
+        self.assertEqual({r['name'] for r in w['worlds']} >= {'town', 'ring'}, True, w)
+        self.assertEqual(next(r for r in w['worlds'] if r['name'] == 'ring')['bridge'], 'delve delve.town')
+        (row,) = [r for r in w['scratches'] if r['name'] == 'junk']
+        self.assertEqual((row['world'], row['principal'], row['owner'], row['left'] + row['idle']), ('scratch/junk', owner, 'sorrel', 360), row)
+        self.assertEqual(self.hand.at('ring').st.world, 'ring')
+        with self.assertRaises(hand.HandError):
+            self.hand.at('moor')
+        page = hand.Hand(self.hand.st, self.root, 't').handle('GET', '/hand/', 'dt_hand=t')[1]
+        for text in ('/hand/ring/watch', 'scratch/junk', 'sorrel', 'action="/hand/town/root/expire"', f'value="{owner}"'):
+            self.assertIn(text, page)
+        code, _, headers = hand.Hand(self.hand.st, self.root, 't').handle('POST', '/hand/town/root/expire', 'dt_hand=t',
+                                                                           {'principal': owner, 'scratch': 'junk', 'reason': 'full of junk'})
+        self.assertEqual((code, dict(headers)['Location'].split('?')[0]), (303, '/hand/'))
+        self.assertEqual([r for r in self.hand.worlds()['scratches'] if r['name'] == 'junk'], [])
+        self.assertEqual(self.hand.tail(1)[0]['what'], 'root:expire')  # the hand's log is its only record
 
 
 if __name__ == '__main__':

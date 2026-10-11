@@ -21,13 +21,14 @@ ROOT = {
     'quiet': (('principal', 'text'), ('hours', 'int')),  # the powers without the law (ROOT 1.1); hours 0 clears a quiet
     'hide': (('object', 'text'),), 'show': (('object', 'text'),), 'retire': (('object', 'text'),), 'unretire': (('object', 'text'),),
     'revoke': (('grant', 'text'),),
+    'expire': (('principal', 'text'), ('scratch', 'text')),  # a scratch world is serve's: discarded now, in the hand's log only
 }
 MOD_SETTINGS = (('postQuota', 'int?'), ('interpretQuota', 'int?'), ('modelQuota', 'int?'))
 POWERS = {  # (the object the power is cast on: a field's value, or `world`), its fields
     'quiet': ('world', (('who', 'text'), ('hours', 'int'))), 'unquiet': ('world', (('who', 'text'),)),
     'retire': ('object', (('object', 'text'),)), 'unretire': ('object', (('object', 'text'),)),
     'hide': ('object', (('object', 'text'),)), 'show': ('object', (('object', 'text'),)),
-    'expire': ('world', (('scratch', 'text'),)), 'revoke': ('world', (('grant', 'text'),)),
+    'revoke': ('world', (('grant', 'text'),)),
 }
 
 

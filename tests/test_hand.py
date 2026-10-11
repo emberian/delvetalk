@@ -103,7 +103,7 @@ class Hand(HandCase):
         self.assertEqual(code, 302)
         self.assertIn('dt_hand=' + TOKEN, headers['Set-Cookie'])
         self.assertEqual(self.poster.calls, [])
-        self.assertEqual(self.get('/hand/')[2]['Location'], '/hand/town/')  # the hand opens on its own world
+        self.assertIn('The worlds', self.get('/hand/')[1])  # the hand opens on every world serve holds
         self.assertEqual(self.get('/hand/nowhere/')[0], 404)  # a world serve does not hold
 
     def test_post_calls_the_poster_once_with_the_edited_text_and_logs_it(self):

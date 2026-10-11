@@ -279,6 +279,44 @@ class Hand:
         return {'seeds': seeds, 'invitations': [dict(r, draft=r['minute'] in invited and {'id': invited[r['minute']][0], 'state': state(invited[r['minute']][1])})
                                                 for r in self.plan['invitations']]}
 
+    # ---- the worlds: every one serve holds, the scratch worlds with their owners
+
+    def worlds(self):
+        """Every world `serve` holds (height, objects, clock, replay edition, the snapshot it reopened from, its bridge, its
+        outbox waiting) and every scratch world (its owner, its size, the home clock of its last turn, when it expires)."""
+        info = self.host.send({'op': 'serve-status'})
+        rows = info.get('worlds') or []
+        home = next((w for w in rows if w.get('name') == self.st.world), rows[0] if rows else {})
+        out = []
+        for w in rows:
+            st = State(self.st.root, w['name'], self.st.config)
+            row = st.bridge()
+            out.append({**{k: w.get(k) for k in ('name', 'height', 'objects', 'clock', 'replay')}, 'resumed': (w.get('snapshot') or {}).get('resumed'),
+                        'bridge': row['transport'] + (f" #{row.get('channel')}" + (f" > {row['topic']}" if row.get('topic') else '') if row['transport'] == 'zulip' else f" {row.get('realm') or 'delve.town'}"),
+                        'waiting': len(st.unposted())})
+        scratches = []
+        for s in info.get('scratches') or []:
+            name = s['world'].removeprefix('scratch/')
+            seen = self.host.at(s['world']).send({'op': 'world-status', 'principal': s['principal']})
+            scratches.append({'world': s['world'], 'name': name, 'principal': s['principal'], 'owner': self.handle_of(s['principal']),
+                              'height': seen.get('height'), 'objects': seen.get('objects'), 'lastTurn': s['lastTurn'], 'expires': s['expires'],
+                              'idle': (home.get('clock') or 0) - s['lastTurn'], 'left': s['expires'] - (home.get('clock') or 0)})
+        return {'pid': info.get('pid'), 'replay': info.get('replay'), 'library': info.get('library'), 'home': home.get('name'),
+                'clock': home.get('clock'), 'worlds': out, 'scratches': scratches}
+
+    def worlds_page(self, query):
+        q, w = lambda t: e(str(t)), self.worlds()
+        rows = ''.join(H['world'].format(name=q(r['name']), height=q(r['height']), objects=q(r['objects']), clock=q(r['clock']), bridge=q(r['bridge']),
+                                         waiting=q(r['waiting']), replay=q(r['replay']), resumed=q(f", reopened at entry {r['resumed']}" if r['resumed'] else ''))
+                       for r in w['worlds']) or '<li class="quiet">— serve holds no world —</li>'
+        scratches = ''.join(H['scratch'].format(world=q(r['world']), owner=q(r['owner']), principal=q(r['principal']), name=q(r['name']),
+                                                height=q(r['height']), objects=q(r['objects']), idle=q(r['idle']), left=q(r['left']),
+                                                expires=q(r['expires']), base=f"/hand/{q(w['home'])}")
+                            for r in w['scratches']) or '<li class="quiet">— no scratch world is open —</li>'
+        codes = self.codes([f"{len(w['worlds'])} worlds", f"{len(w['scratches'])} scratch worlds", f"host pid {w['pid']}", f"replay edition {w['replay']}",
+                            f"{w['home']} clock {w['clock']}"])
+        return shell('the worlds', None, H['worlds'].format(note=self.note(query), codes=codes, worlds=rows, scratches=scratches, home=q(w['home'])))
+
     # ---- watching: the journal and the outbox together, newest first
 
     def handle_of(self, principal):
@@ -453,7 +491,7 @@ class Hand:
             return 302, '', [('Set-Cookie', f'{HAND_COOKIE}={self.token}; Path=/hand/; HttpOnly; SameSite=Strict; Max-Age=2592000'), ('Location', '/hand/')]
         world, _, rest = parts.path.rstrip('/')[len('/hand/'):].partition('/')
         if not world:
-            return 302, '', [('Location', f'/hand/{self.st.world}/')]
+            return (200, self.worlds_page(query), []) if method == 'GET' else (404, shell('not here', None, H['missing'].format(text='no form here')), [])
         try:
             h = self.at(world)
         except (HandError, SystemExit) as err:
@@ -467,8 +505,10 @@ class Hand:
             if done is not None:
                 note = ' '.join(str(v) for v in done.values() if isinstance(v, (str, list)))
                 back = {'root': '/root/?', 'mod': '/root/?', 'speak': '/speak?', 'invite': '/speak?'}.get(rest.partition('/')[0], '/?')
+                anchor = '#outbox' if back == '/?' else ''
+                back = '/hand/?' if rest == 'root/expire' else base + back  # a scratch world is expired from the worlds
                 more = {'spoken': done['drafted']} if rest == 'speak' and done.get('drafted') else {}
-                return 303, '', [('Location', base + back + urllib.parse.urlencode({'note': note, **more}) + ('#outbox' if back == '/?' else ''))]
+                return 303, '', [('Location', back + urllib.parse.urlencode({'note': note, **more}) + anchor)]
         page = {'': h.page, 'speak': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page}.get(rest) if method == 'GET' else None
         if page is None:
             return 404, shell('not here', world, H['missing'].format(text=e(f'no page {rest} in the hand'))), []
@@ -679,7 +719,7 @@ def parser(p, common):
                       ('--seed', dict(type=int, metavar='N', help="the plan's seed N")), ('--invitation', dict(type=int, metavar='MINUTE', help="draft the plan's invitation at T+MINUTE")),
                       ('--topic', dict(help='a Zulip world: the topic (default its one topic, else welcome)')),
                       ('--reply-to', dict(metavar='AT_URI', help='a Delve world: the thread to answer')), ('--intent', dict(help='casting twice under one intent is one turn'))],
-            'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))]}
+            'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': []}
     flags = lambda fields, why: [(f'--{n}', {}) for n, _ in fields] + [(f'--{n}-file', {}) for n, k in fields if k == 'json' or n == 'text'] + \
         [(f'--{why}', dict(required=True))]
     spec |= {v: flags(f, 'reading') for v, (_, f) in root.POWERS.items()} | {'settings': flags(root.MOD_SETTINGS, 'reading')}
@@ -710,7 +750,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'status': h.status, 'search': lambda: h.search(a.slug), 'spend': lambda: h.spend(a.month),
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
-                'speak': lambda: cli_speak(h, a), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit),
+                'speak': lambda: cli_speak(h, a), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
                 'root': lambda: cli_root(h, a), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)

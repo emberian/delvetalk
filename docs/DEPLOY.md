@@ -367,6 +367,9 @@ The same operations have a command-line face for the owner's assistant over ssh:
   `welcome`) or under `--reply-to` a Delve thread. `--seed N` is the plan's seed N (`plan`, config `plan`, default
   docs/PLAYTEST-2.md §2) under an intent of its own, so a second cast is the first receipt; `--invitation MINUTE` drafts
   §3's invitation at T+MINUTE for the bot, its spells quoted, once. The hand's own drafts wait for Post on Zulip too.
+- `worlds` (`/hand/`, where the hand opens): every world `serve` holds (height, cards, clock, its bridge, drafts waiting,
+  replay edition, the snapshot it reopened from) with its pages, and every scratch world with its owner's handle, its
+  size, the minutes since its last turn and when it expires by the home clock, each with root's `expire`.
 - `plan`: the plan's seeds, each with its cast, and its invitations, each with its draft.
 - `watch [--object O] [--limit N]` (`/hand/<world>/watch`, refreshing itself every five seconds, HOLD STILL to stop):
   the journal, or one object's `world-history`, and the outbox together, newest first; each entry with its
@@ -382,16 +385,16 @@ The same operations have a command-line face for the owner's assistant over ssh:
 Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/<world>/root/` (a red
 rule across the top, a reason or reading required on every form, served on the hand's listener only, linked from every page):
 
-- `quiet --who P --hours N`, `unquiet --who P`, `retire|unretire|hide|show --object O`, `revoke --grant G`, `expire
-  --scratch S` (refused until scratch worlds exist), each `--reading R`: the power as a turn by the opener on
-  `world` or the card, journaled and receipted. `settings [--postQuota N] [--interpretQuota N] [--modelQuota N]
+- `quiet --who P --hours N`, `unquiet --who P`, `retire|unretire|hide|show --object O`, `revoke --grant G`, each
+  `--reading R`: the power as a turn by the opener on `world` or the card, journaled and receipted. `settings [--postQuota N] [--interpretQuota N] [--modelQuota N]
   --reading R`: `world-settings`. `modlog [--object O] [--tail N]`: the object's `world-history`, or the journal's
   newest root, moderated and opener entries. `find TEXT`: observed handles, object ids by prefix, a receipt by slug.
 - `root dump O`: the object as the opener reads it (view, record, sources; the page's editor saves a `set` for each
   changed field). `root set --object O --field F --value JSON|--value-file F`, `root delete --object O`, `root as
   --principal P --object O --method M --argument JSON --intent I`, `root settings [--clock N] [--postQuota N]
   [--interpretQuota N] [--modelQuota N]`, `root library --dir D`, `root ignore|unignore --height N`, `root card
-  --object O [--text-file F]` (no text clears), `root quiet|hide|show|retire|unretire|revoke ...`, each `--reason R`:
+  --object O [--text-file F]` (no text clears), `root quiet|hide|show|retire|unretire|revoke ...`, `root expire --principal
+  P --scratch S` (a scratch world discarded now, serve's act, in the hand's log only), each `--reason R`:
   one `world-root`, an entry marked `root` with its reason, public. `root entries [--after N] [--object O]
   [--principal P] [--limit N]` pages the journal raw; `root edit N [--out F]` saves entry N and prints the offline
   `root-edit rewrite`, since an entry is never edited in place.

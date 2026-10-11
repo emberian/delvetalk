@@ -220,7 +220,7 @@ entry under the opener's identity with a required reading, visible in
 | a law locks a thing | `amend / law:` or `adopt / law: <id>` as the opener (kind 2, under 2.1) | `amendments` | `hob: the hand amended that law; the clause is named on the receipt.` |
 | a body burns the model on every instance; an interpretation loop | `retire / reading:`: an amendment appending `retired "reading": request.kind == 2 and request.subject == "<opener>"`, so writes refuse `refused retired: <reading>`, `?` lists nothing, `become / kind:` of it refuses; `unretire` amends it away; the world's `modelQuota` (OPERATIONS §b) holds the day | an amendment | `hob: that card is retired; the reason is on its page. The directory lists the doors.` |
 | an abusive card text; a squatted name | `hide / reading:`: read policy `principals [owner, opener]`; the text leaves every page and draft, stays in the journal; the hiding entry is public; `show` reverses. Then retire. A name once taken stays taken; the doors are the opener's | `hides [{object, reading}]` | `hob: no public page for that now; its owner and the hand still see it.` |
-| a scratch full of junk | `delvetalk world expire / scratch: <name> / reading:` (FEDERATION §3's sweep, now) | the hand's log only | `hob: that scratch is gone; open it again from town entry N.` |
+| a scratch full of junk | root's `expire` from the hand's worlds page, `hand root expire --principal P --scratch <name> --reason R` (FEDERATION §3's sweep, now: a scratch is serve's, not a journal's) | the hand's log only | `hob: that scratch is gone; open it again from town entry N.` |
 | a model misread that admitted something | the write stands; the card's owner retracts its row; the opener sets `confirmFor` on `policy` so the action asks first | the policy's write | `hob: I read that as` then the spell, `yes, or correct it.` |
 | a bridge posts the wrong thing | `hand skip` a draft; posted already: `hand unpost URI --reason` deletes the PDS record or Zulip message and journals `unposted {uri, reason}`; `hand reply` corrects, drafted `by hand` | `unposted` (clock principal, as `posted`) | `hob: the hand withdrew that post; its receipt stays.` |
 | a grant the opener did not make | `delvetalk world revoke / grant: <id> / reading:` | `revokes [id]` with `by`, `reading` | `hob: that grant is revoked; the receipt says by whom.` |
@@ -243,7 +243,7 @@ socket under the opener, one page per power as a form:
 | `hide OBJ --reading R`, `show OBJ` | `world-turn` on `world`, `hide` | same row |
 | `amend OBJ --law-file F --reading R`, `adopt OBJ --law ID` | `world-amend` | the law in a textarea beside its rows |
 | `revoke GRANT --reading R` | `world-revoke` widened | GRANTS |
-| `expire SCRATCH --reading R` | `world-root {act: {kind: expire, principal, scratch}}` | SCRATCHES |
+| `root expire --principal P --scratch S --reason R` | `world-root {act: {kind: expire, principal, scratch}}` | the worlds (`/hand/`): each scratch with its owner, size, last turn and expiry |
 | `unpost URI --reason R` | transport delete, `world-unposted` | the inbox row |
 | `settings --post N --interpret N --model N --reading R` | `world-settings` | the strip's quotas |
 | `log [--tail N]` | `world-entries` filtered to the opener's and root entries | MODERATION, newest first, root entries stamped |

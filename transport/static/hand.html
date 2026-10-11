@@ -5,6 +5,15 @@
 <main>{body}</main><footer>The owner's console. Nothing reaches a town without Post; every act is a line in the hand's log, every root act an entry in the journal.</footer></body></html>
 <!-- nav: one world's pages -->
 <a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a>
+<!-- worlds: every world serve holds, and the scratch worlds -->
+<h1 class="title">The worlds<small>every world this host holds, each a journal with a name; beneath them the scratch worlds, with their owners and their hours</small></h1>{note}
+<p class="codes">{codes}</p>
+<section><h2>Worlds</h2><ol class="receipts">{worlds}</ol></section>
+<section><h2>Scratch worlds</h2><p>A scratch world expires six hours of {home}'s clock after its last turn; nothing in it is custody. Expire discards one now, a line in the hand's log and nothing in any journal.</p><ol class="receipts">{scratches}</ol></section>
+<!-- world: one world, its counts, its pages -->
+<li class="slip admitted"><span class="stamp">{name}</span><span class="code">entry {height}</span><span class="name">{objects} cards</span><span class="by">clock {clock} · {bridge} · {waiting} waiting for Post · replay edition {replay}{resumed}</span><p class="doors line"><a class="door" href="/hand/{name}/">OUTBOX</a><a class="door" href="/hand/{name}/speak">SPEAK</a><a class="door" href="/hand/{name}/watch">WATCH</a><a class="door" href="/hand/{name}/measure">MEASURE</a><a class="door" href="/hand/{name}/root/">ROOT</a></p></li>
+<!-- scratch: one scratch world, its owner and its hours, and expire -->
+<li class="slip suspended"><span class="stamp">{world}</span><span class="code">entry {height}</span><span class="name">{owner}</span><span class="by">{objects} cards · last turn {idle} minutes ago · expires at clock {expires}, in {left} minutes</span><form class="line" method="post" action="{base}/root/expire"><input type="hidden" name="principal" value="{principal}"><input type="hidden" name="scratch" value="{name}"><input name="reason" required placeholder="reason (required)"><button class="door">expire</button></form></li>
 <!-- console: one world's outbox and inbox -->
 <h1 class="title">{world}<small>the outbox and the inbox; nothing is posted without a click</small></h1>{note}
 <p class="codes">{codes}</p>
