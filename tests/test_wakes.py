@@ -204,8 +204,8 @@ class Wakes(Chain):
         stranger = self.turn(wake, "receive", heard("delvetalk %s keyword\nterm: x" % wake), principal=OTHER)
         self.assertEqual(self.label_of(stranger), "refused")
         card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        self.assertIn("#1 on the word moth: note me\n#3 on the word gate: note me\n#4 on the word lantern: note me\n", card)
-        self.assertTrue(card.startswith("WAKE of inkling (yours): 3 triggers. Add: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; rows, writes, grows, turns and remind are on ?. Remove: delvetalk wake unwatch / id: <number>.\n"), card)
+        self.assertIn("#1, on the word moth: notes the avatar\n#3, on the word gate: notes the avatar\n#4, on the word lantern: notes the avatar\n", card)
+        self.assertTrue(card.startswith("WAKE of inkling (yours): 3 triggers.\n  delvetalk wake rows / object: <a card> / field: lines / where: / count: 7\n» at every seventh new line your avatar is noted; mention, keyword, writes, grows, turns and remind are on ?\n  delvetalk wake unwatch / id: <number>\n» that trigger is gone\n"), card)
         # A stranger's card counts the triggers and shows none of them.
         seen = self.turn(wake, "receive", heard(""), principal=OTHER)["offers"][0]["text"]
         self.assertTrue(seen.startswith("WAKE of inkling: 3 triggers.\n"), seen)
@@ -353,7 +353,7 @@ class Wakes(Chain):
             self.deliver_all()
             self.assertEqual(ticks(), expected, who)
         card = self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"]
-        self.assertIn("on 1 new rows of bell/1.lines where author = %s: call tide tick" % OTHER, card)
+        self.assertIn("on 1 new rows of bell/1's lines where author = %s: calls tide tick" % OTHER, card)
 
 
     def test_a_rows_rule_counts_across_deliveries_and_fires_at_its_count_then_at_every_count_more(self):
@@ -373,9 +373,9 @@ class Wakes(Chain):
             r = self.turn("bell/1", "rain", record(text=label("a drizzle")), principal=OWNER if rains % 2 else OTHER, identity="rain%d" % rains)
             self.assertEqual(r["status"], "admitted", r)
             self.deliver_all()
-            self.assertIn("#1 on %s new rows of bell/1.lines: note me\n" % shown, progress(), rains)
+            self.assertIn("#1, on %s new rows of bell/1's lines: notes the avatar\n" % shown, progress(), rains)
             self.assertEqual(len(self.inbox(OWNER)), notes, rains)
-        self.assertEqual(self.inbox(OWNER)[0], (OWNER, "bell/1.lines: 3 new rows matched"))
+        self.assertEqual(self.inbox(OWNER)[0], (OWNER, "bell/1's lines: 3 new rows"))
 
     def test_every_spell_that_sets_or_ends_a_trigger_answers_a_line(self):
         town_kinds(self.host.send, names=("bell",))

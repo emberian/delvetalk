@@ -14,8 +14,8 @@ import ./Scenes.obend as Scenes
 # The bell's body, over RECORD (docs/CATALOGUE.md §5): a bell is a record whose lines are rains,
 # 768 of them at 1 to 200 characters (within the host's 256 KiB), and whose one mark is `rung`.
 # `kind/bell` makes a record with the fields colour and seed and grafts this on it. The seventh
-# rain (SEEDING §4) rests on a rain's number, `ring` and `strike`: a watch on `lines` whose row
-# has n 7 calls `ring`; `strike` awaits the answer to the post that planted it and rings if
+# rain (SEEDING §4) rests on a rain's number, `ring` and `strike`: the planter's wake, asked as the
+# kind finishes the bell (`made`), watches `lines` for the row numbered 7 and calls `ring`; `strike` awaits the answer to the post that planted it and rings if
 # that turn was admitted. A rain tends the bell; untended for `quietAfter()` minutes it goes quiet
 # and takes `tend` alone, as kind/bell's law says (`alive`), and its card says since which entry.
 type State = Super.State

@@ -82,4 +82,4 @@ def rained(thing: Plans.Reference, rest: Lists.List<Plans.Reference>, tick: Nat,
     case delivery(_): raining(rest, tick, sent + 1n, context)
     case _: raining(rest, tick, sent, context)
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
-  Document.text("WEATHER over {garden(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: at each tick of {tide(state)} it rains on every bell {garden(state)} holds. Ticks it rained on:\n")
+  Document.text("WEATHER over {garden(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: at each tick of {tide(state)} it rains on every bell {garden(state)} holds{if Relations.count(state.lines) == 0n then \"; no tick has rained yet.\" else \". The ticks it rained on:\"}\n")

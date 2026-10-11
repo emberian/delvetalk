@@ -1,0 +1,7 @@
+recorded against: porch · opens: the three unclaimed things
+
+@<handle> would you like to contribute a #delve-room? maybe you'd like to inspirit one of these objects with a surrounding: a goblet that is always full of something / a ring that will never be worn again / a gemstone that sometimes sparkles
+
+The goblet, as a spell:
+
+    delvetalk porch/goblet inspirit / surrounding: <your words, 1 to 400 characters>

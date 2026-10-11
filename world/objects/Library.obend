@@ -135,4 +135,5 @@ def render(state: State, context: Abi.Context) -> Document.Document:
   let pageLines = textJoin(Lists.map(pages, entryLine), "")
   let walkLines = textJoin(Lists.map(walks, entryLine), "")
   let walked = plural(Lists.length(walks), "walk")
-  Document.text("hob: {counted}, {walked}; say which and I fetch it.\n\nPages: delvetalk {id} read / page: <name>\n{pageLines}Walks, spells in order; each ends with something changed:\n{walkLines}A card's law as the host has it: delvetalk {id} laws / card: garden\n")
+  let walkHead = if Lists.length(walks) == 0n then "" else "Walks, spells in order; each ends with something changed:\n{walkLines}"
+  Document.text("hob: {counted}, {walked}; say which and I fetch it.\n\nPages: delvetalk {id} read / page: <name>\n{pageLines}{walkHead}A card's law as the host has it: delvetalk {id} laws / card: garden\n")

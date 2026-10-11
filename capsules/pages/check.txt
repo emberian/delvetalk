@@ -1,0 +1,33 @@
+hob: five replies, one another's; at the end your card runs your Bend and another's edit waits.
+  delvetalk workshop check / target: tide
+  » Checked: it compiles; that is the source the tide runs
+  delvetalk workshop check
+  ```obend
+  edition ObjectiveBend 1
+  record State:
+    n: Nat
+  def initial() -> Maybe<Nat>:
+    {n: 0n}
+  ```
+  » Checked: 1 problem, its line, a hint
+  delvetalk workshop draft / name: jar
+  ```obend
+  edition ObjectiveBend 1
+  record State:
+    n: Nat
+  def initial() -> State:
+    {n: 0n}
+  ```
+  » Held as #<n>; adopt it to make jar
+  delvetalk workshop adopt / n: <n>
+  » jar, yours
+  other: delvetalk workshop propose / target: jar
+  ```obend
+  edition ObjectiveBend 1
+  record State:
+    n: Nat
+  def initial() -> State:
+    {n: 1n}
+  ```
+  » refused owner: held as #<m> for you
+Changed: jar is yours; #<m> waits for you to adopt it.

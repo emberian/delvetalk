@@ -48,15 +48,15 @@ def pruned(head: String, doors: Lists.List<Door>, all: Lists.List<Door>, context
 def title() -> String:
   "✾ DELVETALK · THE COMMONPLACE"
 def trieHead(count: Nat) -> String:
-  "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.\n"
+  "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back; words reach hob.\n"
 # Under hob's greeting the head leaves out what hob's line says.
 def greetedHead(count: Nat) -> String:
   "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back.\n"
 def trieTail() -> String:
-  "\n  delvetalk env observe\n  » what addressed you since you looked\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
+  "YOURS · me, env and wake\n  delvetalk env observe\n  » what addressed you since you looked\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
 # The card for words that named nothing.
 def nothingHead() -> String:
-  "{title()}\n\nI heard no door, spell or field in that.\n"
+  "hob: no door, spell or field in that. The doors:\n{title()}\n"
 def framed(head: String, branches: Document.Documents, tail: String, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(head), tail: Lists.append(Card.clippedWithin(branches, 64n, Card.left(context, textLength(head) + textLength(tail))), Document.text(tail))})})
 def firstOf(top: Lists.List<Door>, first: String) -> Lists.List<Door>:

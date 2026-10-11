@@ -20,6 +20,7 @@ record Macro:
 # the answer.
 record State:
   owner: String
+  ownerHandle: String
   model: String
   system: String
   lexicon: Lists.List<Term>

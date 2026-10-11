@@ -183,7 +183,7 @@ def without(entry, *keys):
 
 
 def welcome():
-    w = (ROOT / 'docs' / 'previews' / 'gsb-welcome-v4.txt').read_text()
+    w = (ROOT / 'docs' / 'previews' / 'gsb-welcome.txt').read_text()
     return w, w.split('--- (the clipped')[0]
 
 
@@ -210,8 +210,8 @@ def town_cards(cap):
 def texts(cap):
     """[(label, text)]: the set docs/TOKENS.md measures."""
     whole, clipped = welcome()
-    out = [('welcome v4 (whole)', whole), ('welcome v4 (before clip)', clipped),
-           ('root menu v2', (ROOT / 'docs' / 'previews' / 'gsb-root-menu-v2.txt').read_text())]
+    out = [('welcome (whole)', whole), ('welcome (before clip)', clipped),
+           ('the commonplace', (ROOT / 'docs' / 'previews' / 'commonplace-card.txt').read_text())]
     out += [(f'capsule {p.stem}', p.read_text()) for p in sorted((ROOT / 'capsules').glob('*.txt'))]
     out += [(f'card {k}', v) for k, v in town_cards(cap).items()]
     plant = pick(cap, 'A planter', 'POST', r'.*/garden/receive', 'plant-1')

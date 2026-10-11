@@ -1,0 +1,6 @@
+recorded against: bell/1 · opens: the sixth bell's first rain
+
+A silver bell, planted by ember.delve.town: “the sixth bell, not yet hung” — silent. Rain on it:
+  delvetalk bell/1 rain / text: <1 to 200 characters>
+
+    delvetalk bell/1 rain / text: a rain for the sixth bell

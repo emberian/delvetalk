@@ -39,11 +39,9 @@ DOORS = [
     ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
     ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('GARDEN', 'garden', [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
-    ('ROOMS', 'rooms', [('delvetalk rooms enter', ''),
-                        ('delvetalk rooms choose / choice: Open', 'the passage moves; a ```spween block here makes your own')]),
-    ('TIDE', 'tide', [('delvetalk tide subscribe / every: 3 / note: first light', ''),
-                      ('delvetalk tide tick', 'too soon: refused tooSoon; a due tick notes your avatar')]),
-    ('PORCH', 'porch', [('delvetalk porch enter', ''), ('delvetalk porch say / line: the bell kept both of us', 'heard by everyone here')]),
+    ('ROOMS', 'rooms', [('delvetalk rooms enter', 'the gate and its choices; a ```spween block here makes your own')]),
+    ('TIDE', 'tide', [('delvetalk tide tick', "tick N, the weather's rain; too soon: refused tooSoon")]),
+    ('PORCH', 'porch', [('delvetalk porch enter', 'three unclaimed things lie here; inspirit one')]),
     ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
 ]
 # A link door: no object (the empty reference); its description is its line.
@@ -95,14 +93,19 @@ EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\n
             ('how many have been planted?', 'card')]  # a question the card already answers (docs/FLEX.md §3)
 
 
-# The library's stacks (docs/LIBRARY.md): (name, kind, title); each body is capsules/pages/<name>.txt, so the page in
-# the world and the file in the tree are one text.
+# The library's stacks (docs/LIBRARY.md): six pages and five walks, (name, kind, title); each body is
+# capsules/pages/<name>.txt, so the page in the world and the file in the tree are one text.
 PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a badSpell hint'),
          ('laws', 'page', 'one line a clause, its reading; who may; transient and binding refusals'),
          ('object', 'page', 'a card in Bend, one whole example'),
          ('relations', 'page', "rows in a card's state: keys, insert, upsert, retract, order"),
          ('protocol', 'page', 'what a card asks the world: view, call, send, create, subscribe'),
-         ('world', 'page', "the doors, every card's spells, the classes of refusal")]
+         ('world', 'page', "the doors, every card's spells, the classes of refusal"),
+         ('plant', 'walk', 'plant a bell, rain on it, hear it ring'),
+         ('check', 'walk', 'check Bend, draft a thing, adopt it, hold another\'s proposal'),
+         ('enter', 'walk', 'enter the Moss Gate, choose, say, carve a room of your own'),
+         ('tide', 'walk', 'subscribe, tick, be noted by a due tick'),
+         ('kind', 'walk', 'make a kind under your law; another makes one and meets it')]
 
 
 def page_body(name):
@@ -190,7 +193,7 @@ def body_of(name):
 
 def seeds(opener):
     """(object, package, partial seed), in the order GENESIS.md creates them."""
-    return [('policy', 'Policy', rec(owner=lab(opener), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
+    return [('policy', 'Policy', rec(owner=lab(opener), ownerHandle=lab(HANDLE), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
                                      lexicon=lst(*[rec(word=lab(w), meaning=lab(m)) for w, m in LEXICON]),
                                      examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body

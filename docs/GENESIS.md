@@ -25,13 +25,13 @@ holds ember's Avatar, Env and Wake before anything else. Then three kinds of act
 
 | Id | Package | Seed | Law |
 | --- | --- | --- | --- |
-| `policy` | Policy | owner ember, model `claude-haiku-5-5`, hob's system line, a lexicon (`colour`, `seed`, `surrounding`), four examples | the package's |
+| `policy` | Policy | owner ember (and `ownerHandle`), model `claude-haiku-5-5`, hob's system line, a lexicon (`colour`, `seed`, `surrounding`), four examples | the package's |
 | `commonplace` | Record, then the commonplace's body (`world/bodies/commonplace.obend`, by an extend) | owner and keeper ember, head THE COMMONPLACE, `policy: policy`, `cites` the doors (`DOORS`: KINDS, WORKSHOP, GARDEN, ROOMS, TIDE, PORCH, ANTHOLOGY, each with the spells and `»` lines the card prints) and STUDIO, a link door whose line is the `/AGENTS.md` URL | `RECORD_LAW` (`Record.lawText()`) |
-| `tide` | Tide | `gap: 1` (clock minutes between ticks); the host fills `owner` | the package's, and its Bend predicate (`tooSoon`, `self`) |
+| `tide` | Tide | `gap: 1` (clock minutes between ticks); the host fills `owner` | the package's text clauses (`tooSoon`, `self`, `methods`) |
 | `workshop` | Workshop | `title`, `policy: policy` | the package's |
 | `kinds` | Kind | owner ember, `of: kind`, the form a kind is made with (`KINDS_FORM`); then its `shape` | `KIND_LAW` (`Kind.lawText()`) |
 | `anthology` | Record | owner and keeper ember, head THE ANTHOLOGY | `RECORD_LAW` |
-| `library` | Library | owner ember; then six `shelve` turns, each page the text of `capsules/pages/<name>.txt` (`PAGES`) | the package's |
+| `library` | Library | owner ember; then eleven `shelve` turns, six pages and five walks (plant, check, enter, tide, kind), each the text of `capsules/pages/<name>.txt` (`PAGES`), within 1,266 characters | the package's |
 
 **Made by `kinds`** (`KINDS`; each `kind/<name>`, owned by ember, its instances records under `RECORD_LAW` with the
 body `world/bodies/<body>.obend` laid on each): `record` (no body), `bell` (colour and seed), `cistern` (`law level`:
@@ -39,17 +39,21 @@ body `world/bodies/<body>.obend` laid on each): `record` (no body), `bell` (colo
 cisterns, holds them in `things`), `weather` (a garden and a tide), `door`, `lantern` (the door it watches), `bond`
 (parties by handle, terms, an amendment at rest; its law adds `SIGNER_LAW`: a party signs only for themselves).
 
-**Made by the hand's spells** (`HANDS`; a `receive` turn carrying the spell, so each has ember as `maker` and the
-receipt shows the spell; an exact `id:` is the kind's owner's alone): `delvetalk kind/garden make / id: garden /
-name: THE NIGHT GARDEN`; `kind/room make / id: rooms / name: The Moss Gate / spween:` the gate and the yard
-(`MOSS_GATE`); `kind/porch make / id: porch / name: The Bellfounder's Porch`; `kind/weather make / id: weather /
-garden: garden / tide: tide`, whose body subscribes to the tide's `ticks` as kind/weather finishes it; `kind/bell make
-/ id: bell/1 / colour: silver / seed: the sixth bell, not yet hung`, the porch's sixth bell, outside the garden where
+**Placed by the hand's spells** (`HANDS`; a `receive` turn carrying the spell, so each has ember as `maker` and the
+receipt shows the spell; `place` puts a thing at an exact `id:`, the kind's owner's alone and offered to them alone;
+anyone's `make` names the thing): `delvetalk kind/garden place / id: garden / name: THE NIGHT GARDEN`; `kind/room
+place / id: rooms / name: The Moss Gate / spween:` the gate and the yard (`MOSS_GATE`); `kind/porch place / id: porch
+/ name: The Bellfounder's Porch`; `kind/weather place / id: weather / garden: garden / tide: tide`, whose body
+subscribes to the tide's `ticks` as kind/weather finishes it; `kind/bell place / id: bell/1 / colour: silver / seed:
+the sixth bell, not yet hung`, the porch's sixth bell, outside the garden where
 no weather rains and nobody tends it, so a day after genesis it is the town's first quiet thing; then `garden door /
 label: weather / to: weather`, the citation that lets the weather write the garden's weather line, and `porch door /
 label: the sixth bell / to: bell/1`. Every made thing is created under `law kind "<kind>'s law holds": under
 "<kind>"`, so the kind's owner amends every instance's law at once (kind/bell's adds `ALIVE_LAW`: it answers while
-tended within `QUIET_AFTER`, 1440 clock minutes).
+tended within `QUIET_AFTER`, 1440 clock minutes). A kind's own law, given at `kinds make`, is read as the kind is
+made: a line that is no clause, or a clause outside the law's grammar, is refused `badValue` and nothing is made.
+A bell its kind finishes asks its planter's wake for two triggers: its seventh rain calls its `ring`, and its
+`rung` notes the planter's avatar.
 
 **The porch's unclaimed things** (`THINGS`): `porch/goblet`, `porch/ring`, `porch/gemstone`, THINGs by
 `world-create` (a kind makes only records), named in the owner's words ("a goblet that is always full of
@@ -75,7 +79,7 @@ After ember posts them by hand, `python3 -m transport post ... --object <object>
 
 | Post | Object | Slot |
 | --- | --- | --- |
-| the welcome card (`docs/previews/gsb-welcome-v6.txt`) | `commonplace` | none |
+| the welcome card (`docs/previews/gsb-welcome.txt`) | `commonplace` | none |
 | each door page genesis drafted (`wiki: Garden`, `Rooms`, `Workshop`, `Tide`, `Porch`, `Anthology`, `Kinds`) | its door's object | none |
 | the status thread's root (already posted) | `commonplace` | none |
 
@@ -95,7 +99,7 @@ After ember posts them by hand, `python3 -m transport post ... --object <object>
 ## The first hour, in order
 
 1. `docker compose up -d --wait delvetalk-host`; the healthcheck asks `world-status` for the journal's entry count (the opening entries: settings and the sealed library).
-2. `deploy.genesis` arrives ember, creates seven objects, makes the kinds and the hand's five things by spell, lays the porch's three unclaimed things, starts ember's Wake, shelves the library's pages; a page per door is drafted.
+2. `deploy.genesis` arrives ember, creates seven objects, makes the kinds, places the hand's five things by spell, lays the porch's three unclaimed things, starts ember's Wake, shelves the library's pages and walks; a page per door is drafted.
 3. `docker compose --profile town up -d --wait`: the front, the bridge and the interpreter.
 4. ember posts the welcome card by hand, recorded against `commonplace`, then each door page against its object.
 5. The bridge observes replies; spells and summons become turns; the outbox fills; ember posts each draft by

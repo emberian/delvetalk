@@ -146,7 +146,7 @@ The Python around one `serve`, which carries bytes and credentials and decides n
 - `test_spend` (§6): `hand spend` totals a month of model calls and the grant left.
 - `test_theme` (site): Both palettes pass WCAG AA, the site carries the front's palette, a receipt's fate is a word and an icon.
 - `test_transport` (§7): Observation, identity and posting: posts classified, observed once, bounded; a handle claimed by a posted word; replies threaded and gated behind the posting flag.
-- `test_zulip` (§7): The Zulip playtest transport against a fake Zulip and a real `serve`: topics route as threads, no hourly cap applies (delve.town's quota is not Zulip's), the welcome (`zulip-welcome-v3.txt`) is recorded.
+- `test_zulip` (§7): The Zulip playtest transport against a fake Zulip and a real `serve`: topics route as threads, no hourly cap applies (delve.town's quota is not Zulip's), the welcome (`zulip-welcome.txt`) is recorded.
 
 ## Rehearsal
 

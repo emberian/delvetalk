@@ -226,9 +226,8 @@ class Hub(test_chain.Chain):
         self.assertEqual(card, (
             "hob: no door takes that as said. The nearest:\n"
             "TIDE\n"
-            "  delvetalk tide subscribe / every: 3 / note: first light\n"
             "  delvetalk tide tick\n"
-            "  » too soon: refused tooSoon; a due tick notes your avatar\n"))
+            "  » tick N, the weather's rain; too soon: refused tooSoon\n"))
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # A reply naming the garden's planting and the anthology gets those two branches.
         self.assertEqual(self.say("I would plant a line in the anthology", KIMI, uri="at://x/post/2")["status"], "suspended")
@@ -281,7 +280,7 @@ class Hub(test_chain.Chain):
 
     def test_a_direct_replys_none_is_one_pruned_menu_an_hour_per_speaker(self):
         """The play page: words typed to the commonplace itself (no post). Every such reply reaches
-        hob (one attempt); its none gets the menu under "I heard no door, spell or field in that."
+        hob (one attempt); its none gets the menu under hob's "no door, spell or field in that."
         at most once an hour per speaker, then quiet. The first reply's menu is the greeting."""
         self.policy()
         self.commonplace("policy")
@@ -299,7 +298,7 @@ class Hub(test_chain.Chain):
         later = self.interpret("none")
         self.assertEqual(later["result"]["label"], "usage", later)
         card = later["receipt"]["offers"][0]["text"]
-        self.assertTrue(card.startswith("✾ DELVETALK · THE COMMONPLACE\n\nI heard no door, spell or field in that.\n\nKINDS\n"), card)
+        self.assertTrue(card.startswith("hob: no door, spell or field in that. The doors:\n✾ DELVETALK · THE COMMONPLACE\n\nKINDS\n"), card)
         self.assertIn("\nANTHOLOGY\n", card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 

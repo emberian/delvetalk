@@ -362,16 +362,19 @@ def noteLine(item: Note) -> Document.Document:
 # Notes newest first; eight of each list, then a count; one budget across the card (Card.limit(context)):
 # each list gets what the ones before it leave.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let head = Document.text("{state.handle}, at {state.at.object}.\n")
+  let head = Document.text("{state.handle}'s avatar, {whereLine(state, context)}.\n")
   let held = Card.clippedWithin(Lists.map(state.holding, holdingLine), 8n, Card.left(context, Document.size(head) + 200n))
   let mail = mailFor(state, context, Document.size(head) + sized(held) + 100n)
   let notes = inboxFor(state, context, Document.size(head) + sized(held) + sized(mail))
   Document.Document.sequence({items: Lists.concat(Lists.concat(Document.Documents.cons({head: head, tail: Document.Documents.nil()}), held), Lists.concat(mail, notes))})
+# Where it is: what it last entered; nowhere yet, its principal is shown the spell that goes.
+def whereLine(state: State, context: Abi.Context) -> String:
+  if Plans.isNobody(state.at) == false then "in {state.at.object}" else if Card.reads(context.object, context) then "nowhere yet; go: delvetalk me go / to: <a room>" else "nowhere yet"
 def sized(lines: Document.Documents) -> Nat:
   Document.size(Document.Document.sequence({items: lines}))
 # What it sent is counted for everyone; what it follows is its principal's to see.
 def mailFor(state: State, context: Abi.Context, used: Nat) -> Document.Documents:
-  Document.Documents.cons({head: Document.text("{natText(Relations.count(state.outbox))} sent, follows {natText(Lists.length(state.following))}\n"), tail: if Card.reads(context.object, context) then Card.clippedWithin(Lists.map(state.following, fn(f: Followed) -> Document.Document: followLine(f, context)), 8n, Card.left(context, used)) else Document.Documents.nil()})
+  Document.Documents.cons({head: Document.text("{natText(Relations.count(state.outbox))} sent; follows {natText(Lists.length(state.following))}.\n"), tail: if Card.reads(context.object, context) then Card.clippedWithin(Lists.map(state.following, fn(f: Followed) -> Document.Document: followLine(f, context)), 8n, Card.left(context, used)) else Document.Documents.nil()})
 def followLine(f: Followed, context: Abi.Context) -> Document.Document:
   let watched = if f.field == "outbox" then "" else " ({f.field})"
   Document.text("Follows: {Card.name(f.object.object, context)}{watched}\n")

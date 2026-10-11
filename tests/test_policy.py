@@ -26,7 +26,7 @@ import ./List.obend as Lists
 import ./Form.obend as Form
 import ./Policy.obend as Policy
 def sample() -> Policy.State:
-  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}
+  {owner: "ember", ownerHandle: "", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}
 # The garden's plant form (world/bodies/garden.obend), written out.
 def plantForm(context: Abi.Context) -> Form.Form:
   {card: context.object, action: "plant", fields: Form.Fields.cons({head: {name: "colour", kind: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "amber"), "violet"), "silver")})}, tail: Form.Fields.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 80n})}, tail: Form.Fields.nil()})})}
@@ -41,7 +41,7 @@ def examples(n: Nat) -> Lists.List<Policy.Example>:
     case 0: Lists.List::<Policy.Example>.nil()
     case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
-  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}, {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", held: "", misfit: ""}))
+  textLength(Policy.prompt({owner: "ember", ownerHandle: "", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}, {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", held: "", misfit: ""}))
 """)
 
 
@@ -99,14 +99,14 @@ class PolicyObject(Chain):
         self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
         card = self.card("policy")
         owners = self.card("policy", "ember")
-        for spell in ("teach", "define", "macro"):
-            self.assertIn("\n    delvetalk policy %s\n" % spell, owners)
+        for spell in ("teach\n", "define / word: moth", "macro\n"):
+            self.assertIn("\n    delvetalk policy %s" % spell, owners)
         # The rest of the owner's spells would pass what the receipt line under the card leaves of 1,400
         # (Card.limit: 2 x 6 + 120 for `policy`), so the card names `?` instead.
         self.assertTrue(owners.endswith("\nIts spells: delvetalk policy ?\n") and len(owners) <= 1400 - 132, owners)
         self.assertNotIn("Reply with a spell", card)  # a stranger is offered none of the owner's spells: no usage
-        self.assertIn("Model: claude-sonnet", card)
-        self.assertIn("I only propose. A card asks the speaker first before: reprogram, amend, offer.\n", card)
+        self.assertIn("✾ INTERPRETATION POLICY, model claude-sonnet", card)
+        self.assertIn("a spell hob reads runs at once, except: reprogram, amend, offer, which ask the speaker first.\n", card)
         self.assertIn("- moth: a seed", card)
         self.assertLess(card.index("Said: a fern"), card.index("Said: a moth"))
 

@@ -48,7 +48,7 @@ class Config:
     watch_zuliprc: str = field('', "the watch bot's .zuliprc")
     watch_stream: str = field('delvetalk-ops', 'the stream the watch posts to')
     watch_topic: str = field('watch', 'the topic the watch posts to')
-    welcome: str = field(str(ROOT / 'docs' / 'previews' / 'zulip-welcome-v4.txt'), 'the welcome deploy/playtest.sh posts')
+    welcome: str = field(str(ROOT / 'docs' / 'previews' / 'zulip-welcome.txt'), 'the welcome deploy/playtest.sh posts')
     grant: float = field(200.0, 'the monthly API credit in dollars, against which the hand reports spend')
     plan: str = field(str(ROOT / 'docs' / 'PLAYTEST-2.md'), "the playtest's plan, whose seeds (§2) and invitations (§3) the hand's Speak offers")
     owner_principals: str = field('', "the owner's principals besides the opener (his Zulip user), space-separated: no measure counts them as residents")

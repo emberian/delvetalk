@@ -1,0 +1,21 @@
+hob: five replies; at the end a room of your own, and you are in it.
+  delvetalk rooms enter
+  » you at gate: Open, Wait
+  delvetalk rooms choose / choice: Open
+  » you at yard; gate = open
+  delvetalk rooms say / line: the moss is warm
+  » your line, heard by those here
+  delvetalk rooms
+  ```spween
+  ---
+  id: nook
+  title: The Nook
+  ---
+  === nook
+  A small nook.
+  * [Sit] -> nook
+  ```
+  » ROOM The Nook is at <room>
+  delvetalk <room> enter
+  » you at nook: Sit
+Changed: <room> is a room under the Moss Gate; you are the one here.

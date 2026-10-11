@@ -219,7 +219,7 @@ def ruleFired(action: Action, rest: Lists.List<Trigger>, object: String, field: 
 def ruleArgument(action: Action, object: String, field: String, hits: Nat) -> Data:
   match action:
     case call(_): Plans.nothing()
-    case _: {text: "{object}.{field}: {natText(hits)} new {if hits == 1n then \"row\" else \"rows\"} matched"}
+    case _: {text: "{object}'s {field}: {natText(hits)} new {if hits == 1n then \"row\" else \"rows\"}"}
 def least(on: On) -> Nat:
   match on:
     case rows(r): if r.atLeast == 0n then 1n else r.atLeast
@@ -268,10 +268,13 @@ def plantings(on: On) -> Bool:
   match on:
     case rows(r): r.object == "garden" && r.field == "things"
     case _: false
-# A bell its kind finishes asks its planter's wake this (bell body `made`): be told when it rings
-# (its `rung` mark).
+# A bell its kind finishes asks its planter's wake this (bell body `made`): ring it at its seventh
+# rain (a row of its `lines` numbered 7 calls its `ring`), and be told when it rings (its `rung`).
 def watchBell(state: State, input: {bell: String}, context: Abi.Context) -> Activity<Done>:
-  watched(On.rows({object: input.bell, field: "marks", where: Lists.List.cons({head: Where.equals({column: "name", equals: Relations.text("rung")}), tail: Lists.List.nil()}), atLeast: 1n}), Action.notify({}), context, state)
+  match watched(On.rows({object: input.bell, field: "lines", where: Lists.List.cons({head: Where.equals({column: "n", equals: Relations.nat(7n)}), tail: Lists.List.nil()}), atLeast: 1n}), Action.call({card: input.bell, method: "ring"}), context, state):
+    case watching(_): watched(On.rows({object: input.bell, field: "marks", where: Lists.List.cons({head: Where.equals({column: "name", equals: Relations.text("rung")}), tail: Lists.List.nil()}), atLeast: 1n}), Action.notify({}), context, extend(state, {nextId: state.nextId + 1n}))
+    case refused(r): Done.refused(r)
+    case fired(f): Done.fired(f)
 # From a post: watch a mention or a keyword (the action is a note to you), or unwatch.
 def mention(state: State, input: {actor: String}, context: Abi.Context) -> Activity<Done>:
   spelled(On.mention({actor: input.actor}), context, state)
@@ -486,10 +489,10 @@ def onText(on: On, seen: Nat) -> String:
     case mention(m): "a mention by {Card.handle(m.actor)}"
     case keyword(k): "the word {k.term}"
     case schedule(s): if s.every == 0n then "once at {natText(s.at)}" else "every {natText(s.every)} from {natText(s.at)}"
-    case writes(w): "{w.object}.{w.field} passing {natText(w.above)}"
-    case grows(g): "each rise of {g.object}.{g.field}"
-    case turns(t): "{t.object}.{t.field} turning true"
-    case rows(r): "{if r.atLeast > 1n then \"{natText(seen)} of \" else \"\"}{natText(r.atLeast)} new rows of {r.object}.{r.field}{wheres(r.where)}"
+    case writes(w): "{w.object}'s {w.field} passing {natText(w.above)}"
+    case grows(g): "each rise of {g.object}'s {g.field}"
+    case turns(t): "{t.object}'s {t.field} turning true"
+    case rows(r): "{if r.atLeast > 1n then \"{natText(seen)} of \" else \"\"}{natText(r.atLeast)} new rows of {r.object}'s {r.field}{wheres(r.where)}"
 def wheres(where: Lists.List<Where>) -> String:
   if Lists.length(where) == 0n then "" else textConcat(" where ", textJoin(Lists.map(where, whereText), ", "))
 def whereText(w: Where) -> String:
@@ -504,12 +507,12 @@ def cellText(cell: Relations.Cell) -> String:
     case text(t): t.value
 def actionText(action: Action) -> String:
   match action:
-    case notify(_): "note me"
-    case observe(_): "show my env"
-    case call(c): "call {c.card} {c.method}"
+    case notify(_): "notes the avatar"
+    case observe(_): "shows the env"
+    case call(c): "calls {c.card} {c.method}"
 def line(trigger: Trigger) -> Document.Document:
-  Document.text("#{natText(trigger.id)} on {onText(trigger.event, trigger.seen)}: {actionText(trigger.action)}\n")
+  Document.text("#{natText(trigger.id)}, on {onText(trigger.event, trigger.seen)}: {actionText(trigger.action)}\n")
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let how = if Card.reads(state.owner, context) then " Add: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; rows, writes, grows, turns and remind are on ?. Remove: delvetalk wake unwatch / id: <number>." else ""
+  let how = if Card.reads(state.owner, context) then "\n  delvetalk wake rows / object: <a card> / field: lines / where: / count: 7\n» at every seventh new line your avatar is noted; mention, keyword, writes, grows, turns and remind are on ?\n  delvetalk wake unwatch / id: <number>\n» that trigger is gone" else ""
   let head = Document.text("WAKE of {Card.shown(state.owner, state.handle, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.triggers))} triggers.{how}\n")
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: if Card.reads(state.owner, context) then Card.clippedWithin(Lists.map(state.triggers, line), 8n, Card.left(context, Document.size(head))) else Document.Documents.nil()})})

@@ -66,7 +66,7 @@ class Views(test_chain.Chain):
         mine, theirs = self.card("env/" + GLM, GLM), self.card("env/" + GLM, KIM)
         self.assertNotIn("Reply with a spell", theirs)  # a stranger is offered neither observe nor seen: no usage
         self.assertIn("a secret mention", mine)
-        self.assertIn("ENV of glm (yours): 1 new since #0. Reply delvetalk env observe to read them, delvetalk env seen / at: <number> to mark them read.\n", mine)
+        self.assertIn("ENV of glm (yours): 1 new since #0.\n  delvetalk env observe\n» what addressed you since you looked\n  delvetalk env seen / at: <a number>\n» nothing before it is new again\n", mine)
         self.assertNotIn("a secret mention", theirs)
         self.assertIn("ENV of glm: 1 new since #0.\n", theirs)
         self.assertNotIn("a secret mention", self.world_card("env/" + GLM))
@@ -80,7 +80,7 @@ class Views(test_chain.Chain):
         mine, theirs = self.card(GLM, GLM), self.card(GLM, KIM)
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
-        self.assertIn("glm, at porch.\n0 sent, follows 0\n1 note\n", theirs)
+        self.assertIn("glm's avatar, in porch.\n0 sent; follows 0.\n1 note\n", theirs)
 
 
 if __name__ == "__main__":
