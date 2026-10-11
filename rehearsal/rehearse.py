@@ -423,12 +423,16 @@ def snapshot_replay(out, binary, cuts=4):
     for k in range(1, cuts + 1):
         at = len(lines) * k // (cuts + 1)
         cases[f'cut{at}'] = reopen(f'cut{at}', prefix=at)
-    # And one cut inside a settling: between two deliveries in a row that one post caused, as a crash between
-    # two appends of one durable write leaves it. The open finishes the settling; it must append the entries
-    # the run wrote, and the snapshot it writes then is at the settling's end.
+    # And one cut inside a settling: between two deliveries in a row that one cause produced (a rule's firing, the
+    # tide's next send), as a crash between two appends of one durable write leaves it. A delivery belongs to the
+    # settling of the one before it when it comes from the same origin, or from that very delivery (a chain: the tide's
+    # tick sends the next). The open finishes the settling; it must append the entries the run wrote, and the snapshot
+    # it writes then is at the settling's end. (A card no longer hands prose on, so the old hand-on settlings are gone.)
     entries = chain.entries(src)
     origin = lambda e: ((e.get('delivery') or {}).get('from') or {}).get('intent')
-    inside = next((i for i in range(2, len(entries)) if origin(entries[i]) and origin(entries[i]) == origin(entries[i - 1])), None)
+    ident = lambda e: (e.get('delivery') or {}).get('id')
+    inside = next((i for i in range(2, len(entries)) if origin(entries[i]) and (origin(entries[i]) == origin(entries[i - 1])
+                  or origin(entries[i]) == ident(entries[i - 1]))), None)
     if inside:
         cases[f'settling{inside}'] = reopen(f'settling{inside}', prefix=inside)
     cases['verify'] = reopen('verify', snapshots=own + sorted(base.glob('cut*/world.journal.snapshot.*.cbor'))[-2:], verify=True)
@@ -554,6 +558,10 @@ def main(argv=None):
             if got.get('publications'):
                 results.setdefault('publications', []).extend(got['publications'])
         results['hostOffers'] = held
+        # The journal now ends well short of the host's snapshot cadence (1,000 entries; 835 with the hand-on gone), so
+        # the live host is asked for the snapshot its own cadence no longer reaches: one written by the running host.
+        if not list(r.state.glob('town.journal.snapshot.*.cbor')):
+            results['liveSnapshot'] = r.host.send({'op': 'world-snapshot'})
     finally:
         r.stop_serve()
     results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
