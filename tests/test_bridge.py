@@ -216,7 +216,7 @@ class Bridging(BridgeCase):
         self.assertEqual(self.run_bridge()['failed'], [])
         (d,) = self.drafts()
         self.assertIn('planted', d['text'])
-        self.assertTrue(d['text'].endswith(f"● admitted garden-1 v2, entry {d['receipt']['height']}, receipt {d['receipt']['slug']}\n"), d['text'])
+        self.assertTrue(d['text'].endswith(f"● admitted garden-1 v1, entry {d['receipt']['height']}, receipt {d['receipt']['slug']}\n"), d['text'])
 
 
 class HostParses(BridgeCase):
