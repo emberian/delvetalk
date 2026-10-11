@@ -1,12 +1,11 @@
-/- Generic source-package boundary. Mini owns parsing, elaboration, typing and
-   shared-demand execution. This adapter adds only JSON framing and data IO. -/
-import Delvetalk.Core
+/- The package boundary: compile, check and run requests over the local Objective Bend
+   edition's parser, elaborator, checker and demand machine, with JSON framing and data IO. -/
+import Delvetalk.JsonLine
 import Delvetalk.FrontEnd
 import Compiler.ObjectiveBendFrontEnd
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
 import Delvetalk.PackageData
-import Delvetalk.Reflection
 import Delvetalk.Turn
 import Delvetalk.Document
 import Delvetalk.EvaluateTerm
@@ -16,13 +15,13 @@ import Delvetalk.Hints
 import Delvetalk.Entry
 
 open Lean (Json toJson)
-open Minidregg.Compiler.ObjectiveBendFrontEnd
-open Minidregg.Theory.ObjectiveBendTyping
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendDemandData
-open Minidregg.Compiler.ObjectiveBendDataWire
+open Delvetalk.Compiler.ObjectiveBendFrontEnd
+open Delvetalk.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendDemandMachine
+open Delvetalk.Theory.ObjectiveBendDemandData
+open Delvetalk.Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Package
 
@@ -34,7 +33,7 @@ def getLimits (j : Json) : Json := (j.getObjVal? "limits").toOption.getD default
 
 /-- A compiler refusal, structurally: stage, message, and for a source refusal the
 module and line span (`dregg.bend.compiler-diagnostic.v1` as data). -/
-abbrev Diagnostic := Minidregg.Compiler.ObjectiveBendFrontEnd.Diagnostic
+abbrev Diagnostic := Delvetalk.Compiler.ObjectiveBendFrontEnd.Diagnostic
 
 /-- A refusal of the request itself (not of the source): no module, no span. -/
 def requestRefusal (message : String) : Diagnostic := { stage := "package-request", message }
@@ -48,18 +47,18 @@ private def lift {α : Type} (x : Except String α) : Except Diagnostic α := x.
 /-- A sealed in-memory package: imports name earlier modules explicitly supplied
 by the caller. The adapter never reads an import path from the filesystem. -/
 def modulesAndAsts (j : Json) :
-    Except Diagnostic (List SourceModule × Json × List Minidregg.Compiler.ObjectiveBendSurface.Module) := do
+    Except Diagnostic (List SourceModule × Json × List Delvetalk.Compiler.ObjectiveBendSurface.Module) := do
   let raw ← match j.getObjVal? "modules" with
     | .ok value => lift value.getArr?
     | .error _ => pure #[Json.mkObj [("name", toJson "Package"), ("source", ← lift (j.getObjVal? "source"))]]
   if raw.isEmpty || raw.size > Bounds.maxModules then
     throw (requestRefusal s!"package requires 1..{Bounds.maxModules} modules")
   let mut modules : List SourceModule := []
-  let mut asts : List Minidregg.Compiler.ObjectiveBendSurface.Module := []
+  let mut asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module := []
   for value in raw do
     let name ← lift (value.getObjValAs? String "name")
     let source ← lift (value.getObjValAs? String "source")
-    unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw (requestRefusal "invalid module name")
+    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw (requestRefusal "invalid module name")
     if modules.any (fun m => m.name == name) then throw (requestRefusal "duplicate module name")
     if source.utf8ByteSize > Bounds.maxModuleBytes then throw (requestRefusal s!"module {name} exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)")
     let ast ← FrontEnd.parseSource name source
@@ -69,21 +68,14 @@ def modulesAndAsts (j : Json) :
         | throw { stage := "package-request", message := s!"import must name an earlier supplied module: {edge.path}",
                   sourceModule := some name }
       imports := imports ++ [⟨edge.path, edge.importAlias, edge.span, target.2, target.1.name, target.1.sha256⟩]
-    let module : SourceModule := ⟨name,source,Minidregg.Compiler.Sha256.hexString source,imports⟩
+    let module : SourceModule := ⟨name,source,Delvetalk.Compiler.Sha256.hexString source,imports⟩
     checkImports module ast
     modules := modules ++ [module]
     asts := asts ++ [ast]
   return (modules, .arr raw, asts)
 
-def modulesOfStructured (j : Json) : Except Diagnostic (List SourceModule × Json) := do
-  let (modules, raw, _) ← modulesAndAsts j
-  return (modules, raw)
-
-def modulesOf (j : Json) : Except String (List SourceModule × Json) :=
-  (modulesOfStructured j).mapError Diagnostic.render
-
 /-- A compiled package: the artifact JSON, the entry's checked type and its laws. -/
-abbrev Compiled := Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)
+abbrev Compiled := Json × Ty × List (String × Delvetalk.Compiler.ObjectiveBendLaw.LawExpr)
 
 /-- The request's modules as (name, source), for hints. -/
 def requestSources (j : Json) : List (String × String) :=
@@ -105,42 +97,39 @@ def withHint (j : Json) (d : Diagnostic) : Diagnostic :=
     { d with hint := Delvetalk.Hints.hintFor modules d.stage d.message d.sourceModule (d.span.map (·.line)) }
 
 /-- A parsed module's function definitions with their parameters' declared type texts. -/
-def signaturesOf (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) : List (String × List String) :=
+def signaturesOf (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) : List (String × List String) :=
   ast.decls.filterMap fun
     | .function signature _ _ _ =>
-      some (signature.name, signature.params.map fun p => Minidregg.Compiler.ObjectiveBendElaborate.trimStr p.type)
+      some (signature.name, signature.params.map fun p => Delvetalk.Compiler.ObjectiveBendElaborate.trimStr p.type)
     | _ => none
 
-def functionSignatures (name source : String) : Except Diagnostic (List (String × List String)) := do
-  return signaturesOf (← FrontEnd.parseSource name source)
-
-open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
+open Delvetalk.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- The first `n` parameter types of an elaborated function type and its result. -/
 def peelPTy : Nat → PTy → List PTy × PTy
   | n + 1, .arrow _ _ domain codomain => let (rest, result) := peelPTy n codomain; (domain :: rest, result)
   | _, ty => ([], ty)
 
 /-- A form field's kind as the Form library's `Kind` value, on the Data wire. -/
-def formKindJson : Minidregg.Compiler.ObjectiveBendSurface.FormKind → Json
+def formKindJson : Delvetalk.Compiler.ObjectiveBendSurface.FormKind → Json
   | kind =>
-    let range := fun (min max : Nat) => Minidregg.Theory.ObjectiveBendDemandData.Data.record [("min", .natural min), ("max", .natural max)]
-    let data : Minidregg.Theory.ObjectiveBendDemandData.Data := match kind with
+    let range := fun (min max : Nat) => Delvetalk.Theory.ObjectiveBendDemandData.Data.record [("min", .natural min), ("max", .natural max)]
+    let data : Delvetalk.Theory.ObjectiveBendDemandData.Data := match kind with
       | .text min max => .variant "text" (range min max)
       | .natural min max => .variant "natural" (range min max)
       | .source => .variant "source" (.record [])
       | .choice options => .variant "choice" (.record [("options", options.foldr
           (fun o acc => .variant "cons" (.record [("head", .label o), ("tail", acc)])) (.variant "nil" (.record [])))])
       | .named type => .variant "named" (.label type)
-    Minidregg.Compiler.ObjectiveBendDataWire.dataJson data
+    Delvetalk.Compiler.ObjectiveBendDataWire.dataJson data
 
 /-- A method's form block as its row's `form`: each field's name and kind. -/
-def formRow (forms : List Minidregg.Compiler.ObjectiveBendSurface.FormBlock) (method : String) : List (String × Json) :=
+def formRow (forms : List Delvetalk.Compiler.ObjectiveBendSurface.FormBlock) (method : String) : List (String × Json) :=
   match forms.find? (·.action == method) with
   | some block => [("form", Json.arr (block.fields.map fun f =>
       Json.mkObj [("name", toJson f.name), ("kind", formKindJson f.kind)]).toArray)]
   | none => []
 
-open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
+open Delvetalk.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- The entry module's method table: every definition whose first parameter is
 `State`, called as `(state, [input,] [context])`, with its input type (`{}` when
 it takes none), result type and whether it is an activity. Type JSON is the
@@ -148,10 +137,10 @@ packet's (recursive sums are variables of the packet's bounds). Definitions with
 more than one input beyond state and context are not callable methods and are
 left out. A method with a form block lists its fields as `form`. -/
 def methodTable (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy)
-    (forms : List Minidregg.Compiler.ObjectiveBendSurface.FormBlock := []) : Json :=
+    (forms : List Delvetalk.Compiler.ObjectiveBendSurface.FormBlock := []) : Json :=
   Json.arr (methodRows moduleName signatures globals forms).toArray
 where methodRows (moduleName : String) (signatures : List (String × List String)) (globals : Option PTy)
-    (forms : List Minidregg.Compiler.ObjectiveBendSurface.FormBlock) : List Json :=
+    (forms : List Delvetalk.Compiler.ObjectiveBendSurface.FormBlock) : List Json :=
   signatures.filterMap fun ((fname, types) : String × List String) => do
     guard (types.head? == some "State")
     let ty ← lookupRow globals (moduleName ++ "." ++ fname)
@@ -165,11 +154,11 @@ where methodRows (moduleName : String) (signatures : List (String × List String
     return Json.mkObj ([("name", toJson fname), ("input", input), ("result", result.json),
       ("activity", toJson activity), ("context", toJson context)] ++ formRow forms fname)
 
-open Minidregg.Compiler.ObjectiveBendElaborate (PTy) in
+open Delvetalk.Compiler.ObjectiveBendElaborate (PTy) in
 /-- A layer stack's method table: every method of every layer, the topmost definition of a
 name winning (the one every call reaches). `stack` is top first: (module, its signatures). -/
 def stackMethodTable (stack : List (String × List (String × List String))) (globals : Option PTy)
-    (forms : String → List Minidregg.Compiler.ObjectiveBendSurface.FormBlock := fun _ => []) : Json := Id.run do
+    (forms : String → List Delvetalk.Compiler.ObjectiveBendSurface.FormBlock := fun _ => []) : Json := Id.run do
   let mut seen : List String := []
   let mut rows : Array Json := #[]
   for (moduleName, signatures) in stack do
@@ -178,7 +167,7 @@ def stackMethodTable (stack : List (String × List (String × List String))) (gl
     seen := seen ++ signatures.map (·.1)
   return Json.arr rows
 
-open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
+open Delvetalk.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- A package's optional Bend law predicate, checked by shape: `law(old: State,
 new: State, request: Request) -> Verdict`, pure, with `Verdict` exactly the sum
 `admitted: {} | refused: {clause: String}` or `admitted: {} | refused: {clause: String, reading: String}`
@@ -205,7 +194,7 @@ def lawShape (moduleName : String) (signatures : List (String × List String)) (
         | _ => none
       | _ => none
     let verdict := match row? with
-      | some row => (Minidregg.Compiler.ObjectiveBendElaborate.rowNames row).length == 2 &&
+      | some row => (Delvetalk.Compiler.ObjectiveBendElaborate.rowNames row).length == 2 &&
           lookupRow (some row) "admitted" == some PTy.emptyRow &&
           (lookupRow (some row) "refused" == some (PTy.field "clause" .label .emptyRow) ||
            lookupRow (some row) "refused" == some (PTy.field "clause" .label (.field "reading" .label .emptyRow)) ||
@@ -240,12 +229,12 @@ to run it), its type and the entry module's laws. -/
 structure EntryCompiled where
   artifact : Json
   entry : Delvetalk.CheckedEntry
-  laws : List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)
+  laws : List (String × Delvetalk.Compiler.ObjectiveBendLaw.LawExpr)
   /-- Each law's reading (`law NAME "reading": EXPR`; "" when none), by law name. -/
   readings : List (String × String)
 
 /-- The readings the entry module's source gives its laws (`law NAME "reading": EXPR`). -/
-def lawReadings (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) : List (String × String) :=
+def lawReadings (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) : List (String × String) :=
   ast.decls.filterMap fun d => match d with
     | .law name _ reading _ => some (name, reading)
     | _ => none
@@ -254,23 +243,23 @@ def lawReadings (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) : List (S
 ENFORCES (`EntryCompiled.laws`), in that order, with its source reading or "" when it has
 none. Built from the enforced laws, not from the source's readings, so a host looking a
 refusing law up by name always finds it (`lawTable_names`). -/
-def lawTable (laws : List String) (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) :
+def lawTable (laws : List String) (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) :
     List (String × String) :=
   let readings := lawReadings ast
   laws.map fun name => (name, (readings.lookup name).getD "")
 
-theorem lawTable_names (laws : List String) (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) :
+theorem lawTable_names (laws : List String) (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) :
     (lawTable laws ast).map (·.1) = laws := by
   simp [lawTable, Function.comp_def]
 
-def fixedNames (fields : List Minidregg.Compiler.ObjectiveBendSurface.Field) : List String :=
+def fixedNames (fields : List Delvetalk.Compiler.ObjectiveBendSurface.Field) : List String :=
   (fields.filter (·.fixed)).map (·.name)
 
 /-- The record a State-like name resolves to from module `index`: a `record`, through `type`
 aliases (`Alias.N` names the import aliased `Alias`) however many, and for `State` in a layer
 that declares none, the State of the module below (`Super`). `fuel` bounds the chain. -/
-def stateRecordAt (modules : List SourceModule) (asts : List Minidregg.Compiler.ObjectiveBendSurface.Module) :
-    Nat → Nat → String → Option (List Minidregg.Compiler.ObjectiveBendSurface.Field)
+def stateRecordAt (modules : List SourceModule) (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) :
+    Nat → Nat → String → Option (List Delvetalk.Compiler.ObjectiveBendSurface.Field)
   | 0, _, _ => none
   | fuel + 1, index, name => do
     let ast ← asts[index]?
@@ -279,7 +268,7 @@ def stateRecordAt (modules : List SourceModule) (asts : List Minidregg.Compiler.
     match ast.decls.find? (fun d => d.name == name && (d matches .record .. || d matches .typeAlias ..)) with
     | some (.record _ _ fields _) => some fields
     | some (.typeAlias _ type _) =>
-      match (Minidregg.Compiler.ObjectiveBendElaborate.trimStr type).splitOn "." with
+      match (Delvetalk.Compiler.ObjectiveBendElaborate.trimStr type).splitOn "." with
       | [alias, n] => stateRecordAt modules asts fuel (← target alias) n
       | [n] => stateRecordAt modules asts fuel index n
       | _ => none
@@ -287,7 +276,7 @@ def stateRecordAt (modules : List SourceModule) (asts : List Minidregg.Compiler.
 
 /-- The entry module's `fixed` State fields (`colour: fixed Colour`), in State order, of the
 State it runs on: its own, an alias chain's record, or a layer's inherited one. -/
-def fixedFields (modules : List SourceModule) (asts : List Minidregg.Compiler.ObjectiveBendSurface.Module) (index : Nat) :
+def fixedFields (modules : List SourceModule) (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) (index : Nat) :
     List String :=
   match stateRecordAt modules asts (4 * modules.length + 4) index "State" with
   | some fields => fixedNames fields
@@ -300,13 +289,13 @@ def conventionalNames : List String :=
 
 /-- Which conventional declarations the modules declare, derived ones included (the decoded
 modules are the generics pass's output), in `conventionalNames` order. -/
-def declaredNames (decoded : List Minidregg.Compiler.ObjectiveBendElaborate.Module) (modules : List String) : List String :=
+def declaredNames (decoded : List Delvetalk.Compiler.ObjectiveBendElaborate.Module) (modules : List String) : List String :=
   let present := modules.flatMap fun name =>
     ((decoded.find? (·.name == name)).map fun m => m.decls.map (·.name)).getD []
   conventionalNames.filter present.contains
 
 /-- The world method a message plan term names (`{object, method: "X", argument}`). -/
-def worldMethodOf : Minidregg.Theory.ObjectiveBendOpenRecursion.Term → Option String
+def worldMethodOf : Delvetalk.Theory.ObjectiveBendOpenRecursion.Term → Option String
   | .record fields => match fields.lookup "method" with
     | some (.label m) => some m
     | _ => none
@@ -408,8 +397,8 @@ def compileStructured (j : Json) : Except Diagnostic Compiled := do
   return (compiled.artifact, compiled.entry.type, compiled.laws)
 
 /-- The functions of a module with the span of each body, in source order. -/
-def functionBodies (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) :
-    List (String × Minidregg.Compiler.ObjectiveBendSurface.Span) :=
+def functionBodies (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) :
+    List (String × Delvetalk.Compiler.ObjectiveBendSurface.Span) :=
   ast.decls.filterMap fun
     | .function signature _ body _ => some (signature.name, match body with
       | .expr _ s | .cases _ _ s | .letB _ _ _ _ s => s)
@@ -448,7 +437,7 @@ def checkPackage (modules : List (String × String)) (entry : String) (limits : 
     return artifact
 
 def compileKeepingLaws (j : Json) :
-    Except String (Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)) :=
+    Except String (Json × Ty × List (String × Delvetalk.Compiler.ObjectiveBendLaw.LawExpr)) :=
   (compileStructured j).mapError Diagnostic.render
 
 def compile (j : Json) : Except String Json := do
@@ -504,7 +493,7 @@ def executePacket (packet arguments limits : Json) (profile : Bool := false) : E
   let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
   let terms ← values.mapM argumentTerm
   let source := terms.foldl applyArgument decoded.source
-  let some checked := check source [] decoded.fuel | throw "applied package refused by Mini type checker"
+  let some checked := check source [] decoded.fuel | throw "applied package refused by the type checker"
   executeTyped source.term checked.type limits profile
 
 /-- `run` on a held entry: arguments are checked alone and composed with its derivation. -/
@@ -607,35 +596,6 @@ def DataExecution.wire : DataExecution → Json
        ("status", toJson "finished"), ("value", dataJson value), ("type", typeJson type),
        ("nodesUsed", toJson nodes)] ++ usage.fields)
 
-/-- Explicit recursive-data execution. Full eager materialization and output
-shape checking happen here, before any native consumer sees a Data value.
-Conversion and machine work share the existing whole-execution allowance. -/
-private def executePreparedData (prepared : PackageData.Work (AnnotatedTerm × Ty × Nat))
-    (argumentBytes : Nat) (limits : Json) : Except String DataExecution := do
-  let bytes ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax
-  let inputBytes ← bounded limits "inputBytes" bytes Bounds.bytesMax
-  if argumentBytes > inputBytes then throw "typed data input byte capacity"
-  let ticks ← bounded limits "ticks" Bounds.ticksDefault Bounds.ticksMax
-  let work ← bounded limits "work" ticks Bounds.ticksMax
-  let allowance := min ticks work
-  let ((source, type, _), remaining) ← prepared.run allowance
-  let before := allowance - remaining
-  let heap ← bounded limits "heap" Bounds.heapDefault Bounds.heapMax
-  let stack ← bounded limits "stack" Bounds.stackDefault Bounds.stackMax
-  let nodes ← bounded limits "nodes" Bounds.nodesDefault Bounds.nodesMax
-  let budget : Budget := ⟨nodes, ticks - before, bytes⟩
-  match execute ⟨heap, stack⟩ budget source.term with
-  | .error (failure, state, rest) =>
-      return .refused (reprStr failure) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩
-  | .ok execution =>
-      let result := execution.extraction.result
-      -- Recursive aliases and the complete returned value are checked, including
-      -- payloads which a later source Decision may explicitly refuse.
-      let outputAllowance := min remaining result.remaining.ticks
-      let (_, after) ← (PackageData.validate source.assumptions Bounds.dataWireDepth result.value type).run outputAllowance
-      return .finished result.value type (nodes - result.remaining.nodes)
-        ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
-
 /-- Native finite arguments retain lazy demand cells instead of literal syntax.
 Their preparation and extraction still consume the shared execution allowance. -/
 private def executePreparedNativeFrom (prepared : PackageData.Work PackageData.NativePreparation)
@@ -682,10 +642,6 @@ private def executePreparedNative (prepared : PackageData.Work PackageData.Nativ
     (argumentBytes : Nat) (limits : Json) : Except String DataExecution :=
   (executePreparedNativeFrom prepared argumentBytes limits none).map (·.1)
 
-/-- Conformance reference only; no physical operation dispatch selects it. -/
-def executeQuotedDataValue (packet arguments limits : Json) : Except String DataExecution :=
-  executePreparedData (PackageData.prepare packet arguments) arguments.compress.utf8ByteSize limits
-
 def executeDataValue (packet arguments limits : Json) : Except String DataExecution :=
   executePreparedNative (PackageData.prepareNativeWire packet arguments) arguments.compress.utf8ByteSize limits
 
@@ -695,13 +651,6 @@ def executeDataValues (packet : Json) (arguments : Array Data) (limits : Json) :
   let argumentBytes := 2 + arguments.foldl (fun n value => n + dataJsonBytes value) 0
     + (arguments.size - 1)
   executePreparedNative (PackageData.prepareNative packet arguments) argumentBytes limits
-
-/-- A native receiving caller supplies the exact size of its retained physical
-argument frames; it must not replace compact physical bytes with an expanded
-internal DataWire representation when enforcing the transport cap. -/
-def executeDataValuesSized (packet : Json) (arguments : Array Data) (physicalBytes : Nat)
-    (limits : Json) : Except String DataExecution :=
-  executePreparedNative (PackageData.prepareNative packet arguments) physicalBytes limits
 
 /-- Native data execution on a held entry: the packet is neither decoded nor re-checked;
 the arguments are admitted against the entry's checked type (`prepareNativeChecked`). -/
@@ -745,13 +694,13 @@ def relationsOf (request : PreparedRequest) : Except Diagnostic (Option Json) :=
   | .error e => throw (refusal e)
   | .ok (.refused failure _) => throw (refusal failure)
   | .ok (.finished value _ _ _) =>
-    let some rows := Minidregg.Compiler.ObjectiveBendDataWire.listItems? value
+    let some rows := Delvetalk.Compiler.ObjectiveBendDataWire.listItems? value
       | throw (refusal "is not a list")
     let decls ← rows.toList.mapM fun row => do
       let .record fields := row | throw (refusal "a declaration is {field, key}")
       let some (.label field) := fields.lookup "field" | throw (refusal "a declaration names its field")
       let some keyData := fields.lookup "key" | throw (refusal "a declaration names its key")
-      let some keys := Minidregg.Compiler.ObjectiveBendDataWire.listItems? keyData
+      let some keys := Delvetalk.Compiler.ObjectiveBendDataWire.listItems? keyData
         | throw (refusal "a key is a list of column names")
       let columns ← keys.toList.mapM fun k => match k with
         | .label c => pure c
@@ -789,32 +738,6 @@ def executeDataEntryWire (entry : Delvetalk.CheckedEntry) (arguments limits : Js
   return (← executePreparedNative (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel values.toArray)
     arguments.compress.utf8ByteSize limits).wire
 
-/-- All-compact physical package boundary: input and output interpretation is
-bound to the exact checked packet carried by the verified artifact. -/
-def runCompactDataVerified (j : Json) : Except String Json := do
-  let artifact ← j.getObjVal? "artifact"
-  let packet ← artifact.getObjVal? "packet"
-  let arguments ← j.getObjVal? "arguments"
-  let execution ← executePreparedNative (PackageData.prepareNativeCompact packet arguments)
-    arguments.compress.utf8ByteSize (getLimits j)
-  match execution with
-  | .refused _ _ => return execution.wire
-  | .finished value type nodes usage =>
-    let decoded ← decodePacket packet
-    let ticks ← bounded (getLimits j) "ticks" Bounds.ticksDefault Bounds.ticksMax
-    let work ← bounded (getLimits j) "work" ticks Bounds.ticksMax
-    let allowance := min ticks work
-    let available := allowance - (usage.ticksUsed + usage.conversionNodes)
-    let (wire, remaining) ← (PackageData.encodeCompact decoded.source.assumptions Bounds.dataWireDepth type value).run available
-    let usage := { usage with conversionNodes := usage.conversionNodes + available - remaining }
-    return Json.mkObj ([("executionProfile", toJson "delvetalk-package-compact"),
-      ("status", toJson "finished"), ("value", wire), ("type", typeJson type),
-      ("nodesUsed", toJson nodes), ("schemaPacketSha256", ← artifact.getObjVal? "packetSha256")] ++ usage.fields)
-
-def runCompactData (j : Json) : Except String Json := do
-  verifyArtifact (← j.getObjVal? "artifact")
-  runCompactDataVerified j
-
 /-- The external recursive-data wire is unchanged. Native receiving uses the
 same execution function without serializing and decoding its checked result. -/
 def executeDataPacket (packet arguments limits : Json) : Except String Json := do
@@ -827,21 +750,6 @@ def runDataVerified (j : Json) : Except String Json := do
 def runData (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")
   runDataVerified j
-
-/-- Observe a source-bound specification's actual metadata without applying its
-    extension. A raw prototype's reflected specification says nothing about how
-    its target was made; this result makes no stronger provenance claim. -/
-def inspectSpecification (j : Json) : Except String Json := do
-  let artifact ← j.getObjVal? "artifact"
-  verifyArtifact artifact
-  let packet ← Reflection.metadataPacket (← artifact.getObjVal? "packet")
-  let result ← executeDataPacket packet (.arr #[]) (getLimits j)
-  let fields ← result.getObj?
-  return Json.mkObj (fields.toArray.toList ++ [
-    ("reflectionProfile", toJson "delvetalk-source-specification-v1"),
-    ("sourceBinding", Json.mkObj [("entry", ← artifact.getObjVal? "entry"),
-      ("sourcesSha256", ← artifact.getObjVal? "sourcesSha256"),
-      ("packetSha256", ← artifact.getObjVal? "packetSha256")])])
 
 def selectedDataType (selection : Json) : Except String (Assumptions × Ty × Json) := do
   let artifact ← selection.getObjVal? "artifact"
@@ -876,41 +784,6 @@ def compactCodec (j : Json) (encode : Bool) : Except String Json := do
     ("value", wire), ("conversionNodes", toJson (work - remaining)),
     ("schemaPacketSha256", ← (← selection.getObjVal? "artifact").getObjVal? "packetSha256")]
 
-def compareDataTypes (j : Json) : Except String Json := do
-  let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
-  let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
-  let work ← bounded j "work" Bounds.ticksDefault Bounds.ticksMax
-  let action : PackageData.Work Bool := do
-    let a ← PackageData.select left lt lp
-    let b ← PackageData.select right rt rp
-    PackageData.shape left Bounds.dataWireDepth [] a
-    PackageData.shape right Bounds.dataWireDepth [] b
-    PackageData.equivalent left right Bounds.dataWireDepth [] a b
-  let (equal, remaining) ← action.run work
-  return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
-    ("conversionNodes", toJson (work - remaining))]
-
-/-- Validate every typed allocation alternative against the checked source Value
-ABI. Configuration models remain independently typed for receiving admission. -/
-def allocationDataTypes (j : Json) : Except String Json := do
-  let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
-  let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
-  let work ← bounded j "work" Bounds.ticksDefault Bounds.ticksMax
-  let action : PackageData.Work Bool := do
-    let allocations ← PackageData.select left lt lp
-    let value ← PackageData.select right rt rp
-    PackageData.shape right Bounds.dataWireDepth [] value
-    let head ← PackageData.allocationListType left allocations
-    for leaf in (← PackageData.allocationLeaves left Bounds.dataWireDepth head) do
-      let fields ← PackageData.members Bounds.dataWireDepth leaf
-      for key in ["protocol", "law"] do
-        let some member := fields.lookup key | throw "allocation descriptor field missing"
-        unless (← PackageData.equivalent left right Bounds.dataWireDepth [] member value) do return false
-    return true
-  let (equal, remaining) ← action.run work
-  return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
-    ("conversionNodes", toJson (work - remaining))]
-
 def turnStartVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
   let entry ← Delvetalk.CheckedEntry.ofPacket (← artifact.getObjVal? "packet")
@@ -930,7 +803,7 @@ def job (j : Json) : Except String Json := do
     let mut parsed : Array Json := #[]
     for value in raw do
       let name ← value.getObjValAs? String "name"
-      unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw "invalid module name"
+      unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw "invalid module name"
       if names.contains name then throw "duplicate module name"
       names := name :: names
       let source ← value.getObjValAs? String "source"
@@ -941,12 +814,6 @@ def job (j : Json) : Except String Json := do
       parsed := parsed.push (Json.mkObj [("name", toJson name),
         ("imports", Json.arr (ast.imports.map (·.json)).toArray)])
     return Json.mkObj [("status", toJson "parsed-imports"), ("modules", Json.arr parsed)]
-  | "template-expand" =>
-    let source ← j.getObjValAs? String "source"
-    if source.utf8ByteSize > Bounds.maxModuleBytes then throw s!"source exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)"
-    let expanded ← (FrontEnd.parse "Template" source).mapError (fun d => d.json.compress)
-    return Json.mkObj [("status", toJson "expanded"), ("source", toJson expanded.expandedSource),
-      ("schema", toJson "delvetalk.document-template-expansion.v1")]
   | "check-package" =>
     let raw ← (← j.getObjVal? "modules").getArr?
     let modules ← raw.toList.mapM fun m => do return (← m.getObjValAs? String "name", ← m.getObjValAs? String "source")
@@ -962,12 +829,8 @@ def job (j : Json) : Except String Json := do
   | "turn-start" => turnStart j
   | "turn-resume" => throw Delvetalk.Turn.notIssued
   | "run-data-v1" => runData j
-  | "run-compact" => runCompactData j
   | "encode-compact" => compactCodec j true
   | "decode-compact" => compactCodec j false
-  | "inspect-spec-v1" => inspectSpecification j
-  | "compare-data-types-v1" => compareDataTypes j
-  | "allocation-data-types-v1" => allocationDataTypes j
   | _ => throw "package operation must be compile or run"
 
 end Delvetalk.Package

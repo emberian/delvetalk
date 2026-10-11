@@ -108,5 +108,5 @@ def render(state: State, context: Abi.Context) -> Document.Document:
   let id = Card.called(context, "<bell>")
   let head = Document.text("{article} {colourName(state.colour)} bell, planted by {Card.shown(state.planter, state.planterHandle, context)}{Card.mine(state.planter, context)}: “{state.seed}” — {sound}.\nReply delvetalk {id} rain / text: <1 to 120 characters> to rain on it.\n")
   let doors = Card.doorLines(state.doors)
-  let rains = Card.clippedWithin(Lists.map(Relations.rows(state.rains), line), 8n, Card.left(Document.size(head) + Document.size(Document.Document.sequence({items: doors}))))
+  let rains = Card.clippedWithin(Lists.map(Relations.rows(state.rains), line), 8n, Card.left(context, Document.size(head) + Document.size(Document.Document.sequence({items: doors}))))
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(rains, doors)})})

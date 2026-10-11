@@ -22,9 +22,9 @@ No `isDataUnder` hypothesis is needed: completeness holds for every type, and
 `isDataUnder` is the static side's decision that the type admits only such data. -/
 import Theory.ObjectiveBendDemandData
 import Theory.AxiomPin
-namespace Minidregg.Theory.ObjectiveBendDataConformance
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendDemandData
+namespace Delvetalk.Theory.ObjectiveBendDataConformance
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendDemandData
 set_option autoImplicit false
 
 def isVariable : Ty → Bool
@@ -434,4 +434,4 @@ theorem conformsUnder_iff {bounds : DataBounds} {data : Data} {type : Ty} :
     data.conformsUnder bounds type = true ↔ HasType bounds data type :=
   ⟨conformsFuel_sound bounds _ data type, conformsUnder_complete⟩
 
-end Minidregg.Theory.ObjectiveBendDataConformance
+end Delvetalk.Theory.ObjectiveBendDataConformance

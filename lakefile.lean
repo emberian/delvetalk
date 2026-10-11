@@ -10,9 +10,6 @@ lean_lib Theory where
 lean_lib Compiler where
   srcDir := "spec/bend"
 
-lean_lib Pred where
-  srcDir := "spec/bend"
-
 lean_lib Delvetalk where
   srcDir := "spec"
 

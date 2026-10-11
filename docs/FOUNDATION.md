@@ -57,7 +57,7 @@ Proved, and relied on:
 | Fact | Where |
 | --- | --- |
 | a yield is quiescent; resume preserves typing | from Mini |
-| `stateV3_roundTrip`: the checkpoint codec (v3, addresses relative to their holder) for every dictionary and state | `Theory/ObjectiveBendCheckpointV2RoundTrip.lean` |
+| `stateV3_roundTrip`: the checkpoint codec (v3, addresses relative to their holder) for every dictionary and state | `Theory/ObjectiveBendCheckpointV3RoundTrip.lean` |
 | `settle_resume_segment`, `trim_resume_segment` on the runner a turn uses | `Theory/ObjectiveBendDemandSettleProofs.lean` |
 | `checkpoint_resume_segment`: resuming `collect (trim (collect (settle s)))` gives the verdict, ticks and Data of resuming `s` | `Theory/ObjectiveBendDemandCollectProofs.lean` |
 | `conformsUnder_iff`: the runtime data check agrees with a declarative typing | `Theory/ObjectiveBendDataConformance.lean` |
@@ -271,12 +271,14 @@ Two tiers.
 clause, printed on the card with its reading: `law NAME "reading": EXPR`.
 
 ```
-EXPR ::= EXPR implies|or|and EXPR | not EXPR | ( EXPR ) | ATOM
-ATOM ::= REF == INT | REF <= INT | REF in [INT, …] | REF == REF | REF <= REF (+ INT)
-       | REF == "TEXT" | monotone(F) | writeOnce(F) | appendOnly(F) | unchanged(F) | REF in new.F
-       | insertOnly(F) | REF in new.F.COL | count(new.F) <= INT | count(new.F) <= count(old.F) + INT
-REF  ::= new.F | request.subject | request.caller | request.height | request.turn
-       | request.pin | request.kind | request.method
+EXPR  ::= EXPR implies|or|and EXPR | not EXPR | ( EXPR ) | ATOM
+ATOM  ::= REF == TERM | REF <= TERM | TERM in [INT, …] | TERM in new.F | TERM in new.F.COL
+        | TERM in "OBJECT".F.COL | monotone(F) | writeOnce(F) | appendOnly(F) | unchanged(F)
+        | insertOnly(F) | changed(new.F.COL) by TERM | under "OBJECT"
+TERM  ::= REF | INT | "TEXT" | TERM + TERM
+REF   ::= new.F | old.F | request.subject | request.caller | request.height | request.turn
+        | request.pin | request.kind | request.method | request.clock | request.object
+        | count(new.F) | count(old.F) | count(new.F where COL == TERM) | count(old.F where COL == TERM)
 ```
 
 Top-level fields only. `request.kind`, by name or number, is `write` 0 (the object's own method's

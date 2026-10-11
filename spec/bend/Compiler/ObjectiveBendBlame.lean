@@ -14,11 +14,11 @@ of the term there. `Naming` renders checker types in surface syntax, by the decl
 of a record or sum where one has exactly that type. -/
 import Compiler.ObjectiveBendElaborate
 import Theory.ObjectiveBendTyping
-namespace Minidregg.Compiler.ObjectiveBendBlame
-open Minidregg.Theory.ObjectiveBendTyping
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Compiler.ObjectiveBendElaborate (ATerm Loc)
+namespace Delvetalk.Compiler.ObjectiveBendBlame
+open Delvetalk.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Compiler.ObjectiveBendElaborate (ATerm Loc)
 set_option autoImplicit false
 
 /-- The kind of a refusal, for hints. -/
@@ -363,4 +363,4 @@ where rowFieldsTail : Ty → List (String × Ty)
   | .field name member tail => (name, member) :: rowFieldsTail tail
   | _ => []
 
-end Minidregg.Compiler.ObjectiveBendBlame
+end Delvetalk.Compiler.ObjectiveBendBlame

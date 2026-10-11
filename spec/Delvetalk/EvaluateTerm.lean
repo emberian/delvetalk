@@ -8,10 +8,10 @@ import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.EvaluateTerm
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendDemandData
-open Minidregg.Compiler.ObjectiveBendDataWire (dataJson)
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandMachine
+open Delvetalk.Theory.ObjectiveBendDemandData
+open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson)
 
 def primitiveOfName : String → Except String Primitive
   | "add" => pure .add | "multiply" => pure .multiply | "equal" => pure .equal
@@ -99,7 +99,7 @@ def evaluate (term : Term) (responses : List Term) (ticks : Nat)
     | none => Fetch.none
   let runBounded := fun (limits : Limits) (ticks : Nat) (state : State) => match stored with
     | some _ => (forceHostedWith (fun _ => true) fetch limits budget.bytes ticks state).1
-    | none => Minidregg.Theory.ObjectiveBendDemandMachine.runBounded limits ticks state
+    | none => Delvetalk.Theory.ObjectiveBendDemandMachine.runBounded limits ticks state
   let reads := fun (state : State) (reply : Json) => match stored with
     | some _ => reply.setObjVal! "forced" (toJson ((forcedRows state).map fun (f, j) => [toJson f, toJson j]))
     | none => reply
@@ -143,14 +143,14 @@ def op (j : Json) : Except String Json := do
   let stored ← match j.getObjVal? "stored" with
     | .error _ => pure none
     | .ok s => do
-      let .record state ← Minidregg.Compiler.ObjectiveBendDataWire.decodeData 256 (← s.getObjVal? "state")
+      let .record state ← Delvetalk.Compiler.ObjectiveBendDataWire.decodeData 256 (← s.getObjVal? "state")
         | throw "stored state must be a record"
       let names ← (← s.getObjVal? "relations").getArr?
       let relations ← names.toList.mapM fun name => do
         let field ← name.getStr?
         let some (.variant "rows" (.record [("items", items)])) := state.lookup field
           | throw s!"stored field {field} is not a relation"
-        let some rows := Minidregg.Compiler.ObjectiveBendDataWire.listItems? items
+        let some rows := Delvetalk.Compiler.ObjectiveBendDataWire.listItems? items
           | throw s!"stored field {field} holds no list"
         pure (field, rows)
       pure (some (state, relations))

@@ -4,7 +4,7 @@ retains the exact graph, never a partial successful Plan or invalid-program clai
 import Theory.ObjectiveBendDemandMachine
 import Theory.ObjectiveBendDemandMachineFast
 import Theory.ObjectiveBendTypes
-namespace Minidregg.Theory.ObjectiveBendDemandData
+namespace Delvetalk.Theory.ObjectiveBendDemandData
 open ObjectiveBendDemandMachine
 inductive Failure where
   /-- Only machine tick suspension: forceWith exhausted its countdown. -/
@@ -47,7 +47,7 @@ allowance); this is `forceWith` exactly (ObjectiveBendDemandMachineFast). -/
 @[csimp] theorem forceWith_eq_fast : @forceWith = @ObjectiveBendDemandMachineFast.forceWithFast :=
   ObjectiveBendDemandMachineFast.forceWithFast_unique forceWith (fun _ _ _ => rfl) (fun _ _ _ _ => rfl)
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandData.forceWith_eq_fast' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: 'Delvetalk.Theory.ObjectiveBendDemandData.forceWith_eq_fast' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
 #guard_msgs in
 #print axioms forceWith_eq_fast
@@ -267,7 +267,7 @@ theorem fetchable_spec {fetch : Fetch} {state : State} {address : Nat} {field : 
 /-- `term` applied to a state held as one stored object cell: `state`'s fields, those named in
 `relations` (with their row counts) stored relations, the rest native data. The argument is the
 cell at address 0, entered through an ordinary argument frame. -/
-def storedInitial (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term)
+def storedInitial (term : Delvetalk.Theory.ObjectiveBendOpenRecursion.Term)
     (state : List (String × Data)) (relations : List (String × Nat)) : State :=
   ⟨#[.stored (.object state relations) none], .evaluate term [], [.argument (.bound 0) [0]]⟩
 
@@ -431,11 +431,11 @@ def executeStateWith (policy : State → Bool) (fetch : Fetch) (limits : Limits)
   | (.yielded _ state,ticks) => .error (.yielded,state,{budget with ticks := ticks})
 
 abbrev ExecutionWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget)
-    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :=
+    (term : Delvetalk.Theory.ObjectiveBendOpenRecursion.Term) :=
   StateExecutionWith policy fetch limits budget (initial term)
 
 def executeWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget)
-    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) :
+    (term : Delvetalk.Theory.ObjectiveBendOpenRecursion.Term) :
     Except (Failure × State × Budget) (ExecutionWith policy fetch limits budget term) :=
   executeStateWith policy fetch limits budget (initial term)
 
@@ -444,7 +444,7 @@ They enter lazily as closed pure data cells; source thunk forcing and activities
 retain their existing semantics. Actual data construction uses one transition,
 so removed AST evaluation/update instructions consume no artificial ticks. -/
 def executeDataArgumentsWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) (budget : Budget)
-    (term : Minidregg.Theory.ObjectiveBendOpenRecursion.Term) (arguments : List Data) :=
+    (term : Delvetalk.Theory.ObjectiveBendOpenRecursion.Term) (arguments : List Data) :=
   executeStateWith policy fetch limits budget (initialDataArguments term arguments)
 
 def executeDataArguments := executeDataArgumentsWith (fun _ => true) Fetch.none
@@ -459,19 +459,19 @@ def execute := executeWith (fun _ => true) Fetch.none
 
 /-! ## Activities: the yielded Plan is data; the response is typed data -/
 
-open Minidregg.Theory.ObjectiveBendTypes in
+open Delvetalk.Theory.ObjectiveBendTypes in
 /-- The member type of a first-order row (no rigid variables in data types). -/
 def rowMember : Ty → String → Option Ty
   | .field name member tail, query => if name = query then some member else rowMember tail query
   | _, _ => none
 
-open Minidregg.Theory.ObjectiveBendTypes in
+open Delvetalk.Theory.ObjectiveBendTypes in
 def rowNames : Ty → List String
   | .field name _ tail => name :: rowNames tail
   | _ => []
 
 
-open Minidregg.Theory.ObjectiveBendTypes in
+open Delvetalk.Theory.ObjectiveBendTypes in
 mutual
 /-- Exact first-order conformance of data to a data type: every record field
 is declared once and every declared field is present; a variant's label is one
@@ -514,13 +514,13 @@ def Data.fieldsSize : List (String × Data) → Nat
   | (_, value) :: rest => value.size + Data.fieldsSize rest
 end
 
-open Minidregg.Theory.ObjectiveBendTypes in
+open Delvetalk.Theory.ObjectiveBendTypes in
 /-- Conformance under the declared bounds of a checked packet. The walk is
 bounded by the data's size times the bounds that one node may unfold through. -/
 def Data.conformsUnder (bounds : DataBounds) (data : Data) (type : Ty) : Bool :=
   Data.conformsFuel bounds ((data.size + 1) * (bounds.length + 3) + 2) data type
 
-open Minidregg.Theory.ObjectiveBendTypes in
+open Delvetalk.Theory.ObjectiveBendTypes in
 def Data.conforms (data : Data) (type : Ty) : Bool := data.conformsUnder [] type
 
 /-- Extract the Plan of a yielded state through the same budgeted
@@ -545,4 +545,4 @@ def yieldedPlan (fetch : Fetch) := yieldedPlanWith (fun _ => true) fetch
 
 #assert_axioms fetchable_spec fetchStep_stack
 
-end Minidregg.Theory.ObjectiveBendDemandData
+end Delvetalk.Theory.ObjectiveBendDemandData

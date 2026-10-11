@@ -63,9 +63,14 @@ Remaining, in order (each a commit, the full suite green on persvati, pins re-re
    - Genesis: the hand makes the garden, the Moss Gate (`kind/room make / name: The Moss Gate`, then its
      scene by a ```spween block the hand posts to it, or a `spween` field), the tide and the porch by spell
      (`world-turn ... make` as the opener with a post), so each has `maker` and `post`; the commonplace
-     cites each. Kind still grafts bodies by the self-sent `graft`: HOST-HANDOFF 5.127 says create-then-
-     extend in one turn now works (the lane's typeMismatch came from grafting `input.id`); replace
-     `grafting`/`graft` with `world.extend` after `created` on `c.object.object` and delete the self-send.
+     cites each. The town's own ids: genesis's `kinds make` takes an exact `id:` for the hand's things
+     (the coordinator's decision), and the commonplace's doors cite them.
+   - **Atomic make is still red on 3c96c27d's binary** (reported to the host lane with this input):
+     Kind.making with `world.extend({object: c.object.object, package: state.body})` after `created`
+     admits the make and answers `reprogrammed`, but the made thing's next direct turn on a method its
+     body adds (`cistern/1 pour {text}`) is refused `typeMismatch` ("not what it takes"); a kind made
+     by `kinds` and extended in its creating turn refuses its own `make` the same way. Kind keeps the
+     self-sent `graft`/`shape` until a binary passes test_kinds and test_wakes with the in-turn extend.
 3. **Tending** (LAW §4 A, E are in the binary: `request.clock`, `old.F`): Record gains `tended: Nat` and the
    `tend {}` spell (writes `context.clock`); `kind/bell`'s form carries the seed law string `law alive
    "answers while tended within 1440 minutes": request.method == "tend" or request.clock <= old.tended +

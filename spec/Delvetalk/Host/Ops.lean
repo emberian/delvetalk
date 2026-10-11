@@ -10,9 +10,9 @@ import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Theory.ObjectiveBendTypes (DataBounds)
-open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendTypes (DataBounds)
+open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 /-! ## Wire forms -/
 
@@ -727,9 +727,9 @@ def applyEdits (decls : List RelDecl) (state : Data) (steps : List Step) : EditR
 /-- The state type is the type of the package's entry definition: a zero-argument
     `def initial() -> State` has type `State`, which must be a closed record of
     first-order data. The entry's own value is not used; the seed is explicit. -/
-def stateTypeOk (assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions)
-    (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
-  ty.isDataUnder assumptions.bounds assumptions.rigid Minidregg.Theory.ObjectiveBendTypes.Ty.dataFuel [] &&
+def stateTypeOk (assumptions : Delvetalk.Theory.ObjectiveBendTyping.Assumptions)
+    (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Bool :=
+  ty.isDataUnder assumptions.bounds assumptions.rigid Delvetalk.Theory.ObjectiveBendTypes.Ty.dataFuel [] &&
     match ty with
     | .field .. | .emptyRow => true
     | _ => false
@@ -737,10 +737,10 @@ def stateTypeOk (assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions)
 /-- A type with its variables renamed in order of first use, each bound one's body written once
     where first met: two state types are the same exactly when these agree, whatever numbering the
     compiles gave their bounds (a layer stack's packet numbers them anew). -/
-partial def canonicalTy (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Json :=
+partial def canonicalTy (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Except String Json :=
   (go ty).run' ([], 0)
 where
-  go : Minidregg.Theory.ObjectiveBendTypes.Ty → StateT (List (Nat × Nat) × Nat) (Except String) Json
+  go : Delvetalk.Theory.ObjectiveBendTypes.Ty → StateT (List (Nat × Nat) × Nat) (Except String) Json
     | .variable i => do
       let (seen, steps) ← get
       if steps > 4096 then throw "type too deep to compare"
@@ -755,7 +755,7 @@ where
         | none => return Json.mkObj [("free", toJson k)]
     | .field n m t => do return Json.mkObj [("field", toJson n), ("member", ← go m), ("tail", ← go t)]
     | .variant r => do return Json.mkObj [("variant", ← go r)]
-    | other => pure (Minidregg.Theory.ObjectiveBendTyping.typeJson other)
+    | other => pure (Delvetalk.Theory.ObjectiveBendTyping.typeJson other)
 
 def inputsKeyOf (inputs : Json) : String :=
   Journal.bodyHash (Json.mkObj (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
@@ -792,7 +792,7 @@ def sealLibrary (files : List (String × String)) : Except String Library := do
   if bytes > Limits.maxLibraryBytes then throw s!"library exceeds {Limits.maxLibraryBytes} bytes"
   let names := files.map (·.1)
   for n in names do
-    unless Minidregg.Compiler.ObjectiveBendParse.isIdent n.toList do throw s!"library module name `{n}` is not an identifier"
+    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent n.toList do throw s!"library module name `{n}` is not an identifier"
   if names.eraseDups.length != names.length then throw "library has two modules of one name"
   for (n, src) in files do
     for i in importsOf src do
@@ -973,15 +973,15 @@ def parseLawTextReadings (text : String) : Except String (Law × List (String ×
     let some rest := line.dropPrefix? "law " | throw s!"expected `law NAME: EXPR`, found `{line}`"
     let rest := rest.toString
     let name := (rest.takeWhile fun c => c.isAlphanum || c == '_').toString
-    unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name in `{line}`"
+    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name in `{line}`"
     let after := (rest.drop name.length).toString.trimAsciiStart.toString
     let (reading, after) ← match ← lawReading after with
       | some (r, more) => pure (some r, more.trimAsciiStart.toString)
       | none => pure (none, after)
     let some expr := after.dropPrefix? ":" | throw s!"expected `law NAME: EXPR`, found `{line}`"
-    pure ((name, ← Minidregg.Compiler.ObjectiveBendLaw.parse expr.toString), reading.map (name, ·))
+    pure ((name, ← Delvetalk.Compiler.ObjectiveBendLaw.parse expr.toString), reading.map (name, ·))
   let law := parsed.map (·.1)
-  Minidregg.Compiler.ObjectiveBendLaw.checkNames law
+  Delvetalk.Compiler.ObjectiveBendLaw.checkNames law
   return (law, parsed.filterMap (·.2) |>.filter (!·.2.isEmpty))
 
 /-- Law text: one `law NAME: EXPR` per line (a reading after the name allowed), as at the top of a package. -/
@@ -1061,7 +1061,7 @@ def inputSources (inputs : Json) : List String :=
   modules ++ ((inputs.getObjValAs? String "source").toOption.map ([·])).getD []
 
 /-- The fields of a record type, through the packet's bounds; none for any other type. -/
-partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
+partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Delvetalk.Theory.ObjectiveBendTypes.Ty → Option (List (String × Delvetalk.Theory.ObjectiveBendTypes.Ty))
   | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (recordFieldTypes bounds (fuel - 1))
   | .field n m tail => ((n, m) :: ·) <$> recordFieldTypes bounds fuel tail
   | .emptyRow => some []
@@ -1206,7 +1206,7 @@ def Object.offers (o : Object) (method : String) : Bool :=
     (m.getObjValAs? String "name").toOption == some method && !isHelperRow m
 
 /-- The cases of a sum type (through the bounds): its labels and payload types. -/
-partial def variantCases (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
+partial def variantCases (bounds : DataBounds) (fuel : Nat) : Delvetalk.Theory.ObjectiveBendTypes.Ty → Option (List (String × Delvetalk.Theory.ObjectiveBendTypes.Ty))
   | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (variantCases bounds (fuel - 1))
   | .variant r => recordFieldTypes bounds (bounds.length + 1) r
   | _ => none
@@ -1216,7 +1216,7 @@ partial def variantCases (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.O
     name; through records, list items and the payloads of the sums the value names. A text naming no
     case is `(path, word, cases)`, `path` the field path (`bed.colours[1]`, "" for the whole value). Any other value
     is left as it is, for the conformance check to judge. -/
-partial def wordsAsCases (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) (d : Data)
+partial def wordsAsCases (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) (d : Data)
     (path : String := "") : Except (String × String × List String) Data :=
   let fuel := bounds.length + 1
   match d with
@@ -1237,9 +1237,9 @@ partial def wordsAsCases (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveB
     let item := do
       let cons ← (variantCases bounds fuel ty).bind (·.lookup "cons")
       (← recordFieldTypes bounds fuel cons).lookup "head"
-    match Minidregg.Compiler.ObjectiveBendDataWire.listItems? d, item with
+    match Delvetalk.Compiler.ObjectiveBendDataWire.listItems? d, item with
     | some items, some t =>
-      Minidregg.Compiler.ObjectiveBendDataWire.listData <$> (items.zipIdx.mapM fun (v, i) => wordsAsCases bounds t v s!"{path}[{i}]")
+      Delvetalk.Compiler.ObjectiveBendDataWire.listData <$> (items.zipIdx.mapM fun (v, i) => wordsAsCases bounds t v s!"{path}[{i}]")
     | _, _ =>
       match (variantCases bounds fuel ty).bind (·.lookup l) with
       | some t => .variant l <$> wordsAsCases bounds t p path
@@ -1247,7 +1247,7 @@ partial def wordsAsCases (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveB
   | _ => pure d
 
 /-- The columns of a relation field's rows, read from the state type: `rows {items: List<T>}` with `T` a record. -/
-def rowColumns (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBendTypes.Ty) (field : String) : Option (List String) := do
+def rowColumns (bounds : DataBounds) (stateType : Delvetalk.Theory.ObjectiveBendTypes.Ty) (field : String) : Option (List String) := do
   let fuel := bounds.length + 1
   let fieldTy ← (← recordFieldTypes bounds fuel stateType).lookup field
   let payload ← (← variantCases bounds fuel fieldTy).lookup "rows"
@@ -1258,7 +1258,7 @@ def rowColumns (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBend
 
 /-- A package's relations against its state type: each a relation field whose rows have every key
     column; refused by name (`key: …`) otherwise. -/
-def checkRelations (decls : List RelDecl) (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Unit := do
+def checkRelations (decls : List RelDecl) (bounds : DataBounds) (stateType : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Except String Unit := do
   for d in decls do
     let some cols := rowColumns bounds stateType d.field
       | throw s!"key: {d.field} is not a Relation<T> field of a record T"
@@ -1280,7 +1280,7 @@ def builtOf (j : Json) : Option Built := do
   let artifact ← (j.getObjVal? "artifact").toOption
   let packet ← (artifact.getObjVal? "packet").toOption
   let entry ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
-  let decoded ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).toOption
+  let decoded ← (Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet).toOption
   let laws ← match (j.getObjValAs? String "laws").toOption with
     | some "" => some []
     | some text => (parseLawText text).toOption
@@ -1316,7 +1316,7 @@ partial def compileObject (w : World) (inputs : Json) : Except String Built := d
     fun d => (Package.withHint resolved d).render
   let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
   let packet ← artifact.getObjVal? "packet"
-  let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
+  let decoded ← Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet
   unless stateTypeOk decoded.source.assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
   let declared ← (declsOfArtifact artifact).mapError (s!"key: " ++ ·)
@@ -1363,14 +1363,14 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   let migrated : Option Compiled ← if migration.isEmpty then
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
     else do
-      unless Minidregg.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
+      unless Delvetalk.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
       -- A migration the package does not define is said by name, not by the compiler's entry search.
       let (art, mty, _) ← (Package.compileKeepingLaws (← resolved migration)).mapError fun e =>
         if (e.splitOn "missing selected entry").length > 1 then
           ("migration", s!"the package defines no {migration}; a migration is def {migration}(old: OldState) -> State")
         else ("migration", e)
       let packet ← (art.getObjVal? "packet").mapError (("migration", ·))
-      let md ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
+      let md ← (Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
       match mty with
       | .arrow _ _ dom cod =>
         unless dom == o.stateType && cod == ty do
@@ -1786,13 +1786,13 @@ def compileEntryIn (w : World) (inputs : Json) (name : String) : Except String (
 def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
   return ⟨← c.artifact.getObjVal? "packet", c.entry.type, c.entry.source.assumptions.bounds,
     c.entry.source.assumptions.rigid, some c.entry,
-    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
+    some (Delvetalk.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
 
-/-- A compiled definition from its packet: decoded and re-checked by Mini (`CheckedEntry.ofPacket`). -/
+/-- A compiled definition from its packet: decoded and re-checked (`CheckedEntry.ofPacket`). -/
 def compiledOfPacket (packet : Json) : Option Compiled := do
   let e ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
   return ⟨packet, e.type, e.source.assumptions.bounds, e.source.assumptions.rigid, some e,
-    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram e.source.term)⟩
+    some (Delvetalk.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram e.source.term)⟩
 
 /-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`. -/
 def diskCompiled (key : String) : Option Compiled :=
@@ -1884,7 +1884,7 @@ def contextData (id principal handle caller intent : String) (height clock : Nat
     declares it: the fields its type names, in its order, each fitted alike. An object compiled
     under an older library whose Context lacks a field the host now fills keeps running; a
     field the host cannot fill leaves the record as built (and the kernel refuses it by name). -/
-partial def fitRecord (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) (d : Data) : Data :=
+partial def fitRecord (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) (d : Data) : Data :=
   match d, recordFieldTypes bounds (bounds.length + 1) ty with
   | .record fs, some names =>
     if names.all (fun (n, _) => fs.any (·.1 == n)) then
@@ -1898,13 +1898,13 @@ def contextFields : List String :=
 
 /-- A Context type: a record (through the bounds) naming the principal and the intent, every
     field of which the host fills. An older library's Context with fewer fields is one too. -/
-def isContextType (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
+def isContextType (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Bool :=
   match recordFieldTypes bounds (bounds.length + 1) ty with
   | some fs => fs.any (·.1 == "principal") && fs.any (·.1 == "intent") && fs.all (contextFields.contains ·.1)
   | none => false
 
 /-- The parameter types of a definition's type, outermost first. -/
-def arrowDomains : Nat → Minidregg.Theory.ObjectiveBendTypes.Ty → List Minidregg.Theory.ObjectiveBendTypes.Ty
+def arrowDomains : Nat → Delvetalk.Theory.ObjectiveBendTypes.Ty → List Delvetalk.Theory.ObjectiveBendTypes.Ty
   | fuel + 1, .arrow _ _ domain codomain => domain :: arrowDomains fuel codomain
   | _, _ => []
 
@@ -2882,7 +2882,7 @@ def parseChain (j : Option Json) : Except String Ledger :=
 def defaultLaw (creator : String) : Except String Law := do
   if creator.any (fun c => c == '"' || c == '\\' || c.toNat < 32) then
     throw "the creator handle cannot be named in the default law"
-  let clause ← Minidregg.Compiler.ObjectiveBendLaw.parse
+  let clause ← Delvetalk.Compiler.ObjectiveBendLaw.parse
     s!"request.kind == 0 or request.subject == \"{creator}\""
   return [("owner", clause)]
 
@@ -2937,8 +2937,8 @@ def createOutcome (id : String) (o : Object) (artifact seed : Json) : Json :=
 
 /-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
     come from `initial()`), for `world-create` and the `create` Plan alike. -/
-def mergeSeed (initial seed : Data) (bounds : Minidregg.Theory.ObjectiveBendTypes.DataBounds)
-    (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Data := do
+def mergeSeed (initial seed : Data) (bounds : Delvetalk.Theory.ObjectiveBendTypes.DataBounds)
+    (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Except String Data := do
   if seed.conformsUnder bounds ty then return seed
   match seed, initial with
   | .record given, .record base =>

@@ -21,17 +21,17 @@ import Delvetalk.Canonical
 
 namespace Delvetalk.Host.Snapshot
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
-open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
+open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 def edition : String := "delvetalk.snapshot.v3"
 
 /-! ## Writing -/
 
-def tyJson (t : Ty) : Json := Minidregg.Theory.ObjectiveBendTyping.typeJson t
+def tyJson (t : Ty) : Json := Delvetalk.Theory.ObjectiveBendTyping.typeJson t
 
 def tyOf (j : Json) : Except String Ty :=
-  return (← Minidregg.Theory.ObjectiveBendTyping.decodeTypeWith #[] Limits.dataDepth Limits.dataDepth j).1
+  return (← Delvetalk.Theory.ObjectiveBendTyping.decodeTypeWith #[] Limits.dataDepth Limits.dataDepth j).1
 
 def boundsJson (bounds : DataBounds) : Json :=
   Json.arr (bounds.toArray.map fun (i, t) => Json.mkObj [("index", toJson i), ("type", tyJson t)])

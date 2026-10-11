@@ -1,4 +1,4 @@
-PROOF_ONLY = Delvetalk.PackageDataAdmission Delvetalk.PackageDataNormalization Delvetalk.PackageDataSchemaProofs Delvetalk.Typed Theory.ObjectiveBendNativeDataSimulation
+PROOF_ONLY = Delvetalk.PackageDataAdmission Delvetalk.PackageDataNormalization Delvetalk.PackageDataSchemaProofs Theory.ObjectiveBendNativeDataSimulation
 
 build:
 	LEAN_NUM_THREADS=2 lake build

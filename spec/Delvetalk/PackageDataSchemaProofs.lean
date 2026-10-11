@@ -2,8 +2,8 @@
 import Delvetalk.PackageDataAdmission
 import Std.Data.HashMap.Lemmas
 namespace Delvetalk.PackageData
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendTyping
 set_option autoImplicit false
 
 /-- Every retained alias has one checked completed target. This certificate is
