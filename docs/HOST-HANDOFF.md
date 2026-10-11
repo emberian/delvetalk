@@ -1293,6 +1293,27 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `test_relation_limits` keeps 16,384-byte packages in the Workshop's `held` until the per-cell bound (§15
    step 4) replaces `maxStateBytes`.
 
+135. **`delvetalk-obend root-edit` (host15; ROOT §1.5; §7 item 1 of host14's queue).** `Host/RootEdit.lean`,
+   dispatched by `PackageMain`. `--journal J --out J2 --reason R` with `truncate --height N`, `drop --height N`,
+   `rewrite --height N --entry FILE` (one JSON object), `splice --at N --entries FILE` (JSON lines or an array);
+   `--state DIR --reason R delete-world --name W` moves `W.journal` and its snapshots to
+   `deleted/W-<stamp>.*` beside `W-<stamp>.json` (reason, old head, what moved), refused while `serve` holds
+   `journal.lock`. J must verify and not be open (`flock`; exit 75); J2 must not exist; J is never written.
+   `reseal` keeps entries 1..kept and re-seals the rest: `previous`/`hash`; height 1 holds `replay` (and a fork's
+   genesis keeps its `previous`), no later entry does; a `turn` equal to the old height becomes the new; an
+   `ended` id is recomputed (`endedId` under the new height), and under a changed intent the send, change,
+   publish and interpretation ids are too (`idOf`, matched against the old formula); every later string equal
+   to an old entry hash or an old id is rewritten (`subst`: `resumes`, `delivery.id`, `identity.intent`, slots);
+   a root `ignore`/`unignore` height follows its entry (an edit removing the entry it names is refused). The
+   first re-sealed entry carries `rootEdit {command, reason, oldHead, at}`; `truncate` and a `drop` of the last
+   entry re-seal nothing and carry no marker (J2 is a prefix of J). J2 is chained and replayed in full
+   (`Snapshot.replayAll`) before it is written; a failure writes nothing. Snapshots at or below the kept height
+   are copied. The reply prints `oldHead`, `newHead`, `at`, `slugsChanged` and the table `{oldHeight, old,
+   height, new, oldSlug, slug}`. Not rewritten: CIDs quoted inside checkpoints and states (an await's
+   `Receipt.hash`), and `at://` citations elsewhere, which stop resolving as ROOT says. Tests:
+   `tests/test_root_edit.py` (drop over an `ended` delivery, a resumed suspension and turns, then `verify`;
+   splice back what drop took; truncate; rewrite; an edit that breaks replay; an open journal; delete-world).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
