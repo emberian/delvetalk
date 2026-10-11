@@ -372,6 +372,15 @@ class Catalogue(unittest.TestCase):
         self.assertEqual(h['Content-Type'], 'text/plain; charset=utf-8')
         self.assertIn(b'/api', text)
 
+    def test_the_module_bounds_named_are_the_fronts_and_the_hosts(self):
+        limits = (Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Limits.lean').read_text()
+        host = int(re.search(r'def maxPackageBytes : Nat := (\d+)', limits)[1])  # no op answers the bounds yet
+        when, front = ERRORS['moduleTooLarge']['when'], transport.http
+        self.assertIn(f'over {front.MAX_SOURCE} bytes', when)
+        self.assertIn(f'up to {host}', when)
+        self.assertIn(f'{front.MAX_BODY}-byte body', when)
+        self.assertLessEqual(front.MAX_SOURCE, min(host, front.MAX_BODY))  # the front never offers what the host refuses
+
     def test_the_catalogues_refusals_are_the_hosts_closed_set_and_its_transient_ones(self):
         ops = (Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Host' / 'Ops.lean').read_text()
         names = lambda decl: set(re.findall(r'"(\w+)"', re.search(rf'def {decl} : List String :=\s*\[(.*?)\]', ops, re.S)[1]))
