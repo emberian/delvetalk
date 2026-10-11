@@ -8,6 +8,7 @@ names an object or receipt the journal does not hold, a lost diagnostic, or a ma
 
     python3 -W error -m unittest tests.test_make -v
 """
+import json
 import unittest
 
 from tests.test_reflection import Reflection
@@ -146,6 +147,44 @@ def methods()""").replace('cons({head: "dim", tail:', 'cons({head: "dim", tail: 
         self.assertEqual(self.turn("lamp", "rain", record(drops=nat(4)), principal="kim").get("result"), nat(4))
         self.reopen()
         self.assertEqual(self.turn("lamp", "rain", record(drops=nat(5)), principal="kim").get("result"), nat(5))
+
+    def test_a_body_laid_in_the_making_has_the_shape_a_later_extend_gives(self):
+        """The objects lane's cistern: a body that names only its own method in `methods()` and declares no
+        relations, laid in the turn that makes the thing, keeps what the code below declared public and its
+        relations (HOST-HANDOFF 5.138), as the same body laid by a later extend does, and after replay."""
+        from tests.test_relation import PACKAGE as RAINS
+        base = RAINS.replace("LIMIT", "0n")
+        pour = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Form.obend as Form
+type State = Super.State
+form pour:
+  text: text 1..280
+def pour(state: State, input: PourInput, context: Abi.Context) -> Activity<Nat>:
+  Super.insert(state, {author: context.principal, at: 1n, text: input.text}, context)
+def methods() -> Lists.List<String>:
+  Lists.List::<String>.cons({head: "pour", tail: Lists.List::<String>.nil({})})
+"""
+        made = self.turn("kind", "make", record(source=label(base), body=label(pour), id=label("cistern")), principal="kim")
+        self.assertEqual(made["status"], "admitted", made)
+        poured = self.turn("cistern", "pour", record(text=label("refused tooSoon")), principal="kim")
+        self.assertEqual((poured["status"], poured.get("result")), ("admitted", nat(1)), poured)
+        below = self.turn("cistern", "insert", record(author=label("ann"), at=nat(2), text=label("x")), principal="ann")
+        self.assertEqual(below["status"], "admitted", below)
+        # The same body, laid by an extend after the making.
+        self.host.send(op="world-create", principal="kim", identity="mk-later", object="later", source=base,
+                       entry="initial", seed=record())
+        later = self.host.send(op="world-reprogram", principal="kim", identity="re-later", object="later", version=0,
+                               mode="extend", package=pour, migration="")
+        self.assertEqual(later["status"], "admitted", later)
+        inspect = lambda o: self.host.send(op="world-inspect", principal="kim", object=o)
+        self.assertEqual(inspect("cistern")["methods"], inspect("later")["methods"])
+        # The forms are the same but for the card each names.
+        self.assertEqual(json.dumps(inspect("cistern")["forms"]).replace('"cistern"', '"later"'), json.dumps(inspect("later")["forms"]))
+        self.reopen()
+        again = self.turn("cistern", "pour", record(text=label("refused again")), principal="bob")
+        self.assertEqual(again["status"], "admitted", again)
 
     def test_a_prefix_mints_past_the_ids_already_held(self):
         """`requireAbsent` ending in `/`: the first free `<prefix><n>`, so a squatter of lamp/1 refuses nothing."""

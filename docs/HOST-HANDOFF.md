@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host17 from 5.137; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host17 from 5.137 to 5.138; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -1188,9 +1188,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    - *Atomic make:* on foundation fixtures a body grafted by same-turn create-then-extend gives the made thing
      its methods, a form-derived input (`RainInput`) included, which run, survive a later `extend` and a reopen
      (`tests/test_make.py`
-     `test_a_method_the_body_adds_runs_on_the_made_thing_and_a_later_layer_lays_over_it`). The objects lane's
-     `typeMismatch` did not reproduce here: its Kind grafted `input.id`, which with a minted id names
-     nothing, so the lane's failing input is wanted before more host work.
+     `test_a_method_the_body_adds_runs_on_the_made_thing_and_a_later_layer_lays_over_it`); a body that
+     declares less than the code below it is 5.138.
    - *Minting under a prefix:* a `create` whose `requireAbsent.object` ends in `/` takes the first free
      `<prefix><n>` (`mintUnder`: not an object, not created this turn, not held by a suspension's absence), so a
      squatted `garden/bell/3` refuses nothing; the creation's `object` names the id taken (a kind grafts
@@ -1389,6 +1388,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      file now reads `transport.journal` and writes `write_journal`; `test_root` (the snapshot written at an ignore,
      the one before it refused when it is gone); `test_journal_bound` (both files).
 
+138. **A layer laid in the making has its stack's shape (host17; §7 item 6 of host16's queue; replay edition 5).**
+   The objects lane's failing input: a Kind's `make` creating a record and extending it with the cistern's body
+   in the same turn; the next `cistern/1 pour {text}` was refused `typeMismatch`. The body names only `write`
+   in `methods()` and declares no `relations()`; `buildCreated` compiled the stack and took the top layer's
+   declarations alone, so RECORD's relation went undeclared and the pour's row insert failed, where a later
+   `extend` (`prepareProgram`) kept the code below's public methods, relations and law shape. Now the stack
+   has one shape however it is compiled: `compileObject` compiles the code below a layer (`lowerInputs`) and
+   keeps its exposed methods, its relations when the layer declares none, and its law shape when the layer
+   declares no Bend law (`Built.lawShape`, `Built.shape`); `makeObject`, the root `program` act and
+   `prepareProgram` (now `compileObject` plus the migration and state-type checks) read it. Replay of a
+   layered creation derives the new shape: edition 5. Tests: `tests/test_make.py`
+   `test_a_body_laid_in_the_making_has_the_shape_a_later_extend_gives` (refused on the binary before, the
+   same-turn body's methods and forms equal a later extend's, a reopen); the objects lane's `Kind` with the
+   body laid in the turn (its scratch `Kind-inturn.obend`) passes all of `test_kinds`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1400,7 +1414,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   rule, a derived index, a journaled field replay compares), and say so in the item. 2 is host12
   (evictions and changes owed as facts, lineage, reservations, attempts); 3 is host14 (root, ignore and
   shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126); 4 is host16 (roots
-  read by their cells, the per-cell bound and ledger; 5.136). Test:
+  read by their cells, the per-cell bound and ledger; 5.136); 5 is host17 (a layered package's shape is
+  its stack's, 5.138). Test:
   `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -1417,7 +1432,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host17's item 5.137, in order (numbers kept as the coordinator named them; item 6 goes before item 3). The owner's standing order binds every item: "maturify and take forward
+The queue after host17's item 5.137, in order (numbers kept as the coordinator named them). The owner's standing order binds every item: "maturify and take forward
 everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
 together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things',
 no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
@@ -1431,13 +1446,6 @@ describes only what is.
 5. **Scar tissue to remove now:** `proposalShapes`' second shape and `proposedData`'s `spelled := false` (5.128:
    every object compiles from `world/lib`, so no call site has the older `Proposed`); `receiptReplies`' older
    `Receipt` shape (5.127) likewise; `misfitReason`'s fallback once `extraField` covers every input row.
-6. **The objects lane's atomic make, after item 2:** lane/rewrite6's `tests/test_kinds.py` has the failing
-   inputs: (a) a kind made by `kinds` and extended in the creating turn refuses its own later writes
-   `typeMismatch` (the layer's `make` has a form-derived input record; the rebuilt creation's method table or
-   input shape disagrees with the layer's); (b) a bell body laid in the creating turn is refused, the law
-   judging the extend with the kind as proposer rather than the maker (the turn's principal). Reproduce on
-   persvati, fix in the same-turn extend path, and tell the coordinator so the objects lane drops its
-   send-then-graft workaround.
 7. **Routed by the fungus review** (docs/review/fungus-2026-10-11.md §1, §3), folded into the items above
    where they touch the same code, else after item 3, each deleting the old path in its commit: `world-history`
    takes `reverse` (T28); a host reach rule, `reach-of {text, replyTo, thread}`, so the bridge relays the
