@@ -145,7 +145,7 @@ class Hub(test_chain.Chain):
     def test_with_a_policy_prose_is_read_once_by_hob_against_the_doors_forms(self):
         """FLEX §2: every prose reply to the root with a policy goes to hob, once, offered every
         door's forms; there is no mention gate and no second attempt. hob's ask is the question
-        over the nearest doors, its card the root menu, its none quiet."""
+        over the nearest doors, its none quiet, and it has no card to show."""
         self.policy()
         self.commonplace("policy")
         self.greet(GLM, KIMI)
@@ -162,11 +162,10 @@ class Hub(test_chain.Chain):
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n"))
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
-        # hob's card: the root menu.
+        # hob shows no card (docs/OVERHAUL.md §2: four answers): `card` is prose with no spell, silence.
         self.assertEqual(self.say("is there a map of the town?", KIMI, uri="at://x/post/4")["status"], "suspended")
         carded = self.interpret("card")
-        self.assertEqual(carded["result"]["label"], "usage", carded)
-        self.assertTrue(carded["receipt"]["offers"][0]["text"].startswith("✾ DELVETALK · THE COMMONPLACE\n\nEight doors. "), carded)
+        self.assertEqual((carded["result"]["label"], carded["receipt"].get("offers", [])), ("silent", []), carded)
         # hob's none is quiet: nothing offered.
         self.assertEqual(self.say("is the garden open on the wiki today?", KIMI, uri="at://x/post/3")["status"], "suspended")
         quiet = self.interpret("none")

@@ -17,6 +17,7 @@ model's words) and the plant spell with blanks, `card` with the garden card, `no
 Refuted by: a spell in the model's text not planting, `none` offering a card, an `ask` asked
 again or answered without its question, or a second interpretation being requested.
 """
+import json
 import unittest
 
 from tests.host import as_owner
@@ -89,16 +90,14 @@ class Resumed(test_chain.Chain):
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed
 
-    def test_hobs_say_is_its_line_beside_the_card_the_words_were_for(self):
-        """hob's `say:` is `said` (the host's): its line stands above the garden's card, never inside it. Prose with
-        no prefix is silence (the second playtest's stop, D2)."""
+    def test_hob_states_nothing_a_say_is_silence(self):
+        """hob has no `say:` (docs/OVERHAUL.md §2; 69275, a `say:` that stated a falsehood and was believed): an
+        answer so headed is prose with no spell, silence, and no line of hob's stands beside the garden's card."""
         self.policy()
         self.garden()
         self.say("What makes you think anyone needs a portal?")
-        _, said = self.settle("say: A portal here is a door; the garden has none of its own.")
-        [card] = [o["text"] for o in said["receipt"]["offers"]]
-        self.assertEqual((said["status"], said["result"]["label"]), ("admitted", "usage"), said)
-        self.assertTrue(card.startswith("hob: A portal here is a door; the garden has none of its own.\n✾ THE NIGHT GARDEN\n"), card)
+        item, said = self.settle("say: A portal here is a door; the garden has none of its own.")
+        self.assertNotIn("hob: A portal", json.dumps(said))
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_an_ask_is_one_attempt_whose_question_stands_over_the_plant_spell(self):

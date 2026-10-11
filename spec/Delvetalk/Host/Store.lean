@@ -23,10 +23,6 @@ def maxObjectIdBytes : Nat := 128
 def spellsPerReply : Nat := 3
 /-- The characters of a card an interpretation shows the model (docs/FLEX.md §2). -/
 def cardShownChars : Nat := 1400
-/-- hob's answer to a question (`say: <text>`, the verdict `said`): at most this many sentences and
-    characters, cut at a sentence end. -/
-def saySentences : Nat := 2
-def sayChars : Nat := 300
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
     with every change to what replay derives (judging, a derived field, an index replay checks).
@@ -106,6 +102,11 @@ def subscribersPerObject : Nat := 64
     its kind's `under` carries are bounded by `maxLawClauses` in each text. -/
 def rulesPerObject : Nat := 32
 def wantsPerObject : Nat := 32
+/-- Verbs grown on one object (docs/COLLABORATOR.md §3: sixteen a thing; `ungrow` makes room). -/
+def verbsPerObject : Nat := 16
+/-- A grown verb's reading, in characters: what the verb does, as the grower says it. -/
+def verbReadingMax : Nat := 200
+def verbNameMax : Nat := 32
 /-- Rules one commit fires, over every object it wrote; the rest are journaled `unfired`. -/
 def rulesPerCommit : Nat := 8
 /-- How many rule firings deep a chain goes: a turn a rule's spell delivered fires its own rules one
@@ -269,6 +270,29 @@ def Placed.ofJson (j : Json) : Except String Placed := do
   return { name := ← j.getObjValAs? String "name", owner := ← j.getObjValAs? String "owner",
            since := ← j.getObjValAs? Nat "since", line, clause }
 
+/-- A verb grown on a thing (docs/COLLABORATOR.md §3; OVERHAUL §2): its name, which a spell names as
+    it names a declared form (`delvetalk <thing> <name>`) and which the act carries as `request.verb`;
+    who grew it and the height of the entry that grew it; what it does, in the grower's words; what it
+    takes (`text`, a line, or "" for none); and `does`, the rule placed with it in the same entry that
+    gives it consequence (`when: request.verb == "<name>"`), "" for a gesture (a line and a tend). -/
+structure Verb where
+  name : String
+  grower : String
+  height : Nat
+  reading : String
+  takes : String := "text"
+  does : String := ""
+  deriving BEq, Inhabited
+
+def Verb.json (v : Verb) : Json :=
+  Json.mkObj ([("name", toJson v.name), ("by", toJson v.grower), ("at", toJson v.height), ("reading", toJson v.reading),
+    ("takes", toJson v.takes)] ++ (if v.does.isEmpty then [] else [("does", toJson v.does)]))
+
+def Verb.ofJson (j : Json) : Except String Verb := do
+  return { name := ← j.getObjValAs? String "name", grower := ← j.getObjValAs? String "by",
+           height := ← j.getObjValAs? Nat "at", reading := ← j.getObjValAs? String "reading",
+           takes := ← j.getObjValAs? String "takes", does := (j.getObjValAs? String "does").toOption.getD "" }
+
 /-- Who may `view` an object; fixed at creation and journaled with it. -/
 inductive ReadPolicy where
   | exposed
@@ -353,6 +377,9 @@ structure Object where
       order placed; what its text and its kind carry are read from the texts (`Ops.carried`). -/
   rules : List Placed := []
   wants : List Placed := []
+  /-- The verbs hands grew on it (`grow`), in the order grown: its spells after the forms its package
+      declares, each run by its `act`. -/
+  verbs : List Verb := []
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

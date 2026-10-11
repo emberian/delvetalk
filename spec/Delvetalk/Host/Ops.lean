@@ -248,28 +248,54 @@ def cellsOf (relations : List (RelDecl × Array Data)) (reads : Delvetalk.Turn.R
     else (rows[reach - 1]?).map fun row => (f, some (Delvetalk.Turn.keyProjection d.key row))
   Cells.join { scalar := true, spans := spans } { rows := reads.rows.map fun r => (r.field, r.key) }
 
-/-- A rule or a want a turn places on an object, or takes off it (`line` "" for a removal): a change
-    of kind `rule` (4), judged by the object's law when it places (docs/OVERHAUL.md §2 conflict 8). -/
-structure Placement where
-  object : String
-  want : Bool
-  name : String
-  line : String := ""
+/-- What a placement places: a rule, a want, or a verb grown (docs/COLLABORATOR.md §3). -/
+inductive Placing where
+  | rule
+  | want
+  | verb
   deriving BEq, Inhabited
 
-def Placement.keyword (x : Placement) : String := if x.want then "want" else "rule"
+/-- Its journal key, and the word `request.verb` reads when the law judges the placing: `rule`, `want`,
+    `grow`. -/
+def Placing.keyword : Placing → String
+  | .rule => "rule"
+  | .want => "want"
+  | .verb => "verb"
+
+def Placing.act : Placing → String
+  | .rule => "rule"
+  | .want => "want"
+  | .verb => "grow"
+
+/-- A rule, a want or a verb a turn places on an object, or takes off it (`line` "" for a removal): a
+    change of kind `rule` (4), judged by the object's law when it places (docs/OVERHAUL.md §2 conflict
+    8) with `request.verb` naming which (`Placing.act`). A rule's or a want's `line` is its clause; a
+    verb's is its reading, with what it `takes` and the rule it `does` (placed in the same turn). -/
+structure Placement where
+  object : String
+  what : Placing
+  name : String
+  line : String := ""
+  takes : String := ""
+  does : String := ""
+  deriving BEq, Inhabited
+
+def Placement.keyword (x : Placement) : String := x.what.keyword
 
 def Placement.json (x : Placement) : Json :=
   Json.mkObj ([("object", toJson x.object), (x.keyword, toJson x.name)] ++
-    (if x.line.isEmpty then [] else [("line", toJson x.line)]))
+    (if x.line.isEmpty then [] else if x.what == .verb then
+      [("reading", toJson x.line), ("takes", toJson x.takes)] ++ (if x.does.isEmpty then [] else [("does", toJson x.does)])
+     else [("line", toJson x.line)]))
 
 def Placement.ofJson (j : Json) : Except String Placement := do
   let object ← j.getObjValAs? String "object"
-  let line := (j.getObjValAs? String "line").toOption.getD ""
-  match j.getObjValAs? String "rule", j.getObjValAs? String "want" with
-  | .ok n, .error _ => return { object, want := false, name := n, line }
-  | .error _, .ok n => return { object, want := true, name := n, line }
-  | _, _ => throw "a placement names one rule or one want"
+  let text := fun (k : String) => (j.getObjValAs? String k).toOption.getD ""
+  match j.getObjValAs? String "rule", j.getObjValAs? String "want", j.getObjValAs? String "verb" with
+  | .ok n, .error _, .error _ => return { object, what := .rule, name := n, line := text "line" }
+  | .error _, .ok n, .error _ => return { object, what := .want, name := n, line := text "line" }
+  | .error _, .error _, .ok n => return { object, what := .verb, name := n, line := text "reading", takes := text "takes", does := text "does" }
+  | _, _, _ => throw "a placement names one rule, one want or one verb"
 
 structure Proposal where
   principal : String
@@ -306,20 +332,48 @@ structure Proposal where
   /-- The object whose send the turn delivers ("" for a direct turn): the law's `context.sender`.
       Replay reads it from the pending delivery the entry consumes. -/
   sender : String := ""
-  /-- Rules and wants the turn places and takes off; they take effect with the commit. -/
+  /-- Rules, wants and verbs the turn places and takes off; they take effect with the commit. -/
   placements : List Placement := []
 
+/-- The method a grown verb runs (`act {verb, text}`, docs/COLLABORATOR.md §3): its `request.verb` is the verb. -/
+def actMethod : String := "act"
+
+/-- The host's own spells on every card (docs/CATALOGUE.md §2, higher-order cards), and its reads,
+    answered as `?` is: no verb grows under these names. -/
+def hostSpells : List String := ["become", "adopt", "lend", "rule", "unrule", "want", "unwant", "grow", "ungrow",
+  "retire", "unretire", "hide", "show"]
+def hostReads : List String := ["rules", "wants", "verbs"]
+
+/-- Words a spell reads as no verb: the usage, the lens, the words' way in and the act itself. -/
+def verbsReserved : List String := ["?", "set", "receive", actMethod]
+
+/-- What a grown verb takes: a line (`text`), or nothing. -/
+def verbTakes : List String := ["text", ""]
+
+/-- A verb's name: a spell's action word (`Spell.identifier`), at most `Limits.verbNameMax` long. -/
+def verbWord (name : String) : Bool :=
+  !name.isEmpty && name.length ≤ Limits.verbNameMax && name.all fun c => c.isLower || c.isDigit || c == '-'
+
+/-- The names in an object's method table. -/
+def methodNames (o : Object) : List String :=
+  ((o.methods.getArr?.toOption).getD #[]).toList.filterMap fun m => (m.getObjValAs? String "name").toOption
+
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
-    amendment that no write of the proposal already names. -/
+    amendment that no write of the proposal already names, and one of kind `rule` for each thing a
+    placement names: its `request.verb` the placing's (`rule`, `want`, `grow`), judged by the law, or ""
+    for a thing only taken off, which the law does not judge. -/
 def Proposal.allWrites (p : Proposal) : List (String × List Written) :=
-  let wanted := p.programs.map (fun x => (x.1, 1)) ++ p.laws.map (fun x => (x.1, 2)) ++
-    (p.placements.map (·.object)).eraseDups.map ((·, 4))
-  wanted.foldl (fun acc (id, kind) =>
-    let have_ := ((acc.lookup id).getD []).any (·.kind == kind)
+  let placed := (p.placements.map (·.object)).eraseDups.flatMap fun id =>
+    let acts := ((p.placements.filter fun x => x.object == id && !x.line.isEmpty).map (·.what.act)).eraseDups
+    (if acts.isEmpty then [""] else acts).map ((id, 4, ·))
+  let wanted := p.programs.map (fun x => (x.1, 1, "")) ++ p.laws.map (fun x => (x.1, 2, "")) ++ placed
+  wanted.foldl (fun acc (id, kind, verb) =>
+    let have_ := ((acc.lookup id).getD []).any fun x => x.kind == kind && x.verb == verb
+    let w : Written := { caller := "", kind, edits := [], verb }
     if have_ then acc
     else if acc.any (·.1 == id) then
-      acc.map fun (i, ws) => if i == id then (i, ws ++ [{ caller := "", kind, edits := [] }]) else (i, ws)
-    else acc ++ [(id, [{ caller := "", kind, edits := [] }])]) p.writes
+      acc.map fun (i, ws) => if i == id then (i, ws ++ [w]) else (i, ws)
+    else acc ++ [(id, [w])]) p.writes
 
 /-- A child id `<parent>/<kind>/<n>` raises its parent's `minted` counter to `n` (any creation of
     that shape, named or minted, so a later mint never collides with a named child). -/
@@ -2447,9 +2501,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     let judgments := ((changes ++ migrated).map fun c => (c.caller, c.kind, c.method, c.via, c.verb)).eraseDups
     -- A placement is judged by the law (`request.kind == rule`); taking a line off is the placer's or
     -- the owner's, judged below by who asks.
-    let places := p.placements.any fun x => x.object == id && !x.line.isEmpty
     let judgments := if judgments.isEmpty then [("", 0, "", "", "")] else
-      judgments.filter fun (_, kind, _, _, _) => kind != 4 || places
+      judgments.filter fun (_, kind, _, _, verb) => kind != 4 || !verb.isEmpty
     let mut judgedBy : List Law.Facts := []
     for (caller, kind, method, via, verb) in judgments do
       let subject ← if via.isEmpty then pure p.principal else
@@ -2498,35 +2551,70 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let kept := o.readings.filter fun (n, _) => law.lookup n == o.law.lookup n && (given.lookup n).isNone
       next := { next with law, lawText := text, readings := given ++ kept }
       amendments := amendments ++ [Json.mkObj [("object", toJson id), ("old", toJson o.lawText), ("new", toJson text)]]
-    -- Rules and wants placed and taken off (KERNEL-HANDOFF §27 item 1): a line parsed by the one parser,
-    -- of the modality it is placed as, its name new across the thing's text and placed lines, within
-    -- the bounds; a removal by its placer, the thing's owner or the opener.
+    -- Rules, wants and verbs placed and taken off (KERNEL-HANDOFF §27 item 1; COLLABORATOR §3): a rule's
+    -- or a want's line parsed by the one parser, of the modality it is placed as, its name new across
+    -- the thing's text and placed lines; a verb's name a spell's action word new to the thing's forms,
+    -- the host's spells and its verbs, on a thing with an `act`; each within its bound; a removal by
+    -- its placer, the thing's owner or the opener.
     for x in p.placements.filter (·.object == id) do
       let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
-      let rows := if x.want then next.wants else next.rules
-      if x.line.isEmpty then
-        let some row := rows.find? (·.name == x.name)
-          | throw (refuse "unplaced" s!"{id} has no {x.keyword} {x.name} that a hand placed.")
-        unless row.owner == p.principal || ownerOf o.state == p.principal || openerActs w p.principal do
-          throw (refuse "notPlacer" s!"only who placed {x.keyword} {x.name}, or the owner of {id}, takes it off.")
-        next := if x.want then { next with wants := next.wants.filter (·.name != x.name) }
-          else { next with rules := next.rules.filter (·.name != x.name) }
-      else
-        let clause ← match Delvetalk.Compiler.ObjectiveBendLaw.parseClause x.line with
-          | .ok c => pure c
-          | .error e => throw { cls := "programRefused", clause := some "law syntax", object := some id, reason := some e }
-        unless clause.name == x.name && (if x.want then Law.isWant clause else Law.isRule clause) do
-          throw { cls := "programRefused", clause := some "law syntax", object := some id,
-                  reason := some s!"the line places {clause.name} as another modality than {x.keyword} {x.name}" }
-        let names := (((parseClauses next.lawText).toOption.getD []).map (·.name)) ++ (next.rules ++ next.wants).map (·.name)
-        if names.contains x.name then
-          throw (refuse "nameTaken" s!"{id} already carries a clause {x.name}; place one whose name is new.")
-        if let some message := citationRefusal w id [(x.name, clause.condition)] then
-          throw (refuse "under" ((message.drop "under: ".length).toString))
-        if rows.length ≥ (if x.want then Limits.wantsPerObject else Limits.rulesPerObject) then
-          throw { cls := "capacity", object := some id, reason := some (if x.want then "wantsPerObject" else "rulesPerObject") }
-        let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
-        next := if x.want then { next with wants := next.wants ++ [row] } else { next with rules := next.rules ++ [row] }
+      let mayRemove := fun (placer : String) => placer == p.principal || ownerOf o.state == p.principal || openerActs w p.principal
+      match x.what with
+      | .verb =>
+        if x.line.isEmpty then
+          let some row := next.verbs.find? (·.name == x.name)
+            | throw (refuse "unplaced" s!"{id} has no verb {x.name} that a hand grew.")
+          unless mayRemove row.grower do
+            throw (refuse "notPlacer" s!"only who grew verb {x.name}, or the owner of {id}, takes it off.")
+          next := { next with verbs := next.verbs.filter (·.name != x.name) }
+        else
+          let bad := fun (reason : String) => ({ cls := "programRefused", clause := some "verb", object := some id, reason := some reason } : Refusal)
+          unless verbWord x.name do
+            throw (bad s!"a verb's name is one word of a to z, digits and -, at most {Limits.verbNameMax} long, not {x.name}")
+          unless x.line.length ≤ Limits.verbReadingMax && !x.line.any (· == '\n') do
+            throw (bad s!"a verb's reading is one line of at most {Limits.verbReadingMax} characters")
+          unless verbTakes.contains x.takes do
+            throw (bad s!"a verb takes text (a line) or nothing, not {x.takes}")
+          unless next.offers actMethod do
+            throw { cls := "noMethod", clause := some actMethod, object := some id,
+                    reading := some s!"{id} has no act, so no verb grows on it." }
+          if hostSpells.contains x.name || hostReads.contains x.name || verbsReserved.contains x.name ||
+              (methodNames next).contains x.name then
+            throw (refuse "nameTaken" s!"{id} already takes {x.name}; grow a verb whose name is new.")
+          if next.verbs.any (·.name == x.name) then
+            throw (refuse "nameTaken" s!"{x.name} is grown on {id} already; use it: delvetalk {id} {x.name}")
+          unless x.does.isEmpty || p.placements.any (fun r => r.object == id && r.what == .rule && r.name == x.does && !r.line.isEmpty) do
+            throw (bad s!"a verb does a rule placed with it; {x.does} is placed by no rule of this turn")
+          if next.verbs.length ≥ Limits.verbsPerObject then
+            throw { cls := "capacity", object := some id, reason := some "verbsPerObject" }
+          next := { next with verbs := next.verbs ++ [{ name := x.name, grower := p.principal, height, reading := x.line,
+                                                         takes := x.takes, does := x.does }] }
+      | .rule | .want =>
+        let want := x.what == .want
+        let rows := if want then next.wants else next.rules
+        if x.line.isEmpty then
+          let some row := rows.find? (·.name == x.name)
+            | throw (refuse "unplaced" s!"{id} has no {x.keyword} {x.name} that a hand placed.")
+          unless mayRemove row.owner do
+            throw (refuse "notPlacer" s!"only who placed {x.keyword} {x.name}, or the owner of {id}, takes it off.")
+          next := if want then { next with wants := next.wants.filter (·.name != x.name) }
+            else { next with rules := next.rules.filter (·.name != x.name) }
+        else
+          let clause ← match Delvetalk.Compiler.ObjectiveBendLaw.parseClause x.line with
+            | .ok c => pure c
+            | .error e => throw { cls := "programRefused", clause := some "law syntax", object := some id, reason := some e }
+          unless clause.name == x.name && (if want then Law.isWant clause else Law.isRule clause) do
+            throw { cls := "programRefused", clause := some "law syntax", object := some id,
+                    reason := some s!"the line places {clause.name} as another modality than {x.keyword} {x.name}" }
+          let names := (((parseClauses next.lawText).toOption.getD []).map (·.name)) ++ (next.rules ++ next.wants).map (·.name)
+          if names.contains x.name then
+            throw (refuse "nameTaken" s!"{id} already carries a clause {x.name}; place one whose name is new.")
+          if let some message := citationRefusal w id [(x.name, clause.condition)] then
+            throw (refuse "under" ((message.drop "under: ".length).toString))
+          if rows.length ≥ (if want then Limits.wantsPerObject else Limits.rulesPerObject) then
+            throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }
+          let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
+          next := if want then { next with wants := next.wants ++ [row] } else { next with rules := next.rules ++ [row] }
     out := out ++ [(id, { next with version := o.version + 1, state })]
     factsOf := factsOf ++ [(id, judgedBy)]
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
@@ -4271,7 +4359,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       throw "interpretation of an unknown or already settled request"
     discard <| outcome.getObjVal? "reply"
     let verdict ← outcome.getObjVal? "verdict"
-    unless ["proposal", "proposals", "unclear", "replied", "said"].contains (← verdict.getObjValAs? String "tag") do throw "unknown verdict"
+    unless ["proposal", "proposals", "unclear"].contains (← verdict.getObjValAs? String "tag") do throw "unknown verdict"
     return record w entry key []
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
