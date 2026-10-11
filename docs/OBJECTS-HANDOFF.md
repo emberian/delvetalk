@@ -58,6 +58,11 @@ Remaining, in order (each a commit, the full suite green on persvati, pins re-re
    seven rains in seven turns never reach 7: it needs a running count per trigger (or `count` read as "the n-th
    row", `n >= count`); (4) a kind instance's `write` takes `text`, not the kind's form fields: decide (the plan
    assumed the form's fields; the honest cut is that a record's write is a line, and the form is the make's).
+   **hob's `say:` (the owner's decision; wait for the coordinator's word that lane/host18's `said {text}` is in
+   foundation):** `Policy.prompt` gains the `say:` example ("a question about what a card is or does: answer in at
+   most three sentences from the card, its forms and the library pages given, then the one spell that would act on
+   it"); Card/Record and the commonplace handle `said` by rendering `hob: <text>` beside the card (never inside the
+   card's facts), then the card itself.
 3. Tending: `tended` and `tend` as a RECORD option, the bell body's rain writing `tended`, the `alive` clause in
    kind/bell's law (`request.method == "tend" or request.clock <= old.tended + 1440`), "quiet since entry N" from a
    pure view, the free arc; THING with `me`, `lend`, `circle` (LAW §4 D is now in foundation: kernel14); BOND from
