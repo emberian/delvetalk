@@ -65,7 +65,7 @@ structure Server where
   lock : Option IO.FS.Handle := none
 
 /-- The packages `world-arrive` creates from; the sealed library holds them beside the library. -/
-def arrival : List String := ["Avatar", "Env", "Wake"]
+def arrival : List String := ["Avatar"]
 
 /-- The ops only the root socket takes (docs/ROOT.md §1.4). The opener's ordinary turns are the public
     socket's too; there its privileges are not (`resident`, `Host.openerActs`). -/
