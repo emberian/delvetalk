@@ -1003,3 +1003,42 @@ N. (lane/kernel14, docs/review/fungus-2026-10-11.md K1, K2.) Deleted with their 
    declaration being rewritten (item 2). `test_sugar.Sugar.test_each_derived_refusal_names_its_source_line`
    checks through `compile`, which does not localize, so the span is the pass's own.
 5. `textWords`: no object or design document asks for it (grep of docs/ and world/); not built.
+
+## 26. A computed refusal (lane/kernel16, after foundation 1de640d7; playtest 2's D6, HOST-HANDOFF §7 item 1)
+
+`refuse(...)` took one string literal, so a card could not refuse with the reading it computes: Card's
+`refusing` said `refused <clause>: <reading>` with `tell` and the turn was admitted (the post read
+refused and `● admitted` at once). The design, decided before the build:
+
+- **Term.** `Term.refuse (reason : Term)`; `refuse("why")` is the special case `.refuse (.label "why")`
+  and the literal-only path goes (`refuseCall`'s "refuse takes one string literal"). No desugaring into
+  a hidden world call: the refusal belongs to the term.
+- **Reference.** `Step.refuseReason`: the reason steps under `refuse`; a program whose next redex is
+  `refuse (label s)` has refused with `s` (no rule moves it). `SourceFrame.refuse` and `Yields.refuse`
+  mirror the new congruence, as every other congruence is mirrored.
+- **Typing.** `PartialTyping.refuse` takes the reason's derivation at `String` (`.label`) and its uses;
+  the activity type stays the annotation's. The elaborator checks the reason at String and refuses by
+  name otherwise ("refused (refuse-reason)").
+- **Machine.** `evaluate (.refuse r)` evaluates `r` under a new frame `Frame.refuse`; a label returned to
+  it stops with `.refused (.program s)`, anything else `.refused .wrongValue`. A refusal costs two
+  ticks more than the literal did (the label's evaluation and the frame's pop). The frame holds no
+  address (collector, erasure); both checkpoint codecs gain its tag; the term codecs encode the reason
+  as a term (tag 26 `[26] ++ term`), V3 hashes it structurally; the round trips and the fast machine's
+  `sizesAfter` cover both.
+- **Wire.** Packet `{"tag":"refuse","reason":TERM}`; evaluator array `["refuse", TERM]`: the three
+  evaluators step the reason and are stuck at a label (or any value). Conformance gains a literal, a
+  computed reason and one computed from a bound value (the state's stand-in).
+- **Turn.** `Turn.Step.refused (reason) (ticksUsed)`: a program's refusal is an outcome, not a string
+  error, so the host can tell it from a kernel failure; `turn-start`/`turn-resume` answer
+  `{status: "refused", reason, ticksUsed}`.
+- **Class (the host's open question).** A new class `cardRefused`, bound like `lawRefused`: the clause
+  and reading are parsed from the reason when it reads `refused <clause>: <reading>` (clause one word,
+  split at the first `: `), else clause `card` and the reason whole as the reading; `object` is the
+  card that refused (a callee's refusal refuses the whole turn, as before); `voiced` writes
+  `reason: "refused <clause>: <reading>"`. Not `evaluation` (a kernel or host failure, and the
+  supervisor hears it as `broken`) and not `lawRefused` (a law's or the host's authority clause, whose
+  reading is public law text): a card's reading is computed and may carry state, so `publicRefusal`
+  shows only the class and root. Nothing of the turn is kept: no writes, sends, offers or publishes.
+  A reading past `Limits.maxRefusalBytes` (4096, a law reading's size) refuses `capacity` naming it.
+  Replay edition 8: a new class replay checks, a checkpoint term tag of a new shape, moved packets.
+- **Pins.** Every packet holding a refusal moves (the reason is a term on the wire); re-recorded.
