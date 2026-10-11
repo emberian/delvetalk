@@ -15,6 +15,7 @@ other change of a moved root is `staleRoot`, as before.
 import json
 import unittest
 
+from transport.journal import entries as journal_entries
 from tests.host import as_owner
 
 from tests.test_reflection import Reflection
@@ -97,8 +98,7 @@ class Moved(Reflection):
         # The resumption is refused staleRoot (journaled, transient) and the turn re-run once at once
         # from its request, on the bell as it is now.
         self.assertIn("rerunOf", resumed)
-        with open(self.path) as f:
-            refused = [e for e in map(json.loads, f.read().splitlines()) if e["hash"] == resumed["rerunOf"]][0]
+        refused = [e for e in journal_entries(self.path) if e["hash"] == resumed["rerunOf"]][0]
         self.assertEqual((refused["outcome"]["class"], refused["outcome"]["object"]), ("staleRoot", "bell"))
         self.assertEqual((resumed["status"], resumed["receipt"].get("rerun")), ("admitted", True), resumed)
 

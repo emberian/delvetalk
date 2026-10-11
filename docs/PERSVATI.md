@@ -36,10 +36,10 @@ builds to a few.
     cd ~/scratch/dt-<lane>
     LEAN_NUM_THREADS=2 swarm-build lake build
     LEAN_NUM_THREADS=2 swarm-build lake build Delvetalk.PackageDataAdmission Delvetalk.PackageDataNormalization \
-        Delvetalk.PackageDataSchemaProofs Delvetalk.Typed Theory.ObjectiveBendNativeDataSimulation
+        Delvetalk.PackageDataSchemaProofs Theory.ObjectiveBendNativeDataSimulation
     DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend python3 -W ignore -m tests.run
 
-Binary: `.lake/build/bin/delvetalk-obend`. The five proof-only modules are `PROOF_ONLY` in the Makefile.
+Binary: `.lake/build/bin/delvetalk-obend`. The four proof-only modules are `PROOF_ONLY` in the Makefile.
 Local Lean compilation stays at two processes (`LEAN_NUM_THREADS=2`). Seeding hbox-to-persvati
 works directly: `ssh hbox 'rsync -a ~/scratch/dt-foundation/.lake/ persvati:scratch/dt-foundation/.lake/'`.
 
@@ -48,7 +48,7 @@ works directly: `ssh hbox 'rsync -a ~/scratch/dt-foundation/.lake/ persvati:scra
 | step | persvati | hbox reference |
 |---|---|---|
 | `lake build` on a `.lake` seeded from hbox (134 jobs, all replayed) | ~0.5 s | (not measured) |
-| five proof-only modules, seeded (19 jobs) | ~0.5 s | (not measured) |
+| the proof-only modules, seeded (19 jobs then) | ~0.5 s | (not measured) |
 | `tests.run` | 35.5 s wall, 1347 tests, 323 classes, 0 failed | ~1,347 tests, 0 failed, 30-70 s (hbox was loaded) |
 
 The build times above are cache replays, not cold builds: a cold build on persvati was not

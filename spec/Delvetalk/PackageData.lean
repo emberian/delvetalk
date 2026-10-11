@@ -1,6 +1,6 @@
-/- Explicit, bounded data serialization for pure source packages. This does not
-   change Mini's Plan/Activity types or its evaluator. The original checker still
-   accepts every complete application, including generated injection annotations. -/
+/- Explicit, bounded data serialization for pure source packages: the typed wire and compact
+   codecs and the native admission of arguments against a checked entry's type. It changes
+   neither the activity types nor the evaluator; the checker accepts every complete application. -/
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendTyping
 import Theory.ObjectiveBendFiniteDataTyping
@@ -9,11 +9,11 @@ import Std.Data.HashMap
 
 namespace Delvetalk.PackageData
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendTyping
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Compiler.ObjectiveBendDataWire
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Compiler.ObjectiveBendDataWire
 
 abbrev Work := StateT Nat (Except String)
 
@@ -99,13 +99,6 @@ def decode : Nat → Json → Work Data
           items := items.push (← decode depth item)
         return listData items
     | _ => throw "unknown typed data tag"
-
-structure Quoted where
-  term : Term
-  annotations : List (List Nat × LambdaAnnotation) := []
-
-def prefixAnnotations (n : Nat) (annotations : List (List Nat × LambdaAnnotation)) :=
-  annotations.map fun (path, annotation) => (n :: path, annotation)
 
 def members : Nat → Ty → Work (List (String × Ty))
   | 0, _ => failDepth
@@ -407,20 +400,6 @@ def quoteWith {α : Type} (sink : QuoteSink α) (a : Assumptions) (depth : Nat)
   let graph ← schemaGraph a false depth declared
   quoteSchema sink graph depth value declared graph.root
 
-def termSink : QuoteSink Quoted where
-  natural n := ⟨.nat n, []⟩
-  boolean b := ⟨.boolean b, []⟩
-  label s := ⟨.label s, []⟩
-  emptyRecord := ⟨.record [], []⟩
-  field prior name child :=
-    match prior.term with
-    | .record terms => ⟨.record (terms ++ [(name, child.term)]),
-        prior.annotations ++ prefixAnnotations terms.length child.annotations⟩
-    | _ => prior
-  variant label ty declared child := ⟨.inject label child.term,
-    ([], ⟨ty, declared, .unrestricted, .reusable⟩) :: prefixAnnotations 0 child.annotations⟩
-  data value := ⟨.toData value.term, Minidregg.Theory.ObjectiveBendDemandData.shapeAnnotations value [0]⟩
-
 def validationSink : QuoteSink Unit where
   natural _ := ()
   boolean _ := ()
@@ -452,21 +431,10 @@ def nativeSink : QuoteSink Data where
 def normalizeNative (a : Assumptions) (depth : Nat) (value : Data) (type : Ty) : Work Data := do
   return finishNative (← quoteWith nativeSink a depth value type)
 
-/-- Input quotation retains injection annotations and canonical field order. -/
-def quote (a : Assumptions) (depth : Nat) (value : Data) (declared : Ty) : Work Quoted :=
-  quoteWith termSink a depth value declared
-
 /-- Output validation executes exactly the quotation traversal and work charges,
 while the sink discards constructors before any term tree is allocated. -/
 def validate (a : Assumptions) (depth : Nat) (value : Data) (declared : Ty) : Work Unit :=
   quoteWith validationSink a depth value declared
-
-def apply (source : AnnotatedTerm) (argument : Quoted) : AnnotatedTerm :=
-  { source with term := .app source.term argument.term
-                annotations := fun path => match path with
-                  | 0 :: rest => source.annotations rest
-                  | 1 :: rest => argument.annotations.lookup rest
-                  | _ => none }
 
 /-- A physical compact value is meaningful only relative to this exact checked
 schema. Records carry canonical positional members; sums retain their label.
@@ -547,33 +515,6 @@ def encodeCompact (a : Assumptions) (depth : Nat) (declared : Ty) (value : Data)
   let graph ← schemaGraph a true depth declared
   encodeCompactSchema graph depth graph.root value
 
-def prepareWith {α : Type} (read : Assumptions → Ty → α → Work Data) (packet : Json)
-    (arguments : Work (Array α)) : Work (AnnotatedTerm × Ty × Nat) := do
-  let decoded ← decodePacket packet
-  unless decoded.context.isEmpty do throw "package must have a closed context"
-  let mut source := decoded.source
-  let some initial := check source [] decoded.fuel | throw "typed package refused by Mini type checker"
-  let mut type := initial.type
-  for argument in (← arguments) do
-    let .arrow _ _ domain codomain := callable type | throw "typed package argument requires a function"
-    shape source.assumptions 256 [] domain
-    let value ← read source.assumptions domain argument
-    let quoted ← quote source.assumptions 256 value domain
-    source := apply source quoted
-    let some checked := check source [] decoded.fuel | throw "applied typed package refused by Mini type checker"
-    type := checked.type
-    unless type == codomain do throw "typed package application result mismatch"
-  shape source.assumptions 256 [] type
-  return (source, type, decoded.fuel)
-
-def prepare (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) := do
-  prepareWith (fun _ _ => decode 256) packet (do return ← arguments.getArr?)
-
-def prepareValues (packet : Json) (arguments : Array Data) : Work (AnnotatedTerm × Ty × Nat) :=
-  -- Quotation is itself the complete bounded native value/type admission.
-  -- Repeating an untyped native walk first validates no additional fact.
-  prepareWith (fun _ _ value => pure value) packet (pure arguments)
-
 structure NativePreparation where
   source : AnnotatedTerm
   resultType : Ty
@@ -589,7 +530,7 @@ def prepareNativeArguments {α : Type} (read : Assumptions → Ty → α → Wor
     let .arrow _ quantity domain codomain := callable type
       | throw "typed package argument requires a function"
     unless argumentAllowed a quantity [] domain [] do
-      throw "applied typed package refused by Mini type checker"
+      throw "applied typed package refused by the type checker"
     let value ← read a domain argument
     let normalized ← normalizeNative a 256 value domain
     let (resultType, values) ← prepareNativeArguments read a codomain rest
@@ -603,7 +544,7 @@ def prepareNativeWith {α : Type} (read : Assumptions → Ty → α → Work Dat
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let source := decoded.source
-  let some initial := check source [] decoded.fuel | throw "typed package refused by Mini type checker"
+  let some initial := check source [] decoded.fuel | throw "typed package refused by the type checker"
   let (type, normalized) ← prepareNativeArguments read source.assumptions initial.type (← arguments).toList
   shape source.assumptions 256 [] type
   return ⟨source, type, normalized.toArray, decoded.fuel⟩
@@ -622,12 +563,6 @@ def prepareNative (packet : Json) (arguments : Array Data) : Work NativePreparat
 
 def prepareNativeWire (packet arguments : Json) : Work NativePreparation :=
   prepareNativeWith (fun _ _ => decode 256) packet (do return ← arguments.getArr?)
-
-def prepareNativeCompact (packet arguments : Json) : Work NativePreparation :=
-  prepareNativeWith (fun a ty => decodeCompact a 256 ty) packet (do return ← arguments.getArr?)
-
-def prepareCompact (packet arguments : Json) : Work (AnnotatedTerm × Ty × Nat) :=
-  prepareWith (fun a ty => decodeCompact a 256 ty) packet (do return ← arguments.getArr?)
 
 /-- Select only explicit structural positions from a checked artifact's type. -/
 def select (a : Assumptions) (type : Ty) (path : Json) : Work Ty := do
@@ -650,116 +585,5 @@ def select (a : Assumptions) (type : Ty) (path : Json) : Work Ty := do
         let some member := (← members 256 row).lookup name | throw "type path field is absent"
         selected := member
   return selected
-
-/-- Paired guarded type graphs using the checker's canonical row order. Shape
-    validation precedes this comparison, so canonical shadowing cannot hide a
-    duplicate field. Alias indices belong to their own packet. -/
-def equivalent (left right : Assumptions) : Nat → List (Ty × Ty) → Ty → Ty → Work Bool
-  | 0, _, _, _ => failDepth
-  | depth + 1, seen, a, b => do
-    spend
-    let a := a.canonical
-    let b := b.canonical
-    if seen.contains (a, b) then return true
-    let next := (a, b) :: seen
-    match a, b with
-    | .variable i, _ => equivalent left right depth next (← sumAlias left i) b
-    | _, .variable i => equivalent left right depth next a (← sumAlias right i)
-    | .natural, .natural | .boolean, .boolean | .label, .label | .emptyRow, .emptyRow
-    | .data, .data => return true
-    | .field an am aTail, .field bn bm bTail =>
-        if an != bn then return false
-        if !(← equivalent left right depth next am bm) then return false
-        equivalent left right depth next aTail bTail
-    | .variant ar, .variant br => equivalent left right depth next ar br
-    | _, _ => return false
-
-/-- Closed source choices retain the type of each configured child model. No
-existential box or source-authored schema participates in allocation admission. -/
-def allocationLeaves (a : Assumptions) : Nat → Ty → Work (List Ty)
-  | 0, _ => failDepth
-  | depth + 1, type => do
-    spend
-    match type with
-    | .variable i => allocationLeaves a depth (← sumAlias a i)
-    | .variant row =>
-        let alternatives ← members depth row
-        if alternatives.isEmpty then throw "allocation choice must have alternatives"
-        let mut leaves := []
-        for (_, payload) in alternatives do
-          leaves := leaves ++ (← allocationLeaves a depth payload)
-        return leaves
-    | .field .. | .emptyRow =>
-        let fields ← members depth type
-        let names := fields.map Prod.fst
-        let expected := ["name", "protocol", "law"] ++ (if names.contains "initial" then ["initial"] else [])
-        unless names.length == expected.length && expected.all names.contains do
-          throw "allocation requires name, protocol, law and optional typed initial"
-        unless fields.lookup "name" == some .label do throw "allocation name requires String"
-        for key in ["protocol", "law"] do
-          let some member := fields.lookup key | throw "allocation descriptor field missing"
-          shape a depth [] member
-        if let some initial := fields.lookup "initial" then
-          match initial with
-          | .field .. | .emptyRow => shape a depth [] initial
-          | _ => throw "allocation initial requires a closed record model"
-        return [type]
-    | _ => throw "allocation requires a closed descriptor or finite source choice"
-
-def allocationListType (a : Assumptions) (type : Ty) : Work Ty := do
-  spend
-  let expanded ← match type with
-    | .variable i => sumAlias a i
-    | other => pure other
-  let .variant row := expanded | throw "allocations require a nil/cons list"
-  let cases ← members 256 row
-  unless cases.length == 2 && (cases.map Prod.fst).all ["nil", "cons"].contains do
-    throw "allocations require exactly nil/cons alternatives"
-  unless cases.lookup "nil" == some .emptyRow do throw "allocation nil requires an empty payload"
-  let some cons := cases.lookup "cons" | throw "allocation cons is missing"
-  let fields ← members 256 cons
-  unless fields.length == 2 && (fields.map Prod.fst).all ["head", "tail"].contains do
-    throw "allocation cons requires head/tail"
-  let some head := fields.lookup "head" | throw "allocation head is missing"
-  let some tail := fields.lookup "tail" | throw "allocation tail is missing"
-  unless tail.canonical == type.canonical do throw "allocation tail must retain its list type"
-  discard (allocationLeaves a 256 head)
-  return head
-
-def allocationLeaf (a : Assumptions) : Nat → Data → Ty → Work (Data × Ty)
-  | 0, _, _ => failDepth
-  | depth + 1, value, type => do
-    spend
-    match type with
-    | .variable i => allocationLeaf a depth value (← sumAlias a i)
-    | .variant row =>
-        let .variant label payload := value | throw "allocation choice requires its checked variant"
-        let some member := (← members depth row).lookup label | throw "allocation choice alternative missing"
-        allocationLeaf a depth payload member
-    | .field .. | .emptyRow =>
-        let .record _ := value | throw "allocation descriptor requires a checked record"
-        return (value, type)
-    | _ => throw "invalid allocation descriptor type"
-
-def allocationElements (a : Assumptions) (type : Ty) (value : Data)
-    (limit : Nat := 32) : Work (List (Data × Ty)) := do
-  let head ← allocationListType a type
-  let mut cursor := value
-  let mut result := []
-  let mut remaining := limit
-  repeat
-    spend
-    match cursor with
-    | .variant "nil" (.record []) => return result.reverse
-    | .variant "cons" (.record fields) =>
-        if remaining == 0 then throw "allocation collection capacity"
-        unless fields.length == 2 && (fields.map Prod.fst).all ["head", "tail"].contains do
-          throw "allocation cons requires checked head/tail"
-        let some item := fields.lookup "head" | throw "allocation head missing"
-        let some tail := fields.lookup "tail" | throw "allocation tail missing"
-        result := (← allocationLeaf a 256 item head) :: result
-        cursor := tail
-        remaining := remaining - 1
-    | _ => throw "allocation collection requires checked nil/cons"
 
 end Delvetalk.PackageData

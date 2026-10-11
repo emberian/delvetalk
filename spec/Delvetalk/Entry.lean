@@ -2,15 +2,15 @@
 packet JSON. Running it applies checked arguments to the checked entry
 (`Checked.apply`) and never decodes or re-checks the packet. -/
 import Theory.ObjectiveBendTyping
-import Theory.ObjectiveBendCheckpointV2
+import Theory.ObjectiveBendCheckpointV3
 import Delvetalk.Canonical
 import Delvetalk.Limits
 
 namespace Delvetalk
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendTyping
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendTypes
 
 /-! ## Call sites of a message activity
 
@@ -51,7 +51,7 @@ def messageSites (source : AnnotatedTerm) : Except String (Array (Term × Ty)) :
   let mut sites : Array (Term × Ty) := #[]
   for (plan, type?) in performsOf source.annotations [] source.term #[] do
     let some type := type? | throw "a world call has no annotated result type"
-    match sites.find? (fun (t, _) => Minidregg.Theory.ObjectiveBendCheckpoint.termEq t plan) with
+    match sites.find? (fun (t, _) => Delvetalk.Theory.ObjectiveBendCheckpoint.termEq t plan) with
     | some (_, other) =>
       if other != type then
         throw ("refused (world-call-site): two world calls of this entry build the same message at different " ++
@@ -95,7 +95,7 @@ def CheckedEntry.make (pin : String) (source : AnnotatedTerm) (checked : Checked
 def CheckedEntry.ofPacket (packet : Json) : Except String CheckedEntry := do
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
-  let some checked := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
+  let some checked := check decoded.source [] decoded.fuel | throw "package refused by the type checker"
   CheckedEntry.make (Delvetalk.Canonical.cidJson packet) decoded.source checked decoded.fuel
 
 /-- Checker fuel for an argument: the entry's own fuel plus twice the argument's
@@ -111,8 +111,8 @@ def CheckedEntry.apply (e : CheckedEntry) (argument : Term) (annotations : Annot
   let source : AnnotatedTerm := ⟨argument, annotations.lookup, e.source.assumptions⟩
   -- `checkAt` is `check source` (`checkAt_eq`), walking the tree instead of paths.
   let some arg := checkAt argument annotations e.source.assumptions [] (argumentFuel e.fuel argument)
-    | throw "applied package refused by Mini type checker"
-  let some applied := e.checked.apply arg rfl | throw "applied package refused by Mini type checker"
+    | throw "applied package refused by the type checker"
+  let some applied := e.checked.apply arg rfl | throw "applied package refused by the type checker"
   return ⟨e.pin, e.source.applyTo source, applied, e.fuel, e.sites⟩
 
 end Delvetalk

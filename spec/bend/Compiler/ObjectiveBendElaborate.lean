@@ -17,13 +17,13 @@ import Std.Data.HashSet
 import Theory.ObjectiveBendOpenRecursion
 import Compiler.ObjectiveBendC4
 import Compiler.ObjectiveBendContract
-namespace Minidregg.Compiler.ObjectiveBendElaborate
+namespace Delvetalk.Compiler.ObjectiveBendElaborate
 open Lean
 set_option autoImplicit false
 
-abbrev CoreTerm := Minidregg.Theory.ObjectiveBendOpenRecursion.Term
-abbrev CorePrimitive := Minidregg.Theory.ObjectiveBendOpenRecursion.Primitive
-abbrev CoreUnaryPrimitive := Minidregg.Theory.ObjectiveBendOpenRecursion.UnaryPrimitive
+abbrev CoreTerm := Delvetalk.Theory.ObjectiveBendOpenRecursion.Term
+abbrev CorePrimitive := Delvetalk.Theory.ObjectiveBendOpenRecursion.Primitive
+abbrev CoreUnaryPrimitive := Delvetalk.Theory.ObjectiveBendOpenRecursion.UnaryPrimitive
 
 /-! String helpers (ASCII whitespace, as the TS `trim`). -/
 def isSpace (c : Char) : Bool := c == ' ' || c == '\t' || c == '\n' || c == '\r'
@@ -3098,5 +3098,5 @@ def proposalJson (out : Output) : Except String Json := do
     ("bounds", Json.arr boundJson.toArray),
     ("shareableVariables", toJson ("0" :: bounds.map (fun b => toString b.1)))]
 
-end Minidregg.Compiler.ObjectiveBendElaborate
+end Delvetalk.Compiler.ObjectiveBendElaborate
 

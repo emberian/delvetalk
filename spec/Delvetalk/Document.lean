@@ -9,8 +9,8 @@ import Delvetalk.Limits
 
 namespace Delvetalk.Document
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Compiler.ObjectiveBendDataWire (decodeData dataJson)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Compiler.ObjectiveBendDataWire (decodeData dataJson)
 
 -- The bounds live in Delvetalk/Limits.lean (`Delvetalk.Bounds`).
 open Delvetalk.Bounds (documentDepth documentNodes documentOutputBytes documentWireDepth offersPerTurn)

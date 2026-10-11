@@ -8,6 +8,7 @@ open Lean (Json toJson)
 def main (args : List String) : IO UInt32 := do
   if args.head? == some "serve" then return ← Delvetalk.Serve.main args.tail
   if args.head? == some "root-edit" then return ← Delvetalk.Host.RootEdit.main args.tail
+  if args.head? == some "migrate" then return ← Delvetalk.Host.Migrate.main args.tail
   let input ← IO.getStdin
   let output ← IO.getStdout
   let errors ← IO.getStderr

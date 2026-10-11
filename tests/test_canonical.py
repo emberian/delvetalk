@@ -15,8 +15,9 @@ import os
 import tempfile
 import unittest
 
+from transport.journal import entries as journal_entries
 from tests.host import Host, ROOT
-from tests.wire import boolean, cid_of, label, listing, nat, nil, record
+from tests.wire import boolean, cid_of, label, listing, nat, nil, record, write_journal
 from tests.bend import closure
 
 FIXTURES = os.path.join(ROOT, "tests", "fixtures", "delve")
@@ -182,8 +183,7 @@ class JournalCids(unittest.TestCase):
         return h
 
     def entries(self):
-        with open(self.path) as handle:
-            return [json.loads(line) for line in handle if line.strip()]
+        return journal_entries(self.path)
 
     def populate(self, host):
         self.assertEqual(host.send(op="world-open", path=self.path, sync="none")["status"], "opened")
@@ -214,32 +214,28 @@ class JournalCids(unittest.TestCase):
         host = self.spawn()
         self.populate(host)
         host.close()
-        with open(self.path) as handle:
-            lines = handle.read().split("\n")
-        entry = json.loads(lines[2])  # height 3
+        entries = self.entries()
+        entry = entries[2]  # height 3
         self.assertEqual(entry["height"], 3)
-        lines[2] = lines[2].replace('"glm"', '"gly"', 1)
-        self.assertNotEqual(lines[2], json.dumps(entry))
-        with open(self.path, "w") as handle:
-            handle.write("\n".join(lines))
+        text = json.dumps(entry, separators=(",", ":"))
+        self.assertIn('"glm"', text)
+        entries[2] = json.loads(text.replace('"glm"', '"gly"', 1))  # a changed body under its old hash
+        write_journal(self.path, entries)
         broken = self.spawn().send(op="world-open", path=self.path)
         self.assertEqual(broken["status"], "error", broken)
         self.assertIn("journal broken at height 3", broken["message"])
-        self.assertIn("hash mismatch", broken["message"])
+        self.assertIn("its record is missing or not its CID's", broken["message"])
         # An entry rewritten and resealed with a correct CID breaks the next link.
         self.path = os.path.join(self.dir.name, "resealed.journal")
         host = self.spawn()
         self.populate(host)
         host.close()
-        with open(self.path) as handle:
-            lines = handle.read().split("\n")
-        entry = json.loads(lines[1])  # height 2: rewrite, resealed with a correct CID
+        entries = self.entries()
+        entry = entries[1]  # height 2: rewrite, resealed with a correct CID
         entry["ticksUsed"] = entry.get("ticksUsed", 0) + 1
         body = {k: v for k, v in entry.items() if k != "hash"}
         entry["hash"] = cid_of(body)
-        lines[1] = json.dumps(entry)
-        with open(self.path, "w") as handle:
-            handle.write("\n".join(lines))
+        write_journal(self.path, entries)
         broken = self.spawn().send(op="world-open", path=self.path)
         self.assertEqual(broken["status"], "error", broken)
         self.assertIn("journal broken at height 3", broken["message"])

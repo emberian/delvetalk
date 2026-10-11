@@ -11,9 +11,9 @@ import Std.Data.HashMap
 
 namespace Delvetalk.Profile
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendDemandData
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandMachine
+open Delvetalk.Theory.ObjectiveBendDemandData
 
 def termKind : Term → String
   | .bound _ => "bound" | .lam _ => "lam" | .app _ _ => "app" | .mix _ _ => "mix" | .fix _ _ => "fix"
@@ -42,8 +42,8 @@ def stateKind (state : State) : String :=
     | none => "enter.missing"
   | .returned _ => match state.stack with
     | [] => "returned.empty"
-    | .binaryRight primitive _ :: _ => "returned.binaryRight." ++ (reprStr primitive).replace "Minidregg.Theory.ObjectiveBendOpenRecursion.Primitive." ""
-    | .unary primitive :: _ => "returned.unary." ++ (reprStr primitive).replace "Minidregg.Theory.ObjectiveBendOpenRecursion.UnaryPrimitive." ""
+    | .binaryRight primitive _ :: _ => "returned.binaryRight." ++ (reprStr primitive).replace "Delvetalk.Theory.ObjectiveBendOpenRecursion.Primitive." ""
+    | .unary primitive :: _ => "returned.unary." ++ (reprStr primitive).replace "Delvetalk.Theory.ObjectiveBendOpenRecursion.UnaryPrimitive." ""
     | frame :: _ => "returned." ++ frameKind frame
   | .nativeApplication .. => "nativeApplication"
   | _ => "stopped"
@@ -71,13 +71,13 @@ def profileFrom (fetch : Fetch) (limits : Limits) (bytes : Nat) : Nat → State 
       let cost := textStepCost state (fuel + 1)
       if cost.2 > bytes || cost.1 > fuel + 1 then tally
       else
-        let sizes := Minidregg.Theory.ObjectiveBendDemandMachineFast.sizesAfter state depth
+        let sizes := Delvetalk.Theory.ObjectiveBendDemandMachineFast.sizesAfter state depth
         if sizes.1 ≤ limits.heap && sizes.2 ≤ limits.stack then
           let spent := max 1 cost.1
           let key := stateKind state
           let (count, ticks) := tally.getD key (0, 0)
           let tally := tally.insert key (count + 1, ticks + spent)
-          profileFrom fetch limits bytes (fuel + 1 - spent) (Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast state)
+          profileFrom fetch limits bytes (fuel + 1 - spent) (Delvetalk.Theory.ObjectiveBendDemandMachineFast.stepRawFast state)
             sizes.2 tally
         else tally
 termination_by fuel => fuel

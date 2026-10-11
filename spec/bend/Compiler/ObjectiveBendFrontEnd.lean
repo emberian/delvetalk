@@ -22,10 +22,10 @@ import Compiler.ObjectiveBendTermWire
 import Compiler.ObjectiveBendBlame
 import Compiler.Sha256
 import Theory.ObjectiveBendTyping
-namespace Minidregg.Compiler.ObjectiveBendFrontEnd
+namespace Delvetalk.Compiler.ObjectiveBendFrontEnd
 open Lean
-open Minidregg.Compiler.ObjectiveBendElaborate (ATerm CoreTerm Output)
-open Minidregg.Theory.ObjectiveBendTyping (DecodedPacket decodePacket Checked check)
+open Delvetalk.Compiler.ObjectiveBendElaborate (ATerm CoreTerm Output)
+open Delvetalk.Theory.ObjectiveBendTyping (DecodedPacket decodePacket Checked check)
 set_option autoImplicit false
 
 /-! ## Diagnostics -/
@@ -171,7 +171,7 @@ does leave the process, is still rendered, decoded and checked by `accept`). Wha
 packet decoder would add here is only its capacities on type nesting and row width. -/
 
 section direct
-open Minidregg.Theory.ObjectiveBendTypes (Ty LambdaAnnotation Quantity Reuse)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty LambdaAnnotation Quantity Reuse)
 open ObjectiveBendElaborate (PTy InternKey Slot Proposed propose)
 
 structure TyTable where
@@ -272,7 +272,7 @@ def tyOf : PTy → StateM TyTable (Slot × Ty)
 /-- The annotated source a proposal and an erased term make: what `decodePacket` reads back
 from the packet `packetJson` would render. -/
 def directSource (proposed : Proposed) (erased : CoreTerm) :
-    Minidregg.Theory.ObjectiveBendTyping.AnnotatedTerm := Id.run do
+    Delvetalk.Theory.ObjectiveBendTyping.AnnotatedTerm := Id.run do
   let mut table : TyTable := {}
   let mut annotations : Std.HashMap (List Nat) LambdaAnnotation := {}
   for a in proposed.annotations do
@@ -294,8 +294,8 @@ end direct
 /-! ## A checker refusal, explained and located (`ObjectiveBendBlame`) -/
 
 section blame
-open Minidregg.Theory.ObjectiveBendTypes (Ty Context)
-open Minidregg.Theory.ObjectiveBendTyping (AnnotatedTerm Assumptions sameType)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty Context)
+open Delvetalk.Theory.ObjectiveBendTyping (AnnotatedTerm Assumptions sameType)
 open ObjectiveBendBlame (Naming Blame explain locate arity rowFields)
 
 /-- The text of `span` in `module`, when it is one of `modules`. -/
@@ -389,7 +389,7 @@ end blame
 /-! ## Templates: each open declaration checked once against its bounds alone (D2) -/
 
 /-- The context every knot field is checked in: `$seed : {}` then `$globals : the knot`. -/
-def knotContext : Minidregg.Theory.ObjectiveBendTypes.Context :=
+def knotContext : Delvetalk.Theory.ObjectiveBendTypes.Context :=
   [⟨.emptyRow, .unrestricted⟩, ⟨.variable 0, .unrestricted⟩]
 
 /-- OB-LTUO LT2 D2. An open declaration's knot field is its template at its own bounds. It is
@@ -449,8 +449,8 @@ structure Lowering where
   limits : Json
   typeFuel : Nat
   /-- The package's enforced laws: the entry module's top-level `law` declarations (a law in any
-  other module refuses). The artifact commits them; the kernel installs them on every object
-  pinned to the artifact. -/
+  other module refuses). The artifact commits them; the host judges every write of an object
+  pinned to the artifact by them (`Delvetalk.Host.Law.denote`). -/
   laws : List (String × ObjectiveBendLaw.LawExpr)
   /-- The typing proposal for the selected term, or why there is none: built once. -/
   proposal : Except String Json
@@ -542,7 +542,7 @@ structure Accepted (l : Lowering) where
   packetTerm : packet.source.term = erased
   closed : packet.context = []
   /-- The checked source: the packet's annotations on the elaborator's erased term. -/
-  source : Minidregg.Theory.ObjectiveBendTyping.AnnotatedTerm
+  source : Delvetalk.Theory.ObjectiveBendTyping.AnnotatedTerm
   sourceExact : source = { packet.source with term := erased }
   typed : Checked source []
   checkedExact : check source [] packet.fuel = some typed
@@ -558,7 +558,7 @@ def accept (l : Lowering) : Except Diagnostic (Accepted l) := do
     match proposed : l.proposal with
     | .error message => throw { stage := "objective-source-type-proposal", message }
     | .ok proposal =>
-      if shallow : ObjectiveBendTermWire.depth l.term ≤ Minidregg.Theory.ObjectiveBendTyping.termNestingCapacity then
+      if shallow : ObjectiveBendTermWire.depth l.term ≤ Delvetalk.Theory.ObjectiveBendTyping.termNestingCapacity then
         match decoded : decodePacket l.packet with
         | .error e =>
           throw { stage := "objective-source-type-proposal", message := "typed packet does not decode: " ++ e }
@@ -579,14 +579,14 @@ def accept (l : Lowering) : Except Diagnostic (Accepted l) := do
 
 /-- `accept`'s refusals, in its order, for a whole closure checked on its direct source. -/
 def checkDirect (out : Output) (typeFuel : Nat) (rigid : List Nat) (explainer : Explainer := unexplained) :
-    Except Diagnostic (Minidregg.Theory.ObjectiveBendTyping.AnnotatedTerm) := do
+    Except Diagnostic (Delvetalk.Theory.ObjectiveBendTyping.AnnotatedTerm) := do
   let erased ← match out.term.erase with
     | .error e => throw (elaborationRefusal ("core erasure: " ++ e))
     | .ok erased => pure erased
   let proposed ← match ObjectiveBendElaborate.propose out with
     | .error message => throw { stage := "objective-source-type-proposal", message }
     | .ok p => pure p
-  unless ObjectiveBendTermWire.depth out.term ≤ Minidregg.Theory.ObjectiveBendTyping.termNestingCapacity do
+  unless ObjectiveBendTermWire.depth out.term ≤ Delvetalk.Theory.ObjectiveBendTyping.termNestingCapacity do
     throw (elaborationRefusal "core term nesting exceeds the checker's decoding capacity")
   let source := directSource proposed erased
   let source := { source with assumptions := { source.assumptions with rigid } }
@@ -608,4 +608,4 @@ def checkClosure (modules : List SourceModule) (elaborated : ObjectiveBendElabor
 #assert_axioms Lowering.packet_term
 #assert_axioms Accepted.source_eq_packet
 
-end Minidregg.Compiler.ObjectiveBendFrontEnd
+end Delvetalk.Compiler.ObjectiveBendFrontEnd

@@ -20,11 +20,11 @@ admits it.
 -/
 import Lean
 
-namespace Minidregg.Theory.AssertAxioms
+namespace Delvetalk.Theory.AssertAxioms
 
 open Lean Elab Command
 
-/-- The axioms a kernel-checked Mini theorem may rest on. -/
+/-- The axioms a kernel-checked theorem may rest on. -/
 def standard : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 
 elab "#assert_axioms " ids:ident+ : command => do
@@ -38,4 +38,4 @@ elab "#assert_axioms " ids:ident+ : command => do
   unless offenders.isEmpty do
     throwError MessageData.joinSep offenders.toList "\n"
 
-end Minidregg.Theory.AssertAxioms
+end Delvetalk.Theory.AssertAxioms

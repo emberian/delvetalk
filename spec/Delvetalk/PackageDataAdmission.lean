@@ -1,12 +1,12 @@
-/- Proof interface connecting the indexed finite schema to Mini's literal typing.
+/- Proof interface connecting the indexed finite schema to the checker's literal typing.
 References are atomic; recursive input is consumed by the bounded normalizer,
 so a recursive alias never demands an infinite inductive certificate. -/
 import Delvetalk.PackageData
 import Theory.ObjectiveBendFiniteDataTyping
 namespace Delvetalk.PackageData
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendTyping
-open Minidregg.Theory.ObjectiveBendDemandData
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendDemandData
 set_option autoImplicit false
 
 mutual

@@ -21,7 +21,7 @@ so the theorems are about the checks that run.
 Rows are lists of `(name, type)`; the elaborator passes canonical types, so `==` on a type is
 the elaborator's `sameTy`. -/
 import Theory.AssertAxioms
-namespace Minidregg.Compiler.ObjectiveBendContract
+namespace Delvetalk.Compiler.ObjectiveBendContract
 set_option autoImplicit false
 
 abbrev Row (τ : Type) := List (String × τ)
@@ -184,4 +184,4 @@ theorem discharge_ok {self seed : Row τ} {chain : List (Layer τ)}
 
 #assert_axioms run_append run_assoc checkLayer_ok missing_nil_get discharge_ok
 
-end Minidregg.Compiler.ObjectiveBendContract
+end Delvetalk.Compiler.ObjectiveBendContract

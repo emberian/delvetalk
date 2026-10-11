@@ -10,9 +10,9 @@ import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Theory.ObjectiveBendTypes (DataBounds)
-open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendTypes (DataBounds)
+open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 /-! ## Wire forms -/
 
@@ -727,9 +727,9 @@ def applyEdits (decls : List RelDecl) (state : Data) (steps : List Step) : EditR
 /-- The state type is the type of the package's entry definition: a zero-argument
     `def initial() -> State` has type `State`, which must be a closed record of
     first-order data. The entry's own value is not used; the seed is explicit. -/
-def stateTypeOk (assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions)
-    (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
-  ty.isDataUnder assumptions.bounds assumptions.rigid Minidregg.Theory.ObjectiveBendTypes.Ty.dataFuel [] &&
+def stateTypeOk (assumptions : Delvetalk.Theory.ObjectiveBendTyping.Assumptions)
+    (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Bool :=
+  ty.isDataUnder assumptions.bounds assumptions.rigid Delvetalk.Theory.ObjectiveBendTypes.Ty.dataFuel [] &&
     match ty with
     | .field .. | .emptyRow => true
     | _ => false
@@ -737,10 +737,10 @@ def stateTypeOk (assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions)
 /-- A type with its variables renamed in order of first use, each bound one's body written once
     where first met: two state types are the same exactly when these agree, whatever numbering the
     compiles gave their bounds (a layer stack's packet numbers them anew). -/
-partial def canonicalTy (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Json :=
+partial def canonicalTy (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Except String Json :=
   (go ty).run' ([], 0)
 where
-  go : Minidregg.Theory.ObjectiveBendTypes.Ty → StateT (List (Nat × Nat) × Nat) (Except String) Json
+  go : Delvetalk.Theory.ObjectiveBendTypes.Ty → StateT (List (Nat × Nat) × Nat) (Except String) Json
     | .variable i => do
       let (seen, steps) ← get
       if steps > 4096 then throw "type too deep to compare"
@@ -755,7 +755,7 @@ where
         | none => return Json.mkObj [("free", toJson k)]
     | .field n m t => do return Json.mkObj [("field", toJson n), ("member", ← go m), ("tail", ← go t)]
     | .variant r => do return Json.mkObj [("variant", ← go r)]
-    | other => pure (Minidregg.Theory.ObjectiveBendTyping.typeJson other)
+    | other => pure (Delvetalk.Theory.ObjectiveBendTyping.typeJson other)
 
 def inputsKeyOf (inputs : Json) : String :=
   Journal.bodyHash (Json.mkObj (inputs.getObj?.toOption.map (·.toList.filter (·.1 != "entry")) |>.getD []))
@@ -792,7 +792,7 @@ def sealLibrary (files : List (String × String)) : Except String Library := do
   if bytes > Limits.maxLibraryBytes then throw s!"library exceeds {Limits.maxLibraryBytes} bytes"
   let names := files.map (·.1)
   for n in names do
-    unless Minidregg.Compiler.ObjectiveBendParse.isIdent n.toList do throw s!"library module name `{n}` is not an identifier"
+    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent n.toList do throw s!"library module name `{n}` is not an identifier"
   if names.eraseDups.length != names.length then throw "library has two modules of one name"
   for (n, src) in files do
     for i in importsOf src do
@@ -973,15 +973,15 @@ def parseLawTextReadings (text : String) : Except String (Law × List (String ×
     let some rest := line.dropPrefix? "law " | throw s!"expected `law NAME: EXPR`, found `{line}`"
     let rest := rest.toString
     let name := (rest.takeWhile fun c => c.isAlphanum || c == '_').toString
-    unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name in `{line}`"
+    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name in `{line}`"
     let after := (rest.drop name.length).toString.trimAsciiStart.toString
     let (reading, after) ← match ← lawReading after with
       | some (r, more) => pure (some r, more.trimAsciiStart.toString)
       | none => pure (none, after)
     let some expr := after.dropPrefix? ":" | throw s!"expected `law NAME: EXPR`, found `{line}`"
-    pure ((name, ← Minidregg.Compiler.ObjectiveBendLaw.parse expr.toString), reading.map (name, ·))
+    pure ((name, ← Delvetalk.Compiler.ObjectiveBendLaw.parse expr.toString), reading.map (name, ·))
   let law := parsed.map (·.1)
-  Minidregg.Compiler.ObjectiveBendLaw.checkNames law
+  Delvetalk.Compiler.ObjectiveBendLaw.checkNames law
   return (law, parsed.filterMap (·.2) |>.filter (!·.2.isEmpty))
 
 /-- Law text: one `law NAME: EXPR` per line (a reading after the name allowed), as at the top of a package. -/
@@ -1061,7 +1061,7 @@ def inputSources (inputs : Json) : List String :=
   modules ++ ((inputs.getObjValAs? String "source").toOption.map ([·])).getD []
 
 /-- The fields of a record type, through the packet's bounds; none for any other type. -/
-partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
+partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Delvetalk.Theory.ObjectiveBendTypes.Ty → Option (List (String × Delvetalk.Theory.ObjectiveBendTypes.Ty))
   | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (recordFieldTypes bounds (fuel - 1))
   | .field n m tail => ((n, m) :: ·) <$> recordFieldTypes bounds fuel tail
   | .emptyRow => some []
@@ -1206,7 +1206,7 @@ def Object.offers (o : Object) (method : String) : Bool :=
     (m.getObjValAs? String "name").toOption == some method && !isHelperRow m
 
 /-- The cases of a sum type (through the bounds): its labels and payload types. -/
-partial def variantCases (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.ObjectiveBendTypes.Ty → Option (List (String × Minidregg.Theory.ObjectiveBendTypes.Ty))
+partial def variantCases (bounds : DataBounds) (fuel : Nat) : Delvetalk.Theory.ObjectiveBendTypes.Ty → Option (List (String × Delvetalk.Theory.ObjectiveBendTypes.Ty))
   | .variable i => if fuel == 0 then none else (bounds.lookup i).bind (variantCases bounds (fuel - 1))
   | .variant r => recordFieldTypes bounds (bounds.length + 1) r
   | _ => none
@@ -1216,7 +1216,7 @@ partial def variantCases (bounds : DataBounds) (fuel : Nat) : Minidregg.Theory.O
     name; through records, list items and the payloads of the sums the value names. A text naming no
     case is `(path, word, cases)`, `path` the field path (`bed.colours[1]`, "" for the whole value). Any other value
     is left as it is, for the conformance check to judge. -/
-partial def wordsAsCases (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) (d : Data)
+partial def wordsAsCases (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) (d : Data)
     (path : String := "") : Except (String × String × List String) Data :=
   let fuel := bounds.length + 1
   match d with
@@ -1237,9 +1237,9 @@ partial def wordsAsCases (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveB
     let item := do
       let cons ← (variantCases bounds fuel ty).bind (·.lookup "cons")
       (← recordFieldTypes bounds fuel cons).lookup "head"
-    match Minidregg.Compiler.ObjectiveBendDataWire.listItems? d, item with
+    match Delvetalk.Compiler.ObjectiveBendDataWire.listItems? d, item with
     | some items, some t =>
-      Minidregg.Compiler.ObjectiveBendDataWire.listData <$> (items.zipIdx.mapM fun (v, i) => wordsAsCases bounds t v s!"{path}[{i}]")
+      Delvetalk.Compiler.ObjectiveBendDataWire.listData <$> (items.zipIdx.mapM fun (v, i) => wordsAsCases bounds t v s!"{path}[{i}]")
     | _, _ =>
       match (variantCases bounds fuel ty).bind (·.lookup l) with
       | some t => .variant l <$> wordsAsCases bounds t p path
@@ -1247,7 +1247,7 @@ partial def wordsAsCases (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveB
   | _ => pure d
 
 /-- The columns of a relation field's rows, read from the state type: `rows {items: List<T>}` with `T` a record. -/
-def rowColumns (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBendTypes.Ty) (field : String) : Option (List String) := do
+def rowColumns (bounds : DataBounds) (stateType : Delvetalk.Theory.ObjectiveBendTypes.Ty) (field : String) : Option (List String) := do
   let fuel := bounds.length + 1
   let fieldTy ← (← recordFieldTypes bounds fuel stateType).lookup field
   let payload ← (← variantCases bounds fuel fieldTy).lookup "rows"
@@ -1258,7 +1258,7 @@ def rowColumns (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBend
 
 /-- A package's relations against its state type: each a relation field whose rows have every key
     column; refused by name (`key: …`) otherwise. -/
-def checkRelations (decls : List RelDecl) (bounds : DataBounds) (stateType : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Unit := do
+def checkRelations (decls : List RelDecl) (bounds : DataBounds) (stateType : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Except String Unit := do
   for d in decls do
     let some cols := rowColumns bounds stateType d.field
       | throw s!"key: {d.field} is not a Relation<T> field of a record T"
@@ -1284,7 +1284,7 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   let c ← (Package.compileEntryFrom request "initial").mapError fun d => ("compile", (Package.withHint entryInputs d).render)
   let (artifact, ty) := (c.artifact, c.entry.type)
   let decoded ← (do
-    Minidregg.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
+    Delvetalk.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
   let assumptions := decoded.source.assumptions
   unless stateTypeOk assumptions ty do
     throw ("compile", "initial() must return a closed record of first-order data")
@@ -1299,14 +1299,14 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
   let migrated : Option Compiled ← if migration.isEmpty then
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
     else do
-      unless Minidregg.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
+      unless Delvetalk.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
       -- A migration the package does not define is said by name, not by the compiler's entry search.
       let (art, mty, _) ← (Package.compileKeepingLaws (← resolved migration)).mapError fun e =>
         if (e.splitOn "missing selected entry").length > 1 then
           ("migration", s!"the package defines no {migration}; a migration is def {migration}(old: OldState) -> State")
         else ("migration", e)
       let packet ← (art.getObjVal? "packet").mapError (("migration", ·))
-      let md ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
+      let md ← (Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
       match mty with
       | .arrow _ _ dom cod =>
         unless dom == o.stateType && cod == ty do
@@ -1375,6 +1375,34 @@ def newSources (w : World) (sources : List String) : List (String × Json) :=
     if w.modules.contains cid || acc.any (·.1 == cid) then acc else acc ++ [(cid, src)]) []
   if fresh.isEmpty then [] else
     [("sources", Json.arr (fresh.toArray.map fun (cid, src) => Json.mkObj [("cid", toJson cid), ("source", toJson src)]))]
+
+/-- The sources an entry carries, checked against their CIDs. -/
+def entrySources (entry : Json) : Except String (List (String × String)) := do
+  let some raw := (entry.getObjVal? "sources").toOption | return []
+  (← raw.getArr?).toList.mapM fun m => do
+    let cid ← m.getObjValAs? String "cid"
+    let src ← m.getObjValAs? String "source"
+    unless sourceCid src == cid do throw "a journaled source is not its CID's"
+    return (cid, src)
+
+/-- The blocks an entry carries, checked against their CIDs. -/
+def entryBlocks (entry : Json) : Except String (List (String × Array Json)) := do
+  let some raw := (entry.getObjVal? "blocks").toOption | return []
+  (← raw.getArr?).toList.mapM fun b => do
+    let cid ← b.getObjValAs? String "cid"
+    let items ← (← b.getObjVal? "items").getArr?
+    unless Journal.bodyHash (Json.arr items) == cid do throw "a journaled block is not its CID's"
+    return (cid, items)
+
+/-- The checkpoint block `cid`, read from the entry that carries it (`World.blocks`). -/
+def blockItems (w : World) (cid : String) : Option (Array Json) := do
+  let entry ← w.entries.get? (← w.blocks[cid]?)
+  ((entryBlocks entry).toOption.getD []).lookup cid
+
+/-- The source module `cid`, read from the entry that carries it (`World.modules`). -/
+def sourceText (w : World) (cid : String) : Option String := do
+  let entry ← w.entries.get? (← w.modules[cid]?)
+  ((entrySources entry).toOption.getD []).lookup cid
 
 /-! ## Checkpoint blocks
 
@@ -1478,7 +1506,7 @@ def blockField (j : Json) (field : String) (least : Nat := blockThreshold) : Jso
     journaled. -/
 def unblockField (w : World) (j : Json) (field : String) : Option Json := do
   let some cid := (j.getObjValAs? String (field ++ "Block")).toOption | return j
-  let v ← (w.blocks[cid]?).bind (·[0]?)
+  let v ← (blockItems w cid).bind (·[0]?)
   let rest := ((j.getObj?.toOption.map (·.toList)).getD []).filter fun (k, _) => k != field ++ "Block"
   return Json.mkObj (rest ++ [(field, v)])
 
@@ -1510,7 +1538,7 @@ partial def lowerLabels (w : World) (j : Json) : Except String Json :=
   | .obj _ =>
     if (j.getObjValAs? String "tag").toOption == some "labelBlock" then do
       let cid ← j.getObjValAs? String "cid"
-      let some item := (w.blocks[cid]?).bind (·[0]?) | throw s!"text block {cid} is not journaled"
+      let some item := (blockItems w cid).bind (·[0]?) | throw s!"text block {cid} is not journaled"
       return Json.mkObj [("tag", toJson "label"), ("value", ← item.getStr?)]
     else do
       let fields := (j.getObj?.toOption.map (·.toList)).getD []
@@ -1558,15 +1586,6 @@ def expandInterpretation (w : World) (outcome : Json) : Option Json := do
   let rest := ((i.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "utteranceIsText")
   return Json.mkObj (rest ++ [("utterance", toJson text)])
 
-/-- The blocks an entry carries, checked against their CIDs. -/
-def entryBlocks (entry : Json) : Except String (List (String × Array Json)) := do
-  let some raw := (entry.getObjVal? "blocks").toOption | return []
-  (← raw.getArr?).toList.mapM fun b => do
-    let cid ← b.getObjValAs? String "cid"
-    let items ← (← b.getObjVal? "items").getArr?
-    unless Journal.bodyHash (Json.arr items) == cid do throw "a journaled block is not its CID's"
-    return (cid, items)
-
 /-- A journaled checkpoint with its token array reassembled from the world's blocks. -/
 partial def expandCheckpoint (w : World) (checkpoint : Json) : Except String Json := do
   let some tree := (checkpoint.getObjVal? "tokenTree").toOption | return checkpoint
@@ -1575,7 +1594,7 @@ partial def expandCheckpoint (w : World) (checkpoint : Json) : Except String Jso
     let mut out : Array Json := #[]
     for n in names do
       let cid ← n.getStr?
-      let some items := w.blocks[cid]? | throw s!"checkpoint block {cid} is not journaled"
+      let some items := blockItems w cid | throw s!"checkpoint block {cid} is not journaled"
       out := out ++ items
     expand (depth - 1) out
   let tokens ← expand (← tree.getObjValAs? Nat "depth") (← (← tree.getObjVal? "roots").getArr?)
@@ -1603,18 +1622,9 @@ def expandSuspended (w : World) (entry : Json) : Except String Json := do
     (← c.getObjValAs? String "principal") (← c.getObjValAs? String "intent")
     (← c.getObjValAs? String "rootsDigest") tokens))
 
-/-- The sources an entry carries, checked against their CIDs. -/
-def entrySources (entry : Json) : Except String (List (String × String)) := do
-  let some raw := (entry.getObjVal? "sources").toOption | return []
-  (← raw.getArr?).toList.mapM fun m => do
-    let cid ← m.getObjValAs? String "cid"
-    let src ← m.getObjValAs? String "source"
-    unless sourceCid src == cid do throw "a journaled source is not its CID's"
-    return (cid, src)
-
 /-- Compile inputs from an entry: every CID resolved to the source a `module` entry recorded. -/
 def expandInputs (w : World) (inputs : Json) : Except String Json := do
-  let resolve := fun (cid : String) => match w.modules[cid]? with
+  let resolve := fun (cid : String) => match sourceText w cid with
     | some src => pure src
     | none => throw s!"compile inputs name module {cid}, which no module entry recorded"
   let inputs ← match inputs.getObjVal? "modules" with
@@ -1721,13 +1731,13 @@ def compileEntryIn (w : World) (inputs : Json) (name : String) : Except String (
 def compiledOf (c : Package.EntryCompiled) : Except String Compiled := do
   return ⟨← c.artifact.getObjVal? "packet", c.entry.type, c.entry.source.assumptions.bounds,
     c.entry.source.assumptions.rigid, some c.entry,
-    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
+    some (Delvetalk.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram c.entry.source.term)⟩
 
-/-- A compiled definition from its packet: decoded and re-checked by Mini (`CheckedEntry.ofPacket`). -/
+/-- A compiled definition from its packet: decoded and re-checked (`CheckedEntry.ofPacket`). -/
 def compiledOfPacket (packet : Json) : Option Compiled := do
   let e ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
   return ⟨packet, e.type, e.source.assumptions.bounds, e.source.assumptions.rigid, some e,
-    some (Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram e.source.term)⟩
+    some (Delvetalk.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram e.source.term)⟩
 
 /-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`. -/
 def diskCompiled (key : String) : Option Compiled :=
@@ -1819,7 +1829,7 @@ def contextData (id principal handle caller intent : String) (height clock : Nat
     declares it: the fields its type names, in its order, each fitted alike. An object compiled
     under an older library whose Context lacks a field the host now fills keeps running; a
     field the host cannot fill leaves the record as built (and the kernel refuses it by name). -/
-partial def fitRecord (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) (d : Data) : Data :=
+partial def fitRecord (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) (d : Data) : Data :=
   match d, recordFieldTypes bounds (bounds.length + 1) ty with
   | .record fs, some names =>
     if names.all (fun (n, _) => fs.any (·.1 == n)) then
@@ -1833,13 +1843,13 @@ def contextFields : List String :=
 
 /-- A Context type: a record (through the bounds) naming the principal and the intent, every
     field of which the host fills. An older library's Context with fewer fields is one too. -/
-def isContextType (bounds : DataBounds) (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Bool :=
+def isContextType (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Bool :=
   match recordFieldTypes bounds (bounds.length + 1) ty with
   | some fs => fs.any (·.1 == "principal") && fs.any (·.1 == "intent") && fs.all (contextFields.contains ·.1)
   | none => false
 
 /-- The parameter types of a definition's type, outermost first. -/
-def arrowDomains : Nat → Minidregg.Theory.ObjectiveBendTypes.Ty → List Minidregg.Theory.ObjectiveBendTypes.Ty
+def arrowDomains : Nat → Delvetalk.Theory.ObjectiveBendTypes.Ty → List Delvetalk.Theory.ObjectiveBendTypes.Ty
   | fuel + 1, .arrow _ _ domain codomain => domain :: arrowDomains fuel codomain
   | _, _ => []
 
@@ -1903,6 +1913,42 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
   | _ => return refuse "law"
 
+/-- An admitted entry's writes with their edits (`Touch`): for each written object, the version and
+    the edits other than `keep` then a retraction of each evicted key; none for a write that was not
+    one of edits. -/
+def writeEdits (entry : Json) : List (String × Nat × Option (List (String × Data))) :=
+  let ws := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
+    |>.bind (·.getArr? |>.toOption)).getD #[]
+  ws.toList.filterMap fun x => do
+    let id ← (x.getObjValAs? String "object").toOption
+    let version ← (x.getObjValAs? Nat "version").toOption
+    let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+    let steps := (((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
+    -- A key the declared retention evicted is touched as a retraction of it (codex host 10).
+    let evicted := (((x.getObjVal? "evicted").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList.filterMap fun e => do
+      let f ← (e.getObjValAs? String "field").toOption
+      let k ← (e.getObjVal? "key").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+      return (f, Data.variant "retract" (Data.record [("key", k)]))
+    let edits : Option (List (String × Data)) :=
+      if kinds.any (fun k => !((k.getNat?.toOption.map Law.editKind).getD false)) then none else
+      (steps.foldlM (init := ([] : List (String × Data))) fun acc step => match decodeData Limits.dataDepth step with
+        | .ok (.record fs) => some (acc ++ fs.filter fun (x : String × Data) => match x.2 with
+            | Data.variant "keep" _ => false
+            | _ => true)
+        | _ => none).map (· ++ evicted)
+    return (id, version, edits)
+
+/-- The index rows an admitted entry at `height` adds (`World.touches`), from its `writes`. -/
+def touchesOf (height : Nat) (entry : Json) : List (String × Touch) :=
+  (writeEdits entry).map fun (id, version, _) => (id, { version, height })
+
+/-- The edits of the change `t` of `id`, read from its entry (`writeEdits`): none for a change not of
+    edits (a reprogram, an amendment, a root `set`, whose entry writes none of them). -/
+def touchEdits (w : World) (id : String) (t : Touch) : Option (List (String × Data)) := do
+  let entry ← w.entries.get? (t.height - 1)
+  let (_, _, edits) ← (writeEdits entry).find? fun (x, v, _) => x == id && v == t.version
+  edits
+
 /-- The edits of `id`'s admitted writes after version `seen`, oldest first, from the per-object
     index (`World.touches`, newest back to `seen`); none when one of them was not an ordinary write
     (a reprogram or an amendment) or does not decode. -/
@@ -1914,7 +1960,7 @@ def editsSince (w : World) (id : String) (seen : Nat) : Option (List (String × 
     i := i - 1
     let t : Touch := ts[i]!
     if t.version ≤ seen then break
-    match t.edits with
+    match touchEdits w id t with
     | some es => out := es ++ out
     | none => return none
   return some out
@@ -1977,28 +2023,6 @@ def changedSince (w : World) (reader : String) (since : Nat) (pfx after : String
     out := out.push c
   return (out.toList, false)
 
-/-- The index entries an admitted entry adds (`World.touches`), from its `writes`. -/
-def touchesOf (entry : Json) : List (String × Touch) :=
-  let ws := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)
-    |>.bind (·.getArr? |>.toOption)).getD #[]
-  ws.toList.filterMap fun x => do
-    let id ← (x.getObjValAs? String "object").toOption
-    let version ← (x.getObjValAs? Nat "version").toOption
-    let kinds := (((x.getObjVal? "kinds").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
-    let steps := (((x.getObjVal? "edits").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList
-    -- A key the declared retention evicted is touched as a retraction of it (codex host 10).
-    let evicted := (((x.getObjVal? "evicted").toOption.bind (·.getArr? |>.toOption)).getD #[]).toList.filterMap fun e => do
-      let f ← (e.getObjValAs? String "field").toOption
-      let k ← (e.getObjVal? "key").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
-      return (f, Data.variant "retract" (Data.record [("key", k)]))
-    let edits : Option (List (String × Data)) :=
-      if kinds.any (fun k => !((k.getNat?.toOption.map Law.editKind).getD false)) then none else
-      (steps.foldlM (init := ([] : List (String × Data))) fun acc step => match decodeData Limits.dataDepth step with
-        | .ok (.record fs) => some (acc ++ fs.filter fun (x : String × Data) => match x.2 with
-            | Data.variant "keep" _ => false
-            | _ => true)
-        | _ => none).map (· ++ evicted)
-    return (id, { version, edits })
 
 /-- The edit half of `movedRootAdmits`: with `changedFields`, an edit of a field no write since
     changed is admitted too. With no change of `id`, `none` changes of its own (`noChange`). -/
@@ -2361,6 +2385,118 @@ def modelCall (entry : Json) : Bool :=
 def actOf (outcome : Json) : String :=
   ((outcome.getObjValAs? String "kind").toOption <|> (outcome.getObjValAs? String "power").toOption).getD ""
 
+/-! ## Anchors: what each entry says an object is -/
+
+/-- The rows of `k` in an entry's outcome that name `id`, in order. -/
+def rowsNaming (outcome : Json) (k id : String) : Array Json :=
+  (((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).filter fun x =>
+    (x.getObjValAs? String "object").toOption == some id
+
+/-- The object rows of a fork's genesis state that name `id`. -/
+def forkedRow (outcome : Json) (id : String) : Option Json :=
+  ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).bind
+    fun os => os.find? fun o => (o.getObjValAs? String "id").toOption == some id
+
+/-- The version the entry gives `id`, when it sets one: a creation's 0, a write's, a root `set`'s, a
+    fork genesis's. -/
+def versionIn (entry : Json) (id : String) : Option Nat :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let named := (outcome.getObjValAs? String "object").toOption == some id
+  match tagOf entry with
+  | "created" => if named then some 0 else none
+  | "admitted" =>
+    match (rowsNaming outcome "writes" id).back? with
+    | some x => (x.getObjValAs? Nat "version").toOption
+    | none => if (rowsNaming outcome "creates" id).isEmpty then none else some 0
+  | "root" =>
+    if !named || actOf outcome != "set" then none
+    else if (outcome.getObjValAs? String "field").toOption == some "version" then
+      (outcome.getObjVal? "after").toOption.bind (·.getNat?.toOption)
+    else (outcome.getObjValAs? Nat "version").toOption
+  | "forked" => (forkedRow outcome id).bind (·.getObjValAs? Nat "version" |>.toOption)
+  | _ => none
+
+/-- The pin the entry gives `id`, when it sets one: a creation's, a reprogram's, a root `set` of the
+    pin or the program, a fork genesis's. -/
+def pinIn (entry : Json) (id : String) : Option String :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let named := (outcome.getObjValAs? String "object").toOption == some id
+  match tagOf entry with
+  | "created" => if named then (outcome.getObjValAs? String "pin").toOption else none
+  | "admitted" =>
+    match (rowsNaming outcome "reprograms" id).back? with
+    | some r => (r.getObjValAs? String "newPin").toOption
+    | none => (rowsNaming outcome "creates" id).back?.bind (·.getObjValAs? String "pin" |>.toOption)
+  | "root" =>
+    if !named || actOf outcome != "set" then none else
+    match (outcome.getObjValAs? String "field").toOption with
+    | some "pin" => (outcome.getObjVal? "after").toOption.bind (·.getStr?.toOption)
+    | some "program" => (outcome.getObjValAs? String "pin").toOption
+    | _ => none
+  | "forked" => (forkedRow outcome id).bind (·.getObjValAs? String "pin" |>.toOption)
+  | _ => none
+
+/-- The law text the entry gives `id`, when it sets one: a creation's, an amendment's, a root `set` of
+    the law, a `retire` or `unretire`, a fork genesis's. -/
+def lawIn (entry : Json) (id : String) : Option String :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let named := (outcome.getObjValAs? String "object").toOption == some id
+  let after := (outcome.getObjVal? "after").toOption.bind (·.getStr?.toOption)
+  match tagOf entry with
+  | "created" => if named then (outcome.getObjValAs? String "lawText").toOption else none
+  | "admitted" =>
+    match (rowsNaming outcome "amendments" id).back? with
+    | some a => (a.getObjValAs? String "new").toOption
+    | none => (rowsNaming outcome "creates" id).back?.bind (·.getObjValAs? String "law" |>.toOption)
+  | "root" | "moderated" =>
+    if !named then none else
+    match actOf outcome with
+    | "set" => if (outcome.getObjValAs? String "field").toOption == some "law" then after else none
+    | "retire" | "unretire" => after
+    | _ => none
+  | "forked" => (forkedRow outcome id).bind (·.getObjValAs? String "law" |>.toOption)
+  | _ => none
+
+/-- The state CID the entry names for `id` at `version`: a created seed's, a write's `cid`, a root
+    `set`'s, a fork genesis's `stateCid`; none when it names none. -/
+def stateCidIn (entry : Json) (id : String) (version : Nat) : Option String :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let named := (outcome.getObjValAs? String "object").toOption == some id
+  match tagOf entry with
+  | "created" => if version == 0 && named then (outcome.getObjVal? "seed").toOption.map Journal.bodyHash else none
+  | "admitted" =>
+    match ((rowsNaming outcome "writes" id).filter fun x => (x.getObjValAs? Nat "version").toOption == some version).back? with
+    | some x => (x.getObjValAs? String "cid").toOption
+    | none => if version != 0 then none else
+      (rowsNaming outcome "creates" id).back?.bind fun c => (c.getObjVal? "seed").toOption.map Journal.bodyHash
+  | "root" =>
+    if named && (outcome.getObjValAs? Nat "version").toOption == some version then (outcome.getObjValAs? String "cid").toOption else none
+  | "forked" => (forkedRow outcome id).bind (·.getObjValAs? String "stateCid" |>.toOption)
+  | _ => none
+
+/-- The objects an entry may say something of. -/
+def objectsNamed (entry : Json) : List String :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let ids := fun (k : String) => (((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
+    fun x => (x.getObjValAs? String "object").toOption
+  let forked := (((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
+    fun o => (o.getObjValAs? String "id").toOption
+  (((outcome.getObjValAs? String "object").toOption.toList ++ ids "writes" ++ ids "creates" ++ ids "reprograms" ++
+    ids "amendments" ++ forked)).eraseDups
+
+/-- `World.anchors` after the entry at `height`: each object it gives a version, a pin or a law is
+    anchored there for that; a root `delete` forgets the object. -/
+def anchorsAfter (w : World) (height : Nat) (entry : Json) : Std.HashMap String Anchor :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  if tagOf entry == "root" && actOf outcome == "delete" then
+    w.anchors.erase ((outcome.getObjValAs? String "object").toOption.getD "")
+  else (objectsNamed entry).foldl (fun m id =>
+    let a := m.getD id {}
+    let a := if (versionIn entry id).isSome then { a with version := height } else a
+    let a := if (pinIn entry id).isSome then { a with pin := height } else a
+    let a := if (lawIn entry id).isSome then { a with law := height } else a
+    if a == m.getD id {} then m else m.insert id a) w.anchors
+
 /-- The indexes a root or moderation entry moves (docs/ROOT.md §1.3: rebuilt as `record` rebuilds
     them), the clock hour's counts, and the day's model calls. The store's half is `applyRoot`. -/
 def recordActs (w : World) (entry : Json) : World := Id.run do
@@ -2407,7 +2543,7 @@ def recordActs (w : World) (entry : Json) : World := Id.run do
     | "state" | "owner" =>
       -- A root write of state is a write whose edits nobody knows: a root read before it is stale.
       if let .ok v := outcome.getObjValAs? Nat "version" then
-        w := { w with touches := w.touches.insert id ((w.touches.getD id #[]).push { version := v, edits := none }),
+        w := { w with touches := w.touches.insert id ((w.touches.getD id #[]).push { version := v, height := w.height }),
                       changes := w.changes.push { height := w.height, object := id, version := v,
                                                   principal := (entry.getObjVal? "identity" >>= (·.getObjValAs? String "principal")).toOption.getD "" } }
     | _ => pure ()
@@ -2419,13 +2555,12 @@ def recordActs (w : World) (entry : Json) : World := Id.run do
 def recordInert (w : World) (entry : Json) : World :=
   let sources := (entrySources entry).toOption.getD []
   { w with height := w.height + 1, head := (entry.getObjValAs? String "hash").toOption.getD "",
-           entries := w.entries.push entry,
-           modules := sources.foldl (fun m (cid, src) => m.insert cid src) w.modules,
-           blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (cid, b) => m.insert cid b) w.blocks }
+           modules := sources.foldl (fun m (x : String × String) => m.insert x.1 w.height) w.modules,
+           blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (x : String × Array Json) => m.insert x.1 w.height) w.blocks }
 
 def recordCore (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
-  let index := w.entries.size
+  let index := w.height
   let delivered := (entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption
   let identity := (entry.getObjVal? "identity").toOption.getD Json.null
   let sent := match (entry.getObjVal? "outcome").toOption.bind (fun o => (o.getObjValAs? String "tag").toOption),
@@ -2454,8 +2589,8 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
   { w with
     published := w.published ++ publications
     outbox := offered.foldl (fun box (to, i) => box.insert to ((box.getD to #[]).push (index, i))) w.outbox
-    modules := sources.foldl (fun m (cid, src) => m.insert cid src) w.modules
-    blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (cid, b) => m.insert cid b) w.blocks
+    modules := sources.foldl (fun m (x : String × String) => m.insert x.1 index) w.modules
+    blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (x : String × Array Json) => m.insert x.1 index) w.blocks
     pending := (match delivered with
       | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
       | none => w.pending) ++ sent ++ changed ++
@@ -2463,7 +2598,7 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
       (((entry.getObjVal? "ended").toOption.map fun e =>
         #[Json.mkObj ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
           ((e.getObj?.toOption.map (·.toList)).getD []))]).getD #[])
-    height := w.height + 1, head := hash, entries := w.entries.push entry
+    height := w.height + 1, head := hash
     replies := match (entry.getObjValAs? String "replyTo").toOption,
         identity.getObjValAs? String "principal", identity.getObjValAs? String "intent" with
       | some post, .ok p, .ok i => if w.replies.contains post then w.replies else w.replies.insert post (p, i)
@@ -2499,13 +2634,14 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
     -- over the receipt.
     receipts := match w.receipts[key]? with
       | none => w.receipts.insert key index
-      | some i => if tagOf w.entries[i]! == "suspended" || isTransient w.entries[i]! then w.receipts.insert key index
+      | some i => if (w.entries.get? i).all fun e => tagOf e == "suspended" || isTransient e then w.receipts.insert key index
           else w.receipts
     touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched
     subscriptions := subscriptionsAfter w entry
     touches := if tagOf entry != "admitted" then w.touches else
-      (touchesOf entry).foldl (fun t (id, x) => t.insert id ((t.getD id #[]).push x)) w.touches
-    changes := w.changes ++ changesOf (w.height + 1) entry }
+      (touchesOf (index + 1) entry).foldl (fun t (id, x) => t.insert id ((t.getD id #[]).push x)) w.touches
+    changes := w.changes ++ changesOf (w.height + 1) entry
+    anchors := anchorsAfter w (w.height + 1) entry }
 
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   recordActs (recordCore w entry key touch) entry
@@ -2513,7 +2649,7 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
 def push (w : World) (key : String) (fields : List (String × Json)) (touch : List String) :
     World × Json :=
   let entry := Journal.sealEntry (w.height + 1) w.head fields
-  (record w entry key touch, entry)
+  (record { w with entries := w.entries.push entry } entry key touch, entry)
 
 def statusOf (entry : Json) : String :=
   match entry.getObjVal? "outcome" |>.bind (·.getObjValAs? String "tag") with
@@ -2543,7 +2679,7 @@ def retained (w : World) (principal intent digest : String) : Option Json :=
   match w.receipts[identityKey principal intent]? with
   | none => none
   | some index =>
-    let entry := w.entries[index]!
+    let entry := w.entries.getD index
     let same := (entry.getObjValAs? String "request").toOption == some digest
     if tagOf entry == "suspended" then none
     -- A transient refusal does not bind the identity: the retry runs (and is judged) again.
@@ -2691,7 +2827,7 @@ def parseChain (j : Option Json) : Except String Ledger :=
 def defaultLaw (creator : String) : Except String Law := do
   if creator.any (fun c => c == '"' || c == '\\' || c.toNat < 32) then
     throw "the creator handle cannot be named in the default law"
-  let clause ← Minidregg.Compiler.ObjectiveBendLaw.parse
+  let clause ← Delvetalk.Compiler.ObjectiveBendLaw.parse
     s!"request.kind == 0 or request.subject == \"{creator}\""
   return [("owner", clause)]
 
@@ -2705,12 +2841,12 @@ def builtJson (key : String) (b : Built) : Json :=
       Json.mkObj [("field", toJson d.field), ("key", toJson d.key), ("limit", toJson d.limit)])),
     ("exposed", toJson b.exposed)]
 
-/-- A compiled package from its on-disk form; the packet is decoded and re-checked by Mini. -/
+/-- A compiled package from its on-disk form; the packet is decoded and re-checked. -/
 def builtOf (j : Json) : Option Built := do
   let artifact ← (j.getObjVal? "artifact").toOption
   let packet ← (artifact.getObjVal? "packet").toOption
   let entry ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
-  let decoded ← (Minidregg.Theory.ObjectiveBendTyping.decodePacket packet).toOption
+  let decoded ← (Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet).toOption
   let laws ← match (j.getObjValAs? String "laws").toOption with
     | some "" => some []
     | some text => (parseLawText text).toOption
@@ -2732,7 +2868,7 @@ def compileObject (w : World) (inputs : Json) : Except String Built := do
     fun d => (Package.withHint resolved d).render
   let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
   let packet ← artifact.getObjVal? "packet"
-  let decoded ← Minidregg.Theory.ObjectiveBendTyping.decodePacket packet
+  let decoded ← Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet
   unless stateTypeOk decoded.source.assumptions ty do
     throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
   let relations := ((← (declsOfArtifact artifact).mapError (s!"key: " ++ ·))).getD []
@@ -2791,8 +2927,8 @@ def createOutcome (id : String) (o : Object) (artifact seed : Json) : Json :=
 
 /-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
     come from `initial()`), for `world-create` and the `create` Plan alike. -/
-def mergeSeed (initial seed : Data) (bounds : Minidregg.Theory.ObjectiveBendTypes.DataBounds)
-    (ty : Minidregg.Theory.ObjectiveBendTypes.Ty) : Except String Data := do
+def mergeSeed (initial seed : Data) (bounds : Delvetalk.Theory.ObjectiveBendTypes.DataBounds)
+    (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty) : Except String Data := do
   if seed.conformsUnder bounds ty then return seed
   match seed, initial with
   | .record given, .record base =>
@@ -3543,26 +3679,6 @@ def applyRoot (w : World) (outcome : Json) : Except String World := do
   | "ignore" | "unignore" | "card" | "quiet" => return w
   | k => throw s!"no root act {k}"
 
-/-- The heights a journal's root entries leave ignored, in order (`ignore` adds, `unignore` removes):
-    the set replay runs under from its first entry. -/
-def ignoreSet (entries : Array Json) : List Nat := Id.run do
-  let mut out : List Nat := []
-  for e in entries do
-    if tagOf e == "root" then
-      let o := (e.getObjVal? "outcome").toOption.getD Json.null
-      let h := (o.getObjValAs? Nat "height").toOption.getD 0
-      match actOf o with
-      | "ignore" => out := (out.erase h) ++ [h]
-      | "unignore" => out := out.erase h
-      | _ => pure ()
-  return out
-
-/-- Every height the journal's `ignore`s and `unignore`s name. -/
-def ignoreNamed (entries : Array Json) : List Nat :=
-  (entries.toList.filterMap fun e =>
-    if tagOf e == "root" && ["ignore", "unignore"].contains (actOf ((e.getObjVal? "outcome").toOption.getD Json.null))
-    then (e.getObjVal? "outcome").toOption.bind (·.getObjValAs? Nat "height" |>.toOption) else none).eraseDups
-
 /-- Is an entry a root `ignore` or `unignore`? -/
 def isIgnoreAct (e : Json) : Bool :=
   tagOf e == "root" && ["ignore", "unignore"].contains (actOf ((e.getObjVal? "outcome").toOption.getD Json.null))
@@ -3592,9 +3708,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   let introduced ← entrySources entry
   for (cid, _) in introduced do
     if w.modules.contains cid then throw "a source is journaled twice"
-  let w := { w with modules := introduced.foldl (fun m (cid, src) => m.insert cid src) w.modules }
+  let w := { w with modules := introduced.foldl (fun m (x : String × String) => m.insert x.1 w.height) w.modules }
   let blocks ← entryBlocks entry
-  let w := { w with blocks := blocks.foldl (fun m (cid, b) => m.insert cid b) w.blocks }
+  let w := { w with blocks := blocks.foldl (fun m (x : String × Array Json) => m.insert x.1 w.height) w.blocks }
   checkDelivery w entry principal intent outcome
   checkSends w entry principal intent
   -- A turn answers only a post recorded for the object it ran on (its first root).
@@ -3898,7 +4014,7 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
   let some o := w.objects[id]? | return none
   if o.version == version then return some (stateCid o.state)
   for i in (w.touched[id]?).getD #[] do
-    let some entry := w.entries[i]? | continue
+    let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let named := fun (j : Json) => (j.getObjValAs? String "object").toOption == some id
@@ -3928,7 +4044,7 @@ def stateAt (w : World) (id : String) (version : Nat) : Option Data := Id.run do
   if version > o.version then return none
   let mut state : Option Data := none
   for i in (w.touched[id]?).getD #[] do
-    let some entry := w.entries[i]? | continue
+    let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let named := fun (j : Json) => (j.getObjValAs? String "object").toOption == some id
@@ -4070,7 +4186,7 @@ def pinAndLawAt (w : World) (o : Object) (id : String) (version : Nat) : String 
   let mut pin := o.pin
   let mut law := o.lawText
   for i in ((w.touched[id]?).getD #[]).reverse do
-    let some entry := w.entries[i]? | continue
+    let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let named := fun (x : Json) => (x.getObjValAs? String "object").toOption == some id
@@ -4138,7 +4254,7 @@ def dumpOp (w : World) (j : Json) : Except String Json := do
     reply names its last item) continues exactly where a page stopped, in either order, so items
     sharing a height are never skipped (codex transport 12); `after`/`before` page by whole heights.
     The items, whether more follow, and the cursor of the last item shown when they do. -/
-def pageByHeight (j : Json) (items : Array (Nat × Json)) : Except String (Array Json × Bool × Option String) := do
+def pageByHeight {α : Type} (j : Json) (items : Array (Nat × α)) : Except String (Array α × Bool × Option String) := do
   let limit := (← optNat j "limit").getD Limits.maxHistoryLimit
   if limit == 0 || limit > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
   let reverse ← match j.getObjVal? "reverse" with
@@ -4146,7 +4262,7 @@ def pageByHeight (j : Json) (items : Array (Nat × Json)) : Except String (Array
     | .ok _ => throw "reverse must be true or false"
     | .error _ => pure false
   -- Each item's place: its height and its ordinal among the items of that height.
-  let placed : Array ((Nat × Nat) × Json) := (items.foldl (fun (acc : Array ((Nat × Nat) × Json) × Nat × Nat) (h, x) =>
+  let placed : Array ((Nat × Nat) × α) := (items.foldl (fun (acc : Array ((Nat × Nat) × α) × Nat × Nat) (h, x) =>
     let (out, lastH, n) := acc
     let k := if h == lastH && !out.isEmpty then n + 1 else 0
     (out.push ((h, k), x), h, k)) (#[], 0, 0)).1
@@ -4178,7 +4294,8 @@ def pageFields (more : Bool) (cursor : Option String) : List (String × Json) :=
     at the first entry that carried it. -/
 def sourceRecords (w : World) : Array (Nat × String × Json) := Id.run do
   let mut names : Std.HashMap String String := {}
-  for entry in w.entries do
+  for i in [0:w.entries.count] do
+    let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let compiles := ((outcome.getObjVal? "compile").toOption.toList ++
       (((outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun c => (c.getObjVal? "compile").toOption)
@@ -4188,7 +4305,8 @@ def sourceRecords (w : World) : Array (Nat × String × Json) := Id.run do
           unless names.contains cid do names := names.insert cid n
   let mut out : Array (Nat × String × Json) := #[]
   let mut seen : Std.HashSet String := {}
-  for (entry, i) in w.entries.zipIdx do
+  for i in [0:w.entries.count] do
+    let some entry := w.entries.get? i | continue
     let height := i + 1
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let carried := (((entry.getObjVal? "sources").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun x =>
@@ -4240,7 +4358,8 @@ def sourcesOp (w : World) (j : Json) : Except String Json := do
 def grantsOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let mut items : Array (Nat × Json) := #[]
-  for (entry, i) in w.entries.zipIdx do
+  for i in [0:w.entries.count] do
+    let some entry := w.entries.get? i | continue
     if tagOf entry != "admitted" then continue
     let made := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "grants" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]
     for g in made do
@@ -4258,7 +4377,7 @@ def grantsOp (w : World) (j : Json) : Except String Json := do
 def entryOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let hash ← j.getObjValAs? String "hash"
-  let some entry := w.entries.find? fun e => (e.getObjValAs? String "hash").toOption == some hash
+  let some entry := (w.entries.indexOf? hash).bind w.entries.get?
     | return Json.mkObj [("status", toJson "unknown"), ("message", toJson s!"unknown: no entry here is {hash}")]
   let owner := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
   let whole := owner == reader && !reader.isEmpty
@@ -4272,8 +4391,8 @@ def entryOp (w : World) (j : Json) : Except String Json := do
     see it, paged by height (`pageByHeight`). -/
 def entriesOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
-  let (shown, more, cursor) ← pageByHeight j (w.entries.zipIdx.map fun (e, i) => (i + 1, e))
-  return Json.mkObj ([("status", toJson "entries"), ("entries", Json.arr (shown.map (projectEntry w reader)))] ++
+  let (shown, more, cursor) ← pageByHeight j ((Array.range w.entries.count).map fun i => (i + 1, i))
+  return Json.mkObj ([("status", toJson "entries"), ("entries", Json.arr (shown.map (projectEntry w reader ∘ w.entries.getD)))] ++
     pageFields more cursor)
 
 /-- Everything a slug may name, as `(cid, kind)`: every entry's hash (`receipt`); every pin an
@@ -4282,7 +4401,8 @@ def entriesOp (w : World) (j : Json) : Except String Json := do
 def slugTargets (w : World) (reader : String) : Array (String × String) := Id.run do
   let mut out : Array (String × String) := #[]
   let seen := fun (id : String) => viewable w reader id
-  for entry in w.entries do
+  for i in [0:w.entries.count] do
+    let some entry := w.entries.get? i | continue
     if let .ok h := entry.getObjValAs? String "hash" then out := out.push (h, "receipt")
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
@@ -4321,7 +4441,7 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
       ("message", toJson s!"unknown: no receipt, pin or state here is named {slug}")]
   | [(cid, kind)] =>
     let receipt := if kind != "receipt" then none else
-      (w.entries.find? fun e => (e.getObjValAs? String "hash").toOption == some cid).map (projectEntry w reader)
+      ((w.entries.indexOf? cid).bind w.entries.get?).map (projectEntry w reader)
     return Json.mkObj ([("status", toJson "resolved"), ("slug", toJson slug), ("kind", toJson kind),
       ("cid", toJson cid)] ++ (receipt.map fun r => [("receipt", r)]).getD [])
   | many => return Json.mkObj [("status", toJson "ambiguous"), ("slug", toJson slug), ("matches", toJson many.length),
@@ -4337,7 +4457,7 @@ def receipt (w : World) (j : Json) : Except String Json := do
   match w.receipts[identityKey owner intent]? with
   | none => return Json.mkObj [("status", toJson "unknown")]
   | some index =>
-    let entry := w.entries[index]!
+    let entry := w.entries.getD index
     let shown := projectEntry w reader entry
     if owner != reader && tagOf entry == "refused" then return publicRefusal entry
     return Json.mkObj [("status", toJson "receipt"), ("receipt", shown)]
@@ -4353,7 +4473,7 @@ def history (w : World) (j : Json) : Except String Json := do
   let all := (w.touched.getD id #[]).filter fun index => index + 1 > after
   let page := all.extract 0 asked
   return Json.mkObj [("status", toJson "history"), ("object", toJson id),
-    ("entries", Json.arr (page.map fun index => projectEntry w reader w.entries[index]!)),
+    ("entries", Json.arr (page.map fun index => projectEntry w reader (w.entries.getD index))),
     ("more", toJson (decide (all.size > asked)))]
 
 /-- The principal transport reads publications as: the world's clock principal, or "transport". -/
@@ -4369,7 +4489,7 @@ def originOf (w : World) (entry : Json) : Json := Id.run do
     let some sender := ((e.getObjVal? "delivery").toOption.bind (·.getObjVal? "from" |>.toOption)) | break
     let (.ok p, .ok i) := (sender.getObjValAs? String "principal", sender.getObjValAs? String "intent") | break
     let some index := w.receipts[identityKey p i]? | break
-    let some next := w.entries[index]? | break
+    let some next := w.entries.get? index | break
     e := next
   let identity := (e.getObjVal? "identity").toOption.getD Json.null
   let intent := (identity.getObjValAs? String "intent").toOption.getD ""
@@ -4385,7 +4505,7 @@ def offersOp (w : World) (j : Json) : Except String Json := do
   let all := (w.outbox.getD principal #[]).filter fun (index, _) => index + 1 > after
   let page := all.extract 0 Limits.maxHistoryLimit
   let items := page.filterMap fun (index, i) => do
-    let entry ← w.entries[index]?
+    let entry ← w.entries.get? index
     let offer ← ((entry.getObjVal? "offers").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
     pure (Json.mkObj [("height", toJson (index + 1)), ("ordinal", toJson i),
       ("identity", (entry.getObjVal? "identity").toOption.getD Json.null),
@@ -4396,7 +4516,7 @@ def offersOp (w : World) (j : Json) : Except String Json := do
   let pubs := if principal != publisher w then #[] else
     let mine := w.published.filter fun (index, _) => index + 1 > after
     (mine.extract 0 Limits.maxHistoryLimit).filterMap fun (index, i) => do
-      let entry ← w.entries[index]?
+      let entry ← w.entries.get? index
       let p ← ((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
       let fields ← p.getObj?.toOption
       pure (Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i)] ++ fields.toList))
@@ -4421,8 +4541,10 @@ def pagePosts (w : World) : Std.HashMap String (Nat × String) :=
 def publicationsOp (w : World) (j : Json) : Except String Json := do
   discard <| readerOf j
   let posts := pagePosts w
-  let items := w.published.filterMap fun (index, i) => do
-    let entry ← w.entries[index]?
+  -- The page is chosen by height first: only its entries are read.
+  let (chosen, more, cursor) ← pageByHeight j (w.published.map fun (index, i) => (index + 1, (index, i)))
+  let shown := chosen.filterMap fun (index, i) => do
+    let entry ← w.entries.get? index
     let p ← ((entry.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).bind (·[i]?)
     let field := fun (k : String) => (p.getObjValAs? String k).toOption
     let object ← field "object"
@@ -4435,11 +4557,10 @@ def publicationsOp (w : World) (j : Json) : Except String Json := do
       match posts[identityKey object title]? with
       | some (_, uri) => [("replyTo", toJson uri)]
       | none => []
-    pure (index + 1, Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i),
+    pure (Json.mkObj ([("height", toJson (index + 1)), ("ordinal", toJson i),
       ("id", (p.getObjVal? "id").toOption.getD Json.null), ("object", toJson object), ("page", toJson title),
       ("section", toJson part), ("body", toJson body),
       ("hash", (entry.getObjVal? "hash").toOption.getD Json.null)] ++ replyTo))
-  let (shown, more, cursor) ← pageByHeight j items
   return Json.mkObj ([("status", toJson "publications"), ("publications", Json.arr shown)] ++ pageFields more cursor)
 
 end Delvetalk.Host

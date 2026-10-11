@@ -1,12 +1,12 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host16 from 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host17 from 5.137; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
 The host is one Lean process holding a world of durable objects. Every state change is a journal entry naming the one before it (CID of canonical DAG-CBOR); memory is derived from the journal by `record`, and replay re-judges admitted entries. A reply exists only after its bytes are durable.
 
-- Files: `spec/Delvetalk/Host/` `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots, fork genesis), `Session` (journal IO, ops dispatch). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
+- Files: `spec/Delvetalk/Host/` `Blocks` (the block store: `Entries`, `Link`, the pure record read), `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots and their indexes, opening, fork genesis), `Session` (journal IO, ops dispatch), `RootEdit` (the offline tools: `root-edit`, `migrate`). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
 - An activity yields `World.Message`s; `answer` dispatches on the method name against `worldMethods` (5.48). Write is self-only; cross-object change is `call`/`send`, judged by the callee's own law; `reprogram` and `amend` of another object are judged by the target's law.
 - Only declared methods run from outside (5.62). A direct `receive` is read as a spell by the host (5.49, 5.54, 5.63); a misfit is `badSpell` with `clause`, `reason`, `hint`.
 - Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); subscriptions deliver `changed` to typed receivers (5.50, 5.53); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
@@ -21,8 +21,9 @@ The host is one Lean process holding a world of durable objects. Every state cha
 
 ## 1. Module map
 
-Import order: Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapshot, Root, Session; `Serve.lean` and `PackageSession.lean` sit above them. Snapshot imports Ops only; Spell imports only Store; Root imports TurnLoop and Snapshot.
+Import order: Blocks, Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapshot, Root, Session; `Serve.lean` and `PackageSession.lean` sit above them. Blocks imports only `Canonical`; Snapshot imports Ops only; Spell imports only Store; Root imports TurnLoop.
 
+- `Blocks.lean`: `Entries` (the chain in memory: every CID, each record's span, the step's unwritten entries; `get?` reads and CID-checks one record through `readAt`, a `pread` behind `implemented_by`, pure because a written record never changes), `Link` (one chain line, `Link.ofLine`), `recordBytes`.
 - `Store.lean`: `Limits`, `Law`, `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey` (compressed `[principal, intent]`). Pure data.
 - `Journal.lean`: `bodyHash` (CID of the body's canonical bytes), `sealEntry`, `verify height previous entry`.
 - `Law.lean`: `Facts`, `Reading`, `denote`, `admits`, `refusedBy`; `#guard` tests at the bottom. Syntax is `spec/bend/Compiler/ObjectiveBendLaw.lean`.
@@ -30,12 +31,12 @@ Import order: Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapsh
 - `DiskCache.lean`: the on-disk compile cache's reads (5.66).
 - `Spell.lean`: `parse`, `bare`, `fit` and the `Clause`s of the spell grammar (5.49).
 - `TurnLoop.lean`: `M` monad (`ExceptT Abort (StateM TurnState)`), `runMethod`, `drive`, `answer`, `finishTurn`, `runTurnWith`, `resumeOne`, `settle`, `deliver`, `reprogramOp`, `amendOp`.
-- `Snapshot.lean`: snapshot bytes, `openContent`, fork genesis. It does IO (snapshot files).
-- `Session.lean`: `Open {world, path, handle, report, sync, snapshotAt}`, `openWorld`, `durable`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
+- `Snapshot.lean`: snapshot bytes (`storeJson`, `indexJson`, `installIndex`), `openJournal`, `reopen`, `replayAll`, `resume`, `checkAnchors`, `writeJournal`, fork genesis. It does IO (the chain, the block store, snapshot files).
+- `Session.lean`: `Open {world, path, handle, store, report, sync, snapshotAt, every, bound}`, `openWorld`, `durableIO`/`durable`, `appendJournal`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
 - `Root.lean`: `rootKinds`, `rootFieldsOf`, `rootOp`, `worldSettingsOp` (5.126).
 - `Serve.lean` and `spec/native/serve.c`: the directory of worlds and its two sockets (5.125, 5.131). `PackageSession.lean` is the per-process session above Session.
 
-Durability is fsync, not a full barrier: an entry may be lost on power loss inside the OS write-back window. The chain verifies on reopen, and a journal whose last line is torn is refused by name (`journal broken at height N: unterminated final line`, `Snapshot.lean`, `Ops.lean`); the host never cuts its own file. Recovery is a verified copy: `deploy/backup.sh` cuts the torn line in its mirror and replays it, `deploy/restore.sh` installs the tarball (DEPLOY "Durability and backups", "A torn tail"). `world-open {sync: "none" | "fsync" | "full"}` picks the mode per process (default `fsync`; `full` = F_FULLFSYNC; anything else, a boolean too, is refused). Never journaled; `world-status` reports `sync`. `openWorld` takes an exclusive flock and refuses "journal is open in another process".
+Durability is fsync, not a full barrier: an entry may be lost on power loss inside the OS write-back window. An append writes every record to the block store and syncs it, then every link to the chain and syncs that, so a crash between leaves records no link names (bytes nothing reads). A chain whose last line is torn is refused by name (`journal broken at height N: unterminated final line`, `Snapshot.chainOf`); the host never cuts its own file. Recovery is a verified copy: `deploy/backup.sh` cuts the torn line in its mirror and replays it, `deploy/restore.sh` installs the tarball (DEPLOY "Durability and backups", "A torn tail"). `world-open {sync: "none" | "fsync" | "full"}` picks the mode per process (default `fsync`; `full` = F_FULLFSYNC; anything else, a boolean too, is refused). Never journaled; `world-status` reports `sync`. `openWorld` takes an exclusive flock and refuses "journal is open in another process".
 
 Signatures a newcomer calls (pure unless noted):
 
@@ -57,7 +58,7 @@ def durable (s : Open) (step : World -> Except String (World x Json)) : IO (Sess
 
 All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journals nothing; a refusal is a receipt.
 
-- Open and status: `world-open {path, library?, principal?, libraryLaw?, sync?, verify?, clock?, postQuota?, opener?}`, `world-status`, `world-snapshot`.
+- Open and status: `world-open {path, library?, principal?, libraryLaw?, sync?, verify?, snapshotEvery?, maxJournalBytes?, clock?, postQuota?, opener?}`, `world-status`, `world-snapshot`.
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
@@ -75,7 +76,7 @@ Rules:
 
 ## 3. Journal
 
-One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?}]` (5.136), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
+A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?}]` (5.136), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
 
 `world.receipts` maps `identityKey` to the entry index (first wins, except that a suspension or a transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`) are journaled but do not bind; admitted outcomes and every other refusal bind.
 
@@ -118,7 +119,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | ids, text | `maxObjectIdBytes` 128, `maxPrincipalBytes` 128, `maxIntentBytes` 256, `maxMethodBytes` 128, `maxHandleBytes` 256, `maxTitleBytes` 256, `maxUriBytes` 512 |
 | per turn | `maxRoots` 64, `maxWrites` 64, `maxEditsPerWrite` 256, `maxPlansPerTurn` 1024, `maxCallDepth` 8, `sendsPerTurn` 32, `createsPerTurn` 8, `awaitsPerTurn` 8, `checksPerTurn` 8, `grantsPerTurn` 8, `publishesPerTurn` 4, `listPage` 64 |
 | data | `dataDepth` 8192, `plainDepth` 64, `Bounds.maxCellBytes` 262144 (the scalar part and each relation row, 5.136), `maxObjects` 10000 |
-| journal | `maxEntryBytes` 1 MiB, `maxJournalEntries` 1,000,000, `maxJournalBytes` 256 MiB, `maxHistoryLimit` 100, `maxCheckpointBytes` 512 KiB, `snapshotEvery` 1000, `maxSnapshotBytes` 256 MiB |
+| journal | `maxEntryBytes` 1 MiB (a record), `maxJournalEntries` 1,000,000, `maxJournalBytes` 4 GiB (chain and store), `maxHistoryLimit` 100, `maxCheckpointBytes` 512 KiB, `snapshotEvery` 1000 (`world-open {snapshotEvery}` per process), `maxSnapshotBytes` 256 MiB |
 | ledger | `maxDepth` 100, `chainWork` 10,000,000, `chainStorage` 1 MiB (creation may lower, never raise) |
 | time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64 |
 | delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
@@ -182,17 +183,17 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ### 5.6 Snapshots and replay
 
-- `durable` writes `<journal>.snapshot.<height>.cbor` after the fsync when the height is `snapshotEvery` past the last snapshot written or resumed from; the reply carries `snapshot {height}` or `{refused}` (a failed snapshot refuses nothing). The newest three are kept. File: DAG-CBOR `{cid, body}`; `tests/test_snapshot.py` has an independent Python encoder.
-- The body holds objects (state, `stateCid`, law text, version, read policy, ledger, compile inputs by CID, `pin`, `packet` cached), types, method tables and law shapes by pin, libraries, grants, posts, settings, `supervisor`, `minted`, `readings`; plus `clock`, `pending`, `suspended` as cross-checks. Everything `record` derives is rebuilt by `recordAll`. Sources no entry carries by CID (reprogrammed and extended modules) are kept whole (`knownByCid`).
-- `openContent`: parse and hash-walk every entry (`entriesOf`), then per snapshot newest first check the CID, edition, height, `head`, derived copies, each object's version and pin against the entries (`expectedObjects`), each law reading back from its text, and that every later entry replays on it. The first failure refuses the snapshot by name and the next older is tried, then full replay.
-- `install` refuses "the state of X is not its CID's" and "object X carries no state CID". Against a forger who recomputes both, `resume` compares each object with `anchoredStates` (a created or child seed, or a write's `cid`): "the state of X is not the one the journal commits to at version V". `world-open {verify: true}` replays everything and refuses each snapshot that differs from the replayed store ("it disagrees with replay at its height").
+- `durable` writes `<journal>.snapshot.<height>.cbor` after the sync when the height is `every` (`world-open {snapshotEvery}`, default `Limits.snapshotEvery`) past the last snapshot written or resumed from, and at once after an `ignore`/`unignore`; the reply carries `snapshot {height}` or `{refused}` (a failed snapshot refuses nothing). The newest three are kept. File: DAG-CBOR `{cid, body}` (`delvetalk.snapshot.v3`); `tests/test_snapshot.py` has an independent Python reader.
+- The body is the store (`storeJson`: objects with state, `stateCid`, law text, version, read policy, ledger, compile inputs by CID, `pin`, `packet` cached, `supervisor`, `minted`, `readings`; types, method tables and law shapes by pin; libraries, grants, posts, settings, the clock) and `index` (`indexJson`): every index `record` derives (receipts, `touched`, `touches`, `anchors`, `changes`, subscriptions, pending, suspended, replies, handles, where each source and block lies, outbox, publications, reservations, attempts, interpretations started, root acts, cards, quiets, hidden, the ignore sets, `shadowed`, the day's and the hour's counts, `forkedFrom`). Sources no entry carries by CID (reprogrammed and extended modules) are kept whole (`knownByCid`).
+- `openJournal`: the chain read whole (`chainOf`: links in sequence, each naming the one before; every link inside the store), entry 1 read for the edition, then `reopen`: per snapshot newest first check the CID, edition, height and `head` against the chain, install the indexes and the store, refuse it if a later `ignore`/`unignore` names a height at or before it, check each object against its anchors (`checkAnchors`), and replay every later entry, each read and checked (`checkedEntry`: its record is its CID's, its height, its `previous`). The first failure refuses the snapshot by name and the next older is tried, then full replay (`replayAll`, which also finds the ignore set first, `ignoresFrom`).
+- `install` refuses "the state of X is not its CID's" and "object X carries no state CID". Against a forger who recomputes both, `checkAnchors` reads, per object, the entries `World.anchors` names for its version, pin and law (`versionIn`, `pinIn`, `lawIn`, `stateCidIn`): "the state of X is not the one the journal commits to at version V", "object X is not at the journal's version and pin", "the law of X is not the journal's". A forger who points an object back at an older genuine anchor is `verify`'s: `world-open {verify: true}` replays from height 0 and refuses each snapshot whose body (store and indexes) differs from the replayed world's ("it disagrees with replay at its height").
 - Pins are sources. No packet digest is journaled: replay recompiles from the journaled sources with the current compiler and requires the compile to succeed, the seed to conform and the recomputed pin to equal the recorded one. `world-status.recompiledDifferently` counts objects rebuilt after a snapshot resume whose packet differs from the one the snapshot cached (`World.cachedPackets`, `noteRecompiled`).
-- Suspension checkpoints are journaled as `tokenTree {depth, roots}` over content-defined blocks (`cutBlocks`: leaves 32..256 tokens, a token of 256 bytes or more its own leaf; inner nodes 2..16 names), each block once per journal as a top-level `blocks [{cid, items}]` item (`World.blocks`); an interpretation's `offers` are a one-item block (`offersBlock`). Measured on hbox at foundation 6b928f6 (132 directory suspensions, `tests/test_suspension_size.py`): median 9,392 B with blocks against 119,119 B with the v2 codec alone.
+- Suspension checkpoints are journaled as `tokenTree {depth, roots}` over content-defined blocks (`cutBlocks`: leaves 32..256 tokens, a token of 256 bytes or more its own leaf; inner nodes 2..16 names), each block once per journal as a top-level `blocks [{cid, items}]` item (`World.blocks` names the entry carrying each; `blockItems` reads it); an interpretation's `offers` are a one-item block (`offersBlock`). Measured on hbox at foundation 6b928f6 (132 directory suspensions, `tests/test_suspension_size.py`): median 9,392 B with blocks against 119,119 B with the v2 codec alone.
 
 ### 5.7 Slugs, fork, repository reads
 
 - Slug (`Slug.lean` `ofCid`, `decode`): proquint of the first 32 bits of a CID's multihash digest (`lusab-babad`). Replies show receipts with `slug` beside `hash`; `world-inspect` shows `pinSlug`. `world-resolve {principal, slug}` answers `{status: "resolved", kind: receipt | pin | state, cid, receipt?}`, `{status: "ambiguous", matches, message}` or `{status: "unknown", message}` over `slugTargets`. Test: `test_slug`.
-- `world-fork {principal, height?, into}` (`Session.forkWorld`; `into` must not exist) writes a new journal whose one entry is a `forked` genesis (`Snapshot.forkGenesis`): the store at `height` as a snapshot body with whole sources, only the objects `principal` may view (with grants, pending deliveries, suspended activities), the handle registry, `omitted [ids]`, `forkedFrom {world, height, cid}`. Opener, clock principal and library-law principal are `principal`. Height 1 chains to the forked entry's `cid` (`entriesOf`); replay starts from the installed genesis (`installFork`). Answers `{status: "forked", into, forkedFrom, carried, omitted}`. Test: `test_fork`.
+- `world-fork {principal, height?, into}` (`Session.forkWorld`; `into` must not exist) writes a new journal whose one entry is a `forked` genesis (`Snapshot.forkGenesis`): the store at `height` (`Snapshot.reopen` over the chain's prefix) as `storeJson` with whole sources, only the objects `principal` may view (with grants, pending deliveries, suspended activities), the handle registry, `omitted [ids]`, `forkedFrom {world, height, cid}`. Opener, clock principal and library-law principal are `principal`. Height 1 chains to the forked entry's `cid` (`checkedEntry`); written by `writeJournal`; replay starts from the installed genesis (`installFork`). Answers `{status: "forked", into, forkedFrom, carried, omitted}`. Test: `test_fork`.
 - `world-entry {principal, hash, bytes?}` (`bytes` = hex of the canonical DAG-CBOR, identity's own principal only); `world-entries {principal, after?, before?, reverse?, limit?}` (limit 1..100); `world-object {principal, object, version?}` -> `record {object, version, pin, pinSlug, law, readings, laws [{object, version, pin, name, clause, reading?}], stateCid, library?}` as of the version (`pinAndLawAt`); `world-source`/`world-sources` -> `{cid, name, text, height}` for sources of objects the reader may view and the libraries'; `world-grants`. Test: `test_reads`.
 
 ### 5.8 Arrival
@@ -379,7 +380,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 59. **Compile caches per process (host9).** `World.compiled`, `requests`, `builds` and `programs` are
    keyed by content addresses (compile inputs naming the library by pin and modules by CID; `defKey`,
    `buildKey`, `programKey`), so `Session.stepWorld` hands the caches of the world it had open to the
-   next it opens (`Caches`, `World.caches`/`withCaches`; `openWorld` -> `openContent` -> `startOf`,
+   next it opens (`Caches`, `World.caches`/`withCaches`; `openWorld` -> `openJournal` -> `reopen`,
    `replayAll`, `resume`), and `world-fork`'s replay uses them. `world-status.compiled {packages,
    closures, methods}` counts them. Measured on hbox (`world-create` of Place, Garden, Directory, Thing
    from `world/objects`, a fresh world each time, one process): first world 78/137/92/102 ms, the next
@@ -1081,18 +1082,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_inspect_reads.py` `test_the_source_is_left_out_unless_asked_for`,
    `test_offered_names_the_actions_the_reader_is_offered`.
 
-124. **The journal bound at append (host13; docs/OPERATIONS.md §c 1).** `durable` keeps the journal's
-   bytes (`Open.bytes`, from the file at open) and its bound (`Open.bound`, `Limits.maxJournalBytes`).
+124. **The journal bound at append (host13; docs/OPERATIONS.md §c 1).** `durable` measures the journal's
+   bytes (the chain and the store, `journalBytes`) and meets its bound (`Open.bound`, `Limits.maxJournalBytes`).
    An append that would come within `Limits.journalHeadroom` (1 MiB) of the bound is not written: a turn
    (the step's reply carries a receipt identity) is refused `capacity`, reason the bound's ("the host's
    maxJournalBytes is full; try later."), journaled into the headroom, so `hand` shows it on the live
    world; an op with no identity, or a refusal that would itself pass the bound, is a request error
    "journal is full: appending would pass maxJournalBytes (N bytes)" and appends nothing. Open still
-   refuses a journal past its bound, naming it. The bound stays 256 MiB, against OPERATIONS' 4 GiB:
-   every entry is parsed and held at open (`World.entries`), measured on hbox at 10.4 bytes resident per
-   journal byte plus 60 MB and 0.43 s per MB (an 18 MB journal of 20,000 turns: 250 MB peak, 7.7 s
-   to open with snapshots), so 4 GiB would be about 43 GB and half an hour; raising it waits on an open
-   that reads only the tail after a snapshot and entries kept on disk (§7). `world-open
+   refuses a journal past its bound, naming it. The bound is 4 GiB (5.137). `world-open
    {maxJournalBytes}` lowers the bound for one process, never raises it. Tests:
    `tests/test_journal_bound.py`.
 
@@ -1149,14 +1146,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    - *Replay:* `rootBefore` reads the replaced value from the store, `applyRoot` lays `after` on it (no judge,
      no conformance, no pin check), `recordActs` moves the derived indexes (clock, `cards`, `quiets`, `hidden`,
      `ignored`, `rootActs`, suspensions); live and replay call the same three, and replay refuses "root entry N:
-     before does not match". `ignoreSet` finds the journal's final ignore set before replay; `replayStep` records an
+     before does not match". `Snapshot.ignoresFrom` finds the final ignore set before replay; `replayStep` records an
      ignored height inert (`recordInert`: in the chain, its sources and blocks known, its identity unbound), and
      after the lowest height any `ignore`/`unignore` names, an entry that no longer replays is shadowed
      (`World.shadowed [{height, by, reason}]`, `world-status.shadowed`, `world-open`'s reply, `verify`); before
-     it a disagreement still breaks the journal. An `ignore` or `unignore` re-derives the live store by
-     `Snapshot.replayAll`. A snapshot with an `ignore`/`unignore` after it is refused ("an ignore after it changes
-     what it holds"); a snapshot carries `shadowed`, and `expectedObjects`/`expectedLaws`/`anchoredStates` read root
-     entries and skip inert heights.
+     it a disagreement still breaks the journal. After an `ignore` or `unignore` the session re-derives the live
+     store (`Snapshot.reopen`, from the newest snapshot below the height it names) and writes a snapshot at once. A
+     snapshot with a later `ignore`/`unignore` naming a height at or before it is refused ("an ignore after it changes
+     what it holds"); a snapshot carries the ignore sets and `shadowed`.
    - *The metarule, widened (§2.1), held by the host:* an amendment (kind 2) whose subject is the world's opener
      is admitted whatever the law (`openerAmends`, in `judge`), and the proposer half of the metarule is not
      asked of it. ROOT says each law must admit it, checked at creation; that would refuse every town object
@@ -1290,7 +1287,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 135. **`delvetalk-obend root-edit` (host15; ROOT §1.5; §7 item 1 of host14's queue).** `Host/RootEdit.lean`,
    dispatched by `PackageMain`. `--journal J --out J2 --reason R` with `truncate --height N`, `drop --height N`,
    `rewrite --height N --entry FILE` (one JSON object), `splice --at N --entries FILE` (JSON lines or an array);
-   `--state DIR --reason R delete-world --name W` moves `W.journal` and its snapshots to
+   `--state DIR --reason R delete-world --name W` moves `W.journal`, `W.journal.blocks` and its snapshots to
    `deleted/W-<stamp>.*` beside `W-<stamp>.json` (reason, old head, what moved), refused while `serve` holds
    `journal.lock`. J must verify and not be open (`flock`; exit 75); J2 must not exist; J is never written.
    `reseal` keeps entries 1..kept and re-seals the rest: `previous`/`hash`; height 1 holds `replay` (and a fork's
@@ -1301,7 +1298,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    a root `ignore`/`unignore` height follows its entry (an edit removing the entry it names is refused). The
    first re-sealed entry carries `rootEdit {command, reason, oldHead, at}`; `truncate` and a `drop` of the last
    entry re-seal nothing and carry no marker (J2 is a prefix of J). J2 is chained and replayed in full
-   (`Snapshot.replayAll`) before it is written; a failure writes nothing. Snapshots at or below the kept height
+   (`Snapshot.replayAll`) before it is written (`writeJournal`: J2 and J2.blocks); a failure writes nothing. Snapshots at or below the kept height
    are copied. The reply prints `oldHead`, `newHead`, `at`, `slugsChanged` and the table `{oldHeight, old,
    height, new, oldSlug, slug}`. Not rewritten: CIDs quoted inside checkpoints and states (an await's
    `Receipt.hash`), and `at://` citations elsewhere, which stop resolving as ROOT says. Tests:
@@ -1351,11 +1348,52 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      test_changes, test_world_object; edition 4 in test_replay_edition and test_serve; test_relation_limits
      bounds `scalarBytes`.
 
+137. **The journal as a block store, and a streaming open (host17; §7 item 2 of host16's queue).** A journal at
+   `J` is the chain `J` (one link a line, `{at, bytes, hash, height, previous}`) and the block store `J.blocks`
+   (each entry's canonical record, the entry without `hash`, at `at`; CID of the record = `hash`).
+   - *In memory* (`World.entries : Entries`, `Blocks.lean`): every CID, each record's span and the CID index
+     (persistent structures, so a step extending the session's world copies nothing), and the step's unwritten
+     entries. `Entries.get?` reads one record by `pread` (`readAt`, `implemented_by` over the `delvetalk_handle_pread`
+     extern in `sync.c`: a written record never changes, so the read is a function), checks it against its CID and
+     decodes it; every reader of an entry goes through it (`retained`, receipts, history, offers, `stateAt`,
+     `touchEdits`, `blockItems`, `sourceText`, the scans of `world-sources`, `world-grants`, `world-resolve`).
+     `World.blocks` and `World.modules` name the entry carrying each checkpoint block and source; `Touch` is
+     `{version, height}`, its edits read from its entry when the moved-root rule asks (`touchEdits`).
+   - *Append* (`Session.appendJournal`): the records to the store, synced, then the links to the chain, synced.
+     `maxEntryBytes` bounds a record; the journal bound counts both files, exactly (`linksAt`).
+   - *Open* (`Snapshot.openJournal`): the chain read whole and linked (`chainOf`, `Link.ofLine`, no JSON built),
+     entry 1 for the edition, then `reopen`: the newest snapshot that passes, whose indexes (`indexJson`: every
+     index `record` derives, `anchors` among them) are installed instead of reading the entries before it, each
+     object checked against its anchors (`checkAnchors`), then the tail replayed, each entry checked against the
+     chain (`checkedEntry`). Replay from 0 (`replayAll`) is the slow path; `verify` compares every snapshot's
+     store and indexes with it. Snapshot edition `delvetalk.snapshot.v3`. No replay edition change: the entries,
+     what they hash and what replay derives from them are as they were (`anchors` derives from any journal, as
+     `changes` did in 5.129).
+   - *Measured* (persvati, `measure/journal_open.py` in the lane's scratch, 20,000 bump turns through the JSON-lines
+     driver, intents of 208 bytes; snapshot every 1,000; an empty process peaks at 70 MB): foundation 3c96c27d, a
+     22.3 MB line journal: open 5.25 s, 284 MB peak; now, 21.2 MB (chain 4.0, store 17.2): open 0.19 s, 124 MB
+     peak; with 7-byte intents (17.2 MB): 0.16 s, 109 MB. About 1.4 KB a held entry remains at open (the chain,
+     the receipt and change indexes, the snapshot's decoded index). Building the 20,000 turns: 7.9 s before, 8.9 s
+     after (a record is encoded once more than its hash needs).
+   - `maxJournalBytes` is 4 GiB; `maxJournalEntries` (1,000,000) binds first for small entries. `world-open
+     {snapshotEvery}` sets the cadence per process; an `ignore`/`unignore` re-derives the store from the newest
+     snapshot below the height it names (`Session`, `Snapshot.reopen`) and writes a snapshot at once.
+   - *Tools.* `delvetalk-obend migrate --journal OLD --out NEW` is the one reader of the line format
+     (`Migrate.lineEntries`); an open of a line journal is refused naming it. `root-edit` reads and writes chains
+     and stores (`journalEntries`, `writeJournal`); `delete-world` moves the store too. `transport/journal.py`
+     (`links`, `records`, `entries`, `tail`, `size`, `copy`) is the Python reader for the hand's probe, the
+     harvest, the rehearsal and the tests; `tests/wire.py` `write_journal` writes what a test forges.
+     `deploy/verify.sh` copies each store with its chain; `backup.sh`'s rsync takes the chain before the store.
+   - Tests: `tests/test_block_store.py` (an open from a snapshot answers every read as `verify` and an open
+     without snapshots do; the line format refused, migrated, verified); every test that read or forged a journal
+     file now reads `transport.journal` and writes `write_journal`; `test_root` (the snapshot written at an ignore,
+     the one before it refused when it is gone); `test_journal_bound` (both files).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
   derives; `Journal.sealEntry` writes it as `replay` on every journal's first entry (a fork's genesis
-  too), `world-status` answers it, and `Snapshot.openContent` refuses a journal of another edition
+  too), `world-status` answers it, and `Snapshot.openJournal` refuses a journal of another edition
   before replaying anything: "journal replay edition 1; this host is 2; a world from another host's
   edition does not reopen: make it again with a new genesis" (a journal without the field is
   edition 1). **Bump it in the same commit as any change to what replay derives or checks** (a judging
@@ -1379,19 +1417,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host16's item 5.136, in order (numbers kept as the coordinator named them). The owner's standing order binds every item: "maturify and take forward
+The queue after host17's item 5.137, in order (numbers kept as the coordinator named them; item 6 goes before item 3). The owner's standing order binds every item: "maturify and take forward
 everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
 together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things',
 no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
 describes only what is.
 
-2. **The journal as a block store and a streaming open** (as host13 wrote it): every entry a canonical record
-   under its CID in the checkpoint block store, the text file the ordered chain, every index `record` derives
-   persisted with the snapshot (edition 3's `cards`, `quiets`, `hidden`, `ignored`, `rootActs`, `hourCounts`,
-   `modelDay`, and host15's `changes`), open verifying the chain after the snapshot, replay from 0 the slow path
-   proved equal by a test, measured on an 18 MB journal; then `maxJournalBytes` 4 GiB and the snapshot cadence a
-   `world-open` setting. The newline-JSON reader survives only as the chain and a migration tool. An `ignore`
-   re-derives from the newest snapshot before the ignored height. `root-edit` (5.135) then re-seals blocks too.
 3. **FEDERATION** in its order: scratch worlds (§3, with the `expire` power and root act, now a request error),
    and in the same commit the `heap:` envelope, `world-fork` into heaps and every heap op go (`world:` the one
    way); `<world>:<object>` references (§2); `zulip:<realm>:<id>` principals (§1).
@@ -1420,6 +1451,12 @@ describes only what is.
    state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed
    from cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel
    primitives (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
+8a. **The block store's remainder (5.137):** `world-sources`, `world-grants` and `world-resolve` (`slugTargets`) read
+   every record per call: index sources, grants by height and slugs (as `anchors` is) so they read only what they
+   answer; about 1.4 KB a held entry at open (the chain's CIDs as text, the receipt and change indexes, the
+   snapshot's index decoded whole): CIDs as bytes and a streamed index decode; a record is encoded twice (its hash,
+   then the store): keep the bytes `sealEntry` hashed; `maxJournalEntries` against 4 GiB; `serve` has no
+   `--snapshot-every` (only `world-open` does).
 9. Smaller, standing:
    - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new
      `root:<n>`; `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the

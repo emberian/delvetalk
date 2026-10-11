@@ -44,7 +44,5 @@ in compiled packages; diagnostics and import spans map back to original byte
 offsets. Historical origin attribution lives in
 [`spec/bend/origin.json`](../../../../spec/bend/origin.json); current behavior lives
 in the local compiler source.
-`{"op":"template-expand","source":"..."}` on `delvetalk-obend` returns the
-ordinary source expansion for inspection. It is not a checked or admitted
-artifact; pass the source through the normal compiler. The displayed expansion
-includes the fresh import so it also compiles as ordinary Bend source.
+The expansion adds a fresh import, so it is ordinary Bend source the normal
+compiler checks.

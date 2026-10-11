@@ -10,7 +10,7 @@ and `fit` are what the host calls, `parsedJson`/`fitJson`/`bareJson` are the wir
 -/
 namespace Delvetalk.Host.Spell
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 
 abbrev T := List Char
 

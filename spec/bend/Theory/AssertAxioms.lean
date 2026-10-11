@@ -7,24 +7,22 @@ outside Lean's three standard ones (`propext`, `Classical.choice`,
 (the compiler trust of `native_decide`) are therefore refused.
 
 `#assert_axioms_tree` is the same check over the whole package: every constant
-declared in one of this package's modules (roots `Theory`, `Compiler`,
-`Kernel`, `Assurance`, `Pred`, `Effects`, `Selvage`, `Host`, `Minidregg`) that
+declared in one of this package's modules (roots `Theory`, `Compiler`, `Delvetalk`,
+`PackageMain`, `CompileProfile`) that
 the importing module can see. It fails on any constant resting on `sorryAx` or
 on a declared axiom, and on any package `axiom` declaration. The compiler trust
 (`native_decide`'s auxiliary axioms, `Lean.ofReduceBool`) is admitted there only as a
 counted exception, reported in the verdict line: `native_decide` is a
-deliberate tool in this tree (the `*_compiled` facts), not a hole. The root
-`AxiomCensus` module runs it over the umbrella.
+deliberate tool in this tree (the `*_compiled` facts), not a hole.
 
-It lives in `Theory/` (it imports only Mathlib's tactic base), so every library
-of the tree may import it without crossing the ATLAS §7 import boundary.
+It lives in `Theory/` and imports only `Lean`, so every library of the tree may import it.
 Lean v4.30 precomputes each imported declaration's axioms at olean export, so
 the census is a lookup per constant, not a walk.
 -/
 import Lean
 import Theory.AxiomPin
 
-namespace Minidregg.Theory.AssertAxioms
+namespace Delvetalk.Theory.AssertAxioms
 
 open Lean Elab Command
 
@@ -51,7 +49,7 @@ def isComputedFieldOverride (info : ConstantInfo) (constant : Name) (outside : L
 
 /-- This package's module roots. -/
 def packageRoots : List Name :=
-  [`Theory, `Compiler, `Kernel, `Assurance, `Pred, `Effects, `Selvage, `Host, `Minidregg]
+  [`Theory, `Compiler, `Delvetalk, `PackageMain, `CompileProfile]
 
 /-- The module a constant was declared in, when it is one of this package's. -/
 def packageModule? (env : Environment) (constant : Name) : Option Name := do
@@ -81,4 +79,4 @@ elab "#assert_axioms_tree" : command => do
     throwError m!"#assert_axioms_tree: {offenders.size} package constants rest on axioms outside the standard three and the compiler trust (first 20): {offenders.toList.take 20}"
   logInfo m!"#assert_axioms_tree: {checked} package constants; {compiled} rest on the compiler trust (native_decide); {overrides} are computed_fields overrides (lcProof, compiled code only); none on sorryAx or a declared axiom"
 
-end Minidregg.Theory.AssertAxioms
+end Delvetalk.Theory.AssertAxioms

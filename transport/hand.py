@@ -20,7 +20,7 @@ from pathlib import Path
 
 from deploy import spend
 from deploy.genesis import OPENER as OWNER
-from transport import post, pages, root
+from transport import journal as chain, post, pages, root
 from transport.bridge import all_observations, awaiting_path, skipped, uri_hash, write_atomic
 from transport.delve import Failure, canonical
 from transport.host import CLOCK, add_host_args, connect
@@ -87,11 +87,8 @@ class Hand:
         recent = lambda secs: [x for x in rows if len(x) >= 4 and now - when(x) < secs]
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
         journal = Path(journal) if journal else self.state / 'town.journal'
-        sizes = []
-        if journal.exists():
-            with open(journal, 'rb') as f:
-                f.seek(max(0, journal.stat().st_size - (4 << 20)))  # the newest 4 MiB is enough for a median
-                sizes = sorted(len(l) for l in f.read().splitlines()[1:] if b'"tag":"suspended"' in l)
+        # The newest 4,000 entries are enough for a median: each weighs its record in the block store.
+        sizes = sorted(e['bytes'] for e in chain.tail(journal, 4000) if (e.get('outcome') or {}).get('tag') == 'suspended')
         backups = Path(backups or os.environ.get('DELVETALK_BACKUPS', '/var/backups/delvetalk'))
         tars = sorted(backups.glob('delvetalk-*.tar.gz')) if backups.is_dir() else []
         verify = (backups / 'last-verify').read_text().split() if (backups / 'last-verify').exists() else []
@@ -101,7 +98,7 @@ class Hand:
                 'hour': st.get('hour'), 'model': {'hour': spend.since(self.state, now - 3600), 'day': spend.since(self.state, now - 86400)},
                 'reservations': next((s for s in (st.get('posts') or {}).get('sources') or [] if s.get('source') == 'delve'), {}),
                 'interpretations': {'pending': len(waiting), 'maxAttempts': max([p.get('attempts') or 0 for p in waiting] or [0])},
-                'journal': {'height': st.get('height'), 'bytes': journal.stat().st_size if journal.exists() else None,
+                'journal': {'height': st.get('height'), 'bytes': chain.size(journal) if journal.exists() else None,
                             'medianSuspendedBytes': sizes[len(sizes) // 2] if sizes else None},
                 'clock': {'world': st.get('clock'), 'behindMinutes': int(now // 60) - (st.get('clock') or 0)},
                 'observed': len(self.observed()),

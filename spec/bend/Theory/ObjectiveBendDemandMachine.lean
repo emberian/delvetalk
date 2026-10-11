@@ -12,9 +12,9 @@ remain obligations. -/
 import Theory.ObjectiveBendOpenRecursion
 import Theory.ObjectiveBendFiniteData
 import Theory.AxiomPin
-namespace Minidregg.Theory.ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
+namespace Delvetalk.Theory.ObjectiveBendDemandMachine
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 abbrev Address := Nat
@@ -441,4 +441,4 @@ theorem perform_yields (heap : Array Cell) (plan : Term) (environment : Environm
 
 #assert_axioms perform_yields perform_under_update_refused resume_requires_yield
 
-end Minidregg.Theory.ObjectiveBendDemandMachine
+end Delvetalk.Theory.ObjectiveBendDemandMachine

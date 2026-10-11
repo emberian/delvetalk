@@ -1,12 +1,12 @@
 # Kernel handoff
 
-State on 2026-10-10 (lane/kernel13 after foundation cb4af60: honest package and instance bounds, located generics refusals, LAW §4 A/E/H, §25; the queue is §16).
+State on 2026-10-11 (lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
 
 ## Summary
 
 The kernel is the Objective Bend edition: source text to a checked typed packet, a demand machine with a tick tariff, a checkpoint codec, and the wire and canonical forms. The host (HOST-HANDOFF) calls it through `Turn.lean` and `Package.lean`; JSON exists only at the process boundary.
 
-- Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV2, DemandCollect and the proofs). Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
+- Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV3, DemandCollect and the proofs). Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
 - Binary: `.lake/build/bin/delvetalk-obend` (`lake build`; `make build` also builds the proof-only modules in `PROOF_ONLY`). No `sorry` in `spec/`.
 - One dialect (§21): an activity is `Activity<A>` = `computation Message Data A`; its only yields are world calls `world.X(arg)` / `world.X::<T>(arg)` against `world/lib/World.obend`'s `protocol world` (§17), each resumed at its site's type. Surface `perform` and `Activity<P, R, A>` are refused by name.
 - The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`; a hand-written one beside blocks is not yet refused (§9).
@@ -21,7 +21,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 
 - Build: `LEAN_NUM_THREADS=2 lake build` (one Lean process). Never rebuild while a run uses the binary: `tests/host.py` copies it per run (`DELVETALK_OBEND` names the source, `DELVETALK_OBEND_COPY` shares one copy across workers; `tests/run.py` is the parallel runner). Builds may run on hbox with `swarm-build lake build`.
 - Run: `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend python3 -W ignore -m tests.run [module …]`; whole suite `make check`.
-- Proof-only modules (`Delvetalk.PackageDataAdmission`, `PackageDataNormalization`, `PackageDataSchemaProofs`, `Delvetalk.Typed`, `Theory.ObjectiveBendNativeDataSimulation`) are outside the default target; `make build` builds them. Build them after touching anything they import.
+- Proof-only modules (`Delvetalk.PackageDataAdmission`, `PackageDataNormalization`, `PackageDataSchemaProofs`, `Theory.ObjectiveBendNativeDataSimulation`) are outside the default target; `make build` builds them. Build them after touching anything they import.
 - Lean 4.34: `if_pos`/`if_true` deprecation warnings in old Mini files are noise. A doc comment (`/-- -/`) directly before `mutual` is a parse error; use `/- -/`. In a file that opens `ObjectiveBendTypes`, a pattern variable `label` reads as `Ty.label`. `x.isDataUnder a b c d` puts `x` at the first `Ty`-typed parameter.
 - Host files belong to the host lane (`spec/Delvetalk/Host/*`); `Journal.lean` is shared.
 
@@ -43,11 +43,11 @@ Pipeline for `compile`: source -> (document templates, text) -> `ObjectiveBendPa
 | Typing | `Theory/ObjectiveBendTyping.lean` | `PartialTyping`, `infer`, `check`, `decodePacket`, `decodeTerm` (`termNestingCapacity` 4096), `Assumptions {bounds, shareableVariables, rigid}`. The `decide`d rule examples at the end are the regression suite for effect rules. |
 | Machine | `Theory/ObjectiveBendDemandMachine.lean`, `…MachineFast.lean` | `State {heap, control, stack}`, `Cell`, `Frame`, `Control` (incl. `yielded`, `nativeApplication`, `refused`), `stepRaw`, `runBounded`, `resume`. `Fast` is a proved-equal faster stepper. |
 | Data, tariff | `Theory/ObjectiveBendDemandData.lean` | `textStepCost`, `forceHostedFrom` (tick + byte admission before each step), `materializeWith`, `executeStateWith`, `yieldedPlanWith`, `Data.conformsFuel/conformsUnder/size`. `Data` is in `ObjectiveBendFiniteData.lean`. |
-| Checkpoint | `Theory/ObjectiveBendCheckpoint.lean` (v1), `…CheckpointV2.lean`, `…DemandCollect.lean` | See section 7. |
+| Checkpoint | `Theory/ObjectiveBendCheckpoint.lean` (the token codec), `…CheckpointV3.lean` (the written edition), `…DemandCollect.lean` | See section 7. |
 | Laws | `Compiler/ObjectiveBendLaw.lean`, `Delvetalk/Host/Law.lean` | `law NAME: EXPR` over declared state; the pure profile refuses laws ("host law adapter"). |
-| Typed data/schema | `Delvetalk/PackageData*.lean` | `run-data-v1`, compact codec, schema certificates, `inspect-spec-v1`, `compare-data-types-v1`. Depth is `Bounds.dataWireDepth`. |
+| Typed data/schema | `Delvetalk/PackageData*.lean` | `run-data-v1`, compact codec, schema certificates. Depth is `Bounds.dataWireDepth`. |
 | Package, session | `Delvetalk/Package.lean`, `PackageSession.lean`, `spec/PackageMain.lean` | JSON-lines driver; section 2. |
-| Source evaluator | `Delvetalk/Core.lean`, `Typed.lean` | Older step-by-step evaluator with evidence; not on the turn path. |
+| Line check | `Delvetalk/JsonLine.lean` | a driver line's `\uXXXX` escapes are Unicode scalar values. |
 
 Proof obligations by change:
 - `Term`/`Primitive`/`Step`: the `Step` lemmas in OpenRecursion (`lazy_fixed_function`, `case_selects_injected_arm`, primitive exactness) and `Value` ones; Typing's `PartialTyping` mirrors every constructor; checkpoint codec needs a case (`state_roundTrip` fails the build otherwise).
@@ -57,7 +57,7 @@ Proof obligations by change:
 - Schema/compact codec: `PackageDataSchemaProofs.lean`. Native cells: `ObjectiveBendNativeDataSimulation.lean`, `ObjectiveBendFiniteDataTyping.lean`.
 
 Proved:
-- `plainV2_roundTrip` and `stateV3_roundTrip` for every dictionary and state (the v1 and v2 state codecs and their round trips are deleted, §21); the token codec round trips of terms, values, data, frames and controls (`ObjectiveBendCheckpointRoundTrip`); `refusal_roundTrip`; `encodeTerm_injective`.
+- `plainV3_roundTrip` and `stateV3_roundTrip` for every dictionary and state (the v1 and v2 state codecs and their round trips are deleted, §21); the token codec round trips of terms, values, data, frames and controls (`ObjectiveBendCheckpointRoundTrip`); `refusal_roundTrip`; `encodeTerm_injective`.
 - `settle_resume_segment` and the agreement lemmas on the hosted runner (`agree_forceHostedFrom`, `agree_materializeWith`, `agree_yieldedPlanWith`, `agree_completeWith`). `typed_settle` is not ported (no state-typing judgment).
 - Collector (`DemandCollectProofs`): `related_collect`, `related_stepRaw`, `related_forceHostedFrom` (exact under `ExactRoom`, which `limitsPast` gives), `checkpoint_resume_segment`: resuming `checkpoint s = collect (settle s)` decides the same verdict, spends the same ticks and extracts the same Plan/result Data as resuming `s`.
 - `conformsUnder_iff : d.conformsUnder bounds ty = true ↔ HasType bounds d ty` (`ObjectiveBendDataConformance.lean`); fuel is never a false negative.
@@ -67,7 +67,7 @@ Not proved: that `noActivity` is the static guard matching `perform_under_update
 
 ## 2. Ops
 
-Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"error","message":s}`. `PackageSession.step` keeps two per-process caches: prepared closures (bounded by `Bounds.frontCacheSourceBytes`, 8 MiB of source) and held entries indexed by `packetSha256` (bounded by `Bounds.entryCacheBytes`, 64 MiB of artifact); `{"op":"packet-cache-status"}` answers `{fronts, frontSourceBytes, maxFrontSourceBytes, entries, entryBytes, maxEntryBytes, hits, misses}`. `run`, `run-data-v1`, `turn-start`, `turn-resume` take `artifact` as the whole artifact (held if equal to the one this process compiled under that pin, else recompiled and compared) or `{"packetSha256": pin}` alone (held entries only; "unknown packetSha256: …" otherwise). `world-*` ops go to `Host.stepWorld`. `library-load {path}` and `library: <pin>` are in HOST-HANDOFF.
+Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"error","message":s}`. `PackageSession.step` keeps two per-process caches: prepared closures (bounded by `Bounds.frontCacheSourceBytes`, 8 MiB of source) and held entries indexed by `packetSha256` (bounded by `Bounds.entryCacheBytes`, 64 MiB of artifact). `run`, `run-data-v1`, `turn-start`, `turn-resume` take `artifact` as the whole artifact (held if equal to the one this process compiled under that pin, else recompiled and compared) or `{"packetSha256": pin}` alone (held entries only; "unknown packetSha256: …" otherwise). `world-*` ops go to `Host.stepWorld`. `library-load {path}` and `library: <pin>` are in HOST-HANDOFF.
 
 | op | takes | returns |
 |---|---|---|
@@ -79,8 +79,8 @@ Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"e
 | `evaluate-term` | `term` (array wire), `responses?`, `ticks?` | `{schema, result:{status: value\|yield\|exhausted\|stuck, shape, plans}}`. Pure reference for conformance. |
 | `render-document` | `document` (Data wire) | `{status:"rendered", text, lines, bytes}`. |
 | `canonical-encode` / `canonical-decode` | `data` or `json`, `repeat?` / `hex` | `{cid, hex, bytes, checksum}` / `{data, cid}`; decode is canonical-only. |
-| `source-imports-v1`, `template-expand` | modules / source | import edges; expanded document-literal source. |
-| `run-data-v1`, `run-compact`, `encode-compact`, `decode-compact`, `inspect-spec-v1`, `compare-data-types-v1`, `allocation-data-types-v1` | typed-schema family | see `PackageData.lean` headers. |
+| `source-imports-v1` | modules | import edges. |
+| `run-data-v1`, `encode-compact`, `decode-compact` | typed-schema family | see `PackageData.lean` headers. |
 
 `"profile": true` on `run`, `turn-start`, `turn-resume` returns a tick profile (`Delvetalk/Profile.lean`).
 
@@ -148,7 +148,7 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 ## 7. Checkpoints
 
 - Tokens: `.nat n | .text s | .str i`, JSON bare (`3`, `"x"`, `-(i+1)`). Term tags 24 (`toData`), 25 (`textJoin`), 26 (`refuse`, `[26, text]`); join frames 14-17; a refusal is `encodeRefusal` (`[8, text]` for `program`). Only additions: a checkpoint using a new tag does not decode on an older binary.
-- Edition v3 (`ObjectiveBendCheckpointV2.lean`, `…checkpoint.v3`, §14): the dictionary encoding below of the state with every address relative to its holder. Written against a `Dictionary` rebuilt from the entry's term (`Dictionary.ofProgram entry.source.term`): a term is one token `i+1` for the program's `i`th subterm in preorder, environments of two or more addresses are a table listed once, strings are `Token.str` references. Every reference is emitted only after a check that it names exactly the value, so `stateV3_roundTrip` holds for every dictionary. `Dictionary.ofProgram` runs per start/resume.
+- Edition v3 (`ObjectiveBendCheckpointV3.lean`, `…checkpoint.v3`, §14): the dictionary encoding below of the state with every address relative to its holder. Written against a `Dictionary` rebuilt from the entry's term (`Dictionary.ofProgram entry.source.term`): a term is one token `i+1` for the program's `i`th subterm in preorder, environments of two or more addresses are a table listed once, strings are `Token.str` references. Every reference is emitted only after a check that it names exactly the value, so `stateV3_roundTrip` holds for every dictionary. `Dictionary.ofProgram` runs per start/resume.
 - Collector: `collect` numbers live cells by `canonicalOrder` (depth first from the roots; a list spine put off to the next round), so a reading that walks further does not renumber every later cell. `orderValid` checks the order; otherwise `collectByAddress` (the allocation-order collector) is used.
 - Host side: `resumeOne` rebuilds the `Checkpoint` from journaled tokens plus the activity's object/principal/intent/roots; changing `Checkpoint` fields stops older journals resuming. Block encoding of tokens is the host's (HOST-HANDOFF 5.6); v2 strings are bare or `str` references, so an utterance is no longer cut into its own leaf.
 - Measured at the kernel lane (Garden prose suspension, `tests.test_policy` scenario): v1 248,006 bytes, v2 6,984 bytes.
@@ -229,7 +229,7 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
   state) is written absolute from everywhere, data near its holder relative, so a region
   that moved as a whole encodes the same. Proofs: `ofRelative_toRelative`,
   `mapValue/Cell/Frame/Control_inverse`, `absolute_relative`, `stateV3_roundTrip`
-  (`ObjectiveBendCheckpointV2RoundTrip.lean`); v2 decoded beside it until day 4 (§21). Measured then:
+  (`ObjectiveBendCheckpointV3RoundTrip.lean`); v2 decoded beside it until day 4 (§21). Measured then:
   `tests.test_suspension_size` nine speakers median 11,440 -> 10,223 bytes, edit runs
   between consecutive checkpoints 21-107 -> 15-22; one speaker 7,101 -> 8,161 (the
   same 4-6 edits; checkpoints are 8% more tokens, so its fresh blocks are larger). The
@@ -402,7 +402,7 @@ onto them (objects lane).
 refusal code 9), `objectCell`/`allocateObjectFields`/`forceStored` (Machine); `storedChildren`,
 `forceStored_size` (Fast); `Fetch`, `fetchable`, `fetchStep`, `fetchCost`, `fetchable_spec`,
 `storedInitial`, `forcedRows`, `spineReach` and the fetch branch of `forceHostedFrom` (Data);
-`encodeStored`/`decodeStored`, `stored_roundTrip`, v3 cell tag 5 (`cellV2_roundTrip`); collector,
+`encodeStored`/`decodeStored`, `stored_roundTrip`, v3 cell tag 5 (`cellV3_roundTrip`); collector,
 trim and erase cases; `erase_forceStored`, `fetchable_agree`, `agree_fetchStep`,
 `forceStored_related`, `related_fetchable`, `related_fetchStep`; `agree_*`, `related_*`, the three
 `*_resume_segment` theorems and `checkpoint_resume_segment` take `{fetch}`. `yieldedPlan` and
@@ -508,14 +508,16 @@ checkpoint digest the TurnLoop call sites pass). Remaining, in order:
 12. (Done; the standing caveat.) `expandSuspended` recomputes a digest a compacted journal entry lacks:
    the journal is the trust root, so that is sound, but a host that ever resumes a checkpoint from
    outside its journal must look its digest up there.
+16. Host requests from kernel14 (§25 item M): the law's denotation of every atom that still fails
+   closed in `Host/Law.lean`: `Facts.reads`, filtered counts, `changed`, cited membership, `under`,
+   the roots and the acceptance check.
 17. `Package.localize` (check-package) still recompiles each function alone for a spanless refusal:
    2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
    are elaborator refusals without a span; find them by making `localize` count its calls in
    `test_sugar` and `test_located`-style fixtures, then delete it when none is left.
-18. LAW §6 items 2 and 3 (kernel halves): `changed(new.F.COL) by REF`, `count(new.F where COL == V)`,
-   the quorum form, `REF in "<object>".F.COL`, `under "<object>"`, `LawExpr.cites`.
 
-Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`).
+Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`),
+18 (LAW §6 items 2 and 3, kernel halves, kernel14: §25 item M).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -899,6 +901,58 @@ L. (Coordinator's insertion, docs/LAW.md §4 A, E, H; §6 item 1, kernel half.) 
    request.clock <= old.tended + 1440`) and `compile_clock_old_object`, `native_decide`,
    `#assert_compiled`. `Host/Law.lean` first gained only fail-closed arms; the host lane then added
    `Facts.clock`, `Facts.object` and `read` over `old` (HOST-HANDOFF 133), so a law using them is judged.
+M. (lane/kernel14, docs/LAW.md §4 B, C, D, F, G; §6 items 2 and 3, kernel half.) The law grammar is
+   one term language (`Compiler/ObjectiveBendLaw.lean`, its module comment is the grammar):
+   `LawTerm` (`new.F`, `old.F`, `request.FACT`, `count(SIDE.F)` and `count(SIDE.F where COL == TERM)`,
+   INT, `"TEXT"`, `TERM + TERM`) mutual with `LawFilter`; atoms `eq`, `le`, `member` (`LawPlace`:
+   `[INT, …]`, `new.F`, `new.F.COL`, `"OBJECT".F.COL`), `rule` (`LawRule`: monotone, writeOnce,
+   appendOnly, unchanged, insertOnly), `changed(new.F.COL) by TERM`, `under "OBJECT"`. A count is a
+   reference, so the filtered count, its growth form and the quorum
+   (`count(new.G) <= count(new.F where C == V) + INT`) are comparisons. One refusal shape,
+   `law outside the enforced fragment: FOUND (RULE)`; one name walk (`LawExpr.names`), projected as
+   `fields` (the written object's), `fieldsPlain` and `reads` (the cited objects, each once); one
+   theorem family over tables (`parse_accepts`, `parse_refuses`, `render_reads_back`,
+   `refusals_name_what_and_why`, `names_walk`; `native_decide`, `#assert_compiled`). Renders of every
+   law that parsed before are byte-identical; packets and pins do not move. Deleted: `compile`,
+   `packageLaw`, `LawRef.slot` and the `Pred` library (892 lines; nothing called them, and the
+   agreement theorem `Kernel.ObjectLaw.compile_sound` the module cited does not exist in this tree,
+   so no proved fact went). `Host/Law.lean` was ported arm for arm; what it does not yet denote fails
+   closed. **The host lane's exact request (lane/host15):**
+   - `Facts` gains `reads : List (String × Data)`: the state of every object the law cites,
+     transitively through `under`, at the version recorded as its root. (`clock`, `object` and `read`
+     over `old` landed with HOST-HANDOFF 133 and are carried through the port.)
+   - `read (.count of (.eq col value))`: the rows of `rowsAt old new of` whose `rawField col` canons to
+     the value's data. Generalize `memberData` to every term (a numeric reading as `.natural`), and use
+     it for the filter, membership and `changed`.
+   - `denote (.changed F C who)`: with `before` the rows of `old.F` (none at creation) and `after` of
+     `new.F`, the rows of `before` absent from `after` by canonical bytes, less `facts.evicted` for F,
+     and the rows of `after` absent from `before`; every one has `rawField C` equal to `who`'s data.
+   - `denote (.member t (.cited O F C))`: as `.column F C` over `facts.reads.lookup O`; absent is false.
+   - `denote (.under O)`: the `law` field of `facts.reads.lookup O`, a label, parsed by the law-text
+     parser (`Ops.parseLawText`, which moves beside `denote` so `Law.lean` can call it), every clause
+     admitted at depth − 1; `denote` takes a depth, `Limits.lawDepth` = 4; depth 0, absent, not a
+     label, or unparsable is false.
+   - Roots: every clause's `LawExpr.reads`, closed under the `under` citations of the cited laws,
+     joins the write's roots at the version read (`withLawReads` generalized), within `maxRoots`, each
+     viewable by the subject or the write refuses `lawRefused lawReads`; journaled, so replay re-judges
+     from them; a cited object moved since the read is `staleRoot`.
+   - Acceptance (create, amend, reprogram, the default law aside): every `under` resolves to an existing
+     object whose `law` parses; a cycle within `lawDepth` refuses naming the cycle; the composed law
+     passes the metarule (`amendable`). `world-inspect` lists the citations.
+   - Then the objects lane: Tide's `self` and its five helpers become `law self "only you change your
+     own subscription": changed(new.subs.who) by request.subject`; Deal's `def law` becomes `law signer
+     "a party countersigns only for themselves": changed(new.signatures.principal) by request.subject`;
+     Record gains `changed(new.lines.author) by request.subject`; Kind's `lawOf` and `{maker}` holes
+     become `under "kind/<name>"` and `request.subject == new.maker`.
+N. (lane/kernel14, docs/review/fungus-2026-10-11.md K1, K2.) Deleted with their reasons in the
+   commits: the cSHAKE tower and `HashBytes` that hung from `Pred` (1,290 lines); the ops no caller
+   sends (`run-compact`, `inspect-spec-v1`, `compare-data-types-v1`, `allocation-data-types-v1`,
+   `template-expand`, `packet-cache-status`) and what only they reached: the quoted-argument data
+   path (`executeQuotedDataValue`, `PackageData.prepare*` but the native ones, `quote`, `termSink`,
+   `apply`, `shapeAnnotations`), the allocation family, `Reflection.lean`, `Typed.lean`, `Core.lean`'s
+   evaluator (its line check is `Delvetalk/JsonLine.lean`), the cache's hit counters and
+   `FrontEnd.Parsed.expandedSource`. Kept: `Theory.ObjectiveBendNativeDataSimulation`, whose three
+   theorems are about the live machine's native cells. PROOF_ONLY is four modules.
 4. Located refusals from the generics pass (§16 item 9). Every `refused (…)` of the derivation probe
    now carries `module` and `span` (`derivedAt`, `throwThe Refusal`): `fixed` at the declaration whose
    write names the field; `derived-edits` at the State field whose type the module cannot spell, or at

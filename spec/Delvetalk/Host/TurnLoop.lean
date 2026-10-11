@@ -11,9 +11,9 @@ import Delvetalk.Host.Spell
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
-open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
+open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 structure TurnRequest where
   principal : String
@@ -70,7 +70,7 @@ def parseTurn (j : Json) : Except String TurnRequest := do
   let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
   let method ← boundedText "method" Limits.maxMethodBytes (← j.getObjValAs? String "method")
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
-  unless Minidregg.Compiler.ObjectiveBendParse.isIdent method.toList do throw "invalid method name"
+  unless Delvetalk.Compiler.ObjectiveBendParse.isIdent method.toList do throw "invalid method name"
   let argument ← decodeData Limits.dataDepth (← j.getObjVal? "argument")
   let given ← match j.getObjVal? "limits" with
     | .ok l@(.obj _) => pure l
@@ -427,7 +427,7 @@ def receiptReplies (entry : Json) : List Data :=
 /-- The settled entry of an identity, if it has one (a suspension is not settled). -/
 def settled (w : World) (principal intent : String) : Option Json :=
   match w.receipts[identityKey principal intent]? with
-  | some i => let e := w.entries[i]!; if tagOf e == "suspended" then none else some e
+  | some i => (w.entries.get? i).bind fun e => if tagOf e == "suspended" then none else some e
   | none => none
 
 /-- The id a create with an empty `requireAbsent` gets: `<creator>/<package, lowercased>/<n>`, the
@@ -786,7 +786,7 @@ def expectedInput (obj : Object) (id method : String) (compiled : Compiled)
   let row := ((obj.methods.getArr?.toOption).getD #[]).find? fun m => (m.getObjValAs? String "name").toOption == some method
   let type := match (row.bind fun r => (r.getObjVal? "input").toOption), compiled.type with
     | some input, _ => input
-    | none, .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) => Minidregg.Theory.ObjectiveBendTyping.typeJson domain
+    | none, .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) => Delvetalk.Theory.ObjectiveBendTyping.typeJson domain
     | none, _ => Json.null
   -- The card's declared bounds (`declaredForms`), as the spell path judges by: the hint and the
   -- front's actions agree.
@@ -1369,7 +1369,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     let (next, reads) ← liftEval (Delvetalk.Turn.resumeSuspended entry suspension held.store binding response b)
     held.note reads
     noteProfile fun _ => (Delvetalk.Turn.resumeState entry suspension.state suspension.site response |>.map fun (_, _, _, _, resumed) =>
-      Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state)
+      Delvetalk.Profile.profile (Delvetalk.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state)
         b.bytes b.ticks resumed held.store.bounded)
     drive depth self caller compiled binding held next 0
 
@@ -1770,7 +1770,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
                      unsubscribes := s.unsubscribes ++ (mine.filter (standing.contains ·)) }
         respond bounds responseType "subscribed" [emptyRecord]
       else if mine.contains x then respond bounds responseType "subscribed" [emptyRecord]
-      else if !(Minidregg.Compiler.ObjectiveBendParse.isIdent receiver.toList) ||
+      else if !(Delvetalk.Compiler.ObjectiveBendParse.isIdent receiver.toList) ||
           !(((s.world.objects[self]?).map (hasMethod · receiver)).getD false) then
         refusedWith bounds responseType "method"
       else if mine.isEmpty && ((standing ++ s.subscribes).filter (·.object == id) |>.length |> (· ≥ Limits.subscribersPerObject)) then
@@ -1830,7 +1830,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         match s.world.objects[fromId]? with
         | none => pure (none, some s!"there is no object {fromId} to have been made from")
         | some fromObj =>
-          if !(s.world.entries.any fun e => (e.getObjValAs? String "hash").toOption == some receipt) then
+          if (s.world.entries.indexOf? receipt).isNone then
             pure (none, some s!"there is no receipt {receipt} in the journal")
           else do
             recordRoot fromId fromObj.version
@@ -2002,7 +2002,7 @@ def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
   match w.receipts[identityKey r.principal r.intent]? with
   | none => none
   | some index =>
-    let entry := w.entries[index]!
+    let entry := w.entries.getD index
     let same := (entry.getObjValAs? String "turnRequest").toOption == some r.digest
     if isTransient entry then none
     else if same then some (turnReply w (reply entry))
@@ -2322,7 +2322,7 @@ def textField (state : Data) (name : String) : Option String :=
 
 /-- The hash of the entry that made `id`'s current version (its newest touching entry). -/
 def versionReceipt (w : World) (id : String) : String :=
-  (((w.touched[id]?).bind (·.back?)).bind fun i => w.entries[i]?.bind fun e => (e.getObjValAs? String "hash").toOption).getD ""
+  (((w.touched[id]?).bind (·.back?)).bind w.entries.hashAt?).getD ""
 
 /-- The opener's powers (docs/ROOT.md §2.2), each a receipted turn under the opener's identity with a
     required reading: on `world`, `quiet`/`unquiet {who, hours}` (their turns refused `quiet` until

@@ -20,9 +20,9 @@ import Delvetalk.Limits
 
 namespace Delvetalk.Canonical
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data rowMember)
-open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
-open Minidregg.Compiler.ObjectiveBendDataWire (listItems? listData)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data rowMember)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
+open Delvetalk.Compiler.ObjectiveBendDataWire (listItems? listData)
 
 /-! ## Writing -/
 
@@ -132,10 +132,72 @@ partial def writeJson (out : ByteArray) (j : Json) : Except String ByteArray :=
 
 def encodeJson (j : Json) : Except String ByteArray := writeJson ByteArray.empty j
 
+/-- A head's argument at `pos` (after the initial byte), and the position after it. -/
+def readArg (b : ByteArray) (pos info : Nat) : Except String (Nat × Nat) := do
+  let be := fun (width : Nat) => do
+    if pos + width > b.size then throw "truncated canonical bytes"
+    return ((List.range width).foldl (fun acc i => acc * 256 + (b.get! (pos + i)).toNat) 0, pos + width)
+  if info < 24 then return (info, pos)
+  else if info == 24 then be 1
+  else if info == 25 then be 2
+  else if info == 26 then be 4
+  else if info == 27 then be 8
+  else throw "an indefinite or reserved length"
+
+/-- The JSON `writeJson` wrote, read back from `pos`: unsigned and negative integers, big naturals
+(byte strings), text, arrays, maps with text keys, true, false, null. -/
+partial def readJson (b : ByteArray) (pos depth : Nat) : Except String (Json × Nat) := do
+  if depth == 0 then throw "nesting capacity"
+  if pos ≥ b.size then throw "truncated canonical bytes"
+  let ib := (b.get! pos).toNat
+  let major := ib / 32
+  let info := ib % 32
+  if major == 7 then
+    if info == 20 then return (Json.bool false, pos + 1)
+    else if info == 21 then return (Json.bool true, pos + 1)
+    else if info == 22 then return (Json.null, pos + 1)
+    else throw "a simple value outside JSON"
+  let (n, p) ← readArg b (pos + 1) info
+  match major with
+  | 0 => return (toJson n, p)
+  | 1 => return (toJson (-(Int.ofNat n) - 1), p)
+  | 2 =>
+    if p + n > b.size then throw "truncated canonical bytes"
+    return (toJson ((b.extract p (p + n)).foldl (fun acc x => acc * 256 + x.toNat) 0), p + n)
+  | 3 =>
+    if p + n > b.size then throw "truncated canonical bytes"
+    let some s := String.fromUTF8? (b.extract p (p + n)) | throw "text is not UTF-8"
+    return (Json.str s, p + n)
+  | 4 =>
+    let mut items : Array Json := #[]
+    let mut at_ := p
+    for _ in [0:n] do
+      let (j, q) ← readJson b at_ (depth - 1)
+      items := items.push j
+      at_ := q
+    return (Json.arr items, at_)
+  | 5 =>
+    let mut fields : Array (String × Json) := #[]
+    let mut at_ := p
+    for _ in [0:n] do
+      let (k, q) ← readJson b at_ (depth - 1)
+      let .str key := k | throw "a map key is not text"
+      let (v, r) ← readJson b q (depth - 1)
+      fields := fields.push (key, v)
+      at_ := r
+    return (Json.mkObj fields.toList, at_)
+  | _ => throw "a CBOR item outside JSON"
+
+/-- `encodeJson`'s inverse over its whole input. -/
+def decodeJson (b : ByteArray) (depth : Nat) : Except String Json := do
+  let (j, p) ← readJson b 0 depth
+  unless p == b.size do throw "trailing bytes"
+  return j
+
 /-! ## Identity -/
 
 def digestBytes (message : ByteArray) : ByteArray :=
-  ByteArray.mk ((Minidregg.Compiler.Sha256.digest message).toList.flatMap fun w =>
+  ByteArray.mk ((Delvetalk.Compiler.Sha256.digest message).toList.flatMap fun w =>
     [UInt8.ofNat (w.toNat >>> 24 % 256), UInt8.ofNat (w.toNat >>> 16 % 256),
      UInt8.ofNat (w.toNat >>> 8 % 256), UInt8.ofNat (w.toNat % 256)]).toArray
 
@@ -343,7 +405,7 @@ def unhex (s : String) : Except String ByteArray := do
 
 /-! ## Wire ops -/
 
-open Minidregg.Compiler.ObjectiveBendDataWire (decodeData dataJson)
+open Delvetalk.Compiler.ObjectiveBendDataWire (decodeData dataJson)
 
 /-- `canonical-encode {data | json, repeat?}` -> `{cid, hex, bytes}`. `repeat` re-encodes that
 many times (each with a distinct tag so none can be shared) and reports the checksum, so a

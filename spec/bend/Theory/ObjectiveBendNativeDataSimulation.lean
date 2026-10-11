@@ -1,5 +1,5 @@
 import Theory.ObjectiveBendDemandMachineFast
-namespace Minidregg.Theory.ObjectiveBendDemandMachine
+namespace Delvetalk.Theory.ObjectiveBendDemandMachine
 open ObjectiveBendDemandData ObjectiveBendOpenRecursion
 set_option autoImplicit false
 
@@ -65,4 +65,4 @@ theorem forceNative_literal (heap : Array Cell) (data : Data) (stack : List Fram
           simp only [hn] at h ⊢
           rw [← h]
 
-end Minidregg.Theory.ObjectiveBendDemandMachine
+end Delvetalk.Theory.ObjectiveBendDemandMachine

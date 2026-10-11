@@ -18,6 +18,7 @@ import os
 import statistics
 import unittest
 
+from transport.journal import entries as journal_entries, records as journal_records
 from tests import test_hub
 
 PROSE = [
@@ -36,8 +37,7 @@ WHO = ["did:plc:" + ("%024d" % i).replace("0", "a") for i in range(1, 10)]
 
 class SuspensionSize(test_hub.Hub):
     def entries(self):
-        with open(self.path) as handle:
-            return [json.loads(line) for line in handle]
+        return journal_entries(self.path)
 
     def suspensions(self, speakers):
         self.policy()
@@ -47,10 +47,10 @@ class SuspensionSize(test_hub.Hub):
         for who, text in zip(speakers, PROSE):
             self.assertEqual(self.say(text, who)["status"], "suspended")
         sizes, fresh = [], []
-        for e in self.entries()[start:]:
+        for e, (_, record) in zip(self.entries()[start:], journal_records(self.path)[start:]):
             if e["outcome"]["tag"] != "suspended":
                 continue
-            sizes.append(len(json.dumps(e, separators=(",", ":")).encode()))
+            sizes.append(len(record))  # the entry's canonical record, as the block store holds it
             fresh.append([len(json.dumps(b, separators=(",", ":")).encode()) for b in e.get("blocks", [])])
         print("\n  suspension bytes:", sizes)
         print("  fresh blocks per entry (count, largest):", [(len(f), max(f, default=0)) for f in fresh])
