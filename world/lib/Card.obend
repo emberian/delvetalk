@@ -17,10 +17,12 @@ import ./World.obend as World
 # `set` method); what runs no method reaches receive, which `answer` handles by default.
 type Forms = Lists.List<Form.Form>
 # A refusal names its clause (an object's `Why` arm, or the protocol's own: notOwner) and gives
-# its reading; a card shows it as `refused <clause>: <reading>`.
+# its reading, the next line to type in it when there is one; it is said `refused <clause>: <reading>`.
 record Refusal:
   clause: String
   reading: String
+def refusalLine(refusal: Refusal) -> String:
+  "refused {refusal.clause}: {refusal.reading}"
 # What receive answers when no method was acted on: the card's own (done, usage, unclear,
 # refused, silent), or, at the commonplace, where the words went: passed to a card (its spell
 # ran there, or the card took the words), asked first of the speaker, several spells in order.
@@ -396,8 +398,7 @@ def quietly(replied: Replied) -> Bool:
 # Why a card answered without acting, as its card shows it ("" for the plain usage).
 def whyNot(replied: Replied) -> String:
   match replied:
-    case unclear(u): "\nNot done: Almost. I still need: {Text.joined(u.needs)}.\n"
-    case refused(r): "\nrefused {r.clause}: {r.reading}\n"
+    case unclear(u): "\nAlmost. Still needs {Text.joined(u.needs)}.\n"
     case _: ""
 # The card a reply that ran no method gets: the object's card, then why, then its forms, all
 # within one budget: forms that would pass Card.limit(context) are the one line naming `?` instead (or
@@ -409,9 +410,11 @@ def answerCard(card: Document.Document, why: String, context: Abi.Context, forms
   let short = Document.text("\nIts spells: delvetalk {name} ?\n")
   let tail = if used + Document.size(spells) <= limit(context) then spells else if printable(name) && used + Document.size(short) <= limit(context) then short else Document.text("")
   Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why), tail: Document.Documents.cons({head: tail, tail: Document.Documents.nil()})})})})
-# Refuses by name: the card with `refused <clause>: <reading>` and its forms.
-def answerRefused<T>(refusal: Refusal, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
-  tell(as(Replied.refused(refusal)), answerCard(card, whyNot(Replied.refused(refusal)), context, forms))
+# Every refusal is answered here, in the turn it refuses (`context`), and writes nothing: the
+# speaker hears its one line, and the result goes back to whoever called, which passes it on
+# without saying it again.
+def refusing<T>(result: T, refusal: Refusal, context: Abi.Context) -> Activity<T>:
+  tell(result, Document.text("{refusalLine(refusal)}\n"))
 # Prose a card does not take is sent to the commonplace (`receive {text, post}`, under the
 # speaker), which judges whether it names any door; the card offers nothing itself. The send
 # keeps this turn's reach (HOST-HANDOFF 5.127), so words that reached no one cost no reading.

@@ -70,6 +70,38 @@ class Kinds(Chain):
         self.assertEqual((lamp["status"], lamp["result"]["label"]), ("admitted", "made"), lamp)
         self.assertIn("Made, at lamp/1", text(lamp))
 
+    def test_a_kinds_law_that_does_not_read_is_refused_by_name_and_makes_no_kind(self):
+        """Playtest 2's D4 (69068, 69097): `law: writeOnce(claim)` made kind/prereg, whose every make was then refused
+        and which could not be made again. A law is read as the kind is made: a line that is no clause, or a clause
+        outside the law's grammar, is refused badValue with the law's line as the hint, and nothing is made."""
+        said = lambda line, n: self.turn("kinds", "receive", record(text=label(line), post=label("at://x/law/%d" % n)), principal=KIM)
+        for n, (law, why) in enumerate((("writeOnce(claim)", "law: `writeOnce(claim)` is no clause"),
+                                        ('law q "x": new.owner = 3', "law: law outside the enforced fragment: `=`"))):
+            with self.subTest(law=law):
+                r = said("delvetalk kinds make / name: prereg / of: record / form: claim: text 1..80 / law: " + law, n)
+                self.assertEqual(r["receipt"]["outcome"].get("writes", []), [], r)
+                self.assertTrue(text(r).startswith("refused badValue: " + why), text(r))
+                self.assertIn('One clause a line: law NAME "reading": EXPR; delvetalk library read / page: laws', text(r))
+        self.assertNotIn("kind/prereg", self.host.send(op="world-objects", principal="ember")["ids"])
+        made = said('delvetalk kinds make / name: prereg / of: record / form: claim: text 1..80 / law: law once "a prereg never changes": unchanged(fields)', 9)
+        self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)
+
+    def test_an_exact_id_is_the_kind_owners_place_offered_to_them_alone(self):
+        """Playtest 2's F5 (69132 to 69138): every kind's make offered `id:` to anyone, and only a refusal said it was
+        the maker's. `make` names the thing; `place / id:` puts it at an exact id, the kind owner's, offered to them."""
+        self.kind("lamp", "record", "light: text 1..80", law=genesis.RECORD_LAW)
+        offered = lambda who: self.host.send(op="world-inspect", principal=who, object="kind/lamp", source=False)["offered"]
+        self.assertIn("place", offered("ember"))
+        self.assertNotIn("place", offered(KIM))
+        self.assertIn("make", offered(KIM))
+        stranger = self.turn("kind/lamp", "place", record(light=label("mine"), id=label("lamp/here")), principal=KIM)
+        self.assertEqual(text(stranger), "refused notOwner: Only ember places what this kind makes at an id; make it, and it is named\n")
+        self.assertEqual(stranger["receipt"]["outcome"].get("writes", []), [], stranger)
+        placed = self.turn("kind/lamp", "place", record(light=label("the hand's"), id=label("lamp/here")), principal="ember")
+        self.assertEqual(placed["result"], {"tag": "variant", "label": "made", "payload": record(object=label("lamp/here"))}, placed)
+        made = self.turn("kind/lamp", "make", record(light=label("anyone's")), principal=KIM)
+        self.assertEqual(made["result"]["payload"], record(object=label("lamp/1")), made)
+
     def test_a_kind_is_shaped_once(self):
         """The live redeploy: `kinds shape` a second time laid a layer over the package's module, which a shaped
         kind no longer runs, and the compile refused it. A shaped kind, or one `kinds` made, is refused by name."""
@@ -89,12 +121,12 @@ class Kinds(Chain):
         made = self.turn("kinds", "make", record(name=label("cairn"), of=label("record"), form=label(""), head=label("A CAIRN"), law=label(genesis.RECORD_LAW),
                                                 body=label(body("cistern"))), principal=KIM)
         self.assertEqual((made["status"], refusals(made)), ("admitted", []), made)
-        thing = self.turn("kind/cairn", "make", record(id=label("")), principal=GLM)
+        thing = self.turn("kind/cairn", "make", record(), principal=GLM)
         self.assertEqual((thing["status"], thing["result"]["label"], refusals(thing)), ("admitted", "made", []), thing)
 
     def test_a_kind_of_record_makes_a_record_under_its_law_with_its_head(self):
         self.kind("key", "record", "seed: text 1..80", head="THE KEY, begun by {maker}: {seed}", law=genesis.RECORD_LAW)
-        made = self.turn("kind/key", "make", record(seed=label("three hands deep"), id=label("")), principal=KIM)
+        made = self.turn("kind/key", "make", record(seed=label("three hands deep")), principal=KIM)
         self.assertEqual(made["status"], "admitted", made)
         self.assertEqual(made["result"]["label"], "made", made)
         state = self.state("key/1")
@@ -108,7 +140,7 @@ class Kinds(Chain):
 
     def test_the_cistern_kind_pours_and_its_level_only_rises(self):
         self.kind("cistern", "record", "", law=genesis.RECORD_LAW, body_source=body("cistern"))
-        self.assertEqual(self.turn("kind/cistern", "make", record(id=label("")), principal=GLM)["status"], "admitted")
+        self.assertEqual(self.turn("kind/cistern", "make", record(), principal=GLM)["status"], "admitted")
         poured = self.turn("cistern/1", "pour", record(text=label("refused tooSoon: the next tick from clock 480")), principal=KIM)
         self.assertEqual(poured["status"], "admitted", poured)
         self.assertIn("CISTERN, dug by glm; level 1. Pour a refusal in:\n  delvetalk cistern/1 pour / text: <the refusal, 1 to 280 characters>\n", text(poured))
@@ -119,7 +151,7 @@ class Kinds(Chain):
 
     def test_kind_room_makes_a_room_whose_body_is_laid_in_the_turn_that_makes_it(self):
         self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
-        made = self.turn("kind/room", "make", record(name=label("The Reading Room"), id=label("")), principal=KIM)
+        made = self.turn("kind/room", "make", record(name=label("The Reading Room")), principal=KIM)
         self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)
         room = self.state("room/1")
         self.assertEqual((field(room, "head")["value"], field(room, "owner")["value"]), ("The Reading Room", KIM))
@@ -136,7 +168,7 @@ class Kinds(Chain):
     def test_a_spween_that_is_no_scene_is_refused_by_name(self):
         """Playtest 2 F3: prose in `spween:` made a room with no scene, silently."""
         self.kind("room", "record", "name: text 1..64\nspween: text 0..16384", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
-        made = self.turn("kind/room", "make", record(name=label("The Annex"), spween=label("a quiet annex with a window"), id=label("")), principal=KIM)
+        made = self.turn("kind/room", "make", record(name=label("The Annex"), spween=label("a quiet annex with a window")), principal=KIM)
         self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "refused"), made)
         self.assertEqual(made["result"]["payload"]["fields"][0]["value"], label("spween"))
         self.assertEqual(self.host.send(op="world-view", principal=KIM, object="room/1").get("status"), "unknown")
@@ -146,13 +178,13 @@ class Kinds(Chain):
         self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
         squat = self.host.send(op="world-create", principal=GLM, identity="squat", object="room/1", modules=closure("Record"), entry="initial", seed=record())
         self.assertEqual(squat["status"], "created", squat)
-        made = self.turn("kind/room", "make", record(name=label("The Porch"), id=label("")), principal=KIM)
+        made = self.turn("kind/room", "make", record(name=label("The Porch")), principal=KIM)
         self.assertEqual(made["result"]["label"], "made", made)
         self.assertIn("Made, at room/2; 1 made.", text(made))
 
     def test_a_spween_block_posted_to_a_room_makes_a_room_under_it(self):
         self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
-        self.turn("kind/room", "make", record(name=label("The Porch"), id=label("")), principal=KIM)
+        self.turn("kind/room", "make", record(name=label("The Porch")), principal=KIM)
         spween = "a tube between porch and ledger:\n\n```spween\n---\nid: tube\ntitle: The Tube\n---\n=== mouth\nA scratch comes down the tube.\n* [Listen] -> END\n```"
         r = self.turn("room/1", "receive", record(text=label(spween), post=label("at://x/1")), principal=GLM)
         self.assertEqual(r["status"], "admitted", r)
@@ -207,7 +239,7 @@ class Kinds(Chain):
         people = ["did:plc:" + ("%02d" % i) * 12 for i in range(32)]
         things = ["thing-%02d-" % i + "x" * 100 for i in range(64)]
         doors = [record(label=label(("door%d-" % i).ljust(32, "d")), to=reference("elsewhere/" + "y" * 100), description=label(""), examples=listing([])) for i in range(8)]
-        make_room(self, "yard", head=label("N" * 120), cites=listing(doors), presence=relation(*[record(who=label(p), at=label("")) for p in sorted(people, key=lambda i: (len(i), i))]),
+        make_room(self, "yard", head=label("N" * 120), cites=listing(doors), presence=relation(*[record(who=label(p), handle=label(""), at=label("")) for p in sorted(people, key=lambda i: (len(i), i))]),
                   things=relation(*[reference(t) for t in sorted(things, key=lambda i: (len(i), i))]))
         for i in range(8):
             self.turn("yard", "write", record(text=label("w" * 280)), principal=people[i])

@@ -60,14 +60,14 @@ class Workshop(Chain):
     def test_a_check_with_neither_block_nor_target_and_a_wrong_card_are_refused_by_name(self):
         self.make_workshop()
         reply = self.say("delvetalk workshop check")
-        self.assertEqual(self.refusal(reply), ("noSource", "Include a fenced obend block."))
+        self.assertEqual(self.refusal(reply), ("noSource", "Put a ```obend block under the spell, or source: <<BEND … BEND."))
         # A spell naming another card is the host's: an unknown card is refused by name.
         reply = self.say("delvetalk orchard check\n```obend\nx\n```")
         self.assertEqual((reply["status"], reply["receipt"]["outcome"]["class"], reply["receipt"]["outcome"]["clause"]), ("refused", "badSpell", "otherCard"), reply)
         reply = self.say("delvetalk workshop propose\n```obend\nx\n```")
-        self.assertEqual(self.refusal(reply), ("noTarget", "Name a target to propose to."))
+        self.assertEqual(self.refusal(reply), ("noTarget", "Name the card to propose to: target: <its id>."))
         reply = self.say("delvetalk workshop propose\ntarget: ghost\nmigration: keep\n```obend\n%s```\n" % BLOCK)
-        self.assertEqual(self.card(reply), "Not done: No object called ghost\n")
+        self.assertEqual(self.card(reply), "refused noObject: No object called ghost\n")
 
     def test_the_root_menus_source_block_is_checked(self):
         """The root menu teaches `source: <<BEND` … `BEND`."""
@@ -118,14 +118,14 @@ class Workshop(Chain):
         propose = lambda block, who, ident: self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\n```obend\n%s```\n" % block),
                                                                                   post=label("at://x/" + ident)), principal=who, identity=ident)
         wrong = propose(wide, "kimik3", "w1")
-        self.assertEqual(self.card(wrong), "Not done: Its State is not bell-1's; name a migration from the old one.\n")
+        self.assertEqual(self.card(wrong), "refused stateType: Its State is not bell-1's; name a migration from the old one.\n")
         self.assertEqual(self.refusal(wrong)[0], "stateType")
         self.assertNotIn("Held for", self.say("")["offers"][0]["text"])
         # A migration the package lacks is named with the host's reading, not the bare clause.
         missing = self.turn("workshop", "receive", record(text=label("delvetalk workshop propose\ntarget: bell-1\nmigration: nope\n```obend\n%s```\n" % wide),
                                                           post=label("at://x/m1")), principal="kimik3", identity="m1")
         self.assertEqual(self.refusal(missing)[0], "migration")
-        self.assertTrue(self.card(missing).startswith("Not done: ") and "nope" in self.card(missing), self.card(missing))
+        self.assertTrue(self.card(missing).startswith("refused migration: ") and "nope" in self.card(missing), self.card(missing))
         # Held while it fit; the owner then changes the target's State, so adopting meets stateType.
         held = propose(BLOCK, "kimik3", "w2")
         self.assertIn("held as #1", self.card(held))
@@ -134,7 +134,7 @@ class Workshop(Chain):
                                package=wide.replace("{count: 0n, total: 0n}", "{count: 0n, total: 0n}\ndef migrate(old: {count: Nat}) -> State:\n  {count: old.count, total: 0n}"), migration="migrate")
         self.assertEqual(moved["status"], "admitted", moved)
         adopt = self.turn("workshop", "receive", record(text=label("delvetalk workshop adopt / n: 1"), post=label("at://x/a")), principal="glm")
-        self.assertEqual(self.card(adopt), "Not done: #1 cannot be applied to bell-1: Its State is not bell-1's; name a migration from the old one.\n")
+        self.assertEqual(self.card(adopt), "refused stateType: #1 cannot be applied to bell-1: Its State is not bell-1's; name a migration from the old one.\n")
 
     def test_a_described_thing_is_made_with_the_receipt_of_the_turn_that_held_its_draft(self):
         self.make_workshop()
@@ -157,7 +157,7 @@ class Workshop(Chain):
         propose("kimik3", "p1")
         self.assertIn("#1 for bell-1 from kimik3\n", self.say("")["offers"][0]["text"])
         notMine = self.turn("workshop", "receive", record(text=label("delvetalk workshop withdraw / n: 1"), post=label("")), principal="zero")
-        self.assertEqual(self.card(notMine), "Not done: Only its proposer, kimik3, withdraws #1\n")
+        self.assertEqual(self.card(notMine), "refused notProposer: Only its proposer, kimik3, withdraws #1\n")
         out = self.turn("workshop", "receive", record(text=label("delvetalk workshop withdraw / n: 1"), post=label("")), principal="kimik3")
         self.assertEqual(self.card(out), "✾ WORKSHOP\n\nWithdrew #1.\n")
         # Twelve are held; a thirteenth drops the oldest with a line.

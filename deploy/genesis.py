@@ -157,7 +157,7 @@ KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('bond', 'record', 'parties: text 1..400\nterms: text 1..400\namends: text 0..128\nlaw: text 0..4096', '', RECORD_LAW + '\n' + SIGNER_LAW, 'bond')]
 
 
-# The hand's own things, made by spell on their kinds at genesis, each at an exact id (a kind's owner's alone), so
+# The hand's own things, placed by spell on their kinds at genesis, each at an exact id (`place`, a kind's owner's alone), so
 # each has a maker and the commonplace cites them: (kind, fields). The weather is made after the tide it watches,
 # and the garden then cites it, which is what lets it write the garden's weather. The porch's sixth bell lies
 # outside the garden, where no weather rains, and nobody tends it: a day after genesis it is the town's first quiet
@@ -276,8 +276,8 @@ def run(host, opener=OPENER):
             'package': bodies['commonplace'], 'mode': 'extend'}))
         # The hand's things, each by its spell; then the garden cites its weather and the porch its sixth bell.
         for kind, fields in HANDS:
-            made.append(said(host, opener, kind, 'make', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id']))
-            turned(f"{kind} make {dict(fields)['id']}", made[-1]['reply'])
+            made.append(said(host, opener, kind, 'place', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id']))
+            turned(f"{kind} place {dict(fields)['id']}", made[-1]['reply'])
         for card, label, to in (('garden', 'weather', 'weather'), ('porch', 'the sixth bell', 'bell/1')):
             made.append(said(host, opener, card, 'door', [('label', label), ('to', to)], f'genesis-{card}-door'))
             turned(f'{card} door {to}', made[-1]['reply'])
