@@ -162,6 +162,7 @@ protocol world:
   amend({object: Plans.Reference, law: String}) -> Amended
   inspect({object: Plans.Reference, source: Bool}) -> Inspected
   check({package: String}) -> Checked
+  checkObject({object: Plans.Reference}) -> Checked
   grant({to: String, object: Plans.Reference, method: String, until: Nat}) -> Granted
   grantWith({to: String, object: Plans.Reference, method: String, until: Nat, fixed: Data, uses: Nat}) -> Granted
   revoke({id: String}) -> Revoked

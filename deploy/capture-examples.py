@@ -2,7 +2,7 @@
 """Regenerate docs/AGENTS-EXAMPLES.md from a real stack.
 
 Starts a throwaway `delvetalk-obend serve` (opener named, library sealed), seeds the town's objects as docs/GENESIS.md does, starts
-the HTTP front with a mocked account host, then runs four sessions (a planter, a wake registrar, a forger, a stranger by the controls) as
+the HTTP front with a mocked account host, then runs five sessions (a planter, a maker of a sealed kind, a wake registrar, a forger, a stranger by the controls) as
 literal requests and writes down the replies. Nothing is edited by hand: the page is whatever this prints.
 
   DELVETALK_OBEND=/path/to/delvetalk-obend python3 deploy/capture-examples.py [--out docs/AGENTS-EXAMPLES.md]
@@ -34,7 +34,8 @@ from tests.test_hypermedia import walk  # noqa: E402
 CUT = 2400
 OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'
 PEOPLE = {'moth.delve.town': 'did:plc:uwsco4yctpvu5ki7tiob73s6', 'owl.delve.town': 'did:plc:32ecuw7tqlouxhk3uxtftip2',
-          'smith.delve.town': 'did:plc:tindgd5cosetdn7f7hnr6lda', 'wren.delve.town': 'did:plc:wrenwrenwrenwrenwrenwren'}
+          'smith.delve.town': 'did:plc:tindgd5cosetdn7f7hnr6lda', 'wren.delve.town': 'did:plc:wrenwrenwrenwrenwrenwren',
+          'fern.delve.town': 'did:plc:fernfernfernfernfernfern'}
 NOW = 1791591368.0
 TALLY = '''edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -56,8 +57,10 @@ def lend(state: State, input: {to: String}, context: Abi.Context) -> Activity<St
 def methods() -> Lists.List<String>:
   Text.words("bump lend")
 '''
+SEALED = ('delvetalk kinds make / name: sealed / of: record / form: text: text 1..80 / head: what {maker} sealed, stays sealed'
+          ' / law: law maker "only its maker writes": request.subject == new.maker')
 FLIP = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
-HEAD = '''# DelveTalk: four worked sessions
+HEAD = '''# DelveTalk: five worked sessions
 
 Literal requests and replies, captured on {date} by `deploy/capture-examples.py` from a real stack started as
 docs/DEPLOY.md says: `serve` over a fresh directory with the opener named and the library sealed, genesis by the seeds
@@ -154,12 +157,14 @@ class Capture:
 def seed_town(sock):
     """The town as production creates it: deploy/genesis.py, run by the opener."""
     made, refusal = genesis.run(HostClient(sock), OPENER)  # the root socket: the opener speaks there only
-    assert refusal is None and all(m['status'] == 'created' for m in made), (refusal, made)
+    assert refusal is None and all(m['status'] in ('created', 'admitted') for m in made), (refusal, [m for m in made if m['status'] not in ('created', 'admitted')])
 
 
 def planter(cap):
     cap.say('## A planter')
     cap.login('moth.delve.town')
+    cap.say("The first card is the commonplace: what changed, then the doors, each with its spells.")
+    cap.step('GET', '/world/commonplace/card')
     cap.step('GET', '/world')
     cap.step('GET', '/world/garden/card')
     cap.step('POST', '/world/garden/receive', {'intent': 'plant-1', 'spell': 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths'})
@@ -171,6 +176,21 @@ def planter(cap):
     cap.step('GET', f'/offers?after={waiting["receipt"]["height"] - 1}')
     cap.step('GET', '/receipt?intent=plant-1')
     cap.step('GET', '/world/garden/bell/1/card')
+
+
+def maker(cap):
+    cap.say('## A maker')
+    cap.say('A kind with a law (the commonplace\'s KINDS door): only its maker writes what it makes.')
+    cap.login('fern.delve.town')
+    cap.step('POST', '/world/kinds/receive', {'intent': 'kind-sealed', 'spell': SEALED})
+    cap.step('GET', '/world/kind/sealed/card')
+    cap.step('POST', '/world/kind/sealed/receive', {'intent': 'seal-1', 'spell': 'delvetalk kind/sealed make / text: the first seal'})
+    cap.step('POST', '/world/sealed/1/receive', {'intent': 'seal-2', 'spell': 'delvetalk sealed/1 write / text: the first seal, again'})
+    cap.say('Someone else writes on it; the law answers by name, and nothing is written:')
+    cap.login('moth.delve.town')
+    cap.step('POST', '/world/sealed/1/receive', {'intent': 'seal-3', 'spell': 'delvetalk sealed/1 write / text: a moth was here'})
+    cap.step('GET', '/receipt?intent=seal-3')
+    cap.step('GET', '/world/sealed/1/card')
 
 
 def registrar(cap):
@@ -251,7 +271,7 @@ def main(argv=None):
         cap.whole = lambda reply: reply['checkpoint']
         cap.out = HEAD.format(date=datetime.date.today().isoformat(), cut=CUT).split('\n')
         try:
-            for session in (planter, registrar, forger, stranger):
+            for session in (planter, maker, registrar, forger, stranger):
                 session(cap)
         finally:
             front.shutdown()

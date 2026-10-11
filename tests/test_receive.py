@@ -60,7 +60,7 @@ class Cards(Chain):
         laid = self.version("garden")
         cases = {
             "delvetalk garden plant\nseed: a fern\ncolour: green": ("badValue", "colour is one of: amber, violet, silver"),
-            "delvetalk orchard plant\nseed: a fern\ncolour: silver": ("otherCard", "There is no card orchard; the directory lists the doors."),
+            "delvetalk orchard plant\nseed: a fern\ncolour: silver": ("otherCard", "There is no card orchard; the commonplace lists the doors."),
         }
         for spell, (clause, reason) in cases.items():
             with self.subTest(spell=spell[:40]):
@@ -138,7 +138,7 @@ class Cards(Chain):
         missing = self.turn("commonplace", "receive", record(text=label("delvetalk wake watch / event: mention / actor: ember.delve.town"), post=label("")), principal=did)
         out = missing["receipt"]["outcome"]
         self.assertEqual((missing["status"], out["class"], out["clause"], out["reason"]),
-                         ("refused", "badSpell", "otherCard", "There is no card wake; the directory lists the doors."), missing)
+                         ("refused", "badSpell", "otherCard", "There is no card wake; the commonplace lists the doors."), missing)
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
@@ -155,7 +155,7 @@ class Cards(Chain):
         ghost = self.turn("commonplace", "receive", record(text=label("delvetalk forge make / name: sentry"), post=label("")), principal="glm")
         out = ghost["receipt"]["outcome"]
         self.assertEqual((ghost["status"], out["class"], out["clause"], out["reason"]),
-                         ("refused", "badSpell", "otherCard", "There is no card forge; the directory lists the doors."), ghost)
+                         ("refused", "badSpell", "otherCard", "There is no card forge; the commonplace lists the doors."), ghost)
 
     def test_doors_are_hung_removed_and_labels_are_unique(self):
         self.directory()

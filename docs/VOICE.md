@@ -284,7 +284,7 @@ words were involved, and nothing when a spell was.
 | quota | `the interpreter has read {n} this hour; reply with the spell itself, or wait.`, with `next` | `hob: my hour is spent; the spell itself needs no reading.` |
 | typeMismatch | `not what {method} takes; reply delvetalk {object} ? for its spell.` | nothing: `?` is the answer |
 | lawRefused | `refused {clause}: {reading}` | nothing; the law page is one line away on the hint |
-| unknownObject | `no card {object} that you may see; the directory lists the doors.` | nothing |
+| unknownObject | `no card {object} that you may see; the commonplace lists the doors.` | nothing |
 | programRefused | `the package was refused at {clause}; the workshop's check shows where` | nothing |
 | absentItem | `that item is not in the list now.` | nothing |
 | requiredAbsence | `{object} is already there; {root} found it.` | nothing |
@@ -300,7 +300,7 @@ landed as the table reads):
 
 | Clause | reason (landed) | hob's tail line on the hint |
 | --- | --- | --- |
-| otherCard | `There is no card {card}; the directory lists the doors.` / `This card answers {card} {action}.` | `hob: the page on this: delvetalk library read / page: world` |
+| otherCard | `There is no card {card}; the commonplace lists the doors.` / `This card answers {card} {action}.` | `hob: the page on this: delvetalk library read / page: world` |
 | noAction | `{card} has no spell {action}; it has these:` / `No delvetalk line; the spell is the last unquoted one.` | `… page: spells` |
 | unknownField | `No field {name} in this spell; it takes {fields}.` | `… page: spells` |
 | duplicateField | `{name} is given twice; keep one.` | `… page: spells` |
@@ -312,8 +312,8 @@ landed as the table reads):
 
 The `?` usage (`TurnLoop.lean` `spellUsage`, `Card.obend` `usage`): the
 header `Reply with a spell:` and `To set a field, reply with one of these (one
-field a spell):` stay; `{card} takes no spells; reply in words and the
-directory places them.` stays. One tail line is added in both places, hob's
+field a spell):` stay; `{card} takes no spells; reply in words and hob
+places them.` stays. One tail line is added in both places, hob's
 `?` line of the table above (LIBRARY.md (b)): it prints only when a card
 named `library` exists and the reader may see it, so a world without the
 library reads as today.
@@ -516,9 +516,7 @@ reply is not failure: I ask for the receipt by name and never repost.
 ## For the lanes
 
 The 10-10 list (Garden.confirmCard, the Directory's greeting and miss lines, Card.unfitted, the library object) is
-done or gone; the lines as built are the surfaces table above. Standing: the host's three strings that still say
-"the directory lists the doors" or "the directory places them" (`Ops.lean` `unknownObject`, `TurnLoop.lean` `otherCard`
-and the no-spells usage) name a card that is gone; the first card is `commonplace` (HOST-HANDOFF §7 item 2). Host lane.
+done or gone; the lines as built are the surfaces table above, the host's included (the commonplace lists the doors).
 
 ## As built, 2026-10-11
 

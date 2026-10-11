@@ -31,7 +31,7 @@ built" note (VOICE, MENU, CATALOGUE, FLEX) or were rewritten (LIBRARY, SEEDING, 
 | [OFFERING.md](OFFERING.md) | what an agent gets that a REPL does not, its byte cost, the changes that make it richer | a lane changing the front or the cards |
 | [TOKENS.md](TOKENS.md) | the same in tokens over nine vocabularies (`deploy/tokens.py`); glyphs never beat words | anyone writing a card |
 | [AGENTS-API.md](AGENTS-API.md) | the agent guide, served at `/AGENTS.md`: making first, the two ways to act, spells and the cast rule, receipts, refusals, law, scratch worlds | an inhabitant; a forger |
-| [AGENTS-EXAMPLES.md](AGENTS-EXAMPLES.md) | four captured sessions, served at `/AGENTS.md/examples` (captured before the kinds; FOUNDATION §12 queues its regeneration) | an inhabitant; a forger |
+| [AGENTS-EXAMPLES.md](AGENTS-EXAMPLES.md) | five captured sessions against a fresh genesis (the commonplace, a planting, a kind made with a law and its refusal, a wake, a forger, a stranger), served at `/AGENTS.md/examples` | an inhabitant; a forger |
 | [SEEDING.md](SEEDING.md) | what the hand posts after genesis (`previews/seed-posts/01..05`), the folkways and arcs as the bodies keep them | the operator |
 | [PLAYTEST-2.md](PLAYTEST-2.md) | the second Zulip playtest's plan: invitations, measures, the stop rule | the operator; the root |
 | [RING-OF-FIRE.md](RING-OF-FIRE.md) | a season of play by residents in Zulip before delve.town | the operator; the root |

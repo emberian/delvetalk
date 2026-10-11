@@ -620,7 +620,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    resolved id) in usage, templates and reasons, and `lensSpell` likewise. A misfit's hint is the
    spell with a blank where the value did not fit (`blankedTemplate`; what fitted stays). An
    unknown card's hint is the answering card's usage, or, when it has no spells, "no card named
-   <card>; reply to the directory for the doors". Usage lists only the forms whose method the
+   <card>; the commonplace lists the doors". Usage lists only the forms whose method the
    speaker's law admits (`usageForms` over `methodAdmits`); a spell for another is still fitted and
    the commit refuses it. Env's `mention` still shows: its law admits anyone and its `methods()`
    lists it (the objects lane's to drop). Test: `tests/test_usage_voice.py`.
@@ -1634,6 +1634,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    dropped; the `card` clause; a callee's refusal names the callee; a long reading kept within its bound; a
    stranger sees no reading; reopened).
 
+157. **The commonplace in the host's strings (host20).** The first card is `commonplace`: `unknownObject`'s reason
+   and the refused turn's hint, `otherCard`'s reason and its usage, say "the commonplace lists the doors"; a card
+   with no spells says "reply in words and hob places them". `Spell.cardHeader` matches the commonplace's head
+   line by its door count (`doorsHead`: `One door.` or `<count> doors.`, as `Menu.trieHead` writes it). Test:
+   `test_host_spell.Margin` (a quote from the door line on, and a one-door head, cast nothing).
+
+158. **A target checked whole (host20).** `world.checkObject({object})` answers `Checked` for what a readable
+   object runs: its whole source closure (`Ops.checkObject`: `resolveInputs` of its inputs, the library modules
+   its pin names, the base package and every layer) compiled for `initial`, the diagnostics as `checkSource`
+   writes them (`checkDiagnostics`, shared); an unknown or unreadable object is `refused unknownObject`; it counts
+   against `checksPerTurn`. Workshop's `check / target:` calls it, where it checked `inspect`'s entry source, the
+   top layer alone (`import must name an earlier supplied module: ./Record.obend` on a bell or the garden).
+   Pins re-recorded (World is in every closure). Test: `test_genesis.Checked` (bell/1 and the garden, each
+   `layer over`, check clean; a missing card is named).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1687,9 +1702,7 @@ is.
    settings through `settingsChange`; H10 `sealLibrary` reading `Ops.arrivals`; H11 `serve.c` saying root and the
    frame bound checked once; H12 `Store.lean`'s `Limits` referencing `Bounds` (`maxTurnTicks` = `ticksMax`,
    `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
-   (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls; the
-   "directory" strings (`otherCard`'s "the directory lists the doors", the unknownObject hint: the first card is
-   `commonplace`).
+   (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls.
 2. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
    `inspect` and `viewField` of a foreign object; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
    `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the

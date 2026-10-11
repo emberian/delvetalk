@@ -53,12 +53,12 @@ class CallReading(Chain):
         self.assertEqual(self.pass_("garden", "delvetalk garden plant\ncolour: gold\nseed: fern"),
                          "badValue|colour is one of: amber, violet, silver")
         self.assertEqual(self.pass_("forge", "delvetalk forge make"),
-                         "unknownObject|no card forge that you may see; the directory lists the doors.")
+                         "unknownObject|no card forge that you may see; the commonplace lists the doors.")
         self.assertEqual(self.pass_("garden", "delvetalk garden plant\ncolour: amber\nseed: oak"), "returned")
         run = lambda to, handler: self.turn("relay", "handled", record(to=label(to), handler=label(handler)), principal="glm")["result"]["value"]
         self.assertEqual(run("garden", "ghost"),
                          "handler|no handler ghost that you may see; a run names an object whose handle() answers plans.")
-        self.assertEqual(run("forge", "garden"), "unknownObject|no card forge that you may see; the directory lists the doors.")
+        self.assertEqual(run("forge", "garden"), "unknownObject|no card forge that you may see; the commonplace lists the doors.")
 
 if __name__ == "__main__":
     unittest.main()

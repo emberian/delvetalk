@@ -401,7 +401,7 @@ rule). The last line `delvetalk CARD ACTION` at the margin (fields on the line a
 fences and quotes skipped; an indented `delvetalk` line among other lines is an example, never cast (every card
 prints its spells indented), while a post that is one spell block and nothing else (indented, or in one plain fence)
 is dedented and cast; a post with several spells at a line's start is a turn each (identity `#1` .. `#3`), a
-fourth refused `tooManySpells`; and a text holding a card's header line (`✾ `, `Seven doors.`, `KIND `, a line ending `Make one:`)
+fourth refused `tooManySpells`; and a text holding a card's header line (`✾ `, the commonplace's door count `Eight doors.`, `KIND `, a line ending `Make one:`)
 beside a `delvetalk` line quotes that card: refused `badSpell`, clause `quotation`, nothing cast; a `source` field takes the reply's first ```obend
 fence. The host resolves the card, looks the action up in its declared forms,
 builds the typed argument (a word for a case of a closed sum) and runs the
@@ -764,7 +764,6 @@ Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDO
 | `Package.localize` deleted; a card's stored refusal says why, as a turn's does (KERNEL §16 17, 19) | kernel | `localize` has no caller |
 | a receipt by intent apart from by slug (review docs 6) | transport | a test: an intent spelled like an older receipt's name finds its own receipt by `/receipt?intent=` |
 | `hand.speak` and a post of several spells (`{status: "spells"}`, no top receipt) (HOST §7.6) | transport | the hand reports each turn's receipt |
-| `docs/AGENTS-EXAMPLES.md` regenerated: its garden card is the 10-10 one (`To plant, reply:`, a `cistern` action) | transport, docs | `deploy/capture-examples.py` rewrites it against a fresh genesis |
 | the transport ceiling: 5,429 lines (5,822 with `atproto`) against §7's 5,000 | root | cut back by the reach op, or the ceiling restated |
 | run 12: the rehearsal from the head with a clean re-genesis (`rehearsal/REPORT.md` "Run 12") | root | §11's table has run 12's row |
 | a third playtest (`docs/PLAYTEST-2.md`'s lessons; twelve invitations, two residents each) | root | its review file and a go/no-go row in §11 |

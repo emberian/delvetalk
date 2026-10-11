@@ -596,7 +596,7 @@ def Refusal.voiced (r : Refusal) : Refusal :=
         else if m.startsWith "argument does not conform" || m.isEmpty then some s!"not what {method} takes; {pointer}"
         else some s!"{m}; {pointer}"
       | none => some s!"not what {method} takes; {pointer}"
-    | "unknownObject" => some s!"no card {obj} that you may see; the directory lists the doors."
+    | "unknownObject" => some s!"no card {obj} that you may see; the commonplace lists the doors."
     | "programRefused" =>
       let head := s!"the package was refused at {r.clause.getD "compile"}; the workshop's check shows where"
       -- The compiler's or the migration's diagnostic follows: the proposer sees the cause.
@@ -915,6 +915,19 @@ def entrySource (o : Object) : String :=
   | .ok (.arr modules) => ((modules.back?.bind fun m => (m.getObjValAs? String "source").toOption)).getD ""
   | _ => (o.inputs.getObjValAs? String "source").toOption.getD ""
 
+/-- A dry-run compile's diagnostics, `"<module>:<line>: <stage>: <message>"` (the kernel's hint, when
+    it has one, the next line at the same place), none when it is clean; `fallback` names the
+    module when the kernel names none. -/
+def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String :=
+  match Package.checkPackage modules entry with
+  | .ok _ => []
+  | .error d =>
+    -- A package that declares laws compiles; only the pure profile has no adapter for them.
+    if (d.message.splitOn "package laws require").length > 1 then []
+    else
+      let at_ := s!"{d.sourceModule.getD fallback}:{(d.span.map (·.line)).getD 0}"
+      [s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD []
+
 /-- Dry-run compile of `source` as an entry module over the library: the diagnostics as
     `"<module>:<line>: <stage>: <message>"`, none when it is clean. Nothing is installed. -/
 def checkSource (w : World) (source : String) : List String :=
@@ -934,15 +947,15 @@ def checkSource (w : World) (source : String) : List String :=
     let modules := (match w.library with
       | some lib => libraryClosure lib [checked]
       | none => []) ++ [("Checked", checked)]
-    match Package.checkPackage modules entry with
-    | .ok _ => []
-    | .error d =>
-      -- A package that declares laws compiles; only the pure profile has no adapter for them.
-      if (d.message.splitOn "package laws require").length > 1 then []
-      else
-        let at_ := s!"{d.sourceModule.getD "Checked"}:{(d.span.map (·.line)).getD 0}"
-        -- The kernel's dialect hint, when it has one, is the next line at the same place.
-        [s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD []
+    checkDiagnostics modules entry "Checked"
+
+/-- What an object runs, checked: its whole source closure (the library modules its pin names, the
+    base package and every layer over it, `resolveInputs`) compiled for `initial`, as `checkSource`
+    answers. A layer alone does not compile: its `layer over` names a module below it. -/
+def checkObject (w : World) (o : Object) : List String :=
+  match resolveInputs w o.inputs >>= fun j => j.getObjVal? "modules" >>= parseModules with
+  | .ok modules => checkDiagnostics modules "initial" ((modules.getLast?.map (·.1)).getD "Main")
+  | .error e => [s!"Main:0: package-request: {e}"]
 
 /-- A dry-run compile of `modules` (dependency order, library modules included) for `entry`:
     `{status: "checked", artifact}`, or `{status: "refused", diagnostic}` with the kernel's stage,
@@ -1606,7 +1619,7 @@ def activityArgument (w : World) (act : Json) : Except String Json := do
   | none => throw "a suspended activity's argument block is not journaled"
 
 /-- An interpretation as journaled: its `offers` (the same forms in every reading of one card) are a
-    one-item block (`offersBlock`), and so is a long `utterance` (`utteranceBlock`; the directory reads
+    one-item block (`offersBlock`), and so is a long `utterance` (`utteranceBlock`; the commonplace reads
     one post's text more than once), so a reading costs only what is new in it. The blocks to
     journal with it are the second component. -/
 def compactInterpretation (i : Json) (argument : Data) : Json × Array (Array Json) :=
@@ -4231,7 +4244,7 @@ def publicRefusal (entry : Json) : Json :=
   Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", root)] ++
     (slug.map fun x => [("slug", toJson x)]).getD [] ++ law ++
     (if cls == "unknownObject" then
-      [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
+      [("object", toJson id), ("hint", toJson s!"no card named {id}; the commonplace lists the doors")]
     -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
     else if cls == "badSpell" then
       [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)

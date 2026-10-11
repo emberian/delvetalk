@@ -78,11 +78,11 @@ def runCheck(package: String, context: Abi.Context) -> Activity<Verdict>:
   match world.check({package: package}):
     case checked(c): Card.tell(verdictOf(c.diagnostics), checkedCard(c.diagnostics))
     case refused(r): refusing(r.clause, "The workshop could not check it.", context)
-# Check what an object runs now: inspect it, then check its source.
+# Check what an object runs now: its whole source, the package and every layer over it.
 def checkTarget(target: String, context: Abi.Context) -> Activity<Verdict>:
-  match world.inspect({object: {world: context.world, object: target}, source: true}):
-    case inspected(i): runCheck(i.source, context)
-    case _: refusing("noObject", "No object called {target}", context)
+  match world.checkObject({object: {world: context.world, object: target}}):
+    case checked(c): Card.tell(verdictOf(c.diagnostics), checkedCard(c.diagnostics))
+    case refused(_): refusing("noObject", "No object called {target}", context)
 # View the target (its state is Data here, for the version a card cites; a card never shows
 # a hash), check the new package, and reprogram only if it is clean.
 def runPropose(target: String, package: String, migration: String, context: Abi.Context, state: State) -> Activity<Verdict>:

@@ -107,6 +107,18 @@ class Margin(unittest.TestCase):
         form = fixtures("fit")[0]["form"]
         self.assertEqual(host({"text": post, "form": form})["fit"]["refused"]["clause"], "quotation")
 
+    def test_a_quote_from_the_commonplaces_door_count_on_casts_nothing(self):
+        """The commonplace's head line is its door count (`Menu.trieHead`): `Eight doors.`, `One door.`."""
+        with open(PREVIEW, encoding="utf-8") as handle:
+            card = handle.read()
+        doors = card[card.index("\n\n") + 2:]
+        self.assertRegex(doors, r"^[A-Z][a-z]+ doors\. ")
+        for head in (doors, "One door. " + doors[doors.index(". ") + 2:]):
+            with self.subTest(head=head[:12]):
+                out = host({"text": "this is how it reads:\n\n" + head})
+                self.assertNotIn("spell", out)
+                self.assertTrue(out["quotation"]["reason"].startswith("This quotes a card (" + head[:12]), out)
+
     def test_a_spell_at_the_margin_casts_and_indented_among_other_lines_does_not(self):
         spell = "delvetalk garden plant / seed: x / colour: amber"
         self.assertEqual(show_parsed(host({"text": spell})), "spell garden plant seed=x;colour=amber;")

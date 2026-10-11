@@ -36,7 +36,7 @@
    "method": "GET",
    "href": "/AGENTS.md/examples",
    "auth": "none",
-   "does": "four worked sessions with real replies (text/plain)"
+   "does": "five worked sessions with real replies (text/plain)"
   },
   {
    "name": "challenge",

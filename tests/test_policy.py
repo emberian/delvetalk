@@ -326,8 +326,8 @@ class PolicyObject(Chain):
         misfit = self.say("delvetalk orchard plant", obj="commonplace")
         self.assertEqual(misfit["status"], "suspended", misfit)
         [item] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual(item["misfit"], "otherCard, There is no card orchard; the directory lists the doors.")
-        self.assertIn("\nMisfit: otherCard, There is no card orchard; the directory lists the doors.\n", item["policy"]["system"])
+        self.assertEqual(item["misfit"], "otherCard, There is no card orchard; the commonplace lists the doors.")
+        self.assertIn("\nMisfit: otherCard, There is no card orchard; the commonplace lists the doors.\n", item["policy"]["system"])
         asked = self.interpret(self.hob_says("ask: Which card: the garden?"))
         self.assertEqual(asked["result"]["label"], "unclear", asked)
         self.assertNotIn("Which card", asked["offers"][0]["text"])  # the model's words never reach the card
