@@ -10,12 +10,20 @@ model showing anything but the exact card.
 
     python3 -W error -m unittest tests.test_enchant -v
 """
+import json
+import os
 import tempfile
+import time
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from deploy import genesis
 from tests.town import Town
 from tests.wire import label, record
+from transport import interpret, model
+from transport.config import Config
+from transport.state import State
 
 GLM, KIM = 'did:plc:glm', 'did:plc:kim'
 YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
@@ -85,6 +93,22 @@ class Strokes(unittest.TestCase):
         self.assertEqual(self.strokes('nowhere/1')['status'], 'unknown')
 
 
+    def test_z_the_rules_it_carries_and_the_wants_that_hold_of_it(self):
+        """Last (it rains a third time): host22's rules and wants, as `world-rules` and `world-wants` give them."""
+        bell = 'garden/bell/1'
+        for line in ('rule / name: three / reading: a third rain is noted / when: count(new.lines) == 3 / then: delvetalk me note / text: three',
+                     'want / name: third / reading: a third rain / when: count(new.lines) <= 2 / asks: delvetalk {request.object} rain / text: <a rain>'):
+            self.say(GLM, bell, 'delvetalk %s %s' % (bell, line), line.split()[3])
+        s = self.strokes(bell)['strokes']
+        self.assertEqual(s['rules'], [{'name': 'three', 'owner': 'glm.delve.town', 'reading': 'a third rain is noted'}])
+        self.assertEqual(s['wants'], [{'name': 'third', 'reading': 'a third rain', 'spell': 'delvetalk garden/bell/1 rain / text: <a rain>'}])
+        check = lambda text: self.town.send(op='world-render-check', principal=KIM, object=bell, text=text)
+        self.assertEqual(check('It wants a third rain.\ndelvetalk garden/bell/1 rain / text: <a rain>')['status'], 'verified')
+        self.assertEqual(check('It wants nothing; no third is owed.')['clause'], 'negation')
+        third = self.say(KIM, bell, 'delvetalk %s rain / text: the third' % bell, 'rain3')
+        s = self.strokes(bell)['strokes']
+        self.assertEqual((s['rules'][0]['fired'], s['wants']), (third['receipt']['height'], []))
+
     # Enchant.verify over the town's own strokes (the fixture table is Enchant.lean's `#guard`s).
     def check(self, obj, text):
         return self.town.send(op='world-render-check', principal=KIM, object=obj, text=text)
@@ -108,6 +132,137 @@ class Strokes(unittest.TestCase):
                             ('Ring it, if you will.', 'secondPerson')):
             got = self.check('garden/bell/1', bad)
             self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (bad, got))
+
+
+
+GOOD = ('An amber bell for lost moths, made by glm.delve.town. Two rains have come; kimik3.delve.town\'s says “%s”. '
+        'It has never rung.' % YUE)
+
+
+def replied(text):
+    return {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 900, 'output_tokens': 60}}
+
+
+class Render(unittest.TestCase):
+    """`world-render` through the one model worker, with a mocked model; the disk cache on, so a restarted host
+    still holds the paint."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        env = mock.patch.dict(os.environ, {'DELVETALK_COMPILE_CACHE': os.path.join(cls.tmp.name, 'cache')})
+        env.start()
+        cls.addClassCleanup(env.stop)
+        cls.town = Town(cls.tmp.name)
+        cls.addClassCleanup(cls.town.close)
+        for did, handle in ((GLM, 'glm.delve.town'), (KIM, 'kimik3.delve.town')):
+            cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
+        Strokes.say.__func__(cls, GLM, 'garden', 'delvetalk garden plant / seed: a bell for lost moths / colour: amber', 'plant')
+        Strokes.say.__func__(cls, KIM, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: ' + YUE, 'rain1')
+        Strokes.say.__func__(cls, GLM, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: drop 77', 'rain2')
+
+    def setUp(self):
+        self.asked = []
+
+    def model(self, answers):
+        """A model that answers each request with the next of `answers` (text, or a failure dict), noting each call."""
+        answers = list(answers)
+
+        def ask(req):
+            self.asked.append(req)
+            a = answers.pop(0)
+            return a if isinstance(a, dict) else replied(a)
+        return ask
+
+    def render(self, obj, who=KIM):
+        return self.town.send(op='world-render', principal=who, object=obj)
+
+    def attend(self):
+        """The worker's presence: it lists the renders (and so the host keeps a reader waiting for one)."""
+        return self.town.send(op='world-renders')['pending']
+
+    def test_a_version_is_painted_once_and_read_painted_after(self):
+        self.attend()
+        first = self.render('garden/bell/1')
+        self.assertEqual((first['status'], first['patience']), ('pending', 3), first)
+        listed = self.town.send(op='world-renders')['pending']
+        item = next(i for i in listed if i['key'] == first['key'])
+        req = item['request']
+        self.assertEqual((req['model'], req['maxTokens']), ('claude-haiku-5-5', 400))
+        self.assertTrue(req['system'].startswith('You paint one card for a town of things that answer.'), req['system'])
+        strokes = json.loads(req['user'].removeprefix('Strokes:\n'))
+        self.assertEqual(strokes, self.town.send(op='world-strokes', principal=KIM, object='garden/bell/1')['strokes'])
+        # A second reader before the worker: the same pending render, not a second.
+        self.assertEqual(self.render('garden/bell/1', who=GLM)['key'], first['key'])
+        done = interpret.paint(self.town.client, self.model([GOOD] * len(listed)))
+        self.assertIn(first['key'], done['painted'], done)
+        for who in (KIM, GLM, 'anonymous'):
+            got = self.render('garden/bell/1', who=who)
+            self.assertEqual((got['status'], got['text']), ('painted', GOOD), got)
+        # The same version rendered twice costs one call; the worker finds nothing more to ask.
+        self.assertEqual(interpret.paint(self.town.client, self.model([])), {'painted': []})
+        self.assertEqual(sum(1 for r in self.asked if r['user'] == req['user']), 1)
+        self.assertEqual(self.town.send(op='world-status')['renders']['pending'], 0)
+        # A restarted host reads the paint back from the derived cache, verified again; still no call.
+        self.town.reopen()
+        self.assertEqual(self.render('garden/bell/1')['text'], GOOD)
+        # The next version is a new paint; nobody has asked this process for renders, so the reader is not kept waiting.
+        Strokes.say.__func__(type(self), KIM, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: a third', 'rain3')
+        got = self.render('garden/bell/1')
+        self.assertEqual((got['status'], got['reason']), ('exact', 'unattended'), got)
+        self.assertIn(got['key'], [i['key'] for i in self.attend()])
+        self.assertEqual(self.render('garden/bell/1')['status'], 'pending')
+
+    def test_a_paint_naming_what_the_strokes_do_not_hold_is_shown_exact_and_not_asked_again(self):
+        self.attend()
+        got = self.render('anthology')
+        self.assertEqual(got['status'], 'pending', got)
+        line = "it has no editor named here, so Ember's keeping of it isn't something this card records."
+        others = [i for i in self.town.send(op='world-renders')['pending'] if i['key'] != got['key']]
+        done = interpret.paint(self.town.client, lambda req: (self.asked.append(req), replied(line if 'anthology' in req['user'] else GOOD))[1])
+        self.assertIn(got['key'], done['exact'], (done, others))
+        again = self.render('anthology')
+        self.assertEqual((again['status'], again['reason'], again['clause']), ('exact', 'rejected', 'negation'), again)
+        self.assertNotIn(got['key'], [i['key'] for i in self.town.send(op='world-renders')['pending']])
+        self.assertGreaterEqual(self.town.send(op='world-status')['renders']['rejected'], 1)
+
+    def test_a_network_failure_is_asked_again_later_and_a_refusal_is_shown_exact(self):
+        self.attend()
+        got = self.render('porch')
+        self.assertEqual(got['status'], 'pending', got)
+        porch = lambda answer: (lambda req: (self.asked.append(req), answer if '"object":"porch"' in req['user'] else replied(GOOD))[1])
+        done = interpret.paint(self.town.client, porch(model.failed('rate', '429')))
+        self.assertIn(got['key'], done['retrying'], done)
+        self.assertNotIn(got['key'], [i['key'] for i in self.town.send(op='world-renders')['pending']])  # not before the backoff
+        self.assertEqual(self.render('porch')['status'], 'pending')
+        time.sleep(2.1)
+        done = interpret.paint(self.town.client, porch(model.failed('refused', 'model refusal')))
+        self.assertIn(got['key'], done['exact'], done)
+        self.assertEqual(self.render('porch')['reason'], 'rejected')
+
+    def test_a_world_without_a_model_shows_every_card_exact(self):
+        self.assertEqual(self.render('nowhere/1')['status'], 'unknown')
+        gone = self.town.send(op='world-root', principal=genesis.OPENER, reason='a world with no model', act={'kind': 'delete', 'object': 'policy'})
+        self.assertNotEqual(gone.get('status'), 'error', gone)
+        for obj in ('garden', 'commonplace', 'tide'):
+            got = self.render(obj)
+            self.assertEqual((got['status'], got['reason']), ('exact', 'unavailable'), got)
+            self.assertEqual(self.town.send(op='world-card', principal=KIM, object=obj)['status'], 'card')
+
+
+class Spend(unittest.TestCase):
+    def test_a_paint_is_a_line_of_the_spend_ledger_named_for_its_use(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / 'key').write_text('k\n')
+            st = State(d, config=Config(anthropic_key_file=str(Path(d) / 'key')))
+            body = json.dumps({'model': 'claude-haiku-5-5', 'content': [{'type': 'text', 'text': GOOD}],
+                               'usage': {'input_tokens': 1000, 'output_tokens': 80}}).encode()
+            r = model.ask({'system': 's', 'user': 'u', 'use': 'paint'}, st, transport=lambda *a: (200, body))
+            self.assertEqual(r['raw'], GOOD)
+            row = json.loads(st.spend.read_text())
+            self.assertEqual((row['use'], row['inputTokens'], row['outputTokens']), ('paint', 1000, 80))
+            self.assertEqual(model.spent(st)['all']['dollars'], 0.0001)
 
 
 if __name__ == '__main__':

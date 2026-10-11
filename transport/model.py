@@ -101,12 +101,13 @@ def call(transport, headers, wire, model_id):
     return status, ({**out, 'rateLimits': limits} if limits else out)
 
 
-def spend(st, out, who):
-    """Append one line per replied call so the operator can total spend against the monthly grant."""
+def spend(st, out, who, use=None):
+    """Append one line per replied call so the operator can total spend against the monthly grant; `use` names what the
+    call was for (`paint`; none for an interpretation)."""
     if out.get('status') == 'replied':
         usage = out.get('usage') or {}
         st.append(st.spend, canonical({'at': time.time(), 'world': st.world, 'model': out.get('model'), 'inputTokens': usage.get('input_tokens'),
-                                       'outputTokens': usage.get('output_tokens'), 'account': who}))
+                                       'outputTokens': usage.get('output_tokens'), 'account': who, **({'use': use} if use else {})}))
     return out
 
 
@@ -143,11 +144,11 @@ def ask(request, st, transport=http, tokeman=None):
     wire = json.dumps(body).encode()
     base = {'anthropic-version': '2023-06-01', 'content-type': 'application/json'}
     if c.model_auth == 'oauth':
-        return ask_oauth(req, wire, base, transport, tokeman, st)
+        return ask_oauth(req, wire, base, transport, tokeman, st, request.get('use'))
     secret = key(c.anthropic_key_file)
     if not secret:
         return failed('refused', 'no key: anthropic_key_file names none')
-    return spend(st, call(transport, {**base, 'x-api-key': secret}, wire, req['model'])[1], c.key_name)
+    return spend(st, call(transport, {**base, 'x-api-key': secret}, wire, req['model'])[1], c.key_name, request.get('use'))
 
 
 def load_accounts(path):
@@ -196,7 +197,7 @@ def overage_enabled(probe):
     return q.get('overage_status') not in (None, 'rejected', 'disabled') and not q.get('overage_disabled_reason')
 
 
-def ask_oauth(req, wire, base, transport, tokeman, st):
+def ask_oauth(req, wire, base, transport, tokeman, st, use=None):
     accounts = load_accounts(st.config.tokens_toml)
     if 'status' in accounts:
         return accounts
@@ -212,6 +213,6 @@ def ask_oauth(req, wire, base, transport, tokeman, st):
         if status in (429, 529) and i == 0 and len(order) > 1:
             continue
         billed = bool(((probes.get(name) or {}).get('quota') or {}).get('overage_in_use'))
-        return spend(st, {**out, 'account': name, 'rotated': i == 1, 'overageInUse': billed}, name)
+        return spend(st, {**out, 'account': name, 'rotated': i == 1, 'overageInUse': billed}, name, use)
     return failed('rate', 'no account')
 

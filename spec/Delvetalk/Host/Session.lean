@@ -53,6 +53,8 @@ structure Open where
   /-- The bound the journal's bytes (chain and block store) meet at append (`Limits.maxJournalBytes`,
       or lower for this process: `world-open {maxJournalBytes}`). -/
   bound : Nat := Limits.maxJournalBytes
+  /-- Paints of this world's cards by key (`Enchant.Cache`). Per process, never journaled. -/
+  renders : Enchant.Cache := {}
 
 abbrev Session := Option Open
 
@@ -426,7 +428,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
             (if s.world.modelDay.1 == s.world.clock / 1440 then s.world.modelDay.2 else 0)), ("next", toJson ((s.world.clock / 1440 + 1) * 1440))]),
           ("hour", (if s.world.hourCounts.hour == s.world.clock / 60 then s.world.hourCounts else { hour := s.world.clock / 60 }).json),
           ("shadowed", Json.arr s.world.shadowed), ("ignored", toJson s.world.ignored), ("replay", toJson Limits.replayEdition), ("locked", toJson true), ("sync", toJson s.sync.name),
-          ("recompiledDifferently", toJson s.world.recompiledDifferently),
+          ("recompiledDifferently", toJson s.world.recompiledDifferently), ("renders", s.renders.counts),
           -- What this process holds compiled (carried from world to world it opens).
           ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
             ("methods", toJson s.world.compiled.size)])] |>
@@ -446,6 +448,9 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-offers" => return (session, offersOp s.world request)
       | "world-strokes" => return (session, Enchant.strokesOp s.world request)
       | "world-render-check" => return (session, Enchant.checkOp s.world request)
+      | "world-render" | "world-renders" | "world-render-submit" => match ← Enchant.op op s.renders s.world request with
+        | .ok (renders, w, r) => return (some { s with renders, world := w }, .ok r)
+        | .error e => return (session, .error e)
       | "world-card" => match cardOp s.world request with
         | .ok (w, r) => return (some { s with world := w }, .ok r)
         | .error e => return (session, .error e)

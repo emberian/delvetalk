@@ -38,10 +38,11 @@ structure Verb where
   reading : String
   spell : String
 
-/-- A rule on the thing: its name, its owner's handle, the entry it last fired at (0 for never). -/
+/-- A rule the thing carries: its name, its owner's handle, its reading, the entry it last fired at (0 for never). -/
 structure Rule where
   name : String
   owner : String
+  reading : String
   fired : Nat
 
 /-- A want the thing holds now: its name, its reading, the spell that answers it. -/
@@ -105,7 +106,8 @@ def Mark.json (m : Mark) : Json := present? [("name", toJson m.name), ("handle",
 def Verb.json (v : Verb) : Json :=
   present? [("name", toJson v.name), ("by", toJson v.grower), ("reading", toJson v.reading), ("spell", toJson v.spell)]
 
-def Rule.json (r : Rule) : Json := present? [("name", toJson r.name), ("owner", toJson r.owner), ("fired", toJson r.fired)]
+def Rule.json (r : Rule) : Json :=
+  present? [("name", toJson r.name), ("owner", toJson r.owner), ("reading", toJson r.reading), ("fired", toJson r.fired)]
 
 def Want.json (x : Want) : Json := present? [("name", toJson x.name), ("reading", toJson x.reading), ("spell", toJson x.spell)]
 
@@ -213,12 +215,23 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
     pure ({ name, grower := byHandle, reading := (text? r "reading").getD "",
             spell := ((declared.find? (·.name == name)).map (·.spell)).getD s!"delvetalk {id} {name}" } : Verb)
   let verbs := (declared.filter fun v => !grown.any (·.name == v.name)) ++ grown
-  -- Each clause with its reading; a clause `under "K"` is K's law, so it stands as K's clauses.
-  let laws := (lawClauses lawText).flatMap fun (name, reading, expr) =>
-    match underOf expr with
+  -- Each law clause with its reading; a clause `under "K"` is K's law, so it stands as K's law clauses.
+  let lawsOf := fun (t : String) => (textClauses t).filter (·.1 == "law")
+  let laws := (lawsOf lawText).flatMap fun (_, name, reading, body) =>
+    match underOf body with
     | some k => ((w.objects[k]?).bind fun ko => text? (fieldsOf ko.state) "law").map (fun t =>
-        (lawClauses t).map fun (n, r, _) => (n, r.getD "")) |>.getD [(name, reading.getD "")]
+        (lawsOf t).map fun (_, n, r, _) => (n, r.getD "")) |>.getD [(name, reading.getD "")]
     | none => [(name, ((reading.orElse fun _ => o.readings.lookup name)).getD "")]
+  -- The rules it carries (placed, its text's, its kind's), each with its owner and its last firing; the wants
+  -- that hold of it now, each with the spell that answers it as filled at this read (`world-rules`, `world-wants`).
+  let rules := (carriedRules w id o).map fun c =>
+    let last := (w.ruleLog[id]?).bind (·.lookup c.clause.name)
+    let fired := if (last.bind fun l => (l.getObjVal? "why").toOption).isSome then 0
+      else (last.bind fun l => (l.getObjValAs? Nat "height").toOption).getD 0
+    ({ name := c.clause.name, owner := handleOf w c.owner, reading := c.clause.reading, fired } : Rule)
+  let wants := (wantRows w id o).map fun r =>
+    ({ name := (r.getObjValAs? String "name").toOption.getD "", reading := (r.getObjValAs? String "reading").toOption.getD "",
+       spell := (r.getObjValAs? String "asks").toOption.getD "" } : Want)
   let doors := ((fs.lookup "cites").bind listOf |>.getD []).filterMap fun d => do
     let r := fieldsOf d
     pure ({ label := (text? r "label").getD "", target := ← (r.lookup "to").bind referenceId } : Door)
@@ -235,7 +248,7 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
            maker := handleIn w fs "makerHandle" "maker",
            made, tended := (nat? fs "tendedAt").getD 0,
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
-           counts, lines, marks, verbs, laws, doors, around, present }
+           counts, lines, marks, verbs, laws, rules, wants, doors, around, present }
 
 /-- The strokes of `id` at `version` (default its current one), as `reader` may read them: `none` when
     there is no such object or version, or the reader may not view it. -/
@@ -353,7 +366,7 @@ def trimmed (s : String) : String := s.trimAscii.toString
 /-- Every text of the strokes a paint may quote from. -/
 def Strokes.texts (s : Strokes) : List String :=
   ([s.head] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
-    s.verbs.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
+    s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
 
 def Strokes.spells (s : Strokes) : List String :=
   (s.verbs.map (·.spell) ++ s.wants.map (·.spell)).filter (!·.isEmpty)
@@ -453,7 +466,8 @@ def verify (s : Strokes) (text : String) : Except (String × String) Unit := do
   let texts := s.texts ++ spells
   let plain := fun (t : String) => String.ofList (t.toList.map fun c => if c == '’' then '\'' else c)
   for span in spans do
-    let q := trimmed span
+    -- A quotation's own closing stop (“… late.”) is the sentence's, not the line's.
+    let q := trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse)
     unless q.isEmpty || texts.any (fun t => holdsIn t q || holdsIn (plain t) (plain q)) do throw ("quotes", q)
   for line in lines do
     let low := line.toLower
@@ -506,6 +520,207 @@ def checkOp (w : World) (j : Json) : Except String Json := do
     | .error (clause, detail) => Json.mkObj [("status", toJson "rejected"), ("object", toJson id), ("version", toJson s.version),
         ("clause", toJson clause), ("detail", toJson detail)]
 
+/-! ## The rendering
+
+`world-render {principal, object, version?}` paints a card once per version: the strokes and the library's
+contract (`world/lib/Paint.obend`, `contract()`) go to the world's model (the `policy` object's `model`)
+through the one model worker, which lists `world-renders` beside `world-interpretations` and settles each
+with `world-render-submit {key, reply}`, the model's reply verbatim. The host verifies the paint and caches
+it by its key, the digest of the strokes (object and version among them), the library pin and the model:
+memory of this process (`Cache`, on the session) and, when `DELVETALK_COMPILE_CACHE` names one, the
+directory beside compiled packets, re-verified on every read. Never journaled: replay needs no model, and a
+world opened with no model, or a reader past `renderPatience`, reads the exact card. A refused paint is not
+asked again for that version; the next version is a new key. -/
+
+/-- Seconds a reader's request waits for a paint before the exact card is shown; the transport waits as the
+    host's `pending` answer says. -/
+def renderPatience : Nat := 3
+/-- Model attempts a render gets when the network or a rate limit fails it; then it is shown exact. -/
+def renderAttempts : Nat := 3
+def renderBackoffMs : Nat := 2000
+/-- The painter's reply budget: 600 characters is under 200 tokens. -/
+def renderTokens : Nat := 400
+/-- Renders a session holds (painted and refused kept for their versions); past it, the settled are dropped. -/
+def maxRenders : Nat := 4096
+/-- Renders waiting for the worker at once; past it a reader is shown the exact card (`busy`). -/
+def maxPending : Nat := 64
+/-- The model a world paints with when its policy names none. -/
+def defaultModel : String := "claude-haiku-5-5"
+
+inductive Fate where
+  | pending (attempts : Nat) (notBefore : Nat)
+  | painted (text : String)
+  | rejected (clause detail : String)
+
+structure Render where
+  object : String
+  version : Nat
+  strokes : Strokes
+  request : Json
+  fate : Fate
+
+/-- How long after the worker last listed `world-renders` the host still counts on it (ms): past it a reader is
+    not kept waiting for a paint nobody is there to make. -/
+def workerGraceMs : Nat := 10000
+
+/-- A session's renders by key, and when the worker last asked for them. Memory only. -/
+structure Cache where
+  entries : Std.HashMap String Render := {}
+  polled : Option Nat := none
+
+def Cache.attended (c : Cache) (now : Nat) : Bool := match c.polled with
+  | some at_ => now ≤ at_ + workerGraceMs
+  | none => false
+
+def Cache.count (c : Cache) (p : Fate → Bool) : Nat := c.entries.fold (fun n _ r => if p r.fate then n + 1 else n) 0
+
+/-- `world-status.renders`. -/
+def Cache.counts (c : Cache) : Json :=
+  Json.mkObj [("cached", toJson (c.count fun | .painted _ => true | _ => false)),
+    ("rejected", toJson (c.count fun | .rejected _ _ => true | _ => false)),
+    ("pending", toJson (c.count fun | .pending _ _ => true | _ => false))]
+
+def Cache.insert (c : Cache) (key : String) (r : Render) : Cache :=
+  let entries := if c.entries.size < maxRenders then c.entries else
+    c.entries.fold (fun m k v => match v.fate with | .pending _ _ => m.insert k v | _ => m) {}
+  { c with entries := entries.insert key r }
+
+/-- The contract's text: `Paint.contract()` of the world's library, compiled once per library pin. -/
+def contractOf (w : World) : Except String (String × World) := do
+  let some lib := w.library | throw "the world has no library"
+  let some src := lib.modules.lookup "Paint" | throw "the library has no Paint module"
+  let key := s!"library/{lib.pin}/Paint/contract"
+  let (c, w) ← match w.compiled[key]? with
+    | some c => pure (c, w)
+    | none => do
+      let (ec, w) ← compileEntryIn w (Json.mkObj [("library", toJson lib.pin), ("modules", modulesJson [("Paint", src)])]) "contract"
+      let c ← compiledOf ec
+      pure (c, { w with compiled := w.compiled.insert key c })
+  let some entry := c.entry | throw "the contract did not compile to an entry"
+  match (runPure entry [] Limits.maxTurnTicks).1 with
+  | .ok (.label t) => return (t, w)
+  | _ => throw "the contract renders no text"
+
+/-- The world's model: its `policy` object's `model`, else `defaultModel`; none without a policy. -/
+def modelOf (w : World) : Option String := do
+  let p ← w.objects["policy"]?
+  let m := (text? (fieldsOf p.state) "model").getD ""
+  return if m.isEmpty then defaultModel else m
+
+/-- Is the thing shown exact alone? Its owner set `plain: yes` (a `plain` field true, or `yes`). -/
+def plainOf (w : World) (id : String) : Bool :=
+  match (w.objects[id]?).bind fun o => (fieldsOf o.state).lookup "plain" with
+  | some (.boolean b) => b
+  | some (.label v) => v == "yes"
+  | _ => false
+
+def answer (status : String) (id : String) (more : List (String × Json)) : Json :=
+  Json.mkObj ([("status", toJson status), ("object", toJson id)] ++ more)
+
+def fateAnswer (id key : String) (r : Render) (attended : Bool := true) : Json :=
+  match r.fate with
+  | .painted t => answer "painted" id [("version", toJson r.version), ("key", toJson key), ("text", toJson t)]
+  | .rejected c d => answer "exact" id [("version", toJson r.version), ("reason", toJson "rejected"), ("clause", toJson c), ("detail", toJson d)]
+  | .pending n _ =>
+    if attended then answer "pending" id [("version", toJson r.version), ("key", toJson key), ("patience", toJson renderPatience),
+      ("attempts", toJson n)]
+    else answer "exact" id [("version", toJson r.version), ("key", toJson key), ("reason", toJson "unattended")]
+
+/-- A render the disk holds for `key`, re-verified against the strokes it is for. -/
+def fromDisk (key : String) (r : Render) : IO (Option Render) := do
+  let some j ← DiskCache.readIO "render" key | return none
+  match (j.getObjValAs? String "text").toOption, (j.getObjValAs? String "clause").toOption with
+  | some t, _ => return some { r with fate := match verify r.strokes t with
+      | .ok () => .painted t
+      | .error (c, d) => .rejected c d }
+  | none, some c => return some { r with fate := .rejected c ((j.getObjValAs? String "detail").toOption.getD "") }
+  | none, none => return none
+
+def toDisk (key : String) (r : Render) : IO Unit :=
+  match r.fate with
+  | .painted t => DiskCache.write "render" key (Json.mkObj [("key", toJson key), ("object", toJson r.object),
+      ("version", toJson r.version), ("text", toJson t)])
+  | .rejected c d =>
+    -- A model that failed is this process's to give up on, not every process's.
+    if c == "model" then pure () else DiskCache.write "render" key (Json.mkObj [("key", toJson key),
+      ("object", toJson r.object), ("version", toJson r.version), ("clause", toJson c), ("detail", toJson d)])
+  | .pending _ _ => pure ()
+
+/-- `world-render {principal, object, version?}`: `painted {text, key, version}`; `pending {key, patience}` while
+    the worker paints (the first read of a version queues it); `exact {reason}` when there is no paint to show
+    (`rejected` with its clause, `override` for a root card, `unavailable` without a model or contract, `busy`,
+    `unattended` while no worker has asked for renders within `workerGraceMs`, the render queued for when one
+    does); `plain` when the owner opted out; `unknown` / `denied` as `world-card`. Nothing is journaled. -/
+def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String (Cache × World × Json)) := do
+  let .ok reader := readerOf j | return .error "principal must be at most 128 bytes"
+  let .ok given := j.getObjValAs? String "object" | return .error "world-render needs an object"
+  let .ok version := optNat j "version" | return .error "version must be a natural number"
+  let id := resolveCard reader given
+  match strokesAt w reader id version with
+  | .error why => return .ok (c, w, answer why id [])
+  | .ok s =>
+    if plainOf w id then return .ok (c, w, answer "plain" id [("version", toJson s.version)])
+    if w.cards.contains id then return .ok (c, w, answer "exact" id [("version", toJson s.version), ("reason", toJson "override")])
+    let some model := modelOf w | return .ok (c, w, answer "exact" id [("version", toJson s.version), ("reason", toJson "unavailable"),
+      ("detail", toJson "the world has no policy, so no model")])
+    match contractOf w with
+    | .error e => return .ok (c, w, answer "exact" id [("version", toJson s.version), ("reason", toJson "unavailable"), ("detail", toJson e)])
+    | .ok (contract, w) =>
+      let pin := (w.library.map (·.pin)).getD ""
+      let key := Journal.bodyHash (Json.mkObj [("strokes", s.json), ("library", toJson pin), ("model", toJson model)])
+      let attended := c.attended now
+      if let some r := c.entries[key]? then return .ok (c, w, fateAnswer id key r attended)
+      let request := Json.mkObj [("model", toJson model), ("system", toJson contract),
+        ("user", toJson ("Strokes:\n" ++ s.json.compress)), ("maxTokens", toJson renderTokens)]
+      let fresh : Render := { object := id, version := s.version, strokes := s, request, fate := .pending 0 0 }
+      if let some r ← fromDisk key fresh then return .ok (c.insert key r, w, fateAnswer id key r attended)
+      if c.count (fun | .pending _ _ => true | _ => false) ≥ maxPending then
+        return .ok (c, w, answer "exact" id [("version", toJson s.version), ("reason", toJson "busy")])
+      return .ok (c.insert key fresh, w, fateAnswer id key fresh attended)
+
+/-- `world-renders`: the renders the worker may ask the model for now, each with the exact request to send. -/
+def rendersOp (c : Cache) (now : Nat) : Json :=
+  let pending := c.entries.fold (fun acc key r => match r.fate with
+    | .pending n at_ => if at_ ≤ now then acc.push (Json.mkObj [("key", toJson key), ("object", toJson r.object),
+        ("version", toJson r.version), ("attempts", toJson n), ("request", r.request)]) else acc
+    | _ => acc) #[]
+  Json.mkObj [("status", toJson "renders"), ("pending", Json.arr (pending.qsort fun a b => a.compress < b.compress))]
+
+/-- `world-render-submit {key, reply}`: settle a pending render with the model's reply verbatim (model.py's
+    result object). A reply is verified and cached, painted or refused by its clause; a network or rate
+    failure is asked again after `renderBackoffMs`, `renderAttempts` in all; any other failure shows the
+    thing exact (`model`). -/
+def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Json)) := do
+  let .ok key := j.getObjValAs? String "key" | return .error "world-render-submit needs a key"
+  let .ok reply := j.getObjVal? "reply" | return .error "world-render-submit needs the model's reply"
+  let some r := c.entries[key]? | return .error s!"no render {key}"
+  let .pending tried _ := r.fate | return .ok (c, fateAnswer r.object key r)
+  let status := (reply.getObjValAs? String "status").toOption.getD ""
+  let reason := (reply.getObjValAs? String "reason").toOption.getD ""
+  let fate : Fate :=
+    if status == "replied" then
+      let text := trimmed ((reply.getObjValAs? String "raw").toOption.getD "")
+      match verify r.strokes text with
+      | .ok () => .painted text
+      | .error (cl, d) => .rejected cl d
+    else if ["transport", "rate"].contains reason && tried + 1 < renderAttempts then .pending (tried + 1) (now + renderBackoffMs)
+    else .rejected "model" (if reason.isEmpty then "no reply" else reason)
+  let r := { r with fate }
+  toDisk key r
+  let c := c.insert key r
+  return .ok (c, match fate with
+    | .pending n at_ => answer "retrying" r.object [("key", toJson key), ("attempts", toJson n), ("next", toJson at_)]
+    | _ => fateAnswer r.object key r)
+
+/-- The session's render ops: `(op, cache, world, request)` → the cache and world after, and the reply. -/
+def op (name : String) (c : Cache) (w : World) (j : Json) : IO (Except String (Cache × World × Json)) := do
+  let now ← IO.monoMsNow
+  match name with
+  | "world-render" => renderOp c w j now
+  | "world-renders" => return .ok ({ c with polled := some now }, w, rendersOp c now)
+  | "world-render-submit" => return (← submitOp c j now).map fun (c, r) => (c, w, r)
+  | _ => return .error s!"unknown render operation {name}"
+
 /-! ### Fixtures -/
 
 /-- A bell as the third playtest left bell/2: four rains, Yuè's among them, never rung. -/
@@ -554,6 +769,7 @@ def line69275 : String :=
 #guard verdict fixtureBell "Strike it:\ndelvetalk garden/bell/2 strike" == "spells"
 #guard verdict fixtureBell "It answers delvetalk garden/bell/2 strike at once." == "spells"
 #guard verdict fixtureBell "yue.delve.town wrote “rain is the sky's mistake”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town wrote “rain is the sky's erratum.”" == ""
 #guard verdict fixtureBell "A silver bell. Rain on it if you like." == "secondPerson"
 #guard verdict fixtureBell "Thanks to every rain, it hums." == "forbidden"
 #guard verdict fixtureBell "refused maker: only its maker writes" == "heads"
