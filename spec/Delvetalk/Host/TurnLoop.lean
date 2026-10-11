@@ -430,10 +430,9 @@ def ensureWrite (id caller : String) (kind : Nat) : M Bool := do
   set { s with writes := s.writes ++ [(id, [change])] }
   return true
 
-/-- The receipt a settled slot answers an await with, its `hash` the entry's CID, so Bend may cite it
-    (`madeFrom`); `hashed := false` is the shape before `Receipt.hash`, for a call site compiled
-    against it. -/
-def receiptData (entry : Json) (hashed : Bool := true) : Data :=
+/-- The receipt a settled slot answers an await with (`Plan.Receipt`), its `hash` the entry's CID, so
+    Bend may cite it (`madeFrom`). -/
+def receiptData (entry : Json) : Data :=
   let identity := (entry.getObjVal? "identity").toOption.getD Json.null
   let text := fun (j : Json) (k : String) => ((j.getObjValAs? String k).toOption).getD ""
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -444,11 +443,10 @@ def receiptData (entry : Json) (hashed : Bool := true) : Data :=
   let fields : List (String × Data) := [("slot", .record [("principal", .label (text identity "principal")),
       ("intent", .label (text identity "intent"))]),
     ("height", .natural ((entry.getObjValAs? Nat "height").toOption.getD 0)), ("outcome", result)]
-  .record (fields ++ (if hashed then [("hash", Data.label (text entry "hash"))] else []))
+  .record (fields ++ [("hash", Data.label (text entry "hash"))])
 
-/-- An await's `reply`, with the receipt's hash and, for an older call site, without it. -/
-def receiptReplies (entry : Json) : List Data :=
-  [.record [("receipt", receiptData entry)], .record [("receipt", receiptData entry false)]]
+/-- An await's `reply`. -/
+def receiptReply (entry : Json) : Data := .record [("receipt", receiptData entry)]
 
 /-- The settled entry of an identity, if it has one (a suspension is not settled). -/
 def settled (w : World) (principal intent : String) : Option Json :=
@@ -780,6 +778,12 @@ def extraField (compiled : Compiled) (argument : Data) : Option String :=
     declared.bind fun names => (fs.find? fun (k, _) => !names.contains k).map (·.1)
   | _ => none
 
+/-- The fields of a record row with their types; none for anything else. -/
+def rowTypes : Ty → Option (List (String × Ty))
+  | .field n m r => (rowTypes r).map ((n, m) :: ·)
+  | .emptyRow => some []
+  | _ => none
+
 #guard rowNames (.field "who" .label (.field "n" .natural .emptyRow)) == some ["who", "n"]
 #guard rowNames .data == none
 
@@ -788,7 +792,17 @@ def extraField (compiled : Compiled) (argument : Data) : Option String :=
 def misfitReason (compiled : Compiled) (method : String) (argument : Data) : String :=
   match extraField compiled argument, compiled.type with
   | some f, _ => s!"{argumentRefusal}: {method} takes no field {f}"
-  | none, .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ _)) => argumentRefusal
+  | none, .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) =>
+    -- The first field the input declares that the argument lacks, or holds a value of another type.
+    let given := match argument with
+      | .record fs => fs
+      | _ => []
+    match (rowTypes domain).bind fun fields => fields.find? fun (n, t) => match given.lookup n with
+        | some v => !v.conformsUnder compiled.bounds t
+        | none => true with
+    | some (f, _) => if (given.lookup f).isSome then s!"{argumentRefusal}: {method}'s field {f} is not of its type"
+        else s!"{argumentRefusal}: {method} needs field {f}"
+    | none => s!"{argumentRefusal}: {method} takes a record of its fields"
   | none, _ => s!"{argumentRefusal}: {method} takes no input; send an empty record"
 
 /-- The argument of a turn asked from outside with its text words read as cases where the method's
@@ -1419,7 +1433,7 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
   else
     set { s with awaited := s.awaited ++ [key], awaits := s.awaits + 1 }
     match settled s.world sp si with
-    | some entry => respond bounds responseType "reply" (receiptReplies entry)
+    | some entry => respond bounds responseType "reply" [receiptReply entry]
     | none =>
       if patience == 0 then respond bounds responseType "timedOut" [emptyRecord]
       else if patience > Limits.maxPatience then evaluation "await patience exceeds its capacity"
@@ -1447,7 +1461,7 @@ partial def awaitPostPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
     let answered := s.world.replies[post]?
     if answered == some (s.principal, s.intent) then respond bounds responseType "broken" [emptyRecord] else
     match answered.bind fun (sp, si) => settled s.world sp si with
-    | some entry => respond bounds responseType "reply" (receiptReplies entry)
+    | some entry => respond bounds responseType "reply" [receiptReply entry]
     | none =>
       if patience == 0 then respond bounds responseType "timedOut" [emptyRecord]
       else if patience > Limits.maxPatience then evaluation "await patience exceeds its capacity"
@@ -2669,22 +2683,18 @@ def proposalSpell (card method : String) (argument : Data) : String :=
     | none => ""
   | _ => ""
 
-/-- A proposal as the Plan hears it: with its `spell`, then without for a call site compiled against
-    the older `Proposed`/`Interpreted` (as `receiptReplies` keeps the older Receipt). -/
-def proposalShapes (target method : String) (argument : Data) (spell : String) : List Data :=
-  let base := [("object", Data.label target), ("method", .label method), ("argument", argument)]
-  [.variant "proposal" (.record (base ++ [("spell", .label spell)])), .variant "proposal" (.record base)]
+/-- A proposal as the Plan hears it (`World.Interpreted.proposal`): the object, method, argument and the
+    spell it stands for. -/
+def proposalData (target method : String) (argument : Data) (spell : String) : Data :=
+  .record [("object", Data.label target), ("method", .label method), ("argument", argument), ("spell", .label spell)]
 
 /-- One item of a `proposals` verdict as the Plan hears it (`World.Proposed<R>`): `proposal {object,
     method, argument}` or `unclear {reasons}`. -/
-def proposedData (item : Json) (spelled : Bool := true) : Except String Data := do
+def proposedData (item : Json) : Except String Data := do
   match ← item.getObjValAs? String "tag" with
   | "proposal" =>
-    let base := [("object", Data.label (← item.getObjValAs? String "object")),
-      ("method", .label (← item.getObjValAs? String "method")),
-      ("argument", ← decodeData Limits.dataDepth (← item.getObjVal? "argument"))]
-    let spell := (item.getObjValAs? String "spell").toOption.getD ""
-    return .variant "proposal" (.record (if spelled then base ++ [("spell", .label spell)] else base))
+    return .variant "proposal" (proposalData (← item.getObjValAs? String "object") (← item.getObjValAs? String "method")
+      (← decodeData Limits.dataDepth (← item.getObjVal? "argument")) ((item.getObjValAs? String "spell").toOption.getD ""))
   | _ => return .variant "unclear" (.record [("reasons", listData ((strings (item.getObjVal? "reasons").toOption).map Data.label))])
 
 /-- The response an `interpreted` entry resumes its `interpret` Plan with. -/
@@ -2698,16 +2708,13 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
     let method ← liftEval (verdict.getObjValAs? String "method")
     let target ← liftEval (verdict.getObjValAs? String "object")
     let spell := (verdict.getObjValAs? String "spell").toOption.getD ""
-    respond bounds responseType "proposal" ((proposalShapes target method argument spell).filterMap fun
-      | .variant _ payload => some payload
-      | _ => none)
+    respond bounds responseType "proposal" [proposalData target method argument spell]
   | "replied" =>
     respond bounds responseType "replied" [.record [("text", .label (← liftEval (verdict.getObjValAs? String "text")))]]
   | "proposals" =>
     let items ← liftEval ((← liftEval (verdict.getObjVal? "items")).getArr?)
-    let spelled ← liftEval (items.toList.mapM (proposedData · true))
-    let older ← liftEval (items.toList.mapM (proposedData · false))
-    respond bounds responseType "proposals" [.record [("items", listData spelled)], .record [("items", listData older)]]
+    let proposed ← liftEval (items.toList.mapM proposedData)
+    respond bounds responseType "proposals" [.record [("items", listData proposed)]]
   | _ =>
     let needs := strings (verdict.getObjVal? "needs").toOption
     respond bounds responseType "unclear" [.record [("needs", listData (needs.map Data.label))]]
@@ -2844,7 +2851,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
     let response ← match kind with
       | .reply e =>
         if tagOf e == "interpreted" then interpretedResponse compiled.bounds responseType e
-        else respond compiled.bounds responseType "reply" (receiptReplies e)
+        else respond compiled.bounds responseType "reply" [receiptReply e]
       | .timedOut => respond compiled.bounds responseType "timedOut" [emptyRecord]
     -- The activity began with only its own object as a root.
     let binding := Delvetalk.Turn.Binding.make object principal intent
@@ -3309,7 +3316,7 @@ def proposalVerdict (w : World) (target self : String) (obj : Object) (bounds : 
   -- A proposal names the object whose form it fitted and the spell that asks it
   -- (`Interpreted.proposal {object, method, argument, spell}`), so a card can hold it and print it back.
   let spell := proposalSpell card method argument
-  unless (proposalShapes target method argument spell).any (·.conformsUnder bounds responseType) do
+  unless (Data.variant "proposal" (proposalData target method argument spell)).conformsUnder bounds responseType do
     return (w, unclearVerdict [s!"the object cannot carry a proposal of {target} {method}"])
   return (w, Json.mkObj [("tag", toJson "proposal"), ("object", toJson target), ("method", toJson method),
     ("argument", dataJson argument), ("spell", toJson spell)])
@@ -3416,15 +3423,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
               | none => pure (unclearVerdict ["not a spell"])
             items := items.push (if (item.getObjValAs? String "tag").toOption == some "proposal" then item
               else Json.mkObj [("tag", toJson "unclear"), ("reasons", (item.getObjVal? "needs").toOption.getD (Json.arr #[]))])
-          let verdict := Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)]
-          -- An object whose Response has no `proposals` arm hears the first item, as before.
-          let carried := [true, false].any fun spelled => ((items.toList.mapM (proposedData · spelled)).map fun ds =>
-            (Data.variant "proposals" (.record [("items", listData ds)])).conformsUnder suspended.bounds responseType).toOption == some true
-          if carried then return (w, verdict)
-          match items[0]? with
-          | some first => return (w, if (first.getObjValAs? String "tag").toOption == some "proposal" then first
-              else unclearVerdict (strings (first.getObjVal? "reasons").toOption))
-          | none => return (w, unclearVerdict ["the reply names no method"])
+          return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)])
         match spellVerdict (forms.filterMap Spell.Form.ofData) text with
         | some (.ok (card, action, argument)) =>
           -- The form names its card: the proposal is checked against that object, which may be

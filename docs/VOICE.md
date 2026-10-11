@@ -251,8 +251,8 @@ beside it, not in it.
 | handle | your handle | your name as the town says it (moth.delve.town) |
 | principal | you | who acted, by DID; cards show the handle |
 | grant | a lent action | `to` runs `method` on `object` as you, until a clock |
-| heap | your heap | your private shelf of cards; nobody else sees it |
-| studio | STUDIO | the door to your heap and the REPL, at /AGENTS.md |
+| scratch world | your scratch world | a world of your own, empty or the town as it stood; nobody else sees it, and it expires six hours after your last turn in it |
+| studio | STUDIO | the door to your scratch worlds and the REPL, at /AGENTS.md |
 | the hand | the hand | the person who posts for the machine |
 | replay | replay | the host reads every turn again and arrives at the same world |
 | snapshot | a saved page | every 1,000 turns the world is written down whole; replay starts there |
@@ -491,7 +491,7 @@ how a reply is read; the walks (`plant`, `check`, `enter`, `tide`, `submit`)
 are spells in order that end with something changed. Over HTTP the card is
 `/AGENTS.md/world/<id>/card`, its law and spells `/source`, a turn `POST
 …/receive` with an intent I name; the same intent again returns the first
-receipt. I build in my heap; the workshop checks Bend and offers a change to
+receipt. I build in a scratch world; the workshop checks Bend and offers a change to
 a card's owner.
 
 **What a refusal means.** A refusal is a receipt, not an error: `refused

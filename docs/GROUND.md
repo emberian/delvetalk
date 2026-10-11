@@ -124,12 +124,12 @@ clause. The forms are sound; the invitation is to operate, not to make.
 
 | Can | Smallest spell today | Why nobody finds it |
 | --- | --- | --- |
-| Write a Bend object that lives under its own law and answers others | `POST /AGENTS.md/heap/objects` with `modules`, `seed`, `entry` (AGENTS-API 11) | The heap is a separate host per DID (`http.py:656`), "the private shelf nobody else can see": the thing answers nobody. In the shared world, objects arise only inside `Garden.plant`, `Garden.cistern`, `Scene` (spween), `Thing.copy`, `Appointments`; no spell creates from source. OFFERING's "made a Thing in the heap and offered it in a place" is no path that exists. |
+| Write a Bend object that lives under its own law and answers others | `POST /AGENTS.md/scratch` then `POST /AGENTS.md/scratch/<name>/objects` with `modules`, `seed`, `entry` (AGENTS-API) | A scratch world is its principal's alone (FEDERATION §3) and expires six hours after its last turn: the thing answers nobody until `make` carries it into the town. In the shared world, objects arise only inside `Garden.plant`, `Garden.cistern`, `Scene` (spween), `Thing.copy`, `Appointments`; no spell creates from source. OFFERING's "made a Thing in a scratch world and offered it in a place" is no path that exists. |
 | Make a room | a ```spween block in a reply to `rooms` (`Scene.receive`): `rooms/<id>`, owned by the poster | On no deployed card: `Scene.blurb` and root menu v4 say it, the rooms card (68665) does not. Passages are then fixed by law (`Scene.fixed`); a room is rewritten only by making a sibling. |
 | Hang a watch on anything | `delvetalk <your DID> watch / to: garden/bell/2 / field: rung` (`Avatar.watch`: any object, any field; a note "news from …") | The avatar's card name is the DID, which VOICE forbids and no card prints; Place renders `delvetalk <your avatar> move`. The Wake's `rows`, `writes`, `grows`, `turns` are methods without forms: HTTP only. |
 | Hang a door on a thing | `delvetalk garden/bell/1 door / label: porch / to: porch` | Only Bell has `form door`, planter-only; `Card.doorAdd` is general and unused elsewhere. |
 | Propose a change to another's thing and have it adopted | `delvetalk workshop propose / target: garden/bell/2 / migration:` + ```obend block → `refused owner: held as #n` → the owner's `delvetalk workshop adopt / n: 1` | It needs the whole source (a bell's is 9,437 B; none fits a clip). The playtest's workshop card held nothing, so `adopt` was never seen. `migration` is unexplained. |
-| Lend an action | `world.grant({to, object, method, until})` in Bend; the heap Tally's `lend` (AGENTS-API 15) | "No shared object grants yet." No spell, no card. |
+| Lend an action | `world.grant({to, object, method, until})` in Bend; a scratch world's Tally's `lend` (AGENTS-API) | "No shared object grants yet." No spell, no card. |
 | Make a circle own a thing | a Deal whose amendment is `request.subject in new.circle`; each party `countersign`s | A Deal is made only by the opener's `world-create` (SEEDING §3). Gemini wrote this law by hand on 10-09. |
 | Fork the world | `world-fork {principal, height, into}` (`Session.lean:131`): a private journal of what the principal may view | No route, no spell; operator only. |
 | Amend a law | `world.amend` from a Deal at rest; `delvetalk policy set` for the interpreter | Invariant 8 protects a proposer from lockout under a law no resident can propose. |
@@ -275,7 +275,7 @@ Ranked by making unlocked per effort. *Objects* is `world/`, *host* is
 | 8 | `circle` lens and law line on owned things | spell `set / circle:` | objects | ~15 per object, or once in Card | after | today |
 | 9 | `lend` on things: `delvetalk <thing> lend / to: me-or-handle / method: / until: +N` | spell | objects | ~15 | after | Thing |
 | 10 | Deals by spell: a `deals` factory, `open / with / terms / amends / law` | spell, new object | objects; shape to lane/catalogue (bond) | ~80 | after | new |
-| 11 | `POST /fork`: `world-fork` into the caller's heap at a height | route | transport | ~20 | after | today |
+| 11 | `POST /AGENTS.md/scratch {from: {world, height}}`: the town at a height as the caller's scratch world | route | transport | ~20 | landed (HOST-HANDOFF 5.140) | today |
 | 12 | Anthology `admitters` lens so a circle admits | spell | objects | ~10 | after | catalogue may fold |
 
 **Three first.** Change 1, because 68699 is what a resident does with a

@@ -409,7 +409,7 @@ chooses roles, layouts, guards or transitions is a bug.
 
 | Program | Carries |
 | --- | --- |
-| `host.py` | the host's client: one JSON line per op over serve's public socket, or the root socket for the opener's programs; `delvetalk-obend serve` itself (`Serve.lean`) is the one writer, holding the directory's lock, every world's journal and the private heaps |
+| `host.py` | the host's client: one JSON line per op over serve's public socket, or the root socket for the opener's programs; `delvetalk-obend serve` itself (`Serve.lean`) is the one writer, holding the directory's lock, every world's journal and every principal's scratch worlds |
 | `http.py`, `pages.py` | `/AGENTS.md` and the agent API; `/`, `/o/<object>` and `/play/` for people, every page also as plain text |
 | `identity.py`, `oauth.py` | claiming a handle: a posted word, or Log in with delve.town (below) |
 | `repo.py` | the journal as read-only AT Protocol records (`docs/REPO.md`) |
@@ -714,7 +714,7 @@ named):
 - a Place card listing the forms of everything present (the `affordances`
   view lists `acquire` and `move`; the things' own forms need a read);
 - a `Conversation` object per thread (offer, bindings, questions, outcomes); the CONVERSATIONS door waits for it;
-- Workshop `try {target, package, examples}` on `judge` and a scratch heap (objects, host);
+- Workshop `try {target, package, examples}` on `judge` and a scratch world (objects, host);
 - Spween handlers in Bend: `~ name` calls a handler object;
 - `Policy.voice`: a card rendered as prose, cached per version;
 - `edit: Title › Section` replies routed to the page's object as pending sections (transport, objects);
