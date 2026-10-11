@@ -591,11 +591,12 @@ partial def rowFields (row : Json) : Option (List (String × Json)) :=
     return (name, member) :: rest
   | _ => none
 
-/-- A form field's kind for a member type: text, a natural, or a choice among the labels of a
-    sum whose every payload is empty. Any other type has no form. -/
+/-- A form field's kind for a member type: text (required: only a form or kind that declares `0..N` makes
+    a field optional), a natural, or a choice among the labels of a sum whose every payload is empty. Any
+    other type has no form. -/
 def formKind (member : Json) : Option Data :=
   match (member.getObjValAs? String "tag").toOption with
-  | some "label" => some (.variant "text" (.record [("min", .natural 0), ("max", .natural Limits.formTextMax)]))
+  | some "label" => some (.variant "text" (.record [("min", .natural 1), ("max", .natural Limits.formTextMax)]))
   | some "natural" => some (.variant "natural" (.record [("min", .natural 0), ("max", .natural Limits.formNaturalMax)]))
   | some "variant" => do
     let cases ← rowFields ((member.getObjVal? "row").toOption.getD Json.null)
@@ -902,7 +903,7 @@ def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
-   "objects", "changed", "card", "subscribe", "unsubscribe"]
+   "objects", "changed", "card", "subscribe", "unsubscribe", "principal"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
@@ -1746,6 +1747,14 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         let names := ("offered", listData (offered.map (Data.label ∘ formAction)))
         respond bounds responseType "inspected"
           [.record (shown ++ [methods, laws, names]), .record (shown ++ [methods]), .record shown]
+  -- `principal {handle}`: the principal the registry names by a handle (`me`, the turn's subject), so `offer`
+  -- and `lend` to a handle work from Bend.
+  | .variant "principal" (.record f) =>
+    let some handle := (f.lookup "handle").bind labelOf | evaluation "malformed principal plan"
+    let s ← get
+    match if handle == meCard then some s.subject else principalNamed s.world handle with
+    | some did => respond bounds responseType "named" [.record [("principal", .label did)]]
+    | none => respond bounds responseType "unknown" [emptyRecord]
   | .variant "objects" (.record f) =>
     let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed objects plan"
     let some after := (f.lookup "after").bind labelOf | evaluation "malformed objects plan"
@@ -2415,7 +2424,7 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
   | "quiet" | "unquiet" =>
     let some name := value "who" | refuseSpell w req id "missingField" s!"{action} takes who: a handle." template
     let who := if name == meCard then req.principal else
-      (w.handles.fold (fun acc did h => if acc.isNone && h == name then some did else acc) none).getD name
+      (principalNamed w name).getD name
     if action == "unquiet" then
       unless (w.quiets[who]?).any (·.1 > w.clock) do
         return ← refuseSpell w req id "badValue" s!"{name} is not quieted." template
@@ -2523,7 +2532,7 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
       | refuseSpell w req id "badValue" "until takes +<clock units>, plain digits." template
     -- `me`, a handle the registry knows, or a principal as written.
     let to := if toName == meCard then req.principal else
-      (w.handles.fold (fun acc did h => if acc.isNone && h == toName then some did else acc) none).getD toName
+      (principalNamed w toName).getD toName
     unless o.offers m do
       return ← refuseSpell w req id "noAction" s!"{id} has no method {m} to lend." template
     unless methodAdmits w o req.principal m id == Json.bool true do
@@ -3053,7 +3062,7 @@ def deliver (w : World) (limit : Nat) (reader : String) : Except String (World �
   let mut w := w
   let mut receipts : Array Json := #[]
   for _ in [0:min limit Limits.deliveriesPerCall] do
-    let some d := w.pending[0]? | break
+    let some d := w.pending.find? (deliverable w) | break
     let (w', r) ← deliverOne w d
     w := w'
     receipts := receipts.push (settledFor w reader r)
@@ -3068,7 +3077,7 @@ def settleAll (w : World) : Except String (World × Array Json × Array Json) :=
   let mut resumed := resumed
   let mut delivered : Array Json := #[]
   for _ in [0:Limits.deliveriesPerSettle] do
-    let some d := w.pending[0]? | break
+    let some d := w.pending.find? (deliverable w) | break
     let (w', r) ← deliverOne w d
     let (w'', more) ← settle w'
     w := w''
@@ -3332,20 +3341,24 @@ def inputTypeOf : Ty → Except String (Option Ty)
 def unclearVerdict (needs : List String) : Json :=
   Json.mkObj [("tag", toJson "unclear"), ("needs", toJson needs)]
 
-/-- hob's answer clipped to `Limits.sayChars`: whole, or up to the last sentence end (`.`, `?`, `!`
-    before a space or a line end) inside the bound, else the bound's last word with `…`. -/
-def sayClip (text : String) : String :=
-  let t := text.trimAscii.toString
-  if t.length ≤ Limits.sayChars then t else
-  let cs := (t.take Limits.sayChars).toString.toList.toArray
-  let ends := (List.range cs.size).filter fun i =>
-    ['.', '?', '!'].contains cs[i]! && (i + 1 == cs.size || [' ', '\n'].contains cs[i + 1]!)
-  match ends.getLast? with
-  | some i => String.ofList (cs.toList.take (i + 1))
-  | none =>
-    let words := String.ofList (cs.toList.take (Limits.sayChars - 1))
-    let cut := (words.toList.reverse.dropWhile (· != ' ')).reverse
-    (String.ofList (if cut.isEmpty then words.toList else cut)).trimAsciiEnd.toString ++ "…"
+/-- hob's answer: at most `Limits.saySentences` sentences and `Limits.sayChars` characters, cut only at a
+    sentence end (`.`, `?`, `!` before a space or a line end) outside quotes and backticks, so never inside an
+    example; "" when its first sentence alone passes the bound. -/
+def sayClip (text : String) : String := Id.run do
+  let cs := text.trimAscii.toString.toList.toArray
+  let mut quoted := false
+  let mut ends : Array Nat := #[]
+  for i in [0:cs.size] do
+    let c := cs[i]!
+    if c == '"' || c == '`' then quoted := !quoted
+    else if !quoted && ['.', '?', '!'].contains c && (i + 1 == cs.size || [' ', '\n'].contains cs[i + 1]!) then
+      ends := ends.push i
+  -- A last sentence without its full stop still ends the text.
+  if ends.isEmpty || ends.back! + 1 < cs.size then ends := ends.push (cs.size - 1)
+  let fit := (ends.toList.take Limits.saySentences).filter (· < Limits.sayChars)
+  match fit.getLast? with
+  | some i => return String.ofList (cs.toList.take (i + 1))
+  | none => return ""
 
 /-- `said {text}`: hob's answer to a question, when the suspended object's Response carries it. -/
 def saidVerdict (bounds : DataBounds) (responseType : Ty) (text : String) : Json :=
@@ -3414,8 +3427,8 @@ def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (L
     conforms to the method's input type and fits the object's response type) or `unclear` with the
     reason. Any other reply is the model's text: `none`, `card` (`replied {text: "card"}`), `ask:`,
     `say:` (`said {text}`, `saidVerdict`), else it is fitted as a spell against the offered forms
-    (`spellVerdict`), and prose is `said {text}` too. An object whose Response cannot carry it hears
-    `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
+    (`spellVerdict`); prose that is none of these is `none` (silence). An object whose Response cannot
+    carry an answer hears `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
   let some i := interpretationOf w s | throw "not an interpretation"
   let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
@@ -3485,8 +3498,8 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
           let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
           return proposalVerdict w target object targetObj suspended.bounds responseType action argument card
         | some (.error needs) => return (w, unclearVerdict needs)
-        -- Prose with no answer's prefix and no spell is hob answering in words: an answer, not dropped.
-        | none => return (w, saidVerdict suspended.bounds responseType said)
+        -- Prose with no answer's prefix and no spell says nothing to the card: only `say:` is hob's answer.
+        | none => return (w, unclearVerdict ["not addressed"])
       | none => return (w, unclearVerdict ["the reply names no method"])
   let actions := forms.filterMap fun form =>
     match form with

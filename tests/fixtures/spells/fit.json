@@ -732,7 +732,7 @@
     }
    ]
   },
-  "expected": "refused No field plant in this spell; it takes colour, seed.",
+  "expected": "unclear colour|seed|",
   "parsed": "spell garden-1 plant plant=a fern;seed=moss;colour=silver;"
  },
  {
@@ -892,7 +892,7 @@
     }
    ]
   },
-  "expected": "refused No field smell in this spell; it takes colour, seed.",
+  "expected": "proposal garden-1 plant colour=silver;seed=fern;",
   "parsed": "spell garden-1 plant seed=fern;colour=silver;smell=sweet;"
  },
  {
@@ -924,7 +924,7 @@
     }
    ]
   },
-  "expected": "refused No field smell in this spell; it takes colour, seed.",
+  "expected": "unclear colour|seed|",
   "parsed": "spell garden-1 plant smell=sweet;"
  },
  {
@@ -1340,7 +1340,7 @@
     }
    ]
   },
-  "expected": "refused No field plant in this spell; it takes colour, seed.",
+  "expected": "unclear colour|seed|",
   "parsed": "spell garden-1 plant plant=a;seed=b;plant=c;colour=amber;"
  }
 ]

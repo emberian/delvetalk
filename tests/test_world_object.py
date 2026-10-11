@@ -113,5 +113,37 @@ class WorldObject(Reflection):
                            modules=[{"name": "Thing", "source": THING}], entry="initial", seed=record())
         self.assertIn("not world", r["message"])
 
+WHO = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  found: String
+def initial() -> State:
+  {found: ""}
+def who(state: State, input: {handle: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.principal({handle: input.handle}):
+    case named(n): noted(n.principal)
+    case unknown(_): noted("none")
+def noted(found: String) -> Activity<Nat>:
+  match world.write(extend(keep(), {found: Plans.Edit::<String, {}>.set({value: found})})):
+    case _: 1n
+""", "who")
+
+
+class PrincipalByHandle(Reflection):
+    """`world.principal {handle}`: the registry's principal for a handle (case folded; `me` the asker), or
+    `unknown`, so `offer` and `lend` to a handle work from Bend."""
+
+    def test_a_handle_names_its_principal(self):
+        self.open_library(clock="transport")
+        did = "did:plc:" + "k" * 24
+        self.assertEqual(self.host.send(op="world-principal", principal="transport", did=did, handle="kestrel.delve.town")["status"], "principal")
+        self.make("who", WHO, record(found=label("")))
+        for handle, found in (("kestrel.delve.town", did), ("Kestrel.Delve.Town", did), ("me", "ember"), ("nobody.delve.town", "none")):
+            self.assertEqual(self.turn("who", "who", record(handle=label(handle)))["status"], "admitted")
+            self.assertEqual({f["name"]: f["value"] for f in self.state("who")["fields"]}["found"], label(found), handle)
+
+
 if __name__ == "__main__":
     unittest.main()

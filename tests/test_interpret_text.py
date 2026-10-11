@@ -89,13 +89,13 @@ class Resumed(test_chain.Chain):
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed
 
-    def test_hobs_prose_is_its_line_beside_the_card_the_words_were_for(self):
-        """hob's answer that is no spell and no prefix is `said` (the host's): its line stands above the garden's card,
-        never inside it."""
+    def test_hobs_say_is_its_line_beside_the_card_the_words_were_for(self):
+        """hob's `say:` is `said` (the host's): its line stands above the garden's card, never inside it. Prose with
+        no prefix is silence (the second playtest's stop, D2)."""
         self.policy()
         self.garden()
         self.say("What makes you think anyone needs a portal?")
-        _, said = self.settle("A portal here is a door; the garden has none of its own.")
+        _, said = self.settle("say: A portal here is a door; the garden has none of its own.")
         [card] = [o["text"] for o in said["receipt"]["offers"]]
         self.assertEqual((said["status"], said["result"]["label"]), ("admitted", "usage"), said)
         self.assertTrue(card.startswith("hob: A portal here is a door; the garden has none of its own.\n✾ THE NIGHT GARDEN\n"), card)

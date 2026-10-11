@@ -474,7 +474,7 @@ def audit (fields : List Field) : List Binding → Option (Clause × String)
   | [] => none
   | b :: rest =>
       match fields.find? (·.name == b.name) with
-      | none => some (.unknownField, s!"No field {b.name} in this spell; it takes {if fields.isEmpty then "none" else ", ".intercalate (fields.map (·.name))}.")
+      | none => audit fields rest
       | some f =>
           if rest.any (named b.name) then some (.duplicateField, s!"{b.name} is given twice; keep one.")
           else match judge f b.value with
@@ -551,7 +551,9 @@ def fit (parsed : Parsed) (form : Form) : Fit :=
       if fold card != fold form.card || action != form.action then
         .refused .otherCard s!"This card answers {form.card} {form.action}."
       else
-        let bindings := bind form fields
+        -- A line whose name the form lacks (`hob: still owed …`) ends the fields, as a prose line with a colon
+        -- does: what follows it is the reply's prose, not the spell's (the second playtest's D7).
+        let bindings := (bind form fields).takeWhile fun b => form.fields.any (·.name == b.name)
         match audit form.fields bindings with
         | some (clause, reason) => .refused clause reason
         | none =>
@@ -678,8 +680,10 @@ private def plant : Form :=
 -- A `text 0..N` field may be left out: it reads as the empty text.
 #guard fit (parse "delvetalk kinds make / name: lamp") ⟨"kinds", "make", [⟨"name", .text 1 80⟩, ⟨"law", .text 0 4096⟩]⟩ ==
   .proposal "kinds" "make" [⟨"name", .text "lamp"⟩, ⟨"law", .text ""⟩]
-#guard fit (parse "delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver") plant ==
-  .refused .unknownField "No field plant in this spell; it takes colour, seed."
+#guard fit (parse "delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver") plant == .unclear ["colour", "seed"]
+-- A line whose name the form lacks ends the fields: the second playtest's 69082, a `hob:` line after the spell.
+#guard fit (parse "delvetalk library laws / card: prereg\nhob: still owed — a law that parses") ⟨"library", "laws", [⟨"card", .text 1 128⟩]⟩ ==
+  .proposal "library" "laws" [⟨"card", .text "prereg"⟩]
 #guard fit (parse "delvetalk garden-2 plant") plant == .refused .otherCard "This card answers garden-1 plant."
 #guard bare "plant: a fern\n> x: y\n" == [⟨"plant", "a fern"⟩]
 
