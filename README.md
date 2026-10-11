@@ -14,6 +14,10 @@ spoken name. Words that are not a spell reach hob, a small model under a
 policy anyone may read: it reads them into a spell and proposes; the card
 acts; the host stamps. Silence is named, and nothing is erased.
 
+The first card is the commonplace, whose doors open the rest. The furniture is kinds anyone instantiates (a garden
+of bells, a room, the weather, a door, a bond): `delvetalk kinds make / name: lamp / of: record` makes a kind, its
+law read at once and cited by everything it makes; the porch holds three things waiting to be inspirited.
+
 [docs/FOUNDATION.md](docs/FOUNDATION.md) is the design. [docs/INDEX.md](docs/INDEX.md)
 says what every other document is for and who reads it; a reviewer starts at
 [docs/CODEX-BRIEF.md](docs/CODEX-BRIEF.md).
@@ -34,7 +38,7 @@ line on stdin and writes one reply per line:
 printf '%s\n' '{"op":"compile","modules":[{"name":"Counter","source":"edition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef bump(s: State) -> State:\n  {count: s.count + 1n}\n"}],"entry":"bump"}' | .lake/build/bin/delvetalk-obend
 ```
 
-`make check` runs every suite in parallel (773 tests in 111 files on 2026-10-11); `make
+`make check` runs every suite in parallel (870 `def test` in 119 files at b3855b91); `make
 smoke` the fast pair; `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend
 python3 -W ignore -m tests.run test_<surface>` one surface.
 
@@ -43,11 +47,12 @@ python3 -W ignore -m tests.run test_<surface>` one surface.
 | Path | What |
 | --- | --- |
 | `spec/bend` | the DelveTalk edition of Objective Bend: core, machine, typing, frontend, proofs |
-| `spec/Delvetalk` | generics, documents, package data, the turn ops, `Limits.lean`, and `Host/` (store, journal, law, turn loop, snapshots) |
+| `spec/Delvetalk` | generics, documents, package data, the turn ops, `Limits.lean`, `Serve.lean` (one writer over a directory of worlds), and `Host/` (block store, journal, law, spells, turn loop, snapshots, root) |
 | `spec/native` | two C files: fsync for the journal (`sync.c`) and serve's sockets (`serve.c`) |
-| `world/lib` | the standard library: prelude, `World` (the protocol), `Plan`, `Card`, `Relation`, `Rows`, `Form`, `Text`, `Spell`, `Forms`, `Menu`, Document |
-| `world/objects` | the objects (15 on 2026-10-11), written as activities |
-| `transport` | Python that carries bytes: the host's client, the HTTP front and the delve.town login, the bridge, the poster, the hand, the repository façade, the Zulip playtest |
+| `world/lib` | the standard library: prelude, `World` (the protocol), `Plan`, `Card`, `Relation`, `Rows`, `Form`, `Forms`, `Text`, `Spell`, `Menu`, `Mentions`, `Event`, `Policies`, `Scenes`, `Spween`, Document |
+| `world/objects` | the packages (10): Record, Thing, Wake, Kind; Avatar, Env, Library, Policy, Tide, Workshop |
+| `world/bodies` | the layers a kind lays on each record it makes (9): bell, bond, cistern, commonplace, door, garden, lantern, room, weather |
+| `transport` | Python that carries bytes, one entry point (`python3 -m transport <command> --state DIR`): the host's client, the HTTP front and the delve.town login, the bridge, the poster, the hand, the signed repository, the Zulip playtest |
 | `deploy` | images, compose, genesis, backup, restore, smoke, playtest, token counts |
 | `tests` | one suite per surface, driving the binary over stdin |
 | `rehearsal` | the town's archive replayed offline: the deployment gate |
