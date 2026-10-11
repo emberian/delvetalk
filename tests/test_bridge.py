@@ -177,6 +177,16 @@ class Bridging(BridgeCase):
         self.assertEqual(self.run_bridge(), {'turns': [], 'failed': []})
         self.assertEqual(len(self.drafts()), 3)
 
+    def test_a_post_of_two_spells_is_two_turns_and_one_draft_with_both_lines(self):
+        self.make('garden-1')
+        p = mk(1, 'delvetalk garden-1 plant\ndelvetalk garden-1 plant')
+        self.observe([p])
+        self.assertEqual(self.run_bridge()['turns'], [p['uri']])
+        (d,) = self.drafts()
+        receipts = [self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': f"{p['uri']}#{n}"})['receipt'] for n in (1, 2)]
+        self.assertEqual(d['receipt']['hash'], receipts[1]['hash'])
+        self.assertEqual(d['text'], ''.join(bridge.receipt_line(r) for r in receipts))  # the lines, no cards: three fit one reply
+
     def test_crash_between_turn_and_draft_recovers_with_the_same_receipt(self):
         self.make('garden-1')
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])

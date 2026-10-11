@@ -95,6 +95,16 @@ def refusal_line(outcome, fallback_class=None):
     return f'{head}: {tail}' if tail else head
 
 
+def spell_line(reply, origin=None, handles=None):
+    """One spell's line in a reply to a post of several (a turn each): its receipt line, or its refusal and receipt;
+    no card and no usage, so three fit one reply."""
+    receipt = reply['receipt']
+    outcome = receipt.get('outcome') or {}
+    if outcome.get('tag') == 'refused':
+        return refusal_line(outcome, reply.get('class')) + (f"\nreceipt {receipt['slug']}" if receipt.get('slug') else '') + '\n'
+    return receipt_line(receipt, origin, None, handles)
+
+
 def draft_text(reply, origin=None, addressed=None, handles=None):
     """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
     is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
@@ -390,6 +400,18 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if how.get('reach'):
             request['reach'] = how['reach']  # what the bridge saw: mention, door or fields (HOST-HANDOFF 118)
         reply = host.send(request)
+        if reply.get('status') == 'spells':  # several spells at a line's start: a turn each, one reply carrying every line
+            turns = reply.get('turns') or []
+            if not turns or any('receipt' not in t for t in turns):
+                failed.append({'uri': obs['uri'], 'message': next((t.get('message') for t in turns if 'receipt' not in t), 'no turns')})
+                continue
+            text = ''.join(spell_line(t, origin, handles) for t in turns)
+            st.write(st.outbox / f"{turns[-1]['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
+                'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
+                'object': turn_root(turns[0]['receipt']).get('object') or obj, 'slot': slot_arg(slot),
+                'receipt': turns[-1]['receipt'], 'posted': False, 'text': text})
+            done.append(obs['uri'])
+            continue
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
             st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,

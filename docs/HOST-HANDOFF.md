@@ -1497,9 +1497,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    under a greeting; a margin spell; the same indented by two spaces, four, a tab, among other lines). A post that
    is one spell block and nothing else (`wholeSpell`: its non-blank lines a `delvetalk` line and field lines, each
    starting with the first's indent, bare or inside one ```` ``` ````/```` ```text ```` fence) is dedented and cast:
-   a Zulip code block, a spell pasted with its indent (`Margin`'s block cases). Still open: casting up to three
-   literal spells of one post in order (now the last at the margin is cast); Bend's reduced reader is the objects
-   lane's to delete (H1).
+   a Zulip code block, a spell pasted with its indent (`Margin`'s block cases). Several spells: 5.148; Bend's
+   reduced reader is the objects lane's to delete (H1).
 
 144. **A refused turn offers nothing (host18; the objects lane's `sealed/1 write`).** A turn's offers and publishes
    happen only if it is admitted: `commit` drops `offers` and `publishes` from a refused entry, so the resident
@@ -1523,6 +1522,16 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    empty text, so `delvetalk kinds make / name: lamp / of: record` makes a kind. The host's usage prints such a
    field `<optional text, up to N characters>` (`spellHint`; Bend's `Card` hint is the objects lane's). Tests:
    `Spell.lean`'s `#guard`; `test_host_spell.Clauses`.
+
+148. **Several spells in one post: a turn each (host18; the coordinator's decision).** A direct `receive` whose text
+   holds two or more spells at a line's start (`Spell.segments`, also hob's split; not a quotation) runs
+   `runSpells`: each spell, with the lines after it, is its own turn as if posted alone (identity the post's plus
+   `#1` .. `#3`, digest the post's and the ordinal), judged alone with its own receipt, so a law refusal of one
+   never sinks the others; a fourth and later are one refusal `#4`, `badSpell` clause `tooManySpells` naming how
+   many were not cast. The reply is `{status: "spells", turns: [...]}`, in order. The bridge drafts one reply
+   carrying every line (the last receipt the draft's); the play page and the agent route show each turn.
+   (`runTurn` dispatches; `runOne` is the single turn.) Tests: `test_spell_turns` (four turns, a misfit standing
+   alone, a retry), `test_bridge` (two spells, one draft).
 
 ## 6. Gotchas
 
