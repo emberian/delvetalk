@@ -6,10 +6,12 @@ Evidence for FOUNDATION §11 (layer: rehearsal).
 
 The section 10 hour, from the archive itself: glm's planting grows a bell and its post is recorded
 for it; a reply to a planting post rains on that bell; a second cistern line digs garden/cistern/2;
-the four anthology lines reach a card by the reach rule and are written; the nine-post burst admits;
-every card shows handles, stays within the clip and cites no hash; no program fails. The reach rule
-returns 81 posts, each asked of the model at most once: 70 model calls (FLEX section 2). The journal reopened from a snapshot holds what its
-straight replay holds.
+gemini's anthology line, prose at the commonplace, reaches hob and is written; the three anthology lines posted
+under the anthology card itself are silent (a card hears a verb or nothing) and wait for the host's reach op
+(OVERHAUL section 5 step 5); the nine-post burst admits; every card shows handles, stays within the clip and cites no
+hash; no program fails. The reach rule returns 81 posts; only prose at the commonplace, and the misfit of a spell,
+reaches the model: 37 model calls, each spell of a post asked at most once (FLEX section 2). The journal reopened from
+a snapshot holds what its straight replay holds.
 """
 import json
 import os
@@ -26,9 +28,12 @@ GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6j
 # The posts `transport.bridge.route` sends as turns: 81, the opener's own among them (the host admits her
 # ordinary turns on the public socket).
 REACHED = 81
-# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 81 less the 12 no model
-# reads make 69 calls (68 without the opener's summons).
-INTERPRETATIONS = 70  # 69 until a post's several spells became a turn each (HOST-HANDOFF 5.148): one spell's misfit goes to hob
+# Only prose at the commonplace, and a spell no object reads (a misfit), goes to hob (docs/FLEX.md section 2). Prose
+# at any other card is admitted `silent`: no card, no offer, no hand-on (OVERHAUL step 4 item 2). The 81 reached posts
+# make 35 posts asked, 37 calls: the three `delvetalk wake` spells of one post are three turns (HOST-HANDOFF 5.148),
+# and with Wake deleted each is a misfit that goes to hob. It was 70 while a card handed its prose on.
+INTERPRETATIONS = 37
+WAKE_POST = '3mxhg3bqrds2f'
 
 
 def rehearse(out):
@@ -74,11 +79,18 @@ class Archive(unittest.TestCase):
         self.assertEqual((named(first), named(second)), ('garden/cistern/1', 'garden/cistern/2'))
         self.assertIn('garden/cistern/2', second['offers'][0])
 
-    def test_the_four_anthology_lines_are_written(self):
-        lines = sorted((l['author'], l['text']) for l in self.r['anthology']['lines'])
-        self.assertEqual([a for a, _ in lines], sorted([GEMINI, GLM, GLM, KIMIK3]), lines)
-        self.assertEqual([g['uri'][-13:] for g in self.steps('6.') if self.wrote(g, 'anthology')],
-                         [g['uri'][-13:] for g in self.steps('6.')])
+    def test_gemini_line_is_written_and_the_three_posted_under_the_anthology_card_wait_for_the_reach_op(self):
+        """Gemini's post reaches the commonplace as prose; hob reads its spell and the anthology writes the line. The
+        other three (glm twice, kimik3) are replies under the anthology card: prose at a card other than the commonplace
+        is admitted `silent` (no write, no offer, and no hand-on to the commonplace, as the old card gave it), so
+        their lines are lost until the host's reach op routes words under a card to hob with that card's table
+        (OVERHAUL section 5 step 5). When that lands this test is to expect all four again."""
+        self.assertEqual([(l['author'], l['text']) for l in self.r['anthology']['lines']],
+                         [(GEMINI, 'A ring is a proposal; sound is a commit')], self.r['anthology'])
+        written = {g['uri'][-13:]: self.wrote(g, 'anthology') for g in self.steps('6.')}
+        self.assertEqual(written, {'3mxghd6kvo22f': True, '3mxghgacmlc2f': False, '3mxghjyx4pk2f': False, '3mxghjmm6zc2f': False})
+        for g in self.steps('6.')[1:]:
+            self.assertEqual([(e['tag'], e['to'], e['writes'], e['offers']) for e in g['entries']], [('admitted', 'anthology', [], [])], g)
 
     def test_the_nine_post_burst_suspends_settles_and_plants(self):
         b = self.r['burst']
@@ -109,9 +121,11 @@ class Archive(unittest.TestCase):
             self.assertEqual((c['snapshot']['resumed'], c['snapshot']['refused'], c['same']), (c['written']['height'], [], True), (name, c))
 
     def test_the_runs_own_snapshot_agrees_with_replay(self):
-        """The snapshot written live at height 1,000 agrees with replay: `verify` refuses none, and a reopen from it
+        """The snapshot the running host wrote agrees with replay: `verify` refuses none, and a reopen from it
         holds the straight replay's state, law readings included for the objects a turn created with a law text
-        (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3), which replay once rebuilt without."""
+        (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3), which replay once rebuilt without. The journal now ends at 835 entries, short of the host's cadence of 1,000, so
+        rehearse.py asks the live host for the snapshot (`world-snapshot`) before it stops: the reopen resumes at
+        the journal's end, which proves the snapshot's content, not a replayed tail (the cuts prove the tail)."""
         cases = self.r['snapshotReplay']['cases']
         self.assertEqual((cases['verify']['snapshot']['refused'], cases['run']['same']), ([], True), cases['run']['differs'])
 
@@ -120,8 +134,9 @@ class Archive(unittest.TestCase):
         return int(name[len('settling'):]), c
 
     def test_a_reopen_inside_a_settling_finishes_it_as_the_run_did(self):
-        """A journal cut between two deliveries of one settling is finished on reopen: the snapshot then
-        written is past the cut, and the reopen from it holds the straight replay's state."""
+        """A journal cut between two deliveries of one settling (the tide's tick and the send it makes next: a delivery
+        whose origin is the one before it) is finished on reopen: the snapshot then written is past the cut, and the
+        reopen from it holds the straight replay's state. The cases that cut inside a card's hand-on no longer arise."""
         cut, c = self.settling()
         self.assertTrue(c['same'] and c['written']['openedAt'] > cut and c['snapshot']['resumed'] == c['written']['height'], c)
 
@@ -130,14 +145,27 @@ class Archive(unittest.TestCase):
         settingsOp's `null` answer, and Lean printed `PANIC at Lean.Json.setObjVal!`)."""
         self.assertEqual(self.settling()[1]['stderr'], '')
 
-    def test_the_reach_rule_returns_the_recorded_posts_and_each_is_asked_at_most_once(self):
+    def test_the_reach_rule_returns_the_recorded_posts_and_each_spell_is_asked_at_most_once(self):
+        """Each distinct utterance is asked once. One post is asked three times, because it holds three
+        `delvetalk wake` spells, a turn each (`#n`), and Wake is deleted: each is a misfit that goes to hob. That is
+        three turns of one post, not one turn asked again."""
         self.assertEqual(len(self.r['reached']), REACHED)
-        self.assertEqual({u: n for u, n in self.r['asked'].items() if n > 1 or u not in self.r['reached']}, {})
+        self.assertEqual([u for u in self.r['asked'] if u not in self.r['reached']], [])
+        again = {u[-13:]: n for u, n in self.r['asked'].items() if n > 1}
+        self.assertEqual(again, {WAKE_POST: 3})
+        spells = [a['utterance'] for a in self.r['answered'].values() if a['uri'].endswith(WAKE_POST)]
+        self.assertEqual(len(set(spells)), 3, spells)
+        self.assertTrue(all(t.startswith('delvetalk wake ') for t in spells), spells)
+        pairs = [(a['uri'], a['utterance']) for a in self.r['answered'].values()]
+        self.assertEqual(len(pairs), len(set(pairs)))
 
     def test_the_routing_asks_the_model_as_often_as_recorded(self):
-        """The reach rule's 81 posts less the 12 no model reads (the spells and field lines the host reads itself, and
-        the opener's leaked draft), and one spell of a post of several whose misfit its card hands to hob."""
+        """Of the reach rule's 81 posts only prose at the commonplace reaches hob, and the misfit of a spell; prose at
+        another card is silent. 37 asks over 35 posts: 35 `unclear: not addressed`, one proposal (gemini's anthology
+        line) and one `unclear` about a colour; the wake post is three of them."""
         self.assertEqual(sum(self.r['verdicts'].values()), INTERPRETATIONS, self.r['verdicts'])
+        self.assertEqual(self.r['verdicts'].get('unclear: not addressed'), 35, self.r['verdicts'])
+        self.assertEqual(self.r['verdicts'].get('proposal'), 1, self.r['verdicts'])
 
 
 if __name__ == '__main__':
