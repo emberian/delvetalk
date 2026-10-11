@@ -103,8 +103,7 @@ class FrontCase(ServeCase):
             from transport.config import LIBRARY
             self.state_dir = tempfile.TemporaryDirectory()
             self.addCleanup(self.state_dir.cleanup)
-            self.server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
-            self.addCleanup(self.server.stop)
+            self.server = served(self.state_dir.name, cleanup=self.addCleanup, opener=self.OPENER, library=LIBRARY)
             self.socket, self.root = self.server.sock, HostClient(self.server.root)
         self.provider = Provider()
         self.now = [1000.0]
@@ -490,8 +489,7 @@ class Repl(FrontCase):
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
         from transport.config import LIBRARY
         self.server.stop()  # a restart of serve: a new stateless session, which issued nothing
-        type(self).server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
-        type(self).addClassCleanup(type(self).server.stop)
+        type(self).server = served(self.state_dir.name, cleanup=type(self).addClassCleanup, opener=self.OPENER, library=LIBRARY)
         s, e = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
         self.assertEqual((s, e['class'], e['message'], e['_links']['repl']), (409, 'replRestarted', 'the REPL restarted; start the module again',
                                                                               {'href': '/AGENTS.md/repl'}), e)
@@ -741,6 +739,28 @@ class Play(FrontCase):
         tok = self.cookie.split('=', 1)[1]  # the session is the credential: the agent API reads the same receipt
         s, r = self.call('GET', '/AGENTS.md/receipt/' + line[3].decode(), token=tok)
         self.assertEqual((s, r['receipt']['height']), (200, int(line[2])), r)
+
+    def test_the_paint_stands_above_the_exact_card_and_never_without_it(self):
+        """OVERHAUL §4 (c): /play/ and /o/ show a card's verified paint above its exact card; with no worker attending, the
+        exact card alone, at once; a refused paint never."""
+        from transport import interpret
+        frame = b'<figure class="frame"><pre class="card">'
+        for path in ('/play/garden', '/play/'):
+            s, _, page = self.play(path)
+            self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept
+            self.assertIn(frame, page)
+        self.host.send({'op': 'world-renders'})  # the worker arrives, and finds both queued
+        paint = 'The night garden lies open under the moon, its beds waiting for a seed.'
+        replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
+        done = interpret.paint(self.host, lambda req: replied(paint if '"object":"garden"' in req['user'] else 'You are welcome here.'))
+        self.assertTrue(done['painted'], done)
+        for page in (self.play('/play/garden')[2], self.request('GET', '/o/garden', headers={'Cookie': self.cookie})[2],
+                     self.request('GET', '/o/garden')[2]):
+            at = page.find(b'<p class="paint">' + html.escape(paint).encode() + b'</p>')
+            self.assertTrue(0 <= at < page.find(frame), page[:2000])
+        # A card whose paint the host refused (second person, a welcome) shows exact alone.
+        s, _, page = self.play('/play/')
+        self.assertEqual((s, page.count(b'class="paint"')), (200, 0))
 
     def test_plant_by_prose_shows_the_interpreters_offer(self):
         out = {}

@@ -80,8 +80,7 @@ class BridgeCase(unittest.TestCase):
         """A `serve` of this test's own, started by the first test that talks to a real host
         (the routing tests drive a Stub and never do)."""
         if '_host' not in self.__dict__:
-            serving = served(str(Path(self.tmp.name) / 'serve'))
-            self.addCleanup(serving.stop)
+            serving = served(str(Path(self.tmp.name) / 'serve'), cleanup=self.addCleanup)
             self._host = HostClient(serving.sock)
         return self._host
 
@@ -140,8 +139,7 @@ class OpenerPosts(BridgeCase):
     @property
     def host(self):
         if '_host' not in self.__dict__:
-            serving = served(str(Path(self.tmp.name) / 'serve'), opener=DID)
-            self.addCleanup(serving.stop)
+            serving = served(str(Path(self.tmp.name) / 'serve'), cleanup=self.addCleanup, opener=DID)
             self._host = HostClient(serving.sock)
         return self._host
 

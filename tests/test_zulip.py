@@ -121,8 +121,7 @@ class ZulipCase(unittest.TestCase):
         self.addCleanup(self.zulip.close)
         self.rc = root / 'zuliprc'
         self.rc.write_text(f'[api]\nemail={BOT["email"]}\nkey={KEY}\nsite=http://127.0.0.1:{self.zulip.server.server_port}\n')
-        self.server = served(str(root / 'serve'), opener=OPENER, library=LIBRARY)
-        self.addCleanup(self.server.stop)
+        self.server = served(str(root / 'serve'), cleanup=self.addCleanup, opener=OPENER, library=LIBRARY)
         self.sock = self.server.sock
         (root / 'state').mkdir()
         (root / 'state' / 'delvetalk.toml').write_text(f'host_socket = "{self.sock}"\n')

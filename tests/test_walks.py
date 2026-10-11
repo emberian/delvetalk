@@ -49,8 +49,7 @@ class Walks(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name)
-        cls.addClassCleanup(cls.town.close)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         cls.host = cls.town.client
         cls.n = 0
         for did, handle in ((WALKER, "walker.test"), (OTHER, "other.test")):

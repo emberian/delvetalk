@@ -441,8 +441,7 @@ class Speak(unittest.TestCase):
         from tests.town import Town
         cls.dir = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.dir.cleanup)
-        cls.town = Town(cls.dir.name)
-        cls.addClassCleanup(cls.town.close)
+        cls.town = Town(cls.dir.name, cleanup=cls.addClassCleanup)
         cls.st = State(cls.town.state)
         cls.st.write(cls.st.row, {'world': 'town', 'transport': 'zulip', 'realm': 'tulip.example', 'channel': 'delvetalk', 'zuliprc': None})
         cls.hand = hand.Hand(cls.st, cls.town.client, TOKEN)
@@ -584,8 +583,7 @@ class Measure(unittest.TestCase):
         from tests.town import Town
         cls.dir = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.dir.cleanup)
-        cls.town = t = Town(cls.dir.name)
-        cls.addClassCleanup(t.close)
+        cls.town = t = Town(cls.dir.name, cleanup=cls.addClassCleanup)
         (Path(t.state) / 'delvetalk.toml').write_text(f'owner_principals = "{cls.OWNER}"\n')
         cls.st, S0 = State(t.state), cls.M0 * 60
         for did, handle in ((cls.A, 'kestrel'), (cls.B, 'yue'), (cls.OWNER, 'Hyphaed Biscuit')):

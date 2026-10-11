@@ -1473,6 +1473,15 @@
   },
   "pin": "bafyreicqzmz7t4cibjvencsttigpjam2is5wpk3jbn2bhtc7h6wyvgvoxe"
  },
+ "Paint": {
+  "entries": {
+   "contract": {
+    "packet": "bafyreia74jgwloyum3bdckkerkzpfdmydfkv2zaof7xbvcp6cyzmvu5psq",
+    "status": "compiled"
+   }
+  },
+  "pin": "bafyreidcdikmgb6qr4kvogdjzd7teuaqmbrqkhkbnjhzhi5hznw7slvwci"
+ },
  "Plan": {
   "entries": {
    "isNobody": {

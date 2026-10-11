@@ -112,7 +112,7 @@ class Repository(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.provider = Provider()
-        cls.server = served(cls.tmp.name, opener='did:plc:' + 'o' * 24, library=LIBRARY)  # DID is a resident the front logs in
+        cls.server = served(cls.tmp.name, cleanup=cls.addClassCleanup, opener='did:plc:' + 'o' * 24, library=LIBRARY)  # DID is a resident the front logs in
         sock = cls.server.sock
         cls.host = HostClient(sock)
         cls.now, cls.token = [1000.0], None

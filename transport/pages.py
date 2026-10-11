@@ -85,11 +85,17 @@ def framed(text, kind='offer'):
 BRIEF = 5  # receipts the brief text view keeps
 
 
-def obj(name, who, view, card, entries, did=None, doors=(), seen=None, acts=(), brief=None):
-    """An object: its card (sacred text), its doors, a way to play it, its actions as forms from the method table, its law and
-    source as code, its receipts as slips. `brief` (the text view's default, the href of the whole page): the card, the
-    doors, the actions as spell templates and the newest BRIEF receipts; the law, the source and the rest are a link away."""
-    shown = framed(card, 'card') if card else T['state'].format(state=dl(view.get('state')))
+def painting(text):
+    """A card's paint, above its exact card (never inside the frame), or nothing."""
+    return T['paint'].format(text=e(text)) if text else ''
+
+
+def obj(name, who, view, card, entries, did=None, doors=(), seen=None, acts=(), brief=None, paint=None):
+    """An object: its paint and its card (sacred text), its doors, a way to play it, its actions as forms from the method
+    table, its law and source as code, its receipts as slips. `brief` (the text view's default, the href of the whole page):
+    the card, the doors, the actions as spell templates and the newest BRIEF receipts; the law, the source and the rest are
+    a link away."""
+    shown = painting(paint) + framed(card, 'card') if card else T['state'].format(state=dl(view.get('state')))
     play = T['playlink'].format(href=e(quote(name, safe='/:')), id=e(name)) if who else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),

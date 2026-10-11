@@ -4,14 +4,18 @@ docs/ROOT.md §1.4): named worlds and the root socket beside the public one.
 Evidence for FOUNDATION §7 (layer: host). Refuted by a socket others may open, a second writer that starts, a
 chain broken under concurrent clients, a restart that answers a retried turn differently, a scratch world or the
 stateless session that sees the world, a library without arrival's packages, a world opened under another name, or an
-opener's op or a root op that the public socket takes.
+opener's op or a root op that the public socket takes. A test's serve outlives its test process: refuted by a serve
+still running seconds after the process that started it died of SIGTERM or (Linux) SIGKILL.
 """
 import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
+import sys
 import tempfile
+import time
 import threading
 import unittest
 from pathlib import Path
@@ -53,8 +57,7 @@ class Serve(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
         cls.state = Path(cls.tmp.name) / 'state'
-        cls.server = Served(str(cls.state), opener=OPENER, library=WORLD_LIBRARY)
-        cls.addClassCleanup(cls.server.stop)
+        cls.server = Served(str(cls.state), cleanup=cls.addClassCleanup, opener=OPENER, library=WORLD_LIBRARY)
         cls.sock, cls.root = Path(cls.server.sock), Path(cls.server.root)
 
     def setUp(self):
@@ -223,7 +226,7 @@ class Placement(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             group = grp.getgrgid(os.getgid()).gr_name
             sock = str(Path(d) / 'front' / 'host.sock')
-            server = Served(str(Path(d) / 'state'), host_socket=sock, root_group=group)
+            server = Served(str(Path(d) / 'state'), cleanup=self.addCleanup, host_socket=sock, root_group=group)
             try:
                 self.assertEqual(send(sock, {'op': 'world-status'})['status'], 'world')
                 self.assertFalse((Path(d) / 'state' / 'host.sock').exists())
@@ -240,7 +243,7 @@ class Restart(unittest.TestCase):
     def test_a_restart_replays_to_the_same_receipts_and_a_held_connection_moves_to_the_new_server(self):
         with tempfile.TemporaryDirectory() as d:
             state = str(Path(d) / 'state')
-            server = Served(state)
+            server = Served(state, cleanup=self.addCleanup)
             try:
                 client = HostClient(server.sock)
                 client.send({'op': 'world-create', 'principal': 'e', 'identity': 'mk', 'object': 'c',
@@ -253,7 +256,7 @@ class Restart(unittest.TestCase):
             finally:
                 server.stop()
             self.assertFalse(os.path.exists(server.sock))
-            server = Served(state)
+            server = Served(state, cleanup=self.addCleanup)
             try:
                 again = [bump(i) for i in range(3)]
                 self.assertIsNot(client.local.conn[0], held)
@@ -269,13 +272,13 @@ class Restart(unittest.TestCase):
     def test_a_journal_holding_another_name_is_not_opened_under_this_one(self):
         with tempfile.TemporaryDirectory() as d:
             state = Path(d) / 'state'
-            server = Served(str(state))
+            server = Served(str(state), cleanup=self.addCleanup)
             try:
                 self.assertEqual(send(server.sock, {'op': 'world-status', 'world': 'ring'})['status'], 'world')
             finally:
                 server.stop()
             journal_copy(state / 'ring.journal', state / 'moor.journal')
-            server = Served(str(state))
+            server = Served(str(state), cleanup=self.addCleanup)
             try:
                 r = send(server.sock, {'op': 'world-status', 'world': 'moor'})
                 self.assertEqual(r['status'], 'error', r)
@@ -320,7 +323,7 @@ class Startup(unittest.TestCase):
             answers, servers = {}, []
 
             def town(name):
-                server = Start(Path(d) / name, slow)
+                server = Start(Path(d) / name, slow, cleanup=self.addCleanup)
                 servers.append(server)
                 answers[name] = HostClient(server.sock).send({'op': 'world-status'}).get('status')
             threads = [threading.Thread(target=town, args=(n,)) for n in ('town', 'moor')]
@@ -329,6 +332,61 @@ class Startup(unittest.TestCase):
             for server in servers:
                 server.stop()
             self.assertEqual(answers, {'town': 'world', 'moor': 'world'})
+
+ORPHAN = """
+import os, signal, sys
+from tests.host import binary, served
+server = served(sys.argv[1], cleanup=lambda stop: None)
+print(server.proc.pid, os.getsid(server.proc.pid) == server.proc.pid, os.path.dirname(binary()), flush=True)
+os.kill(os.getpid(), getattr(signal, sys.argv[2]))
+"""
+
+
+class Orphan(unittest.TestCase):
+    """A test process that starts serve and dies without its cleanups: serve dies too, within seconds."""
+
+    def died(self, how):
+        """(state, serve pid, copy dir) after a child Python started serve over `state` with its own binary copy and
+        sent itself `how`; the child's exit is the signal's."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        state = os.path.join(tmp.name, 'state')
+        env = {k: v for k, v in os.environ.items() if k != 'DELVETALK_OBEND_COPY'}
+        env.update(DELVETALK_OBEND=binary(), PYTHONPATH=str(Path(__file__).resolve().parent.parent))
+        child = subprocess.Popen([sys.executable, '-c', ORPHAN, state, how], env=env, stdout=subprocess.PIPE, text=True)
+        pid, own_session, copy = child.stdout.readline().split()
+        child.stdout.close()
+        self.assertEqual(child.wait(timeout=120), -getattr(signal, how))
+        self.assertEqual(own_session, 'True')
+        return state, int(pid), copy
+
+    def gone_within(self, pid, state, seconds=5):
+        """Whether serve `pid` over `state` stops running within `seconds` (a zombie, or the PID reused, is gone)."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            ps = subprocess.run(['ps', '-o', 'stat=,args=', '-p', str(pid)], capture_output=True, text=True).stdout.strip()
+            if not ps or ps.startswith('Z') or state not in ps:
+                return True
+            time.sleep(0.1)
+        return False
+
+    def test_a_serve_stops_and_the_copy_goes_when_its_test_process_is_terminated(self):
+        state, pid, copy = self.died('SIGTERM')
+        self.assertTrue(self.gone_within(pid, state))
+        self.assertFalse(os.path.exists(os.path.join(state, 'served.pid')))
+        self.assertFalse(os.path.exists(copy))
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'PR_SET_PDEATHSIG is Linux')
+    def test_a_serve_stops_when_its_test_process_is_killed_and_the_next_copy_sweeps_the_dead_one(self):
+        from tests.host import sweep_copies
+        state, pid, copy = self.died('SIGKILL')
+        self.assertTrue(self.gone_within(pid, state))
+        with open(os.path.join(state, 'served.pid')) as f:  # nothing ran to remove it: the record of what was started
+            self.assertEqual(int(f.read()), pid)
+        self.assertTrue(os.path.exists(os.path.join(copy, 'owner.pid')))
+        sweep_copies()
+        self.assertFalse(os.path.exists(copy))
+
 
 if __name__ == '__main__':
     unittest.main()
