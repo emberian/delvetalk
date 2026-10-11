@@ -51,8 +51,6 @@ form pour:
 # A receipt is structured data, not a spell: retain has no form.
 def methods() -> Lists.List<String>:
   Text.words("retain")
-def blurb() -> Card.Door:
-  {word: "cistern", blurb: "Keeps the receipts it is given, newest first, and what the town pours in."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def outcomeName(outcome: Plans.Outcome) -> String:

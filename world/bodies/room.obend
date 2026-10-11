@@ -252,8 +252,6 @@ def methods() -> Lists.List<String>:
   Text.words("~take ~put ~inspirited")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("enter choose leave say emote whisper write lines"), if context.principal == state.owner then Text.words("door undoor example") else Text.words(""))
-def blurb() -> Card.Door:
-  {word: "room", blurb: "A room: enter, choose, leave, say; post a ```spween block to make one inside it."}
 # A ```spween block makes a room under this one, by this room's kind (its `makeUnder`, which reads
 # the block); anything else is the card's default.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Card.Replied>:

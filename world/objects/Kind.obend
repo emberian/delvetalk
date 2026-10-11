@@ -153,8 +153,6 @@ def methods() -> Lists.List<String>:
   Text.words("shape makeUnder")
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def blurb() -> Card.Door:
-  {word: "kind", blurb: "A kind of thing: make one."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 # What a kind's make takes: its form, and for a thing (not a kind) the `id` it may be given.

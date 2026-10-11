@@ -227,7 +227,5 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
 # An avatar's accept calls transfer, the Workshop's copy sends copy; drop names a place.
 def methods() -> Lists.List<String>:
   Text.words("transfer copy drop")
-def blurb() -> Card.Door:
-  {word: "thing", blurb: "Inspirit it once, pick it up, put it down, offer it to someone who accepts."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))

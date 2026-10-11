@@ -82,8 +82,6 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("since write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor example") else Text.words("")))
 def methods() -> Lists.List<String>:
   Text.words("due")
-def blurb() -> Card.Door:
-  {word: "commonplace", blurb: "What changed in the town, and its doors."}
 def refusing(clause: String, reading: String, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   toldThen(Document.text("{Menu.title()}\n\nrefused {clause}: {reading}\n"), Card.Replied.refused({clause: clause, reading: reading}), greet, context, state)
 # The hub's reply (a spell naming another card never reaches here: the host runs it there). A

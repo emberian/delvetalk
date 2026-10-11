@@ -42,8 +42,6 @@ form shelve:
   kind: Kind
   title: text 1..80
   body: text 1..1400
-def blurb() -> Card.Door:
-  {word: "library", blurb: "The stacks: pages and walks."}
 def ordered(state: State) -> Lists.List<Page>:
   Relations.order(state.pages, fn(p: Page) -> Nat: p.place)
 def isWalk(page: Page) -> Bool:

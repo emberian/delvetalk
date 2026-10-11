@@ -48,8 +48,6 @@ def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity
   Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("knock lines door undoor example") else Text.words("knock lines")
-def blurb() -> Card.Door:
-  {word: "door", blurb: "A door: knock; the first knock opens it, whoever or whatever knocks."}
 def openedBy(state: State, context: Abi.Context) -> String:
   match Lists.find(Relations.rows(state.marks), fn(m: Rows.Mark) -> Bool: m.name == "open"):
     case some(m): "open, opened by {Card.shown(m.value.who, m.value.handle, context)}"

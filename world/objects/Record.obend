@@ -232,8 +232,6 @@ form example:
 # What the host offers a reader (HOST-HANDOFF 103): admit to the keeper, doors to the owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor example") else Text.words("")))
-def blurb() -> Card.Door:
-  {word: "record", blurb: "Write a line; it is numbered and never edited."}
 # Words take the record's card by default (Card.answer). A spell that misfit this card's forms
 # reaches here with its clause (FLEX §2): a record that reads words (the commonplace, with a
 # policy) shows hob; any other refuses it by that clause, writing nothing.

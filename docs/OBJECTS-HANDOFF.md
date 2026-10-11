@@ -6,11 +6,11 @@ Inherited: the predecessor's tail (`cv show a0d74c0be27d3d607`, last 80 turns) a
 but the coordinator's two notes, both folded: a refused `sealed/1 write` still offers "#1 is written" (host18's first
 item: the host drops a refused turn's offers), and H1 (the Bend reader disagrees with the cast rule).
 
-persvati went down at 05:06 (no route, both addresses) and had not returned when this section was written; no
-suite ran on this lane. Every changed module compiles on hbox's older binary (`~/scratch/dt-rewrite10/cc.py`, the
-compile op only); behaviour is untested until persvati answers.
+persvati went down at 05:06; the suites ran on hbox (`~/scratch/dt-rewrite10/`, the foundation binary rebuilt there
+at 05:33): 834 tests, 4 red classes, each red on pristine foundation too: test_hand's Speak and Measure (the same
+four tests), test_archive (a wake's receipt line names its DID, transport/host), test_pull_backups (date-bound).
 
-Written here (in the worktree; see the commit list in git for what is committed):
+Done (67184b62 H1, ad6baf8b inspirit, da3f45cc the silent turns and the library's `laws`; the three were run as one tree):
 
 - **H1, as far as objects can go.** The host passes a spell it found missing fields to `receive` with the bound
   fields and no action, so a card cannot tell `delvetalk anthology write` (no fields) from prose without reading the
@@ -46,29 +46,28 @@ Written here (in the worktree; see the commit list in git for what is committed)
   refusals; a note an object leaves stays quiet), Env (`seen` "Read through #N; nothing before it is new again.",
   `publish`, refusals), Kind `shape` ("Shaped. Make one:" and its spell; refusals over the card). Env's mention
   (`write`) stays quiet by design: a post mentioning a resident is not a reply to the world.
+- **The `blurb()` sweep** (the commit after da3f45cc): `blurb()` and `Card.Door` are gone from every object, body,
+  fixture and automatafl module; the host's default page falls back to the object's id (genesis names every page);
+  Workshop's page is "workshop". The host's `blurbWord` (TurnLoop ~2262) is now dead: the host lane's to delete.
 - **Library `laws` follows `under`**: a clause `under "<object>"` is followed to that object's `law` field (a made
   thing's kind), whose clauses follow the card's own ("Under kind/bell's law:"), expressions dropped when the whole
   passes the clip. The miss line names the commonplace, not the directory.
 
 Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded):
 
-1. Run what is written: narrow (`test_spell test_inspirit test_genesis test_rooms test_deal test_wakes test_kinds
-   test_library test_strangers test_lenses test_tending`), re-record pins, the full run once; fix; commit H1 alone,
-   then inspirit, then the silent turns with the library's `laws`, each with its cards verbatim in the message.
-2. THING `me`, `lend`, `circle`; BOND by spell. Design: `kind/bond` over RECORD (a body `bond.obend`; form `parties:`
+1. THING `me`, `lend`, `circle`; BOND by spell. Design: `kind/bond` over RECORD (a body `bond.obend`; form `parties:`
    handles, `terms:`, `amends:`, `law:`), a countersignature a `marks` row (`who` the signer: the circle reads
    `request.subject in "bond/N".marks.who`, LAW §4 D), at rest `world.amend` as Deal does; Deal.obend and
    test_deal's package path deleted in the same commit. A thing's `circle` lens amends its own law so the owner
    clause's keeper disjunct reads the bond. `offer / to:` takes a handle the host cannot resolve in Bend: wait for
    host18's `context.sender`/a handle read, or offer to `me`'s avatar id by the host's `me` resolution.
-3. O3 (one Sensed: `Event` gains `n`, `Rows.Sensed` goes; `Card.Reply` folds into `Heard`, `Card.heard` goes), the
-   `blurb()` sweep (delete `blurb()` and `Card.Door` everywhere, fixtures and automatafl included: the host reads
-   only `word` and falls back to the id; Workshop's page name is "workshop"; host's `blurbWord` then dead).
-4. The hand-on refused `capacity`: a wait inside a call is not supported (`mayWait`, depth > 0), so the hand-on
+2. O3: one Sensed (`Event` gains `n`, `Rows.Sensed` goes, `publish`/`sense` callers pass `n: 0`); `Card.Reply`
+   folds into `Heard` (the host fills `misfit` when the input declares it), `Card.heard` goes.
+3. The hand-on refused `capacity`: a wait inside a call is not supported (`mayWait`, depth > 0), so the hand-on
    cannot join the card's turn; objects alone cannot fix it. Host: re-deliver a send refused transiently, or route
    prose a card does not take to the commonplace itself.
-5. `kinds make / name / of` once host18's optional fields land.
-6. Step 4 as below.
+4. `kinds make / name / of` once host18's optional fields land.
+5. Step 4 as below.
 
 
 ## lane/rewrite9 (2026-10-11): hob's said; step 3, first part

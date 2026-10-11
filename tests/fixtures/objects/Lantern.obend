@@ -40,8 +40,6 @@ form light:
 # An action without a form: watching names an object.
 def methods() -> Lists.List<String>:
   Text.words("watch")
-def blurb() -> Card.Door:
-  {word: "lantern", blurb: "Light it, or let a door light it."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def render(state: State, context: Abi.Context) -> Document.Document:

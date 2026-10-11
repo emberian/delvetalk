@@ -111,8 +111,6 @@ def lensEdits(field: String, value: String) -> Edits:
 def setting(field: String, value: String) -> Activity<Card.Replied>:
   let written(_) = world.write(lensEdits(field, value))
   Card.tell(Card.Replied.done({action: "set"}), Document.text("Set {field} to {value}.\n"))
-def blurb() -> Card.Door:
-  {word: "policy", blurb: "How a card understands prose: its examples and words."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 # A source's bound is the host's `Bounds.maxPackageBytes` (131,072 bytes), as a literal: Bend cannot read it.

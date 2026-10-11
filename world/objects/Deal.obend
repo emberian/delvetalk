@@ -107,8 +107,6 @@ def withdrawing(context: Abi.Context, state: State) -> Activity<Done>:
   answered(Done.withdrawn({}), "Withdrawn, {Card.name(context.principal, context)}.", extend(state, {withdrawn: context.principal, withdrawnHandle: context.handle, closed: 1n}), context)
 form countersign:
 form withdraw:
-def blurb() -> Card.Door:
-  {word: "deal", blurb: "Terms every party countersigns; at rest when all have."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def signatureLine(signature: Signature) -> Document.Document:

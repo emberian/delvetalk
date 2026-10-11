@@ -262,8 +262,6 @@ form unsubscribe:
 # Things call hold and release.
 def methods() -> Lists.List<String>:
   Text.words("hold release")
-def blurb() -> Card.Door:
-  {word: "avatar", blurb: "You in the town: go to a room, walk its doors, hold things, watch others and send to your followers."}
 # The handle the card shows is a lens, its principal's: `delvetalk <did> set` and `handle: ...`.
 def lenses() -> Lists.List<Form.Field>:
   Lists.List.cons({head: {name: "handle", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.nil()})

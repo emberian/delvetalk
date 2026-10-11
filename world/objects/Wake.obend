@@ -479,8 +479,6 @@ form remind:
   every: natural 0..10080
 def methods() -> Lists.List<String>:
   Text.words("watch sense schedule ~arrived ~watchBell ~due")
-def blurb() -> Card.Door:
-  {word: "wake", blurb: "Choose what wakes you: mentions, words, rows, a schedule."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def onText(on: On, seen: Nat) -> String:

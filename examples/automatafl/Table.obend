@@ -62,8 +62,6 @@ def methods() -> Lists.List<String>:
   Text.words("resolve")
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def blurb() -> Card.Door:
-  {word: "play", blurb: "The original two-player, 11x11 Automatafl: seal, open, resolve."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def glyph(cell: Nat) -> String:
