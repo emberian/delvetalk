@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Snapshot the DelveTalk data directory: rsync into DEST/mirror, cut a torn
 # final line if a write was in flight, copy SQLite files through SQLite's own
-# backup, verify every journal by replay (deploy/verify.sh), then write
+# backup, verify every journal by replay (deploy/verify.sh) and write each
+# world's snapshot at its head beside it (what a carry to a newer binary reads:
+# every tarball is a world another binary can carry), then write
 # DEST/delvetalk-<UTC stamp>.tar.gz. Exit non-zero if any journal is broken;
 # a broken snapshot is kept in DEST/mirror for inspection but never tarred.
 #
@@ -60,7 +62,7 @@ PY
 done
 
 # The watch's probe (`python3 -m transport status`) reads the last verify: ok, or broken with its stamp.
-if ! "$here/verify.sh" "$mode" "$host" "$dest/mirror"; then
+if ! "$here/verify.sh" --snapshot "$mode" "$host" "$dest/mirror"; then
   echo "broken $(date -u +%Y%m%dT%H%M%SZ)" > "$dest/last-verify"
   exit 1
 fi

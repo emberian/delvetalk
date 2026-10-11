@@ -2489,16 +2489,14 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
     moderated [("object", toJson id), ("after", prior)]
   | "retire" =>
     let o ← card ()
-    if (lawClauses o.lawText).any (·.1 == "retired") then
-      return ← refuseSpell w req id "badValue" s!"{id} is retired already." template
-    let clause := s!"law retired \"{reading}\": request.kind == 2 and request.subject == \"{w.opener}\""
-    return amend o (if o.lawText.isEmpty then clause else s!"{o.lawText}\n{clause}")
+    let some after := retiredLaw o.lawText reading w.opener
+      | return ← refuseSpell w req id "badValue" s!"{id} is retired already." template
+    return amend o after
   | "unretire" =>
     let o ← card ()
     unless (lawClauses o.lawText).any (·.1 == "retired") do
       return ← refuseSpell w req id "badValue" s!"{id} is not retired." template
-    let kept := (o.lawText.splitOn "\n").filter fun l => !(l.trimAscii.toString.startsWith "law retired ")
-    return amend o ("\n".intercalate kept)
+    return amend o (unretiredLaw o.lawText)
   | _ => refuseSpell w req id "noAction" s!"no power {action}." template
 
 /-- The host's spells on any card (docs/CATALOGUE.md §2), each a direct turn of the speaker judged by

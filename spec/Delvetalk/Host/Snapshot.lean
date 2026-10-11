@@ -343,16 +343,64 @@ def install (b : Json) (base : World) : Except String World := do
     posts := posts.insert uri post
   return { w with objects, grants, posts, clock := ← natField b "clock" }
 
-/-! ## Forks
+/-! ## Store-installing geneses: forks and carries
 
-`world-fork` writes a new journal whose genesis entry (`forked`) holds the shared world's store at a
-height as a snapshot body, with the pending deliveries and suspended activities of the objects it
-carries, and chains to the forked world's entry at that height. The fork's opener and clock
-principal are the forking principal. -/
+A fork (`world-fork`) and a carry (`delvetalk-obend carry`, `Host/Carry.lean`) each start a new journal
+whose genesis entry holds another world's store as a snapshot body holds it (`storeJson`, every source
+whole), that world's pending deliveries and suspended activities written out whole, its handle
+registry, and `previous` naming the entry it was taken at. A fork (`forked`) is one principal's view at
+a height, under that principal as opener and clock. A carry (`carried`) is the whole world at its head
+read by a newer binary: its settings, every object, the indexes it stands on (`carriedKeys`) and the old
+chain's entries by hash, so every receipt of the world before still resolves by its slug. Replay starts
+from the installed genesis (`installGenesis`) and never reads the world before it. -/
+
+/-- A suspended entry as a genesis holds it: its checkpoint, its argument and its interpretation written
+    out whole, since a genesis carries no blocks. -/
+def wholeSuspension (w : World) (e : Json) : Except String Json := do
+  let outcome ← e.getObjVal? "outcome"
+  let activity ← outcome.getObjVal? "activity"
+  let activity := activity.setObjVal! "checkpoint" (← expandSuspended w e)
+  let activity := Json.mkObj ((((activity.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "argumentBlock")) ++
+    [("argument", ← activityArgument w activity)])
+  let outcome := outcome.setObjVal! "activity" activity
+  let outcome := match expandInterpretation w outcome with
+    | some i => outcome.setObjVal! "interpretation" i
+    | none => outcome
+  return e.setObjVal! "outcome" outcome
+
+/-- The object a suspended entry's activity runs on. -/
+def suspendedObject (e : Json) : String :=
+  ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
+    |>.bind (·.getObjValAs? String "object" |>.toOption)).getD ""
+
+/-- The indexes a carry keeps beyond the store, the pending deliveries, the suspensions and the handles,
+    each as `indexJson` writes it: what the world stands on that no object's state holds (subscriptions,
+    the posts replies answered, posting reservations, model attempts, the quotas' counts, the root acts'
+    count, the moderation: cards, quiets, hidden). Every other index names entries of the old chain. -/
+def carriedKeys : List String :=
+  ["subscriptions", "replies", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
+   "hidden", "modelDay", "hour"]
+
+/-- A genesis entry chained to `cid`: `tag` and its origin, the store of `shown` with every source its
+    objects compile from carried once in the entry's `sources` (as any entry carries the sources it is
+    first to name) and named by CID, the pending deliveries and whole suspensions given, the handles of
+    `w`, and `more`. -/
+def genesisEntry (w shown : World) (tag principal intent cid : String) (origin : String × Json)
+    (pending suspended : Array Json) (more : List (String × Json)) : Except String Json := do
+  let sources := newSources {} (shown.objects.toList.flatMap fun (_, o) => inputSources o.inputs)
+  let cids := (sources.flatMap fun (_, j) => ((j.getArr?.toOption).getD #[]).toList.filterMap
+    (·.getObjValAs? String "cid" |>.toOption))
+  let state ← storeJson { shown with modules := cids.foldl (fun m c => m.insert c 0) {} }
+  let handles := w.handles.toList.toArray.qsort (fun a b => a.1 < b.1) |>.map fun (did, h) =>
+    Json.mkObj [("did", toJson did), ("handle", toJson h)]
+  let outcome := Json.mkObj ([("tag", toJson tag), origin, ("state", state), ("pending", Json.arr pending),
+    ("suspended", Json.arr suspended), ("handles", Json.arr handles)] ++ more)
+  return Journal.sealEntry 1 cid ([("identity", identityJson principal intent), ("roots", rootsJson []),
+    ("turn", toJson 0), ("request", toJson (Journal.bodyHash origin.2)), ("outcome", outcome)] ++ sources)
 
 /-- The genesis entry of a fork of `w` (the world at `height`, whose entry there is `cid`) for
     `principal`, and the ids it omitted: only objects the principal may view are carried, with their
-    grants, pending deliveries and suspended activities (checkpoints and offers written out whole). -/
+    grants, pending deliveries and suspended activities. -/
 def forkGenesis (w : World) (principal world : String) (height : Nat) (cid : String) :
     Except String (Json × List String) := do
   let carried := w.objects.filter fun _ o => o.read.permits principal
@@ -360,44 +408,35 @@ def forkGenesis (w : World) (principal world : String) (height : Nat) (cid : Str
   let keeps := fun (id : String) => carried.contains id
   let lawText ← libraryLawText principal
   let grants := w.grants.filter fun _ g => keeps g.object
-  let shown : World := { w with objects := carried, modules := {}, posts := {}, grants, opener := principal,
+  let shown : World := { w with objects := carried, posts := {}, grants, opener := principal,
                                 clockPrincipal := principal, settled := true, libraryLaw := lawText }
-  let state ← storeJson shown
   let pending := w.pending.filter fun p => keeps ((p.getObjValAs? String "to").toOption.getD "")
-  let suspended ← (w.suspended.filter fun e => keeps (((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
-      |>.bind (·.getObjValAs? String "object" |>.toOption)).getD "")).mapM fun e => do
-    let outcome ← e.getObjVal? "outcome"
-    let activity ← outcome.getObjVal? "activity"
-    let activity := activity.setObjVal! "checkpoint" (← expandSuspended w e)
-    -- A fork carries no blocks for these: the argument is restored whole.
-    let activity := ((Json.mkObj ((((activity.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "argumentBlock")) ++
-      [("argument", ← activityArgument w activity)])))
-    let outcome := outcome.setObjVal! "activity" activity
-    let outcome := match expandInterpretation w outcome with
-      | some i => outcome.setObjVal! "interpretation" i
-      | none => outcome
-    return e.setObjVal! "outcome" outcome
+  let suspended ← (w.suspended.filter fun e => keeps (suspendedObject e)).mapM (wholeSuspension w)
   let origin := Json.mkObj [("world", toJson world), ("height", toJson height), ("cid", toJson cid)]
-  let handles := w.handles.toList.toArray.qsort (fun a b => a.1 < b.1) |>.map fun (did, h) =>
-    Json.mkObj [("did", toJson did), ("handle", toJson h)]
-  let outcome := Json.mkObj [("tag", toJson "forked"), ("forkedFrom", origin), ("state", state),
-    ("pending", Json.arr pending), ("suspended", Json.arr suspended), ("handles", Json.arr handles),
-    ("omitted", toJson omitted)]
-  let entry := Journal.sealEntry 1 cid [("identity", identityJson principal "fork"), ("roots", rootsJson []),
-    ("turn", toJson 0), ("request", toJson (Journal.bodyHash origin)), ("outcome", outcome)]
+  let entry ← genesisEntry w shown "forked" principal "fork" cid ("forkedFrom", origin) pending suspended
+    [("omitted", toJson omitted)]
   return (entry, omitted)
 
-/-- The world a fork's genesis entry (the first of `entries`) starts: its store installed, its carried
-    pending deliveries and suspended activities, handles and origin, and the entry recorded. -/
-def installFork (entries : Entries) (entry : Json) : Except String World := do
+/-- The world a store-installing genesis (the first of `entries`) starts: its store installed, a carry's
+    standing indexes laid over it, the pending deliveries and suspended activities it holds, the handles,
+    a fork's origin, and the entry recorded. -/
+def installGenesis (entries : Entries) (entry : Json) : Except String World := do
   let outcome ← entry.getObjVal? "outcome"
-  let state ← outcome.getObjVal? "state"
-  let w ← install state {}
+  -- Compile inputs name the sources the genesis carries by CID (an older fork's are whole).
+  let sources ← entrySources entry
+  let w ← install (← outcome.getObjVal? "state")
+    { entries := entries.upTo 1, modules := sources.foldl (fun m (c, _) => m.insert c 0) {} }
+  -- A carry's indexes, each as `indexJson` writes it, over the empty ones of the installed store.
+  let w ← match outcome.getObjVal? "index" with
+    | .ok carried => installIndex w (carriedKeys.foldl (fun j k => match carried.getObjVal? k with
+        | .ok v => j.setObjVal! k v
+        | .error _ => j) (indexJson w))
+    | .error _ => pure w
   let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
   let handles := (arr "handles").foldl (fun m h => match h.getObjValAs? String "did", h.getObjValAs? String "handle" with
     | .ok d, .ok x => m.insert d x
     | _, _ => m) ({} : Std.HashMap String String)
-  let forkedFrom := (outcome.getObjVal? "forkedFrom").toOption
+  let forkedFrom := if tagOf entry == "forked" then (outcome.getObjVal? "forkedFrom").toOption else none
   let cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {}
   let w := { w with pending := arr "pending", suspended := arr "suspended", handles, forkedFrom, cachedPackets,
                     entries := entries.upTo 1 }
@@ -458,12 +497,11 @@ def checkedEntry (src : Entries) (i : Nat) : Except String Json := do
   let some entry := src.get? i | fail "its record is missing or not its CID's"
   unless (entry.getObjValAs? Nat "height").toOption == some (i + 1) do fail "height out of sequence"
   let previous := (entry.getObjValAs? String "previous").toOption.getD ""
-  let expected := if i > 0 then (src.hashAt? (i - 1)).getD "" else if tagOf entry == "forked" then
-      ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "forkedFrom" |>.toOption)
-        |>.bind (·.getObjValAs? String "cid" |>.toOption)).getD ""
-    else Limits.genesis
+  let expected := if i > 0 then (src.hashAt? (i - 1)).getD "" else match genesisOrigin entry with
+    | some (_, origin) => (origin.getObjValAs? String "cid").toOption.getD ""
+    | none => Limits.genesis
   unless previous == expected do
-    fail (if i == 0 && tagOf entry == "forked" then "a fork's genesis must chain to the cid it was forked from"
+    fail (if i == 0 && installsStore entry then s!"a {tagOf entry} genesis must chain to the cid it was taken at"
       else "previous hash does not chain")
   return entry
 
@@ -490,11 +528,12 @@ def ignoresFrom (src : Entries) (start : Nat) (ignoring named : List Nat) (floor
     named := if named.contains h then named else named ++ [h]
   return (ignoring, named)
 
-/-- Where replay of a journal starts: a fork's installed genesis and one entry consumed, else an empty world. -/
+/-- Where replay of a journal starts: a fork's or a carry's installed genesis and one entry consumed, else an
+    empty world. -/
 def startOf (src : Entries) (caches : Caches := {}) : Except String World := do
   if src.count == 0 then return ({ entries := src.upTo 0 } : World).withCaches caches
   let first ← checkedEntry src 0
-  if tagOf first == "forked" then return (← installFork src first).withCaches caches
+  if installsStore first then return (← installGenesis src first).withCaches caches
   return ({ entries := src.upTo 0 } : World).withCaches caches
 
 /-- Full replay from height 0: the slow path, which `verify` compares every snapshot with. -/
@@ -629,7 +668,7 @@ def openJournal (journal : String) (verify : Bool := false) (caches : Caches := 
       | .error e => return .error e
     let edition := (first.getObjValAs? Nat "replay").toOption.getD 1
     if edition != Limits.replayEdition then
-      return .error s!"journal replay edition {edition}; this host is {Limits.replayEdition}; a world from another host's edition does not reopen: make it again with a new genesis"
+      return .error s!"journal replay edition {edition}; this host is {Limits.replayEdition}; a world from another host's edition does not reopen here: carry it (`delvetalk-obend carry --from {journal} --out NEW`, over a snapshot at its head written by the binary of its edition)"
   unless verify do return ← reopen journal src caches
   let snaps ← files journal
   let heights := snaps.map (·.1)

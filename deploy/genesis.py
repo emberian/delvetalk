@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """The town's genesis (docs/GENESIS.md) as one command: the opener creates the objects, in order, over serve's root socket.
 
-  python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --opener did:plc:...
+  python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --towns /towns [--opener did:plc:...]
 
-Refuses to run twice: if any genesis object already exists (`world-objects`), it creates nothing and exits 1.
-rehearsal/rehearse.py calls `run`, so the rehearsal and production seed the same world. Seeds name only the
-fields genesis decides; the host lays them over each package's own initial().
+The world is never wiped (docs/TENURE.md section 1): a genesis while a town journal lives anywhere under `--towns` (the
+directory holding every data directory, `/var/lib/delvetalk`, mounted read-only into the ops container at `/towns`;
+`DELVETALK_TOWNS`) begins a world that abandons that one, so it is refused, naming each journal and its height, unless
+`--wipe-with-the-owners-word R` carries the owner's word. Then R is the town's first line: written on the commonplace
+and admitted by the opener before anything else, and the first line of the welcome. A world changing hosts is carried
+(`python3 -m transport carry`), never begun again. Refuses to run twice: if any genesis object already exists
+(`world-objects`), it creates nothing and exits 1. rehearsal/rehearse.py calls `run`, so the rehearsal and production
+seed the same world. Seeds name only the fields genesis decides; the host lays them over each package's own initial().
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -311,15 +317,64 @@ def run(host, opener=OPENER):
     return made, None
 
 
+def towns(root, own):
+    """Every world journal under `root` that holds a world, other than `own` (the journal this genesis writes): a data
+    directory's `*/state/*.journal`, an older layout's `*/*.journal`, a playtest run's `run-*/state/*.journal`, the
+    root's own; scratch worlds are not custody and are left out. [(path, height)], height the chain's line count."""
+    root = Path(root)
+    mine = os.stat(own) if own and os.path.exists(own) else None
+    found = []
+    for path in sorted({*root.glob('*.journal'), *root.glob('*/*.journal'), *root.glob('*/state/*.journal')}):
+        if 'scratch' in path.parts or not path.is_file():
+            continue
+        st = path.stat()
+        if mine and (st.st_dev, st.st_ino) == (mine.st_dev, mine.st_ino):
+            continue
+        height = sum(1 for _ in open(path, 'rb'))
+        if height:
+            found.append((str(path), height))
+    return found
+
+
+def wipe(host, opener, word):
+    """The owner's word as the town's first line: written on the commonplace and admitted by its keeper, the opener."""
+    wrote = said(host, opener, 'commonplace', 'write', [('text', word)], 'genesis-wipe-word')
+    turned('the owner\'s word', wrote['reply'])
+    return turned('the owner\'s word admitted', said(host, opener, 'commonplace', 'admit', [('number', '1')], 'genesis-wipe-admit')['reply'])
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='genesis.py')
     ap.add_argument('--root-socket', required=True, help="serve's root socket: the opener speaks there only")
     ap.add_argument('--world', default='town')
     ap.add_argument('--opener', default=OPENER, help="the world's opener (default: ember)")
+    ap.add_argument('--state', default=os.environ.get('DELVETALK_STATE'), help='the state directory this genesis writes (DELVETALK_STATE)')
+    ap.add_argument('--towns', default=os.environ.get('DELVETALK_TOWNS'), help='the directory holding every data directory (DELVETALK_TOWNS)')
+    ap.add_argument('--wipe-with-the-owners-word', dest='word', metavar='R',
+                    help="begin a world while a town lives: the owner's word, one line, the town's first line and the welcome's")
     a = ap.parse_args(argv)
+    if not a.towns:
+        print('genesis: --towns (DELVETALK_TOWNS) names the directory of every data directory; without it a wipe cannot be told '
+              'from a first town', file=sys.stderr)
+        return 64
+    if a.word is not None and (not a.word.strip() or '\n' in a.word or len(a.word) > 280):
+        print("genesis: the owner's word is one line of 1 to 280 characters", file=sys.stderr)
+        return 64
+    living = towns(a.towns, os.path.join(a.state, f'{a.world}.journal') if a.state else None)
+    if living and a.word is None:
+        print('genesis refused: a world lives here, and a genesis would abandon it:\n' +
+              ''.join(f'  {path} (height {height})\n' for path, height in living) +
+              'carry it instead (python3 -m transport carry --from OLD --to NEW; docs/DEPLOY.md "A new binary"), or begin '
+              "again only with the owner's word: --wipe-with-the-owners-word R", file=sys.stderr)
+        return 1
     host = HostClient(a.root_socket, a.world)
     try:
         made, refusal = run(host, a.opener)
+        if not refusal and living:
+            try:
+                made.append({'object': 'commonplace', 'module': 'the owner\'s word', 'status': wipe(host, a.opener, a.word), 'reply': {}})
+            except Stopped as e:
+                refusal = str(e)
     finally:
         host.close()
     if refusal:

@@ -164,10 +164,15 @@ services:
     profiles: ["ops"]
     restart: "no"
     command: ["python3", "-m", "transport", "--help"]
+    environment:
+      <<: *env
+      # Every data directory, read only: genesis refuses while a town lives in any (deploy/genesis.py, no wipe).
+      DELVETALK_TOWNS: /towns
     volumes:
       - ${DELVETALK_DATA:-/var/lib/delvetalk/v7}:/data
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
       - ${DELVETALK_REPO_KEYS:-/etc/delvetalk/repo}:/etc/delvetalk/repo
+      - ${DELVETALK_TOWNS:-/var/lib/delvetalk}:/towns:ro
 
 secrets:
   anthropic_key:
