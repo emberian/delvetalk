@@ -552,7 +552,7 @@ def browser_login(case, handle=HANDLE):
 
 
 class Play(FrontCase):
-    """/play/ against the genesis town: the directory, the garden and its interpreter, as a verified browser sees them."""
+    """/play/ against the genesis town: the commonplace, the garden and its interpreter, as a verified browser sees them."""
     OPENER = 'did:plc:' + 'e' * 24
 
     @classmethod
@@ -603,7 +603,7 @@ class Play(FrontCase):
     def test_no_page_a_person_reads_sounds_like_a_cryptocurrency(self):
         pages = {'home': self.request('GET', '/')[2], 'home, logged in': self.request('GET', '/', headers={'Cookie': self.cookie})[2],
                  'object': self.request('GET', '/o/garden', headers={'Cookie': self.cookie})[2], 'play': self.play('/play/garden')[2],
-                 'directory': self.play('/play/')[2], 'style': self.request('GET', '/style/')[2],
+                 'commonplace': self.play('/play/')[2], 'style': self.request('GET', '/style/')[2],
                  'the word': self.request('POST', '/AGENTS.md/challenge', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Accept': 'text/html'})[2],
                  'a refusal': self.request('GET', '/o/nowhere', headers={'Accept': 'text/html'})[2]}
         for name, page in pages.items():
@@ -615,7 +615,7 @@ class Play(FrontCase):
 
 
     def test_a_refused_receipt_with_no_roots_answers_on_the_receipt_turn_and_play_routes(self):
-        """A spell with colour: gold, an undeclared method, a non-owner `directory add`: refused before any root was read."""
+        """A spell with colour: gold, an undeclared method, a non-owner `commonplace door`: refused before any root was read."""
         receipt = {'hash': 'h', 'height': 7, 'slug': 'tulun-huzif', 'identity': {'intent': 'x', 'principal': DID},
                    'outcome': {'tag': 'refused', 'class': 'badSpell', 'clause': 'badValue', 'object': 'garden', 'reason': 'colour is one of: amber, violet, silver'}}
         refused = {'status': 'refused', 'class': 'badSpell', 'receipt': receipt}

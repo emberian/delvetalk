@@ -19,6 +19,7 @@ import Delvetalk.Limits
 import Delvetalk.Canonical
 import Delvetalk.Profile
 import Delvetalk.Entry
+import Std.Data.HashSet
 
 open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendTyping
@@ -49,67 +50,6 @@ def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat :
   if value > cap then throw (key ++ " exceeds package capacity")
   return value
 
-private instance : Inhabited Term := ⟨.nat 0⟩
-
-mutual
-/-- A value's injection annotations at its own shape (`Data.shapeType`), each variant at the
-one-label sum naming its label, as a tree, built bottom-up: each node's shape type is made once from its
-children's, so a long list costs linear time and space (recomputing `shapeType` per
-injection was quadratic). -/
-def shapeTree : Data → AnnotationTree × Ty
-  | .variant tag payload =>
-    let (tree, payloadShape) := shapeTree payload
-    let shape := Ty.variant (.field tag payloadShape .emptyRow)
-    (.node (some ⟨payloadShape, shape, .unrestricted, .reusable⟩) #[tree], shape)
-  | .record fields => let (trees, row) := shapeFieldTrees fields; (.node none trees.toArray, row)
-  | .natural _ => (.empty, .natural)
-  | .boolean _ => (.empty, .boolean)
-  | .label _ => (.empty, .label)
-def shapeFieldTrees : List (String × Data) → List AnnotationTree × Ty
-  | [] => ([], .emptyRow)
-  | (name, value) :: rest =>
-    let (tree, shape) := shapeTree value
-    let (trees, row) := shapeFieldTrees rest
-    (tree :: trees, .field name shape row)
-end
-
-/-- An argument as a term with its injection annotations, directed by its declared
-type: a variant is injected at its declared sum, never guessed from one label (the
-annotation names its payload type and its sum or recursive variable), and a value
-at a universal position (`Data`) is wrapped in `toData` and checked at its own shape
-(`Data.shapeType`), the host having already decided its conformance. Positions follow
-the checker: an injection's payload is child 0, a record's field `i` is child `i`,
-the operand of `toData` child 0. The term itself is `Data.term` up to those `toData`
-wrappers. -/
-partial def quoteAt (bounds : DataBounds) (expected : Ty) (data : Data) : Term × AnnotationTree :=
-  if expected == .data then (.toData data.term, .node none #[(shapeTree data).1]) else
-  match data with
-  | .variant tag payload =>
-    let row? := match expected with
-      | .variant row => some row
-      | .variable index => match bounds.lookup index with
-          | some (.variant row) => some row
-          | _ => none
-      | _ => none
-    match row? >>= fun row => row.lookup bounds Ty.dataFuel tag with
-    | none => (data.term, .empty)
-    | some member =>
-      let (payloadTerm, annotations) := quoteAt bounds member payload
-      (.inject tag payloadTerm, .node (some ⟨member, expected, .unrestricted, .reusable⟩) #[annotations])
-  | .record fields =>
-    let rec memberOf : Ty → String → Option Ty
-      | .field n m tail, name => if n == name then some m else memberOf tail name
-      | _, _ => none
-    let quoted := fields.map fun (name, value) => match memberOf expected name with
-      | some member => (name, quoteAt bounds member value)
-      | none => (name, (value.term, .empty))
-    (.record (quoted.map fun (name, term, _) => (name, term)), .node none (quoted.map (·.2.2)).toArray)
-  | other => (other.term, .empty)
-
-def argumentAt (bounds : DataBounds) (domain : Ty) (v : Data) :
-    Except String (Term × AnnotationTree) :=
-  if domain == .data && !v.wellFormed then .error "turn refused: argument does not conform to Data (repeated field)"
-  else .ok (quoteAt bounds domain v)
 
 def failureName : Failure → String
   | .tickExhausted => "tick budget exhausted"
@@ -460,77 +400,7 @@ def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (b
       | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
       | none => .error ("turn refused: " ++ refusalText failure st)
 
-/-- Turn the outcome of a bounded run into a typed outcome. -/
-def conclude (dictionary : Dictionary) (pin : String) (binding : Binding) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
-    (outcome : Except (Failure × State × Budget) (Data × Budget))
-    (sites : Option (Array (Term × Ty)) := none) : Except String Delvetalk.Turn.Outcome :=
-  (concludeStep dictionary pin binding bounds plan response result b limits outcome sites).map Step.outcome
-
-/-- `packet` belongs to an artifact the caller has already verified. The checked, applied entry of an activity and its Plan/response/result types. -/
-def prepareStart (packet : Json) (arguments : List Data) :
-    Except String (AnnotatedTerm × Ty × Ty × Ty) := do
-  let decoded ← decodePacket packet
-  unless decoded.context.isEmpty do throw "package must have a closed context"
-  let some entry := check decoded.source [] decoded.fuel | throw "package refused by Mini type checker"
-  let mut source := decoded.source
-  let mut entryType := entry.type
-  let mut fuel := decoded.fuel
-  for v in arguments do
-    let (domain, rest) := match entryType with
-      | .arrow _ _ d c => (d, c)
-      | other => (other, other)
-    let bounds := decoded.source.assumptions.bounds
-    if domain.isDataUnder bounds [] Ty.dataFuel [] && !v.conformsUnder bounds domain then
-      throw "turn refused: argument does not conform to its type"
-    let (term, extras) ← argumentAt bounds domain v
-    source := applyArgument source term extras
-    fuel := Delvetalk.argumentFuel fuel term
-    entryType := rest
-  let some checked := check source [] fuel | throw "applied package refused by Mini type checker"
-  let (plan, response, result) ← activityShape source.assumptions checked.type
-  return (source, plan, response, result)
-
-def startActivity (packet : Json) (arguments : List Data) (binding : Binding) (b : Budgets) : Except String Delvetalk.Turn.Outcome := do
-  let (source, plan, response, result) ← prepareStart packet arguments
-  let sites ← sitesFor (← decodePacket packet).source plan
-  let capacities : Limits := ⟨b.heap, b.stack⟩
-  let outcome := (executeWith (fun _ => true) Fetch.none capacities ⟨b.nodes, b.ticks, b.bytes⟩ source.term).map
-    fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  conclude (programDictionary packet) (packetDigest packet) binding source.assumptions.bounds plan response result b capacities outcome sites
-
 /-! ## A decoded, checked entry: no packet decoding or re-checking per turn -/
-
-/-- The checked application of a held entry to turn arguments, and its activity shape:
-each argument is checked alone and composed with the entry's own derivation. -/
-def prepareStartEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) :
-    Except String (Delvetalk.CheckedEntry × Ty × Ty × Ty) := do
-  let bounds := entry.source.assumptions.bounds
-  let mut current := entry
-  for v in arguments do
-    let domain := match callable current.type with
-      | .arrow _ _ d _ => d
-      | other => other
-    if domain.isDataUnder bounds [] Ty.dataFuel [] && !v.conformsUnder bounds domain then
-      throw "turn refused: argument does not conform to its type"
-    let (term, extras) ← argumentAt bounds domain v
-    current ← current.apply term extras
-  let (plan, response, result) ← activityShape current.source.assumptions current.type
-  return (current, plan, response, result)
-
-/-- `startActivity` on a held entry, its yield held (`Step`). -/
-def startEntryStep (entry : Delvetalk.CheckedEntry) (arguments : List Data) (binding : Binding) (b : Budgets)
-    (dictionary : Option Dictionary := none) : Except String Step := do
-  let (applied, plan, response, result) ← prepareStartEntry entry arguments
-  let capacities : Limits := ⟨b.heap, b.stack⟩
-  let outcome := (executeWith (fun _ => true) Fetch.none capacities ⟨b.nodes, b.ticks, b.bytes⟩ applied.source.term).map
-    fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  concludeStep (dictionary.getD (Dictionary.ofProgram entry.source.term)) entry.pin binding
-    applied.source.assumptions.bounds plan response result b capacities outcome entry.sites
-
-/-- `startActivity` on a held entry. -/
-def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (binding : Binding) (b : Budgets)
-    (dictionary : Option Dictionary := none) : Except String Delvetalk.Turn.Outcome :=
-  (startEntryStep entry arguments binding b dictionary).map Step.outcome
 
 open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
 /-- A checkpoint's state, checked against the entry and the binding and decoded, with the site
@@ -562,50 +432,6 @@ def resumeState (entry : Delvetalk.CheckedEntry) (state : State) (site : Option 
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
     | throw "turn refused: checkpoint is not a yielded state"
   return (assumptions.bounds, plan, response, result, resumed)
-
-def prepareResumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String) (binding : Binding) (value : Data)
-    (dictionary : Option Dictionary := none) :
-    Except String (DataBounds × Ty × Ty × Ty × State × State) := do
-  let (state, site) ← checkpointState entry checkpoint issued binding (dictionary.getD (Dictionary.ofProgram entry.source.term))
-  let (bounds, plan, response, result, resumed) ← resumeState entry state site value
-  return (bounds, plan, response, result, state, resumed)
-
-open Minidregg.Theory.ObjectiveBendDemandCollect in
-/-- Run a resumed segment from `state` (its yield's site `site`) and conclude it. -/
-def runResumed (entry : Delvetalk.CheckedEntry) (state : State) (site : Option Nat) (binding : Binding)
-    (value : Data) (b : Budgets) (dictionary : Dictionary) : Except String Step := do
-  let (bounds, plan, response, result, resumed) ← resumeState entry state site value
-  let capacities := limitsPast ⟨b.heap, b.stack⟩ state
-  let outcome := (executeStateWith (fun _ => true) Fetch.none capacities ⟨b.nodes, b.ticks, b.bytes⟩ resumed).map
-    fun e => (e.extraction.result.value, e.extraction.result.remaining)
-  concludeStep dictionary entry.pin binding bounds plan response result b capacities outcome entry.sites
-
-/-- Resume a checkpoint whose digest the caller recorded when it was made (`issued`, see
-`checkpointState`), its next yield held (`Step`). The only other resumption is a yield held in
-this process (`resumeSuspended`). -/
-def resumeEntryStep (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String) (binding : Binding) (value : Data)
-    (b : Budgets) (dictionary : Option Dictionary := none) : Except String Step := do
-  let dictionary := dictionary.getD (Dictionary.ofProgram entry.source.term)
-  let (state, site) ← checkpointState entry checkpoint issued binding dictionary
-  runResumed entry state site binding value b dictionary
-
-/-- `resumeEntryStep`'s outcome. -/
-def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String) (binding : Binding) (value : Data)
-    (b : Budgets) (dictionary : Option Dictionary := none) : Except String Delvetalk.Turn.Outcome :=
-  (resumeEntryStep entry checkpoint issued binding value b dictionary).map Step.outcome
-
-/-- Resume a yield held in this process (`Step.yielded`) without a checkpoint: no encoding,
-digest or decoding. It refuses what `resumeEntry` would refuse of that yield's checkpoint:
-another package or another binding; the state, site and dictionary are the yield's own. -/
-def resumeSuspended (entry : Delvetalk.CheckedEntry) (suspension : Suspension) (binding : Binding)
-    (value : Data) (b : Budgets) : Except String Step := do
-  discard <| activityShape entry.source.assumptions (peelArrows Bounds.entryArrowDepth entry.type)
-  unless suspension.pin == entry.pin do throw "checkpoint belongs to another package"
-  unless suspension.binding.object == binding.object do throw "checkpoint belongs to another object"
-  unless suspension.binding.principal == binding.principal do throw "checkpoint belongs to another principal"
-  unless suspension.binding.intent == binding.intent do throw "checkpoint belongs to another intent"
-  unless suspension.binding.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
-  runResumed entry suspension.state suspension.site binding value b suspension.dictionary
 
 /-! ## Stored state (KERNEL-HANDOFF §15)
 
@@ -678,7 +504,7 @@ def scalarPart (stored : List String) : Data → Data
 A state is bounded per cell: its scalar part (`scalarPart`) and each row of a stored relation are
 at most `Bounds.maxCellBytes` canonical bytes. A write pays the canonical bytes of the cells it
 changes: the scalar part when a scalar field changed, and each row whose key is new or whose row
-changed. The host calls these at write (`stateBytes`, `maxStateBytes`, the storage ledger). -/
+changed. The host calls these at write (the bound, the storage ledger). -/
 
 /-- The rows of a stored relation field of a state record (`rows {items}`), or none. -/
 def relationRows (state : Data) (field : String) : Array Data :=
@@ -689,26 +515,30 @@ def relationRows (state : Data) (field : String) : Array Data :=
   | _ => #[]
 
 /-- The first cell of `state` past the cell bound: `"scalar"` for its scalar part, else the
-relation field and the key of a row; none when every cell fits. -/
-def cellOverBound (relations : List (String × List String)) (state : Data) : Option (String × Data) :=
+relation field and the key of a row (of the relations named in `rows`, by default all: a write
+names those it edited); none when every cell fits. -/
+def cellOverBound (relations : List (String × List String)) (state : Data)
+    (rows : List String := relations.map (·.1)) : Option (String × Data) :=
   let stored := relations.map (·.1)
   if (Canonical.encode (scalarPart stored state)).size > Bounds.maxCellBytes then some ("scalar", .record [])
-  else relations.findSome? fun (field, key) =>
+  else (relations.filter (rows.contains ·.1)).findSome? fun (field, key) =>
     (relationRows state field).findSome? fun row =>
       if (Canonical.encode row).size > Bounds.maxCellBytes then some (field, keyProjection key row) else none
 
 /-- The canonical bytes a write from `before` to `after` changes: the scalar part's when a scalar
-field differs, plus each row of `after` whose key is new or whose row differs. -/
-def changedCellBytes (relations : List (String × List String)) (before after : Data) : Nat :=
+field differs, plus each row of `after` whose key is new or whose row differs (in the relations
+named in `rows`, by default all: a write names those it edited, the rest being unchanged). -/
+def changedCellBytes (relations : List (String × List String)) (before after : Data)
+    (rows : List String := relations.map (·.1)) : Nat :=
   let stored := relations.map (·.1)
   let scalar := Canonical.encode (scalarPart stored after)
   let scalarBytes := if scalar == Canonical.encode (scalarPart stored before) then 0 else scalar.size
-  relations.foldl (fun total (field, key) =>
-    let old := (relationRows before field).map fun row => (Canonical.encode (keyProjection key row), Canonical.encode row)
+  -- A row is unchanged when the same bytes stood before: its key is a projection of them.
+  (relations.filter (rows.contains ·.1)).foldl (fun total (field, _) =>
+    let old : Std.HashSet ByteArray := (relationRows before field).foldl (fun s row => s.insert (Canonical.encode row)) {}
     (relationRows after field).foldl (fun total row =>
       let bytes := Canonical.encode row
-      let k := Canonical.encode (keyProjection key row)
-      if old.any (fun (k', bytes') => k' == k && bytes' == bytes) then total else total + bytes.size) total) scalarBytes
+      if old.contains bytes then total else total + bytes.size) total) scalarBytes
 
 -- A changed scalar pays the scalar part; an inserted row pays its bytes; an unchanged row nothing.
 #guard
@@ -741,6 +571,9 @@ def storedStart (entry : Delvetalk.CheckedEntry) (arguments : List Data) (store 
     if domain == .data && !checked.wellFormed then throw "turn refused: argument does not conform to Data (repeated field)"
     type := rest
   let (plan, response, result) ← activityShape entry.source.assumptions type
+  -- With no stored relation every argument is native, whatever its shape.
+  if store.relations.isEmpty then
+    return (⟨#[], .evaluate entry.source.term [], arguments.map .nativeArgument⟩, plan, response, result)
   let .record fields :: rest := arguments | throw "turn refused: a stored turn's first argument is its state record"
   let start : State := ⟨#[.stored (.object fields (store.relations.map fun r => (r.field, r.size))) none],
     .evaluate entry.source.term [], .argument (.bound 0) [0] :: rest.map .nativeArgument⟩
@@ -762,8 +595,42 @@ def runStored (entry : Delvetalk.CheckedEntry) (store : Store) (dictionary : Dic
     | _ => ended
   return (step, store.readsOf ended)
 
+/-- The rows of `field` from `position` on as the list `List<T>` they stand for, from `store`;
+none when the store does not answer one. -/
+def storedList (store : Store) (field : String) (position size : Nat) : Option Data :=
+  ((List.range (size - position)).mapM fun i => store.fetch field (position + i)).map fun rows =>
+    rows.foldr (fun row tail => .variant "cons" (.record [("head", row), ("tail", tail)])) (.variant "nil" (.record []))
+
+/-- The native data a stored part stands for, from `store`. -/
+def storedData (store : Store) : Stored → Option Data
+  | .object fields stored => do
+    return .record (← fields.mapM fun (name, value) => match stored.lookup name with
+      | some size => do return (name, .variant "rows" (.record [("items", ← storedList store name 0 size)]))
+      | none => pure (name, value))
+  | .relation f n => do return .variant "rows" (.record [("items", ← storedList store f 0 n)])
+  | .items f n => do return .record [("items", ← storedList store f 0 n)]
+  | .spine f j n => storedList store f j n
+  | .cons f j n => do return .record [("head", ← store.fetch f j), ("tail", ← storedList store f (j + 1) n)]
+  | .row f j => store.fetch f j
+
+/-- A yielded state, collected as its checkpoint is (`ObjectiveBendDemandCollect.checkpoint`), with
+every stored cell it still holds unforced replaced by the native data it stands for, and the stored
+fields so replaced: what a checkpoint kept past this process holds, so that resuming it fetches
+nothing (forcing a native cell is forcing the stored cell it replaced). -/
+def materializeStored (store : Store) (yielded : State) : State × List String :=
+  let state := Minidregg.Theory.ObjectiveBendDemandCollect.checkpoint yielded
+  let fieldsOf : Stored → List String
+    | .object _ stored => stored.map (·.1)
+    | .relation f _ | .items f _ | .spine f _ _ | .cons f _ _ | .row f _ => [f]
+  let (heap, fields) := state.heap.foldl (fun (heap, fields) cell => match cell with
+    | .stored part none => match storedData store part with
+      | some d => (heap.push (.native d), fields ++ fieldsOf part)
+      | none => (heap.push cell, fields)
+    | other => (heap.push other, fields)) (#[], [])
+  ({ state with heap }, fields.eraseDups)
+
 /-- Start a stored turn on a held entry: its first step and the rows it forced. -/
-def startEntryStored (entry : Delvetalk.CheckedEntry) (arguments : List Data) (store : Store) (binding : Binding)
+def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (store : Store) (binding : Binding)
     (b : Budgets) (dictionary : Option Dictionary := none) : Except String (Step × Reads) := do
   let (start, plan, response, result) ← storedStart entry arguments store
   runStored entry store (dictionary.getD (Dictionary.ofProgram entry.source.term)) binding plan response result b
@@ -771,7 +638,7 @@ def startEntryStored (entry : Delvetalk.CheckedEntry) (arguments : List Data) (s
 
 /-- Resume a stored yield held in this process (`resumeSuspended`'s refusals), fetching from
 `store`, which must answer the read height the turn started at. -/
-def resumeSuspendedStored (entry : Delvetalk.CheckedEntry) (suspension : Suspension) (store : Store)
+def resumeSuspended (entry : Delvetalk.CheckedEntry) (suspension : Suspension) (store : Store)
     (binding : Binding) (value : Data) (b : Budgets) : Except String (Step × Reads) := do
   discard <| activityShape entry.source.assumptions (peelArrows Bounds.entryArrowDepth entry.type)
   unless suspension.pin == entry.pin do throw "checkpoint belongs to another package"
@@ -784,7 +651,7 @@ def resumeSuspendedStored (entry : Delvetalk.CheckedEntry) (suspension : Suspens
     (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state) resumed
 
 /-- Resume a stored turn's checkpoint whose digest the caller recorded (`issued`). -/
-def resumeEntryStepStored (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String)
+def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String)
     (binding : Binding) (value : Data) (b : Budgets) (store : Store) (dictionary : Option Dictionary := none) :
     Except String (Step × Reads) := do
   let dictionary := dictionary.getD (Dictionary.ofProgram entry.source.term)
@@ -794,14 +661,6 @@ def resumeEntryStepStored (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpo
     (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) resumed
 
 def wantsProfile (request : Json) : Bool := (request.getObjValAs? Bool "profile").toOption.getD false
-
-def start (packet arguments limits request : Json) : Except String Json := do
-  let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
-  let b ← budgets limits
-  let reply := (← startActivity packet values (← Binding.ofJson request) b).toJson
-  if !wantsProfile request then return reply
-  let (source, _) ← prepareStart packet values
-  return reply.setObjVal! "profile" (Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (initial source.term))
 
 /-- A store over a state's own rows, for the JSON ops: `stored: [{field, key}]` names the state's
 relation fields to hold as stored cells (the host builds its `Store` from its own store). -/
@@ -818,17 +677,20 @@ def storeOfState (state : Data) (stored : Json) : Except String Store := do
 
 def stepJson (step : Step) (reads : Reads) : Json := step.outcome.toJson.setObjVal! "reads" reads.toJson
 
+/-- `turn-start`: the first argument's relations named in `stored: [{field, key}]` held as stored
+cells over its own rows (none named: every argument native); the reply carries `reads`, and with
+`profile: true` the segment's tick breakdown. -/
 def startEntryJson (entry : Delvetalk.CheckedEntry) (arguments limits request : Json) : Except String Json := do
   let values ← (← arguments.getArr?).toList.mapM (decodeData Bounds.dataWireDepth)
   let b ← budgets limits
-  if let .ok stored := request.getObjVal? "stored" then
-    let store ← storeOfState (values.headD (.record [])) stored
-    let (step, reads) ← startEntryStored entry values store (← Binding.ofJson request) b
-    return stepJson step reads
-  let reply := (← startEntry entry values (← Binding.ofJson request) b).toJson
+  let store ← match request.getObjVal? "stored" with
+    | .ok stored => storeOfState (values.headD (.record [])) stored
+    | .error _ => pure Store.empty
+  let (step, reads) ← startEntry entry values store (← Binding.ofJson request) b
+  let reply := stepJson step reads
   if !wantsProfile request then return reply
-  let (applied, _) ← prepareStartEntry entry values
-  return reply.setObjVal! "profile" (Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (initial applied.source.term))
+  let (start, _) ← storedStart entry values store
+  return reply.setObjVal! "profile" (Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks start store.bounded)
 
 /-- The refusal of a checkpoint whose digest the resuming process did not record. -/
 def notIssued : String := "checkpoint was not issued by this process"
@@ -842,14 +704,16 @@ def resumeEntryJson (entry : Delvetalk.CheckedEntry) (issued : String → Bool) 
   let value ← decodeData Bounds.dataWireDepth responseJson
   let b ← budgets limits
   let binding ← Binding.ofJson request
-  if let .ok stored := request.getObjVal? "stored" then
-    let store ← storeOfState (← decodeData Bounds.dataWireDepth (← request.getObjVal? "state")) stored
-    let (step, reads) ← resumeEntryStepStored entry checkpoint checkpoint.digest binding value b store
-    return stepJson step reads
-  let reply := (← resumeEntry entry checkpoint checkpoint.digest binding value b).toJson
+  let store ← match request.getObjVal? "stored" with
+    | .ok stored => storeOfState (← decodeData Bounds.dataWireDepth (← request.getObjVal? "state")) stored
+    | .error _ => pure Store.empty
+  let (step, reads) ← resumeEntry entry checkpoint checkpoint.digest binding value b store
+  let reply := stepJson step reads
   if !wantsProfile request then return reply
-  let (_, _, _, _, state, resumed) ← prepareResumeEntry entry checkpoint checkpoint.digest binding value
-  return reply.setObjVal! "profile"
-    (Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) b.bytes b.ticks resumed)
+  let dictionary := Dictionary.ofProgram entry.source.term
+  let (state, site) ← checkpointState entry checkpoint checkpoint.digest binding dictionary
+  let (_, _, _, _, resumed) ← resumeState entry state site value
+  return reply.setObjVal! "profile" (Delvetalk.Profile.profile
+    (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) b.bytes b.ticks resumed store.bounded)
 
 end Delvetalk.Turn

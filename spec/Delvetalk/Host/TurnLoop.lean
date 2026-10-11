@@ -134,8 +134,9 @@ structure TurnState where
   world : World
   roots : List (String × Nat) := []
   writes : List (String × List Written) := []
-  /-- Fields read alone (`viewField`): object, field, version (`recordFieldRoot`). -/
-  fieldRoots : List (String × String × Nat) := []
+  /-- How each root not read whole was read (`Cells`, by object): a stored frame's scalar part,
+      rows and spans (`recordReading`), a field read alone (`viewField`). -/
+  cells : List (String × Cells) := []
   /-- The turn's identity principal: it names the entry and derives send and grant ids. -/
   principal : String
   intent : String
@@ -207,19 +208,74 @@ def liftEval {α : Type} (r : Except String α) : M α :=
   | .ok a => pure a
   | .error e => throw (.evaluation e)
 
+/-- The roots a turn holds against `maxRoots`: each object, and each field, row and span it read. -/
+def rootCount (s : TurnState) : Nat := s.roots.length + (s.cells.map (·.2.extra)).sum
+
+/-- `id` is a root read whole: whatever was read of it by its cells is covered. -/
 def recordRoot (id : String) (version : Nat) : M Unit := do
   let s ← get
-  unless s.roots.any (·.1 == id) do
-    if s.roots.length + s.fieldRoots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
+  if s.roots.any (·.1 == id) then
+    set { s with cells := s.cells.filter (·.1 != id) }
+  else
+    if rootCount s ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
     set { s with roots := s.roots ++ [(id, version)] }
 
-/-- A root on one field of an object (`viewField`, WHOLENESS §3a): none when the whole object is
-    already a root, which covers it. -/
-def recordFieldRoot (id field : String) (version : Nat) : M Unit := do
+/-- `id` is a root read by its cells (`Cells`): joined with what the turn read of it before, and
+    nothing when it is already a root read whole. -/
+def recordCells (id : String) (version : Nat) (r : Cells) : M Unit := do
   let s ← get
-  unless s.roots.any (·.1 == id) || s.fieldRoots.any (fun (o, f, _) => o == id && f == field) do
-    if s.roots.length + s.fieldRoots.length ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
-    set { s with fieldRoots := s.fieldRoots ++ [(id, field, version)] }
+  let joined := match s.cells.lookup id with
+    | some before => some (before.join r)
+    | none => if s.roots.any (·.1 == id) then none else some r
+  let some joined := joined | return
+  let cells := (s.cells.filter (·.1 != id)) ++ [(id, joined)]
+  let roots := if s.roots.any (·.1 == id) then s.roots else s.roots ++ [(id, version)]
+  if roots.length + (cells.map (·.2.extra)).sum > Limits.maxRoots then evaluation "turn exceeds the root capacity"
+  set { s with roots, cells }
+
+/-- A root on one field of an object (`viewField`, WHOLENESS §3a). -/
+def recordFieldRoot (id field : String) (version : Nat) : M Unit :=
+  recordCells id version { fields := [field] }
+
+/-- The store a stored frame of `o` fetches from (KERNEL-HANDOFF §15): each declared relation's rows
+    at the object's committed version, in key order (`canonicalRowsDropping` keeps them so). -/
+def storeOf (o : Object) : List (RelDecl × Array Data) × Delvetalk.Turn.Store :=
+  let rels := o.relations.map fun d => (d, Delvetalk.Turn.relationRows o.state d.field)
+  (rels, { relations := rels.map fun (d, rows) => { field := d.field, size := rows.size, key := d.key }
+           fetch := fun f j => (rels.find? (·.1.field == f)).bind fun (_, rows) => rows[j]? })
+
+/-- A stored frame's store, kept for its resumed segments in this process: the object and the
+    version it was read at, and its relations' rows there (`storeOf`). -/
+structure Held where
+  object : String
+  version : Nat
+  rels : List (RelDecl × Array Data)
+  store : Delvetalk.Turn.Store
+
+def Held.of (id : String) (version : Nat) (o : Object) : Held :=
+  let (rels, store) := storeOf o
+  { object := id, version, rels, store }
+
+/-- The frame of a journaled resumption: its checkpoint holds no stored cell (`Held.kept`), so it
+    fetches nothing and reads its object through what the checkpoint carries. -/
+def Held.journaled (id : String) (version : Nat) : Held := { object := id, version, rels := [], store := Delvetalk.Turn.Store.empty }
+
+/-- What a stored segment of a held frame read is a root (`cellsOf`). -/
+def Held.note (h : Held) (reads : Delvetalk.Turn.Reads) : M Unit :=
+  recordCells h.object h.version (cellsOf h.rels reads)
+
+/-- A yield as a checkpoint kept past this process holds it: every stored cell not yet forced made
+    the native rows it stands for at the version read (`Turn.materializeStored`), so a journaled
+    resumption needs no store at that version; what the rest of the turn may read of those
+    relations is their whole key set then. -/
+def Held.kept (h : Held) (s : Delvetalk.Turn.Suspension) : M Delvetalk.Turn.Suspension := do
+  let (state, fields) := Delvetalk.Turn.materializeStored h.store s.state
+  unless fields.isEmpty do recordCells h.object h.version { spans := fields.map (·, none) }
+  return { s with state }
+
+/-- The state a stored frame starts from: its relations emptied (`Turn.scalarPart`), their rows held
+    by the store, so neither the machine nor a checkpoint carries a row it did not force. -/
+def storedState (o : Object) : Data := Delvetalk.Turn.scalarPart (o.relations.map (·.field)) o.state
 
 def field? (fields : List (String × Data)) (name : String) : Option Data := fields.lookup name
 
@@ -241,27 +297,6 @@ def listData (items : List Data) : Data :=
   items.foldr (fun x tail => .variant "cons" (.record [("head", x), ("tail", tail)]))
     (.variant "nil" (.record []))
 
-
-/-- Plain JSON for a model to read: lists are arrays, a sum is an object with its `tag`. -/
-partial def listHeads (acc : List Data) : Data → Option (List Data)
-  | .variant "nil" _ => some acc.reverse
-  | .variant "cons" (.record f) => do
-    let head ← f.lookup "head"
-    let tail ← f.lookup "tail"
-    listHeads (head :: acc) tail
-  | _ => none
-
-partial def plainJson : Data → Json
-  | .natural n => toJson n
-  | .boolean b => toJson b
-  | .label s => toJson s
-  | .record fs => Json.mkObj (fs.map fun (k, v) => (k, plainJson v))
-  | d@(.variant l p) =>
-    match listHeads [] d with
-    | some items => Json.arr (items.toArray.map plainJson)
-    | none => match p with
-      | .record fs => Json.mkObj (("tag", toJson l) :: fs.map fun (k, v) => (k, plainJson v))
-      | other => Json.mkObj [("tag", toJson l), ("value", plainJson other)]
 
 /-- The first payload that makes a response conform to the Response type. -/
 def respond (bounds : DataBounds) (responseType : Ty) (label : String) (payloads : List Data) : M Data := do
@@ -619,22 +654,38 @@ def hasMethod (o : Object) (name : String) : Bool :=
 def cardContext (w : World) (id reader caller intent : String) (height : Nat) (method : String) : Data :=
   contextData id reader (handleOf w reader) caller intent height w.clock "card" method
 
+/-- A pure definition of `id`'s package run on its committed state (the first argument) through the
+    stored path under this turn's ticks (KERNEL-HANDOFF §15): only the rows it forces are fetched,
+    and what it read of `id` is a root (`recordReading`). -/
+def storedPure (id : String) (o : Object) (c : Compiled) (rest : List Data) : M (Except String Data) := do
+  let entry ← entryOf c
+  let (rels, store) := storeOf o
+  let st ← get
+  match Package.executeDataEntryStored entry (#[storedState o] ++ rest.toArray) store
+      (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
+  | .ok (.finished value _ _ usage, reads) =>
+    recordCells id o.version (cellsOf rels reads)
+    spend (usage.ticksUsed + usage.conversionNodes)
+    return .ok value
+  | .ok (.refused failure usage, reads) =>
+    recordCells id o.version (cellsOf rels reads)
+    spend (usage.ticksUsed + usage.conversionNodes)
+    return .error failure
+  | .error e => return .error e
+
 /-- An object's card as `context`'s reader sees it, run on its committed state under this turn's
     ticks: `renderFor(state, context)` when the package has it, else `render`, which may take
     `(state, context)` or the state alone. `noCard` when it has neither, `render` when it fails
-    or runs out. -/
-def renderCard (o : Object) (context : String → Data) : M (Except String Data) := do
+    or runs out. It runs on the stored state (`storedPure`): what it read of `id` is a root. -/
+def renderCard (id : String) (o : Object) (context : String → Data) : M (Except String Data) := do
   let name := if hasMethod o "renderFor" then "renderFor" else "render"
   let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
   let some c := compiled | return .error "noCard"
   let arguments := match c.type with
-    | .arrow _ _ _ (.arrow _ _ ct _) => #[o.state, fitRecord c.bounds ct (context name)]
-    | _ => #[o.state]
-  let entry ← entryOf c
-  let st ← get
-  match Package.executeDataEntry entry arguments (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
-  | .ok (.finished value _ _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .ok value
-  | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "render"
+    | .arrow _ _ _ (.arrow _ _ ct _) => [fitRecord c.bounds ct (context name)]
+    | _ => []
+  match ← storedPure id o c arguments with
+  | .ok value => return .ok value
   | .error _ => return .error "render"
 
 /-- The views a package declares: the labels its pure `views()` returns (`def views() ->
@@ -652,20 +703,22 @@ def declaredViews (o : Object) : M (List String) := do
     it takes one) under this turn's remaining ticks, as a card is rendered. Its value must be
     first-order data. `noView` when the package does not declare `view`, `view` when it fails, runs
     out, or answers something other than data. -/
-def derivedView (o : Object) (view : String) (context : Data) : M (Except String Data) := do
+def derivedView (id : String) (o : Object) (view : String) (context : Data) : M (Except String Data) := do
   unless (← declaredViews o).contains view do return .error "noView"
   let some c ← tryCatch (some <$> compiledMethod o view) (fun _ => pure none) | return .error "noView"
-  let (arguments, result) := match c.type with
-    | .arrow _ _ _ (.arrow _ _ ct r) => (#[o.state, fitRecord c.bounds ct context], r)
-    | .arrow _ _ _ r => (#[o.state], r)
-    | r => (#[], r)
+  let (rest, result) := match c.type with
+    | .arrow _ _ _ (.arrow _ _ ct r) => (some [fitRecord c.bounds ct context], r)
+    | .arrow _ _ _ r => (some [], r)
+    | r => (none, r)
   unless result.isDataUnder c.bounds [] Ty.dataFuel [] do return .error "view"
-  let entry ← entryOf c
-  let st ← get
-  match Package.executeDataEntry entry arguments (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
-  | .ok (.finished value _ _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .ok value
-  | .ok (.refused _ usage) => spend (usage.ticksUsed + usage.conversionNodes); return .error "view"
-  | .error _ => return .error "view"
+  -- A view of no parameter reads nothing of the object.
+  let ran ← match rest with
+    | some rest => storedPure id o c rest
+    | none => do
+      let (value, used) := runPure (← entryOf c) [] (← get).ticks
+      spend used
+      pure value
+  return ran.mapError fun _ => "view"
 
 /-- The kernel's refusal of an argument that does not conform to the entry's input type. -/
 def argumentRefusal : String := "turn refused: argument does not conform to its type"
@@ -1219,7 +1272,9 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
   -- Only a method the package makes public is asked from outside (a call or a run checked it).
   if depth == 0 && !s.receiver && !obj.offers method then throw (.refused "noMethod" (noMethodReason id method))
-  recordRoot id obj.version
+  -- The frame reads its object by its cells: the scalar part, and the rows its segments force.
+  recordCells id obj.version { scalar := true }
+  let held := Held.of id obj.version obj
   let compiled ← compiledMethod obj method
   -- What the method takes, with the card's declared bounds: built only for a refusal.
   let expectedNow : M Json := do return expectedInput obj id method compiled (← declaredForms obj).1
@@ -1234,8 +1289,8 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
     (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post
   let (arguments, r) ← match compiled.type with
-    | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
-    | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
+    | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([storedState obj, argument, fitRecord compiled.bounds ct context], r)
+    | .arrow _ _ _ (.arrow _ _ ct r) => pure ([storedState obj, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
   unless argumentFits compiled argument do throw (.refused "typeMismatch" (misfitReason compiled method argument) (some (← expectedNow)))
   -- A direct turn's argument is held to the card's declared form bounds as a spell is (codex host
@@ -1248,31 +1303,34 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     let b ← budgetsNow
     let binding := Delvetalk.Turn.Binding.make id s.principal s.intent (← get).roots
     let entry ← entryOf compiled
-    let started ← match Delvetalk.Turn.startEntryStep entry arguments binding b compiled.dictionary with
+    let (started, reads) ← match Delvetalk.Turn.startEntry entry arguments held.store binding b compiled.dictionary with
       | .ok step => pure step
       | .error e => kernelRefusal (.error e) (some (← expectedNow))
-    noteProfile fun _ => (Delvetalk.Turn.prepareStartEntry entry arguments |>.map fun (applied, _) =>
-      Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks (Minidregg.Theory.ObjectiveBendDemandMachine.initial applied.source.term))
-    drive depth id caller compiled binding started 0
+    held.note reads
+    noteProfile fun _ => (Delvetalk.Turn.storedStart entry arguments held.store |>.map fun (start, _) =>
+      Delvetalk.Profile.profile ⟨b.heap, b.stack⟩ b.bytes b.ticks start held.store.bounded)
+    drive depth id caller compiled binding held started 0
   | _ =>
     unless r.isDataUnder compiled.bounds compiled.rigid Ty.dataFuel [] do throw (.request s!"method {method} must be pure data or an activity")
     let st ← get
     let lim := st.limits.setObjVal! "ticks" (toJson (toString st.ticks))
-    -- The held entry, as cards run: no packet decode or re-check per call.
+    -- The held entry on the stored state, as cards run: no packet decode or re-check per call.
     let entry ← entryOf compiled
-    match Package.executeDataEntry entry arguments.toArray lim with
+    match Package.executeDataEntryStored entry arguments.toArray held.store lim with
     | .error e => evaluation e
-    | .ok (.refused failure usage) =>
+    | .ok (.refused failure usage, reads) =>
+      held.note reads
       spend (usage.ticksUsed + usage.conversionNodes)
       evaluation failure
-    | .ok (.finished value _ _ usage) =>
+    | .ok (.finished value _ _ usage, reads) =>
+      held.note reads
       spend (usage.ticksUsed + usage.conversionNodes)
       let .record fields := value | evaluation "a pure method must return the state record"
       addWrite id caller (fields.map fun (k, v) => (⟨k, .set v⟩ : Edit))
       return value
 
 partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (binding : Delvetalk.Turn.Binding)
-    (outcome : Delvetalk.Turn.Step) (_n : Nat) : M Data := do
+    (held : Held) (outcome : Delvetalk.Turn.Step) (_n : Nat) : M Data := do
   match outcome with
   | .finished value _ used => spend used; return value
   | .exhausted resource used =>
@@ -1288,9 +1346,11 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     let response ← match plan with
       | .variant "refusedMessage" (.record f) =>
         refusedWith compiled.bounds responseType (((f.lookup "clause").bind labelOf).getD "noMethod")
-      | .variant "await" (.record f) | .variant "awaitUntil" (.record f) => awaitPlan depth self compiled.bounds f responseType suspension.checkpoint
-      | .variant "awaitPost" (.record f) | .variant "awaitPostUntil" (.record f) => awaitPostPlan depth self compiled.bounds f responseType suspension.checkpoint
-      | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType suspension.checkpoint
+      | .variant "await" (.record f) | .variant "awaitUntil" (.record f) =>
+        awaitPlan depth self compiled.bounds f responseType (← held.kept suspension).checkpoint
+      | .variant "awaitPost" (.record f) | .variant "awaitPostUntil" (.record f) =>
+        awaitPostPlan depth self compiled.bounds f responseType (← held.kept suspension).checkpoint
+      | .variant "interpret" (.record f) => interpretPlan depth self compiled.bounds f responseType (← held.kept suspension).checkpoint
       | _ => do
         -- A frame in the extent of a `run` (its callee, or any frame that callee calls) offers each
         -- Plan to the handlers around it, innermost first; a `pass` goes to the next one out, and
@@ -1304,11 +1364,14 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
         | none => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
     let entry ← entryOf compiled
-    -- A yield held in this process resumes from its machine state; no checkpoint is made.
-    let next ← liftEval (Delvetalk.Turn.resumeSuspended entry suspension binding response b)
-    noteProfile fun _ => (Delvetalk.Turn.prepareResumeEntry entry suspension.checkpoint suspension.checkpoint.digest binding response |>.map fun (_, _, _, _, st, resumed) =>
-      Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ st) b.bytes b.ticks resumed)
-    drive depth self caller compiled binding next 0
+    -- A yield held in this process resumes from its machine state over the frame's store; no
+    -- checkpoint is made.
+    let (next, reads) ← liftEval (Delvetalk.Turn.resumeSuspended entry suspension held.store binding response b)
+    held.note reads
+    noteProfile fun _ => (Delvetalk.Turn.resumeState entry suspension.state suspension.site response |>.map fun (_, _, _, _, resumed) =>
+      Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state)
+        b.bytes b.ticks resumed held.store.bounded)
+    drive depth self caller compiled binding held next 0
 
 /-- `await {slot, patience}`: answered at once if the slot is settled or hopeless;
     otherwise the turn suspends (only at the top of a turn, never inside a call). -/
@@ -1536,7 +1599,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let p : Proposal := { principal := s.principal, intent := s.intent, roots := s.roots, writes,
                           programs := s.programs, layered := s.layered, laws := s.laws, absent := s.absent,
                           creates := s.creates, grants := s.grants, revokes := s.revokes, spent := s.spent,
-                          subscribes := s.subscribes, unsubscribes := s.unsubscribes, fieldRoots := s.fieldRoots,
+                          subscribes := s.subscribes, unsubscribes := s.unsubscribes, cells := s.cells,
                           turn := w.height + 1 }
     let p := withLawReads w p
     let (admitted, clause) := match judge w (w.height + 1) p with
@@ -1652,9 +1715,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | none => respond bounds responseType "denied" [emptyRecord]
     | some (id, o) =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
-      recordRoot id o.version
+      -- What the card shows is its code's on the scalar part and the rows it forced (`storedPure`).
+      recordCells id o.version { scalar := true }
       let reader := cardContext s.world id s.subject self s.intent s.world.height
-      match ← renderCard o reader with
+      match ← renderCard id o reader with
       | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
       | .error clause => refusedWith bounds responseType clause
   | .variant "viewField" (.record f) =>
@@ -1740,9 +1804,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | none => respond bounds responseType "denied" [emptyRecord]
     | some (id, o) =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
-      recordRoot id o.version
+      recordCells id o.version { scalar := true }
       let context := contextData id s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "view" view s.post
-      match ← derivedView o view context with
+      match ← derivedView id o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
   | .variant "check" (.record f) =>
@@ -1856,7 +1920,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       else if to.isEmpty || to.utf8ByteSize > Limits.maxPrincipalBytes then refusedWith bounds responseType "grantee"
       else if s.grants.length ≥ Limits.grantsPerTurn then refusedWith bounds responseType "capacity"
       else if uses == some 0 then refusedWith bounds responseType "uses"
-      else if fixed.any (·.compress.utf8ByteSize > Limits.maxSeedBytes) then refusedWith bounds responseType "capacity"
+      else if (f.lookup "fixed").any (fun d => (Delvetalk.Canonical.encode d).size > Delvetalk.Bounds.maxCellBytes) then
+        refusedWith bounds responseType "capacity"
       else
         let id := grantId s.principal s.intent s.grants.length
         set { s with grants := s.grants ++ [({ id, grantor := s.principal, holder := self, to, object, method, expires,
@@ -1966,9 +2031,9 @@ def ledgerJson (l : Ledger) : Json := l.json
 /-- The sends of an admitted turn, each with the ledger it inherits: depth - 1,
     work - the ticks this turn used, storage - the bytes its writes added. -/
 def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : Nat)
-    (sends : List Send) (updates : List (String × Object)) : List (String × Json) :=
+    (sends : List Send) (updates : List (String × Object)) (writes : List (String × List Written)) : List (String × Json) :=
   if sends.isEmpty then [] else
-  let child := childLedger w ledger used updates
+  let child := childLedger w ledger used updates writes
   [("sends", Json.arr (sends.zipIdx.toArray.map fun (x, i) => Json.mkObj
     ([("id", toJson (deliveryId principal intent i)), ("to", toJson x.to), ("method", toJson x.method),
      ("argument", dataJson x.argument), ("sender", toJson x.sender), ("ledger", child.json)] ++
@@ -2049,7 +2114,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       spent := st.spent
       subscribes := st.subscribes
       unsubscribes := st.unsubscribes
-      fieldRoots := st.fieldRoots }
+      cells := st.cells }
   let base := entryBase ctx used
   -- An activity of a supervised object that ends broken, out of budget, or after its await
   -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
@@ -2117,7 +2182,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("deadline", toJson (w.clock + patience)), ("activity", activity)] ++
       (interpretation.map fun i => [("interpretation", i)]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
-      ([("identity", identityJson ctx.principal ctx.intent), ("roots", allRootsJson st.roots st.fieldRoots),
+      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.cells),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
         newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ journaledCheckpoint.2) []
     return (w', turnReply w' (reply entry))
@@ -2140,7 +2205,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (if st.publishes.isEmpty then [] else [("publishes", Json.arr st.publishes.toArray)]) ++
       (if st.checks == 0 then [] else [("checks", toJson st.checks)])
     let (w', r) := commit w proposal (base ++ [("result", dataJson value)] ++ offered) none
-      (fun updates => sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends updates ++
+      (fun updates => sendsJson w ctx.principal ctx.intent ctx.ledger used st.sends updates proposal.allWrites ++
         changesJson w ctx.principal ctx.intent ctx.ledger used st.sends.length updates proposal.allWrites) endedIfLate
     return (w', turnReply w' r)
 
@@ -2170,7 +2235,7 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
     | _ => ""
   let word := (← blurbWord o).getD id
   let title := if given.isEmpty then word else given
-  let card ← match ← renderCard o (fun m => cardContext s.world id "" "" s.intent s.world.height m) with
+  let card ← match ← renderCard id o (fun m => cardContext s.world id "" "" s.intent s.world.height m) with
     | .ok doc => liftEval (Delvetalk.Document.render doc)
     | .error clause => evaluation s!"publishPage: the card does not render ({clause})"
   let usage := spellUsage id (spellForms s.world id o) (declaredLenses s.world o)
@@ -2638,10 +2703,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let object ← act.getObjValAs? String "object"
   let method ← act.getObjValAs? String "method"
   let argument ← decodeData Limits.dataDepth (← activityArgument w act)
-  -- An older journal repeats the roots in the activity; they are the entry's.
-  let rootsJson := (act.getObjVal? "roots").toOption.getD ((sus.getObjVal? "roots").toOption.getD (Json.arr #[]))
-  let roots ← parseRoots rootsJson
-  let fieldRoots ← parseFieldRoots rootsJson
+  let (roots, cells) ← parseRoots (← sus.getObjVal? "roots")
   let absent := strings (act.getObjVal? "absent").toOption
   let ticks ← natField act "ticks"
   let ledger ← ledgerOf (← sus.getObjVal? "ledger")
@@ -2669,12 +2731,9 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   -- end); one already changed otherwise cannot, and the turn is refused now.
   let staged ← parseRecordedWrites (← activityArray act "writes")
   let stale? := (roots.find? fun (id, v) => match (w.objects[id]?).map (·.version) with
-      | some now => now != v && !(v < now && ((staged.lookup id).isNone || movedRootAdmits w staged id v (id == object)))
+      | some now => now != v && !(v < now && ((staged.lookup id).isNone || rootAdmits w staged id v (cells.lookup id) (id == object)))
       | none => true).map (·.1)
     <|> (absent.find? fun id => w.objects.contains id)
-    <|> (fieldRoots.find? fun (id, field, v) => match (w.objects[id]?).map (·.version) with
-      | some now => now != v && !(v < now && ((fieldsChangedSince w id v).map (!·.contains field)).getD false)
-      | none => true).map (·.1)
   if let some id := stale? then
     let stalled : Proposal :=
       { principal := principal
@@ -2703,7 +2762,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let init : TurnState :=
     { world := w
       roots := roots
-      fieldRoots := fieldRoots
+      cells := cells
       writes := writes
       principal := principal
       intent := intent
@@ -2753,13 +2812,17 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
         if tagOf e == "interpreted" then interpretedResponse compiled.bounds responseType e
         else respond compiled.bounds responseType "reply" (receiptReplies e)
       | .timedOut => respond compiled.bounds responseType "timedOut" [emptyRecord]
-    -- The activity began with only its own object as a root, at the version still current.
+    -- The activity began with only its own object as a root.
     let binding := Delvetalk.Turn.Binding.make object principal intent
       (roots.filter (·.1 == object))
     let b ← budgetsNow
+    -- The journaled checkpoint holds the rows it may still read (`Held.kept`): no store.
+    let held := Held.journaled object ((roots.lookup object).getD obj.version)
     -- `checkpoint` is the journaled one (`expandSuspended`), so its digest is the journal's.
-    let next ← liftEval (Delvetalk.Turn.resumeEntryStep (← entryOf compiled) checkpoint checkpoint.digest binding response b compiled.dictionary)
-    drive 0 object ctx.caller compiled binding next 0
+    let (next, reads) ← liftEval (Delvetalk.Turn.resumeEntry (← entryOf compiled) checkpoint
+      checkpoint.digest binding response b held.store compiled.dictionary)
+    held.note reads
+    drive 0 object ctx.caller compiled binding held next 0
   let (result, st) := action.run.run init
   finishTurn w ctx result st
 
@@ -3039,8 +3102,9 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("laws", openerRow w (lawRows o)), ("bendLaw", toJson o.predicate)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
-      -- Its size against `Limits.maxStateBytes`, as the host counts it (`stateBytes`).
+      -- Its canonical bytes, and its scalar part's, which `Bounds.maxCellBytes` bounds as it bounds each row.
       ("stateBytes", toJson (stateBytes o.state)),
+      ("scalarBytes", toJson (Delvetalk.Canonical.encode (Delvetalk.Turn.scalarPart (o.relations.map (·.field)) o.state)).size),
       ("forms", dataJson (listData ((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)))),
       -- The actions the reader is offered, by name (what a card's usage lists for them).
       ("offered", toJson (((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)).map formAction)),
@@ -3066,7 +3130,7 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
       return (w, Json.mkObj [("status", toJson "card"), ("object", toJson id), ("text", toJson text), ("override", toJson true)])
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    let (r, st) := (renderCard o (cardContext w id principal "" "" w.height)).run.run init
+    let (r, st) := (renderCard id o (cardContext w id principal "" "" w.height)).run.run init
     -- The render definition compiled here stays compiled for the next read.
     let w := w.withCachesOf st.world
     match r with
@@ -3084,7 +3148,7 @@ def cardText (w : World) (id reader : String) : String :=
   | some o =>
     let init : TurnState := { world := w, principal := reader, intent := "", subject := reader, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    match (renderCard o (cardContext w id reader "" "" w.height)).run.run init with
+    match (renderCard id o (cardContext w id reader "" "" w.height)).run.run init with
     | (.ok (.ok document), _) => match Delvetalk.Document.render document with
       | .ok text => (text.take Limits.cardShownChars).toString
       | .error _ => ""

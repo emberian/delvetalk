@@ -190,6 +190,60 @@ structure Written where
       Journaled (`arguments`) only for an object whose package declares a Bend law. -/
   argument : Data := .record []
 
+/-- How a turn read a root it did not read whole (KERNEL-HANDOFF §15, WHOLENESS §3a). A frame that
+    ran on the object's state through the stored path read its scalar part (every field but its
+    relations, which the kernel holds natively) and only the rows and spines it forced; `viewField`
+    reads one field. A root with no `Cells` was read whole. -/
+structure Cells where
+  /-- The scalar part: the fields that are not declared relations. -/
+  scalar : Bool := false
+  /-- Fields read whole, alone (`viewField`). -/
+  fields : List String := []
+  /-- Relation rows forced, by field and key, outside every span of their field. -/
+  rows : List (String × Data) := []
+  /-- The key set a forced spine observed, by relation field: every key up to and including
+      `some k`, or the whole key set (`none`: a count, a failed search, a scan to the end). -/
+  spans : List (String × Option Data) := []
+  deriving Inhabited
+
+/-- How many roots a root's cells add beyond its object's own (the turn's `maxRoots` counts them). -/
+def Cells.extra (r : Cells) : Nat := r.fields.length + r.rows.length + r.spans.length
+
+/-- `a ≤ b` for keys, by their canonical bytes: the relation's order (`canonicalRowsDropping`). -/
+def keyAtMost (a b : Data) : Bool :=
+  let x := Delvetalk.Canonical.encode a
+  let y := Delvetalk.Canonical.encode b
+  x == y || Law.bytesLt x y
+
+/-- One span over another: the whole key set holds every prefix, a longer prefix a shorter one. -/
+def spanJoin : Option Data → Option Data → Option Data
+  | none, _ | _, none => none
+  | some a, some b => some (if keyAtMost a b then b else a)
+
+/-- Two readings of one root as one: spans joined per field, rows a span covers dropped. -/
+def Cells.join (a b : Cells) : Cells :=
+  let spans := (a.spans ++ b.spans).foldl (fun acc (f, t) => match acc.lookup f with
+    | some t' => acc.map fun (g, u) => if g == f then (g, spanJoin t t') else (g, u)
+    | none => acc ++ [(f, t)]) []
+  let covered := fun (f : String) (k : Data) => match spans.lookup f with
+    | some none => true
+    | some (some through) => keyAtMost k through
+    | none => false
+  let rows := (a.rows ++ b.rows).foldl (fun acc (f, k) =>
+    if covered f k || acc.any (fun (g, k') => g == f && Delvetalk.Canonical.encode k' == Delvetalk.Canonical.encode k)
+    then acc else acc ++ [(f, k)]) []
+  { scalar := a.scalar || b.scalar, fields := (a.fields ++ b.fields).eraseDups, rows := rows, spans := spans }
+
+/-- What a stored segment read of an object (`Turn.Reads`), against the rows its store held: each
+    span becomes the key of the last row it reached, or the whole key set once it reached the end. -/
+def cellsOf (relations : List (RelDecl × Array Data)) (reads : Delvetalk.Turn.Reads) : Cells :=
+  let spans := reads.spans.filterMap fun (f, reach) => do
+    let (d, rows) ← relations.find? (·.1.field == f)
+    if reach == 0 then none
+    else if reach > rows.size then some (f, none)
+    else (rows[reach - 1]?).map fun row => (f, some (Delvetalk.Turn.keyProjection d.key row))
+  Cells.join { scalar := true, spans := spans } { rows := reads.rows.map fun r => (r.field, r.key) }
+
 structure Proposal where
   principal : String
   intent : String
@@ -214,8 +268,8 @@ structure Proposal where
   /-- Subscriptions the turn makes and ends (WHOLENESS §3); they take effect with the commit. -/
   subscribes : List Subscription := []
   unsubscribes : List Subscription := []
-  /-- Fields of objects the turn read alone (`viewField`), at the version it read. -/
-  fieldRoots : List (String × String × Nat) := []
+  /-- How the turn read each root it did not read whole, by object (`Cells`). -/
+  cells : List (String × Cells) := []
   /-- A reprogram's lineage, by object (`become`: the kind whose body it laid), journaled on the
       reprogram as `madeFrom {object, pin, receipt}`. -/
   madeFrom : List (String × Json) := []
@@ -264,27 +318,41 @@ partial def compressedSize : Json → Nat
     bytes of tags and names (the Anthology refused its 631st short line). -/
 def stateBytes (state : Data) : Nat := (Delvetalk.Canonical.encode state).size
 
+/-- A relation declaration as the kernel's cell functions take it: field and key columns. -/
+def cellDecls (decls : List RelDecl) : List (String × List String) := decls.map fun d => (d.field, d.key)
+
+/-- The canonical bytes a write from `before` to `after` changes (`Turn.changedCellBytes`): what the
+    storage ledger charges, over the relations `edited` names (every one when none is given). A
+    created object's `before` is none: every cell is new. -/
+def cellBytes (decls : List RelDecl) (before : Option Data) (after : Data) (edited : Option (List String) := none) : Nat :=
+  Delvetalk.Turn.changedCellBytes (cellDecls decls) (before.getD (.record [])) after
+    (edited.getD (decls.map (·.field)))
+
+/-- The fields a write's edits reach: any edit but `keep`. Another relation's rows are as they were. -/
+def editedFields (changes : List Written) : List String :=
+  (changes.flatMap fun c => c.edits.filterMap fun e => match e.kind with
+    | .keep => none
+    | _ => some e.field).eraseDups
+
 /-- The CID of an object's state: its canonical bytes as the journal hashes them, so a root
     names exactly the card version a turn was judged against. -/
 def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
 
-/-- Roots as an entry records them: object and version. The state at that version is named by the
+/-- Roots as an entry records them: `{object, version}` for a root read whole, and for one read by
+    its cells (`Cells`) what was read: `scalar: true`, `fields [f]`, `rows [{field, key}]`, `spans
+    [{field, through?}]` (no `through`: the whole key set). The state at that version is named by the
     entry that wrote it (`writes[].cid`, `world-state-cid`). -/
-def rootsJson (roots : List (String × Nat)) : Json :=
-  Json.arr (roots.toArray.map fun (o, v) => Json.mkObj [("object", toJson o), ("version", toJson v)])
-
-/-- Field roots (WHOLENESS §3a): a turn that read one field of an object (`viewField`) conflicts only
-    with later writes of that field. Journaled in `roots` beside the object roots as `{object, field,
-    key: "*", version}`; the `key` is `*` because the host does not see which rows a turn's code read
-    (that waits on lazy state cells, KERNEL-HANDOFF §15). -/
-def fieldRootsJson (roots : List (String × String × Nat)) : Array Json :=
-  roots.toArray.map fun (o, f, v) => Json.mkObj [("object", toJson o), ("field", toJson f), ("key", toJson "*"), ("version", toJson v)]
-
-/-- An entry's `roots`: the object roots, then the field roots. -/
-def allRootsJson (roots : List (String × Nat)) (fieldRoots : List (String × String × Nat)) : Json :=
-  match rootsJson roots with
-  | .arr a => .arr (a ++ fieldRootsJson fieldRoots)
-  | other => other
+def rootsJson (roots : List (String × Nat)) (cells : List (String × Cells) := []) : Json :=
+  Json.arr (roots.toArray.map fun (o, v) => Json.mkObj ([("object", toJson o), ("version", toJson v)] ++
+    match cells.lookup o with
+    | none => []
+    | some r =>
+      (if r.scalar then [("scalar", toJson true)] else []) ++
+      (if r.fields.isEmpty then [] else [("fields", toJson r.fields)]) ++
+      (if r.rows.isEmpty then [] else [("rows", Json.arr (r.rows.toArray.map fun (f, k) =>
+        Json.mkObj [("field", toJson f), ("key", dataJson k)]))]) ++
+      (if r.spans.isEmpty then [] else [("spans", Json.arr (r.spans.toArray.map fun (f, t) =>
+        Json.mkObj ([("field", toJson f)] ++ (t.map fun k => [("through", dataJson k)]).getD [])))])))
 
 /-- The fields recording who made each change: parallel arrays of steps, callers, kinds. -/
 def writtenFields (ws : List Written) : List (String × Json) :=
@@ -298,28 +366,29 @@ def writtenFields (ws : List Written) : List (String × Json) :=
 def writesJson (writes : List (String × List Written)) : Json :=
   Json.arr (writes.toArray.map fun (o, ws) => Json.mkObj (("object", toJson o) :: writtenFields ws))
 
-def parseRoots (j : Json) : Except String (List (String × Nat)) := do
+/-- An entry's `roots` (`rootsJson`): the roots at their versions, and how each root read by its
+    cells was read. Together within `maxRoots`. -/
+def parseRoots (j : Json) : Except String (List (String × Nat) × List (String × Cells)) := do
   let raw ← j.getArr?
-  if raw.size > Limits.maxRoots then throw "too many roots"
   let mut out : List (String × Nat) := []
+  let mut cells : List (String × Cells) := []
   for r in raw do
-    if (r.getObjVal? "field").toOption.isSome then continue
     let object ← boundedText "object id" Limits.maxObjectIdBytes (← r.getObjValAs? String "object")
     if out.any (·.1 == object) then throw "duplicate root"
     out := out ++ [(object, ← natField r "version")]
-  return out
-
-/-- The field roots among an entry's `roots` (`fieldRootsJson`). -/
-def parseFieldRoots (j : Json) : Except String (List (String × String × Nat)) := do
-  let raw ← j.getArr?
-  let mut out : List (String × String × Nat) := []
-  for r in raw do
-    let some field := (r.getObjValAs? String "field").toOption | continue
-    unless (r.getObjValAs? String "key").toOption == some "*" do throw "a field root's key is *"
-    let object ← boundedText "object id" Limits.maxObjectIdBytes (← r.getObjValAs? String "object")
-    if out.any (fun (o, f, _) => o == object && f == field) then throw "duplicate root"
-    out := out ++ [(object, field, ← natField r "version")]
-  return out
+    let list := fun (k : String) => ((r.getObjVal? k).toOption.map fun a => a.getArr?.map (·.toList)).getD (pure [])
+    let scalar := (r.getObjValAs? Bool "scalar").toOption.getD false
+    let fields ← (← list "fields").mapM (·.getStr?)
+    let rows ← (← list "rows").mapM fun x => do
+      return (← x.getObjValAs? String "field", ← decodeData Limits.dataDepth (← x.getObjVal? "key"))
+    let spans ← (← list "spans").mapM fun x => do
+      return (← x.getObjValAs? String "field", ← match x.getObjVal? "through" with
+        | .ok k => some <$> decodeData Limits.dataDepth k
+        | .error _ => pure none)
+    if scalar || !fields.isEmpty || !rows.isEmpty || !spans.isEmpty then
+      cells := cells ++ [(object, { scalar := scalar, fields := fields, rows := rows, spans := spans })]
+  if out.length + (cells.map (·.2.extra)).sum > Limits.maxRoots then throw "too many roots"
+  return (out, cells)
 
 /-- Writes as a client sends them: direct, so every step has the empty caller, and proposed (kind
     `Law.proposedKind`): no method of the object made them. A client cannot name a caller. -/
@@ -367,11 +436,11 @@ def parseProposal (j : Json) : Except String Proposal := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
   if (j.getObjVal? "turn").toOption.isSome then throw "turn is assigned by the host and cannot be supplied"
-  let roots ← parseRoots (← j.getObjVal? "roots")
+  let (roots, cells) ← parseRoots (← j.getObjVal? "roots")
   let writes ← parseWrites (← j.getObjVal? "writes")
   for (id, _) in writes do
     unless roots.any (·.1 == id) do throw s!"write names {id}, which is not among the roots"
-  return { principal, intent, roots, writes }
+  return { principal, intent, roots, writes, cells }
 
 def spentJson (spent : List (String × Nat)) : Json :=
   Json.arr (spent.toArray.map fun (id, n) => Json.mkObj [("id", toJson id), ("uses", toJson n)])
@@ -385,8 +454,7 @@ def Proposal.digest (p : Proposal) : String :=
   let programs := p.programs.map fun (id, (src, mig)) => Json.mkObj
     [("object", toJson id), ("source", toJson (Journal.bodyHash src)), ("migration", toJson mig)]
   let laws := p.laws.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)]
-  Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots), ("writes", writesJson p.allWrites)] ++
-    (if p.fieldRoots.isEmpty then [] else [("fieldRoots", Json.arr (fieldRootsJson p.fieldRoots))]) ++
+  Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots p.cells), ("writes", writesJson p.allWrites)] ++
     (if programs.isEmpty then [] else [("programs", Json.arr programs.toArray)]) ++
     (if p.layered.isEmpty then [] else [("extends", toJson p.layered)]) ++
     (if laws.isEmpty then [] else [("laws", Json.arr laws.toArray)]) ++
@@ -426,6 +494,35 @@ structure Refusal where
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
+
+/-- Plain JSON for a model to read: lists are arrays, a sum is an object with its `tag`. -/
+partial def listHeads (acc : List Data) : Data → Option (List Data)
+  | .variant "nil" _ => some acc.reverse
+  | .variant "cons" (.record f) => do
+    let head ← f.lookup "head"
+    let tail ← f.lookup "tail"
+    listHeads (head :: acc) tail
+  | _ => none
+
+partial def plainJson : Data → Json
+  | .natural n => toJson n
+  | .boolean b => toJson b
+  | .label s => toJson s
+  | .record fs => Json.mkObj (fs.map fun (k, v) => (k, plainJson v))
+  | d@(.variant l p) =>
+    match listHeads [] d with
+    | some items => Json.arr (items.toArray.map plainJson)
+    | none => match p with
+      | .record fs => Json.mkObj (("tag", toJson l) :: fs.map fun (k, v) => (k, plainJson v))
+      | other => Json.mkObj [("tag", toJson l), ("value", plainJson other)]
+
+/-- The refusal of a state with a cell past `Bounds.maxCellBytes` (KERNEL-HANDOFF §15 step 4):
+    `capacity`, clause `maxCellBytes`, the reason naming the cell. -/
+def cellRefusal (id : String) (cell : String × Data) (cls : String := "capacity") : Refusal :=
+  let what := if cell.1 == "scalar" then "its scalar fields"
+    else s!"the {cell.1} row keyed {(plainJson cell.2).compress}"
+  { cls, clause := some "maxCellBytes", object := some id,
+    reason := some s!"{what} of {id} pass maxCellBytes ({Delvetalk.Bounds.maxCellBytes} canonical bytes); write less to that cell." }
 
 /-- The prefix the kernel puts in front of a refusal it reports as text. -/
 def kernelPrefix : String := "turn refused: "
@@ -1903,15 +2000,11 @@ def touchesOf (entry : Json) : List (String × Touch) :=
         | _ => none).map (· ++ evicted)
     return (id, { version, edits })
 
-/-- A root `id` the turn read at `seen` that has moved since may still commit when every change the
-    turn makes of it is an ordinary write and each edit either commutes (`EditKind.commutes`), or
-    is an `upsert`/`retract` of a relation row whose key no admitted write since `seen` touched
-    (`keysChangedSince`: the row rule, for any root), or, on a resumed turn's own object (`own`), is
-    to a field those writes left alone (a turn that only read its own object qualifies). Anything
-    else is `staleRoot`. -/
-def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat) (own : Bool) : Bool :=
+/-- The edit half of `movedRootAdmits`: with `changedFields`, an edit of a field no write since
+    changed is admitted too. With no change of `id`, `none` changes of its own (`noChange`). -/
+def editsAdmit (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat)
+    (changedFields : Option (List String)) (noChange : Bool) : Bool :=
   let decls := ((w.objects[id]?).map (·.relations)).getD []
-  let changedFields := if own then fieldsChangedSince w id seen else none
   let untouched := fun (e : Edit) =>
     match decls.find? (·.field == e.field) with
     | none => false
@@ -1926,12 +2019,59 @@ def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : S
         !keys.any (Delvetalk.Canonical.encode · == k)
       | _, _ => false
   match writes.lookup id with
-  | none => own && changedFields.isSome
+  | none => noChange && changedFields.isSome
   | some changes => !changes.isEmpty && changes.all fun c => Law.editKind c.kind && c.edits.all fun e =>
       e.kind.commutes || untouched e ||
         (match changedFields with
          | some fields => !fields.contains e.field
          | none => false)
+
+/-- A root `id` the turn read at `seen` that has moved since may still commit when every change the
+    turn makes of it is an ordinary write and each edit either commutes (`EditKind.commutes`), or
+    is an `upsert`/`retract` of a relation row whose key no admitted write since `seen` touched
+    (`keysChangedSince`: the row rule, for any root), or, on a resumed turn's own object (`own`), is
+    to a field those writes left alone (a turn that only read its own object qualifies). Anything
+    else is `staleRoot`. -/
+def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat) (own : Bool) : Bool :=
+  editsAdmit w writes id seen (if own then fieldsChangedSince w id seen else none) own
+
+/-- What a turn read of `id` at `seen` by its cells still holds: every later change of `id` was an ordinary write
+    (`editsSince`) that left alone what the turn read. Its scalar part: no field that is not a
+    declared relation changed. A field read whole: unchanged. A row: no write touched its key
+    (`keysChangedSince`). A span: no write touched a key at or before its last (any key, for the
+    whole key set): an insert or a retract there moves what the spine showed, and an upsert there
+    may change a row the turn passed. -/
+def cellsCurrent (w : World) (id : String) (seen : Nat) (r : Cells) : Bool := Id.run do
+  let some changed := fieldsChangedSince w id seen | return false
+  let decls := ((w.objects[id]?).map (·.relations)).getD []
+  if r.scalar && changed.any (fun f => !decls.any (·.field == f)) then return false
+  if r.fields.any changed.contains then return false
+  let touched := fun (f : String) => match decls.find? (·.field == f) with
+    | some d => keysChangedSince w id seen d
+    | none => if changed.contains f then none else some []
+  for (f, key) in r.rows do
+    match touched f with
+    | some keys => if keys.any (Delvetalk.Canonical.encode · == Delvetalk.Canonical.encode key) then return false
+    | none => return false
+  for (f, through) in r.spans do
+    match touched f, through with
+    | some keys, none => if !keys.isEmpty then return false
+    | some keys, some last => if keys.any (keyAtMost · last) then return false
+    | none, _ => return false
+  return true
+
+/-- A root `id` read at `seen` that has moved since may still commit: by the turn's changes of it
+    (`movedRootAdmits`: they commute, edit untouched keys, or, on a resumed turn's own object, fields
+    the writes since left alone), or, for a root read by its cells, because no write since touched
+    what it read (`cellsCurrent`) and each of its edits leaves alone what those writes changed: a
+    keyed edit an untouched key, any other a field they left alone (RELATIONAL §3: a waiting edit
+    never silently replaces or removes a row it did not see). The cells only admit more: a root read
+    by them is never stale where the whole-object rule admits it. One rule for `judge` and a
+    resumption. -/
+def rootAdmits (w : World) (writes : List (String × List Written)) (id : String) (seen : Nat)
+    (cells : Option Cells) (own : Bool) : Bool :=
+  movedRootAdmits w writes id seen own ||
+    ((cells.map (cellsCurrent w id seen)).getD false && editsAdmit w writes id seen (fieldsChangedSince w id seen) true)
 
 /-- `principal` acts as the world's opener: it is the opener, and the request did not come on the
     public socket (`World.resident`). -/
@@ -1956,13 +2096,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   for (id, seen) in p.roots do
     if let some o := w.objects[id]? then
       if o.version != seen && !(seen < o.version &&
-          movedRootAdmits w writes id seen (p.rebaseOwn == some id)) then
+          rootAdmits w writes id seen (p.cells.lookup id) (p.rebaseOwn == some id)) then
         throw { cls := "staleRoot", object := id }
-  -- A field root is current while no write since the turn read touched that field.
-  for (id, field, seen) in p.fieldRoots do
-    let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
-    if o.version != seen && !(seen < o.version && ((fieldsChangedSince w id seen).map (!·.contains field)).getD false) then
-      throw { cls := "staleRoot", object := id }
   -- A write to the running object needs no view; its version is the first root. A
   -- proposal that writes what it never named as a root is malformed.
   for (id, _) in writes do
@@ -2016,8 +2151,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     if let some f := movedFixed o.fixed o.state written then
       throw { cls := "lawRefused", clause := some "fixed", object := some id,
               reason := some s!"refused fixed: {f} is fixed; it is set when {id} is made and never after." }
-    unless stateBytes written ≤ Limits.maxStateBytes do
-      throw { cls := "capacity", object := id, reason := some "maxStateBytes" }
+    if let some cell := Delvetalk.Turn.cellOverBound (cellDecls o.relations) written (editedFields changes) then
+      throw (cellRefusal id cell)
     -- A reprogram replaces code and, through its migration, the state's type.
     let mut next := o
     let mut state := written
@@ -2035,8 +2170,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .ok (.finished value _ _ _) => state := value
         | .ok (.refused failure _) => throw (refuse "migration" s!"the migration was refused: {failure}")
         | .error e => throw (refuse "migration" e)
-      unless state.conformsUnder prog.bounds prog.stateType && stateBytes state ≤ Limits.maxStateBytes do
+      unless state.conformsUnder prog.bounds prog.stateType do
         throw (refuse "migration" "the converted state does not conform to the new state type")
+      if let some cell := Delvetalk.Turn.cellOverBound (cellDecls prog.relations) state then
+        throw (cellRefusal id cell "programRefused")
       -- A fixed field stays fixed: new code must fix it too (codex host 5, docs 1).
       if let some f := o.fixed.find? (!prog.fixed.contains ·) then
         throw (refuse "fixed" s!"{f} is fixed; it is set when {id} is made and never after, so the new code must keep it fixed")
@@ -2458,7 +2595,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
   -- The law reads join the roots only within the root bound replay holds every entry to (codex
   -- host 4): past it the turn is refused `capacity` on the roots it read itself.
   let expanded := withLawReads w p
-  let (p, forced) := if forced.isNone && expanded.roots.length + expanded.fieldRoots.length > Limits.maxRoots
+  let (p, forced) := if forced.isNone && expanded.roots.length + (expanded.cells.map (·.2.extra)).sum > Limits.maxRoots
     then (p, some ({ cls := "capacity", reason := some "maxRoots" } : Refusal)) else (expanded, forced)
   match retained w p.principal p.intent p.digest with
   | some r => (w, r)
@@ -2466,7 +2603,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     -- The turn number is the host's: the height of the entry about to be written.
     let p := { p with turn := w.height + 1 }
     let key := identityKey p.principal p.intent
-    let base := [("identity", identityJson p.principal p.intent), ("roots", allRootsJson p.roots p.fieldRoots),
+    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots p.cells),
       ("turn", toJson p.turn), ("request", toJson p.digest)] ++
       (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++ extra
     let verdict : Except Refusal Judged :=
@@ -2609,7 +2746,8 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     (chain : Option Json := none) (creator : String := "") (height : Nat := 1)
     (lawText : Option String := none) : Except String (Object × String) := do
   unless state.conformsUnder b.assumptions.bounds b.ty do throw "seed does not conform to the package state type"
-  if stateBytes state > Limits.maxSeedBytes then throw "seed exceeds state byte capacity"
+  if let some cell := Delvetalk.Turn.cellOverBound (cellDecls b.relations) state then
+    throw ((cellRefusal "the seed" cell).reason.getD "")
   -- The pin is the source closure's CID; the compiled packet is only observed beside it.
   let packet ← b.artifact.getObjValAs? String "packetSha256"
   let sources ← b.artifact.getObjValAs? String "sourcesSha256"
@@ -3122,11 +3260,13 @@ def deliveryId (principal intent : String) (ordinal : Nat) : String :=
   Journal.bodyHash (Json.arr #[toJson principal, toJson intent, toJson ordinal])
 
 /-- The ledger a turn's sends and changes inherit: depth - 1, work - the ticks it used, storage -
-    the bytes its writes added and the whole state of each object it created. -/
-def childLedger (w : World) (ledger : Ledger) (used : Nat) (updates : List (String × Object)) : Ledger :=
-  let added := updates.foldl (fun n (id, o) =>
-    let before := ((w.objects[id]?).map fun p => stateBytes p.state).getD 0
-    n + (stateBytes o.state - before)) 0
+    the canonical bytes of the cells its writes changed (`cellBytes`; every cell of an object it
+    created). -/
+def childLedger (w : World) (ledger : Ledger) (used : Nat) (updates : List (String × Object))
+    (writes : List (String × List Written)) : Ledger :=
+  let added := updates.foldl (fun n (id, o) => n + match w.objects[id]? with
+    | some before => cellBytes o.relations (some before.state) o.state ((writes.lookup id).map editedFields)
+    | none => cellBytes o.relations none o.state) 0
   ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
 
 /-- What a write did to one field, as `changed` reports it: for a relation the rows inserted and the
@@ -3149,7 +3289,7 @@ def fieldChange (decls : List RelDecl) (field : String) (old new : Data) : Data 
     and changes together are at most `sendsPerTurn`: the subscribers past it are named in `unserved`. -/
 def changesJson (w : World) (principal intent : String) (ledger : Ledger) (used sent : Nat)
     (updates : List (String × Object)) (writes : List (String × List Written)) : List (String × Json) := Id.run do
-  let child := (childLedger w ledger used updates).json
+  let child := (childLedger w ledger used updates writes).json
   let mut changes : Array Json := #[]
   let mut unserved : Array Json := #[]
   for (id, o) in updates do
@@ -3629,14 +3769,13 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     for (g, i) in grants.zipIdx do
       unless g.id == grantId principal intent i && g.grantor == principal do throw "a grant is not its turn's"
     let spent ← parseSpent (outcome.getObjVal? "spent").toOption
-    let roots ← parseRoots (← entry.getObjVal? "roots")
-    let fieldRoots ← parseFieldRoots (← entry.getObjVal? "roots")
+    let (roots, cells) ← parseRoots (← entry.getObjVal? "roots")
     let rebaseOwn := if (entry.getObjVal? "resumes").toOption.isSome then roots.head?.map (·.1) else none
     let subs := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Subscription.ofJson
     let subscribes ← subs "subscribes"
     let unsubscribes ← subs "unsubscribes"
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, fieldRoots, madeFrom }
+                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, cells, madeFrom }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))
@@ -3853,7 +3992,7 @@ def publicRefusal (entry : Json) : Json :=
   let id := (outcome.getObjValAs? String "root").toOption.getD named
   let cls := (outcome.getObjValAs? String "class").toOption.getD "unknown"
   let roots := (entry.getObjVal? "roots").toOption.getD (Json.arr #[])
-  let version := ((parseRoots roots).toOption.getD []).lookup id
+  let version := (((parseRoots roots).toOption.map (·.1)).getD []).lookup id
   let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [])
   -- A law's reading is the package's public text about the clause, never state.
   let reading := if cls == "lawRefused" then (outcome.getObjValAs? String "reason").toOption else none

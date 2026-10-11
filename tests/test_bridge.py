@@ -11,13 +11,16 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from deploy import genesis
+from deploy.genesis import DOORS, STUDIO
 from tests import test_outbound
+from tests.test_receive import door
 from tests.test_chain import garden_state, town_kinds
 from tests.test_transport import DID, Script, mk
 from transport import bridge, delve, observe
 from tests.host import served
 from transport.host import HostClient
-from tests.wire import label, nat, record
+from tests.wire import label, listing, nat, record
 from tests.bend import closure, declared
 
 CARD = declared("""edition ObjectiveBend 1
@@ -98,16 +101,21 @@ class BridgeCase(unittest.TestCase):
 
 
 class DirectReplies(BridgeCase):
-    """A reply in a card's own thread is addressed to it: the directory answers prose naming
+    """A reply in a card's own thread is addressed to it: the commonplace answers prose naming
     nothing with its menu once an hour per speaker, never with a model call, and then is quiet."""
 
-    def test_replies_in_the_directorys_thread_get_one_card_an_hour(self):
-        made = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-directory', 'object': 'directory',
-                               'modules': closure('Directory'), 'entry': 'initial', 'seed': record(owner=label('ember'))})
+    def test_replies_in_the_commonplaces_thread_get_one_card_an_hour(self):
+        cites = [door(*d) for d in DOORS] + [door(STUDIO[0], '', (), STUDIO[1])]
+        made = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-commonplace', 'object': 'commonplace',
+                               'modules': closure('Menu', 'Mentions', 'Policies', 'Record'), 'entry': 'initial', 'law': genesis.RECORD_LAW,
+                               'seed': record(owner=label('ember'), keeper=label('ember'), head=label('THE COMMONPLACE'), cites=listing(cites))})
         self.assertEqual(made['status'], 'created', made)
+        body = self.host.send({'op': 'world-reprogram', 'principal': 'ember', 'identity': 'body-commonplace', 'object': 'commonplace', 'version': 0,
+                               'package': genesis.body_of('commonplace'), 'mode': 'extend'})
+        self.assertEqual(body['status'], 'admitted', body)
         hub = 'at://did:plc:ember/town.delve.feed.post/hub'
         self.host.send({'op': 'world-post-reserve', 'principal': 'transport', 'intent': 'hub', 'source': 'delve'})  # a post settles its reservation
-        recorded = self.host.send({'op': 'world-posted', 'principal': 'transport', 'uri': hub, 'cid': 'bafyhub', 'object': 'directory', 'intent': 'hub'})
+        recorded = self.host.send({'op': 'world-posted', 'principal': 'transport', 'uri': hub, 'cid': 'bafyhub', 'object': 'commonplace', 'intent': 'hub'})
         self.assertNotEqual(recorded.get('status'), 'error', recorded)
         posts = [mk(n, text, parent=hub) for n, text in enumerate(('hello, what is this?', 'lovely evening', 'thanks all'), 1)]
         for n, p in enumerate(posts):
@@ -116,8 +124,8 @@ class DirectReplies(BridgeCase):
         self.run_bridge()
         texts = [d['text'] for d in self.drafts()]
         self.assertEqual(len(texts), 3, texts)
-        self.assertIn('DELVETALK · ROOT', texts[0])
-        self.assertEqual([t for t in texts[1:] if 'DELVETALK · ROOT' in t], [])
+        self.assertIn('DELVETALK · THE COMMONPLACE', texts[0])
+        self.assertEqual([t for t in texts[1:] if 'DELVETALK · THE COMMONPLACE' in t], [])
 
 
 class OpenerPosts(BridgeCase):
@@ -147,7 +155,7 @@ class Bridging(BridgeCase):
 
     def test_three_posts_three_turns_in_created_order_then_nothing(self):
         self.make('garden-1')
-        self.make('directory')
+        self.make('commonplace')
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:03Z'), summon_post(2, '2026-10-09T10:00:01Z'),
                       spell_post(3, 'garden-1', '2026-10-09T10:00:02Z')])
         first = self.run_bridge()
@@ -258,8 +266,8 @@ class Stub:
             lines = [l.split() for l in req['text'].split('\n') if l.startswith('delvetalk ') and len(l.split()) > 2]
             bare = [{'name': m[1], 'value': m[2]} for m in re.finditer(r'^(\w+): (.+)$', req['text'], re.M)]
             return {'status': 'parsed', 'bare': bare, **({'spell': {'card': lines[-1][1], 'action': lines[-1][2], 'fields': []}} if lines else {'notASpell': {}})}
-        if op == 'world-view' and req['object'] == 'directory':
-            return {'status': 'viewed', 'state': {'doors': [{'label': 'anthology', 'to': {'object': 'anthology'}}]}}
+        if op == 'world-view' and req['object'] == 'commonplace':
+            return {'status': 'viewed', 'state': {'cites': [{'label': 'anthology', 'to': {'object': 'anthology'}}]}}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
@@ -281,7 +289,7 @@ class ReplyScoped(BridgeCase):
                       mk(7, 'delvetalk garden-1 ?')])
         bridge.run(self.state, stub)
         how = {o['identity'][-6:]: (o['object'], o.get('reach'), o.get('replyTo')) for o in stub.ops if o['op'] == 'world-turn'}
-        self.assertEqual(how, {'000001': ('directory', 'mention', None), '000002': ('garden-1', None, card),
+        self.assertEqual(how, {'000001': ('commonplace', 'mention', None), '000002': ('garden-1', None, card),
                                '000003': ('garden-1', 'fields', other), '000004': ('anthology', 'door', other),
                                '000007': ('garden-1', None, None)})  # a reply and a spell the host verifies itself
 
@@ -290,14 +298,14 @@ class Routing(BridgeCase):
 
     def test_a_reply_to_a_journaled_post_goes_to_its_addressee_not_the_card_word(self):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
-        stub = Stub({parent: {'status': 'addressee', 'object': 'directory', 'slot': 'welcome'}})
+        stub = Stub({parent: {'status': 'addressee', 'object': 'commonplace', 'slot': 'welcome'}})
         plain = mk(1, 'just replying', parent=parent)
         spelled = mk(2, 'delvetalk garden-1 plant', parent=parent)
         orphan_reply = mk(3, 'replying elsewhere', parent=f'at://{DID}/town.delve.feed.post/other')
         self.observe([plain, spelled, orphan_reply, summon_post(4, '2026-10-09T10:00:09Z')])
         r = bridge.run(self.state, stub)
         turns = {t['identity'][-6:]: t for t in stub.ops if t['op'] == 'world-turn'}
-        self.assertEqual({k: v['object'] for k, v in turns.items()}, {'000001': 'directory', '000002': 'directory', '000004': 'directory'})
+        self.assertEqual({k: v['object'] for k, v in turns.items()}, {'000001': 'commonplace', '000002': 'commonplace', '000004': 'commonplace'})
         self.assertEqual([f['name'] for f in turns['000001']['argument']['fields']], ['text', 'post'])  # the host owns the slot
         self.assertEqual(turns['000001']['replyTo'], parent)
         self.assertNotIn('replyTo', turns['000004'])  # a top-level summon answers no post
@@ -436,7 +444,7 @@ class Unaddressed(BridgeCase):
     """Whether a refusal is drafted is the host's fact: its `public` projection. The post's wording is never read for it."""
     def run_refused(self, post, public=True):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
-        stub = Stub({parent: {'status': 'addressee', 'object': 'directory', 'slot': 'welcome'}})
+        stub = Stub({parent: {'status': 'addressee', 'object': 'commonplace', 'slot': 'welcome'}})
         real = stub.send
         outcome = {'tag': 'refused', 'class': 'quota', 'reason': 'the interpreter has read 48 this hour; reply with the spell itself, or wait.', 'next': 600}
         stub.send = lambda req: ({'status': 'refused', 'receipt': {'hash': 'h', 'height': 5, 'slug': 'bofab-lukid', 'outcome': outcome},

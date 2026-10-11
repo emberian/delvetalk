@@ -3,96 +3,59 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
-import ./Relation.obend as Relations
 import ./Text.obend as Text
-# The root menu's data and its rendering (docs/MENU.md): the directory's doors, what changed at
-# each, where each reader last went, and the trie they render to. Pure; the Directory keeps the
-# rows and the subscriptions that feed them.
-# A spell a door offers, as the menu prints it: `example`, typed back whole in the host's
-# inline grammar (`delvetalk tide subscribe / every: 3 / note: first light`), and `comes`, the
-# owner's words for what comes back ("" for none; never the model's).
-record Example:
-  example: String
-  comes: String
-type Examples = Lists.List<Example>
-# A door: its word, its object (nobody for a link door, whose description is its line), the
-# spells the menu prints under it, and `watch`, the field of its object whose changes the menu
-# counts (`children`, `ticks`, `count`, `lines`, `held`, `presence`; "" for none). A door whose object
-# is a card under another door's (`garden/bell/1`) is an arc: the menu prints its spells under
-# that door, until the owner removes it.
-record Door:
-  label: String
-  description: String
-  to: Plans.Reference
-  examples: Examples
-  watch: String
-# What a door's object holds now, as its subscription last reported it: the count of the
-# watched field's rows (a tick count for `ticks`), the newest row's name ("" for none) and the
-# clock of that change. Keyed {card}, one row a watched door.
-record News:
-  card: String
-  count: Nat
-  newest: String
-  at: Nat
-# The door a principal's reply last went through, keyed {principal}.
-record Visit:
-  principal: String
-  door: String
-  at: Nat
-# When a reader was last answered for prose that named nothing, keyed {principal}.
-record Missed:
-  principal: String
-  at: Nat
-def missedKey(m: Missed) -> {principal: String}:
-  {principal: m.principal}
-def newsKey(news: News) -> {card: String}:
-  {card: news.card}
-def visitKey(visit: Visit) -> {principal: String}:
-  {principal: visit.principal}
-# The receiver for a watched field's rows ("" for a field the menu does not count).
-def receiverOf(field: String) -> String:
-  if field == "children" then "changedChildren" else if field == "ticks" || field == "count" then "changedNat" else if field == "lines" then "changedLines" else if field == "held" then "changedHeld" else if field == "presence" then "changedPresence" else ""
-# The count as the door line says it.
-def counted(field: String, count: Nat) -> String:
-  if field == "ticks" then "tick {natText(count)}" else if field == "children" then "{natText(count)} planted" else if field == "lines" then "{natText(count)} lines" else if field == "held" then "{natText(count)} held" else if field == "presence" then "{natText(count)} here" else if field == "count" then "{natText(count)} made" else natText(count)
-def newestOf(names: Lists.List<String>) -> String:
-  Lists.fold(names, "", fn(name: String) -> String -> String: fn(later: String) -> String: if later == "" then name else later)
+# The commonplace's card (docs/MENU.md, docs/METAPHYSICS.md §5, §7.5): what changed in the
+# town, newest first, then the doors the hand named, each a trie branch. Pure; the commonplace
+# (world/bodies/commonplace.obend) asks the world what changed and keeps the doors as its
+# `cites` (Card.Doorway: a door's spells are its `examples`).
+type Door = Card.Doorway
 # "Six doors.": the count in words to twelve, as the voice writes it (docs/VOICE.md).
 def doorCount(n: Nat) -> String:
-  if n == 1n then "One door" else "{countWord(n)} doors"
-def countWord(n: Nat) -> String:
-  match Lists.at(Text.words("No One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve"), n):
-    case some(w): w.value
-    case none(_): natText(n)
-# The menu as a trie (docs/MENU.md section 1): per door, `DOOR · <count>`, then each spell
-# indented, typed back whole, and `» <what comes back>`, then its arcs' spells. `first` names
-# the door that leads ("" for place order); the head and the tail are said once, and the
-# branches get what they leave of the clip (a clipped reader sees whole branches). `all` is
-# every door in place order.
-def trie(all: Lists.List<Door>, news: Relations.Relation<News>, context: Abi.Context, first: String) -> Document.Document:
-  trieUnder("", all, news, context, first)
-# The trie under one line of hob's above its head ("" for none; the greeting's), clipped with it
-# counted. A link door (STUDIO) is never clipped: it is said after the clipped branches, before
-# the tail.
-def trieUnder(line: String, all: Lists.List<Door>, news: Relations.Relation<News>, context: Abi.Context, first: String) -> Document.Document:
+  if n == 1n then "One door" else "{Text.counted(n)} doors"
+# What changed (World.changed), at most eight, each `<id> v<n> by <handle>, entry N`; then the
+# first spell, a thing made, and how any card shows its spells, on the newest id.
+def changes(items: Lists.List<World.Change>) -> String:
+  let shown = Lists.take(items, 8n)
+  let listed = if Lists.length(shown) == 0n then "Nothing has changed yet.\n" else "What changed, newest first:\n{textJoin(Lists.map(shown, changeLine), \"\")}"
+  "{listed}  delvetalk kinds make / name: lamp / of: record\n  » kind/lamp, a kind anyone makes\n  delvetalk {newestId(shown)} ?\n  » that card and its spells\n"
+def newestId(items: Lists.List<World.Change>) -> String:
+  match Lists.at(items, 0n):
+    case some(c): c.value.object.object
+    case none(_): "commonplace"
+def changeLine(c: World.Change) -> String:
+  "{c.object.object} v{natText(c.version)} by {Card.handle(c.by)}, entry {natText(c.height)}\n"
+# The doors as a trie (docs/MENU.md section 1): per door its word, then each spell indented,
+# typed back whole, and `» <what comes back>`, then its arcs' spells. `first` names the door
+# that leads ("" for the owner's order); the head, what changed and the tail are said once, and
+# the branches get what they leave of the clip (a clipped reader sees whole branches). A link
+# door (STUDIO) is never clipped: it is said after the clipped branches, before the tail.
+def trie(all: Lists.List<Door>, changed: String, first: String) -> Document.Document:
+  trieUnder("", all, changed, first)
+def trieUnder(line: String, all: Lists.List<Door>, changed: String, first: String) -> Document.Document:
   let top = firstOf(Lists.filter(all, fn(d: Door) -> Bool: isArc(all, d) == false), first)
-  let links = textJoin(Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to)), fn(d: Door) -> String: Document.plain(branch(d, all, news, context))), "")
+  let links = textJoin(Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to)), fn(d: Door) -> String: Document.plain(branch(d, all))), "")
   let head = if line == "" then trieHead(Lists.length(top)) else "{line}\n{greetedHead(Lists.length(top))}"
-  framed(head, Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false), fn(d: Door) -> Document.Document: branch(d, all, news, context)), "{links}{trieTail()}")
-# hob's greeting, above the menu a principal's first words get (docs/VOICE.md, the surfaces).
+  framed("{head}{changed}", Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false), fn(d: Door) -> Document.Document: branch(d, all)), "{links}{trieTail()}")
+# hob's greeting, above the card a principal's first words get (docs/VOICE.md, the surfaces).
 def greetingLine() -> String:
   "hob: words reach me, spells reach the cards. The doors:"
 # The trie pruned to some doors under another head, and no tail: hob's question's card.
-def pruned(head: String, doors: Lists.List<Door>, all: Lists.List<Door>, news: Relations.Relation<News>, context: Abi.Context) -> Document.Document:
-  framed("{head}\n", Lists.map(doors, fn(d: Door) -> Document.Document: branch(d, all, news, context)), "")
+def pruned(head: String, doors: Lists.List<Door>, all: Lists.List<Door>) -> Document.Document:
+  framed("{head}\n", Lists.map(doors, fn(d: Door) -> Document.Document: branch(d, all)), "")
+def title() -> String:
+  "✾ DELVETALK · THE COMMONPLACE"
 def trieHead(count: Nat) -> String:
-  "✾ DELVETALK · ROOT\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.\n"
+  "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.\n"
 # Under hob's greeting the head leaves out what hob's line says.
 def greetedHead(count: Nat) -> String:
-  "✾ DELVETALK · ROOT\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back.\n"
+  "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back.\n"
 def trieTail() -> String:
   "\n  delvetalk env observe\n  » what addressed you since you looked\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
+# The card for words that named nothing.
+def nothingHead() -> String:
+  "{title()}\n\nI heard no door, spell or field in that.\n"
 def framed(head: String, branches: Document.Documents, tail: String) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(head), tail: Lists.append(Card.clippedWithin(branches, 64n, Card.left(textLength(head) + textLength(tail))), Document.text(tail))})})
 def firstOf(top: Lists.List<Door>, first: String) -> Lists.List<Door>:
@@ -104,25 +67,15 @@ def arcOf(parent: Door, door: Door) -> Bool:
   Plans.isNobody(parent.to) == false && Text.starts(door.to.object, "{parent.to.object}/")
 def isArc(all: Lists.List<Door>, door: Door) -> Bool:
   Lists.any(all, fn(p: Door) -> Bool: arcOf(p, door))
-def branch(door: Door, all: Lists.List<Door>, news: Relations.Relation<News>, context: Abi.Context) -> Document.Document:
+def branch(door: Door, all: Lists.List<Door>) -> Document.Document:
   let arcs = textJoin(Lists.map(Lists.filter(all, fn(a: Door) -> Bool: arcOf(door, a)), fn(a: Door) -> String: spellLines(a.examples)), "")
-  Document.text("{door.label}{countLine(door, news, context)}\n{spellLines(door.examples)}{arcs}")
-def spellLines(examples: Examples) -> String:
-  textJoin(Lists.map(examples, fn(e: Example) -> String: if e.comes == "" then "  {e.example}\n" else "  {e.example}\n  » {e.comes}\n"), "")
-# The door line's live part: a watched door's count, with its newest row's name for a day
-# (1,440 clock minutes) after it came; a link door's description.
-def countLine(door: Door, news: Relations.Relation<News>, context: Abi.Context) -> String:
-  if Plans.isNobody(door.to) then linkLine(door) else newsLine(door, Relations.lookup(news, {card: door.to.object}, newsKey), context)
+  Document.text("{door.label}{linkLine(door)}\n{spellLines(door.examples)}{arcs}")
+def spellLines(examples: Card.Examples) -> String:
+  textJoin(Lists.map(examples, fn(e: Card.Example) -> String: if e.comes == "" then "  {e.example}\n" else "  {e.example}\n  » {e.comes}\n"), "")
 def linkLine(door: Door) -> String:
   if door.description == "" then "" else " · {door.description}"
-def newsLine(door: Door, found: Lists.Maybe<News>, context: Abi.Context) -> String:
-  match found:
-    case none(_): ""
-    case some(n): " · {counted(door.watch, n.value.count)}{fresh(n.value, context)}"
-def fresh(news: News, context: Abi.Context) -> String:
-  if news.newest != "" && context.clock < news.at + 1440n then ", newest {news.newest}" else ""
 # Several spells' card: each spell said, with what came of it.
-def ran(lines: Examples) -> Document.Document:
-  Document.text("✾ DELVETALK · ROOT\n\n{countWord(Lists.length(lines))} spells, in the order said:\n{spellLines(lines)}")
+def ran(lines: Card.Examples) -> Document.Document:
+  Document.text("{title()}\n\n{Text.counted(Lists.length(lines))} spells, in the order said:\n{spellLines(lines)}")
 def refusedLine(clause: String, reading: String, object: String) -> String:
   if reading == "" then "refused {clause}: Not done at {object}." else "refused {clause}: {reading}"

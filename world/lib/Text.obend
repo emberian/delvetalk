@@ -51,3 +51,13 @@ def number(value: String) -> Number:
   if size == 0n || size > 18n || textSpan(value, "0123456789") != size then Number.no({}) else if size > 1n && textTake(value, 1n) == "0" then Number.no({}) else Number.yes({value: digits(value, 0n)})
 def digits(rest: String, total: Nat) -> Nat:
   if rest == "" then total else digits(textDrop(rest, 1n), total * 10n + textBreak("0123456789", textTake(rest, 1n)))
+# A count in words to twelve, as the voice writes it ("six pages"; docs/VOICE.md), else digits;
+# `counted` capitalizes it at a line's head ("Six doors").
+def countWord(n: Nat) -> String:
+  match Lists.at(words("no one two three four five six seven eight nine ten eleven twelve"), n):
+    case some(w): w.value
+    case none(_): natText(n)
+def counted(n: Nat) -> String:
+  match Lists.at(words("No One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve"), n):
+    case some(w): w.value
+    case none(_): natText(n)

@@ -12,6 +12,7 @@ has one method per behaviour; the laws are inserted before `def initial` per tes
 import json
 import unittest
 
+from deploy import genesis
 from tests.test_turn_world import TurnWorld
 from tests.wire import field, label, listing, nat, nil, record, reference, relation
 from tests.bend import closure, declared
@@ -152,21 +153,24 @@ class WriteIsSelfOnly(Authority):
 
 
 class LawsOnWho(Authority):
-    def test_directory_remove_by_a_stranger_is_refused_by_the_directorys_law(self):
-        door = record(label=label("garden"), description=label("a garden"), to=reference("garden"), examples={"tag": "list", "items": []}, watch=label(""))
-        r = self.host.send(op="world-create", principal="ember", identity="mk-dir", object="dir",
-                           modules=closure("Directory"), entry="initial",
-                           seed=record(owner=label("ember"), doors=relation(), greeted=relation()))
+    def test_commonplace_undoor_by_a_stranger_is_refused_by_name_and_writes_nothing(self):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-cp", object="commonplace",
+                           modules=closure("Record"), entry="initial", law=genesis.RECORD_LAW,
+                           seed=record(owner=label("ember"), keeper=label("ember")))
         self.assertEqual(r["status"], "created", r)
-        self.assertEqual(self.turn("dir", "add", record(door=door))["status"], "admitted")
-        version = self.version("dir")
-        stranger = self.turn("dir", "remove", record(door=record(label=label("garden"))), principal="kim")
-        self.assertEqual((stranger["status"], self.outcome(stranger)["class"], self.outcome(stranger)["clause"]),
-                         ("refused", "lawRefused", "owner"))
-        self.assertEqual(self.version("dir"), version)
-        owner = self.turn("dir", "remove", record(door=record(label=label("garden"))))
-        self.assertEqual(owner["status"], "admitted", owner)
-        self.assertEqual(self.version("dir"), version + 1)
+        self.assertEqual(self.turn("commonplace", "door", record(label=label("garden"), to=label("garden")))["result"]["label"], "done")
+        version = self.version("commonplace")
+        stranger = self.turn("commonplace", "undoor", record(label=label("garden")), principal="kim")
+        self.assertEqual((stranger["status"], stranger["result"]["label"], self.outcome(stranger)["writes"]), ("admitted", "refused", []), stranger)
+        self.assertIn("refused notOwner", stranger["offers"][0]["text"])
+        self.assertEqual(self.version("commonplace"), version)
+        # The law holds beneath the method: a stranger's proposal over the cited doors is refused by `owner`.
+        forged = self.host.send(op="world-propose", principal="kim", identity="forged-cites", roots=[{"object": "commonplace", "version": version}],
+                                writes=[{"object": "commonplace", "edits": [record(cites={"tag": "variant", "label": "set", "payload": record(value=listing([]))})]}])
+        self.assertEqual((forged["status"], forged["receipt"]["outcome"]["class"], forged["receipt"]["outcome"]["clause"]), ("refused", "lawRefused", "owner"), forged)
+        owner = self.turn("commonplace", "undoor", record(label=label("garden")))
+        self.assertEqual((owner["status"], owner["result"]["label"]), ("admitted", "done"), owner)
+        self.assertEqual(self.version("commonplace"), version + 1)
 
     def test_a_law_on_the_author_admits_the_principal_and_refuses_another_name(self):
         self.ledger("a", "law author: new.lastBy == request.subject\n")

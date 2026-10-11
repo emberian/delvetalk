@@ -79,7 +79,7 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.planter then Text.words("rain ring strike door undoor") else Text.words("rain ring strike")
 # Doors on the bell's card are its planter's (the garden gives it one home on planting).
 def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorAdd(state.doors, state.planter, {label: input.label, to: {world: context.world, object: input.to}}, context), "door")
+  doored(Card.doorAdd(state.doors, state.planter, {label: input.label, to: {world: context.world, object: input.to}, description: "", examples: Lists.List.nil()}, context), "door")
 def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:
   doored(Card.doorRemove(state.doors, state.planter, input.label, context), "undoor")
 def doored(edit: Card.DoorEdit, action: String) -> Activity<Card.Replied>:

@@ -298,7 +298,7 @@
    "method": "GET",
    "href": "/play/{object}",
    "auth": "cookie",
-   "does": "HTML: the card as world-card renders it for you, its doors as links, a reply box and `?`; /play/ is the directory; without the session cookie, a redirect to the login page"
+   "does": "HTML: the card as world-card renders it for you, its doors as links, a reply box and `?`; /play/ is the commonplace; without the session cookie, a redirect to the login page"
   },
   {
    "name": "reply",

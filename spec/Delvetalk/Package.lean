@@ -786,7 +786,8 @@ def compactCodec (j : Json) (encode : Bool) : Except String Json := do
 
 def turnStartVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
-  Delvetalk.Turn.start (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j) j
+  let entry ← Delvetalk.CheckedEntry.ofPacket (← artifact.getObjVal? "packet")
+  Delvetalk.Turn.startEntryJson entry (← j.getObjVal? "arguments") (getLimits j) j
 
 def turnStart (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")

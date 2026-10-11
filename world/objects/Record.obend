@@ -31,6 +31,10 @@ import ./Spween.obend as Spween
 # changed only by its owner's reprogram; `presence` who is in it and at which passage; `vars`
 # what its choices set; `left` when each reader last left; `things` what lies in it.
 #
+# A record that reads words keeps its `policy` (hob's, nobody for none): the commonplace
+# (world/bodies/commonplace.obend) greets each reader once (`greeted`, only added to) and
+# answers words that named nothing at most hourly (`missed`).
+#
 # The package declares no law: a lawful module cannot be imported, and every kind imports the
 # package it makes. Its creator passes the law (`lawText` is the record's own).
 type Line = Rows.Line
@@ -60,14 +64,17 @@ record State:
   vars: Lists.List<Scenes.Var>
   left: Relations.Relation<Departure>
   things: Relations.Relation<Plans.Reference>
+  policy: Plans.Reference
+  greeted: Relations.Relation<Rows.Greeting>
+  missed: Relations.Relation<Rows.Missed>
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), makes: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty()}
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), makes: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), policy: Plans.nobody(), greeted: Relations.empty(), missed: Relations.empty()}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
 # A body that keeps shorter lines keeps more of them (`relationsWith`).
 def relations() -> Relations.Decls:
   relationsWith(128n)
 def relationsWith(lines: Nat) -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n}), {field: "greeted", key: Text.words("principal"), limit: 2048n}), {field: "missed", key: Text.words("principal"), limit: 64n})
 # Who may be in a room at once: one turn offers a line to at most 32 (the host's sendsPerTurn).
 def presenceMax() -> Nat:
   32n
@@ -79,7 +86,7 @@ def leftMax() -> Nat:
 # the keeper admits; what the spells keep (lines, admissions, marks, presence, departures,
 # variables, the floor) no proposal writes, the owner's included.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the keeper, the doors, what it makes, its scene or its code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(cites) and unchanged(makes) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables and what lies here change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things))"
+  "law owner \"the owner stays; only the owner changes the keeper, the policy, the doors, what it makes, its scene or its code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(makes) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission, a mark or a greeting is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables and what lies here change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things))"
 def lineKey(line: Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
 def admissionKey(a: Rows.Admission) -> {n: Nat}:
@@ -133,9 +140,12 @@ def field(state: State, name: String) -> String:
     case none(_): ""
 # Doors on the card are the owner's: what the record cites.
 def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorAdd(state.cites, state.owner, {label: input.label, to: {world: context.world, object: input.to}}, context), "door")
+  doored(Card.doorAdd(state.cites, state.owner, {label: input.label, to: {world: context.world, object: input.to}, description: "", examples: Lists.List.nil()}, context), "door")
 def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:
   doored(Card.doorRemove(state.cites, state.owner, input.label, context), "undoor")
+# A spell a door's card prints under it (a menu's), the owner's.
+def example(state: State, input: {label: String, spell: String, comes: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  doored(Card.doorExample(state.cites, state.owner, input.label, {example: input.spell, comes: input.comes}, context), "example")
 def doored(edit: Card.DoorEdit, action: String) -> Activity<Card.Replied>:
   match edit:
     case refused(r): Card.tell(Card.Replied.refused(r), Document.text("refused {r.clause}: {r.reading}\n"))
@@ -176,13 +186,22 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
+form example:
+  label: text 1..32
+  spell: text 1..280
+  comes: text 0..200
 # What the host offers a reader (HOST-HANDOFF 103): admit to the keeper, doors to the owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
+  Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor example") else Text.words("")))
 def blurb() -> Card.Door:
   {word: "record", blurb: "Write a line; it is numbered and never edited."}
-def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
-  Card.answer(input, context, forms(), render(state, context))
+# Words take the record's card by default (Card.answer). A spell that misfit this card's forms
+# reaches here with its clause (FLEX §2): a record that reads words (the commonplace, with a
+# policy) shows hob; any other refuses it by that clause, writing nothing.
+def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Card.Replied>:
+  if input.misfit.clause != "" then misfitted(input.misfit, state, context) else Card.answer(Card.heard(input), context, forms(), render(state, context))
+def misfitted(misfit: Card.Misfit, state: State, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answerRefused({clause: misfit.clause, reading: misfit.reason}, context, forms(), render(state, context), fn(r: Card.Replied) -> Card.Replied: r)
 # At most eight lines and Card.budget() characters; when lines remain, the last row says how
 # many and the spell that shows them, and its characters are kept for it.
 def numbered(state: State, context: Abi.Context, lines: Lists.List<Line>, shown: Nat, room: Nat, id: String) -> Document.Documents:

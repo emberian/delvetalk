@@ -87,12 +87,8 @@ def shelved(page: Page) -> Activity<Card.Replied>:
   Card.tell(Card.Replied.done({action: "shelve"}), Document.text("Shelved {page.name}.\n"))
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-def countWord(n: Nat) -> String:
-  match Lists.at(Text.words("no one two three four five six seven eight nine ten eleven twelve"), n):
-    case some(w): w.value
-    case none(_): natText(n)
 def plural(n: Nat, word: String) -> String:
-  if n == 1n then "one {word}" else "{countWord(n)} {word}s"
+  if n == 1n then "one {word}" else "{Text.countWord(n)} {word}s"
 def entryLine(page: Page) -> String:
   let padded = textTake(textConcat(page.name, "           "), 11n)
   "  {padded}{page.title}\n"

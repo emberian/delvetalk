@@ -1,12 +1,14 @@
-"""Every relation's declared limit times its widest row fits in 256 KiB (HOST-HANDOFF 108): an object
-whose relation is full, every row at its widest, is under `maxStateBytes` and still takes a write.
+"""An object whose relations are full, every row at its widest, keeps each cell under
+`Bounds.maxCellBytes` (its scalar part and every row, KERNEL-HANDOFF §15 step 4) and still takes a
+write.
 
-Evidence for FOUNDATION's scale rule (layer: objects). Refuted by a full relation past 262,144
-canonical bytes, or a write to it refused `capacity`.
+Evidence for FOUNDATION's scale rule (layer: objects). Refuted by a full object's scalar part past
+262,144 canonical bytes, or a write to it refused `capacity`.
 """
 import unittest
 
 from tests.test_chain import Chain, town_kinds
+from tests.test_receive import commonplace
 from tests.wire import label, nat, record, reference, relation
 from tests.bend import MODULES, closure
 
@@ -28,10 +30,10 @@ def limit(module, field):
 
 
 class FullRelations(Chain):
-    def full(self, name, module, seed, by="ember"):
-        r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name, modules=closure(module), entry="initial", seed=seed)
+    def full(self, name, module, seed, by="ember", law=None):
+        r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name, modules=closure(module), entry="initial", seed=seed, **({"law": law} if law else {}))
         self.assertEqual(r["status"], "created", r)
-        size = self.host.send(op="world-inspect", principal=by, object=name, source=False)["stateBytes"]
+        size = self.host.send(op="world-inspect", principal=by, object=name, source=False)["scalarBytes"]
         self.assertLess(size, MAX, name)
         return size
 
@@ -57,11 +59,12 @@ class FullRelations(Chain):
         town_kinds(self.host.send)
         self.say("garden", "delvetalk garden plant / seed: %s / colour: amber" % ("s" * 80), did(7), "plant")
 
-    def test_a_directory_full_of_greetings_greets_another(self):
-        n = limit("Directory", "greeted")
+    def test_a_commonplace_full_of_greetings_greets_another(self):
+        n = limit("Record", "greeted")
         greeted = [record(principal=label(did(i))) for i in range(n)]
-        self.full("directory", "Directory", record(owner=label("ember"), greeted=relation(*greeted)))
-        self.assertEqual(self.say("directory", "hello", did(n + 1), "hello")["result"]["label"], "menu")
+        commonplace(self, greeted=relation(*greeted))
+        self.assertLess(self.host.send(op="world-inspect", principal="ember", object="commonplace", source=False)["stateBytes"], MAX)
+        self.assertEqual(self.say("commonplace", "hello", did(n + 1), "hello")["result"]["label"], "usage")
 
     def test_a_workshop_full_of_the_largest_held_proposals_is_under_the_bound(self):
         n = limit("Workshop", "held")

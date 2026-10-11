@@ -1,4 +1,4 @@
-"""The world's objects carry their laws in source: only owners change directories and admit anthology
+"""The world's objects carry their laws in source: only owners change a record's doors and admit anthology
 lines, Tide's predicate and Wake's law refuse what their code would.
 
 Evidence for FOUNDATION §4 (layer: objects).
@@ -6,7 +6,7 @@ Evidence for FOUNDATION §4 (layer: objects).
 Laws in source on the objects.
 
 Policy: `owner: unchanged(owner) and request.subject == new.owner` (it has no `describe`, which an older law admitted).
-Directory: only its owner adds or removes a door. Anthology: anyone submits, only its owner admits.
+The commonplace (a Record): only its owner hangs or removes a door. Anthology: anyone submits, only its owner admits.
 Each is made with world-create (a lawful module cannot be imported by a creator) by its owner (a law
 must admit an amendment by its installer).
 
@@ -15,7 +15,7 @@ kind-0 write, and Wake's law text. The tests write through a variant of the pack
 skips the Bend-side check the real one makes; the refusal's clause is the predicate's ("self",
 "tooSoon") or the law's ("owner").
 
-Refuted by: a stranger's add, remove or admit committing; an owner's being refused; a stranger's
+Refuted by: a stranger's door, undoor or admit committing; an owner's being refused; a stranger's
 submit being refused; the variants committing once the host runs predicates.
 """
 import unittest
@@ -28,8 +28,12 @@ from tests.bend import closure
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
 
 
-def door(name):
-    return record(label=label(name), description=label("a " + name), to=reference(name), examples={"tag": "list", "items": []}, watch=label(""))
+def cite(name):
+    return record(label=label(name), to=reference(name), description=label("a " + name), examples={"tag": "list", "items": []})
+
+
+def commonplace_seed(owner):
+    return record(owner=label(owner), keeper=label(owner), keeperHandle=label(""), head=label("THE COMMONPLACE"))
 
 
 def anthology_seed(owner, handle=""):
@@ -62,18 +66,22 @@ class LawWorld(TurnWorld):
 
 class Laws(LawWorld):
 
-    def test_only_the_directorys_owner_adds_or_removes_a_door(self):
-        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))
-        self.assertEqual(self.turn("dir", "add", record(door=door("garden")), principal=OWNER)["status"], "admitted")
-        self.assertEqual(self.clause(self.turn("dir", "add", record(door=door("bazaar")), principal=OTHER)), "lawRefused/owner")
-        self.assertEqual(self.clause(self.turn("dir", "remove", record(door=record(label=label("garden"))), principal=OTHER)), "lawRefused/owner")
-        self.assertEqual(self.version("dir"), 1)
-        self.assertEqual(self.turn("dir", "remove", record(door=record(label=label("garden"))), principal=OWNER)["status"], "admitted")
-        self.assertEqual(rows(field(self.state("dir"), "doors")), [])
+    def test_only_the_commonplaces_owner_hangs_or_removes_a_door(self):
+        self.create("commonplace", closure("Record"), commonplace_seed(OWNER), law=genesis.RECORD_LAW)
+        hang = lambda name, who: self.turn("commonplace", "door", record(label=label(name), to=label(name)), principal=who)
+        self.assertEqual(hang("garden", OWNER)["result"]["label"], "done")
+        refused = hang("bazaar", OTHER)
+        self.assertEqual((refused["status"], refused["result"]["label"], refused["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), refused)
+        self.assertIn("refused notOwner", refused["offers"][0]["text"])
+        gone = self.turn("commonplace", "undoor", record(label=label("garden")), principal=OTHER)
+        self.assertEqual((gone["status"], gone["result"]["label"]), ("admitted", "refused"), gone)
+        self.assertEqual(self.version("commonplace"), 1)
+        self.assertEqual(self.turn("commonplace", "undoor", record(label=label("garden")), principal=OWNER)["result"]["label"], "done")
+        self.assertEqual(field(self.state("commonplace"), "cites")["items"], [])
 
-    def test_a_directory_installed_for_someone_else_has_no_amendment_clause(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-d2", object="d2", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label(OWNER), doors=relation(), greeted=relation()))
+    def test_a_record_installed_for_someone_else_has_no_amendment_clause(self):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-d2", object="d2", modules=closure("Record"),
+                           entry="initial", seed=commonplace_seed(OWNER), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "error", r)
         self.assertTrue(r["message"].startswith("law does not admit an amendment by its proposer ember: owner: "), r)
 
@@ -205,13 +213,13 @@ class NoStrangerAmends(LawWorld):
     """A law that admits anyone's write leaving the guarded fields unchanged must still admit
     only the owner's reprogram and amendment (kind 1 and 2 change no field)."""
 
-    def test_garden_thing_and_directory_refuse_a_strangers_amendment(self):
+    def test_garden_thing_and_commonplace_refuse_a_strangers_amendment(self):
         from tests.test_chain import garden_state
         self.create("garden", closure("Garden"), garden_state(owner=OWNER))
         self.create("stone", closure("Thing"), record(owner=label(OWNER), name=label("stone"), description=label(""),
                                                       holder=reference(""), location=reference(""),
                                                       offer={"tag": "variant", "label": "none", "payload": record()}))
-        self.create("dir", closure("Directory"), record(owner=label(OWNER), doors=relation(), greeted=relation()))
+        self.create("dir", closure("Record"), commonplace_seed(OWNER), law=genesis.RECORD_LAW)
         for obj in ("garden", "stone", "dir"):
             version = self.version(obj)
             r = self.host.send(op="world-amend", principal=OTHER, identity="am-" + obj, object=obj, version=version,

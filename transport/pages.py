@@ -31,7 +31,7 @@ def home(status, who, ids=(), did=None):
 
 
 def items(ids, words, did):
-    """Objects as small cards: the kind's mark, the id, the door word the directory gives it, (yours)."""
+    """Objects as small cards: the kind's mark, the id, the door word the commonplace gives it, (yours)."""
     return ''.join(T['world_item'].format(id=e(i), href=e(quote(i, safe=':')), yours=yours(i, did),
                                           word=T['word'].format(word=e(words[i])) if words.get(i) else '') for i in ids)
 

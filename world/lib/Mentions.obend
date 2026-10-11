@@ -5,8 +5,7 @@ import ./Form.obend as Form
 import ./Spell.obend as Spell
 import ./Card.obend as Card
 import ./Text.obend as Text
-import ./Menu.obend as Menu
-type Door = Menu.Door
+type Door = Card.Doorway
 # Which doors a reply names (pure): its door words, and the actions and fields of the forms
 # learned under each. It prunes the menu hob's question stands over; it never decides whether
 # hob reads the words (the host's reach does).
@@ -21,7 +20,7 @@ def wordAt(words: Lists.List<String>, index: Nat) -> String:
   match Lists.at(words, index):
     case some(w): w.value
     case none(_): ""
-# The directory's mention scan (it alone reads prose for door words, before any model call).
+# The commonplace's mention scan (it alone reads prose for door words, before any model call).
 # Whether prose names one of `words` (door words and form actions, each a whole word) or,
 # as a `name:` line, one of `words` or `fields`. One pass: the text is split at blanks
 # once, and a word of three or more letters (a leading and a trailing mark dropped) is
@@ -67,7 +66,7 @@ def doorWord(text: String) -> String:
   short(textTake(Text.trimStart(text), 65n))
 def short(head: String) -> String:
   if textLength(head) > 64n then "" else Text.trimEnd(head)
-# What the directory learns of its doors, once a turn and only when a reply needs it: each
+# What the commonplace learns of its doors, once a turn and only when a reply needs it: each
 # door's forms, and the forms of the first card listed under it (a garden's bells), by
 # inspect. A door's word, its actions and its forms' fields are what prose must name before
 # the model reads it; a door's forms are what the model is offered.
@@ -101,9 +100,6 @@ def doorForms(learned: Learning) -> Lists.List<Form.Form>:
 def touches(input: Card.Reply, door: Door, learned: Learning) -> Bool:
   let forms = formsOf(Lists.filter(learned, fn(l: Learned) -> Bool: l.door == door.to.object))
   mentions(textTake(input.text, 2000n), input.fields, Lists.concat(doorWords(door), formWords(forms)), formFields(forms))
-# The directory's card for prose naming nothing, and for an action asked first.
-def nothingHead() -> String:
-  "✾ DELVETALK · ROOT\n\nI heard no door, spell or field in that.\n"
 # An action the policy confirms (a give, an offer, a reprogram) is not run from prose: the
 # speaker is shown the door's spell with its blanks, and sending it is the yes.
 def askedFirst(card: String, forms: Lists.List<Form.Form>) -> Document.Document:
