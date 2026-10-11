@@ -105,6 +105,12 @@ weather, door, lantern, bond); the hand places `HANDS` by spell (`garden`, `room
 `bell/1` the sixth bell); the garden cites its weather, the porch the sixth bell; `THINGS` lie on the porch; the
 opener's wake runs `arrived` and the tide schedule; the library shelves `PAGES`; each door publishes its page.
 
+## Previews
+
+`docs/previews/` holds what the hand posts: `gsb-welcome.txt`, `zulip-welcome.txt`, `commonplace-card.txt` (the live
+commonplace verbatim) and `seed-posts/01..05`. `tests/test_previews.py` holds each embedded card equal to a fresh
+genesis's render and casts each seed post's spells, so a card change fails it until the preview is re-cut.
+
 ## Open, in order
 
 1. **A refusal refuses the turn** (playtest 2's D6). Bend's `refuse` takes only a string literal
