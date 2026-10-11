@@ -1476,8 +1476,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    last word and `…`); prose with no prefix and no spell is `said` too (`saidVerdict`; the old prose arm,
    `replied {text}`, is gone: `replied` is only `card`). A Response that cannot carry it hears `unclear`. Garden
    and the commonplace take `said` as they took prose until the objects lane renders it as hob's line. The play
-   page waits on the turn and the turns it handed on (`delivered` under the same principal) while any is
-   suspended, polling `world-offers` and stopping when hob offers or settles with nothing; the turn line names
+   page follows the turn and every turn it handed on (`Front.follow`: each settled receipt's `sends`, delivered
+   under the same principal with the send's id as intent, so hob's planting sent on to the garden is followed)
+   while any is suspended or undelivered, up to `WAIT_MAX`, then shows what they offered; the turn line names
    the card addressed (`bridge.turn_root(receipt, addressed)`), not the first root (a card that asks the
    commonplace's `due` first). Tests: `test_interpret_object` (say, prose, both clips), `test_http.Play`
    (a question to kinds). No replay edition change: the verdict is journaled, not re-derived, and replay's known
