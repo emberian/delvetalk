@@ -14,7 +14,7 @@ import unittest
 
 from deploy import genesis
 from tests.test_laws import anthology_seed
-from tests.test_chain import Chain, garden_seed, town_kinds
+from tests.test_chain import Chain, town_garden
 from tests.test_rooms import make_room, avatar_seed, room_seed
 from tests.test_replay import bell_seed
 from tests.wire import field, label, record, rows
@@ -28,9 +28,10 @@ class Principal(Chain):
     def forged(self, obj, method, argument, field):
         forged = dict(argument["fields"] and {f["name"]: f["value"] for f in argument["fields"]} or {})
         forged[field] = label(CLAIMED)
+        before = self.host.send(op="world-view", principal="ember", object=obj)["version"]
         r = self.turn(obj, method, record(**forged), principal=ACTOR)
         self.assertNotEqual(r.get("status"), "admitted", r)
-        self.assertEqual(self.host.send(op="world-view", principal="ember", object=obj)["version"], 0, r)
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object=obj)["version"], before, r)
         return r
 
     def ignored(self, obj, method, field):
@@ -78,12 +79,11 @@ class Principal(Chain):
         self.assertEqual([field(p, "who") for p in rows(field(self.state("porch"), "presence"))], [label(ACTOR)])
 
     def test_the_planter_is_the_turns_principal_and_the_planting_its_post(self):
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
         spell = "delvetalk garden plant\nseed: a fern\ncolour: amber"
         self.forged("garden", "receive", record(text=label(spell), post=label("at://p/1")), "who")
         r = self.turn("garden", "receive", record(text=label(spell), post=label("at://p/1")), principal=ACTOR, identity="plant-1")
-        self.assertEqual(r["result"]["label"], "planted", r)
+        self.assertEqual(r["status"], "admitted", r)
         bell = self.state("garden/bell/1")
         self.assertEqual((field(bell, "maker"), field(bell, "post")), (label(ACTOR), label("at://p/1")))
         self.assertIn("Planted, kimik3", r["offers"][0]["text"])

@@ -23,8 +23,10 @@ import ./Spween.obend as Spween
 # `maker`, `makerHandle` and `post` are set when it is made (KIND's `make`) and never after.
 #
 # Where a record stands is what it cites and what it makes. `cites` are its doors (the card's
-# word): `{label, to}` rows the owner hangs, eight at most. `makes` are the kinds whose things a
-# body makes under it (`making`): <record>/<kind>/<n>, each with a door home.
+# word): `{label, to}` rows the owner hangs, eight at most. What it makes is its body's to say
+# (`makes`: a garden's kind/bell and kind/cistern; a room makes rooms of its own kind): each
+# <record>/<kind>/<n>, with a door home, among its `things`. `weather` is one line a weather that the record
+# cites writes on it (`forecast`), shown in a garden's head.
 #
 # A room is a record whose body (world/bodies/room.obend) reads the rest: `start`, `passages`,
 # `cooldown` and `requires` are its scene (world/lib/Scenes.obend), set when it is made and
@@ -55,7 +57,6 @@ record State:
   marks: Relations.Relation<Rows.Mark>
   next: Nat
   cites: Card.Doorways
-  makes: Lists.List<Plans.Reference>
   start: String
   passages: Lists.List<Scenes.Passage>
   cooldown: Nat
@@ -64,11 +65,12 @@ record State:
   vars: Lists.List<Scenes.Var>
   left: Relations.Relation<Departure>
   things: Relations.Relation<Plans.Reference>
+  weather: String
   policy: Plans.Reference
   greeted: Relations.Relation<Rows.Greeting>
   missed: Relations.Relation<Rows.Missed>
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), makes: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), policy: Plans.nobody(), greeted: Relations.empty(), missed: Relations.empty()}
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", policy: Plans.nobody(), greeted: Relations.empty(), missed: Relations.empty()}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
 # A body that keeps shorter lines keeps more of them (`relationsWith`).
 def relations() -> Relations.Decls:
@@ -86,7 +88,7 @@ def leftMax() -> Nat:
 # the keeper admits; what the spells keep (lines, admissions, marks, presence, departures,
 # variables, the floor) no proposal writes, the owner's included.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the keeper, the policy, the doors, what it makes, its scene or its code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(makes) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission, a mark or a greeting is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables and what lies here change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things))"
+  "law owner \"the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission, a mark or a greeting is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables and what lies here change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things))"
 def lineKey(line: Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
 def admissionKey(a: Rows.Admission) -> {n: Nat}:
@@ -153,28 +155,53 @@ def doored(edit: Card.DoorEdit, action: String) -> Activity<Card.Replied>:
 def doorWritten(entries: Plans.Entries<Card.Doorway, Card.Doorway>, action: String) -> Activity<Card.Replied>:
   let written(_) = world.write(extend(keep(), {cites: entries}))
   Card.Replied.done({action: action})
-# Making under the record (`makes`): a body's verb (a garden's plant) names one of its kinds and
-# the fields the kind's form takes, as text; the kind judges them and makes <record>/<kind>/<n>
-# with a door home, answering quietly, and the record answers the maker. A kind the record does
-# not make is refused by name; the kind's refusal keeps its clause.
+# Making under the record: a body's verb (a garden's plant, a room's carved block) names a kind
+# the record makes (`makes`, or the record's own kind: a room makes rooms) and the fields its form
+# takes, as text; the kind judges them and makes <record>/<kind>/<n> with a door home, answering
+# quietly, and the record holds it among its `things` and answers the maker with the body's card
+# (`said`), the body's result (`as`). A kind the record does not make is refused by name; the
+# kind's refusal keeps its clause.
 sum Made:
   made: {object: String}
   refused: Card.Refusal
-def making(state: State, kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context) -> Activity<Made>:
-  if Lists.any(state.makes, fn(r: Plans.Reference) -> Bool: r.object == kind) then calling(kind, fields, context) else notMade({clause: "notMade", reading: makesReading(state)})
+def makes(state: State) -> Lists.List<String>:
+  Lists.List.nil()
+def making<T>(state: State, kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
+  if kind == state.kind || Lists.any(makes(state), fn(k: String) -> Bool: k == kind) then calling(kind, fields, context, said, as) else notMade({clause: "notMade", reading: makesReading(state)}, said, as)
 def makesReading(state: State) -> String:
-  if Lists.length(state.makes) == 0n then "This record makes nothing." else "This record makes {textJoin(Lists.map(state.makes, fn(r: Plans.Reference) -> String: r.object), \", \")}."
-def notMade(refusal: Card.Refusal) -> Activity<Made>:
-  Card.tell(Made.refused(refusal), Document.text("Not done: {refusal.reading}\n"))
-def calling(kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context) -> Activity<Made>:
+  if Lists.length(makes(state)) == 0n then "This record makes nothing." else "This record makes {textJoin(makes(state), \", \")}."
+def notMade<T>(refusal: Card.Refusal, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
+  Card.tell(as(Made.refused(refusal)), said(Made.refused(refusal)))
+def calling<T>(kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
   match world.call::<Made>({object: {world: context.world, object: kind}, method: "makeUnder", argument: {under: context.object, fields: fields}}):
-    case returned(r): madeHere(r.result, context)
-    case refused(r): notMade({clause: r.clause, reading: r.reading})
-    case denied(_): notMade({clause: "denied", reading: "{kind} does not answer."})
-def madeHere(made: Made, context: Abi.Context) -> Activity<Made>:
+    case returned(r): madeHere(r.result, context, said, as)
+    case refused(r): notMade({clause: r.clause, reading: r.reading}, said, as)
+    case denied(_): notMade({clause: "denied", reading: "{kind} does not answer."}, said, as)
+def madeHere<T>(made: Made, context: Abi.Context, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
   match made:
-    case made(m): Card.tellTo(made, context.principal, Document.text("Made, at {m.object}.\n"))
-    case refused(r): notMade(r)
+    case made(m): holding(m.object, made, context, said, as)
+    case refused(r): notMade(r, said, as)
+def holding<T>(object: String, made: Made, context: Abi.Context, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
+  let written(_) = write {things: insert {world: context.world, object: object}}
+  Card.tellTo(as(made), context.principal, said(made))
+# The plain card for what was made, or why not.
+def madeLine(made: Made) -> Document.Document:
+  match made:
+    case made(m): Document.text("Made, at {m.object}.\n")
+    case refused(r): Document.text("Not done: {r.reading}\n")
+# What its kind does once the body is laid (Kind's `graft`, the kind as caller): nothing for a
+# plain record; a body that watches something (a weather, a lantern) subscribes here.
+def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
+  false
+# A weather the record cites writes its line here (a garden's head shows it); anyone else's
+# call is refused by name.
+def forecast(state: State, input: {line: String}, context: Abi.Context) -> Activity<Bool>:
+  if Lists.any(state.cites, fn(d: Card.Doorway) -> Bool: d.to.object == context.caller) == false || context.caller == "" then refuse("Only a weather this record cites writes its weather.") else forecastWritten(input.line)
+def forecastWritten(line: String) -> Activity<Bool>:
+  let written(_) = write {weather: set textTake(line, 120n)}
+  true
+def methods() -> Lists.List<String>:
+  Text.words("~made ~forecast")
 form write:
   text: text 1..280
 form admit:

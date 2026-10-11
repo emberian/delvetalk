@@ -1,5 +1,5 @@
 """KIND makes things: `kinds` makes a kind, a kind makes an instance of its package under its law,
-and a kind with a body grafts it on each instance (docs/CATALOGUE.md §3, §5 step 3).
+and a kind with a body lays it on each instance (docs/CATALOGUE.md §3, §5 step 3).
 
 Evidence for FOUNDATION §8 extend (layer: objects).
 
@@ -62,7 +62,7 @@ class Kinds(Chain):
 
     def test_a_kind_of_record_makes_a_record_under_its_law_with_its_head(self):
         self.kind("key", "record", "seed: text 1..80", head="THE KEY, begun by {maker}: {seed}", law=genesis.RECORD_LAW)
-        made = self.turn("kind/key", "make", record(seed=label("three hands deep")), principal=KIM)
+        made = self.turn("kind/key", "make", record(seed=label("three hands deep"), id=label("")), principal=KIM)
         self.assertEqual(made["status"], "admitted", made)
         self.assertEqual(made["result"]["label"], "made", made)
         state = self.state("key/1")
@@ -76,7 +76,7 @@ class Kinds(Chain):
 
     def test_the_cistern_kind_pours_and_its_level_only_rises(self):
         self.kind("cistern", "record", "", law=genesis.RECORD_LAW, body_source=body("cistern"))
-        self.assertEqual(self.turn("kind/cistern", "make", principal=GLM)["status"], "admitted")
+        self.assertEqual(self.turn("kind/cistern", "make", record(id=label("")), principal=GLM)["status"], "admitted")
         poured = self.turn("cistern/1", "pour", record(text=label("refused tooSoon: the next tick from clock 480")), principal=KIM)
         self.assertEqual(poured["status"], "admitted", poured)
         self.assertIn("CISTERN, dug by glm; level 1. Pour a refusal in:\n  delvetalk cistern/1 pour / text: <the refusal, 1 to 280 characters>\n", text(poured))
@@ -87,9 +87,8 @@ class Kinds(Chain):
 
     def test_kind_room_makes_a_room_whose_body_is_laid_in_the_turn_that_makes_it(self):
         self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
-        made = self.turn("kind/room", "make", record(name=label("The Reading Room")), principal=KIM)
+        made = self.turn("kind/room", "make", record(name=label("The Reading Room"), id=label("")), principal=KIM)
         self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)
-        self.deliver_all()
         room = self.state("room/1")
         self.assertEqual((field(room, "head")["value"], field(room, "owner")["value"]), ("The Reading Room", KIM))
         laws = self.host.send(op="world-inspect", principal=KIM, object="room/1")["laws"]
@@ -107,19 +106,16 @@ class Kinds(Chain):
         self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
         squat = self.host.send(op="world-create", principal=GLM, identity="squat", object="room/1", modules=closure("Record"), entry="initial", seed=record())
         self.assertEqual(squat["status"], "created", squat)
-        made = self.turn("kind/room", "make", record(name=label("The Porch")), principal=KIM)
+        made = self.turn("kind/room", "make", record(name=label("The Porch"), id=label("")), principal=KIM)
         self.assertEqual(made["result"]["label"], "made", made)
-        self.deliver_all()
         self.assertIn("Made, at room/2; 1 made.", text(made))
 
     def test_a_spween_block_posted_to_a_room_makes_a_room_under_it(self):
         self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
-        self.turn("kind/room", "make", record(name=label("The Porch")), principal=KIM)
+        self.turn("kind/room", "make", record(name=label("The Porch"), id=label("")), principal=KIM)
         spween = "a tube between porch and ledger:\n\n```spween\n---\nid: tube\ntitle: The Tube\n---\n=== mouth\nA scratch comes down the tube.\n* [Listen] -> END\n```"
-        self.deliver_all()
         r = self.turn("room/1", "receive", record(text=label(spween), post=label("at://x/1")), principal=GLM)
         self.assertEqual(r["status"], "admitted", r)
-        self.deliver_all()
         self.assertEqual(text(r), "ROOM The Tube is at room/1/room/1. Enter: delvetalk room/1/room/1 enter\n")
         tube = self.state("room/1/room/1")
         self.assertEqual((field(tube, "head")["value"], field(tube, "start")["value"], field(tube, "owner")["value"]), ("The Tube", "mouth", GLM))
@@ -128,16 +124,20 @@ class Kinds(Chain):
         self.assertEqual(self.turn("room/1/room/1", "choose", record(choice=label("Listen")), principal=KIM)["result"]["label"], "left")
 
     def yard(self, makes=("kind/bell",)):
-        """A record that makes bells, with a body whose `plant` names the kind, as a garden's does."""
+        """A record that makes bells, with a body whose `makes` names the kinds and whose `plant` names one, as the
+        garden's body does (world/bodies/garden.obend)."""
         town_kinds(self.host.send)
         r = self.host.send(op="world-create", principal="ember", identity="mk-yard", object="yard", modules=closure("Record"), entry="initial",
-                           seed=record(owner=label("ember"), head=label("THE YARD"), makes=listing([reference(k) for k in makes])), law=genesis.RECORD_LAW)
+                           seed=record(owner=label("ember"), head=label("THE YARD")), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
-        plant = ("layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Rows.obend as Rows\nimport ./Form.obend as Form\n"
+        kinds = " ".join(makes)
+        plant = ("layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\n"
+                 "import ./Rows.obend as Rows\nimport ./Form.obend as Form\nimport ./Text.obend as Text\n"
                  "type State = Super.State\nform plant:\n  colour: amber | violet | silver\n  seed: text 1..80\n"
+                 "def makes(state: State) -> Lists.List<String>:\n  Text.words(\"%s\")\n"
                  "def plant(state: State, input: PlantInput, context: Abi.Context) -> Activity<Super.Made>:\n"
-                 "  Super.making(state, \"kind/bell\", Lists.List.cons({head: {name: \"colour\", value: plantColourText(input.colour)}, tail: Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.nil()})}), context)\n"
-                 "def plantColourText(c: PlantColour) -> String:\n  match c:\n    case amber(_): \"amber\"\n    case violet(_): \"violet\"\n    case silver(_): \"silver\"\n")
+                 "  Super.making(state, \"kind/bell\", Lists.List.cons({head: {name: \"colour\", value: plantColourText(input.colour)}, tail: Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.nil()})}), context, Super.madeLine, fn(m: Super.Made) -> Super.Made: m)\n"
+                 "def plantColourText(c: PlantColour) -> String:\n  match c:\n    case amber(_): \"amber\"\n    case violet(_): \"violet\"\n    case silver(_): \"silver\"\n") % kinds
         r = self.host.send(op="world-reprogram", principal="ember", identity="plant", object="yard", version=0, package=plant, mode="extend")
         self.assertEqual(r["status"], "admitted", r)
 

@@ -8,7 +8,7 @@ The section 10 hour, from the archive itself: glm's planting grows a bell and it
 for it; a reply to a planting post rains on that bell; a second cistern line digs garden/cistern/2;
 the four anthology lines reach a card by the reach rule and are written; the nine-post burst admits;
 every card shows handles, stays within the clip and cites no hash; no program fails. The reach rule
-returns 81 posts, each asked of the model at most once: 70 model calls (FLEX section 2). The journal reopened from a snapshot holds what its
+returns 81 posts, each asked of the model at most once: 69 model calls (FLEX section 2). The journal reopened from a snapshot holds what its
 straight replay holds.
 """
 import json
@@ -26,9 +26,9 @@ GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6j
 # The posts `transport.bridge.route` sends as turns: 81, the opener's own among them (the host admits her
 # ordinary turns on the public socket).
 REACHED = 81
-# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 81 less the 11 no model
-# reads make 70 calls (69 without the opener's summons).
-INTERPRETATIONS = 70
+# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 81 less the 12 no model
+# reads make 69 calls (68 without the opener's summons).
+INTERPRETATIONS = 69  # 70 while the garden read words itself; measured 69 since it hands them on (lane/rewrite8)
 
 
 def rehearse(out):
@@ -70,7 +70,7 @@ class Archive(unittest.TestCase):
     def test_a_second_cistern_line_digs_a_second_cistern_named_by_its_receipt(self):
         first, second = [g for g in self.r['grammar'] if 'cistern: line' in g['what']]
         self.assertEqual((first['status'], second['status']), ('admitted', 'admitted'), (first, second))
-        named = lambda g: next(f['value']['fields'][1]['value']['value'] for f in g['result']['payload']['fields'] if f['name'] == 'object')
+        named = lambda g: next(f['value']['value'] for f in g['result']['payload']['fields'] if f['name'] == 'object')
         self.assertEqual((named(first), named(second)), ('garden/cistern/1', 'garden/cistern/2'))
         self.assertIn('garden/cistern/2', second['offers'][0])
 
@@ -135,7 +135,7 @@ class Archive(unittest.TestCase):
         self.assertEqual({u: n for u, n in self.r['asked'].items() if n > 1 or u not in self.r['reached']}, {})
 
     def test_the_routing_asks_the_model_as_often_as_recorded(self):
-        """The reach rule's 81 posts less the 11 no model reads: the spells and field lines the host reads itself,
+        """The reach rule's 81 posts less the 12 no model reads: the spells and field lines the host reads itself,
         and the opener's leaked draft."""
         self.assertEqual(sum(self.r['verdicts'].values()), INTERPRETATIONS, self.r['verdicts'])
 

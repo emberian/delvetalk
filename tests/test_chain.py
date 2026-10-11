@@ -17,25 +17,6 @@ from tests.wire import boolean, empty, field, label, nat, nil, record, reference
 from tests.bend import closure
 
 
-def asking(confirm):
-    """A garden's confirmFor: plant when an understood planting waits for "yes"."""
-    return {"tag": "list", "items": [label("plant")] if confirm else []}
-
-
-def garden_seed(policy="", pending=(), confirm=True, owner="ember"):
-    """A Garden Seed: its owner, its policy object, whether prose waits for "yes" (plant in
-    its confirmFor), and the proposals already waiting."""
-    wire = relation(*[record(principal=label(principal), spell=label(spell), needs=nil())
-                      for principal, spell in sorted(pending, key=lambda p: (len(p[0]), p[0]))])
-    return record(owner=label(owner), policy=reference(policy), confirmFor=asking(confirm), pending=wire)
-
-
-def garden_state(planted=0, owner="ember"):
-    """A whole Garden State, for world-create (which takes a whole state, not a Seed)."""
-    return record(owner=label(owner), planted={"tag": "natural", "value": str(planted)}, policy=reference(""), confirmFor=asking(True),
-                  pending=relation(), children=relation(), pageCheckpoint=label(""))
-
-
 def town_kinds(send, owner="ember", names=("bell", "cistern")):
     """The named kinds as genesis makes them (deploy/genesis.py KINDS; bell and cistern unless told): a Kind created
     under its law, then shaped, so a garden plants and digs through them and a room carves rooms. `send(**request)` is the host's."""
@@ -50,6 +31,17 @@ def town_kinds(send, owner="ember", names=("bell", "cistern")):
         shaped = send(op="world-turn", principal=owner, object="kind/" + name, method="shape", argument=record(object=label("kind/" + name)),
                       identity="shape-kind-" + name)
         assert shaped["status"] == "admitted", shaped
+
+
+def town_garden(send, owner="ember", id="garden", name="THE NIGHT GARDEN"):
+    """The garden as genesis makes it (deploy/genesis.py HANDS): kind/bell, kind/cistern and kind/garden as genesis
+    makes them, then the owner's `kind/garden make` at an exact id; the body (world/bodies/garden.obend) is laid in the
+    settling of that turn. Returns the make's reply."""
+    town_kinds(send, owner, names=("bell", "cistern", "garden"))
+    made = send(op="world-turn", principal=owner, object="kind/garden", method="make", identity="mk-" + id,
+                argument=record(id=label(id), name=label(name)))
+    assert made["status"] == "admitted" and made["result"]["label"] == "made", made
+    return made
 
 
 class Chain(TurnWorld):
