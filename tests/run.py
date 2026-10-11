@@ -3,7 +3,7 @@
     python3 -W ignore -m tests.run [--profile] [module ...]     (default: every tests/test_*.py)
 
 --profile counts, per class, the host processes spawned (every exec of the binary, including the
-ones hostd starts) and the hostd daemons started, and prints the twenty slowest classes with both.
+ones `serve` starts) and the `serve` processes started, and prints the twenty slowest classes with both.
 
 The host binary is copied once and the copy shared with the workers. Each class gets its own
 process (and so its own host process), preserving class-level sharing and journal isolation; a
@@ -93,7 +93,7 @@ def spawn_counts(spawns, name):
         lines = Path(spawns, name.replace('/', '-')).read_text().split()
     except OSError:
         return 0, 0
-    return lines.count('host'), lines.count('hostd')
+    return lines.count('host'), lines.count('serve')
 
 
 def main(argv):
@@ -135,7 +135,7 @@ def main(argv):
     print('by layer: ' + ', '.join(f'{layer} {counts[layer]}' for layer in LAYERS + ['unlayered'] if layer in counts))
     print('slowest classes: ' + ', '.join(f'{n.split(".", 1)[1]} {took[n]:.1f}s' for n in sorted(took, key=took.get, reverse=True)[:5]))
     if profile:
-        print(f'{"class":52} {"tests":>5} {"secs":>6} {"hosts":>5} {"hostd":>5}')
+        print(f'{"class":52} {"tests":>5} {"secs":>6} {"hosts":>5} {"serve":>5}')
         table = {n: (len(work[n]) if '#' in n else len(found[n]), round(took[n], 1), *spawn_counts(spawns, n)) for n in took}
         (HERE / '.profile.json').write_text(json.dumps(table, indent=0))
         for n in sorted(took, key=took.get, reverse=True)[:20]:

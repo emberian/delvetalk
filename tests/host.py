@@ -46,15 +46,22 @@ class Host:
         self.proc = subprocess.Popen([binary()], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      text=True, bufsize=1)
 
-    def send(self, **request):
-        # Test journals only flush (`world-open {sync: "none"}`); deploy and hostd keep the default `fsync`.
-        if request.get("op") == "world-open" and "sync" not in request:
-            request["sync"] = "none"
+    def raw(self, request=None, **fields):
+        """One request as given, one reply as the host printed it."""
+        request = dict(request or {}, **fields)
         self.proc.stdin.write(json.dumps(request) + "\n")
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
         assert line, "host closed its output"
-        reply = json.loads(line)
+        return json.loads(line)
+
+    def send(self, request=None, **fields):
+        """A request as a dict or as keywords. Test journals only flush (`world-open {sync: "none"}`);
+        deploy and `serve` keep the default `fsync`; `raw` sends it as given."""
+        request = dict(request or {}, **fields)
+        if request.get("op") == "world-open" and "sync" not in request:
+            request["sync"] = "none"
+        reply = self.raw(request)
         hashed = [t for t in card_texts(reply) if "bafy" in t]
         assert not hashed, "a card or offer cites a hash: %r" % hashed[:1]
         return reply
@@ -167,11 +174,11 @@ def served(state, opener=None, library=None, extra=()):
     from deploy.serve import Served
     if os.environ.get("DELVETALK_SPAWN_LOG"):
         with open(os.environ["DELVETALK_SPAWN_LOG"], "a") as f:
-            f.write("hostd\n")
+            f.write("serve\n")
     return Served(state, binary(), opener=opener, library=library, extra=extra)
 
 
-class HostdCase(unittest.TestCase):
+class ServeCase(unittest.TestCase):
     """One `serve` per test class, its town opened by OPENER with the world library sealed; tests share its
     world, so each names its own objects. `host` is the public socket, `root` the opener's."""
     OPENER = "did:plc:" + "a" * 24
@@ -181,11 +188,11 @@ class HostdCase(unittest.TestCase):
         super().setUpClass()
         from deploy.serve import LIBRARY
         from transport.host import HostClient
-        cls.hostd_dir = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(cls.hostd_dir.cleanup)
-        cls.hostd = served(cls.hostd_dir.name, opener=cls.OPENER, library=LIBRARY)
-        cls.addClassCleanup(cls.hostd.stop)
-        cls.socket, cls.root_socket = cls.hostd.sock, cls.hostd.root
+        cls.state_dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.state_dir.cleanup)
+        cls.server = served(cls.state_dir.name, opener=cls.OPENER, library=LIBRARY)
+        cls.addClassCleanup(cls.server.stop)
+        cls.socket, cls.root_socket = cls.server.sock, cls.server.root
         cls.host, cls.root = HostClient(cls.socket), HostClient(cls.root_socket)
 
 

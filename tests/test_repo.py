@@ -1,9 +1,9 @@
-"""The journal as a read-only AT Protocol repository over a real hostd: records by slug and CID agree
+"""The journal as a read-only AT Protocol repository over a real `serve`: records by slug and CID agree
 with the host, blocks hash to their CIDs, private records stay private.
 
 Evidence for FOUNDATION §2 Journal, §7 (layer: transport).
 
-The read-only AT Protocol repository (transport/repo.py, docs/REPO.md) against a real hostd: a Garden, a
+The read-only AT Protocol repository (transport/repo.py, docs/REPO.md) against a real `serve`: a Garden, a
 planting, a refusal, a publication and a private counter.
 
 Refuted by: a receipt read by slug, by CID and by world-receipt differing; a sync CAR whose block does not
@@ -30,7 +30,6 @@ from pathlib import Path
 from tests.host import serve, served
 from tests.test_chain import garden_state, town_kinds
 from tests.test_http import DID, Provider
-from tests.test_turn_world import closure, counter_modules, label, nat, record
 from transport import delve, identity
 from deploy.serve import LIBRARY
 from transport.atproto import sign
@@ -40,6 +39,8 @@ from transport.repo import Repo
 from transport.host import HostClient
 from transport.http import Front
 from transport.identity import ORIGIN
+from tests.wire import label, nat, record
+from tests.bend import closure, counter_modules
 
 # Signing is ECDSA with RFC 6979 nonces (`deterministic_signing`), which cryptography has from 43.0.0.
 CRYPTOGRAPHY = tuple(int(x) for x in __import__('cryptography').__version__.split('.')[:2])
@@ -110,8 +111,8 @@ class Repository(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.provider = Provider()
-        cls.hostd = served(cls.tmp.name, opener='did:plc:' + 'o' * 24, library=LIBRARY)  # DID is a resident the front logs in
-        sock = cls.hostd.sock
+        cls.server = served(cls.tmp.name, opener='did:plc:' + 'o' * 24, library=LIBRARY)  # DID is a resident the front logs in
+        sock = cls.server.sock
         cls.host = HostClient(sock)
         cls.now, cls.token = [1000.0], None
         ident = identity.Identity(cls.tmp.name, delve.Client(cls.provider), clock=lambda: cls.now[0])
@@ -137,7 +138,7 @@ class Repository(unittest.TestCase):
     def tearDownClass(cls):
         cls.front.shutdown()
         cls.front.server_close()
-        cls.hostd.stop()
+        cls.server.stop()
         cls.tmp.cleanup()
 
     def get(self, path, token=None, raw=False):

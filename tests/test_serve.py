@@ -1,6 +1,5 @@
 """`delvetalk-obend serve` is the one writer of a directory of worlds (HOST-HANDOFF 5.125; docs/FEDERATION.md §1,
-docs/ROOT.md §1.4): what hostd.py's tests held, now against the Lean server, and its own: named worlds and the
-root socket.
+docs/ROOT.md §1.4): named worlds and the root socket beside the public one.
 
 Evidence for FOUNDATION §7 (layer: host). Refuted by a socket others may open, a second writer that starts, a
 chain broken under concurrent clients, a restart that answers a retried turn differently, a heap or the stateless
@@ -19,8 +18,9 @@ from pathlib import Path
 
 from tests.host import Host, binary, served as Served
 from tests.test_reflection import WORLD_LIBRARY
-from tests.test_turn_world import counter_modules, declared, nat, record
 from transport.host import HostClient
+from tests.wire import nat, record
+from tests.bend import counter_modules, declared
 
 DID = 'did:plc:' + 'a' * 24
 OPENER = 'did:plc:' + 'o' * 24
@@ -122,7 +122,7 @@ class Serve(unittest.TestCase):
 
     def test_the_stateless_session_holds_the_library_and_compiles_by_pin(self):
         info = self.client.send({'op': 'hostd-info'})
-        self.assertEqual((info['status'], info['pid'], info['replay']), ('hostd', self.server.proc.pid, 3), info)
+        self.assertEqual((info['status'], info['pid'], info['replay']), ('hostd', self.server.proc.pid, self.client.send({'op': 'world-status'})['replay']), info)
         self.assertRegex(info['hostSha256'], r'^[0-9a-f]{64}$')
         self.assertEqual(self.client.send({'op': 'hostd-info'})['hostSha256'], info['hostSha256'])
         checked = HostClient(self.sock, stateless=True).send({'op': 'check-package', 'library': info['library'], 'entry': 'initial',

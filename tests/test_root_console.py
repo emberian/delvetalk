@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 from deploy.genesis import OPENER
-from tests.host import HostdCase
+from tests.host import ServeCase
 from tests.test_hand import TOKEN, HandCase, StubHost
 from tests.test_turn_world import counter_modules, label, nat, record
 from transport import hand
@@ -117,7 +117,7 @@ class Page(HandCase):
         self.assertEqual((self.host.ops[-1]['object'], self.host.ops[-1]['method']), ('garden', 'hide'))
 
 
-class Live(HostdCase):
+class Live(ServeCase):
     """The console against a real `serve` (edition 3): the acts are in the journal, marked and public."""
     OPENER = OPENER
 
