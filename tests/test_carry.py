@@ -244,6 +244,8 @@ def jot(state: State, input: {text: String}, context: Abi.Context) -> Activity<S
     case _: input.text
 """
 TALLY_NOTED = declared(TALLY_NOTED_SOURCE, "bump", "jot")
+# A package that declares its law (`objects/Counted.obend`), as one host shipped it.
+COUNTED_SOURCE = TALLY_SOURCE.replace("def initial()", 'law counted "the count only rises": monotone(count)\ndef initial()', 1)
 
 
 class Moves(Reflection):
@@ -271,13 +273,18 @@ class Moves(Reflection):
         r = self.host.send(op="world-create", principal="ember", identity="mk-f", object="f",
                            modules=[{"name": "Fading", "source": TALLY}], entry="initial", seed=record())
         self.assertEqual(r["status"], "created", r)
+        self.ship(declared(COUNTED_SOURCE), "Counted")
+        for name in ("l", "m"):
+            r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
+                               modules=[{"name": "Counted", "source": declared(COUNTED_SOURCE)}], entry="initial", seed=record())
+            self.assertEqual(r["status"], "created", r)
         self.make("c", PACKAGE, source_seed())  # a package the image does not ship: it keeps its pin
         for obj in ("t", "t", "u", "c"):
             self.assertEqual(self.turn(obj, "bump")["status"], "admitted")
         self.before = {i: self.host.send(op="world-object", principal="ember", object=i)["record"] for i in ("t", "u", "c")}
 
-    def ship(self, source):
-        with open(os.path.join(self.image, "objects", "Tally.obend"), "w", encoding="utf-8") as f:
+    def ship(self, source, name="Tally"):
+        with open(os.path.join(self.image, "objects", name + ".obend"), "w", encoding="utf-8") as f:
             f.write(source)
 
     def carry(self, *argv):
@@ -369,6 +376,28 @@ class Moves(Reflection):
         again = self.opened(out)
         self.assertEqual(again.send(op="world-advance", principal="ember", height=2)["status"], "advanced")
         self.assertEqual(field(again.send(op="world-view", principal="ember", object="t")["state"], "count")["value"], "1002")
+
+    def test_a_moved_object_takes_its_packages_new_law_and_an_amended_one_is_kept_and_named(self):
+        version = self.host.send(op="world-view", principal="ember", object="m")["version"]
+        amended = 'law counted: monotone(count)\nlaw mine "ember alone bumps": request.subject == "ember"'
+        a = self.host.send(op="world-amend", principal="ember", identity="am-m", object="m", version=version, law=amended)
+        self.assertEqual(a["status"], "admitted", a)
+        was = self.host.send(op="world-object", principal="ember", object="l")["record"]["law"]
+        now = 'law counted "the count only rises, and anyone places rules on it": monotone(count) or request.kind == rule'
+        self.ship(declared(COUNTED_SOURCE.replace('law counted "the count only rises": monotone(count)', now)), "Counted")
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        moved = {m["object"]: m for m in carried["moved"]}
+        self.assertEqual((sorted(moved), moved["l"]["law"]["before"], "law" in moved["m"]), (["l", "m"], was, False), carried)
+        self.assertEqual(moved["l"]["law"]["after"], "law counted: (monotone(count)) or (request.kind == 4)")
+        self.assertEqual([k["object"] for k in carried["kept"]], ["m"])
+        self.assertIn("ember alone bumps", carried["kept"][0]["law"])
+        new = self.opened(out)
+        law = lambda i: new.send(op="world-object", principal="ember", object=i)["record"]
+        self.assertEqual((law("l")["law"], law("m")["law"]), (moved["l"]["law"]["after"], carried["kept"][0]["law"]))
+        # The new law's own reading is the one a refusal by it reads.
+        self.assertEqual(law("l")["readings"], [{"name": "counted", "reading": "the count only rises, and anyone places rules on it"}])
 
     def test_a_package_that_changes_its_methods_alone_moves_with_its_state(self):
         self.ship(declared(TALLY_SOURCE + "def bump2(state: State, context: Abi.Context) -> Activity<Nat>:\n  add(context, 2n)\n"))

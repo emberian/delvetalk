@@ -214,7 +214,7 @@ def command(a, out):
         out.write(json.dumps({'world': w, 'slug': r['slug'], 'hash': r['hash'], 'height': r['carriedFrom']['height'],
                               'replay': [r['carriedFrom']['replay'], r['replay']], 'library': r['library'], 'objects': r['objects'], 'left': r['left'],
                               'moved': r['moved'],
-                              'dropped': r['dropped'], 'rearmed': r['rearmed'], 'check': checked}, sort_keys=True) + '\n')
+                              'dropped': r['dropped'], 'kept': r['kept'], 'rearmed': r['rearmed'], 'check': checked}, sort_keys=True) + '\n')
     town = carried['town']
     out.write(f"hob: the world was carried to a newer host at entry {town['carriedFrom']['height']}; everything is where it was, "
               f"and the carry is receipt {town['slug']}.\n")

@@ -1659,16 +1659,22 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      relations, within `maxCellBytes`, moving no fixed field. A moved object's suspensions are dropped (the code
      they waited in is gone), supervisors told; one whose package offers `carried` (`~carried`, as a body's `~made`)
      is told `carried {}` once (`rearmed`: a pending delivery `carried:<id>` in the genesis, from no object, under
-     the carry's principal), which the first settling runs: the tide waits again for the tick its last one scheduled. Left, retired at its old pin with the reason as its reading: an
+     the carry's principal), which the first settling runs: the tide waits again for the tick its last one scheduled.
+     A moved object holding its package's law as it was (`lawUnder`: its law renders as the old package's) takes the
+     new package's law and readings when they changed (`law {before, after}` on its move); one an owner amended
+     keeps its own, named (`kept [{object, law}]`). Only a package-declared law is the carry's: a law given at
+     creation (genesis's `RECORD_LAW`, a kind's `under`) and a kind's `law`/`voice` state are genesis's, laid by
+     `deploy.genesis refresh` at the end of the transport's carry (objects lane). Left, retired at its old pin with the reason as its reading: an
      object whose own entry package the image no longer ships (`gone`: Wake, Env), one whose move refuses (no
      compile, no `migrate` for a state that does not conform, a `migrate` that refuses), and one `--leave`
      names. Only an object that does not rebuild under its own pin refuses the carry, by name.
      `carryGenesis`: `carriedFrom {world, height, cid, replay, reason, entries, library?, carriedFrom?}` (the old
      genesis's own when it was a carry), `index`, `left`, `moved [{object, from, to, migration, before, after,
-     body?}]` (pins, `migrate` or "", state CIDs, `body` when it took the image's body), `dropped`, `rearmed`. J2 is replayed from its genesis and every object's state
+     body?, law?}]` (pins, `migrate` or "", state CIDs, `body` when it took the image's body), `kept`, `dropped`,
+     `rearmed`. J2 is replayed from its genesis and every object's state
      CID compared with the snapshot's (a moved one's with `after`) before it is written. Prints `{status:
      carried, hash, slug, replay, carriedFrom, library, objects, pending, suspended, grants, posts, receipts,
-     left, moved, dropped, rearmed}`; the transport's check compares a moved object with `after`.
+     left, moved, kept, dropped, rearmed}`; the transport's check compares a moved object with `after`.
    - *The transport.* `python3 -m transport carry --from OLD --to NEW --reason R [--leave [W=]OBJ]... [--obend B]`
      (`transport/carry.py`): every world journal of OLD carried with the config's library; the transport's files
      copied (serve's never: journals, snapshots, lock, `library/`, `root/`, `scratch/`, sockets, pid files);
@@ -1691,7 +1697,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      transport and served again; `Moves`: an image package changed between two library pins, its plain and
      layered objects migrated, one changing only methods moved with its state, a move that refuses left retired
      at its old pin, a gone package left, a body laid again over the module below, a package offering `carried` told
-     once on the first advance), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
+     once on the first advance, a package's changed law taken and an amended one kept), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
 
 160. **Rules fire, wants pose, replies reveal (lane/host22; OVERHAUL §5 step 3; KERNEL-HANDOFF §27; replay edition 9,
    snapshot `v4`).** The shapes, for the strokes assembly (lane/enchant) and the objects lane, as built:
