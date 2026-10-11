@@ -1645,11 +1645,25 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      now also the root `retire` and the card power's, one clause), its state as it was and its suspensions
      dropped, each supervisor told `ended {how: broken}` as a pending delivery (`droppedEnd`, `endedField`).
      `--library DIR` seals DIR as serve seals it (`Serve.sealLibrary` into J2's directory) and makes it the
-     current library when its pin differs (`carriedFrom.library {from, to}`); objects keep their pins.
+     current library when its pin differs (`carriedFrom.library {from, to}`).
+   - *Moves with migrations* (host24). With `--library DIR` the image's packages are that library's modules and
+     `DIR/../objects` (by name, as `deploy/seed.py` names them). `movedInputs`: an object's own modules named as
+     the image names one take its source, a module the new source newly imports comes before it, layers stay
+     above, `library` the new pin. Compiled (`moved`): the same pin keeps the object as it was; another moves it
+     (version + 1, the new type, bounds, methods, relations, fixed, packet). Its state stays when it conforms to
+     the new type; else the package's `migrate` (`Ops.compileMigration`, its argument type read by the state as it
+     was; `Ops.runMigration`, the two shared with reprogram) converts it, checked to conform, canonical under the
+     new relations, within `maxCellBytes`, moving no fixed field. A moved object's suspensions are dropped (the
+     code they waited in is gone), supervisors told. Refused by name: a package not compiling against the
+     image, a non-conforming state with no `migrate`, a `migrate` not reading the old state. Left without being
+     named (`gone`): an object whose package needs a module of its library the image no longer ships (Wake,
+     Env), its reading `left at the carry: its package needs Wake, which this host no longer ships`.
      `carryGenesis`: `carriedFrom {world, height, cid, replay, reason, entries, library?, carriedFrom?}` (the old
-     genesis's own when it was a carry), `index`, `left`, `dropped`. J2 is replayed from its genesis and every
-     object's state CID compared with the snapshot's before it is written. Prints `{status: carried, hash, slug,
-     replay, carriedFrom, library, objects, pending, suspended, grants, posts, receipts, left, dropped}`.
+     genesis's own when it was a carry), `index`, `left`, `moved [{object, from, to, migration, before, after}]`
+     (pins, `migrate` or "", state CIDs), `dropped`. J2 is replayed from its genesis and every object's state
+     CID compared with the snapshot's (a moved one's with `after`) before it is written. Prints `{status:
+     carried, hash, slug, replay, carriedFrom, library, objects, pending, suspended, grants, posts, receipts,
+     left, moved, dropped}`; the transport's check compares a moved object with `after`.
    - *The transport.* `python3 -m transport carry --from OLD --to NEW --reason R [--leave [W=]OBJ]... [--obend B]`
      (`transport/carry.py`): every world journal of OLD carried with the config's library; the transport's files
      copied (serve's never: journals, snapshots, lock, `library/`, `root/`, `scratch/`, sockets, pid files);
@@ -1669,7 +1683,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      carried thing after, a fresh process replaying it; an object left retired; the library shipped sealed and the
      old pins compiling; refusals without the snapshot, over an open journal, into a journal, an unknown
      `--leave`; a journal re-sealed as edition 7 refused on open and carried; a served town carried with its
-     transport and served again), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
+     transport and served again; `Moves`: an image package changed between two library pins, its plain and
+     layered objects migrated, one changing only methods moved with its state, one with no `migrate` refused by
+     name or left, one whose library module is gone left unnamed), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
 
 160. **Rules fire, wants pose, replies reveal (lane/host22; OVERHAUL §5 step 3; KERNEL-HANDOFF §27; replay edition 9,
    snapshot `v4`).** The shapes, for the strokes assembly (lane/enchant) and the objects lane, as built:
@@ -1877,14 +1893,8 @@ replaces in the same commit, and this file describes only what is. A merge touch
    `test_theme`'s env/wake kinds with the objects lane); test the Bend arms from a body (`world.rule` from a
    `made`, `world.grow`, `world.act`, `world.chronicle`) and a rule-fired delivery's `context.sender`; the full run
    green on hbox; then carry-check (item 1).
-   - **Carry applies migrations** (rewrite14's decision): every record's state type changes (Line gains `verb`,
-     Record loses greeted/missed, Tide subs, Avatar outbox/following, Policy system/lexicon/macros), and
-     rewrite14 writes `def migrate(old: State8) -> State` beside each changed module's `State`. `Carry.carryWorld`
-     must, with `--library DIR`, rebuild an object whose closure holds a library module whose source changed
-     against the new source (a new pin, layers kept), run the package's `migrate` over the old state (as
-     reprogram's migration runs, `Package.executeDataEntry`) before `rebuilt`'s conformance check, and journal
-     the pin move in the carried genesis; an object whose module has no `migrate` and does not conform is
-     refused by name, as now. Test on the playtest-3 copy (bell/2 carried live, its four rains with verb "").
+   - Carry applies migrations: built (host24, 5.159 *Moves with migrations*). Not yet run on the playtest-3
+     copy in the pair (bell/2 carried live, its four rains with verb "").
    - `Enchant.strokes` reads grown verbs from the state's `verbs` field; it must read `Object.verbs` (lane/enchant's
      file: route it there). Its declared list now includes grown forms (`spellForms`), with no grower.
 1. **Edition and carry.** Edition 9 is not deployed; 5.161 and the pair change what it derives, so they need no
