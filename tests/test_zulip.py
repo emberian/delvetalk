@@ -205,7 +205,8 @@ class Bridging(ZulipCase):
         self.zulip.say('t', 'Alice', SPELL)
         self.bridge()
         self.zulip.say('t', 'Alice', 'and some more words')
-        self.zulip.say('t', 'Bob', 'me too')  # his parent is Alice's, which was never posted by us
+        self.zulip.say('t', 'Alice', 'and a last thought')  # past her own message to the world's
+        self.zulip.say('t', 'Bob', 'me too')  # under Alice's: he answers her, so it reaches nothing (the second playtest's F4)
         got = self.bridge()
         self.assertEqual(len(got['turns']), 2, got)
         texts = [m['content'] for m in self.zulip.mine()]
@@ -226,8 +227,9 @@ class Bridging(ZulipCase):
         got = self.bridge()
         self.assertEqual(len(got['posted']), 1, got)
         self.assertIn('commonplace says', self.zulip.mine()[0]['content'])
-        self.zulip.say('new', 'Dana', '@**Carol** nice fern')  # to another resident only: not read
         self.zulip.say('new', 'Carol', 'and the moss too')  # in the topic the world answered: read, as a reply to the world's message
+        self.zulip.say('new', 'Dana', '@**Carol** nice fern')  # to another resident only: not read
+        self.zulip.say('new', 'Carol', 'thanks, Dana')  # under Dana's: answers her, reaches nothing
         from unittest import mock
         real, turns = HostClient.send, []
         with mock.patch.object(HostClient, 'send', lambda h, req: (turns.append(req) if req.get('method') == 'receive' else None) or real(h, req)):

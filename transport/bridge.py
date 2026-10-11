@@ -262,7 +262,8 @@ def route(host, obs, known=None):
     """-> (object, slot|None, how) or None: where a post reaches (FLEX.md), and how, for the host to judge: `replyTo`, the
     recorded post it answers (the host verifies a reply), or `reach`, the rule it matched (HOST-HANDOFF 118). (a) A reply reaches the card whose recorded post
     (the card's, or any of the world's replies under it) is its direct parent; on Zulip, where a topic is one thread, the
-    nearest recorded message above it in the topic, unless it @-mentions only other residents. (b) A spell line reaches
+    nearest recorded message above it in the topic past only its author's own, unless it @-mentions only other residents:
+    prose under another resident's message answers that resident and reaches nothing. (b) A spell line reaches
     its card, as the host reads it; a summons (a mention of the world, #gsb) reaches the commonplace, whose interpreter
     may answer `none`. (c) Field lines anywhere in a thread the world opened reach that thread's card, which completes
     them, and (d) prose there that names one of the commonplace's doors reaches that door's card. Other prose deeper in a
@@ -271,7 +272,7 @@ def route(host, obs, known=None):
     known, ancestor = known or {}, obs['replyTo']
     hops = 0 if zulip and obs['mentions'] and obs['kind'] != 'summon' else MAX_HOPS if zulip else 1
     asked = set()
-    found = walk(host, ancestor, known, hops, asked)
+    found = walk(host, ancestor, known, hops, asked, obs['author']['did'] if zulip else None)
     if found:
         return found[0], found[1], {'replyTo': found[2]}
     read = parsed(host, obs)
@@ -298,9 +299,10 @@ def named_door(host, obs):
     return next((doors[w] for w in re.findall(r"[\w'-]+", obs['text'].lower()) if w in doors), None)
 
 
-def walk(host, ancestor, known, hops, seen):
+def walk(host, ancestor, known, hops, seen, author=None):
     """The addressee of the nearest recorded post among `hops` ancestors, walking replyTo through what was observed;
-    `seen` holds the posts already asked about, so a cycle or a second walk never asks twice."""
+    `seen` holds the posts already asked about, so a cycle or a second walk never asks twice. With `author` (Zulip), the
+    walk passes only that author's own messages: another resident's message above is who the words answer."""
     for _ in range(hops):
         if not ancestor or ancestor in seen:
             return None
@@ -308,7 +310,10 @@ def walk(host, ancestor, known, hops, seen):
         got = host.send({'op': 'world-addressee', 'parent': ancestor})
         if got.get('object'):
             return got['object'], got.get('slot'), ancestor
-        ancestor = (known.get(ancestor) or {}).get('replyTo')
+        above = known.get(ancestor) or {}
+        if author and (above.get('author') or {}).get('did') != author:
+            return None
+        ancestor = above.get('replyTo')
     return None
 
 
