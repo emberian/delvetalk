@@ -894,8 +894,9 @@ def parseLawText (text : String) : Except String Law := do
 /-- The rule against a self-sealing law: a law is only accepted if it admits an
     amendment (the state unchanged) by the principal who proposes it. None when it does,
     else the refusal naming that principal and the clause (`name: expression`) that refused. -/
-def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data) : Option String :=
-  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, "", []⟩ (some state) state).map fun name =>
+def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data)
+    (clock : Nat := 0) (id : String := "") : Option String :=
+  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, "", [], clock, id⟩ (some state) state).map fun name =>
     amendmentRefusal principal (((law.lookup name).map fun e => s!"{name}: {e.render}").getD name)
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
@@ -2075,7 +2076,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         match grantStands w via id method with
         | some g => pure g.grantor
         | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
-      let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method, evicted }
+      let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method, evicted,
+                                 clock := w.clock, object := id }
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
       unless kind == 2 && openerAmends w subject do
@@ -2099,7 +2101,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let amender := ((changes.find? (·.kind == 2)).map (·.caller)).getD ""
       -- The opener's amendment needs no clause for itself: the host admits it whatever the law (`openerAmends`).
       unless openerAmends w p.principal do
-        if let some message := amendable law p.principal amender height p.turn next.pin state then throw (refuse message)
+        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id then throw (refuse message)
       -- A reading stays with its clause only while the amendment leaves that clause as it was.
       -- The amendment's own readings; a clause it leaves as it was without one keeps its reading.
       let given := ((parseLawTextReadings text).toOption.map (·.2)).getD []
@@ -2759,7 +2761,7 @@ def libraryLawText (opener : String) : Except String String := do
 def libraryRefusal (lawText principal : String) (height : Nat) (pin : String) : Option String :=
   match parseLawText lawText with
   | .error _ => some "law syntax"
-  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, "", []⟩ (some (.record [])) (.record [])
+  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, "", [], 0, ""⟩ (some (.record [])) (.record [])
 
 def installLibrary (w : World) (lib : Library) (lawText : String) : World :=
   { w with library := some lib, libraries := w.libraries.insert lib.pin lib, libraryLaw := lawText }
