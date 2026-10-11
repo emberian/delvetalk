@@ -224,41 +224,45 @@ def preflightRemaining (control : Control) (stack : List Frame) (ticks : Nat) : 
       if n == 0 || n >= text.utf8ByteSize then ticks else 0
   | _, _ => ticks
 
-/-- The host's rows (KERNEL-HANDOFF §15): row `position`, in canonical key order, of the
-stored relation `field` of the turn's object at the turn's read height. -/
-abbrev Fetch := String → Nat → Option Data
+/-- What only the host can force (KERNEL-HANDOFF §15): a stored `row`, the row at that position
+in canonical key order of the stored relation of the turn's object at the turn's read height,
+and a stored `key`, that row's projection onto the key columns a lookup names (answered only when
+they are the relation's declared key). Every other stored part `stepRaw` forces itself. -/
+abbrev Fetch := Stored → Option Data
 
-/-- No store: every stored row is refused `unfetched`. -/
-def Fetch.none : Fetch := fun _ _ => Option.none
+/-- No store: every row and key is refused `unfetched`. -/
+def Fetch.none : Fetch := fun _ => Option.none
 
-/-- An unforced stored row the control is entering, and what the store answers for it. -/
-@[inline] def fetchable (fetch : Fetch) (state : State) : Option (Nat × String × Nat × Data) :=
+/-- An unforced stored row or key the control is entering, and what the store answers for it. -/
+@[inline] def fetchable (fetch : Fetch) (state : State) : Option (Nat × Stored × Data) :=
   match state.control with
   | .enter address => match state.heap[address]? with
-    | some (.stored (.row field position) Option.none) => (fetch field position).map (address, field, position, ·)
+    | some (.stored part Option.none) => if part.fetched then (fetch part).map (address, part, ·) else Option.none
     | _ => Option.none
   | _ => Option.none
 
-/-- A fetched row forced as native data is forced, its cell keeping its provenance. -/
-def fetchStep (state : State) (address : Nat) (field : String) (position : Nat) (row : Data) : State :=
-  let (heap, value) := forceNative state.heap row
-  {state with heap := heap.set! address (.stored (.row field position) (some value)), control := .returned value}
+/-- A fetched part forced as native data is forced, its cell keeping its provenance. -/
+def fetchStep (state : State) (address : Nat) (part : Stored) (data : Data) : State :=
+  let (heap, value) := forceNative state.heap data
+  {state with heap := heap.set! address (.stored part (some value)), control := .returned value}
 
-theorem fetchStep_stack (state : State) (address : Nat) (field : String) (position : Nat) (row : Data) :
-    (fetchStep state address field position row).stack = state.stack := rfl
+theorem fetchStep_stack (state : State) (address : Nat) (part : Stored) (data : Data) :
+    (fetchStep state address part data).stack = state.stack := rfl
 
-theorem fetchable_spec {fetch : Fetch} {state : State} {address : Nat} {field : String} {position : Nat}
-    {row : Data} (found : fetchable fetch state = some (address, field, position, row)) :
-    state.control = .enter address ∧ state.heap[address]? = some (.stored (.row field position) Option.none) ∧
-      fetch field position = some row := by
+theorem fetchable_spec {fetch : Fetch} {state : State} {address : Nat} {part : Stored} {data : Data}
+    (found : fetchable fetch state = some (address, part, data)) :
+    state.control = .enter address ∧ state.heap[address]? = some (.stored part Option.none) ∧
+      part.fetched = true ∧ fetch part = some data := by
   unfold fetchable at found
   split at found
   · rename_i a hc
     split at found
-    · rename_i f j hcell
-      cases hf : fetch f j <;> simp [hf] at found
-      obtain ⟨rfl, rfl, rfl, rfl⟩ := found
-      exact ⟨hc, hcell, hf⟩
+    · rename_i p hcell
+      by_cases hp : p.fetched = true
+      · cases hf : fetch p <;> simp [hp, hf] at found
+        obtain ⟨rfl, rfl, rfl⟩ := found
+        exact ⟨hc, hcell, hp, hf⟩
+      · simp [hp] at found
     · simp at found
   · simp at found
 
@@ -277,19 +281,19 @@ def forcedRows (state : State) : List (String × Nat) :=
     | .stored (.row field position) (some _) => some (field, position)
     | _ => Option.none
 
-/-- How far each stored relation's spine was forced: per field, one past the furthest spine
-cell forced (`size + 1` once its `nil` was). -/
-def spineReach (state : State) : List (String × Nat) :=
-  state.heap.foldl (fun reach cell => match cell with
-    | .stored (.spine field position _) (some _) =>
+/-- Per stored relation, the furthest reach of any cell (`Cell.reach`): the key range a run
+read, `size + 1` meaning all of it. -/
+def storedReach (state : State) : List (String × Nat) :=
+  state.heap.foldl (fun reach cell => match cell.reach with
+    | some (field, here) =>
       match reach.lookup field with
-      | some r => if position + 1 > r then (field, position + 1) :: reach.filter (·.1 != field) else reach
-      | Option.none => (field, position + 1) :: reach
-    | _ => reach) []
+      | some r => if here > r then (field, here) :: reach.filter (·.1 != field) else reach
+      | Option.none => (field, here) :: reach
+    | Option.none => reach) []
 
-/-- A fetched row's charge, as a text primitive's: two ticks a canonical byte and one, and
-its canonical bytes reserved. -/
-def fetchCost (row : Data) : Nat × Nat := (1 + 2 * row.canonicalBytes, row.canonicalBytes)
+/-- A fetched row's or key's charge, as a text primitive's: two ticks a canonical byte and one,
+and its canonical bytes reserved. -/
+def fetchCost (data : Data) : Nat × Nat := (1 + 2 * data.canonicalBytes, data.canonicalBytes)
 
 /-- Explicit hosted extension of forcing. No primitive is entered before its
 whole work/allocation allowance is admitted. Insufficient work retains the
@@ -304,12 +308,12 @@ def forceHostedFrom (policy : State → Bool) (fetch : Fetch) (limits : Limits) 
     | .complete _ | .refused _ | .blackhole _ | .yielded _ => (runBounded limits 0 state,ticks)
     | _ =>
       match fetchable fetch state with
-      | some (address, field, position, row) =>
-        let cost := fetchCost row
+      | some (address, part, data) =>
+        let cost := fetchCost data
         if !policy state || cost.2 > bytes then (.suspended .capacity state,ticks)
         else if cost.1 > ticks then (.suspended .ticks state,ticks)
-        else if state.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits.heap && depth ≤ limits.stack then
-          forceHostedFrom policy fetch limits bytes (ticks - cost.1) (fetchStep state address field position row) depth
+        else if state.heap.size + ObjectiveBendDemandMachineFast.nativeChildren data ≤ limits.heap && depth ≤ limits.stack then
+          forceHostedFrom policy fetch limits bytes (ticks - cost.1) (fetchStep state address part data) depth
         else (.suspended .capacity state,ticks - cost.1)
       | Option.none =>
       let cost := textStepCost state ticks

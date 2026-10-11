@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import sys
+import threading
 
 # Python integers implement the source's unbounded Nat (subject to host memory).
 if hasattr(sys, "set_int_max_str_digits"):
@@ -25,7 +26,8 @@ ARITIES = {"bound": 2, "lam": 2, "app": 3, "mix": 3, "fix": 3,
            "specification": 3, "prototype": 3, "reflect": 2, "metadata": 2,
            "project": 2, "nat": 2, "boolean": 2, "label": 2, "refuse": 2, "binary": 4,
            "extend": 3, "record": 2, "get": 3, "ifZero": 4, "inject": 3,
-           "case": 3, "ifBool": 4, "perform": 2, "done": 2, "toData": 2, "textJoin": 3, "unary": 3}
+           "case": 3, "ifBool": 4, "perform": 2, "done": 2, "toData": 2, "textJoin": 3, "unary": 3,
+           "relationCount": 2, "relationLookup": 4}
 
 
 def valid_string(value):
@@ -75,6 +77,11 @@ def validate(term):
         if not isinstance(term[1], str) or term[1] not in UNARY:
             raise ValueError("unknown unary primitive")
         validate(term[2])
+    elif tag == "relationLookup":
+        if not isinstance(term[2], list) or not all(valid_string(c) for c in term[2]):
+            raise ValueError("relationLookup columns must be an array of Unicode scalar strings")
+        validate(term[1])
+        validate(term[3])
     else:
         for child in term[1:]:
             validate(child)
@@ -99,8 +106,9 @@ def walk(term, variable, depth=0):
         return [tag, fields] if tag == "record" else [tag, walk(term[1], variable, depth), fields]
     if tag in {"binary", "inject", "unary"}:
         return [tag, term[1], *[walk(child, variable, depth) for child in term[2:]]]
-    if tag == "get":
-        return [tag, walk(term[1], variable, depth), term[2]]
+    if tag in {"get", "relationLookup"}:
+        return [tag, walk(term[1], variable, depth), term[2],
+                *[walk(child, variable, depth) for child in term[3:]]]
     return [tag, *[walk(child, variable, depth) for child in term[1:]]]
 
 
@@ -223,6 +231,38 @@ def join_expansion(items, separator):
                                       ["get", ["bound", 0], "tail"]]]]]
 
 
+def relation_count_expansion(relation):
+    """relationCount's meaning: case on the relation's rows, then the fold
+    `go count rest` (a fix of four lambdas) adding one per cons; the relation is
+    the scrutinee, outside every binder, and go is closed."""
+    body = ["case", ["bound", 0], [
+        ["nil", ["bound", 2]],
+        ["cons", ["app", ["app", ["bound", 4], ["binary", "add", ["bound", 2], ["nat", "1"]]],
+                  ["get", ["bound", 0], "tail"]]]]]
+    go = ["fix", ["lam", ["lam", ["lam", ["lam", body]]]], ["record", []]]
+    return ["case", relation, [["rows", ["app", ["app", go, ["nat", "0"]],
+                                         ["get", ["bound", 0], "items"]]]]]
+
+
+def relation_lookup_expansion(relation, columns, probe):
+    """relationLookup's meaning: case on the relation's rows, then the fold `go rest`
+    (a fix of three lambdas) applying the probe to each row's projection onto the
+    columns: 0 continues, 1 answers some {value: head}, anything else none; the
+    probe sits under five binders (rows arm, three lambdas, cons arm)."""
+    shifted = shift(probe, 5)
+    projection = ["record", [[c, ["get", ["get", ["bound", 0], "head"], c]] for c in columns]]
+    inner = ["ifZero", ["bound", 0],
+             ["app", ["bound", 4], ["get", ["bound", 1], "tail"]],
+             ["ifZero", ["bound", 0],
+              ["inject", "some", ["record", [["value", ["get", ["bound", 2], "head"]]]]],
+              ["inject", "none", ["record", []]]]]
+    body = ["case", ["bound", 0], [
+        ["nil", ["inject", "none", ["record", []]]],
+        ["cons", ["app", ["lam", inner], ["app", shifted, projection]]]]]
+    go = ["fix", ["lam", ["lam", ["lam", body]]], ["record", []]]
+    return ["case", relation, [["rows", ["app", go, ["get", ["bound", 0], "items"]]]]]
+
+
 def focus(term):
     """Return the unique evaluation-position redex and its outer context.
 
@@ -296,13 +336,18 @@ def contract(term):
         return term[1]
     elif tag == "textJoin":
         return join_expansion(term[1], term[2])
+    elif tag == "relationCount":
+        return relation_count_expansion(term[1])
+    elif tag == "relationLookup":
+        return relation_lookup_expansion(term[1], term[2], term[3])
     return None
 
 
 def reducible(term):
     """Recognize a root step without executing it (especially at zero fuel)."""
     tag = term[0]
-    if tag in {"mix", "fix", "done", "toData", "textJoin"}:
+    if tag in {"mix", "fix", "done", "toData", "textJoin",
+               "relationCount", "relationLookup"}:
         return True
     if tag == "app":
         return term[1][0] in {"lam", "specification"}
@@ -370,7 +415,7 @@ def run(job):
     return {"name": job["name"], "status": status, "term": term, "plans": plans}
 
 
-def main():
+def serve():
     for line_number, line in enumerate(sys.stdin, 1):
         try:
             result = run(json.loads(line))
@@ -379,6 +424,18 @@ def main():
             print(f"line {line_number}: {error}", file=sys.stderr)
             return 1
     return 0
+
+
+def main():
+    """Run the stream in a worker thread: the recursive validate/walk/shift/
+    instantiate need a deep stack for long list literals."""
+    outcome = []
+    sys.setrecursionlimit(200000)
+    threading.stack_size(512 * 1024 * 1024)
+    worker = threading.Thread(target=lambda: outcome.append(serve()))
+    worker.start()
+    worker.join()
+    return outcome[0] if outcome else 1
 
 
 if __name__ == "__main__":

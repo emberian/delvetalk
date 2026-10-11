@@ -80,7 +80,7 @@ class Strangers(Forging):
     # 1. A migration that writes `owner` does not supply the authority that admits it.
     def test_a_strangers_migration_cannot_make_them_the_owner(self):
         self.create("policy", "Policy", record(owner=label(OWNER), model=label("m"), system=label("s"), lexicon=nil(), examples=nil(),
-                                              escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
+                                              macros=nil(), confirmFor=nil()))
         self.create("commonplace", "Record", record(owner=label(OWNER), keeper=label(OWNER)), law=genesis.RECORD_LAW)
         for obj, module in (("policy", "Policy"), ("commonplace", "Record")):
             before = self.view(obj)
@@ -181,9 +181,11 @@ class Strangers(Forging):
         thing = record(world=label(""), object=label("garden/bell/forged"))
         presence = record(who=label(ALICE), at=label(""))
         rain = record(author=label(ALICE), handle=label("glm"), text=label("forged"), at=nat(0), n=nat(0))
-        for obj, edits in (("garden", {"things": inserting(thing)}),
-                           ("porch", {"presence": inserting(presence)}), ("bell", {"rains": inserting(rain)})):
-            self.refused(self.propose(obj, edits), "owner")
+        # The garden is made by its kind and judged by the kind's law, which it cites (`under "kind/garden"`): the
+        # refusal names the cited clause.
+        for obj, edits, clause in (("garden", {"things": inserting(thing)}, "owner"),
+                                   ("porch", {"presence": inserting(presence)}, "owner"), ("bell", {"rains": inserting(rain)}, "owner")):
+            self.refused(self.propose(obj, edits), clause)
 
 
 if __name__ == "__main__":

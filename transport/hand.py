@@ -21,7 +21,7 @@ from transport import bridge, measure, model, post, pages, root
 from transport.bridge import all_observations, awaiting_path, uri_hash
 from transport.delve import Failure, canonical
 from transport.host import CLOCK
-from transport.http import typed
+from transport.http import follow, typed
 from transport.measure import counted
 from transport.state import State
 
@@ -89,8 +89,8 @@ def quoted(spell):
 
 
 class Hand:
-    def __init__(self, st, host, token='', poster=post.post_draft, clock=time.time, who='owner'):
-        self.st, self.host, self.token, self.poster, self.clock, self.who = st, host, token, poster, clock, who
+    def __init__(self, st, host, token='', poster=post.post_draft, clock=time.time, who='owner', sleep=time.sleep):
+        self.st, self.host, self.token, self.poster, self.clock, self.who, self.sleep = st, host, token, poster, clock, who, sleep
         self.owner = st.config.opener
         self.plan, self.names, self.hands = plan(st.config.plan), {}, {st.world: self}  # read once; kept across the hand's worlds
 
@@ -100,7 +100,7 @@ class Hand:
             served = [w.get('name') for w in self.host.send({'op': 'serve-status'}).get('worlds') or []]
             if world not in served:
                 raise HandError(f'no world {world} here; serve holds {", ".join(served) or "none"}')
-            h = Hand(State(self.st.root, world, self.st.config), self.host.at(world), self.token, self.poster, self.clock, self.who)
+            h = Hand(State(self.st.root, world, self.st.config), self.host.at(world), self.token, self.poster, self.clock, self.who, self.sleep)
             h.plan, h.names, h.hands = self.plan, self.names, self.hands
             self.hands[world] = h
         return self.hands[world]
@@ -219,15 +219,17 @@ class Hand:
     def seed_intent(self, spell):
         return 'hand:seed:' + hashlib.sha256(spell.encode()).hexdigest()[:16]
 
-    def cast(self, spell, topic=None, reply_to=None, intent=None):
+    def cast(self, spell, topic=None, reply_to=None, intent=None, to=None):
         """Cast `spell` as the opener on the root socket, as the bridge turns a post: `receive` on the card the host reads
         in it. -> what came back (receipt, card, and the draft of the post that says so, admitted only). A repeated intent
-        is the first receipt and the first draft."""
+        is the first receipt and the first draft. Words that are no spell are asked of the card `to` (`ask`)."""
         spell = (spell or '').replace('\r\n', '\n').strip()
+        if not spell:
+            raise HandError('nothing to say: a spell, or words for a card')
         read = self.host.send({'op': 'spell-parse', 'text': spell})
         card = (read.get('spell') or {}).get('card')
         if not card:
-            raise HandError(f"not a spell: {(read.get('notASpell') or {}).get('reason') or read.get('message') or 'no card in it'}")
+            return self.ask(spell, to, intent)
         where, intent = self.where(topic, reply_to), (intent or '').strip() or f'hand:speak:{int(self.clock() * 1000)}'
         reply = self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent,
                                 'argument': typed({'text': spell, 'post': intent})})
@@ -247,8 +249,26 @@ class Hand:
             if not path.exists():
                 self.st.write(path, {'speak': {'spell': spell, 'intent': intent}, **where, 'principal': self.owner, 'principalVerified': True,
                                      'object': obj, 'slot': None, 'receipt': receipt, 'text': quoted(spell) + '\n\n' + text, 'posted': False, 'hand': True})
-        self.log('speak', name, intent=intent, spell=spell, height=receipt.get('height'), outcome=came['outcome'])
-        return {**came, 'drafted': name}
+        self.log('speak', name, intent=intent, spell=spell, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'], object=obj)
+        return {**came, 'intent': intent, 'drafted': name}
+
+    def ask(self, words, card=None, intent=None):
+        """Words that are no spell, to `card` (default the commonplace) as a resident's direct prose, the turn the play page
+        sends (`receive` with `reach: direct`), followed through every turn it handed on to hob's answer, waiting while hob
+        reads. -> the receipt and what came back, as the town would hear it; nothing is drafted, the hand's log keeps it."""
+        card, intent = (card or '').strip() or 'commonplace', (intent or '').strip() or f'hand:ask:{int(self.clock() * 1000)}'
+        reply = self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent, 'reach': 'direct',
+                                'argument': typed({'text': words, 'post': ''})})
+        receipt = reply.get('receipt')
+        if not receipt:
+            raise HandError(f"{card}: {reply.get('message') or reply.get('status')}")
+        said = follow(self.host, self.owner, intent, reply, self.sleep)
+        came = {'card': card, 'object': card, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
+                'line': bridge.receipt_line(receipt).strip(), 'text': '\n'.join(t.rstrip('\n') for t in said), 'drafted': None,
+                'intent': intent, 'waiting': not said and outcome_of(receipt) == 'suspended'}
+        self.log('ask', None, intent=intent, words=words, card=card, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'],
+                 object=card, said=came['text'])
+        return came
 
     def invite(self, minute, topic=None, reply_to=None):
         """Draft the plan's invitation at T+`minute` for the bot to post, once."""
@@ -523,7 +543,7 @@ class Hand:
                 back = {'root': '/root/?', 'mod': '/root/?', 'speak': '/speak?', 'invite': '/speak?'}.get(rest.partition('/')[0], '/?')
                 anchor = '#outbox' if back == '/?' else ''
                 back = '/hand/?' if rest == 'root/expire' else base + back  # a scratch world is expired from the worlds
-                more = {'spoken': done['drafted']} if rest == 'speak' and done.get('drafted') else {}
+                more = {'came': done['intent']} if rest == 'speak' and done.get('intent') else {}
                 return 303, '', [('Location', back + urllib.parse.urlencode({'note': note, **more}) + anchor)]
         page = {'': h.page, 'speak': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page}.get(rest) if method == 'GET' else None
         if page is None:
@@ -543,13 +563,14 @@ class Hand:
             act = acts.get(form.get('do'))
         else:
             act = {'retry': lambda: self.retry(form.get('uri', '')), 'reply': lambda: self.reply(form.get('uri', ''), form.get('text', ''), form.get('object', '')),
-                   'speak': lambda: self.spoke(self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'))),
+                   'speak': lambda: self.spoke(self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'), form.get('to'))),
                    'invite': lambda: self.invite(form.get('minute', ''), form.get('topic'), form.get('replyTo'))}.get(rest)
         return act and act()
 
     @staticmethod
     def spoke(came):
-        return {'line': came['line'], 'drafted': came['drafted'], 'note': '' if came['drafted'] else 'nothing drafted: only an admitted turn with a card is posted'}
+        return {'line': came['line'], 'intent': came['intent'], 'note': 'drafted for Post' if came['drafted'] else
+                'hob is still reading; watch for its answer' if came.get('waiting') else 'nothing drafted: words are asked, and only an admitted spell is posted'}
 
     def codes(self, items):
         return ''.join(H['code'].format(text=e(str(t))) for t in items)
@@ -588,14 +609,12 @@ class Hand:
             draft='' if r['draft'] else H['invitation_draft'].format(base=base, minute=r['minute'], where=where)) for r in said['invitations']) \
             or '<li class="quiet">— the plan names no invitations —</li>'
         spoken = ''
-        if query.get('spoken'):
-            try:
-                _, d = self.draft(query['spoken'])
-                rc = d.get('receipt') or {}
-                spoken = H['spoken'].format(fate=q(outcome_of(rc)), stamp=q(pages.stamp(outcome_of(rc))), height=q(rc.get('height')), slug=q(rc.get('slug') or ''),
-                                            object=q(d.get('object')), card=H['card'].format(text=q(d['text'])))
-            except HandError:
-                pass
+        line = next((l for l in reversed(self.tail(10 ** 6)) if l.get('intent') == query.get('came') and l.get('world') == self.st.world), None) if query.get('came') else None
+        if line:  # what came back: the drafted post of a spell, hob's answer to words
+            text = line.get('said') if line['what'] == 'ask' else self.draft(line['draft'])[1]['text'] if line.get('draft') else ''
+            spoken = H['spoken'].format(fate=q(line.get('outcome')), stamp=q(pages.stamp(line.get('outcome') or '')), height=q(line.get('height')),
+                                        slug=q(line.get('slug') or ''), object=q(line.get('object')),
+                                        card=H['card'].format(text=q(text)) if text else H['note'].format(text='— quiet: nothing came back yet —'))
         return shell('speak', self.st.world, H['speak'].format(base=base, world=q(self.st.world), note=self.note(query), spoken=spoken,
                                                                intent=q(f'hand:speak:{int(self.clock() * 1000)}'), where=where,
                                                                plan=q(Path(self.plan['path']).name), seeds=seeds, invitations=invitations))
@@ -707,7 +726,7 @@ def cli_speak(h, a):
         spell = h.plan['seeds'][a.seed - 1]
         return h.cast(spell, a.topic, a.reply_to, h.seed_intent(spell))
     spell = Path(a.spell_file).read_text() if a.spell_file else sys.stdin.read() if a.spell in (None, '-') else a.spell
-    return h.cast(spell, a.topic, a.reply_to, a.intent)
+    return h.cast(spell, a.topic, a.reply_to, a.intent, a.to)
 
 
 def serve(st, host):
@@ -742,7 +761,8 @@ def parser(p, common):
             'speak': [('spell', dict(nargs='?', help='the spell; - or none reads it from stdin')), ('--spell-file', {}),
                       ('--seed', dict(type=int, metavar='N', help="the plan's seed N")), ('--invitation', dict(type=int, metavar='MINUTE', help="draft the plan's invitation at T+MINUTE")),
                       ('--topic', dict(help='a Zulip world: the topic (default its one topic, else welcome)')),
-                      ('--reply-to', dict(metavar='AT_URI', help='a Delve world: the thread to answer')), ('--intent', dict(help='casting twice under one intent is one turn'))],
+                      ('--reply-to', dict(metavar='AT_URI', help='a Delve world: the thread to answer')), ('--intent', dict(help='casting twice under one intent is one turn')),
+                      ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': []}
     flags = lambda fields, why: [(f'--{n}', {}) for n, _ in fields] + [(f'--{n}-file', {}) for n, k in fields if k == 'json' or n == 'text'] + \
         [(f'--{why}', dict(required=True))]

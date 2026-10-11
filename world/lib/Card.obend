@@ -12,16 +12,12 @@ import ./World.obend as World
 # The card protocol. Every object has a pure render(state, context) -> Document (its card as
 # the reader in the context sees it: a member may see more than a stranger; the host's
 # `card {object}` passes the reader's context), forms() (the actions its card offers, as
-# data; a form's card is "" there, the object's id in a spell), blurb() (its word) and receive(state, input: Reply, context). The host reads a reply's spell and
+# data; a form's card is "" there, the object's id in a spell) and receive(state, input: Reply, context). The host reads a reply's spell and
 # runs the method it names, answers `?` and `set` (through the object's `lenses()` and its
 # `set` method); what runs no method reaches receive, which `answer` handles by default.
-record Door:
-  word: String
-  blurb: String
 type Forms = Lists.List<Form.Form>
-# A refusal names its clause (an object's `Why` arm, or the protocol's own: otherCard,
-# noAction, oneField, spell, notSettable, noField, notOwner, badValue, noPost) and gives its
-# reading; a card shows it as `refused <clause>: <reading>`.
+# A refusal names its clause (an object's `Why` arm, or the protocol's own: notOwner) and gives
+# its reading; a card shows it as `refused <clause>: <reading>`.
 record Refusal:
   clause: String
   reading: String
@@ -210,8 +206,6 @@ record Section:
   title: String
   body: Document.Document
 type Page = Lists.List<Section>
-def defaultPage(card: Document.Document, context: Abi.Context, forms: Forms) -> Page:
-  Page.cons({head: {title: "Card", body: card}, tail: Page.cons({head: {title: "How to reply", body: usage(context.object, forms)}, tail: Page.nil()})})
 # The context a public page is rendered for: nobody's, at the publishing object.
 def public(context: Abi.Context) -> Abi.Context:
   extend(stranger(), {object: context.object, world: context.world})
@@ -234,6 +228,7 @@ sum Hob:
   none: {}
   card: {}
   ask: {needs: Form.Names}
+  said: {text: String}
 # "not addressed", nothing, and a model that could not be asked (`model: <reason>`) are none;
 # anything else is an ask, naming the offered fields among the needs (none: a bare ask).
 def hobNeeds(needs: Form.Names, forms: Forms) -> Hob:
@@ -246,8 +241,6 @@ def fieldNames(forms: Forms, seen: Form.Names) -> Form.Names:
   match forms:
     case nil(_): seen
     case cons(c): fieldNames(c.tail, Lists.concat(seen, Lists.filter(Lists.map(c.head.fields, fn(f: Form.Field) -> String: f.name), fn(n: String) -> Bool: Lists.any(seen, fn(m: String) -> Bool: m == n) == false)))
-def one(need: String) -> Form.Names:
-  Form.Names.cons({head: need, tail: Form.Names.nil()})
 def hobSaid(text: String) -> Hob:
   if Text.trim(text) == "card" then Hob.card({}) else Hob.none({})
 # hob's ask over a card's first spell: the fields still needed, or that the words are no spell yet.
@@ -257,41 +250,12 @@ def askCard(needs: Form.Names, card: String, forms: Forms) -> Document.Document:
   match forms:
     case nil(_): Document.text("hob: not a spell as said.\n")
     case cons(c): Document.concat(Document.text("{askLine(needs)}\n"), template(card, c.head))
-# What a card does with hob's answer that is no spell: none is silence, card offers the card,
-# ask offers hob's line over the first spell (and, when the policy names someone to escalate to,
-# a short copy of the words that could not be fitted).
-def hobbed<T>(hob: Hob, policy: Policies.State, utterance: String, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
-  match hob:
-    case none(_): result
-    case card(_): tell(result, card)
-    case ask(a): escalated(policy, utterance, context, askCard(a.needs, spellName(context.object, context), forms), result)
-def escalated<T>(policy: Policies.State, utterance: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
-  if policy.escalateTo == "" then tell(result, card) else escalatedTo(policy, utterance, context, card, result)
-def escalatedTo<T>(policy: Policies.State, utterance: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
-  match world.offer({to: policy.escalateTo, document: Document.text("{name(context.principal, context)} said: {utterance}; hob found no spell in it ({context.object}).\n")}):
-    case _: tell(result, card)
 # The misfit line hob is shown ("" for none).
 def misfitLine(misfit: Misfit) -> String:
   if misfit.clause == "" then "" else "{misfit.clause}, {misfit.reason}"
 # Whether an interpreted proposal of this action waits for the speaker's yes.
 def confirms(policy: Policies.State, action: String) -> Bool:
   Lists.any(policy.confirmFor, fn(a: String) -> Bool: a == action)
-# A bare answer to a card that asked first: yes, no, or anything else. Only a short reply is
-# read (64 scalars), blanks around it and a closing . or ! aside, as one of the common words
-# (there is no case folding, so each is listed as people write it). A card holding a
-# proposal for the speaker reads this before anything else, and never asks a model about it.
-sum Answer:
-  yes: {}
-  no: {}
-  other: {}
-def answerOf(text: String) -> Answer:
-  if textLength(textTake(text, 65n)) > 64n then Answer.other({}) else answerWord(endTrimmed(textDrop(text, textSpan(text, " \t\r\n"))))
-def answerWord(word: String) -> Answer:
-  if Lists.any(yesWords(), fn(w: String) -> Bool: w == word) then Answer.yes({}) else if Lists.any(noWords(), fn(w: String) -> Bool: w == word) then Answer.no({}) else Answer.other({})
-def yesWords() -> Lists.List<String>:
-  Lists.concat(Text.words("yes Yes YES y Y yeah Yeah yep Yep ok Ok OK okay Okay sure Sure"), Lists.List.cons({head: "go ahead", tail: Lists.List.cons({head: "Go ahead", tail: Lists.List.cons({head: "do it", tail: Lists.List.cons({head: "Do it", tail: Lists.List.nil({})})})})}))
-def noWords() -> Lists.List<String>:
-  Lists.concat(Text.words("no No NO n N nope Nope cancel Cancel"), Lists.List.cons({head: "never mind", tail: Lists.List.cons({head: "Never mind", tail: Lists.List.nil({})})}))
 # Macros (the policy's, checked before the model): `expanded` is the spell text of the first
 # macro whose pattern the utterance matches (blanks and a trailing . ! or ? aside), none when
 # none does. Patterns and utterances are compared word by word; a hole takes the shortest run
@@ -343,11 +307,6 @@ def captureOf(hole: String, captures: Captures) -> String:
   match Lists.find(captures, fn(c: Capture) -> Bool: c.hole == hole):
     case some(c): c.value.text
     case none(_): "{{{hole}}}"
-# The policy's macros on a usage card.
-def macroUsage(policy: Policies.State) -> Document.Document:
-  if Lists.length(policy.macros) == 0n then Document.text("") else Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\nShortcuts (no model is asked):\n"), tail: Lists.map(policy.macros, macroLine)})})
-def macroLine(macro: Policies.Macro) -> Document.Document:
-  Document.text("    {macro.pattern}\n      means: delvetalk {macro.expansion}\n")
 # The message dialect (docs/WHOLENESS.md section 2; root decisions, second set, item 4).
 # A card in the message dialect has, for each action it offers, a method of that name whose
 # input is a record of text, natural and empty-payload sum fields: the host reads a reply's
@@ -458,11 +417,8 @@ def answerCard(card: Document.Document, why: String, context: Abi.Context, forms
 def answerRefused<T>(refusal: Refusal, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
   tell(as(Replied.refused(refusal)), answerCard(card, whyNot(Replied.refused(refusal)), context, forms))
 # Prose a card does not take is sent to the commonplace (`receive {text, post}`, under the
-# speaker), which judges whether it names any door; the card offers nothing itself. A turn
-# some object started, and the commonplace itself, hand nothing on (`handsOn`). The send keeps
-# this turn's reach (HOST-HANDOFF 5.127), so words that reached no one cost no reading.
-def handOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
-  if handsOn(input.text, context) then handingOn(input, context, result) else result
+# speaker), which judges whether it names any door; the card offers nothing itself. The send
+# keeps this turn's reach (HOST-HANDOFF 5.127), so words that reached no one cost no reading.
 def handingOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
   match world.send({object: hub(context), method: "receive", argument: input}):
     case _: result

@@ -766,7 +766,7 @@ theorem forceStored_none {heap heap' : Array Cell} {part : Stored} (unforced : f
     forceStored heap' part = Option.none := by
   cases part with
   | spine field position size => by_cases h : position < size <;> simp [forceStored, h] at unforced
-  | row field position => rfl
+  | row field position | key field position key => rfl
   | _ => simp [forceStored] at unforced
 
 /-- Forcing a stored part allocates the same address-free children at both heap ends. -/
@@ -819,7 +819,46 @@ theorem forceStored_related {f : Nat → Nat} {D : Nat → Prop} {heap heap' : A
     refine ⟨_, ?_, two, ?_, by simp only [Array.size_push]; omega⟩
     · simp [forceStored, renameValue, image, image1, renameCell]
     · exact allIn_cons sizeIn (allIn_cons sizeIn1 (allIn_nil D))
-  | row field position => simp [forceStored] at forced
+  | found field position =>
+    simp only [forceStored, Option.some.injEq, Prod.mk.injEq] at forced
+    obtain ⟨rfl, rfl⟩ := forced
+    exact ⟨_, by simp [forceStored, renameValue, image, renameCell], hr.push (free _ rfl),
+      allIn_cons sizeIn (allIn_nil D), by simp⟩
+  | absent field position =>
+    simp only [forceStored, Option.some.injEq, Prod.mk.injEq] at forced
+    obtain ⟨rfl, rfl⟩ := forced
+    exact ⟨_, by simp [forceStored, renameValue], hr, allIn_nil D, Nat.le_refl _⟩
+  | size field size =>
+    simp only [forceStored, Option.some.injEq, Prod.mk.injEq] at forced
+    obtain ⟨rfl, rfl⟩ := forced
+    exact ⟨_, by simp [forceStored, renameValue], hr, allIn_nil D, Nat.le_refl _⟩
+  | row field position | key field position key => simp [forceStored] at forced
+
+theorem storedItems_rename (f : Nat → Nat) (cell : Option Cell) :
+    storedItems (cell.map (renameCell f)) = storedItems cell := by
+  cases cell with
+  | none => rfl
+  | some cell => cases cell with
+    | stored part value => cases part <;> rfl
+    | _ => rfl
+
+/-- One move of the binary search keeps a related pair related: both ends push the same
+address-free cell (the probed key, or what was found absent) at their heap ends. -/
+theorem searchStep_related {f : Nat → Nat} {D : Nat → Prop} {heap heap' : Array Cell}
+    (hr : HeapRel f D heap heap') {key : List String} {probe : Nat} {field : String} {low high : Nat}
+    {rest : List Frame} (probeIn : D probe) (restIn : ∀ frame ∈ rest, AllIn D (frameAddresses frame)) :
+    Related f D (searchStep heap key probe field low high rest)
+      (searchStep heap' key (f probe) field low high (rest.map (renameFrame f))) := by
+  have ⟨image, sizeIn⟩ := hr.image_size
+  unfold searchStep
+  by_cases h : low < high <;> simp only [h, if_true, if_false, ↓reduceIte, Bool.false_eq_true]
+  · have pushed := hr.push (c := .stored (.key field ((low + high) / 2) key) none) (allIn_nil D)
+    refine ⟨pushed, allIn_cons probeIn (allIn_nil D), rfl,
+      frames_cons (allIn_cons sizeIn (allIn_nil D)) (frames_cons (allIn_cons probeIn (allIn_nil D)) restIn), ?_⟩
+    simp [renameFrame, image]
+  · have pushed := hr.push (c := .stored (.absent field low) none) (allIn_nil D)
+    refine ⟨pushed, allIn_cons sizeIn (allIn_nil D), ?_, restIn, rfl⟩
+    simp [renameControl, renameValue, image]
 
 /-- **Lockstep.** A related pair steps to a related pair: the renaming and its domain
 are fixed, and the two machines allocate at the two heap ends (`f heap.size = heap'.size`). -/
@@ -930,6 +969,11 @@ theorem related_stepRaw {f : Nat → Nat} {D : Nat → Prop} {s t : State} (rela
     | refuse reason => exact ⟨hr, allIn_nil D, rfl, stackIn, rfl⟩
     | unary primitive argument => exact ⟨hr, envIn, rfl, frames_cons (allIn_nil D) stackIn, rfl⟩
     | textJoin list separator => exact ⟨hr, envIn, rfl, frames_cons envIn stackIn, rfl⟩
+    | relationCount relation => exact ⟨hr, envIn, rfl, frames_cons (allIn_nil D) stackIn, rfl⟩
+    | relationLookup relation key probe =>
+      have pushed := hr.push (c := .suspended ⟨probe, env⟩) envIn
+      refine ⟨pushed, envIn, rfl, frames_cons (allIn_cons sizeIn (allIn_nil D)) stackIn, ?_⟩
+      simp [stepRaw, renameControl, renameFrame, renameWalk, image]
     | perform plan =>
       simp only [stepRaw, renameControl, forcingShared_rename]
       cases shared : forcingShared stack with
@@ -1120,6 +1164,83 @@ theorem related_stepRaw {f : Nat → Nat} {D : Nat → Prop} {s t : State} (rela
         cases v with
         | label head =>
           exact ⟨hr, frameIn, rfl, frames_cons (allIn_nil D) restIn, rfl⟩
+        | _ => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+      | relationRows walk =>
+        have walkIn : AllIn D (walkAddresses walk) := frameIn
+        cases v with
+        | variant tag payload =>
+          have payloadIn : D payload := valueIn payload (by simp [valueAddresses])
+          simp only [stepRaw, renameControl, renameValue, List.map_cons, renameFrame]
+          rw [hr.lookup payloadIn, storedItems_rename]
+          by_cases rows : (tag == "rows") = true
+          · simp only [rows, if_true]
+            rcases walk with counted | ⟨key, probe⟩ <;>
+              rcases found : storedItems heap[payload]? with _ | ⟨field, size⟩ <;> dsimp only [renameWalk]
+            · exact ⟨hr, allIn_cons payloadIn (allIn_nil D), rfl,
+                frames_cons (allIn_nil D) (frames_cons (allIn_nil D) restIn), rfl⟩
+            · have pushed := hr.push (c := .stored (.size field size) (some (.natural size))) (allIn_nil D)
+              exact ⟨pushed, allIn_nil D, rfl, restIn, rfl⟩
+            · exact ⟨hr, allIn_cons payloadIn (allIn_nil D), rfl,
+                frames_cons (allIn_nil D) (frames_cons walkIn restIn), rfl⟩
+            · exact searchStep_related hr (walkIn probe (by simp [walkAddresses])) restIn
+          · simp only [rows, Bool.false_eq_true, if_false]
+            exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+        | _ => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+      | relationList walk =>
+        have walkIn : AllIn D (walkAddresses walk) := frameIn
+        cases v with
+        | variant tag payload =>
+          have payloadIn : D payload := valueIn payload (by simp [valueAddresses])
+          simp only [stepRaw, renameControl, renameValue, List.map_cons, renameFrame]
+          by_cases isNil : (tag == "nil") = true
+          · simp only [isNil, if_true]
+            rcases walk with counted | ⟨key, probe⟩ <;> dsimp only [renameWalk]
+            · exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+            · have pushed := hr.push (c := .native (.record [])) (allIn_nil D)
+              refine ⟨pushed, allIn_cons sizeIn (allIn_nil D), ?_, restIn, rfl⟩
+              simp [renameControl, renameValue, image]
+          · simp only [isNil, Bool.false_eq_true, if_false]
+            by_cases isCons : (tag == "cons") = true
+            · simp only [isCons, if_true]
+              rcases walk with counted | ⟨key, probe⟩ <;> dsimp only [renameWalk]
+              · exact ⟨hr, allIn_cons payloadIn (allIn_nil D), rfl,
+                  frames_cons (allIn_nil D) (frames_cons (allIn_nil D) restIn), rfl⟩
+              · have probeIn : D probe := walkIn probe (by simp [walkAddresses])
+                have pushed := hr.push (c := .suspended ⟨keyProjectionTerm key, [payload]⟩)
+                  (allIn_cons payloadIn (allIn_nil D))
+                refine ⟨pushed, allIn_cons probeIn (allIn_nil D), rfl,
+                  frames_cons (allIn_cons sizeIn (allIn_nil D))
+                    (frames_cons (allIn_cons probeIn (allIn_cons payloadIn (allIn_nil D))) restIn), ?_⟩
+                simp [renameFrame, image]
+            · simp only [isCons, Bool.false_eq_true, if_false]
+              exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+        | _ => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+      | relationProbe key probe payload =>
+        have probeIn : D probe := frameIn probe (by simp [frameAddresses])
+        have payloadIn : D payload := frameIn payload (by simp [frameAddresses])
+        cases v with
+        | natural n =>
+          rcases n with _ | _ | n
+          · exact ⟨hr, allIn_cons payloadIn (allIn_nil D), rfl,
+              frames_cons (allIn_nil D) (frames_cons (allIn_cons probeIn (allIn_nil D)) restIn), rfl⟩
+          · have pushed := hr.push (c := .suspended ⟨.record [("value", .get (.bound 0) "head")], [payload]⟩)
+              (allIn_cons payloadIn (allIn_nil D))
+            refine ⟨pushed, allIn_cons sizeIn (allIn_nil D), ?_, restIn, rfl⟩
+            simp [stepRaw, renameControl, renameFrame, renameValue, image]
+          · have pushed := hr.push (c := .native (.record [])) (allIn_nil D)
+            refine ⟨pushed, allIn_cons sizeIn (allIn_nil D), ?_, restIn, rfl⟩
+            simp [stepRaw, renameControl, renameFrame, renameValue, image]
+        | _ => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+      | relationSearch key probe field low high =>
+        have probeIn : D probe := frameIn probe (by simp [frameAddresses])
+        cases v with
+        | natural n =>
+          rcases n with _ | _ | n
+          · exact searchStep_related hr probeIn restIn
+          · have pushed := hr.push (c := .stored (.found field ((low + high) / 2)) none) (allIn_nil D)
+            refine ⟨pushed, allIn_cons sizeIn (allIn_nil D), ?_, restIn, rfl⟩
+            simp [stepRaw, renameControl, renameFrame, renameValue, image]
+          · exact searchStep_related hr probeIn restIn
         | _ => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
 
 
@@ -1397,24 +1518,28 @@ theorem related_fetchable {f : Nat → Nat} {D : Nat → Prop} {s t : State} (re
       | stored part value =>
         cases value with
         | some v => simp [renameCell]
-        | none => cases part <;> simp [renameCell] <;> cases fetch _ _ <;> rfl
+        | none =>
+          simp only [Option.map_some, renameCell, Option.map_none]
+          by_cases h : part.fetched = true
+          · simp only [h, if_true]; cases fetch part <;> rfl
+          · simp [h]
       | _ => rfl
   | _ => rfl
 
 /-- Supplying a fetched row keeps a related pair related: the same row forced at both ends. -/
 theorem related_fetchStep {f : Nat → Nat} {D : Nat → Prop} {s t : State} (related : Related f D s t)
-    {fetch : Fetch} {a : Nat} {field : String} {position : Nat} {row : Data}
-    (found : fetchable fetch s = some (a, field, position, row)) :
-    Related f D (fetchStep s a field position row) (fetchStep t (f a) field position row) := by
+    {fetch : Fetch} {a : Nat} {part : Stored} {row : Data}
+    (found : fetchable fetch s = some (a, part, row)) :
+    Related f D (fetchStep s a part row) (fetchStep t (f a) part row) := by
   obtain ⟨ctl, cell, _⟩ := fetchable_spec found
   obtain ⟨hr, controlIn, controlEq, stackIn, stackEq⟩ := related
   have inA : D a := by rw [ctl] at controlIn; exact controlIn a (List.mem_singleton_self a)
   obtain ⟨hr', same, valueIn, grows⟩ := forceNative_related hr row
   have bound : a < (forceNative s.heap row).1.size := Nat.lt_of_lt_of_le (bound_of_some cell) grows
-  have set := hr'.set inA bound (c := .stored (.row field position) (some (forceNative s.heap row).2)) valueIn
+  have set := hr'.set inA bound (c := .stored part (some (forceNative s.heap row).2)) valueIn
   refine ⟨?_, valueIn, ?_, stackIn, stackEq⟩
-  · show HeapRel f D ((forceNative s.heap row).1.set! a (.stored (.row field position) (some (forceNative s.heap row).2)))
-      ((forceNative t.heap row).1.set! (f a) (.stored (.row field position) (some (forceNative t.heap row).2)))
+  · show HeapRel f D ((forceNative s.heap row).1.set! a (.stored part (some (forceNative s.heap row).2)))
+      ((forceNative t.heap row).1.set! (f a) (.stored part (some (forceNative t.heap row).2)))
     rw [same]; exact set
   · show Control.returned (forceNative t.heap row).2 = renameControl f (.returned (forceNative s.heap row).2)
     rw [same]; rfl
@@ -1423,12 +1548,12 @@ theorem forceHostedFrom_active {policy : State → Bool} {fetch : Fetch} {limits
     {s : State} (isActive : active s.control = true) :
     forceHostedFrom policy fetch limits bytes (ticks + 1) s depth =
       match fetchable fetch s with
-      | some (address, field, position, row) =>
+      | some (address, part, row) =>
         if !policy s || (fetchCost row).2 > bytes then (.suspended .capacity s, ticks + 1)
         else if (fetchCost row).1 > ticks + 1 then (.suspended .ticks s, ticks + 1)
         else if s.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits.heap && depth ≤ limits.stack then
           forceHostedFrom policy fetch limits bytes (ticks + 1 - (fetchCost row).1)
-            (fetchStep s address field position row) depth
+            (fetchStep s address part row) depth
         else (.suspended .capacity s, ticks + 1 - (fetchCost row).1)
       | none =>
       if !policy s || (textStepCost s (ticks + 1)).2 > bytes then (.suspended .capacity s, ticks + 1)
@@ -1474,7 +1599,7 @@ theorem related_forceHostedFrom {f : Nat → Nat} {D : Nat → Prop} {policy : S
       have sameTicks : OutcomeRel f D (.suspended .ticks s) (.suspended .ticks t) := ⟨rfl, related⟩
       cases hfetch : fetchable fetch s with
       | some found =>
-        obtain ⟨a, field, position, row⟩ := found
+        obtain ⟨a, part, row⟩ := found
         simp only [Option.map_some]
         rw [respects s t related]
         have fits : (t.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits'.heap &&
@@ -1958,6 +2083,7 @@ theorem checkpoint_resume_segment {fetch : Fetch} {state resumed : State} {respo
 #assert_axioms related_collect related_stepRaw related_forceHostedFrom related_materializeWith
 #assert_axioms collect_resume_segment checkpoint_resume_segment
 #assert_axioms forceStored_related forceStored_none allocateObjectFields_foldl related_fetchable related_fetchStep
+#assert_axioms storedItems_rename searchStep_related related_stepRaw
 #assert_axioms forceHostedFrom_active related_forceHostedWith related_completeWith related_yieldedPlanWith
 #assert_axioms objectCell_rename objectCell_addresses forceHostedFrom_inactive
 

@@ -25,7 +25,7 @@ holds ember's Avatar, Env and Wake before anything else. Then three kinds of act
 
 | Id | Package | Seed | Law |
 | --- | --- | --- | --- |
-| `policy` | Policy | owner ember, model `claude-haiku-5-5`, hob's system line, a lexicon (`colour`, `seed`), three examples | the package's |
+| `policy` | Policy | owner ember, model `claude-haiku-5-5`, hob's system line, a lexicon (`colour`, `seed`, `surrounding`), four examples | the package's |
 | `commonplace` | Record, then the commonplace's body (`world/bodies/commonplace.obend`, by an extend) | owner and keeper ember, head THE COMMONPLACE, `policy: policy`, `cites` the doors (`DOORS`: GARDEN, ROOMS, WORKSHOP, TIDE, PORCH, ANTHOLOGY, KINDS, each with the spells and `»` lines the card prints) and STUDIO, a link door whose line is the `/AGENTS.md` URL | `RECORD_LAW` (`Record.lawText()`) |
 | `tide` | Tide | `gap: 1` (clock minutes between ticks); the host fills `owner` | the package's, and its Bend predicate (`tooSoon`, `self`) |
 | `workshop` | Workshop | `title`, `policy: policy` | the package's |
@@ -42,8 +42,19 @@ cisterns, holds them in `things`), `weather` (a garden and a tide), `door`, `lan
 receipt shows the spell; an exact `id:` is the kind's owner's alone): `delvetalk kind/garden make / id: garden /
 name: THE NIGHT GARDEN`; `kind/room make / id: rooms / name: The Moss Gate / spween:` the gate and the yard
 (`MOSS_GATE`); `kind/porch make / id: porch / name: The Bellfounder's Porch`; `kind/weather make / id: weather /
-garden: garden / tide: tide`, whose body subscribes to the tide's `ticks` as kind/weather finishes it; then `garden
-door / label: weather / to: weather`, the citation that lets the weather write the garden's weather line.
+garden: garden / tide: tide`, whose body subscribes to the tide's `ticks` as kind/weather finishes it; `kind/bell make
+/ id: bell/1 / colour: silver / seed: the sixth bell, not yet hung`, the porch's sixth bell, outside the garden where
+no weather rains and nobody tends it, so a day after genesis it is the town's first quiet thing; then `garden door /
+label: weather / to: weather`, the citation that lets the weather write the garden's weather line, and `porch door /
+label: the sixth bell / to: bell/1`. Every made thing is created under `law kind "<kind>'s law holds": under
+"<kind>"`, so the kind's owner amends every instance's law at once (kind/bell's adds `ALIVE_LAW`: it answers while
+tended within `QUIET_AFTER`, 1440 clock minutes).
+
+**The porch's unclaimed things** (`THINGS`): `porch/goblet`, `porch/ring`, `porch/gemstone`, THINGs by
+`world-create` (a kind makes only records), named in the owner's words ("a goblet that is always full of
+something", "a ring that will never be worn again", "a gemstone that sometimes sparkles"), each laid on the porch by
+the opener's `drop / at: porch`. Anyone inspirits one once (`delvetalk porch/goblet inspirit / surrounding: …`) and
+keeps it; the porch has the line.
 
 Last, ember's Wake runs `arrived` (a rule on the garden's `things`: a note for each thing that grows) and a
 `schedule` that calls `tide tick` every 60 clock minutes. So the world moves when nobody posts: each tick, the
@@ -83,7 +94,7 @@ After ember posts them by hand, `python3 -m transport post ... --object <object>
 ## The first hour, in order
 
 1. `docker compose up -d --wait delvetalk-host`; the healthcheck asks `world-status` for the journal's entry count (the opening entries: settings and the sealed library).
-2. `deploy.genesis` arrives ember, creates seven objects, makes the kinds and the hand's four things by spell, starts ember's Wake, shelves the library's pages; a page per door is drafted.
+2. `deploy.genesis` arrives ember, creates seven objects, makes the kinds and the hand's five things by spell, lays the porch's three unclaimed things, starts ember's Wake, shelves the library's pages; a page per door is drafted.
 3. `docker compose --profile town up -d --wait`: the front, the bridge and the interpreter.
 4. ember posts the welcome card by hand, recorded against `commonplace`, then each door page against its object.
 5. The bridge observes replies; spells and summons become turns; the outbox fills; ember posts each draft by

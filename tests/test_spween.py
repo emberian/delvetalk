@@ -213,7 +213,7 @@ class Made(test_chain.Chain):
         forged = self.host.send(op="world-propose", principal="did:plc:kimik3", identity="forged", roots=[{"object": well, "version": version}],
                                 writes=[{"object": well, "edits": [record(presence=append, vars=keep, left=keep)]}])
         self.assertEqual((forged["status"], forged["receipt"]["outcome"]["class"], forged["receipt"]["outcome"].get("clause")),
-                         ("refused", "lawRefused", "owner"), forged)
+                         ("refused", "lawRefused", "owner"), forged)  # the room cites kind/room's law; its owner clause refuses, named
         self.host.send(op="world-advance", height=at + 3)
         back = self.say(well, "delvetalk %s enter" % well)
         self.assertEqual(back["result"]["label"], "entered", back)

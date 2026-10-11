@@ -2,7 +2,8 @@
 // Independent source-step interpreter. No parser, checker, authority or host I/O.
 // Nat arithmetic uses BigInt; the wire preserves decimal strings, not Numbers.
 import { createInterface } from 'node:readline';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { createHash } from 'node:crypto';
 
 const arities = new Map(Object.entries({
@@ -10,6 +11,7 @@ const arities = new Map(Object.entries({
   reflect: 2, metadata: 2, project: 2, nat: 2, boolean: 2, label: 2, refuse: 2,
   binary: 4, unary: 3, extend: 3, record: 2, get: 3, ifZero: 4, inject: 3,
   case: 3, ifBool: 4, perform: 2, done: 2, toData: 2, textJoin: 3,
+  relationCount: 2, relationLookup: 4,
 }));
 const primitives = new Set(['add', 'multiply', 'equal', 'conjunction',
   'labelEqual', 'subtract', 'divide', 'less', 'lessEqual', 'modulo',
@@ -53,6 +55,10 @@ export function validate(term) {
     } else if (tag === 'unary') {
       requireThat(unaries.has(a), 'unknown unary primitive');
       pending.push(b);
+    } else if (tag === 'relationLookup') {
+      requireThat(Array.isArray(b) && b.every(scalarString),
+        'relationLookup columns must be an array of Unicode scalar strings');
+      pending.push(a, t[3]);
     } else pending.push(...t.slice(1));
   }
   return term;
@@ -75,6 +81,7 @@ function substitute(t, env) {
     case 'inject': return ['inject', t[1], sub(t[2])];
     case 'binary': return ['binary', t[1], sub(t[2]), sub(t[3])];
     case 'unary': return ['unary', t[1], sub(t[2])];
+    case 'relationLookup': return ['relationLookup', sub(t[1]), t[2], sub(t[3])];
     default: return [t[0], ...t.slice(1).map(sub)];
   }
 }
@@ -97,6 +104,35 @@ function joinExpansion(items, separator) {
       ['binary', 'textConcat', ['bound', 2], ['binary', 'textConcat', shifted, head]]], tail]]]];
   const go = ['fix', ['lam', ['lam', ['lam', ['lam', body]]]], ['record', []]];
   return ['case', items, [['nil', ['label', '']], ['cons', ['app', ['app', go, head], tail]]]];
+}
+// relationCount's meaning: case on the relation's rows, then the fold `go count
+// rest` (a fix of four lambdas) adding one per cons; the relation is the
+// scrutinee, outside every binder, and go is closed.
+function relationCountExpansion(relation) {
+  const body = ['case', ['bound', 0], [
+    ['nil', ['bound', 2]],
+    ['cons', ['app', ['app', ['bound', 4], ['binary', 'add', ['bound', 2], ['nat', '1']]],
+      ['get', ['bound', 0], 'tail']]]]];
+  const go = ['fix', ['lam', ['lam', ['lam', ['lam', body]]]], ['record', []]];
+  return ['case', relation, [['rows', ['app', ['app', go, ['nat', '0']], ['get', ['bound', 0], 'items']]]]];
+}
+// relationLookup's meaning: case on the relation's rows, then the fold `go rest`
+// (a fix of three lambdas) applying the probe to each row's projection onto the
+// columns: 0 continues, 1 answers some {value: head}, anything else none; the
+// probe sits under five binders (rows arm, three lambdas, cons arm).
+function relationLookupExpansion(relation, columns, probe) {
+  const shifted = rename(probe, n => n + 5);
+  const projection = ['record', columns.map(c => [c, ['get', ['get', ['bound', 0], 'head'], c]])];
+  const inner = ['ifZero', ['bound', 0],
+    ['app', ['bound', 4], ['get', ['bound', 1], 'tail']],
+    ['ifZero', ['bound', 0],
+      ['inject', 'some', ['record', [['value', ['get', ['bound', 2], 'head']]]]],
+      ['inject', 'none', ['record', []]]]];
+  const body = ['case', ['bound', 0], [
+    ['nil', ['inject', 'none', ['record', []]]],
+    ['cons', ['app', ['lam', inner], ['app', shifted, projection]]]]];
+  const go = ['fix', ['lam', ['lam', ['lam', body]]], ['record', []]];
+  return ['case', relation, [['rows', ['app', go, ['get', ['bound', 0], 'items']]]]];
 }
 const instantiate = (body, argument) => substitute(body, i => i === 0 ? argument : ['bound', i - 1]);
 const nat = n => ['nat', n.toString()];
@@ -238,6 +274,8 @@ function inspect(t) {
     case 'perform': return { kind: 'yield', plan: a, resume: response => response };
     case 'done': case 'toData': return step(() => a);
     case 'textJoin': return step(() => joinExpansion(a, b));
+    case 'relationCount': return step(() => relationCountExpansion(a));
+    case 'relationLookup': return step(() => relationLookupExpansion(a, b, c));
     default: return stuck;
   }
 }
@@ -269,17 +307,40 @@ export function run(job) {
   }
 }
 
+// The recursive substitute/rename/validate need a deep stack for long list
+// literals, so jobs are evaluated in a worker with a 256 MiB stack; the main
+// thread keeps stdin/stdout line-by-line and in order.
+const stackSizeMb = 256;
 async function main() {
+  const worker = new Worker(fileURLToPath(import.meta.url),
+    { resourceLimits: { stackSizeMb, maxOldGenerationSizeMb: 8192 } });
+  const replies = [];
+  let waiting = null;
+  worker.on('message', message => { if (waiting) { waiting(message); waiting = null; } else replies.push(message); });
+  worker.on('error', error => { if (waiting) waiting({ error: error.message }); else replies.push({ error: error.message }); });
+  const next = () => replies.length ? Promise.resolve(replies.shift()) : new Promise(resolve => { waiting = resolve; });
   let lineNumber = 0;
   for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
     lineNumber++;
-    try {
-      process.stdout.write(JSON.stringify(run(JSON.parse(line))) + '\n');
-    } catch (error) {
-      process.stderr.write(`line ${lineNumber}: ${error.message}\n`);
+    worker.postMessage(line);
+    const reply = await next();
+    if (reply.error !== undefined) {
+      process.stderr.write(`line ${lineNumber}: ${reply.error}\n`);
       process.exitCode = 1;
       break;
     }
+    process.stdout.write(reply.output);
   }
+  await worker.terminate();
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+function serve() {
+  parentPort.on('message', line => {
+    try {
+      parentPort.postMessage({ output: JSON.stringify(run(JSON.parse(line))) + '\n' });
+    } catch (error) {
+      parentPort.postMessage({ error: error.message });
+    }
+  });
+}
+if (!isMainThread) serve();
+else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

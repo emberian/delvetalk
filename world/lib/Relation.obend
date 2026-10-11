@@ -56,19 +56,18 @@ def where<T>(relation: Relation<T>, predicate: T -> Bool) -> Relation<T>:
   Relation.rows({items: Lists.filter(rows(relation), predicate)})
 def project<T, U>(relation: Relation<T>, column: T -> U) -> Lists.List<U>:
   Lists.map(rows(relation), column)
+# The row count: a stored relation answers from its handle, forcing no row (one tick).
 def count<T>(relation: Relation<T>) -> Nat:
-  Lists.length(rows(relation))
+  relationCount(relation)
 def exists<T>(relation: Relation<T>, predicate: T -> Bool) -> Bool:
   Lists.any(rows(relation), predicate)
-# The row with this key, stopping at the first row past it.
+# The row with this key: `key` is a record of key columns (`{who: who}`), compared by canonical
+# bytes. A stored relation keyed by exactly those columns is binary-searched, probing its keys and
+# fetching only the row found, when read; any other relation is walked to the first row not
+# below the key. `keyOf` is the projection onto the key's own columns, which relationLookup reads
+# itself: it goes when the callers drop it.
 def lookup<T, K>(relation: Relation<T>, key: K, keyOf: T -> K) -> Lists.Maybe<T>:
-  lookupIn(rows(relation), key, keyOf)
-def lookupIn<T, K>(items: Lists.List<T>, key: K, keyOf: T -> K) -> Lists.Maybe<T>:
-  match items:
-    case nil(_): Lists.Maybe.none({})
-    case cons(c): foundAt(compare(keyOf(c.head), key), c.head, c.tail, key, keyOf)
-def foundAt<T, K>(order: Nat, row: T, rest: Lists.List<T>, key: K, keyOf: T -> K) -> Lists.Maybe<T>:
-  if order == 1n then Lists.Maybe.some({value: row}) else if order == 2n then Lists.Maybe.none({}) else lookupIn(rest, key, keyOf)
+  relationLookup(relation, key)
 # The rows sorted by another key (stable: rows `by` ties keep their key order).
 def order<T, K>(relation: Relation<T>, by: T -> K) -> Lists.List<T>:
   sorted(rows(relation), by)

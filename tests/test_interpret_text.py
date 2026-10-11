@@ -12,8 +12,7 @@ Card.hobNeeds / Card.hobSaid classify these: an ask, or none (not addressed, bla
 `model:` need, a model that could not be asked); the text "card" is the card, any other text none.
 The commonplace answers `ask` with hob's fixed line naming only the offered fields the need names
 (`hob: still needs colour; the spell is below.`, or `hob: not a spell as said; ...`: never the
-model's words) and the plant spell with blanks (and, when the policy names `escalateTo`, a short
-copy to that principal), `card` with the garden card, `none` with silence, still one attempt.
+model's words) and the plant spell with blanks, `card` with the garden card, `none` with silence, still one attempt.
 
 Refuted by: a spell in the model's text not planting, `none` offering a card, an `ask` asked
 again or answered without its question, or a second interpretation being requested.
@@ -37,15 +36,17 @@ import ./Text.obend as Text
 def forms() -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: {card: "garden", action: "plant", fields: Form.Fields.cons({head: {name: "colour", kind: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "amber"), "violet"), "silver")})}, tail: Form.Fields.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 80n})}, tail: Form.Fields.nil()})})}, tail: Lists.List::<Form.Form>.nil()})
 def need(text: String) -> String:
-  match Card.hobNeeds(Card.one(text), forms()):
+  match Card.hobNeeds(Form.Names.cons({head: text, tail: Form.Names.nil()}), forms()):
     case ask(a): textConcat("ask ", Text.joined(a.needs))
     case none(_): "none"
     case card(_): "card"
+    case said(_): "said"
 def said(text: String) -> String:
   match Card.hobSaid(text):
     case ask(_): "ask"
     case none(_): "none"
     case card(_): "card"
+    case said(_): "said"
 """
 
 
@@ -88,20 +89,24 @@ class Resumed(test_chain.Chain):
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed
 
-    def test_words_that_are_no_spell_are_none_and_end_with_no_card(self):
+    def test_hobs_prose_is_its_line_beside_the_card_the_words_were_for(self):
+        """hob's answer that is no spell and no prefix is `said` (the host's): its line stands above the garden's card,
+        never inside it."""
         self.policy()
         self.garden()
         self.say("What makes you think anyone needs a portal?")
-        _, quiet = self.settle("I think they are just chatting.")
-        self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
+        _, said = self.settle("A portal here is a door; the garden has none of its own.")
+        [card] = [o["text"] for o in said["receipt"]["offers"]]
+        self.assertEqual((said["status"], said["result"]["label"]), ("admitted", "usage"), said)
+        self.assertTrue(card.startswith("hob: A portal here is a door; the garden has none of its own.\n✾ THE NIGHT GARDEN\n"), card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_an_ask_is_one_attempt_whose_question_stands_over_the_plant_spell(self):
-        self.policy(escalate="claude-opus")
+        self.policy()
         self.garden()
         self.say("plant something pretty")
         first, asked = self.settle("ask: which colour?")
-        # One attempt: nothing is asked again, and the policy's escalate model is not tried.
+        # One attempt: nothing is asked again.
         self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "unclear"), asked)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         self.assertEqual(first["policy"]["model"], "claude-haiku", first)

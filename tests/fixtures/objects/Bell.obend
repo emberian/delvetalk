@@ -89,8 +89,6 @@ def doored(edit: Card.DoorEdit, action: String) -> Activity<Card.Replied>:
 def doorWritten(entries: Plans.Entries<Card.Doorway, Card.Doorway>, action: String) -> Activity<Card.Replied>:
   let written(_) = world.write(extend(keep(), {doors: entries}))
   Card.Replied.done({action: action})
-def blurb() -> Card.Door:
-  {word: "bell", blurb: "A bell from the Night Garden: rain on it, ring it."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def colourName(colour: Colour) -> String:

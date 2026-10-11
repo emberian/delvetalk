@@ -24,33 +24,13 @@ record State:
   last: Nat
   gap: Nat
   subs: Relations.Relation<Sub>
-# What the law text cannot say: "a changed subscription is its principal's own" ranges over
-# the rows, and "tooSoon" compares old and new; the Bend predicate says both.
 law clock "ticks only count up": monotone(ticks)
 law last "the last tick only moves forward": monotone(last)
 law gap "the gap never changes": unchanged(gap)
 law owner "the owner never changes; only the owner reprograms or amends it; anyone ticks and subscribes": unchanged(owner) and (request.kind == 0 or request.subject == new.owner)
-# The two-tier law, in Bend: a tick sooner than gap after the last is tooSoon; every key
-# the write changed (a row added, replaced or retracted) is the requesting principal's; a
-# write no method made (a proposed `last` far ahead would stop every tick) is refused.
-def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if Plans.unnamed(request) then Plans.proposedRefused() else if new.ticks > old.ticks && old.ticks > 0n && request.context.clock < old.last + old.gap then Abi.Verdict.refused({clause: "tooSoon", reading: "A tick may not come sooner than the gap after the last."}) else if ownSubs(old.subs, new.subs, request.context.principal) then Abi.Verdict.admitted({}) else Abi.Verdict.refused({clause: "self", reading: "Only you change your own subscription."})
-def ownSubs(old: Relations.Relation<Sub>, new: Relations.Relation<Sub>, principal: String) -> Bool:
-  ownRows(Relations.rows(old), Relations.rows(new), principal)
-# One merge of the old and new rows in key order: a key on one side only, or a row that
-# differs, is a changed key and must be the principal's.
-def ownRows(old: Lists.List<Sub>, new: Lists.List<Sub>, principal: String) -> Bool:
-  match old:
-    case nil(_): Lists.any(new, fn(n: Sub) -> Bool: n.who != principal) == false
-    case cons(o): ownFrom(o.head, o.tail, new, principal)
-def ownFrom(old: Sub, olds: Lists.List<Sub>, new: Lists.List<Sub>, principal: String) -> Bool:
-  match new:
-    case nil(_): old.who == principal && ownRows(olds, new, principal)
-    case cons(n): ownStep(Relations.compare(subKey(old), subKey(n.head)), old, olds, n.head, n.tail, principal)
-def ownStep(order: Nat, old: Sub, olds: Lists.List<Sub>, new: Sub, news: Lists.List<Sub>, principal: String) -> Bool:
-  if order == 1n then (sameSub(old, new) || new.who == principal) && ownRows(olds, news, principal) else if order == 0n then old.who == principal && ownRows(olds, Lists.List.cons({head: new, tail: news}), principal) else new.who == principal && ownFrom(old, olds, news, principal)
-def sameSub(old: Sub, new: Sub) -> Bool:
-  old.every == new.every && old.note == new.note && old.since == new.since && old.handle == new.handle
+law tooSoon "A tick may not come sooner than the gap after the last.": new.ticks <= old.ticks or old.ticks == 0 or request.clock == old.last + old.gap or not (request.clock <= old.last + old.gap)
+law self "Only you change your own subscription.": changed(new.subs.who) by request.subject
+law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
 def subKey(sub: Sub) -> {who: String}:
   {who: sub.who}
 def relations() -> Relations.Decls:
@@ -116,8 +96,6 @@ form subscribe:
   every: natural 1..1000
   note: text 1..140
 form tick:
-def blurb() -> Card.Door:
-  {word: "tide", blurb: "Wake on a cadence: subscribe yourself; anyone may tick, never too soon."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def line(context: Abi.Context) -> Sub -> Document.Document:

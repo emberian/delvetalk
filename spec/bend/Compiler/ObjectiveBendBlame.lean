@@ -208,9 +208,24 @@ partial def explain (a : Assumptions) (ann : Annotations) (ctx : Context) (pos :
         match sub ctx 1 separator with
         | none => down ctx 1 separator
         | some s =>
-          if !l.type.isTextList a.bounds then
+          if l.type.listItem a.bounds != some .label then
             at_ pos (child 0) "textJoin takes a list of String" .mismatch none (some l.type)
           else mismatch pos (child 1) "textJoin takes a String separator" .label s.type
+    | .relationCount relation =>
+      match sub ctx 0 relation with
+      | none => down ctx 0 relation
+      | some r => at_ pos (child 0) "relationCount takes a Relation<T>" .mismatch none (some r.type)
+    | .relationLookup relation _ probe =>
+      match sub ctx 0 relation with
+      | none => down ctx 0 relation
+      | some r =>
+        match sub ctx 1 probe with
+        | none => down ctx 1 probe
+        | some p =>
+          if (r.type.relationItem a.bounds).isNone then
+            at_ pos (child 0) "relationLookup takes a Relation<T>" .mismatch none (some r.type)
+          else at_ pos (child 1) "relationLookup's key names columns of the row type, compared by a reusable probe"
+            .mismatch none (some p.type)
     | .toData inner =>
       match sub ctx 0 inner with
       | none => down ctx 0 inner
@@ -276,9 +291,11 @@ def step : ATerm → List Nat → Option (ATerm × List Nat)
   | .unary _ b, 0 :: rest | .get b _, 0 :: rest | .inject _ _ _ b, 0 :: rest | .perform _ _ b, 0 :: rest
   | .done _ _ b, 0 :: rest | .toData _ b, 0 :: rest => some (b, rest)
   | .app a _, 0 :: rest | .mix a _, 0 :: rest | .fix a _, 0 :: rest | .specification a _, 0 :: rest
-  | .prototype a _, 0 :: rest | .binary _ a _, 0 :: rest | .textJoin a _, 0 :: rest => some (a, rest)
+  | .prototype a _, 0 :: rest | .binary _ a _, 0 :: rest | .textJoin a _, 0 :: rest
+  | .relationCount a, 0 :: rest | .relationLookup a _ _, 0 :: rest => some (a, rest)
   | .app _ b, 1 :: rest | .mix _ b, 1 :: rest | .fix _ b, 1 :: rest | .specification _ b, 1 :: rest
-  | .prototype _ b, 1 :: rest | .binary _ _ b, 1 :: rest | .textJoin _ b, 1 :: rest => some (b, rest)
+  | .prototype _ b, 1 :: rest | .binary _ _ b, 1 :: rest | .textJoin _ b, 1 :: rest
+  | .relationLookup _ _ b, 1 :: rest => some (b, rest)
   | .ifZero a _ _, 0 :: rest | .ifBool a _ _, 0 :: rest => some (a, rest)
   | .ifZero _ b _, 1 :: rest | .ifBool _ b _, 1 :: rest => some (b, rest)
   | .ifZero _ _ c, 2 :: rest | .ifBool _ _ c, 2 :: rest => some (c, rest)

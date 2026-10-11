@@ -5,6 +5,7 @@
 import Lean.Data.Json
 import Theory.ObjectiveBendDemandData
 import Compiler.ObjectiveBendDataWire
+import Delvetalk.Turn
 
 namespace Delvetalk.EvaluateTerm
 open Lean (Json toJson)
@@ -57,6 +58,10 @@ def termOf : Nat → Json → Except String Term
     | "done" => return .done (← child 1)
     | "toData" => return .toData (← child 1)
     | "textJoin" => return .textJoin (← child 1) (← child 2)
+    | "relationCount" => return .relationCount (← child 1)
+    | "relationLookup" => do
+      let key ← (← (items[2]?.getD Json.null).getArr?).toList.mapM (·.getStr?)
+      return .relationLookup (← child 1) key (← child 3)
     | "refuse" => return .refuse (← (items[1]?.getD Json.null).getStr?)
     | "unary" => return .unary (← unaryOfName (← (items[1]?.getD Json.null).getStr?)) (← child 2)
     | "binary" => return .binary (← primitiveOfName (← (items[1]?.getD Json.null).getStr?)) (← child 2) (← child 3)
@@ -87,21 +92,24 @@ def shape (state : State) : RuntimeValue → Json
   | .variant label _ => Json.mkObj [("kind", toJson "inject"), ("label", toJson label)]
 
 /-- Run to a result, resuming each yielded Plan with the next response. With `stored`, the term
-is applied to a state whose named relations are stored cells fetched from the state's own rows
-(KERNEL-HANDOFF §15), run by the hosted runner, and the reply names the rows it forced; the
-evaluators run the same term applied to the state as a literal. -/
+is applied to a state whose named relations are stored cells over the state's own rows, as a
+turn's (`Turn.storeOfState`, the store's `bounded` fetch: rows, and keys for a lookup by the
+declared key; KERNEL-HANDOFF §15), run by the hosted runner, and the reply names the rows it
+forced and how far into each relation it looked (`reach`); the evaluators run the same term
+applied to the state as a literal. -/
 def evaluate (term : Term) (responses : List Term) (ticks : Nat)
-    (stored : Option (List (String × Data) × List (String × Array Data)) := none) : Json :=
+    (stored : Option (List (String × Data) × Delvetalk.Turn.Store) := none) : Json :=
   let limits : Limits := ⟨1000000, 100000⟩
   let budget : Budget := ⟨1000000, 100000000, 16777216⟩
   let fetch : Fetch := match stored with
-    | some (_, relations) => fun field position => (relations.lookup field).bind (·[position]?)
+    | some (_, store) => store.bounded
     | none => Fetch.none
   let runBounded := fun (limits : Limits) (ticks : Nat) (state : State) => match stored with
     | some _ => (forceHostedWith (fun _ => true) fetch limits budget.bytes ticks state).1
     | none => Delvetalk.Theory.ObjectiveBendDemandMachine.runBounded limits ticks state
   let reads := fun (state : State) (reply : Json) => match stored with
-    | some _ => reply.setObjVal! "forced" (toJson ((forcedRows state).map fun (f, j) => [toJson f, toJson j]))
+    | some _ => (reply.setObjVal! "forced" (toJson ((forcedRows state).map fun (f, j) => [toJson f, toJson j])))
+        |>.setObjVal! "reach" (toJson ((storedReach state).map fun (f, j) => [toJson f, toJson j]))
     | none => reply
   let rec go (fuel : Nat) (state : State) (responses : List Term) (plans : Array Json) : Json :=
     let done := fun (status : String) (value : Json) => Json.mkObj
@@ -128,7 +136,7 @@ def evaluate (term : Term) (responses : List Term) (ticks : Nat)
             | none => doneWith "stuck" plans
             | some next => go fuel next rest plans
   let start := match stored with
-    | some (state, relations) => storedInitial term state (relations.map fun (f, rows) => (f, rows.size))
+    | some (state, store) => storedInitial term state (store.relations.map fun r => (r.field, r.size))
     | none => initial term
   go 64 start responses #[]
 
@@ -138,22 +146,14 @@ def op (j : Json) : Except String Json := do
     | .ok r => (← r.getArr?).toList.mapM (termOf 4096)
     | .error _ => pure []
   let ticks := (j.getObjValAs? Nat "ticks").toOption.getD 200000
-  -- `stored: {state, relations}`: the term applied to the state, the named relation fields held
-  -- as stored cells over the state's own rows.
+  -- `stored: {state, relations: [{field, key}]}`: the term applied to the state, the named relation
+  -- fields held as stored cells over the state's own rows, keyed as named.
   let stored ← match j.getObjVal? "stored" with
     | .error _ => pure none
     | .ok s => do
-      let .record state ← Delvetalk.Compiler.ObjectiveBendDataWire.decodeData 256 (← s.getObjVal? "state")
-        | throw "stored state must be a record"
-      let names ← (← s.getObjVal? "relations").getArr?
-      let relations ← names.toList.mapM fun name => do
-        let field ← name.getStr?
-        let some (.variant "rows" (.record [("items", items)])) := state.lookup field
-          | throw s!"stored field {field} is not a relation"
-        let some rows := Delvetalk.Compiler.ObjectiveBendDataWire.listItems? items
-          | throw s!"stored field {field} holds no list"
-        pure (field, rows)
-      pure (some (state, relations))
+      let state ← Delvetalk.Compiler.ObjectiveBendDataWire.decodeData 4096 (← s.getObjVal? "state")
+      let .record fields := state | throw "stored state must be a record"
+      pure (some (fields, ← Delvetalk.Turn.storeOfState state (← s.getObjVal? "relations")))
   return Json.mkObj [("schema", toJson "delvetalk.evaluate-term.v1"), ("result", evaluate term responses ticks stored)]
 
 end Delvetalk.EvaluateTerm

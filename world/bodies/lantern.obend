@@ -40,8 +40,6 @@ def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity
   Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("lines door undoor example") else Text.words("lines")
-def blurb() -> Card.Door:
-  {word: "lantern", blurb: "A lantern: lit when the door it watches opens."}
 def methods() -> Lists.List<String>:
   Text.words("~changedMarks")
 def watched(state: State) -> String:

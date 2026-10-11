@@ -83,6 +83,28 @@ def resolve(method, path):
 
 
 
+def follow(host, principal, intent, reply, sleep=time.sleep):
+    """The texts offered to `principal` by a turn and every turn it handed on (its `sends`, delivered under the same
+    principal with the send's id as intent: a card handing prose to the commonplace, hob's planting sent to the garden),
+    waiting up to WAIT_MAX seconds while any of them is suspended on hob or not yet delivered: the play page's turn and
+    the hand's Speak."""
+    watch = {intent}
+    done = {} if reply.get('status') == 'suspended' else {intent: reply['receipt']}  # the turn as it answered
+    watch |= {s['id'] for r in done.values() for s in r.get('sends') or [] if s.get('id')}
+    after = reply['receipt']['height'] - 1
+    for _ in range(WAIT_MAX + 1):
+        for i in sorted(watch - set(done)):
+            got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': i}).get('receipt') or {}
+            if ((got.get('outcome') or {}).get('tag') or 'suspended') != 'suspended':
+                done[i] = got
+                watch |= {s['id'] for s in got.get('sends') or [] if s.get('id')}
+        if watch <= set(done):
+            break
+        sleep(WAIT_STEP)
+    seen = host.send({'op': 'world-offers', 'principal': principal, 'after': after}).get('offers') or []
+    return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch]
+
+
 def typed(value):
     """Plain JSON as the host's typed data: text is a label, an integer a natural, an object a record."""
     if isinstance(value, dict):
@@ -365,26 +387,6 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         info = self.host.send({'op': 'serve-status'})
         if force or info.get('pid') != self.serve_pid:
             self.library, self.serve_pid = info.get('library'), info.get('pid')
-
-    def follow(self, principal, intent, reply):
-        """The texts offered to `principal` by a turn and every turn it handed on (its `sends`, delivered under the same
-        principal with the send's id as intent: a card handing prose to the commonplace, hob's planting sent to the garden),
-        waiting up to WAIT_MAX seconds while any of them is suspended on hob or not yet delivered."""
-        host, watch = self.host, {intent}
-        done = {} if reply.get('status') == 'suspended' else {intent: reply['receipt']}  # the turn as it answered
-        watch |= {s['id'] for r in done.values() for s in r.get('sends') or [] if s.get('id')}
-        after = reply['receipt']['height'] - 1
-        for _ in range(WAIT_MAX + 1):
-            for i in sorted(watch - set(done)):
-                got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': i}).get('receipt') or {}
-                if ((got.get('outcome') or {}).get('tag') or 'suspended') != 'suspended':
-                    done[i] = got
-                    watch |= {s['id'] for s in got.get('sends') or [] if s.get('id')}
-            if watch <= set(done):
-                break
-            self.sleep(WAIT_STEP)
-        seen = host.send({'op': 'world-offers', 'principal': principal, 'after': after}).get('offers') or []
-        return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch]
 
     def used(self, credential):
         now = self.clock()
@@ -913,7 +915,7 @@ class Handler(BaseHTTPRequestHandler):
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
             for t in turns:
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
-            offers = [o for t in turns if 'receipt' in t for o in self.server.follow(did, t['receipt']['identity']['intent'], t)]
+            offers = [o for t in turns if 'receipt' in t for o in follow(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)]
             names = self.server.handles(pages.A_DID.findall(name))
             if r.get('status') == 'spells':
                 said = ''.join(pages.T['said'].format(cls=html.escape(str(t.get('status'))), icon=pages.stamp(t.get('status'), word=False),

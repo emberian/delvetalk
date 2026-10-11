@@ -12,9 +12,8 @@ import ./Text.obend as Text
 # await exactly that slot: the reveal opens the move only once the opponent's
 # commitment is admitted, and suspends until it is.
 type State = Seats.State
-# Only its own methods write it: a write no method made is refused (`methods`).
-def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if Plans.unnamed(request) then Plans.proposedRefused() else Abi.Verdict.admitted({})
+law owner "only its player reprograms or amends it; anyone else only by its methods": request.kind == 0 or request.subject == new.owner
+law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
 def initial() -> State:
   {table: Plans.nobody(), seat: 0n, owner: "", opponent: "", rival: Plans.nobody(), round: 0n, digest: "", opened: false, source: 0n, target: 0n}
 type Done = Seats.Done
@@ -66,8 +65,6 @@ def methods() -> Lists.List<String>:
   Text.words("next commit reveal")
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def blurb() -> Card.Door:
-  {word: "seat", blurb: "Your seat at a commit-reveal table."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def render(state: State, context: Abi.Context) -> Document.Document:

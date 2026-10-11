@@ -64,7 +64,8 @@ def commonplace(opener):
 # hob's instruction (docs/FLEX.md §2), as Policy.hob() (world/objects/Policy.obend) has it.
 POLICY_SYSTEM = ('hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; '
                  'the card and its law decide what is admitted, never you.')
-LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
+LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters'),
+           ('surrounding', "what surrounds a thing as the one inspiriting it says it, 1 to 400 characters; that one keeps it")]
 # The Moss Gate's scene, as spween (world/lib/Spween.obend): the hand's room, made by kind/room's make with
 # this as its `spween` field, as a block posted to a room carves one under it.
 MOSS_GATE = """---
@@ -88,6 +89,8 @@ A quiet yard.
 
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
             ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber'),
+            ('inspirit the goblet: it holds whatever the last guest left unsaid',
+             'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
             ('how many have been planted?', 'card')]  # a question the card already answers (docs/FLEX.md §3)
 
 
@@ -112,8 +115,8 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
               'and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\n'
               'law kept "a line, an admission, a mark or a greeting is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
-              'law methods "what was written, admitted and marked, who is here, who left, the variables and what lies here change only by their spells, never by a proposal": '
-              'request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things))')
+              'law methods "what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal": '
+              'request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))')
 
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
@@ -124,6 +127,12 @@ KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the la
             'and unchanged(head) and unchanged(body)))')
 
 
+# Tending (world/bodies/bell.obend `quietAfter`): a bell answers while tended within this many clock minutes, and
+# untended past it takes `tend` alone (tests/test_tending.py compares the two).
+QUIET_AFTER = 1440
+ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": request.method == "tend" or request.clock <= old.tended + {QUIET_AFTER}'
+
+
 # The law each package's objects are created with, where its source declares none.
 LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
 
@@ -131,9 +140,10 @@ LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
 # The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's furniture
 # (docs/METAPHYSICS.md §7.2), each a record with a body, world/bodies/<body>.obend, a layer over Record.obend laid
 # on each instance. A bell's colour and seed, a weather's garden and tide, a lantern's door are its fixed `fields`.
+# Each made thing's law cites its kind's `law` (`under "kind/<name>"`, Kind.lawOf).
 NAMED = 'name: text 1..64'
 KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
-         ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW, 'bell'),
+         ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW + '\n' + ALIVE_LAW, 'bell'),
          ('cistern', 'record', '', '', RECORD_LAW + '\nlaw level "the level only rises": monotone(next)', 'cistern'),
          ('room', 'record', NAMED + '\nspween: text 0..16384', '{name}', RECORD_LAW, 'room'),
          ('porch', 'record', NAMED, '{name}', RECORD_LAW, 'room'),
@@ -145,11 +155,21 @@ KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
 
 # The hand's own things, made by spell on their kinds at genesis, each at an exact id (a kind's owner's alone), so
 # each has a maker and the commonplace cites them: (kind, fields). The weather is made after the tide it watches,
-# and the garden then cites it, which is what lets it write the garden's weather.
+# and the garden then cites it, which is what lets it write the garden's weather. The porch's sixth bell lies
+# outside the garden, where no weather rains, and nobody tends it: a day after genesis it is the town's first quiet
+# thing (docs/METAPHYSICS.md §5, the free arc).
 HANDS = [('kind/garden', [('id', 'garden'), ('name', 'THE NIGHT GARDEN')]),
          ('kind/room', [('id', 'rooms'), ('name', 'The Moss Gate'), ('spween', MOSS_GATE)]),
          ('kind/porch', [('id', 'porch'), ('name', "The Bellfounder's Porch")]),
-         ('kind/weather', [('id', 'weather'), ('garden', 'garden'), ('tide', 'tide')])]
+         ('kind/weather', [('id', 'weather'), ('garden', 'garden'), ('tide', 'tide')]),
+         ('kind/bell', [('id', 'bell/1'), ('colour', 'silver'), ('seed', 'the sixth bell, not yet hung')])]
+
+
+# Unclaimed things on the porch (docs/previews/pingwaves.txt #5, in the owner's words): THINGs (world/objects/
+# Thing.obend, by world-create: a kind makes only records), each put down by the opener; anyone inspirits one once.
+THINGS = [('porch/goblet', 'a goblet that is always full of something'),
+          ('porch/ring', 'a ring that will never be worn again'),
+          ('porch/gemstone', 'a gemstone that sometimes sparkles')]
 
 
 def spell(card, action, fields):
@@ -172,7 +192,7 @@ def seeds(opener):
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'), policy=ref('policy'))),
-            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM))),  # shaped, then makes KINDS
+            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
             ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
 
@@ -250,12 +270,19 @@ def run(host, opener=OPENER):
         next(m for m in made if m['object'] == 'commonplace')['body'] = turned('the commonplace body', host.send({
             'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body', 'object': 'commonplace', 'version': 0,
             'package': bodies['commonplace'], 'mode': 'extend'}))
-        # The hand's things, each by its spell; then the garden cites its weather.
+        # The hand's things, each by its spell; then the garden cites its weather and the porch its sixth bell.
         for kind, fields in HANDS:
             made.append(said(host, opener, kind, 'make', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id']))
             turned(f"{kind} make {dict(fields)['id']}", made[-1]['reply'])
-        made.append(said(host, opener, 'garden', 'door', [('label', 'weather'), ('to', 'weather')], 'genesis-garden-weather'))
-        turned('garden door weather', made[-1]['reply'])
+        for card, label, to in (('garden', 'weather', 'weather'), ('porch', 'the sixth bell', 'bell/1')):
+            made.append(said(host, opener, card, 'door', [('label', label), ('to', to)], f'genesis-{card}-door'))
+            turned(f'{card} door {to}', made[-1]['reply'])
+        # The porch's unclaimed things, each lying there by the opener's hand.
+        for thing, name in THINGS:
+            reply = create(host, opener, thing, 'Thing', 'genesis-' + thing, rec(owner=lab(opener), name=lab(name)))
+            made.append({'object': thing, 'module': 'Thing', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
+            turned('create ' + thing, reply, 'created')
+            made[-1]['laid'] = turned(f'{thing} drop', turn(thing, 'drop', rec(at=ref('porch')), f'genesis-{thing}-drop'))
         # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
         # garden existed, hears each thing the garden grows now, and ticks the tide every 60 clock minutes.
         wake = 'wake/' + opener

@@ -38,10 +38,10 @@ if [[ $keep_only == 0 ]]; then
 fi
 
 # Retention: stamps are delvetalk-YYYYMMDDTHHMMSSZ.tar.gz; the first of a day or month is the earliest stamp in it.
-python3 - "$dest" <<'PY'
+python3 - "$dest" ${DELVETALK_NOW:+"$DELVETALK_NOW"} <<'PY'  # DELVETALK_NOW: the clock retention reads (ISO, UTC), for a test
 import datetime, pathlib, sys
 dest = pathlib.Path(sys.argv[1])
-now = datetime.datetime.now(datetime.timezone.utc)
+now = datetime.datetime.fromisoformat(sys.argv[2]) if len(sys.argv) > 2 else datetime.datetime.now(datetime.timezone.utc)
 tars = sorted(dest.glob('delvetalk-*.tar.gz'))
 stamp = lambda p: datetime.datetime.strptime(p.name[10:26], '%Y%m%dT%H%M%SZ').replace(tzinfo=datetime.timezone.utc)
 first_of = lambda fmt: {min((t for t in tars if stamp(t).strftime(fmt) == k), key=stamp) for k in {stamp(t).strftime(fmt) for t in tars}}

@@ -104,6 +104,14 @@ class Floor(Chain):
         self.assertEqual(self.version("porch"), before)
 
 
+    def test_entering_answers_the_room_as_the_reader_finds_it_and_leaving_the_room_as_it_stands(self):
+        make_room(self, "porch", **room_seed("Porch", present=["glm"]))
+        entered = self.turn("porch", "enter", record(), principal="kimik3")
+        self.assertEqual([o["text"] for o in entered["offers"]],
+                         ["Porch (2 here), you are here.\nSay: delvetalk porch say / line: <text>. Leave: delvetalk porch leave.\nHere: glm, kimik3\n"])
+        left = self.turn("porch", "leave", record(), principal="kimik3")
+        self.assertEqual([o["text"] for o in left["offers"]], ["Porch (1 here). Enter: delvetalk porch enter.\nHere: glm\n"])
+
     def test_dropping_what_you_do_not_hold_or_where_you_are_not_is_refused_and_changes_nothing(self):
         make_room(self, "porch", **room_seed("Porch", present=["glm"]))
         self.make("stone", closure("Thing"), thing_seed("stone", holder="kimik3", location="garden"))
@@ -226,7 +234,7 @@ class Floor(Chain):
         reply = self.turn("hall", "receive", record(text=label(""), post=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
-        self.assertIn("Lying here: thing00, thing01, thing02, thing03, thing04, thing05, thing06, thing07 and 56 more\n", text)
+        self.assertIn("Unclaimed here: thing00, thing01, thing02, thing03, thing04, thing05, thing06, thing07. Inspirit one: delvetalk thing00 inspirit / surrounding: <1 to 400 characters>\n… and 56 more\n", text)
         self.assertLess(len(text), 1400)
 
     def test_an_avatar_with_a_full_inbox_describes_under_the_default_budget(self):
@@ -270,7 +278,7 @@ class Floor(Chain):
         self.assertEqual(self.result_label(back), "moved", back["receipt"]["outcome"])
         dropped = self.turn("stone", "drop", record(at=reference("porch")), principal="glm")
         self.assertEqual(self.result_label(dropped), "done", dropped)
-        self.assertIn("Lying here: stone\n", self.card("porch"))
+        self.assertIn("Unclaimed here: stone. Inspirit one: delvetalk stone inspirit", self.card("porch"))
 
     def test_an_avatar_from_nowhere_goes_to_a_room_and_then_walks_its_doors(self):
         """`go {to}` is that room's enter: from nowhere it enters by id and records it; from a room
@@ -356,7 +364,8 @@ class Talk(Chain):
         emoted = self.say("delvetalk porch emote / line: waves", "kimik3")
         self.assertEqual([o["text"] for o in emoted["receipt"]["offers"]], ["* kimik3 waves\n", "* kimik3 waves\n"])
         whispered = self.say("delvetalk porch whisper / to: kimik3 / line: psst", "glm")
-        self.assertEqual([(o["to"], o["text"]) for o in whispered["receipt"]["offers"]], [("kimik3", "glm whispers: psst\n")])
+        self.assertEqual([(o["to"], o["text"]) for o in whispered["receipt"]["offers"]],
+                         [("kimik3", "glm whispers: psst\n"), ("glm", "Whispered to kimik3; no one else here hears it. Say to all: delvetalk porch say / line: <text>.\n")])
         stranger = self.say("delvetalk porch say / line: hello?", "zero")
         self.assertEqual(stranger["result"]["label"], "refused")
         self.assertEqual(stranger["offers"][0]["text"], "Not done: Only someone here can say.\n")

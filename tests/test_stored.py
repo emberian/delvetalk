@@ -15,6 +15,9 @@ LIST = """edition ObjectiveBend 1
 sum List<T>:
   nil: {}
   cons: {head: T, tail: List<T>}
+sum Maybe<T>:
+  none: {}
+  some: {value: T}
 """
 
 RELATION = """edition ObjectiveBend 1
@@ -85,6 +88,28 @@ def counted(state: State) -> Activity<Nat>:
   match world.write({field: 0n, before: state.count, after: state.count + 1n}):
     case written(_): size(rowsOf(state.rains))
     case refused(_): 0n
+def rainCount(state: State) -> Nat:
+  relationCount(state.rains)
+def rainAt(state: State, n: Nat) -> String:
+  match relationLookup(state.rains, {n: n}):
+    case some(s): s.value.text
+    case none(_): "none"
+def rainHere(state: State, n: Nat) -> Bool:
+  match relationLookup(state.rains, {n: n}):
+    case some(_): true
+    case none(_): false
+def rainByText(state: State, t: String) -> String:
+  match relationLookup(state.rains, {text: t}):
+    case some(s): natText(s.value.n)
+    case none(_): "none"
+def countedNow(state: State) -> Activity<Nat>:
+  match world.write({field: 0n, before: state.count, after: state.count + 1n}):
+    case written(_): relationCount(state.rains)
+    case refused(_): 0n
+def lookedUp(state: State) -> Activity<String>:
+  match world.write({field: 0n, before: state.count, after: state.count + 1n}):
+    case written(_): rainAt(state, 1500n)
+    case refused(_): "refused"
 def planned(state: State) -> Activity<Nat>:
   match world.write({field: 1n, before: nAt(rowsOf(state.rains), 1n), after: 0n}):
     case written(_): state.count
@@ -238,6 +263,88 @@ class StoredReads(StoredCase):
         self.assertEqual(reply["value"], nat(2))
         self.assertEqual(self.keys(reply, "rains"), [0, 1, 2, 3, 4])
         self.assertEqual(self.keys(reply, "marks"), [2, 4])
+
+
+class RelationPrimitives(StoredCase):
+    """`relationCount` and `relationLookup` (KERNEL-HANDOFF section 16 item 15): a stored relation
+    answers a count from its handle and a lookup by its key with a binary search over its keys,
+    fetching one row and only when it is read; any other relation is walked to the same answer."""
+
+    def run_entry(self, entry, the_state, *rest, stored=True):
+        request = {"op": "run", "artifact": self.artifact(entry), "arguments": [the_state, *rest],
+                   "stored": STORED if stored else [], "limits": {"ticks": "1000000"}}
+        return self.host().send(request)
+
+    def keys(self, reply):
+        return [int(r["key"]["fields"][0]["value"]["value"]) for r in reply["reads"]["rows"]]
+
+    def test_stored_and_walked_relations_answer_alike(self):
+        # Refuted if the stored path and the walk of the same rows disagree on any answer.
+        s = state(40)
+        for entry, rest in (("rainCount", ()), ("rainAt", (nat(17),)), ("rainAt", (nat(99),)),
+                            ("rainHere", (nat(0),)), ("rainHere", (nat(40),))):
+            with self.subTest(entry=entry, rest=rest):
+                walked = self.run_entry(entry, s, *rest, stored=False)
+                self.assertEqual(walked["status"], "finished", walked)
+                self.assertEqual(self.run_entry(entry, s, *rest)["value"], walked["value"])
+
+    def test_a_count_reads_no_row_and_costs_the_same_at_any_size(self):
+        # Refuted if a count forces a row, reports less than the whole key set, or pays per row.
+        replies = [self.run_entry("rainCount", state(n)) for n in (0, 5, 2048)]
+        self.assertEqual([r["value"] for r in replies], [nat(0), nat(5), nat(2048)])
+        self.assertEqual([r["reads"] for r in replies],
+                         [{"rows": [], "spans": [{"field": "rains", "reach": n + 1}]} for n in (0, 5, 2048)])
+        self.assertEqual(len({r["ticksUsed"] for r in replies}), 1)
+
+    def test_a_count_is_one_tick(self):
+        # Refuted if the count step itself costs more than one transition (the profile's frame).
+        first = self.host().send({"op": "turn-start", "artifact": self.artifact("countedNow"),
+                                  "arguments": [state(2048)], "stored": STORED, **BINDING})
+        done = self.host().send({"op": "turn-resume", "artifact": self.artifact("countedNow"),
+                                 "checkpoint": first["checkpoint"], "response": WRITTEN, "stored": STORED,
+                                 "state": state(2048), "profile": True, **BINDING})
+        self.assertEqual(done["value"], nat(2048))
+        rows = {p["kind"]: p for p in done["profile"]}
+        self.assertEqual((rows["returned.relationRows"]["steps"], rows["returned.relationRows"]["ticks"]), (1, 1))
+        self.assertNotIn("fetch.row", rows)
+
+    def test_a_lookup_fetches_the_one_row_it_reads(self):
+        # Refuted if a hit over 2,048 rows fetches any row but its own or reports a span past it.
+        reply = self.run_entry("rainAt", state(2048), nat(1500))
+        self.assertEqual(reply["value"], {"tag": "label", "value": "rain 1500"})
+        self.assertEqual(self.keys(reply), [1500])
+        self.assertEqual(reply["reads"]["spans"], [{"field": "rains", "reach": 1501}])
+
+    def test_a_lookup_pays_its_row_and_its_probes(self):
+        # Refuted if the found row is not charged 1 + 2 bytes, or a search probes more than
+        # log2(n) + 1 keys: twelve over 2,048 rows.
+        first = self.host().send({"op": "turn-start", "artifact": self.artifact("lookedUp"),
+                                  "arguments": [state(2048)], "stored": STORED, **BINDING})
+        done = self.host().send({"op": "turn-resume", "artifact": self.artifact("lookedUp"),
+                                 "checkpoint": first["checkpoint"], "response": WRITTEN, "stored": STORED,
+                                 "state": state(2048), "profile": True, **BINDING})
+        self.assertEqual(done["value"], {"tag": "label", "value": "rain 1500"})
+        rows = {p["kind"]: p for p in done["profile"]}
+        row = done["reads"]["rows"][0]["bytes"]
+        self.assertEqual((rows["fetch.row"]["steps"], rows["fetch.row"]["ticks"]), (1, 1 + 2 * row))
+        self.assertLessEqual(rows["fetch.key"]["steps"], 12)
+        self.assertLess(done["ticksUsed"], 2000)
+
+    def test_presence_reads_no_row(self):
+        # Refuted if asking whether a key is present fetches its row.
+        hit, miss = self.run_entry("rainHere", state(2048), nat(7)), self.run_entry("rainHere", state(2048), nat(5000))
+        self.assertEqual((hit["value"], miss["value"]), ({"tag": "boolean", "value": True}, {"tag": "boolean", "value": False}))
+        self.assertEqual((hit["reads"]["rows"], miss["reads"]["rows"]), ([], []))
+        self.assertEqual(hit["reads"]["spans"], [{"field": "rains", "reach": 8}])
+        self.assertEqual(miss["reads"]["spans"], [{"field": "rains", "reach": 2049}])
+
+    def test_a_lookup_by_columns_that_are_not_the_key_is_refused(self):
+        # Refuted if a stored relation searched by a non-key column answers (its rows are not in
+        # that column's order); the walk of the same rows answers.
+        reply = self.run_entry("rainByText", state(6), {"tag": "label", "value": "rain 3"})
+        self.assertEqual((reply["status"], reply["reads"]["rows"]), ("refused", []), reply)
+        walked = self.run_entry("rainByText", state(6), {"tag": "label", "value": "rain 3"}, stored=False)
+        self.assertEqual(walked["value"], {"tag": "label", "value": "3"})
 
 
 if __name__ == "__main__":

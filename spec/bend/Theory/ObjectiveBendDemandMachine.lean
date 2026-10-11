@@ -53,6 +53,16 @@ inductive Stored where
   | cons (field : String) (position size : Nat)
   /-- The row at `position`, fetched from the host. -/
   | row (field : String) (position : Nat)
+  /-- The row at `position` projected onto the columns `key` (`relationLookup`'s probe), fetched
+  from the host, which answers only when `key` is the relation's declared key. -/
+  | key (field : String) (position : Nat) (key : List String)
+  /-- What a lookup found at `position`: the payload `{value}` of its `some`, the row unforced. -/
+  | found (field : String) (position : Nat)
+  /-- What a lookup found absent: the payload `{}` of its `none`; the sought key lies below
+  the row at `position` (at `size`: past every row). -/
+  | absent (field : String) (position : Nat)
+  /-- A relation's row count (`relationCount`), read from its handle. -/
+  | size (field : String) (size : Nat)
   deriving Repr
 inductive Cell where
   | suspended (origin : Closure)
@@ -65,6 +75,13 @@ inductive Cell where
   /-- A stored part of the turn's state (`Stored`): `none` unforced, `some` its WHNF once
   forced, kept with its provenance so a turn's reads are read off its heap. -/
   | stored (part : Stored) (value : Option RuntimeValue)
+  deriving Repr
+/-- What a relation walk (`relationCount`, `relationLookup`) is doing. -/
+inductive Walk where
+  /-- Counting: the cons cells passed so far. -/
+  | count (counted : Nat)
+  /-- Looking up by the columns `key`; `probe` is the probe's cell. -/
+  | lookup (key : List String) (probe : Address)
   deriving Repr
 inductive Frame where
   | argument (term : Term) (environment : Environment)
@@ -88,6 +105,14 @@ inductive Frame where
   | joinCons (separator accumulated : String) (first : Bool)
   /-- `textJoin`: a head is being forced; the tail cell is next. -/
   | joinHead (separator accumulated : String) (first : Bool) (tail : Address)
+  /-- A relation is being forced to `rows payload`; a stored one answers from its handle. -/
+  | relationRows (walk : Walk)
+  /-- A relation's list cell (nil or cons) is being forced. -/
+  | relationList (walk : Walk)
+  /-- A walked row's projection is being probed; `payload` is its cons payload. -/
+  | relationProbe (key : List String) (probe payload : Address)
+  /-- The stored key at the middle of positions `low` to `high` is being probed. -/
+  | relationSearch (key : List String) (probe : Address) (field : String) (low high : Nat)
   deriving Repr
 inductive Refusal where
   | unbound | missingCell | missingField | wrongValue | invalidUpdate | capacity | missingArm
@@ -186,7 +211,45 @@ def forceStored (heap : Array Cell) : Stored → Option (Array Cell × RuntimeVa
     let address := heap.size
     some ((heap.push (.stored (.row field position) none)).push (.stored (.spine field (position + 1) size) none),
       .record [("head", address), ("tail", address + 1)])
-  | .row _ _ => none
+  | .found field position =>
+    let address := heap.size
+    some (heap.push (.stored (.row field position) none), .record [("value", address)])
+  | .absent _ _ => some (heap, .record [])
+  | .size _ size => some (heap, .natural size)
+  | .row _ _ | .key _ _ _ => none
+
+/-- The stored parts the hosted runner fetches (`ObjectiveBendDemandData.fetchable`): exactly those `forceStored` cannot force. -/
+def Stored.fetched : Stored → Bool
+  | .row _ _ | .key _ _ _ => true
+  | _ => false
+
+/-- How far into a stored relation's key order a cell shows the run looked: one past the furthest
+position whose key it depends on, `size + 1` for the whole key set. A forced spine cell at `j`
+(it saw whether row `j` exists, `size + 1` for the `nil`); a lookup's `found` or `absent` at
+`j`, forced or not (the sought key is row `j`'s, or lies below it, or past every row at
+`size`); a `size` (a count reads the whole key set). Probed keys say nothing more: the lookup's
+answer depends only on where the sought key falls. -/
+def Cell.reach : Cell → Option (String × Nat)
+  | .stored (.spine field position _) (some _) => some (field, position + 1)
+  | .stored (.found field position) _ | .stored (.absent field position) _ => some (field, position + 1)
+  | .stored (.size field size) _ => some (field, size + 1)
+  | _ => Option.none
+
+/-- A relation's `rows` payload held by the host: its field and row count. -/
+def storedItems : Option Cell → Option (String × Nat)
+  | some (.stored (.items field size) _) => some (field, size)
+  | _ => none
+
+/-- One move of the binary search over positions `low` to `high` of a stored relation: probe the
+key in the middle (a stored `key` cell, fetched by the hosted runner), or, the range empty,
+answer `none` with the position the sought key lies below (`absent`). -/
+def searchStep (heap : Array Cell) (key : List String) (probe : Address) (field : String)
+    (low high : Nat) (rest : List Frame) : State :=
+  let address := heap.size
+  if low < high then
+    ⟨heap.push (.stored (.key field ((low + high) / 2) key) none), .enter probe,
+      .argument (.bound 0) [address] :: .relationSearch key probe field low high :: rest⟩
+  else ⟨heap.push (.stored (.absent field low) none), .returned (.variant "none" address), rest⟩
 
 def allocateFields (heap : Array Cell) (environment : Environment)
     (fields : List (String × Term)) : Array Cell × List (String × Address) :=
@@ -265,6 +328,11 @@ def stepRaw (state : State) : State :=
     | .refuse reason => {state with control:=.refused (.program reason)}
     | .textJoin list separator =>
       {state with control:=.evaluate separator environment, stack:=.joinSeparator list environment::state.stack}
+    | .relationCount relation =>
+      {state with control:=.evaluate relation environment, stack:=.relationRows (.count 0)::state.stack}
+    | .relationLookup relation key probe =>
+      let address := state.heap.size
+      {state with heap:=state.heap.push (.suspended ⟨probe,environment⟩), control:=.evaluate relation environment, stack:=.relationRows (.lookup key address)::state.stack}
     | .perform plan =>
       if forcingShared state.stack then {state with control:=.refused .sharedEffect} else
       let address := state.heap.size
@@ -355,6 +423,48 @@ def stepRaw (state : State) : State :=
         | .label head =>
           let joined := if first then head else accumulated ++ separator ++ head
           {state with control:=.enter tail,stack:=.joinList separator joined false::rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .relationRows walk => match value with
+        | .variant tag payload =>
+          if tag == "rows" then
+            match walk, storedItems state.heap[payload]? with
+            | .count counted, some (field, size) =>
+              {state with heap:=state.heap.push (.stored (.size field size) (some (.natural size))), control:=.returned (.natural (counted + size)), stack:=rest}
+            | .lookup key probe, some (field, size) => searchStep state.heap key probe field 0 size rest
+            | _, _ => {state with control:=.enter payload, stack:=.field "items"::.relationList walk::rest}
+          else {state with control:=.refused .missingArm,stack:=rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .relationList walk => match value with
+        | .variant tag payload =>
+          if tag == "nil" then match walk with
+            | .count counted => {state with control:=.returned (.natural counted),stack:=rest}
+            | .lookup _ _ =>
+              let address := state.heap.size
+              {state with heap:=state.heap.push (.native (.record [])), control:=.returned (.variant "none" address), stack:=rest}
+          else if tag == "cons" then match walk with
+            | .count counted =>
+              {state with control:=.enter payload, stack:=.field "tail"::.relationList (.count (counted + 1))::rest}
+            | .lookup key probe =>
+              let address := state.heap.size
+              {state with heap:=state.heap.push (.suspended ⟨keyProjectionTerm key,[payload]⟩), control:=.enter probe, stack:=.argument (.bound 0) [address]::.relationProbe key probe payload::rest}
+          else {state with control:=.refused .missingArm,stack:=rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .relationProbe key probe payload => match value with
+        | .natural 0 =>
+          {state with control:=.enter payload, stack:=.field "tail"::.relationList (.lookup key probe)::rest}
+        | .natural 1 =>
+          let address := state.heap.size
+          {state with heap:=state.heap.push (.suspended ⟨.record [("value", .get (.bound 0) "head")],[payload]⟩), control:=.returned (.variant "some" address), stack:=rest}
+        | .natural _ =>
+          let address := state.heap.size
+          {state with heap:=state.heap.push (.native (.record [])), control:=.returned (.variant "none" address), stack:=rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .relationSearch key probe field low high => match value with
+        | .natural 0 => searchStep state.heap key probe field ((low + high) / 2 + 1) high rest
+        | .natural 1 =>
+          let address := state.heap.size
+          {state with heap:=state.heap.push (.stored (.found field ((low + high) / 2)) none), control:=.returned (.variant "some" address), stack:=rest}
+        | .natural _ => searchStep state.heap key probe field low ((low + high) / 2) rest
         | _ => {state with control:=.refused .wrongValue,stack:=rest}
 
 /-- A blackhole is a non-result divergence observation, not a catchable language
