@@ -203,7 +203,12 @@ class Checked(unittest.TestCase):
                 source = self.town.send(op='world-inspect', principal='did:plc:glm', object=target, source=True)['source']
                 self.assertTrue(source.startswith('layer over ./'), source[:80])
                 self.assertEqual(self.check(target, 'check-' + target.replace('/', '-')), '✾ WORKSHOP\n\nChecked: it compiles.\n')
-        self.assertIn('No object called ghost', json.dumps(self.check('ghost', 'check-ghost')))
+        # A missing card is the card's own refusal now: the turn is refused, the reason names it (kernel16, rewrite13).
+        got = self.town.send(op='world-turn', principal='did:plc:glm', object='workshop', method='receive',
+                             argument=record(text=label('delvetalk workshop check / target: ghost'),
+                                             post=label('at://x/p/check-ghost')), identity='check-ghost')
+        self.assertEqual((got['status'], got['public']['class']), ('refused', 'cardRefused'), got)
+        self.assertIn('No object called ghost', json.dumps(got))
 
 
 class Weather(unittest.TestCase):
