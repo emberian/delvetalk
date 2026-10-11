@@ -213,7 +213,7 @@ an open of the old one-file line format is refused naming it. Two cases, kept ap
   /j/town.journal.old --out /j/town.journal` (the old file renamed first; `--out` must not exist; without `--user` the
   pair belongs to the image's 65532) and checked with `verify.sh`. Rehearsed 2026-10-11: a 91-entry journal written out
   in the line format migrates back to the same two files, byte for byte.
-- *Another replay edition* ("journal replay edition 1; this host is 5"): nothing converts it, `migrate` included. It is
+- *Another replay edition* ("journal replay edition 1; this host is 6"): nothing converts it, `migrate` included. It is
   a new genesis into a fresh data directory (OPERATIONS section b, "The upgrade path"); the old directory is kept as it
   is, served read-only by its own old image if its receipts are to resolve. Done 2026-10-11 (b14df72e into `v3`, the
   edition-1 world left unserved in `v2`, so its receipts stop resolving): `docker compose --profile town down` on the
@@ -278,8 +278,8 @@ Avatar, Env and Wake (heights 30 to 40) and were skipped with no draft.
 and the home page shows `entry <n>` (a refused `world-open` shows `entry None`), the bridge's and interpreter's pid files
 are fresh, and the hand answers a tokenless `/hand/` with 404. `docker compose ps` shows all five `(healthy)`. Then
 `docker compose run --rm delvetalk-ops python3 -m transport hand status` (the journal height, the host pid) and
-`serve-status` are the host's own word: the binary's SHA-256, its pid, `replay` (the edition: 5 on foundation
-7884a972), the sealed library's pin, and per world its height, objects, clock, `replay` and `snapshot {resumed,
+`serve-status` are the host's own word: the binary's SHA-256, its pid, `replay` (the edition: 6 since
+host18's redelivery), the sealed library's pin, and per world its height, objects, clock, `replay` and `snapshot {resumed,
 refused}` (the height it reopened from: 0 is a replay from genesis). The DID document and the signed head:
 `curl -s <origin>/.well-known/did.json` names the `did:key` `transport repokey` printed as `#atproto`, and
 `com.atproto.sync.getLatestCommit?did=did:web:<host>` answers `{cid, rev}`; the commit block in `getRepo`'s CAR

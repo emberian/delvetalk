@@ -282,5 +282,73 @@ class Restart(Deliveries):
         self.assertEqual(len(self.deliver_all()), SENDS_PER_TURN)
         self.assertEqual(self.fields("lantern")["lit"], True)
 
+GATE = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  count: Nat
+  open: Nat
+def initial() -> State:
+  {count: 0n, open: 0n}
+def spun(n: Nat) -> Nat:
+  spun(n + 1n)
+def nudge(state: State, input: {target: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: {world: "", object: input.target}, method: "ping", argument: Data.of::<{target: String}>({target: ""})}):
+    case delivery(_): 1n
+    case _: 0n
+def ping(state: State, input: {target: String}, context: Abi.Context) -> Activity<Nat>:
+  if state.open == 0n then spun(0n) else pinged(context)
+def pinged(context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
+    case _: 1n
+def unlock(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {open: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
+    case _: 1n
+""", "nudge", "ping", "unlock")
+
+
+class Redelivery(TurnWorld):
+    """A send refused transiently (here `budget`: the receiver spins) stays pending and is delivered again once
+    the clock moves, up to `deliveryAttempts`; words handed on are not lost to a passing capacity."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("sender", "gate"):
+            r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
+                               modules=closure("World") + [{"name": "Gate", "source": GATE}], entry="initial", seed=record())
+            self.assertEqual(r["status"], "created", r)
+
+    def advance(self, to):
+        self.assertNotEqual(self.host.send(op="world-advance", principal="transport", height=to).get("status"), "error")
+
+    def deliveries(self):
+        return [e for e in journal_entries(self.path) if "delivery" in e]
+
+    def test_a_transient_refusal_is_delivered_again_once_the_clock_moves(self):
+        r = self.turn("sender", "nudge", record(target=label("gate")))
+        self.assertEqual(r["status"], "admitted", r)
+        [first] = self.deliveries()
+        self.assertEqual((first["outcome"]["tag"], first["outcome"]["class"]), ("refused", "budget"), first["outcome"])
+        self.assertEqual(self.host.send(op="world-pending")["count"], 1)  # kept, waiting for the clock
+        self.assertEqual(self.turn("gate", "unlock")["status"], "admitted")
+        self.assertEqual(len(self.deliveries()), 1)  # not again before the clock moves
+        self.advance(1)
+        self.assertEqual([d["outcome"]["tag"] for d in self.deliveries()], ["refused", "admitted"])
+        self.assertEqual(self.host.send(op="world-pending")["count"], 0)
+        v = self.host.send(op="world-view", principal="ember", object="gate")["state"]["fields"]
+        self.assertEqual({f["name"]: f["value"]["value"] for f in v}["count"], "1")
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-pending")["count"], 0)
+
+    def test_a_send_refused_every_time_is_dropped_after_its_attempts(self):
+        attempts = bounds()["host"]["deliveryAttempts"]
+        self.turn("sender", "nudge", record(target=label("gate")))
+        for minute in range(1, attempts + 2):
+            self.advance(minute)
+        self.assertEqual([d["outcome"]["class"] for d in self.deliveries()], ["budget"] * attempts)
+        self.assertEqual(self.host.send(op="world-pending")["count"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

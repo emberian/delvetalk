@@ -692,7 +692,7 @@ class Play(FrontCase):
         self.assertIn(b'a bell for the owls', out['page'])  # the interpreter's proposal, as the offer to this turn
 
     def test_a_question_to_a_card_in_words_waits_for_hobs_answer_and_names_the_card(self):
-        """The owner's question on /play/kinds (2026-10-11): the card hands the prose on, hob answers in prose, and the
+        """The owner's question on /play/kinds (2026-10-11): the card hands the prose on, hob answers (`say:`), and the
         page waits for that answer; the turn line names kinds, the card the words were addressed to."""
         out = {}
         t = threading.Thread(target=lambda: out.update(page=self.play('/play/kinds', 'what is a kind? what is the things in a cistern?')[2]))
@@ -704,7 +704,7 @@ class Play(FrontCase):
             time.sleep(0.1)
         answer = 'A kind is a template for a made thing. The kinds make form takes a name and an of.'
         r = self.host.send({'op': 'world-interpretation', 'id': pending[-1]['id'],
-                            'reply': {'status': 'replied', 'model': 'claude-haiku-5-5', 'json': None, 'raw': answer}})
+                            'reply': {'status': 'replied', 'model': 'claude-haiku-5-5', 'json': None, 'raw': 'say: ' + answer}})
         self.assertEqual((r['status'], r['receipt']['outcome']['verdict']), ('interpreted', {'tag': 'said', 'text': answer}), r)
         t.join(60)
         self.assertFalse(t.is_alive())

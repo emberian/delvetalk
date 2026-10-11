@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -124,7 +124,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | journal | `maxEntryBytes` 1 MiB (a record), `maxJournalEntries` 1,000,000, `maxJournalBytes` 4 GiB (chain and store), `maxHistoryLimit` 100, `maxCheckpointBytes` 512 KiB, `snapshotEvery` 1000 (`world-open {snapshotEvery}` per process), `maxSnapshotBytes` 256 MiB |
 | ledger | `maxDepth` 100, `chainWork` 10,000,000, `chainStorage` 1 MiB (creation may lower, never raise) |
 | time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64 |
-| delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
+| delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `deliveryAttempts` 4, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
 | programs, laws | `maxPackageBytes` 131072 (`Bounds.maxPackageBytes`), `maxLawBytes` 4096, `maxLawClauses` 16, `maxPreparedPrograms` 16, `maxCompiledPackets` 256, `maxBuilds` 1024, `maxReaders` 256, `maxLibraryModules` 256, `maxLibraryBytes` 786432 |
 | interpret | `maxUtteranceBytes` 8192, `maxOffersBytes` 65536, `maxReplyBytes` 262144 |
 | forms | `formTextMax` 1400, `formNaturalMax` 1000000000 |
@@ -1468,20 +1468,18 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    ("bump2 needs field n"), one of another type ("bump2's field n is not of its type"); the bare "argument does not
    conform" is left only for an input that is not a record of fields. Test: `tests/test_make.py` `Misfit`.
 
-142. **hob answers a question (host18; the owner on /play/kinds, 2026-10-11).** "what is a kind? what is the things
-   in a cistern?" got the kinds card twice: Haiku answered in prose, and `interpretVerdict` dropped prose that was
-   none of spell, `ask:`, `card`, `none`. A fifth answer, `say: <text>`, is the verdict `said {text}` (World.obend's
-   `Interpreted` gains `said`), clipped to `Limits.sayChars` (600) at the last sentence end (`sayClip`, else the
-   last word and `…`); prose with no prefix and no spell is `said` too (`saidVerdict`; the old prose arm,
-   `replied {text}`, is gone: `replied` is only `card`). A Response that cannot carry it hears `unclear`. Garden
-   and the commonplace take `said` as they took prose until the objects lane renders it as hob's line. The play
-   page follows the turn and every turn it handed on (`Front.follow`: each settled receipt's `sends`, delivered
-   under the same principal with the send's id as intent, so hob's planting sent on to the garden is followed)
-   while any is suspended or undelivered, up to `WAIT_MAX`, then shows what they offered; the turn line names
-   the card addressed (`bridge.turn_root(receipt, addressed)`), not the first root (a card that asks the
-   commonplace's `due` first). Tests: `test_interpret_object` (say, prose, both clips), `test_http.Play`
-   (a question to kinds). No replay edition change: the verdict is journaled, not re-derived, and replay's known
-   verdicts gain `said` (an edition-5 journal without one replays as before).
+142. **hob answers a question (host18; the owner on /play/kinds, 2026-10-11; the second playtest's D2).** A fifth
+   answer, `say: <text>`, is the verdict `said {text}` (World.obend's `Interpreted` gains `said`): at most
+   `Limits.saySentences` (2) sentences and `Limits.sayChars` (300) characters, cut only at a sentence end outside
+   quotes and backticks (`sayClip`), and nothing when the first sentence alone passes (`saidVerdict`). Only an
+   explicit `say:` is an answer: prose with no prefix and no spell is `none`, silence (the second playtest stopped
+   at 69158 on two paragraphs of the model's own posted as hob's line). `replied` is only `card`. A Response that
+   cannot carry `said` hears `unclear`. The play page follows the turn and every turn it handed on (`follow`:
+   each settled receipt's `sends`, delivered under the same principal with the send's id as intent) while any is
+   suspended or undelivered, up to `WAIT_MAX`, then shows what they offered; the turn line names the card
+   addressed (`bridge.turn_root(receipt, addressed)`). Tests: `test_interpret_object` (say, both bounds, an
+   example's full stop, prose, 69158 verbatim), `test_interpret_text`, `test_http.Play` (a question to kinds). No
+   replay edition change: the verdict is journaled, not re-derived; replay's known verdicts include `said`.
 
 143. **A post quoting a card casts nothing (host18; the owner's outreach on delve.town, 2026-10-11).** The root
    menu quoted under a greeting (its spells indented two spaces) was read as a spell and admitted `env observe`
@@ -1537,9 +1535,31 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    it lacked fields (`castSpell`'s `unclear` arm), else what `Spell.parse` reads in the text, `{card: "",
    action: ""}` for none; a card that does not declare it is unchanged (the shapes tried are fields, with spell,
    with misfit, with both). So the objects lane can delete Bend's last spell reader (`world/lib/Spell.obend`
-   `parse`, `Card.spellMissing`, `spellAction`). `withFields` is gone. Note: a derived `String` field is `text
-   0..formTextMax`, so since 5.147 it may be left out; only choices and numbers are "missing". Test:
-   `test_spell_turns` (a missing colour reaches `receive` with `Cast plant`; prose with `" "`).
+   `parse`, `Card.spellMissing`, `spellAction`). `withFields` is gone. A derived `String` field is `text
+   1..formTextMax` (`formKind`): required; only a form or kind that declares `0..N` makes one optional. Test:
+   `test_spell_turns` (a missing seed reaches `receive` with `Cast plant`; prose with `" "`).
+
+150. **A send refused transiently is delivered again (host18; replay edition 6).** The commonplace lost words handed
+   on to it when that delivery was refused `capacity` after the card's turn was admitted. Now `record` keeps a
+   delivery refused with a transient class pending (`redelivered`): `attempts` counted on it and `next` the clock
+   after the refusal's; `deliver` and `settleAll` take the first pending send that is `deliverable` (its `next`
+   passed), so it runs again once the clock moves, and the refusal of its `Limits.deliveryAttempts` (4)th attempt
+   is its last. The identity does not bind on a transient refusal, so the retry is the same delivery. Replay
+   derives the kept send: edition 6. Tests: `test_deliveries.Redelivery` (a spinning receiver refused `budget`,
+   unlocked, delivered when the clock moves, a reopen; a send refused every time dropped after four).
+
+151. **`world.principal {handle}` (host18; the objects lane's `offer / to:` and `lend / to:` a handle).** World.obend's
+   protocol gains `principal({handle}) -> Named` (`named {principal}` or `unknown {}`): the registry's principal
+   for a handle, case folded as a DNS name is (`Ops.principalNamed`, which the host's `quiet`/`unquiet` and
+   `lend` spells now share), `me` the turn's subject. A read: no root, nothing journaled beyond the turn. Test:
+   `test_world_object.PrincipalByHandle`.
+
+152. **A line whose name the form lacks ends a spell's fields (host18; the second playtest's D7, 69082).** `Spell.fit`
+   takes the bound fields up to the first whose name the form lacks (`hob: still owed …`, `smell: sweet`), as a
+   prose line with a colon already ended them: what follows is the reply's prose. So a spell is no longer refused
+   `unknownField` for a trailing line; a misnamed field is a missing one (`unclear`). `unknownField` stays the
+   lens spell's (`set` naming a field no lens has). Tests: `Spell.lean`'s `#guard`s (69082's shape),
+   `test_receive.Cards` (a `hob:` line after a whole planting plants), the recorded `fit` rows re-recorded.
 
 ## 6. Gotchas
 
@@ -1553,7 +1573,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   (evictions and changes owed as facts, lineage, reservations, attempts); 3 is host14 (root, ignore and
   shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126); 4 is host16 (roots
   read by their cells, the per-cell bound and ledger; 5.136); 5 is host17 (a layered package's shape is
-  its stack's, 5.138; the relational atoms judged and their citations roots, 5.139). Test:
+  its stack's, 5.138; the relational atoms judged and their citations roots, 5.139); 6 is host18 (a send refused
+  transiently stays pending, 5.150). Test:
   `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -1570,66 +1591,62 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host17 (5.137 to 5.141; host16's items 2, 3, 4, 5 and 6 are done), in order. The owner's standing
-order binds every item: "maturify and take forward everything that we've started and bring it to its full
-sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
-called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
-replaces in the same commit, and this file describes only what is.
+The queue after host18 (5.142 to 5.152; of host17's queue, T25, T27/S12, H1's host half and the blurb are done), in
+order. The owner's standing order binds every item: "maturify and take forward everything that we've started and
+bring it to its full sophistication and make sure the code is all 'fungused together' (no seams or welds where rich
+semantic braiding is called for); let's not leave behind 'old things', no scar and growth tissue." So each
+replacement deletes what it replaces in the same commit, and this file describes only what is.
 
-1. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1 T25 to T33, §3 H1 to H19; H9 and H19 are
-   done by 5.140 and 5.136, H2's older shapes by 5.141), one commit each, each deleting the old path:
-   - T25 with the coordinator's request: `serve-status` answers what `hostd-info` answers (sha, pid, replay,
-     library) and, per world, its `replay` edition and `snapshot {resumed}` (the height it reopened from, so the
-     live service shows a snapshot open); `hostd-info` deleted, `hostd.pid` becomes `serve.pid`, and the readers
-     (`http.py` `sync_library`, `hand.py`, `deploy/serve.py`, `deploy/playtest.sh`) move in the same commit.
-   - T27/S12: `serve-status` answers the kernel's and the host's bounds (`maxPackageBytes`, `maxModules`, frame,
-     entry); the front's `MAX_SOURCE`/`MAX_MODULES` and the catalogue read them.
-   - T28: `world-history` through `pageByHeight` (`reverse`, `cursor`); the front's widening loop goes.
-   - T29: the REPL's two prose refusals (`unknown library pin`, `not issued by this process`) as classes.
-   - T30: `world-reach {post, parent, root, text, mentions}` answering `{object, slot, how}`; `bridge.py`'s
-     `route`, `walk`, `named_door` go.
-   - T32: `world-status.suspendedBytes {median}` (the hand's probe now reads the block store's tail, 5.137).
-   - T33/H17: `world-inspect` answers each form's usage text; the front's `actions` and Card's templates copy it.
-   - H2's remainder: `respond` with one payload per method (the `refused` and `inspected` ladders).
-   - H3: the model's JSON `{method, argument}` reply branch and `model.extract`.
-   - H4: `reprogram {mode: "extend"}` beside `extend`.
-   - H5/H6 with the kernel: dispatch on `(method, argument)`; the `plan` wire names.
-   - H7/H8: root acts and moderation powers as one table; settings reach the journal one way (`settingsChange`).
-   - H10: `sealLibrary` reads `Ops.arrivals`. H11: `serve.c` says root; the frame bound checked once.
-   - H12/H13/H14/H15: `Limits` reference `Bounds`; `compressedSize`; `statusOf`; one list codec.
-   - H16: reads of older journals (an edition below 5 is refused by name, nothing else reads it).
-   - H1/H18 with the objects lane: the host's spell grammar the one reader; a host `fit {form, fields}`.
-2. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (§2, a suspension resumed by the target's
-   receipt; row 6); `inspect` and `viewField` of a foreign object (only `view` and `card` cross now); the REPL and
-   `check` in a scratch (`/scratch/<name>/repl`; they still run in the stateless session); the `delvetalk world
-   expire / scratch:` spell (only the root act exists); `world-history` and receipts across worlds; the hand's
-   SCRATCHES page; `world-cite` has no front route.
-3. **The stored path's remainder (5.136):** a write still costs O(state): `conformsUnder` of the whole written
-   state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed from
-   cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel primitives
-   (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
-4. **The block store's remainder (5.137):** `world-sources`, `world-grants` and `world-resolve` (`slugTargets`)
-   read every record per call: index sources, grants by height and slugs (as `anchors` is) so they read only what
-   they answer; about 1.4 KB a held entry at open (the chain's CIDs as text, the receipt and change indexes, the
-   snapshot's index decoded whole): CIDs as bytes and a streamed index decode; a record is encoded twice (its
-   hash, then the store): keep the bytes `sealEntry` hashed; `maxJournalEntries` (1,000,000) binds before 4 GiB
-   for small entries; `serve` has no `--snapshot-every` (only `world-open` does); a held world is never closed now
-   (5.140), so memory grows with the worlds and scratches served.
-5. **The law atoms' remainder (5.139):** `world-inspect`'s `cites` lists the closure, not per clause; the objects
-   lane's Tide, Deal, Record and Kind laws move to the atoms (KERNEL-HANDOFF §25 M, last item) once this binary
-   is deployed.
+1. **Asked by the objects lane, not started (host18 stopped at its budget):**
+   - A misfit spell to a card that does not read words stays the host's `badSpell` with its usage hint. Today the
+     signal is the shape of `receive`'s input: the host hands `misfit` only to a `receive` that declares it
+     (`heardArgument`, `misfitOnly`; `spellTurn`'s `.refuse` arm), else refuses `badSpell`. If the objects lane
+     folds `Card.Reply` into `Heard`, every card declares `misfit` and the distinction is lost: give the host
+     another signal (a card that names a policy in its state, or a declared name) and say it in this section, then
+     the fold can land. Test both: a policy card hears the misfit, a plain card refuses `badSpell`.
+   - A refusal by a law given at creation or by amendment carries `reason` but no `reading` (`readingOf` reads
+     `Object.readings`, which only a package's declared laws and an amendment's own readings fill): parse the
+     given law text's readings (`parseLawTextReadings`) into `readings` at creation as an amendment does, so a thing
+     may take its law at creation. Test: a `world-create {law: "law x \"why\": …"}` refusal carries the reading.
+   - `context.sender`: a delivered turn's top frame carries the sending object (`TurnMeta.caller` is it today,
+     but `caller` is also a call's), so the weather's rain is credited to the weather. One field in
+     `Abi.Context` and `contextData`; `fitRecord` keeps objects compiled without it running.
+2. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
+   old path: T30 reach as a host op (`reach-of {text, replyTo, thread}` answering `{object, slot, how}`; `bridge.py`'s
+   `route`, `walk`, `named_door` go; the Zulip rule of 9f48f6d5, the author's own messages passed and another
+   resident's stopping, moves with it); T28 `world-history` through `pageByHeight` (`reverse`, `cursor`) and the
+   front's widening loop gone; T29 the REPL's two prose refusals (`unknown library pin`, `not issued by this process`)
+   as classes and `http.py` matching the class; T32 `world-status.suspendedBytes {median}`; T33/H17 `world-inspect`
+   answering each form's usage text (`spellTemplate`), which Card and the front copy; H2's remainder (`respond` with
+   one payload per method: the `refused` and `inspected` ladders); H3 the model's JSON `{method, argument}` reply
+   branch in `interpretVerdict` and `model.extract`; H4 `reprogram {mode: "extend"}`; H5/H6 dispatch on `(method,
+   argument)` and the `plan` wire names (with the kernel); H7/H8 root acts and moderation powers as one table,
+   settings through `settingsChange`; H10 `sealLibrary` reading `Ops.arrivals`; H11 `serve.c` saying root and the
+   frame bound checked once; H12 `Store.lean`'s `Limits` referencing `Bounds` (`maxTurnTicks` = `ticksMax`,
+   `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
+   (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls; the
+   "directory" strings (`otherCard`'s "the directory lists the doors", the unknownObject hint: the first card is
+   `commonplace`).
+3. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
+   `inspect` and `viewField` of a foreign object; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
+   `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the
+   hand's SCRATCHES page.
+4. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
+   the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
+   per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).
+5. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
+   sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; held worlds never closed;
+   `world-inspect`'s `cites` per clause.
 6. Smaller, standing:
+   - `hand.speak` (transport) casts one spell through `spell-parse`; a hand post of several spells answers
+     `{status: "spells"}` without a top `receipt`, which it reports as an error. Teach it the turns, or keep it one.
+   - `tests/test_pull_backups.Retention` depends on the time of day (names built from `now - 12h` and `now - 6h`
+     straddle midnight UTC): transport's.
+   - `test_hand.Speak` and `test_hand.Plan` were red on foundation after objects step 3 (the hand's plan seeds
+     `kind/room make` where the objects now plant `porch write`): transport and objects'.
    - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new `root:<n>`;
-     `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the method as
-     named. `root-edit` does not rewrite CIDs quoted inside checkpoints and states (an await's `Receipt.hash`).
-   - `openerActs` (5.131): the opener's interpret-quota exemption (TurnLoop ~1425) ignores `resident`; decide.
-   - `test_zulip.Bridging` once saw "host unavailable" in `setUp` under a loaded full run; it passed alone
-     twice. Watch it.
-   - Deploy: edition 5 and the block store need a new genesis for every world (or `delvetalk-obend migrate` of an
-     edition-5 line journal).
-   - `readerActions` compiles `actions` per read; warm it as `warmLaws` warms `law` if it shows in
-     `DELVETALK_TIMING`. `methodAdmits` judges on the state as it stands. hob's tail line always names
-     `page: spells`. A `call` or `write` to an object created in the same turn is `unknownObject` (5.122 covers
-     `extend`).
-   - The bridge must state `reach` (5.118) and, on Zulip, pass the recorded ancestor as `replyTo`; the hand's
-     root console uses `world-dump` (5.131) and `world-root`.
+     `set pin` stores the pin alone; `as` runs the method as named; `root-edit` does not rewrite CIDs inside
+     checkpoints and states. `openerActs`' interpret-quota exemption ignores `resident`: decide.
+   - Deploy: edition 6 (5.150) needs a new genesis for every world.
+   - `readerActions` compiles `actions` per read; `methodAdmits` judges on the state as it stands; a `call` or
+     `write` to an object created in the same turn is `unknownObject`.

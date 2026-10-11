@@ -1872,6 +1872,11 @@ def withLawReads (w : World) (p : Proposal) : Proposal :=
 def handleOf (w : World) (principal : String) : String :=
   (w.handles[principal]?).getD ""
 
+/-- The principal the registry names by `handle` (case folded, as a DNS name is), if one. -/
+def principalNamed (w : World) (handle : String) : Option String :=
+  let h := handle.toLower
+  w.handles.fold (fun acc did name => if acc.isNone && name.toLower == h then some did else acc) none
+
 /-- What the host tells a running method about itself, built here and nowhere else.
     `handle` is the principal's display handle from the registry (`world-principal`), ""
     when unknown; `caller` is the calling object's id (empty for the turn's own method),
@@ -2636,6 +2641,19 @@ def recordInert (w : World) (entry : Json) : World :=
            modules := sources.foldl (fun m (x : String × String) => m.insert x.1 w.height) w.modules,
            blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (x : String × Array Json) => m.insert x.1 w.height) w.blocks }
 
+/-- A pending send ready to deliver: one a transient refusal put back waits for the clock to pass it. -/
+def deliverable (w : World) (p : Json) : Bool :=
+  ((p.getObjValAs? Nat "next").toOption.map fun n => decide (n ≤ w.clock)).getD true
+
+/-- A send whose delivery was refused transiently, put back to be delivered again once the clock moves,
+    unless that was its last attempt (`Limits.deliveryAttempts`). -/
+def redelivered (w : World) (entry : Json) (id : String) : Option Json := do
+  guard (isTransient entry)
+  let p ← w.pending.find? fun p => (p.getObjValAs? String "id").toOption == some id
+  let attempts := ((p.getObjValAs? Nat "attempts").toOption.getD 0) + 1
+  guard (attempts < Limits.deliveryAttempts)
+  return (p.setObjVal! "attempts" (toJson attempts)).setObjVal! "next" (toJson (w.clock + 1))
+
 def recordCore (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
   let index := w.height
@@ -2670,7 +2688,8 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
     modules := sources.foldl (fun m (x : String × String) => m.insert x.1 index) w.modules
     blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (x : String × Array Json) => m.insert x.1 index) w.blocks
     pending := (match delivered with
-      | some id => w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id
+      | some id => (w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id) ++
+          ((redelivered w entry id).map (#[·])).getD #[]
       | none => w.pending) ++ sent ++ changed ++
       -- An activity's end told to its object's supervisor, whatever the entry's outcome.
       (((entry.getObjVal? "ended").toOption.map fun e =>
