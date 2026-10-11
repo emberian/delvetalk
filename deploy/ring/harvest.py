@@ -78,7 +78,6 @@ def harvest(run):
     obs = observations(st)
     drafts = [json.loads(p.read_text()) for p in sorted(st.outbox.glob('*.json'))]
     interp = [json.loads(p.read_text()) for p in st.interpretations.glob('*.json')]
-    awaiting = {json.loads(p.read_text())['uri'] for p in st.awaiting.glob('*.json')}
     steps, spend, hand = jsonl(run / 'bridge.log'), jsonl(st.spend), jsonl(st.hand_log)
     r = {'run': str(run), 'observed': dict(collections.Counter(o['kind'] for o in obs)), 'journal': {
         'height': len(entries), 'bytes': chain.size(journal) if journal else 0, 'outcomes': dict(tags), 'refusedByClass': dict(classes),
@@ -97,9 +96,7 @@ def harvest(run):
     r['spend'] = {'calls': len(spend), 'inputTokens': sum(x.get('inputTokens') or 0 for x in spend), 'outputTokens': sum(x.get('outputTokens') or 0 for x in spend)}
     r['hand'] = dict(collections.Counter(h.get('what') for h in hand))
     r['access'] = access(st)
-    answered = {d['replyTo'] for d in drafts if d.get('text') or d.get('usage')}
-    addressed = [o for o in obs if o['kind'] == 'summon' or 'delvetalk' in o['text'].lower()]
-    r['noReply'] = [o['uri'] for o in addressed if o['uri'] not in answered and o['uri'] not in awaiting]
+    r['noReply'] = measure.no_reply(st, obs, entries)  # the world heard it and nothing answered (transport/measure.py)
     # The ring's own rows, by handle (section 5).
     by_handle = collections.defaultdict(list)
     for o in obs:

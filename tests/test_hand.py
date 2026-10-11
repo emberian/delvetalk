@@ -293,6 +293,11 @@ class Cli(HandCase):
         self.assertEqual([l['what'] for l in self.logged()], ['edit', 'edit', 'post'])
         self.assertEqual(self.logged_who(), {'cli'})
 
+    def test_draft_reads_one_draft_and_show_stays_the_power(self):
+        self.assertEqual(self.js('draft', '7-aaaa')['text'], 'planted <b>a</b>')  # D11: `show` was the power and shadowed it
+        code, req = self.cmd('show', '--object', 'garden', '--reading', 'back')[0], self.host.ops[-1]
+        self.assertEqual((code, req['op'], req['method']), (0, 'world-turn', 'show'))
+
     def test_skip_hold_and_unknown_drafts(self):
         self.js('hold', '7-aaaa')
         self.js('skip', '7-aaaa', '--reason', 'noise')
@@ -339,7 +344,7 @@ class Plan(unittest.TestCase):
         p = hand.plan(Path(__file__).resolve().parent.parent / 'docs' / 'PLAYTEST-2.md')
         self.assertEqual(len(p['seeds']), 4)
         self.assertTrue(all(s.startswith('delvetalk ') for s in p['seeds']))
-        self.assertEqual(p['seeds'][0], "delvetalk kind/room make / name: The Bellfounder's Porch")
+        self.assertEqual(p['seeds'][1], 'delvetalk garden plant / colour: silver / seed: a lighthouse for beached verbs, as kimik3 planted it on 10-09')
         self.assertEqual([r['minute'] for r in p['invitations']], [0, 15, 30, 45, 60, 75, 90, 105])
         self.assertTrue(all(r['spells'] and r['answered'] for r in p['invitations']))
         zulip = hand.invitation_text(p['invitations'][0], 'zulip')
@@ -386,19 +391,20 @@ class Speak(unittest.TestCase):
         cls.hand = hand.Hand(cls.st, cls.town.client, TOKEN)
 
     def test_a_seed_is_cast_once_as_the_opener_and_its_post_waits_for_post_in_its_topic(self):
-        spell = self.hand.plan['seeds'][0]
+        spell = self.hand.plan['seeds'][1]  # the garden's planting: a seed that makes a thing
         came = self.hand.cast(spell, intent=self.hand.seed_intent(spell))
-        self.assertEqual((came['outcome'], came['object']), ('admitted', 'room/1'), came)
-        self.assertIn('Made, at room/1', came['text'])
+        bell = came['object']
+        self.assertEqual((came['outcome'], bell.startswith('garden/bell/')), ('admitted', True), came)
+        self.assertIn(bell, came['text'])
         _, d = self.hand.draft(came['drafted'])
-        self.assertEqual((d['topic'], d['replyTo'], d['object'], d['posted'], d['hand']), ('welcome', None, 'room/1', False, True))
-        self.assertTrue(d['text'].startswith("    delvetalk kind/room make / name: The Bellfounder's Porch\n\n"), d['text'])
+        self.assertEqual((d['topic'], d['replyTo'], d['object'], d['posted'], d['hand']), ('welcome', None, bell, False, True))
+        self.assertTrue(d['text'].startswith('    ' + spell + '\n\n'), d['text'])
         entry = self.town.send(op='world-receipt', principal=self.hand.owner, identity=self.hand.seed_intent(spell))
         self.assertEqual(entry['receipt']['identity']['principal'], self.hand.owner)
         again = self.hand.cast(spell, intent=self.hand.seed_intent(spell))  # the same intent: the first receipt, the first draft
         self.assertEqual((again['height'], again['drafted']), (came['height'], came['drafted']))
         self.assertEqual(sum(1 for i, _, _ in self.hand.drafts() if '-speak-' in i), 1)
-        seed = self.hand.spoken()['seeds'][0]
+        seed = self.hand.spoken()['seeds'][1]
         self.assertEqual((seed['cast']['height'], seed['cast']['state']), (came['height'], 'waiting for Post'))
         from transport import zulip
         sent = []
@@ -409,7 +415,7 @@ class Speak(unittest.TestCase):
         h.post(came['drafted'])
         self.assertEqual(sent[0][:2], ('delvetalk', 'welcome'))
         uri = json.loads((self.st.outbox / f"{came['drafted']}.json").read_text())['sent']['uri']
-        self.assertEqual(self.town.send(op='world-addressee', parent=uri).get('object'), 'room/1')  # a reply to the post reaches the porch
+        self.assertEqual(self.town.send(op='world-addressee', parent=uri).get('object'), bell)  # a reply to the post reaches the bell
 
     def test_a_refused_spell_drafts_nothing(self):
         came = self.hand.cast('delvetalk room/99 write / text: nobody here')
@@ -544,7 +550,7 @@ class Measure(unittest.TestCase):
 
     def test_time_rain_and_interpretations(self):
         self.assertEqual(self.m['T0'], time_of(self.M0 * 60))
-        self.assertEqual(self.m['firstMade'], {'minutesFromT0': 3.0, 'byResident': {'kestrel': 2.0, 'yue': 1.0}})
+        self.assertEqual(self.m['firstMade'], {'secondsFromT0': 180, 'byResident': {'kestrel': 120, 'yue': 60}})  # no post: the clock's minute stands in
         self.assertGreaterEqual(self.m['unposted']['count'], 1)
         self.assertIn('tide', [o for r in self.m['unposted']['rows'] for o in r['objects']])
         self.assertEqual((self.m['interpretations']['count'], self.m['interpretations']['byVerdict']), (2, {'none': 1, 'spell': 1}))
@@ -563,6 +569,32 @@ class Measure(unittest.TestCase):
         r = harvest.harvest(self.dir.name)
         self.assertEqual(r['playtest']['made'], self.m['made'])
         self.assertIn('| things made by residents | 6 |', harvest.markdown(r))
+
+
+class PlaytestTwo(unittest.TestCase):
+    """The second Zulip playtest's state (run-20261011-063034, trimmed to what the measures read: the journal whole, the
+    drafts, observations and readings slimmed) measured as docs/review/zulip-playtest-2.md D12 found it should be."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tarfile
+        from transport import measure
+        cls.dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.dir.cleanup)
+        with tarfile.open(Path(__file__).resolve().parent / 'fixtures' / 'playtest-2' / 'state.tar.gz') as t:
+            t.extractall(cls.dir.name, filter='data')
+        cls.m = measure.measures(State(Path(cls.dir.name) / 'state'))
+
+    def test_the_first_make_is_seconds_after_t0_in_wall_time_never_before_it(self):
+        self.assertEqual(self.m['T0'], '2026-10-11T10:32:06Z')  # the Post of the T+0 invitation
+        self.assertEqual(self.m['made']['rows'][0]['object'], 'garden/bell/2')
+        self.assertEqual(self.m['firstMade'], {'secondsFromT0': 14, 'byResident': {'Kestrel': 5, 'Claude': 0, 'Yuè月': 0}})  # the post that made it
+
+    def test_no_reply_is_the_summons_nothing_answered_not_residents_talking(self):
+        self.assertEqual(self.m['noReply'], ['zulip://delvetalk/welcome/69103'])  # 69147 reached only avatars; 69140, 69141, 69159 were quiet by design
+
+    def test_nobody_posting_rains_nothing_genesis_and_hob_are_not_the_clock(self):
+        self.assertEqual(self.m['unposted'], {'count': 0, 'notes': 0, 'rows': []})  # not genesis's 67, 69, 70; not hob's 112
 
 
 def time_of(seconds):

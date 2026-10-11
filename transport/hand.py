@@ -189,7 +189,8 @@ class Hand:
                 'outcome': outcome_of(r) if r else 'drafted', 'text': d['text'], 'state': state,
                 **({'original': d['original']} if d.get('original') else {}), **({'reason': d['reason']} if d.get('reason') else {})}
 
-    def show(self, draft_id):
+    def view(self, draft_id):
+        """One draft whole: its text, its receipt line and the post it answers (`hand draft`; `show` is the moderation power)."""
         _, d = self.draft(draft_id)
         o = self.observed().get(d.get('replyTo'))
         return {**self.summary(draft_id, d), 'post': d.get('replyTo'), 'original post': o and {'handle': o['author']['handle'], 'text': o['text']}}
@@ -751,7 +752,7 @@ def parser(p, common):
     common = [common, as_json]
     sub = p.add_subparsers(dest='verb', required=True)
     spec = {'inbox': [('--since', dict(type=int)), ('--kind', dict(choices=('summon', 'reply', 'post', 'wiki-page', 'wiki-edit', 'wiki-merge')))],
-            'outbox': [('--all', dict(action='store_true'))], 'show': [('draft', {})],
+            'outbox': [('--all', dict(action='store_true'))], 'draft': [('draft', {})],
             'edit': [('draft', {}), ('--text-file', {}), ('--stdin', dict(action='store_true'))],
             'post': [('draft', {}), ('--object', {})], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],
             'unpost': [('draft', {}), ('--reason', dict(required=True))], 'status': [], 'search': [('slug', {})], 'retry': [('uri', {})],
@@ -788,7 +789,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
     h = Hand(st, host, poster=poster, who='cli')
     try:
         read = lambda p: Path(p).read_text()
-        data = {'inbox': lambda: h.inbox(a.since, a.kind), 'outbox': lambda: h.outbox(a.all), 'show': lambda: h.show(a.draft),
+        data = {'inbox': lambda: h.inbox(a.since, a.kind), 'outbox': lambda: h.outbox(a.all), 'draft': lambda: h.view(a.draft),
                 'edit': lambda: h.edit(a.draft, sys.stdin.read() if a.stdin else read(a.text_file)), 'post': lambda: h.post(a.draft, object=a.object),
                 'skip': lambda: h.skip(a.draft, a.reason), 'hold': lambda: h.hold(a.draft), 'unpost': lambda: h.unpost(a.draft, a.reason),
                 'status': h.status, 'search': lambda: h.search(a.slug), 'spend': lambda: h.spend(a.month),
