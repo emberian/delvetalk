@@ -14,6 +14,7 @@ one reader's choice moving another, a stranger's card equal to a reader's, a sec
 admitted, a thirty-third reader or seventeenth variable admitted, a stranger's proposal written
 into the room, a cooldown the room does not judge, or a full card past 1,400 characters.
 """
+import json
 import unittest
 
 from tests import test_chain
@@ -225,18 +226,17 @@ class Scenes(test_chain.Chain):
     def test_a_forged_principal_cannot_be_sent_and_a_labelled_choice_of_another_passage_does_nothing(self):
         self.scene()
         self.say("delvetalk scene enter", GLM)
-        before = self.view()
         for text in ("delvetalk scene choose\nchoice: Open\nprincipal: " + KIM,
                      "delvetalk scene enter\nprincipal: " + KIM,
                      "delvetalk scene choose\nwho: " + KIM + "\nchoice: Open"):
             with self.subTest(text=text):
-                # The host fits the spell against the method's input; a field it lacks reaches the room's
-                # receive as a misfit (FLEX §2), which a room without a policy refuses by that clause.
+                # A line whose name the form lacks ends the spell's fields (HOST-HANDOFF 5.152): a forged
+                # principal never reaches the method, which runs, if at all, as the turn's principal.
                 r = self.turn("scene", "receive", heard(text), principal=GLM)
-                self.assertEqual((r["status"], r["result"]["label"], r["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), r)
-                self.assertIn("refused unknownField: ", r["offers"][0]["text"])
-        self.assertEqual(self.view(), before)
+                self.assertEqual(r["status"], "admitted", r)
+                self.assertNotIn(KIM, json.dumps(r["receipt"]["outcome"].get("writes", [])))
         self.assertEqual([p["who"] for p in self.view()[1]["presence"]], [GLM])
+        before = self.view()
         # Turn-level choose moves only the turn's principal.
         r = self.turn("scene", "choose", record(choice=label("Open")), principal=KIM)
         self.assertEqual(r["status"], "admitted")

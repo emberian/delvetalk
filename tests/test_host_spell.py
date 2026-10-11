@@ -75,7 +75,6 @@ class Clauses(unittest.TestCase):
         form = fixtures("fit")[0]["form"]
         for reply, clause in (("delvetalk garden-2 plant", "otherCard"), ("delvetalk garden-1 prune", "otherCard"),
                               ("prose", "noAction"), ("delvetalk garden-1 plant now", "noAction"),
-                              ("delvetalk garden-1 plant\nsmell: x", "unknownField"),
                               ("delvetalk garden-1 plant\nseed: a\nseed: b", "duplicateField"),
                               ("delvetalk garden-1 plant\ncolour: green", "badValue"),
                               ("delvetalk garden-1 plant\nseed: <<S\nx", "unclosedBlock")):

@@ -1554,6 +1554,13 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `lend` spells now share), `me` the turn's subject. A read: no root, nothing journaled beyond the turn. Test:
    `test_world_object.PrincipalByHandle`.
 
+152. **A line whose name the form lacks ends a spell's fields (host18; the second playtest's D7, 69082).** `Spell.fit`
+   takes the bound fields up to the first whose name the form lacks (`hob: still owed …`, `smell: sweet`), as a
+   prose line with a colon already ended them: what follows is the reply's prose. So a spell is no longer refused
+   `unknownField` for a trailing line; a misnamed field is a missing one (`unclear`). `unknownField` stays the
+   lens spell's (`set` naming a field no lens has). Tests: `Spell.lean`'s `#guard`s (69082's shape),
+   `test_receive.Cards` (a `hob:` line after a whole planting plants), the recorded `fit` rows re-recorded.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

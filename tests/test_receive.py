@@ -60,7 +60,6 @@ class Cards(Chain):
         laid = self.version("garden")
         cases = {
             "delvetalk garden plant\nseed: a fern\ncolour: green": ("badValue", "colour is one of: amber, violet, silver"),
-            "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": ("unknownField", "No field smell in this spell; it takes colour, seed."),
             "delvetalk orchard plant\nseed: a fern\ncolour: silver": ("otherCard", "There is no card orchard; the directory lists the doors."),
         }
         for spell, (clause, reason) in cases.items():
@@ -71,15 +70,17 @@ class Cards(Chain):
                 self.assertEqual([f["value"]["value"] for f in reply["result"]["payload"]["fields"]], [clause, reason], reply)
                 self.assertIn("refused %s: %s\n" % (clause, reason), self.card(reply))
         self.assertEqual(self.version("garden"), laid)
-        self.say("delvetalk garden plant\nseed: a fern\ncolour: silver")
+        # A line whose name the form lacks ends the fields (the second playtest's D7): the spell above it runs.
+        planted = self.say("delvetalk garden plant\nseed: a fern\ncolour: silver\nhob: still owed — a note for later")
+        self.assertNotEqual(planted["receipt"]["outcome"]["writes"], [], planted)
         # A record (a bell) answers a misfit itself, admitted and refused by the clause (FLEX section 2).
-        for spell, clause in (("delvetalk garden/bell/1 rain\ntext: x\nsmell: sweet", "unknownField"), ("delvetalk orchard rain\ntext: x", "otherCard")):
+        for spell, clause in (("delvetalk orchard rain\ntext: x", "otherCard"),):
             with self.subTest(spell=spell[:40]):
                 reply = self.say(spell, obj="garden/bell/1")
                 self.assertEqual((reply["status"], reply["result"]["label"], reply["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), reply)
                 self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], clause, reply)
         self.make("tide", closure("Tide"), record(gap=nat(1)))
-        for spell, clause in (("delvetalk tide tick\nsmell: sweet", "unknownField"), ("delvetalk orchard rain\ntext: x", "otherCard")):
+        for spell, clause in (("delvetalk orchard rain\ntext: x", "otherCard"),):
             with self.subTest(spell=spell[:40]):
                 out = self.say(spell, obj="tide")["receipt"]["outcome"]
                 self.assertEqual((out["class"], out["clause"]), ("badSpell", clause), out)
