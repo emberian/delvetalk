@@ -141,8 +141,10 @@ inductive Decl where
   | typeAlias (name type : String) (span : Span)
   | sum (name : String) (cases : List Field) (typeParameters : List String) (span : Span)
   | record (name : String) (methods : List Signature) (fields : List Field) (span : Span)
-  /-- `law NAME "reading": EXPR`; `reading` is "" when the source gives none. -/
-  | law (name source reading : String) (span : Span)
+  /-- A clause of the package's text (`Compiler.ObjectiveBendLaw`): `keyword` is `law`, `rule` or
+  `want`; `source` the text after the `:` as written (the condition, then a rule's `then SPELL` or a
+  want's `asks SPELL`); `reading` is "" when the source gives none. -/
+  | clause (keyword name source reading : String) (span : Span)
   /-- `typeParameters` is present (possibly empty) exactly when the source wrote `def f<...>`
   or the generics pass made the function an instance. -/
   | function (signature : Signature) (typeParameters : Option (List String)) (body : Body) (span : Span)
@@ -153,13 +155,13 @@ inductive Decl where
   deriving Inhabited, Repr, BEq
 
 def Decl.name : Decl → String
-  | .reexport n .. | .extension n .. | .typeAlias n .. | .sum n .. | .record n .. | .law n .. | .protocol n .. => n
+  | .reexport n .. | .extension n .. | .typeAlias n .. | .sum n .. | .record n .. | .clause _ n .. | .protocol n .. => n
   | .spec s => s.name
   | .function s .. => s.name
 
 def Decl.span : Decl → Span
   | .reexport _ _ s | .extension _ _ _ _ _ s | .typeAlias _ _ s | .sum _ _ _ s | .record _ _ _ s
-  | .law _ _ _ s | .function _ _ _ s | .protocol _ _ _ s => s
+  | .clause _ _ _ _ s | .function _ _ _ s | .protocol _ _ _ s => s
   | .spec s => s.span
 
 /-- The declaration's generic type parameters (`[]` for every non-generic declaration). -/
@@ -170,7 +172,7 @@ def Decl.typeParameters : Decl → List String
 
 def Decl.kind : Decl → String
   | .reexport .. => "reexport" | .spec .. => "spec" | .extension .. => "extension"
-  | .typeAlias .. => "typeAlias" | .sum .. => "sum" | .record .. => "record" | .law .. => "law"
+  | .typeAlias .. => "typeAlias" | .sum .. => "sum" | .record .. => "record" | .clause keyword .. => keyword
   | .function .. => "function" | .protocol .. => "protocol"
 
 /-- A form field's kind as a `form` block writes it. `named` is a closed sum of empty cases
@@ -336,7 +338,7 @@ def Decl.json : Decl → Json
       ("span", s.json)]
   | .protocol n methods _ s => Json.mkObj [("kind", toJson "protocol"), ("name", toJson n),
       ("methods", Json.arr (methods.map Field.json).toArray), ("span", s.json)]
-  | .law n source reading s => Json.mkObj ([("kind", toJson "law"), ("name", toJson n), ("source", toJson source)] ++
+  | .clause keyword n source reading s => Json.mkObj ([("kind", toJson keyword), ("name", toJson n), ("source", toJson source)] ++
       (if reading.isEmpty then [] else [("reading", toJson reading)]) ++ [("span", s.json)])
   | .function sig ps b s => Json.mkObj ([("kind", toJson "function"), ("signature", sig.json)] ++
       (match ps with | some ps => [("typeParameters", toJson ps)] | none => []) ++
@@ -410,7 +412,7 @@ def Decl.mapSpans (f : Span → Span) : Decl → Decl
   | .typeAlias n t s => .typeAlias n t (f s)
   | .sum n cases ps s => .sum n (cases.map (fun x => x.mapSpans f)) ps (f s)
   | .record n methods fields s => .record n (methods.map (fun x => x.mapSpans f)) (fields.map (fun x => x.mapSpans f)) (f s)
-  | .law n source reading s => .law n source reading (f s)
+  | .clause keyword n source reading s => .clause keyword n source reading (f s)
   | .function sig ps b s => .function (sig.mapSpans f) ps (b.mapSpans f) (f s)
   | .protocol n methods shown s => .protocol n (methods.map (fun x => x.mapSpans f)) shown (f s)
 

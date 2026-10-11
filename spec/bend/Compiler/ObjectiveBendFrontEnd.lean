@@ -448,10 +448,11 @@ structure Lowering where
   modules : List SourceModule
   limits : Json
   typeFuel : Nat
-  /-- The package's enforced laws: the entry module's top-level `law` declarations (a law in any
-  other module refuses). The artifact commits them; the host judges every write of an object
-  pinned to the artifact by them (`Delvetalk.Host.Law.denote`). -/
-  laws : List (String × ObjectiveBendLaw.LawExpr)
+  /-- The package's text: the entry module's top-level clauses (a clause in any other module
+  refuses). Its laws (`Lowering.laws`) the artifact commits and the host judges every write of an
+  object pinned to the artifact by (`Delvetalk.Host.Law.denote`); its rules and wants are the host's
+  to place on every object it makes (KERNEL-HANDOFF §27). -/
+  clauses : List ObjectiveBendLaw.Clause
   /-- The typing proposal for the selected term, or why there is none: built once. -/
   proposal : Except String Json
   /-- `dregg.objective-bend.typed-core.v3`: exactly the packet the checker reads (an
@@ -460,12 +461,15 @@ structure Lowering where
   proposalIs : proposal = ObjectiveBendElaborate.proposalJson { output with term := term }
   packetIs : packet = packetOf proposal term sourceEntry modules typeFuel
 
+/-- The package's laws, by name: the law clauses of its text. -/
+def Lowering.laws (l : Lowering) : List (String × ObjectiveBendLaw.LawExpr) := ObjectiveBendLaw.lawsOf l.clauses
+
 /-- Assemble a lowering, building its proposal and packet once. -/
 def Lowering.make (output : Output) (term : ATerm) (sourceEntry : String)
     (modules : List SourceModule) (limits : Json) (typeFuel : Nat)
-    (laws : List (String × ObjectiveBendLaw.LawExpr)) : Lowering :=
+    (clauses : List ObjectiveBendLaw.Clause) : Lowering :=
   let proposal := ObjectiveBendElaborate.proposalJson { output with term := term }
-  ⟨output, term, sourceEntry, modules, limits, typeFuel, laws, proposal,
+  ⟨output, term, sourceEntry, modules, limits, typeFuel, clauses, proposal,
     packetOf proposal term sourceEntry modules typeFuel, rfl, rfl⟩
 
 /-- Limits: `limits` carries `heap`/`stack`/`ticks` (canonical positive, at most 1000000) and an
@@ -496,11 +500,11 @@ def lowerElaborated (modules : List SourceModule) (decoded : List ObjectiveBendE
   let some entry := modules[entryModule]? | throw (elaborationRefusal "missing selected entry")
   unless templatesChecked do checkTemplates output typeFuel
   for (m, index) in decoded.zipIdx do
-    if index != entryModule && !m.laws.isEmpty then
-      throw (elaborationRefusal ("a law belongs to the package's entry module; " ++ m.name ++
-        " is imported and declares " ++ toString m.laws.length ++ " law(s)"))
-  let laws := (decoded[entryModule]?.map (·.laws)).getD []
-  return Lowering.make output term (entry.name ++ "." ++ entryDefinition) modules limits typeFuel laws
+    if index != entryModule && !m.clauses.isEmpty then
+      throw (elaborationRefusal ("a clause belongs to the package's entry module; " ++ m.name ++
+        " is imported and declares " ++ toString m.clauses.length ++ " clause(s)"))
+  let clauses := (decoded[entryModule]?.map (·.clauses)).getD []
+  return Lowering.make output term (entry.name ++ "." ++ entryDefinition) modules limits typeFuel clauses
 
 /-- The front end on parsed, checked modules: elaborate the selected declaration. -/
 def lowerDecoded (modules : List SourceModule) (decoded : List ObjectiveBendElaborate.Module)

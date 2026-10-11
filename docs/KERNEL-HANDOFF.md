@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-11 (lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
+State on 2026-10-11 (lane/kernel17 after foundation 57d1c580: one clause language, `law`, `rule` and `want` on a thing's text, OVERHAUL §5 step 2, §27; before it lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
 
 ## Summary
 
@@ -22,7 +22,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Build: `LEAN_NUM_THREADS=2 lake build` (one Lean process). Never rebuild while a run uses the binary: `tests/host.py` copies it per run (`DELVETALK_OBEND` names the source, `DELVETALK_OBEND_COPY` shares one copy across workers; `tests/run.py` is the parallel runner). Builds may run on hbox with `swarm-build lake build`.
 - Run: `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend python3 -W ignore -m tests.run [module …]`; whole suite `make check`.
 - Proof-only modules (`Delvetalk.PackageDataAdmission`, `PackageDataNormalization`, `PackageDataSchemaProofs`, `Theory.ObjectiveBendNativeDataSimulation`) are outside the default target; `make build` builds them. Build them after touching anything they import.
-- Lean 4.34: `if_pos`/`if_true` deprecation warnings in old Mini files are noise. A doc comment (`/-- -/`) directly before `mutual` is a parse error; use `/- -/`. In a file that opens `ObjectiveBendTypes`, a pattern variable `label` reads as `Ty.label`. `x.isDataUnder a b c d` puts `x` at the first `Ty`-typed parameter.
+- Lean 4.34: `if_pos`/`if_true` deprecation warnings in old Mini files are noise. A doc comment (`/-- -/`) directly before `mutual` is a parse error; use `/- -/`. In a file that opens `ObjectiveBendTypes`, a pattern variable `label` reads as `Ty.label`. Likewise inside `def LawTerm.x`/`LawName.x` a pattern variable `field` reads as the constructor `field`: name it otherwise. `x.isDataUnder a b c d` puts `x` at the first `Ty`-typed parameter.
 - Host files belong to the host lane (`spec/Delvetalk/Host/*`); `Journal.lean` is shared.
 
 ## 1. Map
@@ -44,7 +44,7 @@ Pipeline for `compile`: source -> (document templates, text) -> `ObjectiveBendPa
 | Machine | `Theory/ObjectiveBendDemandMachine.lean`, `…MachineFast.lean` | `State {heap, control, stack}`, `Cell`, `Frame`, `Control` (incl. `yielded`, `nativeApplication`, `refused`), `stepRaw`, `runBounded`, `resume`. `Fast` is a proved-equal faster stepper. |
 | Data, tariff | `Theory/ObjectiveBendDemandData.lean` | `textStepCost`, `forceHostedFrom` (tick + byte admission before each step), `materializeWith`, `executeStateWith`, `yieldedPlanWith`, `Data.conformsFuel/conformsUnder/size`. `Data` is in `ObjectiveBendFiniteData.lean`. |
 | Checkpoint | `Theory/ObjectiveBendCheckpoint.lean` (the token codec), `…CheckpointV3.lean` (the written edition), `…DemandCollect.lean` | See section 7. |
-| Laws | `Compiler/ObjectiveBendLaw.lean`, `Delvetalk/Host/Law.lean` | `law NAME: EXPR` over declared state; the pure profile refuses laws ("host law adapter"). |
+| Clauses | `Compiler/ObjectiveBendLaw.lean`, `Delvetalk/Host/Law.lean` | `law`, `rule` and `want` lines over declared state, one grammar (§27); the pure profile refuses laws ("host law adapter"). |
 | Typed data/schema | `Delvetalk/PackageData*.lean` | `run-data-v1`, compact codec, schema certificates. Depth is `Bounds.dataWireDepth`. |
 | Package, session | `Delvetalk/Package.lean`, `PackageSession.lean`, `spec/PackageMain.lean` | JSON-lines driver; section 2. |
 | Line check | `Delvetalk/JsonLine.lean` | a driver line's `\uXXXX` escapes are Unicode scalar values. |
@@ -1052,3 +1052,107 @@ refused and `● admitted` at once). Now the reason is a term and the refusal is
 - **Next (the objects lane, OBJECTS-HANDOFF D6).** `Card.refusing` becomes `refuse(refusalLine(refusal))`
   and every method that answers a refusal by `tell` refuses instead; `bell`'s `refused text: …` and
   Kind's `refused body: …` already parse; Record's "Only a weather …" is clause `card`.
+
+## 27. One clause language: law, rule, want (lane/kernel17, after foundation 57d1c580; OVERHAUL §5 step 2)
+
+The grammar is `Compiler/ObjectiveBendLaw.lean`'s module comment; this is what changed and what the host
+does next.
+
+- **One AST.** A line is a `Clause {modality, name, reading, condition}`; `Modality` is `law`, `rule
+  (spell)` or `want (spell)`; a `Spell` is `parts`, each `text` or `hole TERM`. The three keywords share
+  one condition language (`LawExpr`), so a rule's `when` and a want's condition are laws' conditions.
+- **One reference arm per side.** `LawSide` is `new`, `old` or `cited "O"`: `LawTerm.field side F`
+  (`new.F`, `old.F`, `"O".F`), `count side F filter` (`count("O".F where …)` too), and
+  `LawPlace.list side F` / `.column side F C`, so `TERM in old.F.COL` (REACTION §4), `TERM in old.F` and
+  `TERM in "O".F` are the same arm on another side. The former `LawTerm.old`, `LawTerm.count (of :
+  LawTerm)` and `LawPlace.cited` are gone into it.
+- **Added.** `TERM % INT` (`LawTerm.mod`, the integer at least 1, never negative; binds tighter than
+  `+`); `>=` (`LawExpr.ge`); `"O" wants NAME` (`LawExpr.wants`, a root); `request.verb`
+  (`LawFact.verb`); the kind `rule` 4 (`ObjectiveBendLaw.kinds` is the one table: `kindNumber` and the
+  host's `Law.kindNames` read it, so `world-inspect`'s `requestKinds` lists `rule`). A comparison now
+  needs one side reading the write rather than a reference first, so REACTION §5's `0 + 1 <= old.tended`
+  and `"tide" == request.object` parse; `1 + 2 <= 3` and `"a" == "b"` refuse (`compareRule`).
+- **Holes** are `{TERM}`, a term of the grammar that reads the write (`refers`); anything else refuses
+  by name with the hole quoted: `` `{object}` `` and `` `{request.target}` `` (`holeRule`). OVERHAUL's
+  `{object}` is spelled `{request.object}`: a hole is a reference of the one grammar, not a second
+  vocabulary. `me` is not a hole; the host resolves it. A spell is one line starting `delvetalk `.
+- **A want reads the thing as it stands.** `Clause.atRead` (over the condition and the holes): no
+  `old`, no request fact but `clock` and `object`, no rule over old and new, no `changed`, no `under`;
+  `admit` refuses the first such construct, `` `old.a` in a want `` (`wantRule`).
+  `parsed_want_reads_as_it_stands` proves it of every line `parseClause` accepts (`#assert_axioms`,
+  with `admit_ok` and `parseClauseSource_reads_now`).
+- **One parser.** `parseClause`, `parseClauseSource` (the clause and the text after its `:` as written),
+  `parseText` (blank lines aside; names unique across all three modalities, `checkNames` over names),
+  `parseBody` (the text after `:` in a modality), `splitReading`. `tokenize` stops at `then` (a rule) or
+  `asks` (a want) where it is not a field name, so a spell is never tokenized as a condition; a
+  leftover `then`/`asks` names the modality that takes it (`joinRule`). The package parser's `lawRe`
+  and the host's own line splitter (`parseLawTextReadings`) are deleted: both call the kernel. The
+  Surface decl `.law` is `.clause keyword name source reading`; its JSON `kind` is the keyword, so a law
+  decl's JSON is byte-identical. `ObjectiveBendElaborate.Module.clauses` and `Lowering.clauses` carry
+  the entry module's text; `Module.laws`/`Lowering.laws` are its law projection (`lawsOf`).
+- **One renderer.** `Clause.render` (`Lean.Json` quotes the reading); `Host.renderLaw` renders through it,
+  byte-identical (`law NAME: EXPR`).
+- **One walk.** `Clause.names` is the condition's names then the holes'; `fields`, `reads`,
+  `fieldsPlain` project it for `LawExpr` and `Clause` alike. `LawName.cited object field` (its column
+  is a `.column`), `LawName.want object name`.
+- **Theorems** (`native_decide`, `#assert_compiled`): `parse_accepts`, `parse_refuses`,
+  `render_reads_back` (conditions, the new arms among them); `parse_clauses` (REACTION §5's six rules as
+  typed from a card, the bell's `rings`/`rang`, OVERHAUL's `water`, `daily`, `rests`, four wants),
+  `parse_clauses_refuse` (35 malformed lines), `clause_render_reads_back`; `text_holds_three_modalities`
+  (one text: laws, rules and wants keep their modalities, `under` an atom of each, `lawsOf` the laws,
+  duplicate names refused); `refusals_name_what_and_why` (every new rule in the one shape);
+  `names_walk`. `#assert_axioms`: the three above.
+- **`Host/Law.lean`.** `Facts.verb` and `Facts.wants` (the want clauses of each object cited by `"O"
+  wants`); `read` over every side and `%`; `denote` for `>=`, the sided memberships, `"O" wants N`
+  (the want's condition on the cited state, `old` none, `asItStands` facts, depth − 1) and a text
+  constant on either side of `==`. Rules and wants are judged by the same `denote`: `fires` (the rules a
+  write makes hold), `poses` (the wants that hold of a state as it stands), `fill` (a spell's holes at
+  the write; none when a hole reads nothing), `followed` (the rules and wants a law's `under` citations
+  carry, with the carrying object, through the cited texts' own `under`, each once), `citations`.
+  `parseClauses` is the text with its bounds; `parseLawText`/`parseLawTextReadings` its law clauses, so
+  every existing caller judges laws only. `#guard`s for each arm, REACTION §5's `two`, `next` and
+  `company`, a want's clock, a filled spell, and a kind carrying its rules through `under`.
+- **Host files touched**, mechanically: the five `Law.Facts` built by anonymous constructor (Ops
+  `amendable`, `libraryRefusal`; TurnLoop layer, `methodAdmits`, `kindAdmits`) are named-field
+  instances, so a growing `Facts` never breaks them again; `judge` and `methodAdmits` set `verb :=
+  method` (a declared method is its own verb). `tests/test_law.py`: `requestKinds` lists `rule`;
+  `Atoms.test_one_text_holds_laws_rules_and_wants_and_its_laws_judge` (a kind's text and an instance's
+  holding all three; `%` and `request.verb` refuse by name at a real write; a want reading `old` refuses
+  the text).
+- **Pins unmoved**: grammar only; no packet or source pin changed (`test_artifact_pins` green). Rules
+  and wants written in a text today parse, render, round-trip and are carried; nothing fires or poses
+  until step 3.
+
+**The host's step 3, exactly** (lane/host after host21; HOST-HANDOFF):
+
+1. `Object.rules`, `Object.wants : List {name, owner, since, line}`. `world.rule {object, name, when,
+   then}` builds `rule NAME: WHEN then THEN` and parses it with `ObjectiveBendLaw.parseClause` (`want`:
+   `want NAME: WHEN asks ASKS`), refusing by the parser's message; the name unique against the text's
+   clauses and the placed rows (`checkNames`). The placement is judged by the object's law with `Facts
+   {kind := 4, subject, caller, verb := "", …}` (`request.kind == rule`). `unrule`/`unwant` by the
+   placer or the owner. Rows journaled; replay re-parses them.
+2. Following: the rules and wants an object carries are its placed rows, then `Law.followed (reads)
+   o.law` (the kind's lines through `under`, owned by the carrying object's owner). `Ops.lawCitations`
+   closes over `Clause.reads` of every carried rule and want too (their `"O".F`, `"O" wants`, holes), so
+   their states are roots of the write; `Facts.wants` is, for every object a carried clause or a law
+   cites by `"O" wants`, that object's placed wants then its `followed` wants.
+3. Commit, after `judge` admits each written object: `Law.fires facts (some old) new rules` with the
+   same `Facts` as its law (so `request.verb`, `request.kind`, `request.clock` read alike); for each,
+   `Law.fill facts (some old) new spell`: none is `unfired` (a hole read nothing), else `me` resolved to
+   the owner's avatar and `receive {text}` staged under the owner, identity
+   `rule:<object>:<name>:<height>`; `rulesPerCommit` 8, `rulesPerObject` 32, `ruleDepth` 4, judged
+   under `ruleTicks` = `lawTicks`. `fired`/`unfired` journaled and re-derived on replay.
+4. Wants: `Law.poses facts object state wants` at the clock, on the old state and on the new at commit
+   (the `wanted`/`unwanted` diff, `since` the height that made each true) and on the state as it stands
+   at every read (`wants {object}`); a want's spell filled with `Law.fill (Law.asItStands facts object)
+   none state spell`.
+5. `request.verb`: `act {verb, text}` sets `verb` to the grown verb (method `act`); every other write
+   already sets it to the method.
+6. Delete `Law.lawReading` and `Ops.lawClauses`' line splitter: `lawRows` reads `parseClauses o.lawText`
+   and lists every clause with its keyword, so `world-inspect` and `rules`/`wants` show rules and wants.
+7. `Limits.maxLawClauses` (16) now counts a text's rules and wants; a kind carrying laws, rules and wants
+   may need it raised (placed rules are bounded by `rulesPerObject`, not by it).
+8. A package's top-level `rule`/`want` lines are parsed, checked and carried to `Lowering.clauses`;
+   `Package.EntryCompiled` should carry them to `Built` so `makeObject` places them (owner the
+   creator) when no law text is given. (Objects lane: `Kind.obend`'s `lawChecked` still refuses lines
+   not starting `law `; `world.check` accepts `rule` and `want` lines now.)

@@ -134,9 +134,10 @@ structure Module where
   /-- (alias, imported module name) in source order. -/
   imports : List (String × String)
   decls : List Decl
-  /-- The module's top-level enforced laws (`law NAME: EXPR`), in source order. They are not
-  terms: the elaborator never sees them; the front end hands the entry module's to the artifact. -/
-  laws : List (String × ObjectiveBendLaw.LawExpr) := []
+  /-- The module's text: its top-level clauses (`law`, `rule`, `want`), in source order. They are
+  not terms: the elaborator never sees them; the front end hands the entry module's to the
+  artifact. -/
+  clauses : List ObjectiveBendLaw.Clause := []
   /-- `layer over ./X.obend`: the module this one is a layer over (its `Super`). -/
   layerOver : Option String := none
   /-- The module's protocols: name, then each method's name, type text and span. -/
@@ -210,22 +211,26 @@ def decl (d : ObjectiveBendSurface.Decl) : Except String Decl := do
 
 end Surface
 
+/-- The module's laws, by name: the law clauses of its text. -/
+def Module.laws (m : Module) : List (String × ObjectiveBendLaw.LawExpr) := ObjectiveBendLaw.lawsOf m.clauses
+
 /-- A parsed module, its import aliases resolved to module names: what the elaborator reads.
-Top-level laws are parsed into their enforced form and set aside (`Module.laws`). -/
+Top-level clauses are parsed into their enforced form and set aside (`Module.clauses`). -/
 def ofSurface (name : String) (imports : List (String × String)) (m : ObjectiveBendSurface.Module) :
     Except String Module := do
   let mut decls : List Decl := []
-  let mut laws : List (String × ObjectiveBendLaw.LawExpr) := []
+  let mut clauses : List ObjectiveBendLaw.Clause := []
   let mut protocols : List (String × List (String × String × String × ObjectiveBendSurface.Span)) := []
   for d in m.decls do
-    if let .law lawName source _ _ := d then
-      laws := laws ++ [(lawName, ← ObjectiveBendLaw.parse source)]
+    if let .clause keyword name source reading _ := d then
+      let (modality, condition) ← ObjectiveBendLaw.parseBody keyword source
+      clauses := clauses ++ [← ObjectiveBendLaw.admit { modality, name, reading, condition }]
     else if let .protocol name methods shown _ := d then
       protocols := protocols ++ [(name, (methods.zip (shown ++ methods.map (·.type))).map fun (f, s) => (f.name, f.type, s, f.span))]
     else decls := decls ++ [← Surface.decl d]
-  ObjectiveBendLaw.checkNames laws
+  ObjectiveBendLaw.checkNames (clauses.map (·.name))
   let layerOver := m.layerOver.bind fun _ => (imports.find? (·.1 == "Super")).map (·.2)
-  return ⟨name, imports, decls, laws, layerOver, protocols, m.implements, m.forms⟩
+  return ⟨name, imports, decls, clauses, layerOver, protocols, m.implements, m.forms⟩
 
 /-! ## Proposal types (the `Ty` JSON wire of Theory.ObjectiveBendTyping.typeJson, plus `variant`) -/
 

@@ -971,7 +971,7 @@ def rewriteDecl : Nat → Site → List (String × M IType) → Decl → M Decl
     | .sum name cases typeParameters span =>
       let cases ← cases.mapM fun c => do return { c with type := ← rewriteType fuel site c.type }
       return .sum name cases typeParameters span
-    | .law .. | .typeAlias .. => return d
+    | .clause .. | .typeAlias .. => return d
     | .protocol name methods shown span =>
       -- The implementer's State, Plan and Response stay names (the elaborator binds them).
       let free := { site with bindings := ["State", "Plan", "Response"].map (fun n => (n, GType.atom n)) ++ site.bindings }
@@ -1099,7 +1099,7 @@ def declStrings : Decl → List String
   | .typeAlias n t _ => [n, t]
   | .sum n cases ps _ => n :: ps ++ cases.flatMap (fun c => [c.name, c.type])
   | .record n methods fields _ => n :: methods.flatMap signatureStrings ++ fields.flatMap (fun f => [f.name, f.type])
-  | .law n source reading _ => [n, source, reading]
+  | .clause _ n source reading _ => [n, source, reading]
   | .function sig ps b _ => signatureStrings sig ++ ps.getD [] ++ (bodyStrings b)
   | .protocol n methods shown _ => n :: shown ++ methods.flatMap (fun f => [f.name, f.type])
 
