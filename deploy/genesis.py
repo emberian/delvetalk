@@ -106,7 +106,9 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
               'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(cites) and unchanged(makes) '
               'and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\n'
               'law kept "a line is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
-              'and (unchanged(admitted) or request.subject == new.keeper)')
+              'and (unchanged(admitted) or request.subject == new.keeper)\n'
+              'law methods "what was written, admitted and marked, who is here, who left, the variables and what lies here change only by their spells, never by a proposal": '
+              'request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things))')
 
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,

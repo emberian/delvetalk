@@ -45,22 +45,17 @@ Done here (commit "RECORD absorbs PLACE"):
 - Tests: test_places is test_rooms; test_scene, test_spween, test_kinds, test_strangers, test_lenses (the
   place lenses deleted with them), test_hub, test_await, test_objects and the rest migrated.
 
-Red at the checkpoint (full run on persvati: 781 tests, 3 failed classes), the next turns' first work:
+Step 1a (green: 787 tests, 0 failed on persvati), the checkpoint's reds closed:
 
-1. `test_kinds` `test_a_spween_block_posted_to_a_room_makes_a_room_under_it`: a block posted to a room made
-   by `kind/room make` (body grafted by delivery) is answered with the room's card, not carved; the same
-   through a room made by `world-reprogram extend` (test_spween `Made`) carves. Find why the grafted room's
-   `receive` does not see the block.
-2. `test_genesis` `MenuFromState`: glm's root menu opens on ROOMS, not on its last door (ANTHOLOGY), after
-   kimi enters `rooms` through the directory. Check what `visits` the directory writes when the room's enter
-   answers `entered`.
-3. `test_properties` `EveryMethod`: an avatar's `publishPage` (the host's default page) ran from outside for a
-   stranger. Avatar changed only its imports and move/go; find what the artifact now declares.
-
-4. A loss to restore: Scene refused a proposed write by its owner too (`methods`); a room's owner can now
-   propose `presence` (the record law's owner clause admits the owner at any kind). Add to RECORD's law a
-   clause that refuses a proposal (`request.kind == proposed` is in the fragment, KERNEL-HANDOFF §24), and put
-   back test_strangers' creator assertion (`test_a_stranger_cannot_place_themselves_in_a_room`).
+1. The spween block in `test_kinds` was not spween this dialect read (`* [Listen] -> END`); Spween now takes a
+   divert after a choice's label (`* [label] -> target`), as ink does, and its reading names it.
+2. A field line at the root goes to the first door whose card takes it: `write:` reaches ROOMS (a room is a
+   record) before ANTHOLOGY; test_genesis says so. The commonplace replaces this routing in 1b.
+3. `publishPage` is the host's on every public card (HOST-HANDOFF 5.62, 5.68): test_properties' helper probe
+   skips the conventional names.
+4. RECORD's law has `law methods`: `request.kind == proposed implies` lines, admissions, marks, presence,
+   departures, vars and things unchanged, the owner's proposal included; test_strangers' creator assertion is
+   back. `next` stays out, so a cistern's drained level is its own `level` clause's.
 
 Routed here by docs/review/fungus-2026-10-11.md §3 (on foundation; merge it into this lane first), each folded
 into the step that touches the same object:

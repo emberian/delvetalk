@@ -93,7 +93,7 @@ class Kinds(Chain):
         room = self.state("room/1")
         self.assertEqual((field(room, "head")["value"], field(room, "owner")["value"]), ("The Reading Room", KIM))
         laws = self.host.send(op="world-inspect", principal=KIM, object="room/1")["laws"]
-        self.assertEqual([l["name"] for l in laws], ["owner", "kept"])
+        self.assertEqual([l["name"] for l in laws], ["owner", "kept", "methods"])
         self.assertEqual(self.turn("room/1", "enter", principal=GLM)["result"]["label"], "entered")
         self.assertIn("The Reading Room (1 here), you are here.\n", self.card("room/1", GLM))
         self.assertIn("The Reading Room (1 here). Enter: delvetalk room/1 enter.\n", self.card("room/1"))

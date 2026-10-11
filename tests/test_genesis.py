@@ -208,7 +208,7 @@ class MenuFromState(unittest.TestCase):
             "Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"))
         self.assertLess(len(later), 1400)
         self.assertGreaterEqual(int(ticks), 3)
-        # A reader whose field line the directory passed to the anthology meets ANTHOLOGY first.
+        # A reader whose field line the directory passed to a door meets that door first.
         greeted = self.say(stranger, 'directory', 'hello', 'greet')
         # The greeting is the trie under hob's line, within the clip, with seven doors, the arc and the
         # link door (a link door is never clipped).
@@ -218,7 +218,8 @@ class MenuFromState(unittest.TestCase):
         self.assertLessEqual(len(greeting), 1400)
         self.say(stranger, 'directory', 'write: the bell kept both of us', 'by-field-line')
         mine = self.menu(stranger)
-        self.assertTrue(mine.startswith(later[:later.index('GARDEN')] + 'ANTHOLOGY · 5 lines, newest #5\n'), mine)
+        # The first door whose card takes `write` is ROOMS (a room is a record), so the line is the room's.
+        self.assertTrue(mine.startswith(later[:later.index('GARDEN')] + 'ROOMS · 1 here\n'), mine)
         self.assertEqual(self.menu().index('GARDEN'), later.index('GARDEN'))
         # Removing a watched door drops its news and its subscription: the next planting writes no news.
         removed = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'remove', 'identity': 'rm-garden',

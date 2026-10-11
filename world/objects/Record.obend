@@ -76,9 +76,10 @@ def leftMax() -> Nat:
   64n
 # The record's law, as a kind passes it: the owner stays and alone changes the keeper, the doors,
 # what it makes, its scene or its code; a line is only added, an admission only added, and only
-# the keeper admits.
+# the keeper admits; what the spells keep (lines, admissions, marks, presence, departures,
+# variables, the floor) no proposal writes, the owner's included.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the keeper, the doors, what it makes, its scene or its code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(cites) and unchanged(makes) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)"
+  "law owner \"the owner stays; only the owner changes the keeper, the doors, what it makes, its scene or its code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(cites) and unchanged(makes) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables and what lies here change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things))"
 def lineKey(line: Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
 def admissionKey(a: Rows.Admission) -> {n: Nat}:

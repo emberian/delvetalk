@@ -84,10 +84,10 @@ def extras(m, cap):
     from deploy.seed import create
     from transport.host import HostClient
     cap.say('## town')
-    made = create(HostClient(cap.root), m.OPENER, 'yard', 'Place', 'tokens-yard',
-                  rec(owner=lab(m.OPENER), name=lab('The moss yard'), description=lab('A quiet yard behind the gate.'),
-                      exits=lst(rec(label=lab('garden'), to=ref('garden')))), genesis.PLACE_LAW)
-    print('place:', made.get('status'), made.get('message') or '', file=sys.stderr)
+    made = create(HostClient(cap.root), m.OPENER, 'yard', 'Record', 'tokens-yard',
+                  rec(owner=lab(m.OPENER), head=lab('The moss yard, a quiet yard behind the gate'),
+                      cites=lst(rec(label=lab('garden'), to=ref('garden')))), genesis.RECORD_LAW)
+    print('record:', made.get('status'), made.get('message') or '', file=sys.stderr)
     moth = m.PEOPLE['moth.delve.town']
     cap.token = cap.tokens['moth.delve.town']
     for obj in ('directory', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern',
