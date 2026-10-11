@@ -131,6 +131,8 @@ KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the la
 # untended past it takes `tend` alone (tests/test_tending.py compares the two).
 QUIET_AFTER = 1440
 ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": request.method == "tend" or request.clock <= old.tended + {QUIET_AFTER}'
+# A bond's countersignatures are marks whose `who` is the signer (world/bodies/bond.obend).
+SIGNER_LAW = 'law signer "a party signs only for themselves": changed(new.marks.who) by request.subject'
 
 
 # The law each package's objects are created with, where its source declares none.
@@ -150,7 +152,8 @@ KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('garden', 'record', NAMED, '{name}', RECORD_LAW, 'garden'),
          ('weather', 'record', 'garden: text 1..128\ntide: text 1..128', '', RECORD_LAW, 'weather'),
          ('door', 'record', NAMED, '{name}', RECORD_LAW, 'door'),
-         ('lantern', 'record', NAMED + '\ndoor: text 1..128', '{name}', RECORD_LAW, 'lantern')]
+         ('lantern', 'record', NAMED + '\ndoor: text 1..128', '{name}', RECORD_LAW, 'lantern'),
+         ('bond', 'record', 'parties: text 1..400\nterms: text 1..400\namends: text 0..128\nlaw: text 0..4096', '', RECORD_LAW + '\n' + SIGNER_LAW, 'bond')]
 
 
 # The hand's own things, made by spell on their kinds at genesis, each at an exact id (a kind's owner's alone), so

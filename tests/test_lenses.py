@@ -95,8 +95,9 @@ class Lenses(test_chain.Chain):
 
 class OwnedLenses(test_chain.Chain):
     """Lenses on the objects that had no owner: Thing (name, description);
-    Workshop has nothing to set and says so. Thing declares a law that refuses the same
-    write from anyone but the owner. A room and the garden are records and have no lenses."""
+    Workshop has nothing to set and says so. A Thing's law, not its code, refuses the write
+    from anyone but its keeper (its owner while unclaimed), so a lent `set` runs. A room and the
+    garden are records and have no lenses."""
 
     def say(self, obj, text, who):
         r = self.turn(obj, "receive", heard(text), principal=who)
@@ -122,8 +123,8 @@ class OwnedLenses(test_chain.Chain):
         self.make("stone", closure("Thing"), thing_seed("stone"))
         set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
         for obj, kind, fields in (("stone", "thing", ["name", "description", "holder", "location"]),):
-            r = self.say(obj, "delvetalk %s set\nname: renamed" % obj, "glm")
-            self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only ember changes it: its keeper, or its owner while it is unclaimed"))
+            r = self.turn(obj, "receive", heard("delvetalk %s set\nname: renamed" % obj), principal="glm")
+            self.assertEqual((r["status"], r["receipt"]["outcome"].get("clause")), ("refused", "owner"), r)
             self.assertEqual(self.say(obj, "delvetalk %s set\ndescription: moths" % obj, "ember")["result"]["label"], "done")
             self.assertEqual(self.say(obj, "delvetalk %s set\nname: renamed" % obj, "ember")["result"]["label"], "done")
             self.assertEqual((self.field(obj, "name"), self.field(obj, "description")), ("renamed", "moths"))
