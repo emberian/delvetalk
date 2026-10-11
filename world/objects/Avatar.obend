@@ -344,15 +344,22 @@ def holdingLine(item: Plans.Reference) -> Document.Document:
   Document.text("Holding: {item.object}\n")
 def noteLine(item: Note) -> Document.Document:
   Document.text("{Card.shown(item.from, item.handle, Card.stranger())}: {item.text}\n")
-# Notes newest first; eight of each list, then a count.
+# Notes newest first; eight of each list, then a count; one budget across the card (Card.limit()):
+# each list gets what the ones before it leave.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Lists.concat(Lists.concat(Document.Documents.cons({head: Document.text("{state.handle}, at {state.at.object}.\n"), tail: Document.Documents.nil()}), Card.clipped(Lists.map(state.holding, holdingLine), 8n)), Lists.concat(mailFor(state, context), inboxFor(state, context)))})
+  let head = Document.text("{state.handle}, at {state.at.object}.\n")
+  let held = Card.clippedWithin(Lists.map(state.holding, holdingLine), 8n, Card.left(Document.size(head) + 200n))
+  let mail = mailFor(state, context, Document.size(head) + sized(held) + 100n)
+  let notes = inboxFor(state, context, Document.size(head) + sized(held) + sized(mail))
+  Document.Document.sequence({items: Lists.concat(Lists.concat(Document.Documents.cons({head: head, tail: Document.Documents.nil()}), held), Lists.concat(mail, notes))})
+def sized(lines: Document.Documents) -> Nat:
+  Document.size(Document.Document.sequence({items: lines}))
 # What it sent is counted for everyone; what it follows is its principal's to see.
-def mailFor(state: State, context: Abi.Context) -> Document.Documents:
-  Document.Documents.cons({head: Document.text("{natText(Relations.count(state.outbox))} sent, follows {natText(Lists.length(state.following))}\n"), tail: if Card.reads(context.object, context) then Card.clipped(Lists.map(state.following, fn(f: Followed) -> Document.Document: followLine(f, context)), 8n) else Document.Documents.nil()})
+def mailFor(state: State, context: Abi.Context, used: Nat) -> Document.Documents:
+  Document.Documents.cons({head: Document.text("{natText(Relations.count(state.outbox))} sent, follows {natText(Lists.length(state.following))}\n"), tail: if Card.reads(context.object, context) then Card.clippedWithin(Lists.map(state.following, fn(f: Followed) -> Document.Document: followLine(f, context)), 8n, Card.left(used)) else Document.Documents.nil()})
 def followLine(f: Followed, context: Abi.Context) -> Document.Document:
   let watched = if f.field == "outbox" then "" else " ({f.field})"
   Document.text("Follows: {Card.name(f.object.object, context)}{watched}\n")
 # The notes are the avatar's principal's alone; anyone else sees how many there are.
-def inboxFor(state: State, context: Abi.Context) -> Document.Documents:
-  if Card.reads(context.object, context) then Card.clipped(Lists.map(Lists.reverse(Relations.rows(state.inbox)), noteLine), 8n) else Document.Documents.cons({head: Document.text(if Relations.count(state.inbox) == 1n then "1 note\n" else "{natText(Relations.count(state.inbox))} notes\n"), tail: Document.Documents.nil()})
+def inboxFor(state: State, context: Abi.Context, used: Nat) -> Document.Documents:
+  if Card.reads(context.object, context) then Card.clippedWithin(Lists.map(Lists.reverse(Relations.rows(state.inbox)), noteLine), 8n, Card.left(used)) else Document.Documents.cons({head: Document.text(if Relations.count(state.inbox) == 1n then "1 note\n" else "{natText(Relations.count(state.inbox))} notes\n"), tail: Document.Documents.nil()})
