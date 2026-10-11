@@ -10,7 +10,7 @@ import unittest
 
 from deploy import genesis
 from tests.town import Town
-from tests.wire import label, nat, record
+from tests.wire import cast_refusal, label, nat, record, result_label
 from transport.config import ORIGIN
 
 
@@ -109,6 +109,9 @@ class Genesis(unittest.TestCase):
     def library(self, text, n):
         got = self.host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'library', 'method': 'receive', 'identity': 'lib-%d' % n,
                               'argument': record(text=label(text), post=label('at://x/p/%d' % n))})
+        if got['status'] == 'refused':  # the card's refusal refuses the turn: its line is the receipt's reason
+            cast_refusal(got)
+            return got['receipt']['outcome']['reason'] + '\n'
         self.assertEqual(got['status'], 'admitted', got)
         return got['offers'][0]['text']
 
@@ -151,7 +154,10 @@ class Rows(unittest.TestCase):
     def say(self, who, obj, text, ident):
         got = self.town.send(op='world-turn', principal=who, object=obj, method='receive',
                              argument=record(text=label(text), post=label('at://x/p/' + ident)), identity=ident)
-        self.assertEqual(got['status'], 'admitted', got)
+        if got['status'] == 'refused':  # a card's refusal of its own spell refuses the turn
+            cast_refusal(got)
+        else:
+            self.assertEqual(got['status'], 'admitted', got)
         return got
 
     def test_a_residents_wake_counts_seven_rains_on_anothers_bell_and_fires(self):
@@ -253,7 +259,7 @@ class Commonplace(unittest.TestCase):
     def owner(self, method, ident, **fields):
         got = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'commonplace', 'method': method,
                               'identity': ident, 'argument': record(**{k: label(v) for k, v in fields.items()})})
-        self.assertEqual(got['status'], 'admitted', got)
+        self.assertIn(got['status'], ('admitted', 'refused'), got)
         return got
 
     def test_what_changed_leads_and_the_doors_follow_within_the_clip(self):
@@ -267,7 +273,7 @@ class Commonplace(unittest.TestCase):
         rain = self.say(kimi, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: it rained here first', 'rain-1')
         # The owner opens an arc (SEEDING §4): a door to the first bell, with a spell.
         # The commonplace holds eight doors, and the hand's seven with the link door fill them: a ninth is refused, so TIDE makes room.
-        self.assertEqual(self.owner('door', 'arc-full', label='BELL', to='garden/bell/1')['result']['label'], 'refused')
+        self.assertEqual(result_label(self.owner('door', 'arc-full', label='BELL', to='garden/bell/1')), 'refused')
         self.assertEqual(self.owner('undoor', 'arc-room', label='TIDE')['result']['label'], 'done')
         self.assertEqual(self.owner('door', 'arc-door', label='BELL', to='garden/bell/1')['result']['label'], 'done')
         self.assertEqual(self.owner('example', 'arc-spell', label='BELL', spell='delvetalk garden/bell/1 rain / text: it rained here first',
@@ -292,7 +298,7 @@ class Commonplace(unittest.TestCase):
         # A stranger hangs no door.
         refused = self.host.send({'op': 'world-turn', 'principal': stranger, 'object': 'commonplace', 'method': 'door', 'identity': 'stranger-door',
                                   'argument': record(label=label('MINE'), to=label('garden'))})
-        self.assertEqual(refused['result']['label'], 'refused', refused)
+        self.assertEqual(result_label(refused), 'refused', refused)
 
     def test_first_words_get_hobs_greeting_once_and_a_field_line_goes_to_its_door(self):
         reader = 'did:plc:newcomer'

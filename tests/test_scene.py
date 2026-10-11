@@ -19,7 +19,7 @@ import unittest
 
 from tests import test_chain
 from tests.test_rooms import make_room
-from tests.wire import label, record
+from tests.wire import cast_refusal, label, record
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
 
@@ -56,8 +56,7 @@ GATE = [
 
 def why(reply):
     """A refusal as `clause: reading`."""
-    fields = {f["name"]: f["value"]["value"] for f in reply["result"]["payload"]["fields"]}
-    return "%s: %s" % (fields["clause"], fields["reading"])
+    return "%s: %s" % cast_refusal(reply)
 
 
 def plain(item):
@@ -81,7 +80,10 @@ class Scenes(test_chain.Chain):
 
     def say(self, text="", principal=GLM):
         r = self.turn("scene", "receive", heard(text), principal=principal)
-        self.assertEqual(r["status"], "admitted", r)
+        if r["status"] == "refused":  # a refusal of the card's own spell refuses the turn
+            self.assertEqual(r["receipt"]["outcome"]["class"], "cardRefused", r)
+        else:
+            self.assertEqual(r["status"], "admitted", r)
         return r
 
     def card(self, principal):
@@ -119,11 +121,10 @@ class Scenes(test_chain.Chain):
         for text in ("Knock", "open", "Back", "Open the gate"):
             with self.subTest(choice=text):
                 r = self.say("delvetalk scene choose\nchoice: " + text)
-                self.assertEqual(r["result"]["label"], "refused")
                 self.assertTrue(why(r).startswith("notOffered: gate does not offer"), why(r))
                 self.assertEqual(self.view(), before)
         r = self.say("delvetalk scene choose\nchoice: Knock")
-        self.assertEqual(r["offers"][0]["text"], "refused notOffered: gate does not offer Knock\n")
+        self.assertEqual(r["receipt"]["outcome"]["reason"], "refused notOffered: gate does not offer Knock")
         # A principal who never entered has no passage to choose from.
         r = self.say("delvetalk scene choose\nchoice: Open", principal=KIM)
         self.assertEqual(why(r), "notHere: Enter the room first.")
@@ -232,14 +233,16 @@ class Scenes(test_chain.Chain):
                 # A line whose name the form lacks ends the spell's fields (HOST-HANDOFF 5.152): a forged
                 # principal never reaches the method, which runs, if at all, as the turn's principal.
                 r = self.turn("scene", "receive", heard(text), principal=GLM)
-                self.assertEqual(r["status"], "admitted", r)
+                if r["status"] == "refused":
+                    self.assertEqual(r["receipt"]["outcome"]["class"], "cardRefused", r)
+                else:
+                    self.assertEqual(r["status"], "admitted", r)
                 self.assertNotIn(KIM, json.dumps(r["receipt"]["outcome"].get("writes", [])))
         self.assertEqual([p["who"] for p in self.view()[1]["presence"]], [GLM])
         before = self.view()
         # Turn-level choose moves only the turn's principal.
         r = self.turn("scene", "choose", record(choice=label("Open")), principal=KIM)
-        self.assertEqual(r["status"], "admitted")
-        self.assertTrue(r["result"]["payload"]["fields"][0]["value"]["value"].startswith("notHere"))
+        self.assertTrue(cast_refusal(r)[0].startswith("notHere"), r)
         self.assertEqual(self.view(), before)
 
 

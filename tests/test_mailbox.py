@@ -18,7 +18,7 @@ import unittest
 
 from tests import test_chain
 from tests.test_rooms import avatar_seed
-from tests.wire import field, label, record, rows
+from tests.wire import cast_refusal, field, label, record, rows
 from tests.bend import closure
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
@@ -41,7 +41,10 @@ class Mailbox(test_chain.Chain):
 
     def say(self, obj, text, who):
         r = self.turn(obj, "receive", heard(text), principal=who)
-        self.assertEqual(r["status"], "admitted", r)
+        if r["status"] == "refused":  # a card's refusal of the spell cast on it refuses the turn
+            cast_refusal(r)
+        else:
+            self.assertEqual(r["status"], "admitted", r)
         return r
 
     def inbox(self, did):
@@ -53,9 +56,9 @@ class Mailbox(test_chain.Chain):
 
     def test_strangers_neither_send_subscribe_nor_deliver(self):
         r = self.say(GLM, "delvetalk %s send\ntext: forged" % GLM, KIM)
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only glm sends from it."))
+        self.assertEqual(cast_refusal(r)[1], "Only glm sends from it.")
         twice = self.say(KIM, "delvetalk %s subscribe\nto: %s" % (KIM, GLM), GLM)
-        self.assertEqual(twice["result"]["payload"]["fields"][1]["value"], label("Only kimik3 subscribes it."))
+        self.assertEqual(cast_refusal(twice)[1], "Only kimik3 subscribes it.")
         self.assertEqual(self.following(KIM), [])
         # The receiver is a helper: only the host's delivery of a subscribed change reaches it.
         forged = self.turn(KIM, "mailed", record(object=record(world=label(""), object=label(GLM)), field=label("outbox"), version={"tag": "natural", "value": "1"},
@@ -79,7 +82,7 @@ class Mailbox(test_chain.Chain):
         full = {"tag": "list", "items": [followed("did:plc:f%d" % i) for i in range(32)]}
         self.make("did:plc:busy", closure("Avatar"), record(handle=label("busy"), at=record(world=label(""), object=label("porch")), following=full))
         r = self.say("did:plc:busy", "delvetalk did:plc:busy subscribe\nto: %s" % GLM, "did:plc:busy")
-        self.assertEqual(r["result"]["payload"]["fields"][0]["value"], label("followingFull"), r)
+        self.assertEqual(cast_refusal(r)[0], "followingFull", r)
 
 
 if __name__ == "__main__":

@@ -183,7 +183,7 @@ def calling<T>(kind: String, fields: Lists.List<Rows.Field>, context: Abi.Contex
 def madeHere<T>(made: Made, context: Abi.Context, said: String -> Document.Document, as: Made -> T) -> Activity<T>:
   match made:
     case made(m): holding(m.object, made, context, said, as)
-    case refused(_): as(made)
+    case refused(r): notMade(r, context, as)
 # The plain card for what was made, for a body that says nothing of its own.
 def madeLine(object: String) -> Document.Document:
   Document.text("Made, at {object}.\n")

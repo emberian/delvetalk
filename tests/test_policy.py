@@ -17,7 +17,7 @@ from tests.host import as_owner
 from tests.test_chain import Chain, town_garden
 from tests.test_receive import commonplace
 from tests.test_objects import check, compile_job
-from tests.wire import boolean, field, label, nil, record, rows
+from tests.wire import boolean, cast_refusal, field, label, nil, record, rows
 from tests.bend import closure, declared
 
 PROBE = declared("""edition ObjectiveBend 1
@@ -115,9 +115,9 @@ class PolicyObject(Chain):
         self.policy()
         example = record(utterance=label("x"), spell=label("y"))
         stranger = self.turn("policy", "teach", example, principal="glm")
-        self.assertEqual(stranger["status"], "admitted", stranger)
-        self.assertEqual(stranger["result"]["label"], "refused")
-        self.assertIn("Only the policy's owner", stranger["result"]["payload"]["fields"][1]["value"]["value"])
+        clause, reading = cast_refusal(stranger)
+        self.assertEqual(clause, "notOwner", stranger)
+        self.assertIn("Only the policy's owner", reading)
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="policy")["version"], 0)
         # The same write proposed directly is judged by the law in the source.
         proposed = self.host.send(op="world-propose", principal="glm", identity="forged",
@@ -140,15 +140,14 @@ class PolicyObject(Chain):
     def test_the_owner_teaches_a_macro_and_a_stranger_is_refused_by_name(self):
         self.policy()
         stranger = self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="glm")
-        self.assertEqual(stranger["result"]["label"], "refused", stranger)
-        self.assertIn("Only the policy's owner may teach it", stranger["result"]["payload"]["fields"][1]["value"]["value"])
+        self.assertIn("Only the policy's owner may teach it", cast_refusal(stranger)[1])
         taught = self.turn("policy", "receive", record(text=label(self.MOTH), post=label("")), principal="ember")
         self.assertEqual((taught["status"], taught["result"]["label"]), ("admitted", "taught"), taught)
         [macro] = [f["value"] for f in self.state("policy")["fields"] if f["name"] == "macros"][0]["items"]
         self.assertEqual({f["name"]: f["value"]["value"] for f in macro["fields"]},
                          {"name": "moth-bell", "pattern": "moth for {who}", "expansion": "garden plant / colour: violet / seed: a bell for {who}"})
         holes = self.turn("policy", "receive", record(text=label("delvetalk policy macro / name: all / pattern: {x} / expansion: garden plant"), post=label("")), principal="ember")
-        self.assertIn("starts with a word", holes["result"]["payload"]["fields"][1]["value"]["value"])
+        self.assertIn("starts with a word", cast_refusal(holes)[1])
         card = self.card("policy")
         self.assertNotIn("Reply with a spell", card)  # no usage for a stranger
         self.assertIn("Macro moth-bell: moth for {who}\n  means: delvetalk garden plant / colour: violet / seed: a bell for {who}\n", card)
@@ -175,7 +174,7 @@ class PolicyObject(Chain):
             r = self.turn("policy", "teach", record(utterance=label("u%d" % i), spell=label("s")), principal="ember")
             self.assertEqual(r["result"]["label"], "taught", r)
         over = self.turn("policy", "teach", record(utterance=label("u16"), spell=label("s")), principal="ember")
-        self.assertEqual(over["result"]["label"], "refused")
+        self.assertEqual(cast_refusal(over)[0], "examplesFull", over)
 
     def test_the_prompt_shows_what_the_card_holds_and_the_misfit_before_the_examples(self):
         out = run("heldPrompt", context())

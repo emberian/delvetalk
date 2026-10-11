@@ -228,7 +228,7 @@ def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity
 # (the calling object) does either. A thing lying here that is inspirited gives the room its line,
 # under the one who inspirited it, and a mark, so the card lists it among the claimed.
 def inspirited(state: State, input: {line: String}, context: Abi.Context) -> Activity<Done>:
-  if context.caller == "" then Done.refused({clause: "notAThing", reading: "Only a thing is inspirited."}) else if holds(state.things, {world: context.world, object: context.caller}) == false then Done.refused({clause: "notLying", reading: "That is not lying here."}) else spirited(input.line, context, state)
+  if context.caller == "" then roomRefused({clause: "notAThing", reading: "Only a thing is inspirited."}, context) else if holds(state.things, {world: context.world, object: context.caller}) == false then roomRefused({clause: "notLying", reading: "That is not lying here."}, context) else spirited(input.line, context, state)
 def spirited(line: String, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {lines: insert {author: context.principal, handle: context.handle, text: if textLength(line) > 280n then "{textTake(line, 279n)}…" else line, at: context.height, n: state.next}, next: add 1n, marks: insert {name: claimMark(context.caller), who: context.principal, handle: context.handle, at: context.height}}
   Done.done({})
@@ -237,12 +237,12 @@ def claimMark(thing: String) -> String:
 def claimed(thing: Plans.Reference, state: State) -> Bool:
   Super.marked(state, claimMark(thing.object))
 def take(state: State, context: Abi.Context) -> Activity<Done>:
-  if context.caller == "" then Done.refused({clause: "notAThing", reading: "Only a thing can take itself."}) else if isHere(context, state) == false then Done.refused({clause: "notPresent", reading: "Only someone here can take things."}) else if holds(state.things, {world: context.world, object: context.caller}) == false then Done.refused({clause: "notLying", reading: "That is not lying here."}) else lifted(context)
+  if context.caller == "" then roomRefused({clause: "notAThing", reading: "Only a thing can take itself."}, context) else if isHere(context, state) == false then roomRefused({clause: "notPresent", reading: "Only someone here can take things."}, context) else if holds(state.things, {world: context.world, object: context.caller}) == false then roomRefused({clause: "notLying", reading: "That is not lying here."}, context) else lifted(context)
 def lifted(context: Abi.Context) -> Activity<Done>:
   let written(_) = write {things: retract {object: context.caller}}
   Done.done({})
 def put(state: State, context: Abi.Context) -> Activity<Done>:
-  if context.caller == "" then Done.refused({clause: "notAThing", reading: "Only a thing can put itself down."}) else if isHere(context, state) == false && context.principal != state.owner then Done.refused({clause: "notPresent", reading: "Only someone here can put things down."}) else if holds(state.things, {world: context.world, object: context.caller}) then Done.refused({clause: "alreadyLying", reading: "That is already lying here."}) else laid(context)
+  if context.caller == "" then roomRefused({clause: "notAThing", reading: "Only a thing can put itself down."}, context) else if isHere(context, state) == false && context.principal != state.owner then roomRefused({clause: "notPresent", reading: "Only someone here can put things down."}, context) else if holds(state.things, {world: context.world, object: context.caller}) then roomRefused({clause: "alreadyLying", reading: "That is already lying here."}, context) else laid(context)
 def laid(context: Abi.Context) -> Activity<Done>:
   let written(_) = write {things: insert {world: context.world, object: context.caller}}
   Done.done({})

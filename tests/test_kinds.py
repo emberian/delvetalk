@@ -12,7 +12,7 @@ import unittest
 from deploy import genesis
 from tests.host import ROOT
 from tests.test_chain import Chain, town_kinds
-from tests.wire import field, label, listing, record, reference, relation
+from tests.wire import cast_refusal, field, label, listing, record, reference, relation
 from tests.bend import closure
 
 KIM, GLM = "did:plc:kimik3", "did:plc:glm"
@@ -56,8 +56,7 @@ class Kinds(Chain):
             with self.subTest(fields=fields):
                 rows = {"tag": "list", "items": [record(name=label(n), value=label(v)) for n, v in fields]}
                 r = self.turn("kind/bell", "makeUnder", record(under=label("yard"), fields=rows), principal=KIM)
-                self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "refused"), r)
-                self.assertEqual([f["value"]["value"] for f in r["result"]["payload"]["fields"]], [clause, reading], r)
+                self.assertEqual(cast_refusal(r), (clause, reading), r)
         self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
 
     def test_a_kind_from_a_name_and_what_it_is_of_alone(self):
@@ -79,9 +78,11 @@ class Kinds(Chain):
                                         ('law q "x": new.owner = 3', "law: law outside the enforced fragment: `=`"))):
             with self.subTest(law=law):
                 r = said("delvetalk kinds make / name: prereg / of: record / form: claim: text 1..80 / law: " + law, n)
+                reason = r["receipt"]["outcome"]["reason"]
+                self.assertEqual(cast_refusal(r)[0], "badValue", r)
                 self.assertEqual(r["receipt"]["outcome"].get("writes", []), [], r)
-                self.assertTrue(text(r).startswith("refused badValue: " + why), text(r))
-                self.assertIn('One clause a line: law NAME "reading": EXPR; delvetalk library read / page: laws', text(r))
+                self.assertTrue(reason.startswith("refused badValue: " + why), reason)
+                self.assertIn('One clause a line: law NAME "reading": EXPR; delvetalk library read / page: laws', reason)
         self.assertNotIn("kind/prereg", self.host.send(op="world-objects", principal="ember")["ids"])
         made = said('delvetalk kinds make / name: prereg / of: record / form: claim: text 1..80 / law: law once "a prereg never changes": unchanged(fields)', 9)
         self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)
@@ -95,7 +96,7 @@ class Kinds(Chain):
         self.assertNotIn("place", offered(KIM))
         self.assertIn("make", offered(KIM))
         stranger = self.turn("kind/lamp", "place", record(light=label("mine"), id=label("lamp/here")), principal=KIM)
-        self.assertEqual(text(stranger), "refused notOwner: Only ember places what this kind makes at an id; make it, and it is named\n")
+        self.assertEqual(cast_refusal(stranger), ("notOwner", "Only ember places what this kind makes at an id; make it, and it is named"))
         self.assertEqual(stranger["receipt"]["outcome"].get("writes", []), [], stranger)
         placed = self.turn("kind/lamp", "place", record(light=label("the hand's"), id=label("lamp/here")), principal="ember")
         self.assertEqual(placed["result"], {"tag": "variant", "label": "made", "payload": record(object=label("lamp/here"))}, placed)
@@ -109,8 +110,8 @@ class Kinds(Chain):
             if target == "kind/key":
                 self.kind("key", "record", "seed: text 1..80", law=genesis.RECORD_LAW)
             again = self.turn(target, "shape", record(object=label(target)))
-            self.assertEqual((again["status"], again["result"]["label"]), ("admitted", "refused"), again)
-            self.assertTrue(text(again).startswith("refused shaped: Already shaped; its make stands\n"), text(again))
+            self.assertEqual(cast_refusal(again)[0], "shaped", again)
+            self.assertTrue(again["receipt"]["outcome"]["reason"].startswith("refused shaped: Already shaped; its make stands"), again)
 
     def test_making_a_kind_and_its_thing_journals_no_refused_delivery(self):
         """A made kind has no `made`; only a made record with a body is sent one (the host lane's finding: every
@@ -169,8 +170,7 @@ class Kinds(Chain):
         """Playtest 2 F3: prose in `spween:` made a room with no scene, silently."""
         self.kind("room", "record", "name: text 1..64\nspween: text 0..16384", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
         made = self.turn("kind/room", "make", record(name=label("The Annex"), spween=label("a quiet annex with a window")), principal=KIM)
-        self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "refused"), made)
-        self.assertEqual(made["result"]["payload"]["fields"][0]["value"], label("spween"))
+        self.assertEqual(cast_refusal(made)[0], "spween", made)
         self.assertEqual(self.host.send(op="world-view", principal=KIM, object="room/1").get("status"), "unknown")
 
     def test_a_room_mints_past_an_id_already_held(self):
@@ -229,8 +229,7 @@ class Kinds(Chain):
     def test_a_kind_the_record_does_not_make_is_refused_by_name(self):
         self.yard(makes=())
         made = self.turn("yard", "plant", record(colour=choice("amber"), seed=label("x")), principal=KIM)
-        self.assertEqual(made["result"]["label"], "refused", made)
-        self.assertEqual([f["value"]["value"] for f in made["result"]["payload"]["fields"]], ["notMade", "This record makes nothing."])
+        self.assertEqual(cast_refusal(made), ("notMade", "This record makes nothing."))
         self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
 
     def test_the_fullest_room_card_stays_under_the_limit(self):

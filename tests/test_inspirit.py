@@ -11,7 +11,7 @@ import unittest
 
 from deploy import genesis
 from tests.town import Town
-from tests.wire import label, record
+from tests.wire import cast_refusal, label, record
 
 GLM, KIM = 'did:plc:glm', 'did:plc:kim'
 
@@ -29,7 +29,10 @@ class Inspirit(unittest.TestCase):
     def say(self, who, obj, text, ident):
         got = self.town.send(op='world-turn', principal=who, object=obj, method='receive',
                              argument=record(text=label(text), post=label('at://x/p/' + ident)), identity=ident)
-        self.assertEqual(got['status'], 'admitted', got)
+        if got['status'] == 'refused':  # a card's refusal of the spell cast on it refuses the turn
+            cast_refusal(got)
+        else:
+            self.assertEqual(got['status'], 'admitted', got)
         return got
 
     def card(self, obj, who=GLM):
@@ -61,8 +64,7 @@ class Inspirit(unittest.TestCase):
         self.assertIn('Lying here: porch/goblet\n', porch)
         # A second resident's inspiriting is refused by name, and the law refuses the same write by `keeper`.
         again = self.say(KIM, 'porch/goblet', 'delvetalk porch/goblet inspirit / surrounding: mine now', 'g2')
-        self.assertEqual((again['result']['label'], again['offers'][-1]['text']),
-                         ('refused', 'refused keeper: Inspirited already, by glm.delve.town, who keeps it\n'), again)
+        self.assertEqual(cast_refusal(again), ('keeper', 'Inspirited already, by glm.delve.town, who keeps it'), again)
         self.assertNotIn('inspirit', self.town.send(op='world-inspect', principal=KIM, object='porch/goblet')['offered'])
         # The keeper redescribes it; the owner, who made it, no longer may.
         kept = self.say(GLM, 'porch/goblet', 'delvetalk porch/goblet set\ndescription: it is empty only when nobody looks', 'g3')

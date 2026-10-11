@@ -11,7 +11,7 @@ import unittest
 from deploy import genesis
 from tests.bend import closure, declared
 from tests.test_chain import Chain, town_kinds
-from tests.wire import field, label, nat, record, rows
+from tests.wire import cast_refusal, field, label, nat, record, rows
 
 GLM, KIM = "did:plc:glm", "did:plc:kim"
 
@@ -29,6 +29,8 @@ class Tending(Chain):
         self.host.send(op="world-advance", principal="transport", height=clock + minutes)
 
     def card(self, reply):
+        if reply["status"] == "refused" and reply["receipt"]["outcome"]["class"] == "cardRefused":
+            return reply["receipt"]["outcome"]["reason"] + "\n"  # the card's refusal refuses the turn: its line is the reason
         return "".join(o["text"] for o in reply.get("offers") or reply["receipt"].get("offers") or [])
 
     def rain(self, text, who=KIM):
@@ -56,9 +58,9 @@ class Tending(Chain):
         card = self.host.send(op="world-card", principal=KIM, object="bell/1")["text"]
         self.assertIn("— quiet, untended since entry %d. Tend it:\n  delvetalk bell/1 tend\n" % tended_at, card)
         hushed = self.rain("too late")
-        self.assertEqual(hushed["status"], "admitted", hushed)
+        self.assertEqual(cast_refusal(hushed)[0], "alive", hushed)
         self.assertEqual(self.card(hushed), "refused alive: answers while tended within %d minutes; tend it: delvetalk bell/1 tend\n" % genesis.QUIET_AFTER)
-        self.assertEqual(hushed["receipt"]["outcome"]["writes"], [], hushed)
+        self.assertEqual(hushed["receipt"]["outcome"].get("writes", []), [], hushed)
         rung = self.turn("bell/1", "ring", principal=KIM)
         self.assertEqual(rung["receipt"]["outcome"]["class"], "lawRefused", rung)
         tended = self.turn("bell/1", "tend", principal=KIM)

@@ -173,9 +173,9 @@ def transferred(to: Plans.Reference, context: Abi.Context) -> Activity<Done>:
 # by whoever asked (the host fills `owner` with the creating principal).
 def copy(state: State, context: Abi.Context) -> Activity<Done>:
   if state.copyable == false then copyRefused({clause: "notCopyable", reading: "{state.name} is not copyable; its owner, {Card.name(state.owner, context)}, decides"}, context) else copying(context, state)
-# A copy is asked by a send (the workshop's `create`), so its refusal is told to the asker.
+# A copy is mostly asked by a send (the workshop's `create`), whose turn says the refusal to the asker.
 def copyRefused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Done>:
-  Card.tellTo(Done.refused(refusal), context.principal, Document.text("{Card.refusalLine(refusal)}\n"))
+  Card.refusing(Done.refused(refusal), refusal, context)
 def copying(context: Abi.Context, state: State) -> Activity<Done>:
   match world.create({package: "Thing", seed: {name: state.name, description: state.description, holder: Plans.nobody(), location: Plans.nobody(), copyable: state.copyable}, law: "", requireAbsent: Plans.nobody()}):
     case created(c): Card.tellTo(Done.done({}), context.principal, Document.text("Copied {state.name} as {c.object.object}.\n"))

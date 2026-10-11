@@ -15,7 +15,7 @@ import unittest
 from deploy import genesis
 from transport.journal import entries as journal_entries
 from tests.test_turn_world import TurnWorld
-from tests.wire import field, label, listing, nat, nil, record, reference, relation
+from tests.wire import cast_refusal, field, label, listing, nat, nil, record, reference, relation
 from tests.bend import closure, declared
 
 LEDGER = declared("""edition ObjectiveBend 1
@@ -161,8 +161,8 @@ class LawsOnWho(Authority):
         self.assertEqual(self.turn("commonplace", "door", record(label=label("garden"), to=label("garden")))["result"]["label"], "done")
         version = self.version("commonplace")
         stranger = self.turn("commonplace", "undoor", record(label=label("garden")), principal="kim")
-        self.assertEqual((stranger["status"], stranger["result"]["label"], self.outcome(stranger)["writes"]), ("admitted", "refused", []), stranger)
-        self.assertIn("refused notOwner", stranger["offers"][0]["text"])
+        self.assertEqual((stranger["status"], self.outcome(stranger).get("writes", [])), ("refused", []), stranger)
+        self.assertEqual(cast_refusal(stranger)[0], "notOwner", stranger)
         self.assertEqual(self.version("commonplace"), version)
         # The law holds beneath the method: a stranger's proposal over the cited doors is refused by `owner`.
         forged = self.host.send(op="world-propose", principal="kim", identity="forged-cites", roots=[{"object": "commonplace", "version": version}],
