@@ -132,6 +132,10 @@ structure Send where
 
 structure TurnState where
   world : World
+  /-- What this segment read of other worlds (`Foreign`): `{world, object, version, stateCid, height,
+      head}` each, journaled as `cites` on the entry it ends in. Not roots: two journals do not commit
+      together, so a foreign read can go stale without refusing the turn. -/
+  cites : Array Json := #[]
   roots : List (String × Nat) := []
   writes : List (String × List Written) := []
   /-- How each root not read whole was read (`Cells`, by object): a stored frame's scalar part,
@@ -292,6 +296,13 @@ def referenceId : Data → Option String
 
 def emptyRecord : Data := .record []
 
+/-- A `Reference` to another world's object: `(world, object)` when `world` is not "". -/
+def foreignRef : Data → Option (String × String)
+  | .record f => match (f.lookup "world").bind labelOf, (f.lookup "object").bind labelOf with
+      | some world, some id => if world.isEmpty then none else some (world, id)
+      | _, _ => none
+  | _ => none
+
 /-- A `List<T>` value on the wire: `nil {} | cons {head, tail}`. -/
 def listData (items : List Data) : Data :=
   items.foldr (fun x tail => .variant "cons" (.record [("head", x), ("tail", tail)]))
@@ -315,6 +326,21 @@ def refusedWith (bounds : DataBounds) (responseType : Ty) (clause : String) : M 
 def refusedReading (bounds : DataBounds) (responseType : Ty) (clause reading : String) : M Data :=
   respond bounds responseType "refused"
     [.record [("clause", .label clause), ("reading", .label reading)], .record [("clause", .label clause)], emptyRecord]
+
+/-- A read of another world's object (`World.foreign`): that world's own answer, shaped for the call site
+    by `shape`, and its citation kept for the entry (`TurnState.cites`); `denied` when that world denies
+    the reader or has no such object; `foreignWorld` when no world of that name is served here. -/
+def foreignRead (bounds : DataBounds) (responseType : Ty) (world op id : String)
+    (shape : Json → Option (String × Data)) : M Data := do
+  let s ← get
+  match s.world.foreign.read world op id s.subject with
+  | none => refusedReading bounds responseType "foreignWorld" s!"{world} is not a world served here"
+  | some (reply, cite) =>
+    match shape reply with
+    | some (label, payload) =>
+      modify fun s => { s with cites := s.cites.push cite }
+      respond bounds responseType label [payload]
+    | none => respond bounds responseType "denied" [emptyRecord]
 
 /-- The reading of a refused call: the voiced reason of the refusal it names. -/
 def callReading (cls object : String) (expected : Option Json := none) : String :=
@@ -1504,6 +1530,10 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
 partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
   | .variant "view" (.record f) =>
+    if let some (world, id) := (f.lookup "object").bind foreignRef then
+      return ← foreignRead bounds responseType world "view" id fun r => do
+        let state ← (r.getObjVal? "state").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+        return ("viewed", .record [("version", .natural ((r.getObjValAs? Nat "version").toOption.getD 0)), ("state", state)])
     match (f.lookup "object").bind referenceId with
     | none => respond bounds responseType "denied" [emptyRecord]
     | some id =>
@@ -1710,6 +1740,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         ("by", .label (if handle.isEmpty then c.principal else handle))]
     respond bounds responseType "changed" [.record [("items", listData (items.map item)), ("more", .boolean more)]]
   | .variant "card" (.record f) =>
+    if let some (world, id) := (f.lookup "object").bind foreignRef then
+      return ← foreignRead bounds responseType world "card" id fun r => do
+        let document ← (r.getObjVal? "document").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+        return ("carded", .record [("document", document)])
     let s ← get
     match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
     | none => respond bounds responseType "denied" [emptyRecord]
@@ -2115,7 +2149,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       subscribes := st.subscribes
       unsubscribes := st.unsubscribes
       cells := st.cells }
-  let base := entryBase ctx used
+  let base := entryBase ctx used ++ (if st.cites.isEmpty then [] else [("cites", Json.arr st.cites)])
   -- An activity of a supervised object that ends broken, out of budget, or after its await
   -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
   let ended := fun (how : String) (h : Nat) (out : Json) =>

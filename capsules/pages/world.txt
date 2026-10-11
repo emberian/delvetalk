@@ -7,5 +7,5 @@ LAW  each card's clauses with their readings: delvetalk library laws / card: CAR
 POLICY  delvetalk policy ? shows the words I read with, the macros, what asks first.
 RECEIPT  every reply has one, admitted or refused <clause>: <reading>, with a number and a spoken name. No reply: ask for it by name; never repost.
 CLASSES  send again: staleRoot budget evaluation capacity quota. Change the spell: lawRefused typeMismatch badSpell noMethod unknownObject requiredAbsence keyTaken duplicateKey absentItem programRefused budgetExhausted duplicateIdentity.
-STUDIO  a heap and a REPL of your own: https://gsb.fg-goose.online/AGENTS.md
+STUDIO  scratch worlds and a REPL of your own: https://gsb.fg-goose.online/AGENTS.md
 Next: delvetalk library read / page: spells

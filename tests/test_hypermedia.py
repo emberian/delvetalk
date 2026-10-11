@@ -42,7 +42,7 @@ PURE = 'edition ObjectiveBend 1\ndef twice(n: Nat) -> Nat:\n  n + n\n'
 
 def walk(call, handle, prove, module):
     """A stranger with only the catalogue and the controls in replies: challenge, verify, find something to plant in,
-    plant, read the receipt by its slug, make a thing in the heap and run it, run a REPL entry. `call(method, href, body,
+    plant, read the receipt by its slug, open a scratch world, make a thing in it and run it, run a REPL entry. `call(method, href, body,
     token)` -> (status, reply); `prove(text)` posts the challenge and returns the post's URI; `module` is the stranger's
     own Bend (a State with a `count` and a `bump` method). -> what it reached."""
     got = {}
@@ -58,12 +58,13 @@ def walk(call, handle, prove, module):
     got['planted'] = (planted['status'], [c['name'] for c in planted['_links'].get('created', [])])
     receipt = call('GET', planted['_links']['receipt']['href'], None, tok)[1]
     got['receipt'] = (receipt['status'], receipt['receipt']['slug'] == planted['receipt']['slug'])
-    made = call('POST', routes['create']['href'], {'intent': 'stranger-make', 'object': 'mine', 'entry': 'initial', 'source': module, 'seed': {}}, tok)[1]
+    opened = call('POST', routes['scratch']['href'], {'name': 'try'}, tok)[1]
+    made = call('POST', opened['_links']['objects']['href'], {'intent': 'stranger-make', 'object': 'mine', 'entry': 'initial', 'source': module, 'seed': {}}, tok)[1]
     mine = call('GET', made['_links']['object']['href'], None, tok)[1]
     assert 'bump' in mine['_actions'], mine
     bumped = call('POST', mine['_links']['object']['href'] + '/bump', {'intent': 'stranger-bump', 'fields': {}}, tok)[1]
     result = call('GET', bumped['_links']['receipt']['href'], None, tok)[1]['receipt']['result']
-    got['heap'] = (made['status'], bumped['status'], result)
+    got['scratch'] = (made['status'], bumped['status'], result)
     ran = call('POST', routes['repl']['href'], {'source': PURE, 'entry': 'twice', 'arguments': [{'tag': 'natural', 'value': '21'}]}, tok)[1]
     got['repl'] = (ran['status'], ran['value'])
     return got
@@ -114,14 +115,15 @@ class Controls(FrontCase):
         self.assertEqual(offers['_links']['next']['href'], f"/AGENTS.md/offers?after={offers['offers'][-1]['height']}&wait=30")
 
     def test_a_refusal_links_its_hint_and_the_usage_action(self):
-        s, made = self.call('POST', '/AGENTS.md/heap/objects', {'intent': 'mk-l', 'object': 'kept', 'entry': 'initial', 'seed': {},
+        self.call('POST', '/AGENTS.md/scratch', {'name': 'try'}, self.tok)
+        s, made = self.call('POST', '/AGENTS.md/scratch/try/objects', {'intent': 'mk-l', 'object': 'kept', 'entry': 'initial', 'seed': {},
                                                                 'modules': [{'name': 'Kept', 'source': LAWFUL}]}, self.tok)
         self.assertEqual((s, made['status']), (200, 'created'), made)
-        self.assertEqual(made['_links']['object']['href'], '/AGENTS.md/heap/world/kept')
-        s, t = self.call('POST', '/AGENTS.md/heap/world/kept/bump', {'intent': 'no'}, self.tok)
+        self.assertEqual(made['_links']['object']['href'], '/AGENTS.md/scratch/try/world/kept')
+        s, t = self.call('POST', '/AGENTS.md/scratch/try/world/kept/bump', {'intent': 'no'}, self.tok)
         self.assertEqual((s, t['status'], t['class']), (200, 'refused', 'lawRefused'), t)
         self.assertTrue(t['line'].startswith('§ refused '), t['line'])
-        self.assertEqual(t['_links']['hint']['href'], '/AGENTS.md/heap/world/kept/source')  # the law is there
+        self.assertEqual(t['_links']['hint']['href'], '/AGENTS.md/scratch/try/world/kept/source')  # the law is there
         # The law refuses this caller `bump` on a request-only clause (`admits`), so it is not offered again.
         self.assertNotIn('_actions', t)
         s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': 7, 'intent': 'bad'}, self.tok)
@@ -145,7 +147,7 @@ class Controls(FrontCase):
             return f'at://{did}/town.delve.feed.post/3abc'
         got = walk(call, handle, prove, REPL_COUNTER)
         self.assertEqual(got, {'planted': ('admitted', ['garden/bell/1']), 'receipt': ('receipt', True),
-                               'heap': ('created', 'admitted', {'tag': 'natural', 'value': '1'}),
+                               'scratch': ('created', 'admitted', {'tag': 'natural', 'value': '1'}),
                                'repl': ('finished', {'tag': 'natural', 'value': '42'})})
 
     def test_a_strangers_read_of_a_refused_receipt_by_slug_keeps_its_object_and_recovery_links(self):
@@ -210,7 +212,8 @@ class Envelope(FrontCase):
         self.front.repl.send = lambda req: {'status': 'error', 'message': 'checkpoint was not issued by this process'} if req['op'] == 'turn-resume' else repl(req)
         saw('replRestarted', post('/AGENTS.md/repl', {'modules': [{'name': 'Package', 'source': PURE}], 'entry': 'twice', 'checkpoint': {}, 'response': {}}))
         self.front.repl.send = repl
-        saw('unspellable', post('/AGENTS.md/heap/objects', {'object': 'coin box', 'intent': 'mk-cb'}))
+        post('/AGENTS.md/scratch', {'name': 'try'})
+        saw('unspellable', post('/AGENTS.md/scratch/try/objects', {'object': 'coin box', 'intent': 'mk-cb'}))
         saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 140000}]}))
         e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))
         self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': f'/AGENTS.md/world/{self.c}/source'}))
@@ -319,7 +322,7 @@ class Robust(FrontCase):
         crashes, n = [], 0
         for e in CATALOGUE:
             for oid in rnd.sample(ids, 4):
-                path = re.sub(r'\{(\w+)\}', lambda m: urllib.parse.quote(oid, safe='/%') if m[1] == 'object' else urllib.parse.quote(oid, safe=''), e['href'])
+                path = re.sub(r'\{(\w+)\}', lambda m: urllib.parse.quote(oid, safe='/%') if m[1] == 'object' else 'try' if m[1] == 'name' else urllib.parse.quote(oid, safe=''), e['href'])
                 for method in ('GET', 'POST'):
                     for body in (rnd.sample(bodies, 4) if method == 'POST' else [None]):
                         self.now[0] += 4  # under every rate limit: the fuzz is of input, not of the limiter

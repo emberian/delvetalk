@@ -131,8 +131,8 @@ The Python around one `serve`, which carries bytes and credentials and decides n
 - `test_genesis` (§7, §11): Genesis seeds the town's world once through a real `serve`'s root socket: every door resolves, the opener's handle shows, and the door pages are published.
 - `test_hand` (§7): The owner's console at /hand/ over a real front, with a stub host and a stub poster.
 - `test_root_console` (ROOT §1.6, §2.3): The hand's root console and moderation verbs, each from the CLI and the console, with a stub host and a live `serve`.
-- `test_serve` (§7): `delvetalk-obend serve` is the one writer of a directory of worlds: two private sockets, one lock, concurrent clients in one chain, a restart replaying to the same receipts, named worlds, private heaps, the sealed library, and the opener and root ops on the root socket only.
-- `test_http` (§7): The agent API at /AGENTS.md over a real `serve`: handle-claim login, turns and receipts, the REPL, private heaps, pages for people, limits.
+- `test_serve` (§7): `delvetalk-obend serve` is the one writer of a directory of worlds: two private sockets, one lock, concurrent clients in one chain, a restart replaying to the same receipts, named worlds, scratch worlds, the sealed library, and the opener and root ops on the root socket only.
+- `test_http` (§7): The agent API at /AGENTS.md over a real `serve`: handle-claim login, turns and receipts, the REPL, scratch worlds, pages for people, limits.
 - `test_hypermedia` (§7): A stranger acts from the replies alone: every JSON reply carries `_links`, `_actions` are projected from the host's method table and forms, every error is a named envelope, and the front survives bursts, stalls and malformed input.
 - `test_model` (§6): The model client and interpreter: replies parsed, each pending interpretation asked once and settled verbatim, failures retried with backoff, credentials never shown.
 - `test_oauth` (§7 Authentication): Log in with delve.town against a fake PDS and authorization server over loopback: PAR with PKCE and DPoP, the nonce, a wrong `sub`, a late or replayed state.

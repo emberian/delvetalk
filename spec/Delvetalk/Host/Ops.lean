@@ -2181,7 +2181,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   -- An absence is a root too: something appearing since the turn looked makes it stale.
   for id in p.absent do
     if w.objects.contains id then throw { cls := "staleRoot", object := id }
-  if w.objects.size + p.creates.length > Limits.maxObjects then
+  if w.objects.size + p.creates.length > w.objectBound then
     throw { cls := "evaluation", reason := some "object capacity reached" }
   if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants", reason := some "maxGrants" }
   -- Subscriptions stand at most `subscribersPerObject` to an object, counted as they will be.
@@ -2991,7 +2991,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
     if !openerActs w principal then
       throw s!"only the opener of the world{if w.resident && principal == w.opener then ", on the root socket," else ""} may name an owner{if w.opener.isEmpty then "; this world names no opener" else s!"; that is {w.opener}"}"
   if w.objects.contains id then throw s!"object {id} already exists"
-  if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
+  if w.objects.size ≥ w.objectBound then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
   -- The seed is laid over initial(), as the create Plan does: a record of some of the state's
   -- fields ({} is initial() itself). The journal keeps the whole state, so replay needs no merge.
@@ -3343,6 +3343,25 @@ def principalOp (w : World) (j : Json) : Except String (World × Json) := do
     [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson (Journal.bodyHash (Json.mkObj fields))), ("outcome", Json.mkObj fields)] []
   return (w', answer (some entry))
+
+/-- `world-cite {principal, identity?, world, entry}`: an entry of a scratch world kept as evidence here
+    (docs/FEDERATION.md §3, the second exit), whole inside a `cited` entry under the citer's identity
+    (`cite:<hash>` unless one is named). `serve` reads the entry from the scratch itself; the entry
+    must be its hash's. Evidence survives the scratch; its state does not. -/
+def citeOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let world ← j.getObjValAs? String "world"
+  let cited ← j.getObjVal? "entry"
+  let hash ← cited.getObjValAs? String "hash"
+  let body := Json.mkObj (((cited.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "hash"))
+  unless Journal.bodyHash body == hash do throw "the cited entry is not its hash's"
+  let intent ← boundedText "identity" Limits.maxIntentBytes ((← optText j "identity").getD s!"cite:{hash}")
+  let digest := Journal.bodyHash (Json.mkObj [("world", toJson world), ("receipt", toJson hash)])
+  if let some r := retained w principal intent digest then return (w, r)
+  let (w', entry) := push w (identityKey principal intent)
+    [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0), ("request", toJson digest),
+     ("outcome", Json.mkObj [("tag", toJson "cited"), ("world", toJson world), ("receipt", toJson hash), ("entry", cited)])] []
+  return (w', Json.mkObj [("status", toJson "cited"), ("receipt", slugged entry)])
 
 /-- A newcomer's own objects, each made from the library module of that name: the Avatar (its id
     is the principal's DID), its Env and its Wake (`env/<did>`, `wake/<did>`, the ids `env` and
@@ -3776,6 +3795,10 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "unposted by another principal"
     let reason ← outcome.getObjValAs? String "reason"
     return record { w with posts := w.posts.insert uri { post with unposted := reason } } entry key [post.object]
+  | "cited" =>
+    discard <| outcome.getObjValAs? String "world"
+    discard <| outcome.getObjVal? "entry"
+    return record w entry key []
   | "named" =>
     if !w.name.isEmpty then throw "a world named twice"
     let name ← outcome.getObjValAs? String "name"
