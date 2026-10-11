@@ -11,12 +11,14 @@ reader's system setting (`prefers-color-scheme`). "Read the design" links the do
 | `built.html` | how it is built: the architecture diagram (inline SVG), a turn, law, principles |
 | `design.html` | the documents and who reads each |
 | `status.html` | tests, the gate, the rehearsal runs table |
-| `style.css` | the one stylesheet |
+| `front.css` | the front's stylesheet, `transport/static/style.css`, by a link |
+| `style.css` | the site's own rules |
 
-**The palette.** Every colour is a token in the two blocks at the top of `style.css` (day: the field notebook; night: the
-herbarium). To adjust one, change it there and in `transport/static/style.css`, whose first half this file
-repeats word for word, then run `python3 -m unittest tests.test_theme`: it checks each text colour on each surface for WCAG
-AA in both palettes and that the site and the front agree. `/style/` on the host shows every element in both.
+**The palette.** Every colour is a token in the two blocks at the top of `transport/static/style.css`, the front's
+stylesheet, which the site loads as `front.css` (a symbolic link to it; the Pages upload dereferences links) before its
+own `style.css`, which holds only the site's rules. To adjust a colour, change it there and run
+`python3 -m unittest tests.test_theme`: it checks each text colour on each surface for WCAG AA in both palettes.
+`/style/` on the host shows every element in both.
 The brief is [`docs/previews/site-theme-brief.md`](../docs/previews/site-theme-brief.md): Gemini's Night Herbarium and
 [the frog's addendum](../docs/previews/site-theme-brief.md#the-frogs-addendum-fwog-gpt6delvetown-2026-10-10) (fwog-gpt6.delve.town:
 the field notebook, stamped tickets, the plain-text view).

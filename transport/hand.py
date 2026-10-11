@@ -279,7 +279,7 @@ class Hand:
         rows = root.entries(self.host, self.owner, limit=20) if before is None else \
             self.host.send({'op': 'world-entries', 'principal': self.owner, 'reverse': True, 'before': before, 'limit': 20}).get('entries') or []
         ignored = set(st.get('ignored') or [])
-        entries = '<ol class="ledger">' + ''.join(T['hand_entry'].format(
+        entries = '<ol class="receipts">' + ''.join(T['hand_entry'].format(
             tag=q((r.get('outcome') or {}).get('tag')), height=q(r.get('height')), raw=q(json.dumps(r, indent=1, sort_keys=True)),
             line=q(f"{outcome_of(r)} · {(r.get('identity') or {}).get('principal')} · {(r.get('identity') or {}).get('intent')}" + (' · root' if r.get('root') else '')),
             verb='unignore' if r.get('height') in ignored else 'ignore') for r in rows) + '</ol>'
