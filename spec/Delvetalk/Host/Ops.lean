@@ -476,6 +476,17 @@ def refusalClasses : List String :=
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
    "keyTaken", "duplicateKey", "badSpell", "quota", "noMethod", "quiet"]
 
+open Lean Elab Term in
+/-- `natsIn% N`: every `Nat` definition of namespace `N`, as `[(its name, its value)]` in name order, so a
+    bound is written once, by its definition, and answered from there. -/
+elab "natsIn% " ns:ident : term => do
+  let pre := ns.getId
+  let names := (← getEnv).constants.fold (init := #[]) fun acc n ci =>
+    if n.getPrefix == pre && !n.isInternal && ci.type == Lean.mkConst ``Nat && ci.isDefinition then acc.push n else acc
+  let items ← (names.qsort (·.toString < ·.toString)).mapM fun n =>
+    `((($(quote (n.getString!)) : String), Lean.toJson $(mkIdent n)))
+  elabTerm (← `([$items,*])) none
+
 structure Refusal where
   cls : String
   clause : Option String := none
@@ -2367,6 +2378,14 @@ def tagOf (entry : Json) : String :=
     that never drains refuses the retry again). They are journaled but do not bind the
     identity's outcome. -/
 def transientClasses : List String := ["staleRoot", "budget", "evaluation", "capacity", "quota", "quiet"]
+
+/-- `bounds`: the kernel's bounds (`Delvetalk.Bounds`, and the generic instances a package may need), the
+    host's (`Limits`) and the refusal classes, so no client or test restates one. -/
+def bounds : Json :=
+  Json.mkObj [("status", toJson "bounds"),
+    ("kernel", Json.mkObj (natsIn% Delvetalk.Bounds ++ [("maxInstances", toJson Generics.maxInstances)])),
+    ("host", Json.mkObj (natsIn% Delvetalk.Host.Limits)),
+    ("refusalClasses", toJson refusalClasses), ("transientClasses", toJson transientClasses)]
 
 def isTransient (entry : Json) : Bool :=
   tagOf entry == "refused" &&

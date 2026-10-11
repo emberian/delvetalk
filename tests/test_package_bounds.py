@@ -15,9 +15,8 @@ import unittest
 from tests import host
 from tests.bend import closure
 
-MAX_PACKAGE_BYTES = 131072  # Delvetalk.Bounds.maxPackageBytes
-MAX_MODULE_BYTES = 524288  # Delvetalk.Bounds.maxModuleBytes
-MAX_INSTANCES = 1024  # Delvetalk.Generics.maxInstances
+KERNEL = host.bounds()["kernel"]
+MAX_PACKAGE_BYTES, MAX_MODULE_BYTES, MAX_INSTANCES = KERNEL["maxPackageBytes"], KERNEL["maxModuleBytes"], KERNEL["maxInstances"]
 
 
 def program(size):
@@ -72,7 +71,7 @@ class PackageBound(unittest.TestCase):
         modules = [{"name": f"M{i}", "source": "# " + "x" * (MAX_MODULE_BYTES - 16) + "\n"} for i in range(3)]
         reply = host.check({"op": "source-imports-v1", "modules": modules})
         self.assertEqual(reply["status"], "error")
-        self.assertIn("exceeds maxPackageSourceBytes (1048576 bytes)", reply["message"])
+        self.assertIn(f"exceeds maxPackageSourceBytes ({KERNEL['maxPackageSourceBytes']} bytes)", reply["message"])
 
 
 class InstanceBound(unittest.TestCase):

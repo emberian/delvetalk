@@ -104,15 +104,15 @@ class RenderTests(unittest.TestCase):
             nested = variant("sequence", items=listing([nested]))
         self.assertEqual(self.s.render(nested)["status"], "rendered")  # depth 64
         r = self.s.render(variant("sequence", items=listing([nested])))
-        self.assertIn("document depth exceeds 64", r.get("message", ""), r)
+        self.assertIn(f"document depth exceeds {host.bounds()['kernel']['documentDepth']}", r.get("message", ""), r)
         inner = lambda: variant("sequence", items=listing([variant("text", value=label(""))
                                                        for _ in range(200)]))
         many = variant("sequence", items=listing([inner() for _ in range(200)]))
         r = self.s.render(many)
-        self.assertIn("document exceeds 65536 nodes", r.get("message", ""), str(r)[:200])
+        self.assertIn(f"document exceeds {host.bounds()['kernel']['documentNodes']} nodes", r.get("message", ""), str(r)[:200])
         big = variant("sequence", items=listing([variant("text", value=label("x" * 100000)) for _ in range(11)]))
         r = self.s.render(big)
-        self.assertIn("document text exceeds 1048576 bytes", r.get("message", ""), str(r)[:200])
+        self.assertIn(f"document text exceeds {host.bounds()['kernel']['documentOutputBytes']} bytes", r.get("message", ""), str(r)[:200])
         for bad in (nat(1), variant("nonsense"), variant("text", value=nat(1)), variant("sequence"),
                     variant("quote", attribution=label("a"), body=variant("text", value=label("b")))):
             r = self.s.render(bad)

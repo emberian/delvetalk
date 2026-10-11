@@ -25,6 +25,7 @@ from transport import delve, identity
 from transport.host import HostClient
 from transport.http import CATALOGUE, ERRORS, EXAMPLES, GUIDE, REFUSALS, Front
 from tests.bend import closure
+from tests.host import bounds
 
 LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 implies request.subject == "ember"\n'
 
@@ -378,20 +379,17 @@ class Catalogue(unittest.TestCase):
         self.assertEqual(h['Content-Type'], 'text/plain; charset=utf-8')
         self.assertIn(b'/api', text)
 
-    def test_the_module_bounds_named_are_the_fronts_and_the_hosts(self):
-        limits = (Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Limits.lean').read_text()
-        host = int(re.search(r'def maxPackageBytes : Nat := (\d+)', limits)[1])  # no op answers the bounds yet
-        when, front = ERRORS['moduleTooLarge']['when'], transport.http
-        self.assertEqual(front.MAX_SOURCE, host)  # an agent may send a module up to the kernel's bound
-        self.assertIn(f'over {host} bytes', when)
-        self.assertIn(f'{front.MAX_BODY}-byte body', when)
-        self.assertLess(front.MAX_SOURCE, front.MAX_BODY)  # so moduleTooLarge is reached before bodyTooLarge
+    def test_the_module_bounds_named_are_the_hosts(self):
+        kernel = bounds()['kernel']
+        s, h, raw = self.call('GET', '/AGENTS.md/api')
+        limits = json.loads(raw)['limits']  # an agent may send a module up to the kernel's bound, as many as it takes
+        self.assertEqual((limits['moduleBytes'], limits['modules']), (kernel['maxPackageBytes'], kernel['maxModules']))
+        self.assertLess(limits['moduleBytes'], limits['bodyBytes'])  # so moduleTooLarge is reached before bodyTooLarge
+        self.assertEqual(limits['deliverPerCall'], bounds()['host']['deliveriesPerCall'])
 
     def test_the_catalogues_refusals_are_the_hosts_closed_set_and_its_transient_ones(self):
-        ops = (Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Host' / 'Ops.lean').read_text()
-        names = lambda decl: set(re.findall(r'"(\w+)"', re.search(rf'def {decl} : List String :=\s*\[(.*?)\]', ops, re.S)[1]))
-        self.assertEqual(set(REFUSALS), names('refusalClasses'))
-        self.assertEqual({k for k, v in REFUSALS.items() if v['transient']}, names('transientClasses'))
+        self.assertEqual(set(REFUSALS), set(bounds()['refusalClasses']))
+        self.assertEqual({k for k, v in REFUSALS.items() if v['transient']}, set(bounds()['transientClasses']))
         host = Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Host'
         spell, loop = (host / 'Spell.lean').read_text(), (host / 'TurnLoop.lean').read_text()
         named = set(re.findall(r'=> "(\w+)"', re.search(r'def Clause.name.*?\n\n', spell, re.S)[0])) - {'unclear'}  # unclear is a question, never a refusal

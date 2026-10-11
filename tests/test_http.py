@@ -44,7 +44,7 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
     case _: state.count + 1n
 ''')
 from transport import delve, identity
-from tests.host import ServeCase, serve, served
+from tests.host import ServeCase, bounds, serve, served
 from transport.host import HostClient
 from transport.config import Config
 from transport.http import CATALOGUE, AccessLog, Front
@@ -717,6 +717,8 @@ class StubHost:
 
     def send(self, req):
         self.ops.append(req['op'])
+        if req['op'] == 'bounds':
+            return bounds()
         return {'status': 'viewed', 'version': 0} if req['op'] == 'world-view' else {'status': 'ok'}
 
 

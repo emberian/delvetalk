@@ -232,6 +232,7 @@ def stepIO (session : Session) (request : Json) (foreign : Host.Foreign := {}) :
     if Host.isWorldOp op then
       let (world, result) ← Host.stepWorld session.world request foreign
       return ({ session with world }, result)
+    else if op == "bounds" then return (session, .ok Host.bounds)
     else if op == "library-load" then
       let (cache, result) ← libraryLoad session.cache request
       return ({ session with cache }, result)

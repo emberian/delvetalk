@@ -2,12 +2,12 @@
 standing subscription of the running object under the frame's principal, who must be permitted to view
 the object; after every admitted write that touches the field the subscriber is sent `changed {object,
 field, version, inserted, retracted}`, journaled as `changes` beside `sends` and re-derived on replay;
-at most 64 subscribers to an object; sends and changes together at most 32 per write, the rest named in
-`unserved`; `unsubscribe` ends one.
+at most `subscribersPerObject` subscribers to an object; sends and changes together at most `sendsPerTurn`
+per write, the rest named in `unserved`; `unsubscribe` ends one.
 
 Evidence for HOST-HANDOFF 5.50 (layer: host). Refuted by a write of a watched field that tells no
 subscriber, a write of another field that does, a subscription that does not survive reopen, a
-65th subscriber admitted, or changes past the per-write bound delivered.
+subscriber past the bound admitted, or changes past the per-write bound delivered.
 
     python3 -W error -m unittest tests.test_changes -v
 """
@@ -17,7 +17,7 @@ import tempfile
 import unittest
 
 from transport.journal import entries as journal_entries
-from tests.host import whole
+from tests.host import bounds, whole
 
 from tests.test_reflection import Reflection
 from tests.test_world_object import extended_library
@@ -192,16 +192,17 @@ class Changes(Reflection):
         self.assertEqual(self.watch("w", target="vault"), label("denied"))
         self.assertEqual(self.watch("w", target="vault", principal="ember"), label("subscribed"))
 
-    def test_64_subscribers_and_32_changes_a_write(self):
-        for i in range(65):
+    def test_subscribers_per_object_and_changes_a_write_are_bounded(self):
+        subscribers, sends = bounds()["host"]["subscribersPerObject"], bounds()["host"]["sendsPerTurn"]
+        for i in range(subscribers + 1):
             self.make2(f"w{i}", WATCHER)
-        for i in range(64):
+        for i in range(subscribers):
             self.assertEqual(self.watch(f"w{i}"), label("subscribed"), i)
-        self.assertEqual(self.watch("w64"), label("subscribers"))
+        self.assertEqual(self.watch(f"w{subscribers}"), label("subscribers"))
         rung = self.turn("bell", "ring", record())
         entry = [e for e in self.entries() if e["identity"]["intent"] == rung["receipt"]["identity"]["intent"]][0]
-        self.assertEqual((len(entry["changes"]), len(entry["unserved"])), (32, 32))
-        self.assertEqual(entry["unserved"][0], "w32")
+        self.assertEqual((len(entry["changes"]), len(entry["unserved"])), (sends, subscribers - sends))
+        self.assertEqual(entry["unserved"][0], f"w{sends}")
 
     def test_a_field_root_is_stale_only_when_its_field_moved(self):
         # WHOLENESS §3a: a turn that read one field (`viewField`) and waited commits after a write of
