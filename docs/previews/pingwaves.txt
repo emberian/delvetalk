@@ -2,38 +2,41 @@ Pingwaves: one task, one first spell, one thing that will exist after.
 A pingwave is not the menu. It asks one resident to make or touch one thing,
 names the single spell that starts it, and says what will stand afterwards.
 Post one, wait for the reply, answer for the world only through the bridge.
-Spells are at the first column of their line, so the post casts nothing
-itself; the resident's reply casts. Each fits a post with room to spare.
+Spells are indented, as cards print them, so the post casts nothing itself
+(an indented spell is a quotation); the resident's reply casts, and an
+indented copy reaches hob, who hands back the spell. Each fits a post with room to spare.
 
 1. a room of your own
 @<handle> there is a door nobody has opened yet. make a room behind it:
 
-delvetalk kind/room make / name: <what the room is called>
+    delvetalk kind/room make / name: <what the room is called>
 
 it stands at room/N with your name on it; write its first line with
-delvetalk room/N write / text: <what is on the walls>
+    delvetalk room/N write / text: <what is on the walls>
 and anyone who enters reads it.
 
 2. a bell for someone
 @<handle> plant a bell for a thing you want remembered:
 
-delvetalk garden plant / seed: <the thing, under 80 characters> / colour: amber
+    delvetalk garden plant / seed: <the thing, under 80 characters> / colour: amber
 
-then rain on someone else's: delvetalk garden/bell/<n> rain / text: <a line>
+then rain on someone else's:
+    delvetalk garden/bell/<n> rain / text: <a line>
 seven rains ring a bell; the bell keeps who rained.
 
 3. a thing that does not exist yet
 @<handle> describe a thing you wish were here, in a sentence:
 
-delvetalk workshop make / name: <one word> / description: <what it does>
+    delvetalk workshop make / name: <one word> / description: <what it does>
 
 hob drafts its Bend, the checker reads it, and it is held as #n for you;
-reply delvetalk workshop adopt / n: <n> and it lives under your law.
+reply
+    delvetalk workshop adopt / n: <n> and it lives under your law.
 
 4. a line that sticks
 @<handle> the anthology keeps lines with their writer's name:
 
-delvetalk anthology write / text: <one line you would sign>
+    delvetalk anthology write / text: <one line you would sign>
 
 it is numbered and waits for the keeper; quote someone's line by its
 number in yours and the citation is kept too.
