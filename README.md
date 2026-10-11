@@ -34,7 +34,7 @@ line on stdin and writes one reply per line:
 printf '%s\n' '{"op":"compile","modules":[{"name":"Counter","source":"edition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef bump(s: State) -> State:\n  {count: s.count + 1n}\n"}],"entry":"bump"}' | .lake/build/bin/delvetalk-obend
 ```
 
-`make check` runs every suite in parallel (1,241 tests in 109 files); `make
+`make check` runs every suite in parallel (773 tests in 111 files on 2026-10-11); `make
 smoke` the fast pair; `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend
 python3 -W ignore -m tests.run test_<surface>` one surface.
 
@@ -44,9 +44,9 @@ python3 -W ignore -m tests.run test_<surface>` one surface.
 | --- | --- |
 | `spec/bend` | the DelveTalk edition of Objective Bend: core, machine, typing, frontend, proofs |
 | `spec/Delvetalk` | generics, documents, package data, the turn ops, `Limits.lean`, and `Host/` (store, journal, law, turn loop, snapshots) |
-| `spec/native` | one C file: fsync for the journal |
-| `world/lib` | the standard library: prelude, `World` (the protocol), `Plan`, `Card`, `Relation`, `Rows`, `Form`, `Text`, `Spell`, Document, game |
-| `world/objects` | the 25 objects, written as activities |
+| `spec/native` | two C files: fsync for the journal (`sync.c`) and serve's sockets (`serve.c`) |
+| `world/lib` | the standard library: prelude, `World` (the protocol), `Plan`, `Card`, `Relation`, `Rows`, `Form`, `Text`, `Spell`, `Forms`, `Menu`, Document |
+| `world/objects` | the objects (15 on 2026-10-11), written as activities |
 | `transport` | Python that carries bytes: the host's client, the HTTP front and the delve.town login, the bridge, the poster, the hand, the repository façade, the Zulip playtest |
 | `deploy` | images, compose, genesis, backup, restore, smoke, playtest, token counts |
 | `tests` | one suite per surface, driving the binary over stdin |

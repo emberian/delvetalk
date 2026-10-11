@@ -418,8 +418,8 @@ chooses roles, layouts, guards or transitions is a bug.
 | `zulip.py` | the playtest transport: one Zulip stream (or one topic) observed and answered, with no hourly cap |
 
 The principal is the DID (`zulip:<realm>:<id>` on Zulip, FEDERATION §1); the handle is display
-text. `transport/` is 4,508 lines on 2026-10-11 (4,901 with `transport/atproto`, the signed
-repository's encoder and tree) against a ceiling of 5,000 counting both, raised
+text. `transport/` is 4,484 lines on 2026-10-11 (4,877 with `transport/atproto`, the signed
+repository's encoder and tree, after lane fungus took 25 lines of duplicates out) against a ceiling of 5,000 counting both, raised
 from 2,900 as the Zulip transport, the repository and its signing, the hand and
 its root console, the hypermedia front, the plain-text view and the delve.town
 login were added, and lowered by 381 when `serve` replaced hostd; the rule it
