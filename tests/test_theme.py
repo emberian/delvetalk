@@ -12,7 +12,7 @@ FRONT, SITE = ROOT / 'transport' / 'static' / 'style.css', ROOT / 'site' / 'styl
 SPECIMEN = ROOT / 'transport' / 'static' / 'specimen.html'
 TEXT = ('ink', 'soft', 'muted', 'amber', 'violet', 'silver', 'terracotta', 'sage')  # every colour text is set in
 SURFACES = ('paper', 'leaf', 'tint', 'rtint')  # every colour text is set on
-KINDS = {'garden': 'garden', 'bell': 'garden/bell/1', 'env': 'env/did:plc:x', 'wake': 'wake/did:plc:x', 'tide': 'tide', 'deal': 'deal/1',
+KINDS = {'garden': 'garden', 'bell': 'garden/bell/1', 'tide': 'tide', 'deal': 'deal/1',
          'scene': 'rooms', 'place': 'place/1', 'thing': 'thing/1', 'anthology': 'anthology', 'workshop': 'workshop'}
 
 
