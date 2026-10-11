@@ -1045,13 +1045,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    direct turn, a spell refused `unknownField`, `noAction`, `badValue` or `otherCard` (`misfitClauses`)
    runs instead the `receive` of the card the refusal names (the spell's card; the answering card for
    `otherCard`) with the reply's `text`, `post`, its field lines as `fields` and `misfit {clause,
-   reason}`, when that `receive` takes a `misfit` (`heardArgument … misfitOnly`); the turn's reach is
-   `spell`, so the card may `interpret` with the `misfit` line (5.117) and hob asks one question. A
-   card whose `receive` takes no `misfit` refuses as before (`badSpell`, hint), and `duplicateField`,
-   `unclosedBlock`, `fixed`, the host spells' clauses and every call's or delivery's misfit (5.63)
-   stay refusals. A `receive` that takes `misfit` gets `{clause: "", reason: ""}` with every other
-   reply (`withFields`, `heardFits`). The objects lane's World/Card lines: `Reply.misfit`. Tests:
-   `tests/test_spell_turns.py` `Misfits`.
+   reason}`, when that card reads words (5.153) and its `receive` takes a `misfit` (`heardArgument …
+   misfitOnly`); the turn's reach is `spell`, so the card may `interpret` with the `misfit` line (5.117)
+   and hob asks one question. Every other card's misfit is `badSpell` with the hint, and
+   `duplicateField`, `unclosedBlock`, `fixed`, the host spells' clauses and every call's or delivery's
+   misfit (5.63) stay refusals. A `receive` that takes `misfit` gets `{clause: "", reason: ""}` with
+   every other reply (`heardFits`). Tests: `tests/test_spell_turns.py` `Misfits`.
 
 122. **A turn's `extend` reaches what it created (host13; the rewrite lane's Kind).** An `extend` (or
    `reprogram {mode: extend}`) naming an object the same turn created lays the layer into the making
@@ -1561,6 +1560,22 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    lens spell's (`set` naming a field no lens has). Tests: `Spell.lean`'s `#guard`s (69082's shape),
    `test_receive.Cards` (a `hob:` line after a whole planting plants), the recorded `fit` rows re-recorded.
 
+153. **A card hears a misfit only when it reads words (host19; the objects lane's fold of `Card.Reply` into
+   `Heard`).** The signal was the shape of `receive`'s input, which the fold erases. Now it is the card's
+   state: a card reads words when its `policy` field names an object of this world (`readsWords`: a
+   `Reference {world: "", object}` whose object is held), the interpreter its `receive` asks. Only such a
+   card's direct misfit (`misfitClauses`) reaches its `receive` with `misfit {clause, reason}`; every other
+   card's is the host's `badSpell` with clause, reason and the card's usage as `hint`, an entry refused, so
+   a record without a policy no longer answers a misfit with an admitted turn and a refusal card (the
+   second playtest's D6). The host already reads `owner` from state by the same convention; `policy` is the
+   field Record, Workshop and the commonplace already hold. So the objects lane may fold `Card.Reply`
+   into `Heard` (every `receive` then declares `misfit`, and a plain card still refuses `badSpell`), and
+   delete what answered a misfit without reading it: `Record.misfitted`, the room body's `Super.misfitted`
+   arm, the commonplace's `isNobody(state.policy)` refusal of a misfit, Card's comment that a `Reply`
+   card is the one refused. Tests: `test_spell_turns.Misfits` (a card naming a policy hears the misfit; one
+   that declares `misfit` and names no policy, or names an object not held, refuses `badSpell` with its
+   usage); `test_receive.Cards`, `test_policy`, `test_scenarios` Garden and Bell moved to the refusal.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1598,12 +1613,6 @@ semantic braiding is called for); let's not leave behind 'old things', no scar a
 replacement deletes what it replaces in the same commit, and this file describes only what is.
 
 1. **Asked by the objects lane, not started (host18 stopped at its budget):**
-   - A misfit spell to a card that does not read words stays the host's `badSpell` with its usage hint. Today the
-     signal is the shape of `receive`'s input: the host hands `misfit` only to a `receive` that declares it
-     (`heardArgument`, `misfitOnly`; `spellTurn`'s `.refuse` arm), else refuses `badSpell`. If the objects lane
-     folds `Card.Reply` into `Heard`, every card declares `misfit` and the distinction is lost: give the host
-     another signal (a card that names a policy in its state, or a declared name) and say it in this section, then
-     the fold can land. Test both: a policy card hears the misfit, a plain card refuses `badSpell`.
    - A refusal by a law given at creation or by amendment carries `reason` but no `reading` (`readingOf` reads
      `Object.readings`, which only a package's declared laws and an amendment's own readings fill): parse the
      given law text's readings (`parseLawTextReadings`) into `readings` at creation as an amendment does, so a thing

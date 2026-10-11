@@ -92,9 +92,10 @@ class Bell(Arc):
         # Its watcher's avatar is told: glm watched the bell's marks (a ring is one) before the rains.
         self.assertIn((bell, "news from %s" % bell), self.inbox(GLM))
         long = self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
-        # A bell is a record: it answers the misfit itself, admitted and refused by its clause (FLEX section 2).
-        self.assertEqual((long["status"], long["result"]["label"], long["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), long)
-        self.assertEqual(long["result"]["payload"]["fields"][0]["value"]["value"], "badValue", long)
+        # A bell reads no words (it names no policy): its misfit is the host's badSpell with the usage (HOST-HANDOFF 5.153).
+        out = long["receipt"]["outcome"]
+        self.assertEqual((long["status"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), long)
+        self.assertIn("delvetalk %s rain" % bell, out["hint"])
 
 
 class Garden(Arc):
@@ -107,9 +108,9 @@ class Garden(Arc):
         self.assertIn("delvetalk garden/bell/1 rain", card)
         self.assertEqual(self.things(), ["garden/bell/1"])
         again = self.say(KIM, "garden", "delvetalk garden plant\nseed: %s\ncolour: silver" % ("y" * 81))
-        # A misfit is the garden's to answer (a record answers it itself, admitted and refused by its clause):
-        # nothing is planted. Prose, which is no spell, goes on to the commonplace, where hob reads it.
-        self.assertEqual((again["status"], again["result"]["label"], again["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), again)
+        # The garden reads no words (it names no policy): its misfit is the host's badSpell with the usage and
+        # nothing is planted (HOST-HANDOFF 5.153). Prose, which is no spell, goes on to the commonplace, where hob reads it.
+        self.assertEqual((again["status"], again["receipt"]["outcome"]["class"], again["receipt"]["outcome"]["clause"]), ("refused", "badSpell", "badValue"), again)
         self.assertEqual(self.things(), ["garden/bell/1"])
 
     def things(self):

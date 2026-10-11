@@ -207,9 +207,10 @@ about 150 lines, 8 fixtures):
    `tests/test_host_spell.py` still agrees on all 116 fixtures.
 3. `rebound` generalised: a bare line binds by type.
 4. `spellTurn`: `unknownField`, `noAction`, `badValue`, `otherCard` on a
-   direct turn go to the card's `receive` with `fields` and `misfit {clause,
-   reason}` instead of refusing; a call's or delivery's misfit still refuses
-   (5.63).
+   direct turn to a card that reads words (its state's `policy` names an
+   object, HOST-HANDOFF 5.153) go to its `receive` with `fields` and `misfit
+   {clause, reason}` instead of refusing; any other card's, and a call's or
+   delivery's misfit, is `badSpell` with the usage (5.63).
 5. The interpretation request (`world.interpret`, `world-interpretations`,
    `policyPrompt`) carries `{utterance, offers, policy, model, card, held,
    misfit?}`; `Policy.prompt(state, offers, context)`.

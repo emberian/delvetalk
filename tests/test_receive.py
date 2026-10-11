@@ -52,10 +52,10 @@ class Cards(Chain):
         return reply["offers"][0]["text"]
 
 
-    def test_a_misfit_spell_is_the_gardens_to_answer_and_a_plain_card_still_refuses_badSpell(self):
-        """The garden's receive takes a direct turn's misfit (HOST-HANDOFF 121): with no policy it
-        answers by a refusal card naming the clause, an admitted turn that writes nothing. A card
-        whose receive takes a plain Card.Reply (a bell) still has the host refuse it badSpell."""
+    def test_a_misfit_spell_to_a_card_that_reads_no_words_is_the_hosts_badSpell_with_the_usage(self):
+        """HOST-HANDOFF 5.153: only a card whose state names a policy hears a misfit; the garden, a bell
+        and the tide name none, so each misfit is refused badSpell with its clause, reason and the
+        card's usage, and nothing is written, whatever their `receive` takes."""
         self.garden()
         laid = self.version("garden")
         cases = {
@@ -64,26 +64,18 @@ class Cards(Chain):
         }
         for spell, (clause, reason) in cases.items():
             with self.subTest(spell=spell[:40]):
-                reply = self.say(spell)
-                self.assertEqual((reply["status"], reply["receipt"]["outcome"]["tag"], reply["receipt"]["outcome"]["writes"]), ("admitted", "admitted", []), reply)
-                self.assertEqual(reply["result"]["label"], "refused", reply)
-                self.assertEqual([f["value"]["value"] for f in reply["result"]["payload"]["fields"]], [clause, reason], reply)
-                self.assertIn("refused %s: %s\n" % (clause, reason), self.card(reply))
+                out = self.say(spell)["receipt"]["outcome"]
+                self.assertEqual((out["class"], out["clause"], out["reason"]), ("badSpell", clause, reason), out)
+                self.assertIn("delvetalk garden plant", out["hint"])
         self.assertEqual(self.version("garden"), laid)
         # A line whose name the form lacks ends the fields (the second playtest's D7): the spell above it runs.
         planted = self.say("delvetalk garden plant\nseed: a fern\ncolour: silver\nhob: still owed — a note for later")
         self.assertNotEqual(planted["receipt"]["outcome"]["writes"], [], planted)
-        # A record (a bell) answers a misfit itself, admitted and refused by the clause (FLEX section 2).
-        for spell, clause in (("delvetalk orchard rain\ntext: x", "otherCard"),):
-            with self.subTest(spell=spell[:40]):
-                reply = self.say(spell, obj="garden/bell/1")
-                self.assertEqual((reply["status"], reply["result"]["label"], reply["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), reply)
-                self.assertEqual(reply["result"]["payload"]["fields"][0]["value"]["value"], clause, reply)
         self.make("tide", closure("Tide"), record(gap=nat(1)))
-        for spell, clause in (("delvetalk orchard rain\ntext: x", "otherCard"),):
-            with self.subTest(spell=spell[:40]):
-                out = self.say(spell, obj="tide")["receipt"]["outcome"]
-                self.assertEqual((out["class"], out["clause"]), ("badSpell", clause), out)
+        for card in ("garden/bell/1", "tide"):
+            with self.subTest(card=card):
+                out = self.say("delvetalk orchard rain\ntext: x", obj=card)["receipt"]["outcome"]
+                self.assertEqual((out["class"], out["clause"]), ("badSpell", "otherCard"), out)
 
 
     def version(self, name):
@@ -141,12 +133,12 @@ class Cards(Chain):
         self.assertEqual((observed["status"], observed["result"]), ("admitted", nat(0)), observed)  # observe's count
         self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
         self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
-        # A speaker without a wake: the spell is a misfit the commonplace takes; with no policy it
-        # refuses by the clause, and writes no greeting.
+        # A speaker without a wake: the spell is a misfit; the commonplace names no policy here, so it
+        # reads no words and the host refuses it badSpell (HOST-HANDOFF 5.153), writing no greeting.
         missing = self.turn("commonplace", "receive", record(text=label("delvetalk wake watch / event: mention / actor: ember.delve.town"), post=label("")), principal=did)
-        self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
-        self.assertEqual([f["value"]["value"] for f in missing["result"]["payload"]["fields"]], ["otherCard", "There is no card wake; the directory lists the doors."], missing)
-        self.assertEqual(missing["offers"][0]["text"], "✾ DELVETALK · THE COMMONPLACE\n\nrefused otherCard: There is no card wake; the directory lists the doors.\n")
+        out = missing["receipt"]["outcome"]
+        self.assertEqual((missing["status"], out["class"], out["clause"], out["reason"]),
+                         ("refused", "badSpell", "otherCard", "There is no card wake; the directory lists the doors."), missing)
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
@@ -158,12 +150,12 @@ class Cards(Chain):
         self.assertIn("Planted, glm: a silver bell", r["offers"][0]["text"])
         self.assertEqual(self.version("garden"), laid + 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden", "kind/bell"})
-        # No card forge: the commonplace is the answering card and takes the misfit; with no policy it
-        # refuses by the clause (an admitted turn, no greeting written), never badSpell.
+        # No card forge: with no policy the commonplace reads no words, so the misfit is the host's
+        # badSpell (HOST-HANDOFF 5.153); with one, hob is shown it (test_policy).
         ghost = self.turn("commonplace", "receive", record(text=label("delvetalk forge make / name: sentry"), post=label("")), principal="glm")
-        self.assertEqual((ghost["status"], ghost["result"]["label"], ghost["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), ghost)
-        self.assertEqual([f["value"]["value"] for f in ghost["result"]["payload"]["fields"]], ["otherCard", "There is no card forge; the directory lists the doors."], ghost)
-        self.assertEqual(self.card(ghost), "✾ DELVETALK · THE COMMONPLACE\n\nrefused otherCard: There is no card forge; the directory lists the doors.\n")
+        out = ghost["receipt"]["outcome"]
+        self.assertEqual((ghost["status"], out["class"], out["clause"], out["reason"]),
+                         ("refused", "badSpell", "otherCard", "There is no card forge; the directory lists the doors."), ghost)
 
     def test_doors_are_hung_removed_and_labels_are_unique(self):
         self.directory()

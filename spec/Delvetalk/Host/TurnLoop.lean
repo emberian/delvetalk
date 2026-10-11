@@ -2561,9 +2561,20 @@ def reachOf (w : World) (req : TurnRequest) : String :=
     | .spell .. => "spell"
     | _ => req.reach
 
-/-- The misfits a card's `receive` may take instead of a refusal: what hob can read past. A duplicate
+/-- The misfits a card that reads words may take instead of a refusal: what hob can read past. A duplicate
     field, an unclosed block, `fixed` and the host spells' own stay refusals: their hint is the fix. -/
 def misfitClauses : List String := ["unknownField", "noAction", "badValue", "otherCard"]
+
+/-- Does the card read words? Its state's `policy` names an object of this world: the interpreter its
+    `receive` asks (`world.interpret`). Only such a card hears a misfit spell (`misfit {clause, reason}`
+    in its `receive`), for hob to read past; every other card's misfit is the host's `badSpell` with its
+    usage, whatever its `receive` declares. -/
+def readsWords (w : World) (o : Object) : Bool :=
+  match o.state with
+  | .record fs => match (fs.lookup "policy").bind referenceId with
+    | some id => w.objects.contains id
+    | none => false
+  | _ => false
 
 /-- A direct turn's `receive` read as a spell (`routeSpell`); `none` when the host leaves the turn as asked. -/
 def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × Json)) :=
@@ -2579,9 +2590,9 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
     some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object),
       ("text", toJson (hobTail w req.principal text hobUsageLine))]))
   | .refuse object clause reason hint =>
-    -- A misfit a card's `receive` takes goes to it with the clause, for the card to ask hob (docs/FLEX.md
-    -- §4 host 4); a call's or a delivery's misfit still refuses (5.63).
-    match (if misfitClauses.contains clause then w.objects[object]? else none).bind fun o =>
+    -- A misfit to a card that reads words goes to its `receive` with the clause, for hob (docs/FLEX.md
+    -- §4 host 4); any other card's, and a call's or a delivery's, is refused with the usage (5.63).
+    match (if misfitClauses.contains clause then (w.objects[object]?).filter (readsWords w) else none).bind fun o =>
         heardArgument w o req.argument (Spell.bare (heardText req.method req.argument)) (misfitData clause reason) true with
     | some argument =>
       some (runTurnWith w { req with object, method := "receive", argument, post := (heardPost req.method req.argument).getD "" }
