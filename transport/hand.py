@@ -20,7 +20,7 @@ from pathlib import Path
 from transport import bridge, measure, model, post, pages, root
 from transport.bridge import all_observations, awaiting_path, uri_hash
 from transport.delve import Failure, canonical
-from transport.host import CLOCK
+from transport.host import CLOCK, painted
 from transport.http import WAIT_MAX, trace, typed
 from transport.identity import INVITE_DAYS, Identity, IdentityError
 from transport.measure import counted
@@ -286,7 +286,10 @@ class Hand:
             rc = self.host.send({'op': 'world-receipt', 'principal': self.owner, 'identity': intent}).get('receipt') or {}
             said, waiting = trace(self.host, self.owner, intent, {'status': outcome_of(rc), 'receipt': rc}, wait=0) if rc else ([], True)
             text = '\n'.join(t.rstrip('\n') for t in said)
-        return {**line, 'text': text, 'waiting': waiting}
+        # The card the act left, painted from its strokes, above the exact text (never in the draft: posting paint is the
+        # fourth playtest's question).
+        paint = painted(self.host, self.owner, line['object'], self.sleep) if line.get('outcome') == 'admitted' and line.get('object') else None
+        return {**line, 'text': text, 'waiting': waiting, 'paint': paint}
 
     def invite(self, minute, topic=None, reply_to=None):
         """Draft the plan's invitation at T+`minute` for the bot to post, once."""
@@ -684,7 +687,8 @@ class Hand:
             quiet = '— hob is reading; this page looks again every few seconds —' if came['waiting'] else '— quiet: nothing came back —'
             spoken = H['spoken'].format(fate=q(came.get('outcome')), stamp=q(pages.stamp(came.get('outcome') or '')), height=q(came.get('height')),
                                         slug=q(came.get('slug') or ''), object=q(came.get('object')),
-                                        card=(H['card'].format(text=q(came['text'])) if came['text'] else '') + (H['note'].format(text=quiet) if came['waiting'] or not came['text'] else ''))
+                                        card=pages.painting(came.get('paint')) + (H['card'].format(text=q(came['text'])) if came['text'] else '') +
+                                        (H['note'].format(text=quiet) if came['waiting'] or not came['text'] else ''))
         return shell('speak', self.st.world, H['speak'].format(base=base, world=q(self.st.world), note=self.note(query), spoken=spoken,
                                                                intent=q(f'hand:speak:{int(self.clock() * 1000)}'), where=where,
                                                                plan=q(Path(self.plan['path']).name), seeds=seeds, invitations=invitations),

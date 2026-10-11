@@ -1,12 +1,12 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
 The host is one Lean process holding a world of durable objects. Every state change is a journal entry naming the one before it (CID of canonical DAG-CBOR); memory is derived from the journal by `record`, and replay re-judges admitted entries. A reply exists only after its bytes are durable.
 
-- Files: `spec/Delvetalk/Host/` `Blocks` (the block store: `Entries`, `Link`, the pure record read), `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots and their indexes, opening, the store-installing geneses of a fork and a carry), `Session` (journal IO, ops dispatch), `RootEdit` (the offline tools: `root-edit`, `migrate`), `Carry` (the offline `carry`, 5.159). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
+- Files: `spec/Delvetalk/Host/` `Blocks` (the block store: `Entries`, `Link`, the pure record read), `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots and their indexes, opening, the store-installing geneses of a fork and a carry), `Session` (journal IO, ops dispatch), `RootEdit` (the offline tools: `root-edit`, `migrate`), `Carry` (the offline `carry`, 5.159), `Enchant` (strokes, the paint check and the render cache, 5.161). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
 - An activity yields `World.Message`s; `answer` dispatches on the method name against `worldMethods` (5.48). Write is self-only; cross-object change is `call`/`send`, judged by the callee's own law; `reprogram` and `amend` of another object are judged by the target's law.
 - Only declared methods run from outside (5.62). A direct `receive` is read as a spell by the host (5.49, 5.54, 5.63); a misfit is `badSpell` with `clause`, `reason`, `hint`, unless the card reads words (its state names a `policy`, 5.153).
 - Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); subscriptions deliver `changed` to typed receivers (5.50, 5.53); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
@@ -33,7 +33,8 @@ Import order: Blocks, Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop
 - `TurnLoop.lean`: `M` monad (`ExceptT Abort (StateM TurnState)`), `runMethod`, `drive`, `answer`, `finishTurn`, `runTurnWith`, `resumeOne`, `settle`, `deliver`, `reprogramOp`, `amendOp`.
 - `Snapshot.lean`: snapshot bytes (`storeJson`, `indexJson`, `installIndex`), `openJournal`, `reopen`, `replayAll`, `resume`, `checkAnchors`, `writeJournal`, the store-installing geneses (`genesisEntry`, `forkGenesis`, `wholeSuspension`, `carriedKeys`, `installGenesis`). It does IO (the chain, the block store, snapshot files).
 - `Carry.lean`: `delvetalk-obend carry` (5.159): `readWorld` (a snapshot body under `readKeys` only), `rebuilt`, `resumable`, `carryWorld`, `carryGenesis`, `main`.
-- `Session.lean`: `Open {world, path, handle, store, report, sync, snapshotAt, every, bound}`, `openWorld`, `durableIO`/`durable`, `appendJournal`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
+- `Enchant.lean` (5.161): `Strokes` and `assemble`/`strokesAt` (a thing as exact data at a version), `verify` (the paint check, its fixtures as `#guard`s), `Cache` and the render ops. Imports TurnLoop; Session imports it.
+- `Session.lean`: `Open {world, path, handle, store, report, sync, snapshotAt, every, bound, renders}`, `openWorld`, `durableIO`/`durable`, `appendJournal`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
 - `Root.lean`: `rootKinds`, `rootFieldsOf`, `rootOp`, `worldSettingsOp` (5.126).
 - `Serve.lean` and `spec/native/serve.c`: the directory of worlds and its two sockets (5.125, 5.131). `PackageSession.lean` is the per-process session above Session.
 
@@ -61,7 +62,8 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 
 - Open and status: `world-open {path, library?, principal?, libraryLaw?, sync?, verify?, snapshotEvery?, maxJournalBytes?, clock?, postQuota?, opener?}`, `world-status`, `world-snapshot`.
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
-- Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
+- Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
+- Paint (5.161, never journaled): `world-render {principal, object, version?}`, `world-renders`, `world-render-submit {key, reply}`; `world-status.renders {cached, rejected, pending}`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
 - `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
@@ -1767,6 +1769,54 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    - *For the objects lane.* The world-call arms (`rule`, `unrule`, `want`, `unwant` from Bend) are not built:
      World.obend's protocol must declare them in the same change that deletes `subscribe` and `awaitPost` (one pin
      move), and the host's arms follow (`answer`, `worldMethods`; staged as `TurnState` placements, as `amend` is).
+
+161. **Enchantment (lane/enchant; OVERHAUL §4, step 3b; no replay edition change).** `spec/Delvetalk/Host/Enchant.lean`,
+   `world/lib/Paint.obend`; hooks only in `Session.lean` (the import, `Open.renders`, the five ops' dispatch, `world-status.renders`).
+   - *Strokes* (`assemble`, `strokesAt`): read from the store at a version (`stateAt`, `pinAndLawAt`) by field name, so any
+     package's state gives what it holds: `head` (else `name`), `fields` (the kind's form values; beyond OVERHAUL's list,
+     because a bell's seed is its maker's words and no other stroke holds it), `kind` and that kind's `voice`, `maker`,
+     `keeper`, `owner` (handles, the state's or the registry's), `made` (state `made`, else the creating entry's
+     height), `tended` (`tendedAt`), relation `counts` (`lines` and `marks` always), the eight newest `lines` with
+     `admitted`/`pending` under a keeper and a thing's `description` as its keeper's `inspirit` line, `marks`, `verbs`
+     (the card's spell forms as one-line spells, then any `verbs` rows with their grower), `laws` (a clause `under "K"`
+     stands as K's clauses), `doors` (`cites`), `around` (`location`, else the longest prefix of the id that is an
+     object), `present`, `rules` (`carriedRules`: name, owner's handle, reading, the height `ruleLog` last fired it at), `wants` (`wantRows`: those that hold now, with `asks` filled). `today` stays empty until `chronicle` lands. `world-strokes` reads them; nothing is written.
+   - *The check* (`verify`): clauses `ids`, `numbers`, `handles`, `spells`, `quotes`, `heads`, `forbidden`,
+     `secondPerson`, `negation`, `length`, the first failed refusing; the doc comment and VOICE "The paint" give each.
+     A store line with no verb column holds every verb (strict: "nobody rains here" over a rained bell is refused).
+     `world-render-check {principal, object, version?, text}` judges any text without caching.
+   - *Rendering*: `world-render` assembles the strokes and keys them `bodyHash {strokes, library pin, model}`; a
+     cached `painted` answers its text, a refused one `exact {reason: rejected, clause}`; else it queues
+     `pending` (bounded `maxPending` 64, `busy` past it) with the request `{model (the policy object's, else
+     claude-haiku-5-5), system: Paint.contract() compiled once per library pin and cached as a definition, user:
+     "Strokes:\n" + the strokes' JSON, maxTokens 400}`. `pending` carries `patience` (`renderPatience`, 3 s) only
+     while the worker attends (`world-renders` within `workerGraceMs`, 10 s); otherwise `exact {reason: unattended}`
+     at once, the render still queued. `world-render-submit {key, reply}` takes model.py's result verbatim: `replied`
+     is verified and cached; `transport`/`rate` waits `renderBackoffMs` and is listed again, `renderAttempts` 3 in
+     all; anything else is `exact` (`model`). Painted and refused renders are written to the disk cache (kind
+     `render`) when `DELVETALK_COMPILE_CACHE` is set and re-verified on every read back; a model failure is not.
+     `plain` (a `plain` field true or `yes`) answers `plain`; a root `card` override `exact {override}`; no
+     policy or no `Paint` module `exact {unavailable}`.
+   - Transport: `interpret` is the one model worker (interpretations, then paints, every `model_poll` second;
+     spend lines carry `use: paint`); `transport/host.py` `painted()` waits as the host's `pending` says; `/play/`,
+     `/o/` and the hand's Speak show `pages.painting` above the exact card; the bridge's drafts are exact only.
+   - Tests: `tests/test_enchant.py` (strokes, a placed rule and want read back, fired and unposed after a rain; 69275 refused at `negation` on the genesis anthology; one call per
+     version, read back after a restart from the disk cache; a refused paint not asked again; a rate failure retried
+     after the backoff; no policy, every card exact), `test_http.Play.test_the_paint_stands_above_the_exact_card_and_never_without_it`.
+   - Live, hbox, the real key through `interpret.paint` (2026-10-11): three cards of a fresh genesis with a bell rained
+     on twice, all three painted and admitted, $0.0007 for 4,509 input and 482 output tokens. The first contract's
+     paints were all refused (a quotation's closing stop, two over 600 characters) and, worse, admitted ones misread
+     `made`/`tended` as counts ("made 41 times"): the contract now says how each stroke reads and asks for two to four
+     sentences; the quote check drops a quotation's own closing stop. A token check cannot catch a misreading of a
+     true number (OVERHAUL §7 risk 11): watch for it in the fourth playtest's corrections row.
+   - *Handoff* (lane/enchant, stopped at its token budget). Open, in order: (1) the morning card and the chronicle as
+     painted surfaces once `chronicle {day}` lands (`today` in `assemble`; a painted surface for `hand morning`);
+     (2) KIND's `voice` and the `plain` lens are the objects lane's (read here by field name, untested until a
+     package declares them; add a test then); (3) whether a reply post carries paint is the fourth playtest's (the
+     bridge drafts exact; `zulip.py` untouched); (4) renders are per process: a restarted serve without
+     `DELVETALK_COMPILE_CACHE` paints each card once more (deploy does not set it; set it, or accept the call);
+     (5) the paint is dry, a field-guide catalogue; once kinds carry `voice` read a dozen live paints and tune
+     `Paint.contract()` (it is library text: a library change, not a host one).
 
 ## 6. Gotchas
 

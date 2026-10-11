@@ -49,7 +49,7 @@ Three voices, and a reader can always tell which:
 
 | voice | where | what it is |
 | --- | --- | --- |
-| the thing | a card's facts, its spells, its `»` lines | the object's own `render`: what it is now, in the third person, present tense |
+| the thing | a card's facts, its spells, its `»` lines; its paint above the card | the object's own `render`: what it is now, in the third person, present tense; the paint is the same voice from the model, checked against the strokes ("The paint") |
 | the host | the receipt line, a refusal's clause and reading, `?` usage, the hint | the exact words of the machine (`Refusal.voiced`, `spellUsage`); never a character |
 | **hob** | the natural-language surfaces only (below) | the creature the system plays when it reads or answers words |
 
@@ -229,6 +229,39 @@ it is not a bell. C reads as a tutorial: every line an order, and a reader
 who has done it once is told again. B is the Spiderwick guide and the
 Wyverary's answers: a thing, its habits, what it does when touched; hob is
 beside it, not in it.
+
+## The paint
+
+OVERHAUL §4, as built (lane/enchant, `spec/Delvetalk/Host/Enchant.lean`, `world/lib/Paint.obend`). A card a
+resident reads may stand under a paint: a few sentences of the thing in its own voice, written by the world's
+model from the thing's **strokes** (its exact data at a version: head, the kind's form values, maker, keeper,
+owner, the eight newest lines verbatim with their handles, marks, verbs with their spells, laws' readings, rules,
+wants, doors, where it lies, who is here) and checked by the host before anyone reads it. It is still the thing's
+voice, not a fourth one: third person, present tense, in the register its kind's `voice` gives ("moon-flavoured;
+short; the present tense"), else plain. It has no `hob:` head, because hob does not narrate; it paints what the
+strokes hold and the exact card stands beneath, always, and is the only text the law, rules, wants, hob's reading
+and the check itself read. No model reads a model's prose.
+
+**The contract** is `Paint.contract()`, the system text sent with the strokes; the check is `Enchant.verify`, one
+clause each, in this order: `ids`, `numbers`, `handles`, `spells` (a spell on a line of its own, byte for byte a
+stroke's), `quotes` (a resident's line quoted whole, credited, or not at all), `heads` (no line begins `●`, `§`,
+`refused`, `law `, `rule `, `want `, `hob:`), `forbidden`, `secondPerson`, `negation` (no "no", "not", "never" or
+"n't" within three words of a field's name the strokes hold: 69275's "Ember's keeping of it isn't something this
+card records" over a card with a keeper), `length` (600 characters). The forbidden words are one table,
+`Enchant.forbidden`: I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please; a resident's
+quoted line may hold any of them. A refused paint shows the card exact until its next version and is not asked
+again for that one.
+
+**Where.** Painted, above the exact card and never inside its frame: `/play/<id>` after a reply or a look, the
+public `/o/<id>`, the hand's Speak (what a cast came back with). Never: a receipt or refusal line, `?`'s usage, a
+law line or reading, the library's pages, hob's own lines, and, for now, the bridge's drafts: a post carries the
+exact card alone until the fourth playtest decides whether a post carries paint (§6's two enchantment rows). The
+morning card and the chronicle as painted surfaces wait for the chronicle (host22). An owner's `plain: yes`
+shows a thing exact alone; a root `card` override is shown exact.
+
+**Time.** One model call per version, on the first read of it; every later read is the cached paint. A reader
+waits for a fresh one at most `Enchant.renderPatience` (3 s), and not at all while no worker is painting (the
+host answers `exact`, `unattended`): a world opened with no model reads exactly as it did before paint.
 
 ## Lexicon
 
