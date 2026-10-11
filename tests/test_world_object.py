@@ -15,8 +15,9 @@ import unittest
 
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record, declared
 from tests.test_reflection import LIBRARY
+from tests.wire import label, nat, record
+from tests.bend import declared
 
 # The library's World module with one method the host does not answer.
 EXTRA = "  teleport({to: String}) -> Written\n"

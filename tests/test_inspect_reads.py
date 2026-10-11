@@ -13,7 +13,7 @@ turn cannot run.
 import unittest
 
 from tests.test_reflection import PROBE, Reflection
-from tests.test_turn_world import nat, record, label
+from tests.wire import label, nat, record
 
 LAWS = ('law owner "only ember bumps by two": request.method == "bump2" implies request.subject == "ember"\n'
         'law quiet: request.method == "fire" implies request.subject == "nobody"\n'

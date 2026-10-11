@@ -15,8 +15,8 @@ admitted, a seventeenth reader or variable admitted, or a full card past 1,400 c
 import unittest
 
 from tests import test_chain
-from tests.test_objects import closure
-from tests.test_turn_world import label, record, relation
+from tests.wire import label, record, relation
+from tests.bend import closure
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
 

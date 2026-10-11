@@ -11,7 +11,8 @@ import os
 import unittest
 
 from tests.host import HostCase
-from tests.test_turn_world import counter_modules, nat, record
+from tests.wire import nat, record
+from tests.bend import counter_modules
 
 
 class Durability(HostCase):

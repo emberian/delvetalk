@@ -10,57 +10,18 @@ binary (read-only, built elsewhere). Run from the repository root:
 
     python3 -m unittest tests.test_objects -v
 """
-import os
 import re
 import unittest
 
 from tests import host
+from tests.bend import MODULES, closure, pure
+from tests.wire import nat
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-WORLD = os.path.join(ROOT, "world")
-IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
 DEF = re.compile(r"^def (\w+)(<[^>]*>)?\(.*\) -> (.*):$", re.M)
-
-
-def modules_on_disk():
-    found = {}
-    for root in (os.path.join(WORLD, "lib"), os.path.join(WORLD, "objects"), os.path.join(ROOT, "tests", "fixtures", "objects"), os.path.join(ROOT, "examples", "automatafl")):
-        for directory, _, files in os.walk(root):
-            for name in files:
-                if name.endswith(".obend"):
-                    assert name not in found, "module names are flat: " + name
-                    found[name[:-6]] = os.path.join(directory, name)
-    return found
-
-
-MODULES = modules_on_disk()
-
-
-def closure(name, seen=None, out=None):
-    """The module and its imports in dependency order (imports first)."""
-    seen = set() if seen is None else seen
-    out = [] if out is None else out
-    if name in seen:
-        return out
-    seen.add(name)
-    with open(MODULES[name]) as handle:
-        source = handle.read()
-    for dep in IMPORT.findall(source):
-        closure(dep, seen, out)
-    out.append({"name": name, "source": source})
-    return out
 
 
 def check(request):
     return host.check(request)
-
-
-def pure(modules):
-    """The modules without their law lines: the stateless compile is the pure profile, which
-    refuses package laws ("package laws require a host law adapter"); the host keeps them."""
-    return [dict(m, source="".join(l for l in m["source"].splitlines(True) if not l.startswith("law ")))
-            for m in modules]
 
 
 def compile_job(modules, entry):
@@ -71,28 +32,6 @@ def definitions(name):
     """(entry, is_generic, result type text) for each top-level def."""
     with open(MODULES[name]) as handle:
         return [(m.group(1), m.group(2) is not None, m.group(3)) for m in DEF.finditer(handle.read())]
-
-
-def row_names(row):
-    names = []
-    while isinstance(row, dict) and row.get("tag") == "field":
-        names.append(row["name"])
-        row = row["tail"]
-    return names
-
-
-def computation(type_json):
-    while type_json.get("tag") != "computation":
-        type_json = type_json["codomain"]
-    return type_json
-
-
-def record(**fields):
-    return {"tag": "record", "fields": [{"name": k, "value": v} for k, v in fields.items()]}
-
-
-def nat(n):
-    return {"tag": "natural", "value": str(n)}
 
 
 def run_pure(name, entry, *arguments, probe=None, limits=None):
@@ -239,9 +178,6 @@ class Refusals(unittest.TestCase):
                 self.assertIn(name, reply["message"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 BUDGET_HEAD = "edition ObjectiveBend 1\nimport ./List.obend as Lists\nimport ./Plan.obend as Plans\nimport ./Document.obend as Document\nimport ./Card.obend as Card\nimport ./Relation.obend as Relations\n"
 REPEAT = """def rep(n: Nat, s: String) -> String:
@@ -300,3 +236,6 @@ class Budgets(unittest.TestCase):
     def test_a_scene_passage_with_long_choices_and_vars_stays_under_1400(self):
         text = self.text("Scene", SCENE_BUDGET_PROBE)
         self.assertLessEqual(len(text), 1400, (len(text), text[-200:]))
+
+if __name__ == "__main__":
+    unittest.main()

@@ -11,7 +11,9 @@ the world's protocol at T, and each call site resumes at its own result type.
 """
 import unittest
 
-from tests.test_turn import Host, library_modules
+from tests.bend import closure
+from tests.test_turn import Host
+from tests.wire import nat, record, variant
 
 # A stand-in for world/lib/World.obend (the objects lane's file): the shapes WHOLENESS fixes.
 WORLD = """edition ObjectiveBend 1
@@ -65,19 +67,7 @@ def tell(state: State, input: {other: Plans.Reference}, context: Abi.Context) ->
 
 
 def world_modules(thing=THING, world=WORLD):
-    return library_modules("Abi", "Plan") + [{"name": "World", "source": world}, {"name": "Thing", "source": thing}]
-
-
-def rec(**fields):
-    return {"tag": "record", "fields": [{"name": n, "value": v} for n, v in fields.items()]}
-
-
-def nat(n):
-    return {"tag": "natural", "value": str(n)}
-
-
-def variant(label, payload):
-    return {"tag": "variant", "label": label, "payload": payload}
+    return closure("Abi", "Plan") + [{"name": "World", "source": world}, {"name": "Thing", "source": thing}]
 
 
 def labels(t):
@@ -142,7 +132,7 @@ class WorldCalls(unittest.TestCase):
             with self.subTest(needle=needle):
                 d = self.refused(entry, source)
                 self.assertIn(needle, d["message"])
-        reply = self.h.send({"op": "check-package", "entry": "peek", "modules": library_modules("Abi", "Plan") +
+        reply = self.h.send({"op": "check-package", "entry": "peek", "modules": closure("Abi", "Plan") +
                              [{"name": "Thing", "source": THING.replace("import ./World.obend as World\n", "")}]})
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("no module named World", reply["diagnostic"]["message"])
@@ -162,8 +152,8 @@ class WorldCalls(unittest.TestCase):
 
     def start(self, entry, count=2):
         art = self.compile(entry)
-        ref = rec(world={"tag": "label", "value": ""}, object={"tag": "label", "value": "b"})
-        return art, self.h.start(art, [rec(count=nat(count)), rec(other=ref)])
+        ref = record(world={"tag": "label", "value": ""}, object={"tag": "label", "value": "b"})
+        return art, self.h.start(art, [record(count=nat(count)), record(other=ref)])
 
     def test_a_view_yields_at_viewed_of_its_type_resumes_with_it_and_refuses_another(self):
         art, y = self.start("peek")
@@ -171,27 +161,27 @@ class WorldCalls(unittest.TestCase):
         self.assertEqual(y["responseType"]["tag"], "variant")
         self.assertEqual(labels(y["responseType"]), ["viewed", "denied", "refused"])
         self.assertEqual(y["checkpoint"]["tokens"][0], "delvetalk.checkpoint.site.v1")
-        done = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(3), state=rec(count=nat(7)))))
+        done = self.h.resume(art, y["checkpoint"], variant("viewed", record(version=nat(3), state=record(count=nat(7)))))
         self.assertEqual((done["status"], done.get("value")), ("finished", nat(7)), done)
         art, y = self.start("peek")
-        bad = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(3), state=rec(other=nat(7)))))
+        bad = self.h.resume(art, y["checkpoint"], variant("viewed", record(version=nat(3), state=record(other=nat(7)))))
         self.assertEqual(bad["status"], "error", bad)
         self.assertIn("response does not conform", bad["message"])
-        written = self.h.resume(art, y["checkpoint"], variant("written", rec()))
+        written = self.h.resume(art, y["checkpoint"], variant("written", record()))
         self.assertIn("response does not conform", written["message"])
 
     def test_two_sites_resume_at_two_types_and_one_message_at_two_types_is_refused(self):
         art, y = self.start("both")
         self.assertEqual(labels(y["responseType"]), ["viewed", "denied", "refused"])
-        w = self.h.resume(art, y["checkpoint"], variant("viewed", rec(version=nat(1), state=rec(count=nat(5)))))
+        w = self.h.resume(art, y["checkpoint"], variant("viewed", record(version=nat(1), state=record(count=nat(5)))))
         self.assertEqual(w["status"], "yielded", w)
         self.assertEqual(labels(w["responseType"]), ["written", "refused"])
         fields = {f["name"]: f["value"] for f in w["plan"]["fields"]}
         self.assertEqual(fields["method"], {"tag": "label", "value": "write"})
         # A view's response at the write's site is refused.
-        again = self.h.resume(art, w["checkpoint"], variant("viewed", rec(version=nat(1), state=rec(count=nat(5)))))
+        again = self.h.resume(art, w["checkpoint"], variant("viewed", record(version=nat(1), state=record(count=nat(5)))))
         self.assertIn("response does not conform", again["message"])
-        done = self.h.resume(art, w["checkpoint"], variant("written", rec()))
+        done = self.h.resume(art, w["checkpoint"], variant("written", record()))
         self.assertEqual((done["status"], done.get("value")), ("finished", nat(5)), done)
         reply = self.h.send({"op": "check-package", "entry": "twice", "modules": world_modules(TWICE)})
         self.assertEqual(reply["status"], "refused", reply)

@@ -15,10 +15,9 @@ write added, committing nothing.
 """
 import unittest
 
-from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
-from tests.test_turn_world import declared
+from tests.wire import field, label, nat, record
+from tests.bend import declared
 
 COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -100,13 +99,6 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
     case returned(r): r.result + 10n
     case _: 97n
 """)
-
-# Runs the counter under a handler of its own, from inside another `run`.
-
-
-# The same three in the message dialect: a handler takes the World.Message a frame yields and
-# answers with the result the call site's protocol method types (`write` -> Written).
-
 
 class Handlers(Reflection):
     def setUp(self):

@@ -23,8 +23,7 @@ from tests.host import as_owner
 
 from tests import test_chain, test_policy
 from tests.test_objects import PROBE_HEAD_G, run_pure
-from tests.test_replay import rows
-from tests.test_turn_world import label, record
+from tests.wire import label, record, rows
 
 SPELL = "delvetalk garden plant / colour: silver / seed: a fern that remembers"
 

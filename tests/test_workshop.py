@@ -12,8 +12,9 @@ target's own law with request.caller = the workshop. A block must be a package w
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_objects import MODULES, check, closure, compile_job
-from tests.test_turn_world import closure as world_closure, label, nat, record
+from tests.test_objects import check, compile_job
+from tests.wire import label, nat, record
+from tests.bend import MODULES, closure
 
 PROBE = """edition ObjectiveBend 1
 import ./List.obend as Lists
@@ -86,7 +87,7 @@ class Workshop(Chain):
         amendment and reprogram, and anyone's ordinary writes."""
         law = 'law owner: request.kind == 0 or request.subject == "%s"\n' % owner
         source = open(MODULES["Counter"]).read().replace("record State:", law + "record State:", 1)
-        modules = world_closure("Counter", override={"Counter": source})
+        modules = closure("Counter", override={"Counter": source})
         r = self.host.send(op="world-create", principal=owner, identity="mk-bell-1", object="bell-1", modules=modules,
                            entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)

@@ -11,9 +11,9 @@ import json
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_turn import MESSAGE, Host, TurnCase, nat, label, variant
-from tests.test_turn_world import closure
-from tests.test_turn_world import declared
+from tests.test_turn import MESSAGE, Host, TurnCase
+from tests.wire import field, label, listing, nat, record, variant
+from tests.bend import closure, declared
 
 CALLER_WORLD = "edition ObjectiveBend 1\n" + MESSAGE + """record Call:
   object: String
@@ -55,17 +55,6 @@ def pair(p: Pair) -> Activity<Nat>:
 def called(plan):
     """The Call record a yielded Message carries as its argument."""
     return field(field(plan, "argument"), "argument")
-
-
-def field(record, name):
-    for f in record["fields"]:
-        if f["name"] == name:
-            return f["value"]
-    raise KeyError(name)
-
-
-def record(**fields):
-    return {"tag": "record", "fields": [{"name": k, "value": v} for k, v in fields.items()]}
 
 
 class DataTypeTests(TurnCase):
@@ -162,10 +151,6 @@ def data_counter_modules():
     return closure("DataCounter", override={"DataCounter": DATA_COUNTER})
 
 
-def items(*values):
-    return {"tag": "list", "items": list(values)}
-
-
 def set_payload(value):
     return record(payload=variant("set", record(value=value)))
 
@@ -205,7 +190,7 @@ class DataInState(Chain):
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
         self.assertEqual(self.payload(), tagged)
         self.assertEqual(self.cid(self.payload()), self.cid(tagged))
-        listed = items(nat(1), nat(2), nat(3))
+        listed = listing([nat(1), nat(2), nat(3)])
         r = self.turn("box", "putList", record(items=listed))
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
         self.assertEqual(self.payload(), listed)
@@ -219,7 +204,7 @@ class DataInState(Chain):
     def test_a_data_payload_crosses_an_await_checkpoint_a_restart_and_a_replay(self):
         # Refuted if the Data value read before suspending is not the one written after resuming.
         self.assertEqual(self.create()["status"], "created")
-        nested = record(shade=variant("light", record(level=nat(3))), tags=items(label("a"), label("b")))
+        nested = record(shade=variant("light", record(level=nat(3))), tags=listing([label("a"), label("b")]))
         self.assertEqual(self.raw(op="world-propose", principal="ember", identity="w1",
                                   roots=[{"object": "box", "version": 0}],
                                   writes=[{"object": "box", "edits": set_payload(nested)}]

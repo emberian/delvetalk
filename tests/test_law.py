@@ -12,9 +12,9 @@ package's Bend `law(old, new, request)` judges it under `Bounds.lawTicks`, readi
 import os
 import unittest
 
-from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import nat, record, declared
+from tests.wire import field, nat, record
+from tests.bend import closure, declared
 
 GUARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -308,7 +308,6 @@ class CreatedReadings(Reflection):
         return r["receipt"]["outcome"]["reason"], [(x["name"], x["reading"]) for x in laws]
 
     def test_a_creators_readings_survive_a_reopen_and_the_snapshot_is_replays(self):
-        from tests.test_objects import closure
         from tests.test_reflection import PROBE
         maker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -323,9 +322,7 @@ def make(state: State, context: Abi.Context) -> Activity<String>:
     case created(_): "made"
     case refused(r): r.reading
 """ % self.LAW.replace('"', '\\"'), "make")
-        seen, mods = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, mods)
+        mods = closure(*("Abi", "List", "Form", "Plan", "World"))
         r = self.host.send(op="world-create", principal="ember", identity="mk-maker", object="maker",
                            modules=mods + [{"name": "Probe", "source": PROBE}, {"name": "Maker", "source": maker}],
                            entry="initial", seed=record(n=nat(0)))

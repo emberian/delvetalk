@@ -10,12 +10,11 @@ retired card written, or a non-opener casting a power.
 
     python3 -W error -m unittest tests.test_root -v
 """
-import os
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_objects import closure
-from tests.test_turn_world import label, nat, record
+from tests.wire import label, nat, record
+from tests.bend import closure
 
 OPENER = "did:plc:hand"
 CLOCK = "clock"

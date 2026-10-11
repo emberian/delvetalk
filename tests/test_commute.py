@@ -17,11 +17,10 @@ import unittest
 
 from tests.host import as_owner
 
-from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
 from tests.test_world import BOUNDED, WorldCase, add, root, write
-from tests.test_turn_world import declared
+from tests.wire import field, label, nat, record
+from tests.bend import declared
 
 BELL = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -104,7 +103,7 @@ class Moved(Reflection):
         self.assertEqual((resumed["status"], resumed["receipt"].get("rerun")), ("admitted", True), resumed)
 
     def test_the_law_judges_the_commuted_write_on_the_state_as_it_is_now(self):
-        s = self.turn("bell", "strike", principal="gemini", identity="strike")
+        self.turn("bell", "strike", principal="gemini", identity="strike")
         self.rain("a", "kim")
         self.rain("b", "kim")
         [resumed] = [as_owner(self.host, r, "gemini") for r in self.rain("c", "ann", identity="go")["resumed"]]

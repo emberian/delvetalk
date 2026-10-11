@@ -14,7 +14,9 @@ host encodes them (`canonical-encode`).
 import random
 import unittest
 
-from tests.test_turn import Host, library_modules
+from tests.bend import closure
+from tests.test_turn import Host
+from tests.wire import label, nat, record
 
 SOURCE = """edition ObjectiveBend 1
 import ./List.obend as Lists
@@ -38,33 +40,21 @@ def numbers(a: Lists.List<Nat>, b: Lists.List<Nat>) -> Nat:
 TEXTS = ["", "a", "b", "ab", "ba", "é", "zz", "日本", "😀", "aaa", "Z", "a b"]
 
 
-def lab(s):
-    return {"tag": "label", "value": s}
-
-
-def nat(n):
-    return {"tag": "natural", "value": str(n)}
-
-
-def rec(**fields):
-    return {"tag": "record", "fields": [{"name": k, "value": v} for k, v in fields.items()]}
-
-
 def row(r):
-    shade = r.choice([{"tag": "variant", "label": "dark", "payload": rec()},
-                      {"tag": "variant", "label": "light", "payload": rec(level=nat(r.choice([0, 1, 300])))},
-                      {"tag": "variant", "label": "dim", "payload": rec(by=lab(r.choice(TEXTS)))}])
-    return rec(name=lab(r.choice(TEXTS)), n=nat(r.choice([0, 1, 23, 24, 255, 256, 70000, 2 ** 64 - 1, 2 ** 64, 2 ** 70])),
+    shade = r.choice([{"tag": "variant", "label": "dark", "payload": record()},
+                      {"tag": "variant", "label": "light", "payload": record(level=nat(r.choice([0, 1, 300])))},
+                      {"tag": "variant", "label": "dim", "payload": record(by=label(r.choice(TEXTS)))}])
+    return record(name=label(r.choice(TEXTS)), n=nat(r.choice([0, 1, 23, 24, 255, 256, 70000, 2 ** 64 - 1, 2 ** 64, 2 ** 70])),
                ok={"tag": "boolean", "value": r.random() < 0.5},
-               tags={"tag": "list", "items": [lab(r.choice(TEXTS)) for _ in range(r.randrange(0, 4))]},
-               shade=shade, inner=rec(a=nat(r.choice([1, 2])), bb=lab(r.choice(TEXTS))))
+               tags={"tag": "list", "items": [label(r.choice(TEXTS)) for _ in range(r.randrange(0, 4))]},
+               shade=shade, inner=record(a=nat(r.choice([1, 2])), bb=label(r.choice(TEXTS))))
 
 
 class CanonicalCompare(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.h = Host()
-        cls.modules = library_modules("List") + [{"name": "Package", "source": SOURCE}]
+        cls.modules = closure("List") + [{"name": "Package", "source": SOURCE}]
 
     @classmethod
     def tearDownClass(cls):

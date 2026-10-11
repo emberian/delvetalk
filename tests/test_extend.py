@@ -11,10 +11,9 @@ Extend, not replace: `reprogram {mode: extend}` and Plan
 """
 import unittest
 
-from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
-from tests.test_turn_world import declared
+from tests.wire import field, label, nat, record
+from tests.bend import declared
 
 BASE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi

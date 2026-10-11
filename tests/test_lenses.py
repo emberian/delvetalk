@@ -17,9 +17,9 @@ import unittest
 
 from tests import test_chain, test_policy
 from tests.test_chain import town_kinds
-from tests.test_objects import closure
 from tests.test_places import avatar_seed
-from tests.test_turn_world import label, record
+from tests.wire import label, record
+from tests.bend import closure
 
 GLM = "did:plc:glm"
 
@@ -97,9 +97,6 @@ class Lenses(test_chain.Chain):
         self.assertEqual(self.field("handle", GLM), "glm.bsky")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class OwnedLenses(test_chain.Chain):
     """Lenses on the objects that had no owner: Garden (confirm), Place and Thing (name,
@@ -176,3 +173,6 @@ class OwnedLenses(test_chain.Chain):
             usage = self.turn(obj, "receive", heard("delvetalk %s ?" % obj), principal="glm")
             self.assertEqual(usage["status"], "usage", usage)
             self.assertIn(form, usage["text"])
+
+if __name__ == "__main__":
+    unittest.main()

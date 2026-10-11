@@ -1,6 +1,9 @@
 """Every route a browser reaches is a page in the theme's vocabulary, never a JSON dump; JSON stays JSON for agents.
 
-Against the genesis town on a real `serve`, logged in through the login page's forms (the session cookie)."""
+Against the genesis town on a real `serve`, logged in through the login page's forms (the session cookie).
+
+Evidence for FOUNDATION §7 (layer: transport).
+"""
 import html
 import json
 import re
@@ -8,8 +11,9 @@ import urllib.parse
 from html.parser import HTMLParser
 
 from transport.pages import text as pages_text
-from tests.test_turn_world import closure, counter_modules, declared, nat, record
 from tests.test_http import DID, FORM, HANDLE, FrontCase, browser_login
+from tests.wire import nat, record
+from tests.bend import closure, counter_modules, declared
 
 HTML = {'Accept': 'text/html,application/xhtml+xml'}
 A_DID = re.compile(r'did:plc:[a-z2-7]{24}')

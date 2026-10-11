@@ -5,24 +5,16 @@ Evidence for FOUNDATION §8 MUD floor (layer: objects).
 
 Places, things and avatars: the MUD floor as ordinary objects.
 
-Compile-level types for every method, then turns through the real host.
-
-The host implements the `remove` list edit, so leave, take, move and acquire run
-end to end.
+Turns through the real host.
 """
 import unittest
 
 from deploy import genesis
-from tests.test_turn_world import relation
-from tests.test_chain import Chain, boolean, reference
-from tests.test_objects import closure
-from tests.test_turn_world import label, nat, record
+from tests.test_chain import Chain
+from tests.wire import boolean, label, listing, nat, record, reference, relation
+from tests.bend import closure
 
 NOBODY = reference("")
-
-
-def listing(items):
-    return {"tag": "list", "items": list(items)}
 
 
 def make_place(chain, name, seed):
@@ -89,9 +81,6 @@ class Floor(Chain):
     def refusal_clause(self, reply):
         """A refusal names its clause (Thing.Why, Place.Why) beside its reading."""
         return reply["result"]["payload"]["fields"][0]["value"]["value"]
-
-    # --- paths that do not need remove -------------------------------------------------
-
 
     def test_enter_appends_in_order_and_a_second_entry_is_refused(self):
         make_place(self, "porch", place_seed("Porch"))
@@ -250,9 +239,6 @@ class Floor(Chain):
         self.assertNotIn("note 000", text)
         self.assertIn("… and 56 more\n", text)
 
-    # --- paths through remove -----------------------------------------------------------
-
-
     def test_a_place_hears_take_and_put_only_from_the_thing_itself(self):
         make_place(self, "garden", place_seed("Garden", present=["glm"], things=["stone"]))
         for method in ("take", "put"):
@@ -294,9 +280,6 @@ class Floor(Chain):
         self.assertNotIn("Here: kimik3\n", self.card("garden"))
         self.assertIn("Here: kimik3\n", self.card("porch"))
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class Scoped(Chain):
@@ -389,4 +372,5 @@ class Copies(Chain):
         texts = [o["text"] for d in delivered for o in d.get("receipt", d).get("offers", [])]
         self.assertIn("Not copied: stone is not copyable; its owner, ember, decides.\n", texts)
 
-
+if __name__ == "__main__":
+    unittest.main()

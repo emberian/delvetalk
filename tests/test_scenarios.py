@@ -20,15 +20,12 @@ from pathlib import Path
 
 from tests.host import card_texts
 from tests.town import Town
-from tests.test_properties import OPENER, STRANGERS, lab, nat, rec
+from tests.test_properties import OPENER, STRANGERS
 import tempfile
+from tests.wire import label, nat, record, variant
 
 ROOT = Path(__file__).resolve().parent.parent
 KIM, GLM = list(STRANGERS)
-
-
-def variant(name, **fields):
-    return {"tag": "variant", "label": name, "payload": rec(**fields)}
 
 
 class Arc(unittest.TestCase):
@@ -47,7 +44,7 @@ class Arc(unittest.TestCase):
 
     def say(self, who, obj, text):
         """A reply carrying `text` to card `obj`, as the bridge makes it."""
-        return self.turn(who, obj, "receive", rec(text=lab(text), post=lab("at://%s/post/%d" % (who, self.n + 1))))
+        return self.turn(who, obj, "receive", record(text=label(text), post=label("at://%s/post/%d" % (who, self.n + 1))))
 
     def card(self, reply):
         return "\n".join(dict.fromkeys(card_texts(reply)))
@@ -79,10 +76,10 @@ class Bell(Arc):
         self.assertEqual(followed["result"]["label"], "followed", followed)
         nothing = self.say(KIM, KIM, "delvetalk %s watch\nto: %s\nfield: chimes" % (KIM, bell))  # a field the bell lacks
         self.assertEqual(nothing["result"]["label"], "refused", nothing)
-        watch = self.turn(KIM, "wake/" + KIM, "watch", rec(
-            event=variant("rows", object=lab(bell), field=lab("lines"), atLeast=nat(1),
-                          where={"tag": "list", "items": [variant("equals", column=lab("n"), equals=variant("natural", value=nat(7)))]}),
-            action=variant("call", card=lab(bell), method=lab("ring"))))
+        watch = self.turn(KIM, "wake/" + KIM, "watch", record(
+            event=variant("rows", object=label(bell), field=label("lines"), atLeast=nat(1),
+                          where={"tag": "list", "items": [variant("equals", column=label("n"), equals=variant("natural", value=nat(7)))]}),
+            action=variant("call", card=label(bell), method=label("ring"))))
         self.assertEqual(watch["status"], "admitted", watch)
         for i, who in enumerate([GLM, KIM, OPENER, GLM, KIM, OPENER, GLM], 1):
             rained = self.say(who, bell, "delvetalk %s rain\ntext: drizzle %d" % (bell, i))
@@ -116,12 +113,12 @@ class Garden(Arc):
         # an owner's naming no post, and prose containing the word are refused or not a merge.
         page = "at://%s/town.delve.feed.post/page1" % OPENER
         for who, text, post in ((GLM, "merge", page), (OPENER, "merge", ""), (OPENER, "merge this please", page)):
-            r = self.turn(who, "garden", "receive", rec(text=lab(text), post=lab(post)))
+            r = self.turn(who, "garden", "receive", record(text=label(text), post=label(post)))
             self.assertNotEqual(r.get("result", {}).get("label"), "merged", r)
-        self.assertEqual(self.field("garden", "pageCheckpoint"), lab(""))
-        merged = self.turn(OPENER, "garden", "receive", rec(text=lab("merge"), post=lab(page)))
+        self.assertEqual(self.field("garden", "pageCheckpoint"), label(""))
+        merged = self.turn(OPENER, "garden", "receive", record(text=label("merge"), post=label(page)))
         self.assertEqual(merged["result"]["label"], "merged", merged)
-        self.assertEqual(self.field("garden", "pageCheckpoint"), lab(page))
+        self.assertEqual(self.field("garden", "pageCheckpoint"), label(page))
 
 
 class Workshop(Arc):

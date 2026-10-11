@@ -8,12 +8,10 @@ World kernel: object store, hash-chained journal, commit-on-roots, receipts.
 Python only drives bytes over stdin/stdout; every decision is Lean's. Each case
 is named by the defect that would make it fail.
 """
-import os
 import unittest
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-from tests.host import HostCase, binary
-BINARY = binary()
+from tests.host import HostCase
+from tests.wire import nat, variant
 
 COUNTER = """edition ObjectiveBend 1
 record State:
@@ -27,20 +25,11 @@ MONOTONE = COUNTER.replace("def initial", "law counter: monotone(count)\ndef ini
 BOUNDED = COUNTER.replace("def initial", "law ceiling: new.count <= 5\ndef initial")
 
 
-def nat(n):
-    return {"tag": "natural", "value": str(n)}
-
-
 def seed(count=0, open_=True, name="c"):
     return {"tag": "record", "fields": [
         {"name": "count", "value": nat(count)},
         {"name": "open", "value": {"tag": "boolean", "value": open_}},
         {"name": "name", "value": {"tag": "label", "value": name}}]}
-
-
-def variant(label, **payload):
-    return {"tag": "variant", "label": label, "payload": {"tag": "record", "fields": [
-        {"name": k, "value": v} for k, v in payload.items()]}}
 
 
 def add(field, n):

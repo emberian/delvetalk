@@ -11,15 +11,11 @@ is about process boundaries.
 """
 import copy
 import json
-import os
-import subprocess
 import unittest
 
-from tests.wire import cid_of
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-from tests.host import binary
-BINARY = binary()
+from tests import host
+from tests.bend import closure
+from tests.wire import cid_of, label, listing, nat, nil, variant
 
 # A message-dialect package carries a module named World: the Message an activity yields, the result
 # sum of each world call, and the `protocol world:` that types the calls.
@@ -87,19 +83,6 @@ BINDING = {"object": "counter", "principal": "glm", "intent": "t1",
            "roots": [{"object": "counter", "version": 0}]}
 
 
-def nat(n):
-    return {"tag": "natural", "value": str(n)}
-
-
-def label(s):
-    return {"tag": "label", "value": s}
-
-
-def variant(name, payload=None):
-    return {"tag": "variant", "label": name,
-            "payload": payload or {"tag": "record", "fields": []}}
-
-
 NOT_ISSUED = "checkpoint was not issued by this process"
 
 
@@ -156,49 +139,6 @@ def show(label: String) -> Activity<Nat>:
     case back(d): Doc.size(d)
 """
 
-WORLD_LIB = os.path.join(ROOT, "world", "lib")
-
-
-def library_modules(*names):
-    """Library modules (imports first) read from world/lib, as supplied modules."""
-    found = {}
-    for directory, _, files in os.walk(WORLD_LIB):
-        for f in files:
-            if f.endswith(".obend"):
-                found[f[:-6]] = os.path.join(directory, f)
-    out, seen = [], set()
-
-    def visit(name):
-        if name in seen:
-            return
-        seen.add(name)
-        with open(found[name]) as handle:
-            source = handle.read()
-        for line in source.splitlines():
-            if line.startswith("import ./"):
-                visit(line.split("/")[1].split(".obend")[0])
-        out.append({"name": name, "source": source})
-    for n in names:
-        visit(n)
-    return out
-
-
-def nil():
-    return {"tag": "list", "items": []}
-
-
-def cons(head, tail):
-    return {"tag": "list", "items": [head] + tail["items"]}
-
-
-def from_list(items):
-    return {"tag": "list", "items": list(items)}
-
-
-def to_list(data):
-    return data["items"]
-
-
 def message_argument(plan):
     """The argument of a yielded Message (the data the world call carries)."""
     return plan_field(plan, "argument")
@@ -211,23 +151,14 @@ def plan_field(plan, name):
     raise KeyError(name)
 
 
-class Host:
-    def __init__(self):
-        self.proc = subprocess.Popen([BINARY], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     text=True, bufsize=1)
-
-    def send(self, request):
-        self.proc.stdin.write(json.dumps(request) + "\n")
-        self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
-        assert line, "host closed its output (crash)"
-        return json.loads(line)
+class Host(host.Host):
+    """A host process driven in turn ops: compile a package, start a turn, resume it from its checkpoint."""
 
     def compile(self, source, entry, library=(), world=None):
         """`world` is the source of the package's World module (message dialect), placed after the library."""
         supplied = [{"name": "World", "source": world}] if world else []
         reply = self.send({"op": "compile", "entry": entry,
-                           "modules": library_modules(*library) + supplied + [{"name": "Package", "source": source}]})
+                           "modules": closure(*library) + supplied + [{"name": "Package", "source": source}]})
         assert reply["status"] == "compiled", reply
         return reply["artifact"]
 
@@ -243,11 +174,6 @@ class Host:
         if limits:
             request["limits"] = limits
         return self.send(request)
-
-    def close(self):
-        self.proc.stdin.close()
-        self.proc.stdout.close()
-        self.proc.wait(timeout=30)
 
 
 class TurnCase(unittest.TestCase):
@@ -437,18 +363,18 @@ class TurnTests(TurnCase):
         y = h.start(art, [nat(100)])
         self.assertEqual(y["status"], "yielded", y)
         self.assertEqual(plan_field(y["plan"], "method"), label("put"))
-        self.assertEqual([x["value"] for x in to_list(message_argument(y["plan"]))],
+        self.assertEqual([x["value"] for x in message_argument(y["plan"])["items"]],
                          [str(n) for n in range(100, 0, -1)])
         done = h.resume(art, y["checkpoint"], variant("none"))
         self.assertEqual((done["status"], done["value"]), ("finished", nat(0)), done)
         art = h.compile(LISTS, "collect", library=("List",), world=LISTS_WORLD)
         y = h.start(art, [nat(2)])
-        good = variant("names", from_list([label("a"), label("b"), label("c")]))
+        good = variant("names", listing([label("a"), label("b"), label("c")]))
         done = h.resume(art, y["checkpoint"], good)
         self.assertEqual((done["status"], done["value"]), ("finished", nat(3)), done)
         missing_tail = variant("names", variant("cons", {"tag": "record", "fields": [
             {"name": "head", "value": label("a")}]}))
-        wrong_head = variant("names", from_list([label("a"), nat(7)]))
+        wrong_head = variant("names", listing([label("a"), nat(7)]))
         extra_field = variant("names", variant("cons", {"tag": "record", "fields": [
             {"name": "head", "value": label("a")}, {"name": "tail", "value": nil()},
             {"name": "more", "value": nat(1)}]}))
@@ -657,9 +583,6 @@ class DiagnosticTests(TurnCase):
                                  "modules": [{"name": "First", "source": good}]})["status"], "checked")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 def wide_library(count):
     """A module of `count` definitions; f0..f9 call each other in a chain, the rest are unused."""
@@ -729,3 +652,5 @@ class SessionCacheTests(TurnCase):
         self.assertEqual((refused["status"], refused["message"]),
                          ("error", "artifact does not match recompilation of its claimed source"), refused)
 
+if __name__ == "__main__":
+    unittest.main()

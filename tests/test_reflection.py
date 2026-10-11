@@ -17,8 +17,9 @@ import tempfile
 import unittest
 
 from tests.host import HostCase
-from tests.test_chain import field
-from tests.test_turn_world import ROOT, label, nat, record, declared
+from tests.wire import field, label, nat, record
+from tests.bend import declared
+from tests.host import ROOT
 
 WORLD_LIBRARY = os.path.join(ROOT, "world", "lib")
 

@@ -13,7 +13,8 @@ import json
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, record, declared
+from tests.wire import label, record
+from tests.bend import declared
 
 GARDEN = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
