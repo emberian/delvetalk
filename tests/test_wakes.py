@@ -13,7 +13,7 @@ import unittest
 
 from tests.test_chain import Chain, town_kinds
 from tests.test_rooms import avatar_seed
-from tests.wire import field, label, nat, nil, record, reference, relation, rows, variant
+from tests.wire import cast_refusal, field, label, nat, nil, record, reference, relation, rows, variant
 from tests.bend import closure
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
@@ -65,13 +65,17 @@ class Wakes(Chain):
                 self.assertEqual(self.label_of(self.turn(wake, "receive", heard("delvetalk %s %s" % (wake, spell)), principal=OWNER)), "watching")
         bad = self.turn(wake, "receive", heard("delvetalk %s rows / object: ledger / field: lines / where: n is big / count: 1" % wake), principal=OWNER)
         self.assertEqual(self.label_of(bad), "refused")
-        self.assertEqual(bad["result"]["payload"]["fields"][0]["value"]["value"], "badWhere", bad)
+        self.assertEqual(cast_refusal(bad)[0], "badWhere", bad)
         lines = [l for l in self.turn(wake, "receive", heard(""), principal=OWNER)["offers"][0]["text"].split("\n") if l.startswith("#")]
         self.assertEqual(len(lines), 5, lines)
         self.assertIn("moth", lines[0])
         self.assertEqual(self.label_of(self.turn(wake, "receive", heard("delvetalk %s grows / object: ledger / field: next" % wake), principal=OTHER)), "refused")
 
     def label_of(self, reply):
+        """The result's label; a card's refusal of the spell cast on it refuses the turn, which reads "refused"."""
+        if reply["status"] == "refused":
+            cast_refusal(reply)
+            return "refused"
         self.assertEqual(reply["status"], "admitted", reply)
         return reply["result"]["label"]
 
@@ -117,8 +121,7 @@ class Wakes(Chain):
         # An env made at any other id takes nothing in.
         self.create("env/elsewhere", "Env", record(owner=label(OWNER), buffer=relation(), seen=nat(0)), by=OWNER)
         r = self.turn("env/elsewhere", "publish", record(event=event()), principal=OWNER)
-        fields = {f["name"]: f["value"] for f in r["result"]["payload"]["fields"]}
-        self.assertEqual(fields, {"clause": label("misplaced"), "reading": label("An env lives at env/did:plc:inkling")})
+        self.assertEqual(cast_refusal(r), ("misplaced", "An env lives at env/did:plc:inkling"))
         self.assertEqual(self.version("env/elsewhere"), 0)
 
     def test_the_opener_creates_an_env_for_its_owner_whom_only_the_opener_joins_in_amending(self):
@@ -382,7 +385,12 @@ class Wakes(Chain):
         made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell")), principal=OWNER)
         self.assertEqual(made["status"], "admitted", made)
         wake = self.wake()
-        said = lambda text, who=OWNER: [o["text"] for o in self.turn(wake, "receive", heard("delvetalk %s %s" % (wake, text)), principal=who)["offers"]]
+        def said(text, who=OWNER):
+            r = self.turn(wake, "receive", heard("delvetalk %s %s" % (wake, text)), principal=who)
+            if r["status"] == "refused":  # the line is the receipt's reason; nothing is offered
+                cast_refusal(r)
+                return [r["receipt"]["outcome"]["reason"] + "\n"]
+            return [o["text"] for o in r["offers"]]
         self.assertEqual(said("rows / object: bell/1 / field: lines / where: / count: 1"), ["Watching bell/1's lines: each new row notes your avatar. Stop: delvetalk wake unwatch / id: 1.\n"])
         self.assertEqual(said("rows / object: bell/1 / field: lines / where: text has moth / count: 7"),
                          ["Watching bell/1's lines where text has moth: 0 of 7 rows; at 7 your avatar is noted, then at every 7 more. Stop: delvetalk wake unwatch / id: 2.\n"])
@@ -416,13 +424,13 @@ class Wakes(Chain):
         first = self.turn("tide", "tick", principal="did:plc:zero")
         self.assertEqual((self.label_of(first), field(first["result"]["payload"], "sent")), ("ticked", nat(1)))
         soon = self.turn("tide", "tick", principal="did:plc:zero")
-        self.assertEqual(self.label_of(soon), "tooSoon")
+        self.assertEqual(self.label_of(soon), "refused")
         last = int(field(self.state("tide"), "last")["value"])
-        self.assertEqual(field(soon["result"]["payload"], "next"), nat(last + 3))
+        self.assertEqual(cast_refusal(soon), ("tooSoon", "the next tick may come at clock %d" % (last + 3)))
         # The gap is in clock units: turns do not move it, world-advance does.
         for _ in range(4):
             self.turn("tide", "receive", heard(""), principal="did:plc:zero")
-        self.assertEqual(self.label_of(self.turn("tide", "tick", principal="did:plc:zero")), "tooSoon")
+        self.assertEqual(self.label_of(self.turn("tide", "tick", principal="did:plc:zero")), "refused")
         self.host.send(op="world-advance", height=last + 3)
         second = self.turn("tide", "tick", principal="did:plc:zero")
         self.assertEqual((self.label_of(second), field(second["result"]["payload"], "sent")), ("ticked", nat(2)))

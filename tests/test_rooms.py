@@ -81,14 +81,20 @@ class Floor(Chain):
         return reply["result"]["label"]
 
     def refusal_reason(self, reply):
-        self.assertEqual(reply["status"], "admitted", reply)
-        self.assertEqual(reply["result"]["label"], "refused", reply)
-        fields = reply["result"]["payload"]["fields"]
-        return fields[-1]["value"]["value"]
+        """A cast refusal refuses the turn: the receipt's outcome carries the reading, nothing is offered."""
+        self.assertEqual(reply["status"], "refused", reply)
+        out = reply["receipt"]["outcome"]
+        self.assertEqual(out["class"], "cardRefused", reply)
+        self.assertEqual(out["reason"], "refused {}: {}".format(out["clause"], out["reading"]), reply)
+        self.assertNotIn("result", reply)
+        return out["reading"]
 
     def refusal_clause(self, reply):
         """A refusal names its clause beside its reading."""
-        return reply["result"]["payload"]["fields"][0]["value"]["value"]
+        if reply["status"] == "admitted":
+            return reply["result"]["payload"]["fields"][0]["value"]["value"]
+        self.assertEqual(reply["status"], "refused", reply)
+        return reply["receipt"]["outcome"]["clause"]
 
     # --- paths that do not need remove -------------------------------------------------
 
@@ -368,9 +374,9 @@ class Talk(Chain):
         super().setUp()
         make_room(self, "porch", **room_seed("Porch", present=["glm", "kimik3"]))
 
-    def say(self, text, who):
+    def say(self, text, who, status="admitted"):
         r = self.turn("porch", "receive", record(text=label(text), post=label("at://x/1")), principal=who)
-        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual(r["status"], status, r)
         return r
 
     def test_say_and_emote_reach_everyone_present_whisper_one_and_a_stranger_is_refused(self):
@@ -384,9 +390,11 @@ class Talk(Chain):
         whispered = self.say("delvetalk porch whisper / to: kimik3 / line: psst", "glm")
         self.assertEqual([(o["to"], o["text"]) for o in whispered["receipt"]["offers"]],
                          [("kimik3", "glm whispers: psst\n"), ("glm", "Whispered to kimik3; no one else here hears it. Say to all: delvetalk porch say / line: <text>.\n")])
-        stranger = self.say("delvetalk porch say / line: hello?", "zero")
-        self.assertEqual(stranger["result"]["label"], "refused")
-        self.assertEqual(stranger["offers"][0]["text"], "refused notPresent: Only someone here can say; enter first: delvetalk porch enter\n")
+        stranger = self.say("delvetalk porch say / line: hello?", "zero", status="refused")
+        out = stranger["receipt"]["outcome"]
+        self.assertEqual((out["class"], out["clause"], out["reading"]), ("cardRefused", "notPresent", "Only someone here can say; enter first: delvetalk porch enter"))
+        self.assertEqual(out["reason"], "refused notPresent: Only someone here can say; enter first: delvetalk porch enter")
+        self.assertNotIn("result", stranger)
 
 
 class Copies(Chain):

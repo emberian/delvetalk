@@ -22,7 +22,7 @@ from tests.host import card_texts
 from tests.town import Town
 from tests.test_properties import OPENER, STRANGERS
 import tempfile
-from tests.wire import label, nat, record, variant
+from tests.wire import cast_refusal, label, nat, record, variant
 
 ROOT = Path(__file__).resolve().parent.parent
 KIM, GLM = list(STRANGERS)
@@ -75,7 +75,7 @@ class Bell(Arc):
         followed = self.say(GLM, GLM, "delvetalk %s watch\nto: %s\nfield: marks" % (GLM, bell))
         self.assertEqual(followed["result"]["label"], "followed", followed)
         nothing = self.say(KIM, KIM, "delvetalk %s watch\nto: %s\nfield: chimes" % (KIM, bell))  # a field the bell lacks
-        self.assertEqual(nothing["result"]["label"], "refused", nothing)
+        self.assertEqual(cast_refusal(nothing)[0], "field", nothing)
         watch = self.turn(KIM, "wake/" + KIM, "watch", record(
             event=variant("rows", object=label(bell), field=label("lines"), atLeast=nat(1),
                           where={"tag": "list", "items": [variant("equals", column=label("n"), equals=variant("natural", value=nat(7)))]}),

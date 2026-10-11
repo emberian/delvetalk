@@ -13,7 +13,7 @@ import unittest
 from deploy import genesis
 from deploy.genesis import DOORS, STUDIO
 from tests.test_chain import Chain, town_garden
-from tests.wire import field, label, listing, nat, record, reference, relation
+from tests.wire import cast_refusal, field, result_label, label, listing, nat, record, reference, relation
 from tests.bend import closure
 
 ROOT_DOORS = DOORS  # (label, object, [(spell, what comes back)])
@@ -160,15 +160,14 @@ class Cards(Chain):
     def test_doors_are_hung_removed_and_labels_are_unique(self):
         self.directory()
         again = self.turn("commonplace", "door", record(label=label("GARDEN"), to=label("garden")), principal="ember")
-        self.assertEqual(again["result"]["label"], "refused", again)
+        self.assertEqual(result_label(again), "refused", again)
         stranger = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="kimik3")
-        self.assertEqual(stranger["result"]["label"], "refused", stranger)
+        self.assertEqual(result_label(stranger), "refused", stranger)
         gone = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="ember")
         self.assertEqual(gone["result"]["label"], "done", gone)
         self.assertNotIn("ROOMS\n", self.card(self.say("", obj="commonplace", who="kimik3")))
         missing = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="ember")
-        fields = {f["name"]: f["value"]["value"] for f in missing["result"]["payload"]["fields"]}
-        self.assertEqual(fields["clause"], "noDoor", missing)
+        self.assertEqual(cast_refusal(missing)[0], "noDoor", missing)
 
 
 if __name__ == "__main__":

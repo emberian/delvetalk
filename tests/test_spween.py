@@ -22,7 +22,7 @@ from tests import test_chain
 from tests.test_objects import run_pure
 from tests.test_scene import GATE, GLM, heard, plain, scene_fields
 from tests.test_rooms import make_room
-from tests.wire import label, record
+from tests.wire import cast_refusal, label, record
 
 # The README's running example, verbatim.
 TAVERN = """---
@@ -163,8 +163,7 @@ class Made(test_chain.Chain):
         return v["version"], plain(v["state"])
 
     def refusal(self, r):
-        fields = {f["name"]: f["value"]["value"] for f in r["result"]["payload"]["fields"]}
-        return fields["clause"], fields["reading"]
+        return cast_refusal(r)
 
     def made(self):
         r = self.say("scene", "A scene for the square:\n\n```spween\n" + WELL + "```\n", identity="post-well")

@@ -184,8 +184,10 @@ class Walks(unittest.TestCase):
         _, text = self.say(W, tick)
         self.assertIn("Tick 1: 1 note sent.", text)
         reply, text = self.cast(W, soon)
-        clock = re.match(r"refused tooSoon: the next tick may come at clock (\d+)", text)
-        self.assertTrue(clock, text)
+        # The refusal refuses the turn: its line is the receipt's reason, and nothing is offered.
+        self.assertEqual((reply["status"], reply["receipt"]["outcome"]["class"], text), ("refused", "cardRefused", ""), reply)
+        clock = re.match(r"refused tooSoon: the next tick may come at clock (\d+)$", reply["receipt"]["outcome"]["reason"])
+        self.assertTrue(clock, reply)
         self.assertIn("tide 1: first light", self.avatar(W))
         got = self.host.send({"op": "world-advance", "principal": "transport", "height": int(clock.group(1)) + 1})
         self.assertEqual(got["status"], "advanced", got)

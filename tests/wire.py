@@ -56,6 +56,26 @@ def field(wire, name):
     return [f["value"] for f in wire["fields"] if f["name"] == name][0]
 
 
+def cast_refusal(reply):
+    """A spell cast on a card that the card refuses is a refused turn (class `cardRefused`): nothing written, no
+    offers, no result. Returns `(clause, reading)` from the receipt's outcome, whose `reason` is the whole line."""
+    assert reply["status"] == "refused", reply
+    out = reply["receipt"]["outcome"]
+    assert out["class"] == "cardRefused", reply
+    assert out["reason"] == "refused %s: %s" % (out["clause"], out["reading"]), reply
+    assert "result" not in reply and "offers" not in reply and "offers" not in reply["receipt"], reply
+    return out["clause"], out["reading"]
+
+
+def result_label(reply):
+    """The label of a turn's result; a card's refusal of the spell cast on it (a refused turn) reads `refused`."""
+    if reply["status"] == "refused":
+        cast_refusal(reply)
+        return "refused"
+    assert reply["status"] == "admitted", reply
+    return reply["result"]["label"]
+
+
 def rows(wire):
     """The rows of a relation on the wire, in key order."""
     assert wire["tag"] == "variant" and wire["label"] == "rows", wire

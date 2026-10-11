@@ -22,7 +22,7 @@ import unittest
 
 from deploy import genesis
 from tests.test_turn_world import TurnWorld
-from tests.wire import field, label, nat, nil, record, reference, relation, rows
+from tests.wire import cast_refusal, field, label, nat, nil, record, reference, relation, result_label, rows
 from tests.bend import closure
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
@@ -71,10 +71,10 @@ class Laws(LawWorld):
         hang = lambda name, who: self.turn("commonplace", "door", record(label=label(name), to=label(name)), principal=who)
         self.assertEqual(hang("garden", OWNER)["result"]["label"], "done")
         refused = hang("bazaar", OTHER)
-        self.assertEqual((refused["status"], refused["result"]["label"], refused["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), refused)
-        self.assertIn("refused notOwner", refused["offers"][0]["text"])
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"].get("writes", [])), ("refused", []), refused)
+        self.assertEqual(cast_refusal(refused)[0], "notOwner", refused)
         gone = self.turn("commonplace", "undoor", record(label=label("garden")), principal=OTHER)
-        self.assertEqual((gone["status"], gone["result"]["label"]), ("admitted", "refused"), gone)
+        self.assertEqual(cast_refusal(gone)[0], "notOwner", gone)
         self.assertEqual(self.version("commonplace"), 1)
         self.assertEqual(self.turn("commonplace", "undoor", record(label=label("garden")), principal=OWNER)["result"]["label"], "done")
         self.assertEqual(field(self.state("commonplace"), "cites")["items"], [])
@@ -92,11 +92,9 @@ class Laws(LawWorld):
         self.assertEqual((spelled["status"], spelled["result"]), ("admitted", nat(2)), spelled)  # the method's own result: the line's number
         # A stranger's admit is refused by name in Bend, with the card; so is a line that is not there.
         stranger = self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)
-        self.assertEqual((stranger["status"], stranger["result"]["label"]), ("admitted", "refused"), stranger)
-        self.assertIn("refused notKeeper", stranger["offers"][0]["text"])
+        self.assertEqual(cast_refusal(stranger)[0], "notKeeper", stranger)
         missing = self.turn("anthology", "admit", record(number=nat(9)), principal=OWNER)
-        self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
-        self.assertIn("refused noLine", missing["offers"][0]["text"])
+        self.assertEqual(cast_refusal(missing)[0], "noLine", missing)
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
         admitted = [field(p, "n") for p in rows(field(self.state("anthology"), "admitted"))]
         self.assertEqual(admitted, [nat(2)])
@@ -115,7 +113,7 @@ class Laws(LawWorld):
         lines = rows(field(self.state("anthology"), "lines"))
         self.assertEqual((len(lines), field(lines[0], "text")["value"][:4]), (128, "0002"))
         gone = self.turn("anthology", "admit", record(number=nat(1)), principal=OWNER)
-        self.assertEqual(gone["result"]["label"], "refused", gone)
+        self.assertEqual(result_label(gone), "refused", gone)
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
         self.assertEqual([field(p, "n") for p in rows(field(self.state("anthology"), "admitted"))], [nat(2)])
 

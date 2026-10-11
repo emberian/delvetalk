@@ -14,7 +14,7 @@ import unittest
 
 from tests.test_chain import Chain
 from tests.test_objects import check, compile_job
-from tests.wire import label, nat, record
+from tests.wire import cast_refusal, label, nat, record
 from tests.bend import MODULES, closure
 
 PROBE = """edition ObjectiveBend 1
@@ -47,6 +47,8 @@ class Workshop(Chain):
         return self.turn(obj, "receive", record(text=label(text), post=label("at://glm/p/1")), principal="glm")
 
     def card(self, reply):
+        if reply["status"] == "refused":  # the card's refusal refuses the turn: its line is the receipt's reason
+            return cast_refusal(reply) and reply["receipt"]["outcome"]["reason"] + "\n"
         self.assertEqual(reply["status"], "admitted", reply)
         return reply["offers"][0]["text"]
 
@@ -54,8 +56,7 @@ class Workshop(Chain):
         return reply["result"]["label"]
 
     def refusal(self, reply):
-        fields = {f["name"]: f["value"]["value"] for f in reply["result"]["payload"]["fields"]}
-        return fields["clause"], fields["reading"]
+        return cast_refusal(reply)
 
 
     def test_a_check_with_neither_block_nor_target_and_a_wrong_card_are_refused_by_name(self):

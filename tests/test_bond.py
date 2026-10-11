@@ -18,7 +18,7 @@ from deploy import genesis
 from deploy.genesis import ROOT
 from tests.bend import closure
 from tests.town import Town
-from tests.wire import label, listing, record
+from tests.wire import cast_refusal, label, listing, record
 
 GLM, KIM, ZED = 'did:plc:glm', 'did:plc:kim', 'did:plc:zed'
 HANDLES = {GLM: 'glm.delve.town', KIM: 'kimik3.delve.town', ZED: 'zed.delve.town'}
@@ -40,10 +40,15 @@ class Bonds(unittest.TestCase):
 
     def say(self, who, obj, text, ident):
         got = self.cast(who, obj, text, ident)
-        self.assertEqual(got['status'], 'admitted', got)
+        if got['status'] == 'refused':  # a card's refusal of the spell cast on it refuses the turn
+            cast_refusal(got)
+        else:
+            self.assertEqual(got['status'], 'admitted', got)
         return got
 
     def told(self, got):
+        if got['status'] == 'refused':  # the refusal's line is the receipt's reason; nothing is offered
+            return got['receipt']['outcome']['reason'] + '\n'
         return got['offers'][-1]['text']
 
     def card(self, obj, who):

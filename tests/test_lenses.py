@@ -16,7 +16,7 @@ import unittest
 
 from tests import test_chain, test_policy
 from tests.test_rooms import avatar_seed
-from tests.wire import label, record
+from tests.wire import cast_refusal, label, record
 from tests.bend import closure
 
 GLM = "did:plc:glm"
@@ -27,7 +27,7 @@ def heard(text):
 
 
 def why(reply):
-    return reply["result"]["payload"]["fields"][1]["value"]["value"]
+    return cast_refusal(reply)[1]
 
 
 class Lenses(test_chain.Chain):
@@ -35,7 +35,10 @@ class Lenses(test_chain.Chain):
 
     def say(self, text, principal="ember", obj="policy"):
         r = self.turn(obj, "receive", heard(text), principal=principal)
-        self.assertEqual(r["status"], "admitted", r)
+        if r["status"] == "refused":  # the card's refusal of its own spell refuses the turn
+            self.assertEqual(r["receipt"]["outcome"]["class"], "cardRefused", r)
+        else:
+            self.assertEqual(r["status"], "admitted", r)
         return r
 
     def field(self, name, obj="policy"):
@@ -68,8 +71,8 @@ class Lenses(test_chain.Chain):
         self.policy()
         # The owner's guard is the policy's; the value's kind and the lens's name are the host's.
         r = self.say("delvetalk policy set\nmodel: evil", principal="glm")
-        self.assertEqual((r["result"]["label"], why(r)), ("refused", "Only the policy's owner may teach it; that is ember"))
-        self.assertIn("refused notOwner: Only the policy's owner may teach it; that is ember", r["offers"][0]["text"])
+        self.assertEqual(why(r), "Only the policy's owner may teach it; that is ember")
+        self.assertEqual(r["receipt"]["outcome"]["reason"], "refused notOwner: Only the policy's owner may teach it; that is ember")
         cases = [
             ("delvetalk policy set\nmodel: " + "m" * 65, "badValue"),
             ("delvetalk policy set\nmodel: a\nsystem: b", "unknownField"),

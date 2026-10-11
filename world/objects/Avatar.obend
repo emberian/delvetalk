@@ -225,10 +225,10 @@ def leaving(from: Plans.Reference, to: Plans.Reference, context: Abi.Context) ->
   match world.call::<Done>({object: from, method: "leave", argument: Plans.nothing()}):
     case returned(r): left(r.result, to, context)
     case _: moveRefused(Why.roomSilent({}), context)
-# A room's refusal comes back as its result, the room having said it; the avatar passes it on.
+# A room's refusal comes back as its result; the avatar refuses its own turn with it.
 def left(result: Done, to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match result:
-    case refused(r): Moved.refused(r)
+    case refused(r): movedRefused(r, context)
     case _: entering(to, context)
 def entering(to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match world.call::<Done>({object: to, method: "enter", argument: Plans.nothing()}):
@@ -236,7 +236,7 @@ def entering(to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
     case _: moveRefused(Why.roomSilent({}), context)
 def entered(result: Done, to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match result:
-    case refused(r): Moved.refused(r)
+    case refused(r): movedRefused(r, context)
     case _: arrived(to)
 # Go to a room by its id, from anywhere: leave the room it is in if any, enter the named one
 # (that room's `enter`, under its own law) and record where it is: what it last entered.

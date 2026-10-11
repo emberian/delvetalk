@@ -34,7 +34,7 @@ from tests.test_receive import commonplace as make_commonplace, door
 from tests.test_rooms import make_room, room_seed
 from tests.wire import field, label, nat, record, rows
 from transport.config import ORIGIN
-from tests.wire import field, label, nat, record, reference, rows
+from tests.wire import cast_refusal, field, label, nat, record, reference, rows
 from tests.bend import closure
 
 POSTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rehearsal", "fixtures", "posts.json")
@@ -567,8 +567,7 @@ class AnthologyReachable(test_chain.Chain):
             submitted = self.say("anthology", "delvetalk anthology write\ntext: " + line, who)
             self.assertEqual(submitted["receipt"]["offers"][0]["to"], who)  # the anthology as it now stands, to its author
         refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
-        self.assertEqual((refused["status"], refused["result"]["label"]), ("admitted", "refused"), refused)
-        self.assertTrue(refused["offers"][0]["text"].startswith("refused notKeeper: Only the keeper, ember, admits\n"), refused)
+        self.assertEqual(cast_refusal(refused), ("notKeeper", "Only the keeper, ember, admits"), refused)
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did="ember", handle="ember.delve.town")["status"], "principal")
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
         self.assertEqual(admitted["offers"][0]["text"], "#2 admitted: a splash for every refusal\n")

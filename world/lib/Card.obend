@@ -410,11 +410,14 @@ def answerCard(card: Document.Document, why: String, context: Abi.Context, forms
   let short = Document.text("\nIts spells: delvetalk {name} ?\n")
   let tail = if used + Document.size(spells) <= limit(context) then spells else if printable(name) && used + Document.size(short) <= limit(context) then short else Document.text("")
   Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why), tail: Document.Documents.cons({head: tail, tail: Document.Documents.nil()})})})})
-# Every refusal is answered here, in the turn it refuses (`context`), and writes nothing: the
-# speaker hears its one line, and the result goes back to whoever called, which passes it on
-# without saying it again.
+# Every refusal is answered here, by its one line. A spell cast on the card refuses its turn with
+# it (the host's `cardRefused`, its clause and reading parsed from the line): nothing written,
+# nothing offered. Called by another object (`context.caller`), the card says the line and gives
+# the refusal back as its result, for the caller to weigh: a record making under itself, an
+# avatar entering a room, a thing taking itself off a floor refuse their own turn with it; a
+# wake's scheduled call and the commonplace's call on a door go on.
 def refusing<T>(result: T, refusal: Refusal, context: Abi.Context) -> Activity<T>:
-  tell(result, Document.text("{refusalLine(refusal)}\n"))
+  if context.caller == "" then refuse(refusalLine(refusal)) else tell(result, Document.text("{refusalLine(refusal)}\n"))
 # Prose a card does not take is sent to the commonplace (`receive {text, post}`, under the
 # speaker), which judges whether it names any door; the card offers nothing itself. The send
 # keeps this turn's reach (HOST-HANDOFF 5.127), so words that reached no one cost no reading.
