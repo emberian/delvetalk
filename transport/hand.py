@@ -61,7 +61,7 @@ class Hand:
 
     def status(self):
         st = self.host.send({'op': 'world-status'})
-        delve = next((s for s in (st.get('posts') or {}).get('sources') or [] if s.get('source') == 'delve'), {})  # the host's count
+        delve = post.posts(st)  # the host's count
         month = time.strftime('%Y-%m', time.gmtime(self.clock()))
         spent = model.spent(self.st).get(month, {})
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []

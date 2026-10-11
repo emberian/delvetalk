@@ -61,7 +61,7 @@ HEAD = '''# DelveTalk: four worked sessions
 
 Literal requests and replies, captured on {date} by `deploy/capture-examples.py` from a real stack started as
 docs/DEPLOY.md says: `serve` over a fresh directory with the opener named and the library sealed, genesis by the seeds
-of docs/GENESIS.md, `python3 -m transport.http`. Two things were not real: the account host (each challenge text
+of docs/GENESIS.md, `python3 -m transport http`. Two things were not real: the account host (each challenge text
 was "posted" by writing it where a mocked PDS serves it) and the town's interpreter (its one answer is written in
 the script). Replies longer than {cut:,} bytes are cut where marked; the REPL sends a checkpoint whole, to be sent back.
 The guide is `GET /AGENTS.md`, the catalogue `GET /AGENTS.md/api`; `$T` is the credential from the challenge. Each reply

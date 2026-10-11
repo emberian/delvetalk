@@ -140,10 +140,10 @@ The Python around one `serve`, which carries bytes and credentials and decides n
 - `test_publish` (§5, §7): A published page reaches the outbox as a draft, is recorded when posted, and a merge reply to it routes back to its object.
 - `test_repo` (§2 Journal, §7): The journal as a read-only AT Protocol repository over a real `serve`: records by slug and CID agree with the host, blocks hash to their CIDs, private records stay private.
 - `test_ring_harvest` (§11): `deploy/ring/harvest.py` reads the front's access log.
-- `test_open` (FEDERATION §7): `deploy/open.py` writes one bridge row per world and prints how to start it, starting nothing.
+- `test_open` (FEDERATION §7): `python3 -m transport open` writes one bridge row per world, starting nothing; the world's bridge reads it.
 - `test_pull_backups` (OPERATIONS §b): `deploy/pull-backups.sh` keeps the pulled tarballs 7 days whole, 56 days daily, months forever.
-- `test_watch` (OPERATIONS §b): `deploy/watch.py` probes against the thresholds, one line per crossed condition, six hours between two lines for one condition.
-- `test_spend` (§6): The spend report totals a month of model calls and the grant left.
+- `test_watch` (OPERATIONS §b): `python3 -m transport watch` probes against the thresholds, one line per crossed condition, six hours between two lines for one condition.
+- `test_spend` (§6): `hand spend` totals a month of model calls and the grant left.
 - `test_theme` (site): Both palettes pass WCAG AA, the site carries the front's palette, a receipt's fate is a word and an icon.
 - `test_transport` (§7): Observation, identity and posting: posts classified, observed once, bounded; a handle claimed by a posted word; replies threaded and gated behind the posting flag.
 - `test_zulip` (§7): The Zulip playtest transport against a fake Zulip and a real `serve`: topics route as threads, no hourly cap applies (delve.town's quota is not Zulip's), the welcome (`zulip-welcome-v3.txt`) is recorded.

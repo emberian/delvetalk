@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from transport import journal as chain, model
+from transport import journal as chain, model, post
 from transport.bridge import all_observations
 
 DEDUPE, URGENT = 6 * 3600, 3600  # seconds between two lines for one condition; for the two that page
@@ -37,7 +37,7 @@ def probe(st, host, clock=time.time):
             'front': {'requests5m': len(recent(300)), '5xx5m': sum(1 for x in recent(300) if x[3].startswith('5')),
                       '5xxHour': sum(1 for x in recent(3600) if x[3].startswith('5'))},
             'hour': status.get('hour'), 'model': {'hour': model.spent(st, now - 3600)['all'], 'day': model.spent(st, now - 86400)['all']},
-            'reservations': next((s for s in (status.get('posts') or {}).get('sources') or [] if s.get('source') == 'delve'), {}),
+            'reservations': post.posts(status),
             'interpretations': {'pending': len(waiting), 'maxAttempts': max([p.get('attempts') or 0 for p in waiting] or [0])},
             'journal': {'height': status.get('height'), 'bytes': chain.size(st.journal) if st.journal.exists() else None,
                         'medianSuspendedBytes': sizes[len(sizes) // 2] if sizes else None},

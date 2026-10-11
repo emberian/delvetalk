@@ -26,10 +26,6 @@ def reply_ref(client, parent_uri):
     return {'root': {'uri': root['uri'], 'cid': root['cid']}, 'parent': parent}
 
 
-def wiki_text(kind, title, body):
-    return f'{kind}: {title}\n\n{body}'
-
-
 def mention_facets(client, text):
     """One mention facet per @handle in the text (byte offsets), resolved by the PDS. Unresolvable handles get none."""
     facets = []
@@ -45,10 +41,9 @@ def mention_facets(client, text):
     return facets
 
 
-def posts(host, source='delve'):
-    """This hour's posting for `source` as the host counts it (`world-status.posts`): {source, used, quota?, next?}."""
-    got = host.send({'op': 'world-status'})
-    return next((s for s in (got.get('posts') or {}).get('sources') or [] if s.get('source') == source), {'source': source})
+def posts(status, source='delve'):
+    """This hour's posting for `source` as the host counts it, from a `world-status` reply: {source, used, quota?, next?}."""
+    return next((s for s in (status.get('posts') or {}).get('sources') or [] if s.get('source') == source), {'source': source})
 
 
 def reserve(host, intent, source):
@@ -171,63 +166,67 @@ def record_sent(st, host):
     return done
 
 
-def post_draft(path, st, host, text=None, reader=None, client=None, intent=None, object=None):
-    """Post a bridge outbox draft (its replyTo, object and slot; `text` replaces its text), record it with the host, and
-    mark it posted: what `post --draft ... --i-am-ember-and-authorize-posting` does, callable. -> the post result."""
+def post_draft(path, st, host, text=None, reader=None, client=None, intent=None, object=None, zulip=None):
+    """Post an outbox draft where its world lives (its replyTo, object and slot; `text` replaces its text), record it with
+    the host and mark it posted: on delve.town a record (`reader` reads the thread, `client` writes), on a Zulip world a
+    message in the draft's topic addressed to its author (`zulip` the bot's client). -> the post result."""
     path = Path(path)
     d = json.loads(path.read_text())
     if d.get('posted') or d.get('skipped'):
         raise Failure('draft_already_posted')
-    body = d['text'] if text is None else text
-    reader = reader or Client(http_transport)
-    slot = slot_record(d['slot']) if d.get('slot') else None
-    request = build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body))
-    intent = intent or f'draft-{path.stem}'
-    result = send(request, intent, st, host, client=client)
+    body, row, object = d['text'] if text is None else text, st.bridge(), object or draft_object(d)
+    if row['transport'] == 'zulip':
+        from transport import zulip as z
+        stream, topic = z.target(d, row)
+        intent = intent or f'zulip-{path.stem}'
+        said = f"@**{d['replyHandle']}**\n{body}" if d.get('replyTo') and 'publication' not in d else body
+        result = z.deliver(st, host, zulip or z.Client(row['zuliprc']), stream, topic, said, intent)
+    else:
+        reader, intent = reader or Client(http_transport), intent or f'draft-{path.stem}'
+        result = send(build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body)),
+                      intent, st, host, client=client)
     d = dict(d, text=body, posted=True, sent=result, intent=intent, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
     st.write(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
-    object = object or draft_object(d)
     if object:
-        result = dict(result, recorded=record_posted(host, result, object, slot, wiki_target(body), intent))
+        result = dict(result, recorded=record_posted(host, result, object, slot_record(d['slot']) if d.get('slot') else None, wiki_target(body), intent))
         st.write(path, dict(d, recorded=result['recorded']))
     return result
 
 
 def command(st, a, out, client=None, zulip=None):
-    """`post`: one post, at most once per its intent, recorded with the host for `--object`."""
+    """`post`: one post, at most once per its intent, recorded with the host for `--object`. A draft is posted where its
+    world lives; a text to delve.town is a dry run without the authorizing flag; to a Zulip world, a message in `--topic`."""
     try:
-        d = {}
-        if a.draft:
-            d = json.loads(Path(a.draft).read_text())
-            if d.get('posted'):
-                raise Failure('draft_already_posted')
+        d = json.loads(Path(a.draft).read_text()) if a.draft else {}
         reply_to, obj, slot = a.reply_to or d.get('replyTo'), a.object or draft_object(d), a.slot or d.get('slot')
-        if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) + bool(a.draft) != 1 or (not (a.text_file or a.draft) and not a.body_file):
-            raise Failure('choose_one_of', '--text-file | --draft | --wiki-page/--wiki-edit with --body-file')
-        text = d['text'] if a.draft else Path(a.text_file).read_text() if a.text_file else \
-            wiki_text('wiki' if a.wiki_page else 'edit', a.wiki_page or a.wiki_edit, Path(a.body_file).read_text())
+        if bool(a.text_file) == bool(a.draft):
+            raise Failure('choose_one_of', '--text-file | --draft')
+        text = d['text'] if a.draft else Path(a.text_file).read_text()
         for h in a.mention:
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
         slot, host, row = slot_record(slot) if slot else None, st.host(), st.bridge()
+        zulip_world = row['transport'] == 'zulip'  # the owner's own Zulip: no flag and no quota
         try:
-            if row['transport'] == 'zulip':  # the owner's own Zulip: no flag and no quota, a topic of the world's channel
+            if d.get('posted'):
+                raise Failure('draft_already_posted')
+            if not zulip_world and (wiki_target(text) or ('', ''))[1] and not reply_to:  # `edit: <page> › <section>`
+                raise Failure('wiki_edit_needs_reply_to', 'reply to the page post')
+            if a.authorized and not obj:
+                raise Failure('live_post_needs_object', 'world-posted {object, intent} settles the reservation; without it the post stays counted')
+            if a.draft and (a.authorized or zulip_world):
+                out.write(canonical(post_draft(a.draft, st, host, text, client, client, a.intent, obj, zulip)) + '\n')
+                return 0
+            if zulip_world:
                 from transport import zulip as z
                 zc = zulip or z.Client(row['zuliprc'])
                 if not a.topic:
                     raise Failure('zulip_post_needs_topic')
-                result = z.deliver(st, host, zc, row['channel'], a.topic, text.replace('<bot name>', zc.me()['full_name']), a.intent, obj, slot)
+                result = z.deliver(st, host, zc, row['channel'], a.topic, text.replace('<bot name>', zc.me()['full_name']), a.intent)
             else:
-                if (a.wiki_edit or (wiki_target(text) or ('', ''))[1]) and not reply_to:
-                    raise Failure('wiki_edit_needs_reply_to', 'reply to the page post')
-                if a.authorized and not obj:
-                    raise Failure('live_post_needs_object', 'world-posted {object, intent} settles the reservation; without it the post stays counted')
-                if a.authorized and a.draft:  # posted, recorded and marked posted in one
-                    out.write(canonical(post_draft(a.draft, st, host, text=text, reader=client, intent=a.intent, object=obj)) + '\n')
-                    return 0
                 reader = client or Client(http_transport)
                 request = build_request(text, reply_ref(reader, reply_to) if reply_to else None, mention_facets(reader, text))
                 if not a.authorized:
-                    plan = {'dry_run': True, 'intent': a.intent, 'quota': posts(host) if st.host_socket.exists() else None, 'request': request}
+                    plan = {'dry_run': True, 'intent': a.intent, 'quota': posts(host.send({'op': 'world-status'})) if st.host_socket.exists() else None, 'request': request}
                     if obj:
                         plan['record'] = {'op': 'world-posted', 'object': obj, 'slot': slot}
                         if wiki_target(text):
@@ -235,8 +234,8 @@ def command(st, a, out, client=None, zulip=None):
                     out.write(canonical(plan) + '\n')
                     return 2
                 result = send(request, a.intent, st, host)
-                if obj:
-                    result['recorded'] = record_posted(host, result, obj, slot, wiki_target(text), a.intent)
+            if obj:
+                result['recorded'] = record_posted(host, result, obj, slot, wiki_target(text), a.intent)
         finally:
             host.close()
     except (Failure, OSError, KeyError, ValueError) as e:

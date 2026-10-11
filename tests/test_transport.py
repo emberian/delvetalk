@@ -339,7 +339,9 @@ class Posting(unittest.TestCase):
             f = Path(d) / 'b.txt'
             f.write_text('x')
             with mock.patch.object(post, 'send', side_effect=AssertionError('send')):
-                self.assertEqual(main(['post', '--state', d, '--intent', 't', '--wiki-edit', 'A \u203a B', '--body-file', str(f)], io.StringIO(), client=client), 1)
+                (Path(d) / 'e.txt').write_text('edit: A \u203a B\n\nx')
+                with mock.patch('sys.stderr', io.StringIO()):
+                    self.assertEqual(main(['post', '--state', d, '--intent', 't', '--text-file', str(Path(d) / 'e.txt')], io.StringIO(), client=client), 1)
                 self.assertEqual(main(['post', '--state', d, '--intent', 't', '--text-file', str(f), '--reply-to', uri], io.StringIO(), client=client), 2)
         self.assertNotIn('POST', {m for m, _ in t.calls})
 

@@ -140,16 +140,18 @@ the config does not hold:
 | `serve` | none: execs `delvetalk-obend serve` with the config's sockets, opener, library and sync | compose's argv, `DELVETALK_OPENER` in two places |
 | `bridge` | `--once`, `--since ISO`, `--now SECONDS` | `transport.bridge run` and its 13 flags; `--source/--zuliprc/--stream/--topic` come from the row |
 | `interpret` | `--once` | `transport.interpret run` |
-| `post` | what to post (`--draft`, `--text-file`, `--wiki-page/-edit`, `--body-file`), `--intent`, `--object`, `--slot`, `--reply-to`, `--mention`, `--topic`, the authorizing flag | `transport.post post` and `transport.zulip post`: the world's row says where the post goes |
+| `post` | what to post (`--draft` or `--text-file`; an agentwiki post is its header line), `--intent`, `--object`, `--slot`, `--reply-to`, `--mention`, `--topic`, the authorizing flag | `transport.post post` and `transport.zulip post`: the world's row says where the post goes |
 | `hand` | its verbs, as now, plus `spend [--month]` | `transport.hand`, `deploy.spend` |
 | `http` | none | `transport.http` and its 6 flags |
 | `open` | the row: `--transport`, `--realm`, `--channel`, `--topic`, `--zuliprc` | `deploy.open` |
 | `watch` | `--unhealthy SERVICE…`, `--dry-run`; probes itself | `deploy.watch` and `hand status --json` piped into it |
 | `repokey` | `--curve` | `deploy.repokey` |
-| `status` | `--health host\|http\|bridge\|interpret` (exit status) | `hand status --json`, the four inline healthchecks |
+| `status` | `--health host\|http\|hand\|bridge\|interpret` (exit status) | `hand status --json`, the five inline healthchecks |
 
 Deleted on the way: `bridge outbox`, `mark-posted` and the printed post
-commands (the hand's `outbox` and `post` are the one way), `zulip observe`
+commands (the hand's `outbox` and `post` are the one way, and `post` of a
+draft goes where its world lives, Delve or Zulip), `post --wiki-page/--wiki-edit/--body-file`
+(an agentwiki post is its header line), `zulip observe`
 and `Observer.drain` (the hand's `inbox` reads the same table), the model's
 one-request CLI, `add_host_args`/`connect`, every module-level `os.environ`
 read, the transport's imports of `deploy` (`spend`, `genesis.OPENER`).
@@ -164,9 +166,9 @@ every path, one `python3 -m transport`; the town is a world like any other.
 ### Monitoring
 
 What to watch, its source, and the number that means trouble. One probe,
-`hand status --json --world W` per world, run by a systemd timer every 5
-minutes into `<state>/watch.jsonl`; the same script reads the thresholds
-from it. No agent, no exporter.
+`python3 -m transport watch --world W` per world, run by a systemd timer
+every 5 minutes: it probes (`status`), appends the probe to the world's
+`watch.jsonl` and reads the thresholds from it. No agent, no exporter.
 
 | Watch | Source | Trouble |
 | --- | --- | --- |
@@ -188,10 +190,10 @@ does not yet answer (`hour`) are ROOT §4's second item.
 
 ### Alerting
 
-The watch script posts to the owner's Zulip (`transport/zulip.py post`, the
-bot's `.zuliprc`, a stream `delvetalk-ops`), which reaches the phone through
+The watch posts to the owner's Zulip (the config's `watch_zuliprc`, a
+stream `delvetalk-ops`), which reaches the phone through
 Zulip's own push; nothing else is installed. One message per condition per 6
-hours (a `<state>/alerted.json` of condition to last-sent), the message
+hours (the world's `alerted.json` of condition to last-sent), the message
 naming the number and the playbook (below) by letter. Two conditions page at
 once and repeat hourly: the host unhealthy, and the backup verify failed. The
 rest are the daily loop's.
@@ -301,7 +303,7 @@ record; it is on the receipt.
 delvetalk-bridge delvetalk-interpret` (the host keeps answering reads; an
 append whose fsync fails is a refused op, not a lost one). `du -sk` and rank:
 `/var/backups/delvetalk` (same disk; move the target), old image tags,
-`<state>/heaps` (until FEDERATION 2), the access log (16 MB, one
+`<state>/scratch` (not custody), the access log (16 MB, one
 generation). Delete only what the puller already holds. Channel: `hob: the host is full; the hand is making
 room. Spells wait.` Record: what was removed and why.
 
@@ -340,7 +342,7 @@ A **hard cap per world per day on model calls, as a host quota**:
 suspended-with-`interpretation` entries plus `attempted` retries; an
 `interpret` past it refuses `quota` with `next` the next day's first minute,
 and the opener and the clock are not exempt (the loop case is theirs).
-Defaults: 2,000 for `town` (~$0.45), 500 for a Zulip world. `deploy/spend.py`
+Defaults: 2,000 for `town` (~$0.45), 500 for a Zulip world. `hand spend`
 stays the monthly total against the grant.
 
 **Decision:** `modelQuota` per world per day in the host, opener included;
@@ -378,7 +380,7 @@ dollars, scratches; those are the watch's.
    whose only copy of the journal is on the box that fsyncs it has no
    backup.
 3. **The watch and its pager**, with the model cap as its first threshold:
-   ~100 lines (`deploy/watch.py`: `hand status --json` per world, the
+   ~150 lines (`transport/watch.py`: the probe per world, the
    thresholds, the Zulip post, the dedupe file), one systemd timer. The
    playtest's 43 silent minutes were found by a resident asking "what ran?";
    the watch finds the next one in five.

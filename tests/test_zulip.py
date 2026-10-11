@@ -248,11 +248,22 @@ class Bridging(ZulipCase):
         got = self.bridge()
         self.assertEqual((got['posted'], [h['reason'] for h in got['held']]), ([], ['zulip_refused']), got)
         self.assertEqual(len(self.zulip.mine()), 1)
-        again = zulip.post_drafts(self.state, self.host, self.client(), 'delvetalk')
+        again = zulip.post_drafts(self.state, self.host, self.client())
         self.assertEqual(len(self.zulip.mine()), 1, 'the lost send is adopted, never repeated')
         self.assertEqual(again['posted'], [zulip.uri_of('delvetalk', 't', self.zulip.mine()[0]['id'])])
         self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': again['posted'][0]})['object'], 'garden-1')
 
+
+    def test_the_hands_post_goes_where_the_world_lives_its_zulip_topic(self):
+        self.zulip.say('t', 'Alice', 'hello there')
+        self.bridge()  # prose addressed to nobody: observed, no draft
+        from transport.hand import Hand
+        hand = Hand(self.state, self.host)
+        uri = self.observed()[0]['uri']
+        name = hand.reply(uri, 'a word by hand', 'garden-1')['drafted']
+        got = hand.post(name)
+        self.assertEqual([(m['subject'], m['content']) for m in self.zulip.mine()], [('t', '@**Alice**\na word by hand')])
+        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': got['uri']})['object'], 'garden-1')
 
 if __name__ == '__main__':
     unittest.main()

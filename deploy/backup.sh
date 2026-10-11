@@ -50,7 +50,7 @@ src.close()
 PY
 done
 
-# The watch reads the last verify (transport.hand status --json): ok, or broken with its stamp.
+# The watch's probe (`python3 -m transport status`) reads the last verify: ok, or broken with its stamp.
 if ! "$here/verify.sh" "$mode" "$host" "$dest/mirror"; then
   echo "broken $(date -u +%Y%m%dT%H%M%SZ)" > "$dest/last-verify"
   exit 1

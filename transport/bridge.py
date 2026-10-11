@@ -422,7 +422,7 @@ def command(st, a, out):
         from transport import zulip
         client = zulip.Client(row['zuliprc'])
         observer = zulip.ZulipObserver(st, client, row['channel'], since, row.get('topic'))
-        after = lambda: zulip.post_drafts(st, host, client, row['channel'], row.get('topic'))
+        after = lambda: zulip.post_drafts(st, host, client)
     else:
         observer, after = Observer(st, Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport), since), dict
     step = lambda: out.write(canonical({**run(st, host, observer, now=a.now), **after()}) + '\n') and out.flush()
