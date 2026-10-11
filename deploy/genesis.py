@@ -325,7 +325,7 @@ def towns(root, own):
     mine = os.stat(own) if own and os.path.exists(own) else None
     found = []
     for path in sorted({*root.glob('*.journal'), *root.glob('*/*.journal'), *root.glob('*/state/*.journal')}):
-        if 'scratch' in path.parts or not path.is_file():
+        if 'scratch' in path.relative_to(root).parts or not path.is_file():
             continue
         st = path.stat()
         if mine and (st.st_dev, st.st_ino) == (mine.st_dev, mine.st_ino):
