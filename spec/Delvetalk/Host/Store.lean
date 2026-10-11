@@ -96,8 +96,6 @@ def deliveriesPerSettle : Nat := 64
     refusal is its last: each retry waits for the clock to move past the refusal's. -/
 def deliveryAttempts : Nat := 4
 def sendsPerTurn : Nat := 32
-/-- Subscriptions to one object (`subscribe`, WHOLENESS §3). -/
-def subscribersPerObject : Nat := 64
 /-- Rules placed on one object, and wants (docs/OVERHAUL.md §2 conflict 2): what its text carries and
     its kind's `under` carries are bounded by `maxLawClauses` in each text. -/
 def rulesPerObject : Nat := 32
@@ -467,33 +465,6 @@ structure Built where
       text given, owned by its creator (`Ops.makeObject`). -/
   lines : List Delvetalk.Compiler.ObjectiveBendLaw.Clause := []
 
-/-- A standing subscription (WHOLENESS §3): after every admitted write that touches `field` of
-    `object`, `subscriber`'s receiver `method` (`changed` unless the subscription named another) is
-    sent the change, run under `principal` (who subscribed it and must still be permitted to view
-    `object`). One per (subscriber, object, field). -/
-structure Subscription where
-  subscriber : String
-  principal : String
-  object : String
-  field : String
-  method : String := "changed"
-  deriving BEq, Repr, Inhabited
-
-/-- The method is written only when it is not `changed`. -/
-def Subscription.json (x : Subscription) : Json :=
-  Json.mkObj ([("subscriber", toJson x.subscriber), ("principal", toJson x.principal),
-    ("object", toJson x.object), ("field", toJson x.field)] ++
-    (if x.method == "changed" then [] else [("method", toJson x.method)]))
-
-def Subscription.ofJson (j : Json) : Except String Subscription := do
-  return ⟨← j.getObjValAs? String "subscriber", ← j.getObjValAs? String "principal",
-    ← j.getObjValAs? String "object", ← j.getObjValAs? String "field",
-    (j.getObjValAs? String "method").toOption.getD "changed"⟩
-
-/-- Do two subscriptions stand for the same (subscriber, object, field)? -/
-def Subscription.sameAs (x y : Subscription) : Bool :=
-  x.subscriber == y.subscriber && x.object == y.object && x.field == y.field
-
 /-- One change of an object's version, as the moved-root rule reads it (`Ops.movedRootAdmits`): the
     version it produced and the height of the entry that made it. Its edits are read from that entry
     when asked (`Ops.touchEdits`): a write of edits (kinds 0 and 3, `Law.editKind`) whose steps decode
@@ -594,9 +565,6 @@ structure World where
   objectBound : Nat := Limits.maxObjects
   /-- Memory only, set per request by `serve`: the other worlds it serves, for reads (`Foreign`). -/
   foreign : Foreign := {}
-  /-- Standing subscriptions by the object they watch, in the order they were made; derived by
-      `record` from entries' `subscribes`/`unsubscribes`. -/
-  subscriptions : Std.HashMap String (Array Subscription) := {}
   /-- Per object, each rule's last firing or refusal to fire, by rule name: `{height, id}` (fired: the
       delivery it staged) or `{height, why}` (unfired), the newest replacing. Derived by `record` from
       admitted entries' `fired` and `unfired`. -/
@@ -645,9 +613,6 @@ structure World where
   /-- Model attempts by interpretation id: the transient failures journaled `attempted` and the clock
       at which the next may be asked. Derived by `record`. -/
   attempts : Std.HashMap String (Nat × Nat) := {}
-  /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
-      entry's `replyTo`), which `awaitPost` settles on. -/
-  replies : Std.HashMap String (String × String) := {}
   /-- Checkpoint blocks by CID, as the index of the entry whose `blocks` carries each: a suspension
       journals each block of its checkpoint's tokens once, and names the rest (`tokenTree`). Derived by `record`. -/
   blocks : Std.HashMap String Nat := {}

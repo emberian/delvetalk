@@ -16,7 +16,7 @@ from transport import journal
 from transport.bridge import plain
 
 SPELL = re.compile(r'^\s*delvetalk\s+\S', re.M)  # a spell at a line's start, as the host casts one
-GENESIS = re.compile(r'^(?:did:|zulip:|env/|wake/)')  # a principal's own objects, made at its arrival
+GENESIS = re.compile(r'^(?:did:|zulip:)')  # a principal's own object, its avatar, made at its arrival
 
 
 def counted(n, word, plural=None):
@@ -79,7 +79,7 @@ def no_reply(st, observed, entries):
     """Posts addressed to the world (a summons, or a spell at a line's start, as the host casts one) that it heard (a turn
     under the post's own uri) and answered with nothing: no draft with text replies, and the turn is not still waiting on
     hob. Prose in a thread that hob reads as `none` is quiet by design, and residents talking to each other reach only
-    each other's avatars (`<uri>#env:`)."""
+    each other's avatars (`<uri>#mention:`)."""
     last = {(x.get('identity') or {}).get('intent'): (x.get('outcome') or {}).get('tag') for x in entries}
     said = {d.get('replyTo') for _, d in st.drafts() if d.get('text')} if st.outbox.exists() else set()
     asked = [o for o in observed if o['kind'] == 'summon' or SPELL.search(o.get('text') or '')]
@@ -139,7 +139,7 @@ def measures(st, entries=None):
         sender = by_identity.get((((x.get('delivery') or {}).get('from') or {}).get('principal'), ((x.get('delivery') or {}).get('from') or {}).get('intent')))
         if (x.get('resumes') and 'delivery' in x) or (sender is not None and sender in moved):
             moved.add(height)
-            wrote = [w.get('object') for w in out.get('writes') or [] if w.get('object') and not str(w.get('object')).startswith('wake/')]
+            wrote = [w.get('object') for w in out.get('writes') or [] if w.get('object')]
             if wrote and (start is None or now_clock >= start // 60):
                 unposted.append({'height': height, 'objects': wrote, 'notes': sum(1 for o in wrote if str(o).startswith(('did:', 'zulip:')))})
         if not direct or not resident(p):
@@ -151,7 +151,7 @@ def measures(st, entries=None):
             continue
         for w in out.get('writes') or []:
             obj = w.get('object')
-            if obj and makers.get(obj) not in (None, p) and obj not in (p, f'env/{p}', f'wake/{p}'):
+            if obj and makers.get(obj) not in (None, p) and obj != p:
                 used.setdefault((obj, p), {'object': obj, 'by': who(p), 'maker': who(makers[obj]), 'height': height, 'residentMade': resident(makers[obj])})
             hung = doors(w)
             for to in hung:

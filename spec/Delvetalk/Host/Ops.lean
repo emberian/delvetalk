@@ -318,9 +318,6 @@ structure Proposal where
   revokes : List String := []
   /-- Uses the turn spends of limited grants: grant id and count. -/
   spent : List (String × Nat) := []
-  /-- Subscriptions the turn makes and ends (WHOLENESS §3); they take effect with the commit. -/
-  subscribes : List Subscription := []
-  unsubscribes : List Subscription := []
   /-- How the turn read each root it did not read whole, by object (`Cells`). -/
   cells : List (String × Cells) := []
   /-- A reprogram's lineage, by object (`become`: the kind whose body it laid), journaled on the
@@ -554,8 +551,6 @@ def Proposal.digest (p : Proposal) : String :=
     (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
     (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
     (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]) ++
-    (if p.subscribes.isEmpty then [] else [("subscribes", Json.arr (p.subscribes.toArray.map (·.json)))]) ++
-    (if p.unsubscribes.isEmpty then [] else [("unsubscribes", Json.arr (p.unsubscribes.toArray.map (·.json)))]) ++
     (if p.placements.isEmpty then [] else [("placements", Json.arr (p.placements.toArray.map (·.json)))])))
 
 /-! ## Judging -/
@@ -2084,7 +2079,7 @@ def principalNamed (w : World) (handle : String) : Option String :=
     `intent` the turn's identity, `height` the journal height the turn read, `clock` the world
     clock (`world-advance`) the frame runs at, which deadlines compare against,
     `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none, and `sender`
-    the object whose send this turn delivers (a subscription's changed object, a supervised
+    the object whose send this turn delivers (a rule's object, a sending object, a supervised
     activity's), the same in every frame of the turn and in its law's context, "" for a turn a
     principal began. None is chosen by the client. -/
 def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String)
@@ -2402,12 +2397,6 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   if w.objects.size + p.creates.length > w.objectBound then
     throw { cls := "evaluation", reason := some "object capacity reached" }
   if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants", reason := some "maxGrants" }
-  -- Subscriptions stand at most `subscribersPerObject` to an object, counted as they will be.
-  for x in p.subscribes do
-    let standing := ((w.subscriptions.getD x.object #[]).toList ++ p.subscribes).filter fun y =>
-      y.object == x.object && !p.unsubscribes.contains y
-    if standing.eraseDups.length > Limits.subscribersPerObject then
-      throw { cls := "capacity", object := some x.object, reason := some "subscribersPerObject" }
   for g in p.grants do
     if w.grants.contains g.id then throw { cls := "evaluation", reason := some "a grant id is already taken" }
   -- A limited grant must have the uses the turn spends left when it commits.
@@ -2628,21 +2617,14 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
 
 /-! ## Entries -/
 
-/-- Card names that mean the acting principal's own object: a turn or card naming `env` or
-    `wake` runs `env/<principal>` or `wake/<principal>`. No object may take these ids, so no one
-    can stand in for another's own. -/
-def ownCards : List String := ["env", "wake", "me"]
-
 /-- The card name for the speaker's own avatar (docs/GROUND.md §6 change 2): the object an arrival
-    makes under the principal's own id (`arrivals`), so a card may print `delvetalk me watch` and
-    never a DID. -/
+    makes under the principal's own id (`arriveOp`), so a card may print `delvetalk me note` and
+    never a DID. No object may take the id, so no one can stand in for another's own. -/
 def meCard : String := "me"
 
-/-- The object a principal means by `object`: its own for a name in `ownCards` (`me` is its avatar,
-    the object named by the principal itself). -/
+/-- The object a principal means by `object`: `me` is its avatar, the object named by the principal itself. -/
 def resolveCard (principal object : String) : String :=
-  if object == meCard then principal
-  else if ownCards.contains object then s!"{object}/{principal}" else object
+  if object == meCard then principal else object
 
 /-- The one object whose id folds to `id`'s fold; none when no object or several do. -/
 def foldedId (w : World) (id : String) : Option String :=
@@ -2680,30 +2662,6 @@ def bounds : Json :=
 def isTransient (entry : Json) : Bool :=
   tagOf entry == "refused" &&
     ((entry.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "class" |>.toOption)).any transientClasses.contains
-
-/-- The subscriptions after an entry: an admitted one's `subscribes` added (once each) and
-    `unsubscribes` removed; a refused delivery of `changed` whose principal may no longer view the
-    object (`lawRefused denied`) drops its subscription, as a fallen grant is dropped. -/
-def subscriptionsAfter (w : World) (entry : Json) : Std.HashMap String (Array Subscription) := Id.run do
-  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
-  let list := fun (k : String) => ((((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
-    fun j => (Subscription.ofJson j).toOption)
-  let mut subs := w.subscriptions
-  if tagOf entry == "admitted" then
-    for x in list "subscribes" do
-      let now := subs.getD x.object #[]
-      unless now.contains x do subs := subs.insert x.object (now.push x)
-    for x in list "unsubscribes" do
-      subs := subs.insert x.object ((subs.getD x.object #[]).filter (· != x))
-  else if (outcome.getObjValAs? String "clause").toOption == some "denied" then
-    let id := (entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption
-    if let some d := w.pending.find? fun p => (p.getObjValAs? String "id").toOption == id then
-      if (d.getObjVal? "field").toOption.isSome then
-        if let (.ok to, .ok principal, .ok object, .ok field) :=
-            (d.getObjValAs? String "to", d.getObjValAs? String "principal", d.getObjValAs? String "object", d.getObjValAs? String "field") then
-          let x : Subscription := { subscriber := to, principal, object, field }
-          subs := subs.insert object ((subs.getD object #[]).filter fun y => !(y.sameAs x && y.principal == principal))
-  return subs
 
 /-- The reservations after an entry: `reserved` adds one (a released intent reserved again counts a
     round), `released` and a `posted` naming an `intent` settle it. -/
@@ -3010,13 +2968,6 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
           (if fields.any (·.1 == "principal") then [] else
             [("principal", (identity.getObjVal? "principal").toOption.getD Json.null)]) ++ fields)
     | _, _ => #[]
-  -- A subscriber's `changed` deliveries, run under the subscription's principal, the changed
-  -- object as their sender.
-  let changed := if tagOf entry != "admitted" then #[] else
-    (((entry.getObjVal? "changes").toOption.bind (·.getArr?.toOption)).getD #[]).map fun c =>
-      let fields := c.getObj?.toOption.map (·.toList) |>.getD []
-      Json.mkObj ([("from", identity), ("method", toJson ((c.getObjValAs? String "method").toOption.getD "changed")),
-        ("sender", (c.getObjVal? "object").toOption.getD Json.null)] ++ fields.filter (·.1 != "method"))
   -- The rules an admitted write fired, run under their owners, the written object their sender.
   let fired := (reactionRows entry "fired").map fun f =>
     Json.mkObj ([("from", identity)] ++ ((f.getObj?.toOption.map (·.toList)).getD []))
@@ -3035,16 +2986,12 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
     pending := (match delivered with
       | some id => (w.pending.filter fun p => (p.getObjValAs? String "id").toOption != some id) ++
           ((redelivered w entry id).map (#[·])).getD #[]
-      | none => w.pending) ++ sent ++ changed ++ fired ++
+      | none => w.pending) ++ sent ++ fired ++
       -- An activity's end told to its object's supervisor, whatever the entry's outcome.
       (((entry.getObjVal? "ended").toOption.map fun e =>
         #[Json.mkObj ([("from", identity), ("principal", (identity.getObjVal? "principal").toOption.getD Json.null)] ++
           ((e.getObj?.toOption.map (·.toList)).getD []))]).getD #[])
     height := w.height + 1, head := hash
-    replies := match (entry.getObjValAs? String "replyTo").toOption,
-        identity.getObjValAs? String "principal", identity.getObjValAs? String "intent" with
-      | some post, .ok p, .ok i => if w.replies.contains post then w.replies else w.replies.insert post (p, i)
-      | _, _, _ => w.replies
     handles := if tagOf entry == "principal" then
         match (entry.getObjVal? "outcome").toOption with
         | some o => match o.getObjValAs? String "did", o.getObjValAs? String "handle" with
@@ -3079,7 +3026,6 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
       | some i => if (w.entries.get? i).all fun e => tagOf e == "suspended" || isTransient e then w.receipts.insert key index
           else w.receipts
     touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched
-    subscriptions := subscriptionsAfter w entry
     ruleLog := ruleLogAfter w entry
     wanting := wantingAfter w entry
     days := if (w.days.back?.map (·.1)) == some (w.clock / Limits.clockDay) then w.days
@@ -3197,7 +3143,7 @@ def ruleDepthOf (w : World) (delivery : Option String) : Nat :=
 def spellCard (w : World) (owner text : String) : Option String :=
   match Spell.parse text with
   | .spell card _ _ =>
-    let card := if Spell.fold card == meCard || ownCards.contains (Spell.fold card) then Spell.fold card else card
+    let card := if Spell.fold card == meCard then meCard else card
     let id := resolveCard owner card
     some (if w.objects.contains id then id else (foldedId w id).getD id)
   | _ => none
@@ -3336,8 +3282,6 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
         (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
         (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]) ++
-        (if p.subscribes.isEmpty then [] else [("subscribes", Json.arr (p.subscribes.toArray.map (·.json)))]) ++
-        (if p.unsubscribes.isEmpty then [] else [("unsubscribes", Json.arr (p.unsubscribes.toArray.map (·.json)))]) ++
         (if p.placements.isEmpty then [] else [("placements", Json.arr (p.placements.toArray.map (·.json)))]))
       -- The rules the write fires and the wants it opens and closes, under the ledger its sends inherit.
       let (ledger, used, delivery) := entryBudget base
@@ -3496,9 +3440,7 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   if let some r := retained w principal intent digest then return (w, r)
   unless validObjectId id do throw s!"object id {id} is not one: {objectIdRule}"
   if id == "self" then throw "object id self is reserved for the running object"
-  if ownCards.contains id then
-    throw (if id == meCard then "object id me is reserved: it names each principal's own avatar"
-      else s!"object id {id} is reserved: it names each principal's own {id}/<principal>")
+  if id == meCard then throw "object id me is reserved: it names each principal's own avatar"
   -- The opener of the world may create an object for its owner: the law (the default law
   -- names the owner) and the metarule are the owner's, the creator is the opener.
   let owner ← optText j "owner"
@@ -3879,20 +3821,18 @@ def citeOp (w : World) (j : Json) : Except String (World × Json) := do
      ("outcome", Json.mkObj [("tag", toJson "cited"), ("world", toJson world), ("receipt", toJson hash), ("entry", cited)])] []
   return (w', Json.mkObj [("status", toJson "cited"), ("receipt", slugged entry)])
 
-/-- A newcomer's own objects, each made from the library module of that name: the Avatar (its id
-    is the principal's DID), its Env and its Wake (`env/<did>`, `wake/<did>`, the ids `env` and
-    `wake` resolve to for that principal). -/
+/-- A newcomer's own object, made from the library module of that name: the Avatar, whose id is the
+    principal's DID (`me` resolves to it); it holds the newcomer's notes (mentions, rule notes). -/
 def arrivals (did : String) : List (String × String) :=
-  [(did, "Avatar"), (s!"env/{did}", "Env"), (s!"wake/{did}", "Wake")]
+  [(did, "Avatar")]
 
 /-- `world-arrive {principal, did, handle}`: the clock principal (transport) reports a principal
-    it has verified or observed. The handle is recorded as `world-principal` does, and each of the
-    newcomer's objects (`arrivals`) that is absent is created from the world's library, by the
-    world's opener for the owner `did` (`world-create {…, owner}`), as an ordinary `created` entry
-    with identity `(opener, "arrive:<id>")`. The partial seed names, of `owner` (the DID), `handle`
-    and `env` (a Reference to `env/<did>`, which the Wake watches), the fields the package's state
-    has; the rest is `initial()`. Idempotent: a second arrival creates nothing, and a changed
-    handle is one `principal` entry. -/
+    it has verified or observed. The handle is recorded as `world-principal` does, and the newcomer's
+    avatar (`arrivals`), when absent, is created from the world's library, by the world's opener for
+    the owner `did` (`world-create {…, owner}`), as an ordinary `created` entry with identity
+    `(opener, "arrive:<id>")`. The partial seed names, of `owner` (the DID) and `handle`, the fields
+    the package's state has; the rest is `initial()`. Idempotent: a second arrival creates nothing,
+    and a changed handle is one `principal` entry. -/
 def arriveOp (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let did ← boundedText "did" (Limits.maxObjectIdBytes - 5) (← j.getObjValAs? String "did")
@@ -3900,7 +3840,7 @@ def arriveOp (w : World) (j : Json) : Except String (World × Json) := do
   if w.clockPrincipal.isEmpty || principal != w.clockPrincipal then
     throw s!"arrivals are reported only by the clock principal{if w.clockPrincipal.isEmpty then "; this world names none" else s!" {w.clockPrincipal}"}"
   if w.opener.isEmpty then throw "this world names no opener to create a newcomer's objects"
-  if did == "self" || ownCards.contains did || did.any (· == '/') then throw s!"{did} cannot name a principal's objects"
+  if did == "self" || did == meCard || did.any (· == '/') then throw s!"{did} cannot name a principal's objects"
   let some lib := w.library | throw "this world has no library to make a newcomer's objects from"
   let (w, recorded) ← principalOp w (Json.mkObj [("principal", toJson principal), ("did", toJson did), ("handle", toJson handle)])
   let mut w := w
@@ -3913,8 +3853,7 @@ def arriveOp (w : World) (j : Json) : Except String (World × Json) := do
       ("modules", modulesJson [(module, source)])]
     let inputs ← attachLibrary w (← compileInputs request)
     let built ← compileObject w inputs
-    let given : List (String × Data) := [("owner", .label did), ("handle", .label handle),
-      ("env", .record [("world", .label ""), ("object", .label s!"env/{did}")])]
+    let given : List (String × Data) := [("owner", .label did), ("handle", .label handle)]
     let seed := match ← initialState built with
       | .record fields => given.filter fun (k, _) => fields.any (·.1 == k)
       | _ => []
@@ -3939,51 +3878,6 @@ def addressee (w : World) (j : Json) : Except String Json := do
       (if p.unposted.isEmpty then [] else [("unposted", toJson p.unposted)]))
 
 /-! ## Replay -/
-
-/-- What a write did to one field, as `changed` reports it: for a relation the rows inserted and the
-    rows retracted (an upsert that replaced a row is both), for a list the items added and the items
-    removed (by canonical bytes), for anything else the new value and the old one. Both are lists. -/
-def fieldChange (decls : List RelDecl) (field : String) (old new : Data) : Data × Data :=
-  let listed := fun (items : List Data) => ofList items
-  let diff := fun (a b : List Data) =>
-    let bs := b.map Delvetalk.Canonical.encode
-    a.filter fun x => !bs.contains (Delvetalk.Canonical.encode x)
-  let rows := fun (d : Data) => if decls.any (·.field == field) then (relationRows d).toOption else listOf d
-  match rows old, rows new with
-  | some before, some after => (listed (diff after before), listed (diff before after))
-  | _, _ => (listed [new], listed [old])
-
-/-- The `changed` deliveries an admitted write owes its subscribers (WHOLENESS §3): for each written
-    object, each subscription to a field its edits touched (an edit other than `keep`), in
-    subscription order, `{id, to, object, field, version, principal, ledger, argument}` with argument
-    `{object: Reference, field, version, inserted, retracted}`; ids continue the sends' ordinals. Sends
-    and changes together are at most `sendsPerTurn`: the subscribers past it are named in `unserved`. -/
-def changesJson (w : World) (principal intent : String) (ledger : Ledger) (used sent : Nat)
-    (updates : List (String × Object)) (writes : List (String × List Written)) : List (String × Json) := Id.run do
-  let child := (childLedger w ledger used updates writes).json
-  let mut changes : Array Json := #[]
-  let mut unserved : Array Json := #[]
-  for (id, o) in updates do
-    let some before := w.objects[id]? | continue
-    let touched := (((writes.lookup id).getD []).filter (Law.editKind ·.kind)).flatMap fun c =>
-      (c.edits.filter fun e => match e.kind with | .keep => false | _ => true).map (·.field)
-    for x in w.subscriptions.getD id #[] do
-      unless touched.contains x.field do continue
-      if sent + changes.size ≥ Limits.sendsPerTurn then
-        unserved := unserved.push (toJson x.subscriber)
-        continue
-      let field := fun (d : Data) => match d with
-        | .record fs => (fs.lookup x.field).getD (.record [])
-        | _ => .record []
-      let (inserted, retracted) := fieldChange o.relations x.field (field before.state) (field o.state)
-      let argument := Data.record [("object", .record [("world", .label ""), ("object", .label id)]),
-        ("field", .label x.field), ("version", .natural o.version), ("inserted", inserted), ("retracted", retracted)]
-      changes := changes.push (Json.mkObj ([("id", toJson (deliveryId principal intent (sent + changes.size))),
-        ("to", toJson x.subscriber), ("object", toJson id), ("field", toJson x.field), ("version", toJson o.version),
-        ("principal", toJson x.principal), ("ledger", child), ("argument", dataJson argument)] ++
-        (if x.method == "changed" then [] else [("method", toJson x.method)])))
-  return (if changes.isEmpty then [] else [("changes", Json.arr changes)]) ++
-    (if unserved.isEmpty then [] else [("unserved", Json.arr unserved)])
 
 /-- A delivery entry must consume exactly the pending delivery it names, under
     the sender's principal; a budget refusal must name a field that is zero. -/
@@ -4415,16 +4309,13 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let spent ← parseSpent (outcome.getObjVal? "spent").toOption
     let (roots, cells) ← parseRoots (← entry.getObjVal? "roots")
     let rebaseOwn := if (entry.getObjVal? "resumes").toOption.isSome then roots.head?.map (·.1) else none
-    let subs := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Subscription.ofJson
-    let subscribes ← subs "subscribes"
-    let unsubscribes ← subs "unsubscribes"
     let placements ← ((outcome.getObjVal? "placements").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Placement.ofJson
     -- A delivered entry's sender is the pending send it consumes (checked by `checkDelivery`).
     let delivered := ((entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption)
     let sender := (delivered.bind fun id => w.pending.find? fun s => (s.getObjValAs? String "id").toOption == some id).bind
       (fun s => (s.getObjValAs? String "sender").toOption) |>.getD ""
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, cells, madeFrom, sender,
+                          absent, creates, grants, revokes, spent, layered, cells, madeFrom, sender,
                           placements }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
@@ -4450,18 +4341,10 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         -- The state an admitted write commits to (host7; earlier entries name none).
         if let some cid := (raw.getObjValAs? String "cid").toOption then
           unless cid == stateCid o.state do throw s!"the state of {id} does not replay to the CID its write recorded"
-      -- The changes owed to subscribers are re-derived and must be the ones journaled.
-      let sentCount := ((entry.getObjVal? "sends").toOption.bind (·.getArr?.toOption) |>.map (·.size)).getD 0
       let entryLedger ← match entry.getObjVal? "ledger" with
         | .ok l => ledgerOf l
         | .error _ => pure Ledger.start
       let usedTicks := (entry.getObjValAs? Nat "ticksUsed").toOption.getD 0
-      -- As `commit` handed `onAdmit` them: the updates and the creations (whose state the child
-      -- ledger spends, codex host 9).
-      let owed := changesJson w principal intent entryLedger usedTicks sentCount (updates ++ judged.creations) p.allWrites
-      unless owed.lookup "changes" == (entry.getObjVal? "changes").toOption &&
-          owed.lookup "unserved" == (entry.getObjVal? "unserved").toOption do
-        throw "the changes owed to subscribers do not replay"
       let before := w
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
       let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
@@ -4640,7 +4523,7 @@ def viewable (w : World) (reader id : String) : Bool :=
 /-- The public projection of a refusal: observed, not committed, the class and the root it
     names, and nothing else. `root` is `{object, version}`, the version the turn read it at (a reader
     who may view the object reads that state's CID with `world-state-cid`); an `unknownObject` refusal also names the
-    id the author wrote (as resolved, so `env` reads `env/<did>`) and where the list of cards is. -/
+    id the author wrote (as resolved, so `me` reads the author's DID) and where the list of cards is. -/
 def publicRefusal (entry : Json) : Json :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let named := (outcome.getObjValAs? String "object").toOption.getD ""

@@ -61,12 +61,9 @@ def turn_root(receipt, addressed=None):
 
 
 def card_name(object_, handles=None):
-    """How a line names a card: a person's own cards by their handle (`kestrel's wake`, `kestrel's env`, `kestrel's avatar`,
-    the avatar's id being the DID), a DID never reaching a post; any other card by its id."""
+    """How a line names a card: a person's avatar by their handle (`kestrel's avatar`, the avatar's id being the DID), a
+    DID never reaching a post; any other card by its id."""
     handles = handles or {}
-    for prefix in ('wake/', 'env/'):
-        if object_.startswith(prefix) and object_[len(prefix):] in handles:
-            return f"{handles[object_[len(prefix):]]}'s {prefix[:-1]}"
     return f"{handles[object_]}'s avatar" if object_ in handles else object_
 
 
@@ -223,9 +220,10 @@ MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ig
 
 def mention_turns(st, host, obs, authors, handles):
     """A mention is addressed to the mentioned: one turn per mention (a facet's DID, or an @handle that is a known
-    author) to env/<did>.write {text, post} under the author (Env's own method: a stranger's
-    `receive` carrying a spell line is retargeted by the host, so a quoted spell would run). Once per post. Only an arrived principal has an Env:
-    a mentioned principal the observer has seen is arrived first; one it has not is skipped, with a note in skipped.txt."""
+    author) to the mentioned principal's avatar, `<did>`.receive {text, post} under the author with reach `mentioned`:
+    the avatar keeps it as a note, and the host never reads it as a spell (its spell lines are the author's, routed to the
+    cards they name). Once per post. Only an arrived principal has an avatar: a mentioned principal the observer has seen
+    is arrived first; one it has not is skipped, with a note in skipped.txt."""
     done = st.words(st.mentioned)
     dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:MENTIONS]) if d))
     if obs['uri'] in done or not dids:
@@ -236,10 +234,11 @@ def mention_turns(st, host, obs, authors, handles):
     replies = []
     for did in dids:
         if did not in handles or not register(st, host, did, handles[did]):
-            st.append(st.skipped, f"{obs['uri']}#mention:{did}")  # not arrived, so no Env: nothing to send
+            st.append(st.skipped, f"{obs['uri']}#mention:{did}")  # not arrived, so no avatar: nothing to send
             continue
-        replies.append(host.send({'op': 'world-turn', 'principal': author['did'], 'object': f'env/{did}', 'method': 'write',
-                                  'argument': {'tag': 'record', 'fields': fields}, 'identity': f"{obs['uri']}#env:{did}"}))
+        replies.append(host.send({'op': 'world-turn', 'principal': author['did'], 'object': did, 'method': 'receive',
+                                  'argument': {'tag': 'record', 'fields': fields}, 'reach': 'mentioned',
+                                  'identity': f"{obs['uri']}#mention:{did}"}))
     if all('receipt' in r for r in replies):  # else retry next run: the host answers a repeated identity with its first receipt
         st.append(st.mentioned, obs['uri'])
     return bool(replies)
