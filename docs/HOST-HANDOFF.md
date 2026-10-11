@@ -1518,6 +1518,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`LawTerm.referenceSum`); `==` still starts with a reference and `1 + old.last <= …` still refuses. `denote`
    already read sums. Proofs: `parse_accepts`, `render_reads_back` (`canonical`), `refusals_name_what_and_why`.
 
+147. **A `text 0..N` field may be left out (host18; the objects lane's `kinds make` and its `id`).** `Spell.fit`
+   needs only the fields that are not `Field.optional` (a text bound starting at 0); one left out reads as the
+   empty text, so `delvetalk kinds make / name: lamp / of: record` makes a kind. The host's usage prints such a
+   field `<optional text, up to N characters>` (`spellHint`; Bend's `Card` hint is the objects lane's). Tests:
+   `Spell.lean`'s `#guard`; `test_host_spell.Clauses`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

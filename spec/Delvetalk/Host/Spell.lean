@@ -480,6 +480,12 @@ def isText : Kind → Bool
   | .text .. => true
   | _ => false
 
+/-- A text field whose bound starts at 0 may be left out of a spell: it reads as the empty text. -/
+def Field.optional (f : Field) : Bool :=
+  match f.kind with
+  | .text 0 _ => true
+  | _ => false
+
 def rebound (bindings : List Binding) (form : Form) : List Binding :=
   if bindings.any (named form.action) then
     match form.fields.find? (fun f => isText f.kind && !bindings.any (named f.name)) with
@@ -533,7 +539,7 @@ def fit (parsed : Parsed) (form : Form) : Fit :=
         match audit form.fields bindings with
         | some (clause, reason) => .refused clause reason
         | none =>
-            let needs := (form.fields.filter fun f => !bindings.any (named f.name)).map (·.name)
+            let needs := (form.fields.filter fun f => !f.optional && !bindings.any (named f.name)).map (·.name)
             if needs.isEmpty then
               .proposal form.card form.action
                 (form.fields.map fun f => ⟨f.name, typed f.kind (valueOf bindings f.name)⟩)
@@ -653,6 +659,9 @@ private def plant : Form :=
 #guard parse "delvetalk w c\nsource: <<BEND\nline\n" ==
   .notASpell "The block <<BEND for source needs a last line that is exactly BEND." true
 #guard fit (parse "delvetalk garden-1 plant\nplant: a fern") plant == .unclear ["colour"]
+-- A `text 0..N` field may be left out: it reads as the empty text.
+#guard fit (parse "delvetalk kinds make / name: lamp") ⟨"kinds", "make", [⟨"name", .text 1 80⟩, ⟨"law", .text 0 4096⟩]⟩ ==
+  .proposal "kinds" "make" [⟨"name", .text "lamp"⟩, ⟨"law", .text ""⟩]
 #guard fit (parse "delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver") plant ==
   .refused .unknownField "No field plant in this spell; it takes colour, seed."
 #guard fit (parse "delvetalk garden-2 plant") plant == .refused .otherCard "This card answers garden-1 plant."

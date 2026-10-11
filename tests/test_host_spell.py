@@ -84,6 +84,11 @@ class Clauses(unittest.TestCase):
                 self.assertEqual(fit.get("refused", {}).get("clause"), clause, fit)
         self.assertEqual(host({"text": "delvetalk garden-1 plant\nseed: fern", "form": form})["fit"], {"unclear": {"needs": ["colour"]}})
         self.assertIs(host({"text": "plant: a fern"})["notASpell"]["fielded"], True)
+        # A field whose text bound starts at 0 may be left out: it reads as empty (`kinds make` with a name and an of).
+        make = {"card": "kinds", "action": "make", "fields": [{"name": "name", "kind": {"text": {"min": 1, "max": 80}}},
+                                                              {"name": "law", "kind": {"text": {"min": 0, "max": 4096}}}]}
+        self.assertEqual(show_fit(host({"text": "delvetalk kinds make / name: lamp", "form": make})["fit"]), "proposal kinds make name=lamp;law=;")
+        self.assertEqual(host({"text": "delvetalk kinds make / law: x", "form": make})["fit"], {"unclear": {"needs": ["name"]}})
         self.assertIs(host({"text": "just prose"})["notASpell"]["fielded"], False)
 
 
