@@ -215,6 +215,14 @@ def command(a, out):
                               'replay': [r['carriedFrom']['replay'], r['replay']], 'library': r['library'], 'objects': r['objects'], 'left': r['left'],
                               'moved': r['moved'],
                               'dropped': r['dropped'], 'kept': r['kept'], 'rearmed': r['rearmed'], 'check': checked}, sort_keys=True) + '\n')
+        if checked['problems']:
+            continue
+        # Then genesis's own laws and kinds as the image stands (`deploy.genesis refresh`, as the opener): after the
+        # check, which compares the carried states with the carry's own `moved`.
+        from deploy import genesis
+        for row in genesis.carried(obend, str(new / f'{w}.journal')):
+            out.write(json.dumps({'world': w, 'refresh': row}, sort_keys=True) + '\n')
+            failed = failed or row.get('status') not in ('refreshed', 'current', 'left')
     town = carried['town']
     out.write(f"hob: the world was carried to a newer host at entry {town['carriedFrom']['height']}; everything is where it was, "
               f"and the carry is receipt {town['slug']}.\n")

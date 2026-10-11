@@ -1680,7 +1680,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      copied (serve's never: journals, snapshots, lock, `library/`, `root/`, `scratch/`, sockets, pid files);
      `publications.after` and each `awaiting` turn's height set to 1; each carried world checked in a throwaway
      copy beside it (every object's state CID against the old head snapshot and its card rendering for its
-     owner, every old receipt's slug resolving to its height, a `world-advance` admitted); the hand's line last.
+     owner, every old receipt's slug resolving to its height, a `world-advance` admitted); then, on each world
+     that checked clean, `deploy.genesis.carried` (genesis's laws and kinds as the image stands, as the opener),
+     a `{world, refresh: row}` line per slot, any status but `refreshed`, `current` or `left` failing; the hand's
+     line last.
      `deploy/playtest.sh --from RUN` carries an earlier run instead of a genesis.
    - *Size.* A carried genesis holds the store with its compiled types and method tables: playtest 3's (51
      objects) is 1.4 MB of record, past `maxEntryBytes`, which bounds appends only (`writeJournal` writes a

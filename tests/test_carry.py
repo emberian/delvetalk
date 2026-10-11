@@ -460,6 +460,9 @@ class StateDirectory(unittest.TestCase):
         self.assertEqual((report["check"]["problems"], report["check"]["rendered"], report["check"]["objects"]),
                          ([], report["objects"], report["objects"]), report)
         self.assertEqual(report["check"]["receipts"], report["height"])
+        # Genesis's laws and kinds refreshed after the check: a town begun by this image already holds them.
+        refreshed = [json.loads(line)["refresh"] for line in lines[1:-1]]
+        self.assertEqual({r["status"] for r in refreshed}, {"current"}, refreshed)
         self.assertRegex(lines[-1], r"^hob: the world was carried to a newer host at entry \d+; everything is where it was, and the carry is receipt [a-z]{5}-[a-z]{5}\.$")
         with open(os.path.join(new, "worlds", "town", "publications.after")) as f:
             self.assertEqual(f.read().strip(), "1")
