@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from deploy.seed import create  # noqa: E402
 from transport.host import HostClient  # noqa: E402
-from transport.identity import ORIGIN  # noqa: E402
+from transport.config import Config  # noqa: E402
 
 OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town
 HANDLE = 'ember.delve.town'
@@ -46,7 +46,7 @@ DOORS = [
     ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
 ]
 # A link door: no object (the empty reference); its description is its line.
-STUDIO = ('STUDIO', f'scratch worlds and REPL: {ORIGIN}/AGENTS.md')
+STUDIO = ('STUDIO', f'scratch worlds and REPL: {Config().origin}/AGENTS.md')
 
 
 def door(label, to, examples, description=''):

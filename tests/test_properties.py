@@ -329,10 +329,12 @@ class Run:
         definition of any world module (its helpers, and the other objects' methods) not in its table."""
         listed = self.objects()
         names = sorted(set(re.findall(r"^def (\w+)\(", "\n".join(p.read_text() for p in (ROOT / "world").rglob("*.obend")), re.M)))
+        unoffered = set(re.findall(r"~(\w+)", " ".join(re.findall(r"^  Text\.words\(\"([^\"]*)\"\)", "\n".join(p.read_text() for p in (ROOT / "world").rglob("*.obend")), re.M))))
         probed = 0
         for obj in listed["ids"]:
-            # "~m": declared, callable, not offered; an id holding a DID (a wake) lists no methods, so its table is inspect's
-            public = {m.lstrip("~") for m in listed["methods"].get(obj, [])} | {m["name"] for m in self.inspect(obj).get("methods") or []}
+            # "~m": declared, callable, not offered; another principal's wake lists none to the opener, so those are read
+            # from the sources' `methods()` (`~arrived`, `~watchBell`)
+            public = {m.lstrip("~") for m in listed["methods"].get(obj, [])} | (unoffered if "did:" in obj else set())
             for helper in self.rng.sample([n for n in names if n not in public and n not in CONVENTIONAL], 6):
                 got = self.turn(self.who(), obj, helper, record(), retry=False)
                 probed += 1

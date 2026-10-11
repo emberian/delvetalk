@@ -10,7 +10,7 @@ import unittest
 from deploy import genesis
 from tests.town import Town
 from tests.wire import label, nat, record
-from transport.identity import ORIGIN
+from transport.config import ORIGIN
 
 
 class Genesis(unittest.TestCase):

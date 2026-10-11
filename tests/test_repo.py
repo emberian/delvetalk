@@ -39,7 +39,7 @@ from transport.atproto.mst import Tree, common_prefix, layer
 from transport.repo import Repo
 from transport.host import HostClient
 from transport.http import Front
-from transport.identity import ORIGIN
+from transport.config import ORIGIN
 from tests.wire import label, nat, record
 from tests.bend import counter_modules
 

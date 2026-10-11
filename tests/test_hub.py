@@ -33,7 +33,7 @@ from tests.test_laws import anthology_seed
 from tests.test_receive import commonplace as make_commonplace, door
 from tests.test_rooms import make_room, room_seed
 from tests.wire import field, label, nat, record, rows
-from transport.identity import ORIGIN
+from transport.config import ORIGIN
 from tests.wire import field, label, nat, record, reference, rows
 from tests.bend import closure
 
