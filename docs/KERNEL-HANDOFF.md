@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (lane/kernel11 after foundation f7865b0: lazy state cells, §15, built and measured; the queue is §16).
+State on 2026-10-10 (lane/kernel13 after foundation cb4af60: honest package and instance bounds, located generics refusals, LAW §4 A/E/H, §25; the queue is §16).
 
 ## Summary
 
@@ -15,7 +15,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
 - Tests: 1,241 `def test_` across 109 files (foundation b0f3618). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
-- Open: section 9.
+- Open: section 9; queue §16.
 
 ## 0. Working rules
 
@@ -112,9 +112,9 @@ Digests:
 
 Per machine segment (default / ceiling): `ticks` 100,000 / 1,000,000; `heap` 100,000 / 1,000,000 (cells); `stack` 10,000 / 100,000 (frames); `nodes` 100,000 / 1,000,000 (Data nodes materialized for a result or Plan); `bytes` 1 MiB / 16 MiB (the canonical DAG-CBOR size of a result or Plan, `Data.canonicalBytes`, `#guard`ed against `Canonical.encode` in Canonical.lean; and the largest single text-primitive reserve per step). Materialization spends each scalar's canonical bytes as it is reached and checks the whole value's size once it is whole (a list's cells cost nothing but its array head); before kernel10 it charged a legacy decimal-length encoding, so `true` needed 2 bytes (`test_tariff.CanonicalBytes`). `lawTicks` 100,000. `typeFuelDefault` 16384.
 
-Wire: `dataWireDepth` 256, `plainJsonDepth` 64, `documentWireDepth` 8192, `entryArrowDepth` 64. Packages: `maxModules` 64, `maxModuleBytes` 512 KiB, `maxPackageSourceBytes` 1 MiB (import scan only), `frontCacheSourceBytes` 8 MiB, `entryCacheBytes` 64 MiB. Documents: `documentDepth` 64, `documentNodes` 65,536, `documentOutputBytes` 1 MiB, `offersPerTurn` 16 (their text shares the 1 MiB). `Document.maxOffersPerTurn`/`maxOutputBytes` are aliases that `TurnLoop.lean` reads.
+Wire: `dataWireDepth` 256, `plainJsonDepth` 64, `documentWireDepth` 8192, `entryArrowDepth` 64, `maxFrameBytes` 16 MiB (a driver request line). Packages: `maxModules` 64, `maxModuleBytes` 512 KiB, `maxPackageSourceBytes` 1 MiB (import scan only), `maxPackageBytes` 128 KiB (one module offered as a program: reprogram, extend, create of source, a `check` Plan, a form's `source`; the host's `maxPackageBytes`/`formSourceMax` read it, §25), `frontCacheSourceBytes` 8 MiB, `entryCacheBytes` 64 MiB. Each refusal names its bound and number ("module M exceeds maxModuleBytes (524288 bytes)"). Documents: `documentDepth` 64, `documentNodes` 65,536, `documentOutputBytes` 1 MiB, `offersPerTurn` 16 (their text shares the 1 MiB). `Document.maxOffersPerTurn`/`maxOutputBytes` are aliases that `TurnLoop.lean` reads.
 
-Outside `Limits.lean`: `PackageMain` 16 MiB line frame; `EvaluateTerm` nesting 4096, default 200,000 ticks, `go 64` yields cap; `Canonical` reuses `nodesMax`/`bytesMax`; the host's own `Host.Limits` (`dataDepth` 8192, `plainDepth` 64, `maxTurnTicks` 1,000,000, `maxPackageBytes` 32768 …). Fuel parameters that are not budgets: `Typing.check` fuel, `Ty.dataFuel`, `termNestingCapacity` 4096, `conformsFuel`, `peelArrows`. A fuel exhaustion is a refusal, never a wrong answer, but it looks like a type error.
+Outside `Limits.lean`: `PackageMain` 16 MiB line frame; `EvaluateTerm` nesting 4096, default 200,000 ticks, `go 64` yields cap; `Canonical` reuses `nodesMax`/`bytesMax`; the host's own `Host.Limits` (`dataDepth` 8192, `plainDepth` 64, `maxTurnTicks` 1,000,000, `maxPackageBytes` 32768 until the host reads `Bounds.maxPackageBytes` …). Fuel parameters that are not budgets: `Typing.check` fuel, `Ty.dataFuel`, `termNestingCapacity` 4096, `conformsFuel`, `peelArrows`. A fuel exhaustion is a refusal, never a wrong answer, but it looks like a type error.
 
 ## 5. Tariff
 
@@ -471,17 +471,36 @@ reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `S
 state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with
 `keysChangedSince` and the span rule, the per-cell bound and ledger: 3 days.
 
-## 16. Queue for the successor (lane/kernel10, after foundation 534b92c)
+## 16. Queue for the successor (lane/kernel13, after foundation cb4af60)
 
-Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the ten kernel findings of the
-codex review of a3e1fb2 (kernel10, §24). Remaining:
+Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the codex findings (kernel10,
+§24); lazy cells (kernel11, §15); the package and instance bounds, located generics refusals and
+LAW §4 A/E/H (kernel13, §25). Remaining, in order:
 
-7. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a
-   native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both
-   codecs).
-9. Located refusals from the generics pass: the derived-edits, fixed, form-kind and
-   derived-forms refusals are strings (stage `source-specialization`, no span); a
-   `Generics` error type with a span (the State's, the write's, the form block's) would place them.
+15. The two primitives of §15, `relationCount(r) -> Nat` and `relationLookup(r, key) -> Maybe<T>`,
+   then `Relation.obend`'s `count` and `lookup` onto them (objects lane). Not started by kernel13
+   (the bounds, the law insertion and item 9 took the lane). The shape, so the successor starts
+   cutting: two `Term` forms beside `textJoin` (`relationCount x`, `relationLookup x key keyType`, the
+   key's type carried so the fallback can compare canonically as `canonicalCompare` does); typing in
+   `PartialTyping` (argument a `Relation<T>` instance: the one-case `rows {items: List<T>}` sum
+   recognised as `Generics.relationItem` does; result `Nat`, or the `Maybe<T>` instance the
+   elaborator names, refused by name when the package has none); machine: entering
+   `relationCount` forces the argument to WHNF; a `stored (relation f n) _` or `stored (items …)`/
+   `stored (spine f j n)` cell answers `n - j` in one tick and adds the whole-relation span to
+   `Reads` (`spineReach` gains a `counted f` mark), any other value walks the list with a
+   `countList` frame; `relationLookup` on a stored spine binary-searches by `Store.key f j :
+   Option Data` (new; the host supplies key projections, charged `1 + 2 * keyBytes` each, `⌈log2 n⌉ + 1`
+   of them, reported as a span over the probed keys) and fetches the found row (`fetchCost`), else a
+   `lookupList` frame walking cons cells comparing canonical bytes. Proof cases: `stepRawFast` and
+   `sizesAfter`, collector `frameAddresses` and renamings for the two frames, `erase_stepRaw`, `agree_*`
+   for the key fetch (`Store.key` threaded as `fetch` is), checkpoint frame tags 18-19 and term tags
+   27-28 with `stateV3_roundTrip`. Evaluators: the reference meaning is the list walk (count;
+   first row whose key projection equals the key by canonical bytes), so Python, JS and C implement
+   the walk; the generator gains both forms (stored and literal relations), `KNOWN_DIVERGENCE`
+   none expected. Conformance and `test_stored` (a count reads no row and reports a whole span; a
+   lookup over 2,048 rows fetches one row and 12 keys) close it.
+   Estimate: 2 days kernel, half a day objects.
+7. `textWords(s) -> List<String>`: only if an object asks; none does (kernel13 grep of docs/, world/).
 10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
    be `F.Forms` and drop its List.obend requirement (Counter, Loop).
 12. Host lane: `Turn.resumeEntryStep entry checkpoint issued binding value b dictionary?` takes
@@ -489,12 +508,20 @@ codex review of a3e1fb2 (kernel10, §24). Remaining:
    checkpoint (and `suspension.checkpoint.digest` for the profile). `expandSuspended` recomputes a
    digest a compacted journal entry lacks: the journal is the trust root, so that is sound, but a
    host that ever resumes a checkpoint from outside its journal must look its digest up there.
-13. Done (`52ad1b2`): a REPL checkpoint from before the host restarted is refused `replRestarted`.
-14. Lazy state (§15) is built through step 5 (lane/kernel11). After the host's switch (lane/host14):
-   delete `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt`
-   for state, and move `test_tariff`'s pins in that commit.
-15. The two primitives of §15, `relationCount` and `relationLookup` (with `Store.key`), then
-   `Relation.obend`'s `count` and `lookup` onto them (objects lane).
+14. After the host's switch to the stored path (lane/host14 and after): delete
+   `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt` for state,
+   and move `test_tariff`'s pins in that commit.
+16. Host requests from kernel13 (§25): `Host.Limits.maxPackageBytes` and `formSourceMax` read
+   `Bounds.maxPackageBytes` (128 KiB) with refusals naming it; `Facts.clock`, `Facts.object` and `read`
+   over `old` (LAW §6 item 1; until then those atoms fail closed in `Host/Law.lean`).
+17. `Package.localize` (check-package) still recompiles each function alone for a spanless refusal:
+   2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
+   are elaborator refusals without a span; find them by making `localize` count its calls in
+   `test_sugar` and `test_located`-style fixtures, then delete it when none is left.
+18. LAW §6 items 2 and 3 (kernel halves): `changed(new.F.COL) by REF`, `count(new.F where COL == V)`,
+   the quorum form, `REF in "<object>".F.COL`, `under "<object>"`, `LawExpr.cites`.
+
+Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -805,3 +832,87 @@ fragment (`kindNumber`, `parse_kind_names`).
 No pinned tick count and no packet moved (pins: 0 recompiled). The three evaluators and the
 conformance generator needed nothing: no term form or primitive meaning changed, and conformance
 compares values, never costs. Full suite on hbox at the end: 1,148 tests, 0 failed.
+
+## 25. Honest bounds (lane/kernel13, after foundation 2cb6fd5)
+
+Measured on persvati (24 cores, load ~9, best of two or three; scripts `kernel13.sh`,
+`k13_gen*.py`, `k13_many.py` in the lane's scratchpad, the packages are generated):
+
+| package | instances | host-shaped compile (`initial` + 10 methods, one process) | resident |
+|---|---|---|---|
+| Garden, 31.7 KB | 140 | 0.34 s | 114 MB |
+| Garden + Card, 61 KB | 161 | 0.35 s | 116 MB |
+| Garden + Card + 2 copies, 117 KB | 203 | 0.42 s | 106 MB |
+| Garden + Card + 7 copies, 258 KB | 308 | 0.64 s (refused at 256 instances before item 2) | 127 MB |
+
+Card's declarations alone (one entry module, `check-package`, 20 entries in one process): 30 KB
+0.09 s / 0.17 s, 58 KB 0.11 / 0.24, 114 KB 0.15 / 0.27, 255 KB 0.27 / 0.54 s, 93-112 MB.
+
+1. The package bound. `Bounds.maxPackageBytes` = 128 KiB: every measured size compiles under a
+   second, so compile cost does not decide; the scale rule does. A program is also data held whole
+   in one state cell (a kind's body, a Workshop draft, a form's reply), a cell is `maxCellBytes`
+   (256 KiB), and 128 KiB leaves its row the other half. Every bound a package meets: the host's
+   `maxPackageBytes` (reprogram, extend, create of source, `check`; host request below) and
+   `formSourceMax` (a form's `source` field, 16,384 characters), the kernel's `maxModuleBytes`
+   (512 KiB a module), `maxPackageSourceBytes` (1 MiB, the import scan), `maxFrameBytes` (16 MiB a
+   driver line, which holds the artifact a `run` sends back: 1 MB for the 258 KB Garden, 2.6 MB for an
+   entry reaching 1,024 instances), `frontCacheSourceBytes` and `entryCacheBytes` (caches: a closure
+   or artifact larger than its cache is compiled and not held, never refused). Each kernel refusal
+   names its bound. `tests/test_package_bounds.py`: a 131,072-byte module checks, compiles and runs;
+   the module and import-scan bounds refuse by name.
+   Host request (lane/host15; `spec/Delvetalk/Host/Store.lean`): `def maxPackageBytes : Nat :=
+   Bounds.maxPackageBytes` and `def formSourceMax : Nat := Bounds.maxPackageBytes`; the four
+   refusals (TurnLoop `creationInputs` and `buildCreated`, Ops `checkSource` and `prepareProgram`)
+   read "package source exceeds maxPackageBytes (131072 bytes)". Then `tests/test_form_bounds.py`
+   (16384), `world/lib/Card.obend` and `world/objects/Policy.obend` ("1 to 16384 characters", objects
+   lane) follow. Until the per-cell bound (§15 step 4) replaces `maxStateBytes`, the Workshop's
+   `held` (12 drafts) cannot hold 12 full-size packages in 256 KiB: `test_relation_limits` fills it
+   with 16,384-byte packages and must keep doing so until that switch.
+
+2. The generic-instance bound. `Generics.maxInstances` 256 -> 1,024. Measured (`k13_many.py`: N row
+   types, each used through Relation insert, count, retract and rows, about eleven instances each;
+   `check-package` then the compile of an entry reaching all of them, one process):
+
+   | instances | check | compile | packet | resident |
+   |---|---|---|---|---|
+   | 178 | 0.09 s | 0.06 s | 0.35 MB | 87 MB |
+   | 354 | 0.15 | 0.11 | 0.70 | |
+   | 706 | 0.27 | 0.23 | 1.40 | |
+   | 1,025 | 0.39 | 0.35 | 2.04 | 107 MB |
+   | 1,410 | 0.57 | 0.55 | 2.81 | |
+   | 2,818 | 1.38 | 1.33 | 5.63 | 167 MB |
+
+   Linear (about 0.37 ms of check and 2 KB of packet an instance); 1,024 is the most whose check and
+   compile stay under a second together. World closures today: Kind 197, Directory 190, Garden and
+   Place 140; the 258 KB Garden of item 1 needs 308. The refusal names the count, the bound and the
+   declaration that asked, at that declaration: "refused (generic-instances): the package needs more
+   than 1024 generic instances; Many.use92 asks for instance 1025, removeWhere at Many.R92
+   (Generics.maxInstances)", `module`, `span`. Mechanism: the pass's error is `Generics.Refusal
+   {message, module?, span?}`; text thrown anywhere in the pass is placed by `rewriteTop` at the
+   declaration being rewritten (so `Package.localize`'s recompile-each-function search, 2.5 s on a
+   32 KB package, no longer runs for a specialization refusal), and `throwThe Refusal (refusalAt …)`
+   places one more precisely. The dead linear `instances.find?` by key (a key is a hash of the pair
+   `instanceOf` already indexes) is gone. Packets do not move (pins: 0 recompiled).
+   `test_package_bounds.InstanceBound`.
+L. (Coordinator's insertion, docs/LAW.md §4 A, E, H; §6 item 1, kernel half.) `ObjectiveBendLaw`:
+   `LawRef.clock` (`request.clock`, the world clock at the write in minutes), `LawRef.object`
+   (`request.object`, the written object's id; text-comparable: `request.object == "tide"`),
+   `LawRef.old F` (`old.F` as a reference; at creation the empty value, as `writeOnce` reads an empty
+   field; `old.a.b` refused by name), and `LawExpr.leRSum` (`REF <= REF + REF`, so
+   `request.clock <= old.tended + new.gap` is one atom). `compile`: clock and object are the slots
+   `request/clock`, `request/object`; an atom reading `old.F` and the three-slot bound are `any []`
+   (host-judged, as relations). `fields`, `fieldsPlain`, `render`, the parser and its refusals cover
+   them. Theorems `parse_clock_old_object` (METAPHYSICS `alive` as `request.method == "tend" or
+   request.clock <= old.tended + 1440`) and `compile_clock_old_object`, `native_decide`,
+   `#assert_compiled`. `Host/Law.lean` gained only fail-closed arms (`read` of clock, object, old is
+   `none`; `leRSum` denotes over `read`), so a law using them refuses every write until the host lane
+   adds `Facts.clock`, `Facts.object` and `read` over `old`.
+4. Located refusals from the generics pass (§16 item 9). Every `refused (…)` of the derivation probe
+   now carries `module` and `span` (`derivedAt`, `throwThe Refusal`): `fixed` at the declaration whose
+   write names the field; `derived-edits` at the State field whose type the module cannot spell, or at
+   the State; `form-kind` at the form field; `form-input` "declares" at the module's clashing
+   declaration; `derived-forms` and a form-input parse failure at the first form block. Every other
+   refusal of the pass (world calls, inference, unknown types, the instance bound) is placed at the
+   declaration being rewritten (item 2). `test_sugar.Sugar.test_each_derived_refusal_names_its_source_line`
+   checks through `compile`, which does not localize, so the span is the pass's own.
+5. `textWords`: no object or design document asks for it (grep of docs/ and world/); not built.

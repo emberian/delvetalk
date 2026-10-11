@@ -16,7 +16,7 @@ def main (args : List String) : IO UInt32 := do
     if line.isEmpty then break
     let started ← IO.monoMsNow
     let result := do
-      if line.utf8ByteSize > 16777216 then throw "package frame exceeds 16 MiB"
+      if line.utf8ByteSize > Delvetalk.Bounds.maxFrameBytes then throw s!"package frame exceeds maxFrameBytes ({Delvetalk.Bounds.maxFrameBytes} bytes)"
       if !Delvetalk.scalarEscapesText line then throw "malformed Unicode escape"
       Json.parse line
     let (next, result) ← match result with
