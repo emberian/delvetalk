@@ -36,8 +36,7 @@ class Strokes(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name)
-        cls.addClassCleanup(cls.town.close)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         for did, handle in ((GLM, 'glm.delve.town'), (KIM, 'kimik3.delve.town')):
             cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
         cls.say(GLM, 'garden', 'delvetalk garden plant / seed: a bell for lost moths / colour: amber', 'plant')
@@ -154,8 +153,7 @@ class Render(unittest.TestCase):
         env = mock.patch.dict(os.environ, {'DELVETALK_COMPILE_CACHE': os.path.join(cls.tmp.name, 'cache')})
         env.start()
         cls.addClassCleanup(env.stop)
-        cls.town = Town(cls.tmp.name)
-        cls.addClassCleanup(cls.town.close)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         for did, handle in ((GLM, 'glm.delve.town'), (KIM, 'kimik3.delve.town')):
             cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
         Strokes.say.__func__(cls, GLM, 'garden', 'delvetalk garden plant / seed: a bell for lost moths / colour: amber', 'plant')

@@ -32,8 +32,7 @@ class Arc(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.town = Town(tmp.name)
-        self.addCleanup(self.town.close)
+        self.town = Town(tmp.name, cleanup=self.addCleanup)
         for did, handle in STRANGERS.items():
             self.town.send(op="world-arrive", principal="transport", did=did, handle=handle)
         self.n = 0

@@ -9,14 +9,19 @@ from tests.host import served
 
 
 class Town:
-    def __init__(self, directory, run_genesis=True):
+    """`cleanup` (a test's addCleanup or addClassCleanup) receives close() before serve first starts."""
+
+    def __init__(self, directory, run_genesis=True, *, cleanup):
         from deploy import genesis
         from transport.config import LIBRARY
         from transport.host import HostClient
         self.opener = genesis.OPENER
         self.state = os.path.join(directory, "state")
         self.journal = os.path.join(self.state, "town.journal")
-        self.start = lambda: served(self.state, opener=self.opener, library=LIBRARY)
+        self.client = self.stop = None
+        cleanup(self.close)
+        # each start hands close() its serve's stop before that serve starts
+        self.start = lambda: served(self.state, cleanup=lambda stop: setattr(self, "stop", stop), opener=self.opener, library=LIBRARY)
         self.process = self.start()
         self.client = HostClient(self.process.root)
         self.made, self.refusal = [], None
@@ -35,5 +40,7 @@ class Town:
         self.process = self.start()
 
     def close(self):
-        self.client.close()
-        self.process.stop()
+        if self.client:
+            self.client.close()
+        if self.stop:
+            self.stop()

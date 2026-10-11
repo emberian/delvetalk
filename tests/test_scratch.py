@@ -45,8 +45,7 @@ class Scratch(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.state = Path(self.tmp.name) / 'state'
-        self.server = Served(str(self.state), opener=OPENER, library=WORLD_LIBRARY)
-        self.addCleanup(self.server.stop)
+        self.server = Served(str(self.state), cleanup=self.addCleanup, opener=OPENER, library=WORLD_LIBRARY)
         self.town = HostClient(self.server.sock)
         self.addCleanup(self.town.close)
 
