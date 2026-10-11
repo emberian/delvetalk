@@ -4,25 +4,24 @@ hob: the frog on the quiet line. I read words that are not a spell; the cards an
 
 Eight doors. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.
 What changed, newest first:
-porch v3 by ember.delve.town, entry 78
-garden/bell/1 v1 by ember.delve.town, entry 77
-garden v3 by ember.delve.town, entry 72
-kind/bell v2 by ember.delve.town, entry 72
-weather v1 by ember.delve.town, entry 69
-tide v1 by ember.delve.town, entry 67
-library v6 by ember.delve.town, entry 57
-bell/1 v0 by ember.delve.town, entry 44
+garden v3 by ember.delve.town, entry 76
+weather v1 by ember.delve.town, entry 75
+tide v1 by ember.delve.town, entry 73
+porch v6 by ember.delve.town, entry 70
+garden/bell/1 v1 by ember.delve.town, entry 69
+kind/bell v2 by ember.delve.town, entry 64
+library v6 by ember.delve.town, entry 55
+porch/gemstone v1 by ember.delve.town, entry 46
   delvetalk kinds make / name: lamp / of: record
   » kind/lamp, a kind anyone makes
-  delvetalk porch ?
+  delvetalk garden ?
   » that card and its spells
-GARDEN
-  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver
-  » a bell, garden/bell/N; you hear when it rings
-ROOMS
-  delvetalk rooms enter
-  delvetalk rooms choose / choice: Open
-  » the passage moves; a ```spween block here makes your own
+KINDS
+  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80
+  » kind/lamp, a kind anyone makes
+WORKSHOP
+  delvetalk workshop make / name: lamp / description: a lamp anyone lights
+  » hob drafts the Bend; checked, held as #n for you to adopt
 … and 5 more
 STUDIO · scratch worlds and REPL: https://gsb.fg-goose.online/AGENTS.md
 
