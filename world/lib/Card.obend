@@ -314,11 +314,16 @@ def captureOf(hole: String, captures: Captures) -> String:
 # refused `badSpell` with its clause, reason and hint, and `?` is answered by the host. What
 # runs no method reaches `receive(state, input: Reply, context)`: blank text, prose, a spell
 # missing fields and field lines naming none of the card's forms, with the reply's
-# `name: value` lines in `fields`. `answer` is the default for those.
+# `name: value` lines in `fields` and the spell the host read in `spell` (its card and action as
+# written when it lacked fields; both "" when the text held none). `answer` is the default.
+record Cast:
+  card: String
+  action: String
 record Reply:
   text: String
   post: String
   fields: Spell.Bindings
+  spell: Cast
 # A card with a policy takes a direct turn's misfit spell (unknownField, noAction, badValue,
 # otherCard) in its receive as `Heard`, and hob asks one question with its clause and reason
 # (docs/FLEX.md §4 host 4); the host hands any other reply `misfit {clause: "", reason: ""}`. A
@@ -330,9 +335,10 @@ record Heard:
   text: String
   post: String
   fields: Spell.Bindings
+  spell: Cast
   misfit: Misfit
 def heard(input: Heard) -> Reply:
-  {text: input.text, post: input.post, fields: input.fields}
+  {text: input.text, post: input.post, fields: input.fields, spell: input.spell}
 # Offers a document (to the replier, or to one principal) and finishes with the given result.
 def tell<T>(result: T, document: Document.Document) -> Activity<T>:
   match world.offer({to: "", document: document}):
@@ -373,26 +379,16 @@ def dueOffered<T>(input: Reply, context: Abi.Context, forms: Forms, card: Docume
 def toldOn<T>(input: Reply, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
   match world.offer({to: "", document: card}):
     case _: handingOn(input, context, result)
+# A spell in a reply that ran no method is one the host found missing fields (it refuses every
+# other misfit): the card names what it still needs. Prose is silent here.
 def unanswered(input: Reply, forms: Forms) -> Replied:
-  if Text.blank(input.text) then Replied.usage({}) else spellMissing(Spell.parse(input.text), input.fields, forms)
-# A spell line in a reply that ran no method is one the host found missing fields (it refuses
-# every other misfit): the card names what it still needs.
-def spellMissing(parsed: Spell.Parsed, fields: Spell.Bindings, forms: Forms) -> Replied:
-  match parsed:
-    case notASpell(_): Replied.silent({})
-    case spell(s): needing(Lists.find(forms, fn(f: Form.Form) -> Bool: f.action == s.action), fields)
+  if Text.blank(input.text) then Replied.usage({}) else if input.spell.action == "" then Replied.silent({}) else needing(Lists.find(forms, fn(f: Form.Form) -> Bool: f.action == input.spell.action), input.fields)
 def needing(form: Lists.Maybe<Form.Form>, fields: Spell.Bindings) -> Replied:
   match form:
     case none(_): Replied.usage({})
     case some(f): unclearOf(Lists.map(Lists.filter(f.value.fields, fn(x: Form.Field) -> Bool: Lists.any(fields, fn(b: Spell.Binding) -> Bool: b.name == x.name) == false), fn(x: Form.Field) -> String: x.name))
 def unclearOf(needs: Form.Names) -> Replied:
   if Lists.length(needs) == 0n then Replied.usage({}) else Replied.unclear({needs: needs})
-# The action of the reply's spell line, "" when it has none: what a card completes from its
-# own policy (a Deal's countersign cites the reply's post).
-def spellAction(text: String) -> String:
-  match Spell.parse(text):
-    case spell(s): s.action
-    case notASpell(_): ""
 def quietly(replied: Replied) -> Bool:
   match replied:
     case silent(_): true

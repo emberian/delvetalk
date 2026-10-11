@@ -1,135 +1,14 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
-import ./Text.obend as Text
-# What Bend still reads of a spell. The host parses a reply's spell, fits it to the card's
+# What a card's receive is handed of a spell: the host parses a reply, fits it to the card's
 # forms and runs the method (spec/Delvetalk/Host/Spell.lean, op `spell-parse`; FOUNDATION
-# section 5 has the grammar); a card's receive gets the reply's `name: value` lines as
-# `Reply.fields`. One reading stays here until the host's `Heard` names the spell's card and
-# action (fungus H1): the card and action of a spell the host found missing fields, so the card
-# names what it still needs (`Card.unanswered`, the workshop's `check` with a target alone). It
-# reads as the host casts: the last `delvetalk <card> <action>` line at the margin (an indented
-# one is an example, never a spell; a line inside a fence with an info string is code); a card
-# name is [a-zA-Z0-9:/._-], at most 128 bytes; an action [a-z0-9-] or `?`, folded to lower case
-# with one trailing `.` or `:` trimmed, and one written with capitals only when nothing but
-# inline fields follows it (`Delvetalk Garden Plant` is a spell, "delvetalk Is The word" a
-# sentence).
-#
-#   delvetalk <card> <action> [/ <field>: <value>]...
+# section 5 has the grammar). What runs no method reaches `receive` with the reply's
+# `name: value` lines as bindings and the spell the host read (`Card.Cast`: the card and action
+# as written when it lacked fields, both "" for prose). Bend reads no spell itself.
 record Binding:
   name: String
   value: String
 type Bindings = Lists.List<Binding>
-sum Parsed:
-  spell: {card: String, action: String, fields: Bindings}
-  notASpell: {reason: String}
-def identifier() -> String:
-  "abcdefghijklmnopqrstuvwxyz0123456789-"
-# The host's object-name rule (Store.lean `Limits.nameAlphabet`, 1..128): every object id is a card name.
-def cardAlphabet() -> String:
-  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-:/._"
-def isCardName(value: String) -> Bool:
-  let size = textLength(value)
-  size > 0n && size <= 128n && textSpan(value, cardAlphabet()) == size
-def isAction(value: String) -> Bool:
-  value == "?" || isIdentifier(value)
-def isIdentifier(value: String) -> Bool:
-  let size = textLength(value)
-  size > 0n && textSpan(value, identifier()) == size
-sum Candidate:
-  none: {}
-  at: {card: String, action: String, tail: String}
-# One walk of the lines: the last spell line at the margin wins.
-def parse(text: String) -> Parsed:
-  seek(text, Candidate.none({}))
-def seek(text: String, found: Candidate) -> Parsed:
-  if text == "" then chosen(found) else seekLine(text, textSpan(text, " \t"), textBreak(text, "\n"), found)
-def seekLine(text: String, indent: Nat, stop: Nat, found: Candidate) -> Parsed:
-  if tagged(text, indent, stop) then seek(pastFence(textDrop(text, stop + 1n)), found) else if indent == 0n && stop > 0n && isSpellAt(text, 0n) then seek(textDrop(text, stop + 1n), latest(headingAt(text, 0n, stop), found)) else seek(textDrop(text, stop + 1n), found)
-def latest(line: Candidate, found: Candidate) -> Candidate:
-  match line:
-    case none(_): found
-    case at(_): line
-def chosen(found: Candidate) -> Parsed:
-  match found:
-    case at(a): spelled(a.card, a.action, inline(a.tail))
-    case none(_): Parsed.notASpell({reason: "No delvetalk line; the spell is the last unquoted one."})
-def isSpellAt(text: String, indent: Nat) -> Bool:
-  let head = textTake(textDrop(text, indent), 10n)
-  if textSpan(head, "dD") == 0n then false else spellWord(Text.lower(head))
-def spellWord(head: String) -> Bool:
-  head == "delvetalk " || head == "delvetalk\t"
-# A fence with an info string (```bend, ```json) opens code: its lines are never a spell. A
-# bare fence is skipped as a line and what it holds is read.
-def tagged(text: String, indent: Nat, stop: Nat) -> Bool:
-  stop > indent + 3n && textTake(textDrop(text, indent), 3n) == "```" && textSpan(textDrop(text, indent + 3n), " \t\r") < stop - indent - 3n
-def pastFence(text: String) -> String:
-  if text == "" then text else pastFenceLine(text, textSpan(text, " \t"), textBreak(text, "\n"))
-def pastFenceLine(text: String, indent: Nat, stop: Nat) -> String:
-  if textTake(textDrop(text, indent), 3n) == "```" then textDrop(text, stop + 1n) else pastFence(textDrop(text, stop + 1n))
-def headingAt(text: String, indent: Nat, stop: Nat) -> Candidate:
-  heading(Text.trimEnd(textDrop(textTake(text, stop), indent + 9n)))
-def heading(line: String) -> Candidate:
-  let afterBlanks = Text.trimStart(line)
-  let cardEnd = textBreak(afterBlanks, " \t")
-  let card = textTake(afterBlanks, cardEnd)
-  let afterCard = Text.trimStart(textDrop(afterBlanks, cardEnd))
-  let actionEnd = textBreak(afterCard, " \t")
-  let written = textTake(afterCard, actionEnd)
-  let action = unmarked(Text.lower(written))
-  let tail = Text.trimStart(textDrop(afterCard, actionEnd))
-  if isCardName(card) == false || isAction(action) == false then Candidate.none({}) else if Text.lower(written) == written then Candidate.at({card: card, action: action, tail: tail}) else capitalled(card, action, tail)
-def capitalled(card: String, action: String, tail: String) -> Candidate:
-  if tail == "" || textTake(tail, 1n) == "/" || looksLikeField(tail) then Candidate.at({card: card, action: action, tail: tail}) else Candidate.none({})
-# A word with one trailing `.` or `:` trimmed (`delvetalk garden plant.`).
-def unmarked(word: String) -> String:
-  let size = textLength(word)
-  if size > 1n && textSpan(textDrop(word, size - 1n), ".:") == 1n then textTake(word, size - 1n) else word
-# Fields on the spell line are separated by ` / ` (`delvetalk tide subscribe / every: 1 /
-# note: first light`) or by commas; a slash or comma only separates when what follows it
-# looks like `name:`, so a value may hold either.
-sum Fields:
-  found: {bindings: Bindings}
-  bad: {reason: String}
-def spelled(card: String, action: String, fields: Fields) -> Parsed:
-  match fields:
-    case found(f): Parsed.spell({card: card, action: action, fields: f.bindings})
-    case bad(b): Parsed.notASpell({reason: b.reason})
-def inline(tail: String) -> Fields:
-  if tail == "" then Fields.found({bindings: Bindings.nil()}) else slashed("", if textTake(tail, 1n) == "/" then Text.trimStart(textDrop(tail, 1n)) else tail)
-def slashed(before: String, rest: String) -> Fields:
-  let at = textBreak(rest, "/")
-  if at == textLength(rest) then segment("{before}{rest}") else slashAt(before, textTake(rest, at), textDrop(rest, at + 1n))
-def slashAt(before: String, head: String, after: String) -> Fields:
-  if looksLikeField(Text.trimStart(after)) && (head == "" || textSpan(textDrop(head, textLength(head) - 1n), Text.blanks()) == 1n) then both(segment("{before}{head}"), slashed("", Text.trimStart(after))) else slashed("{before}{head}/", after)
-def segment(text: String) -> Fields:
-  if Text.trimStart(text) == "" then Fields.found({bindings: Bindings.nil()}) else piece(Text.trimStart(text))
-# Commas: a comma continues the current value unless what follows it looks like `name:`.
-def piece(tail: String) -> Fields:
-  let stop = textBreak(tail, ",")
-  startField(Text.trimStart(textTake(tail, stop)), textDrop(tail, stop + 1n))
-def looksLikeField(value: String) -> Bool:
-  let colon = textBreak(value, ":")
-  colon > 0n && textTake(value, colon) != value && isIdentifier(Text.lower(textTake(value, colon)))
-def startField(value: String, rest: String) -> Fields:
-  let colon = textBreak(value, ":")
-  if looksLikeField(value) then continued(Text.lower(textTake(value, colon)), Text.trimStart(textDrop(value, colon + 1n)), rest) else Fields.bad({reason: "Not a field: {textTake(value, 40n)}"})
-def continued(name: String, value: String, rest: String) -> Fields:
-  if rest == "" then consed(name, Text.trimEnd(value), Fields.found({bindings: Bindings.nil()})) else more(name, value, textBreak(rest, ","), rest)
-def more(name: String, value: String, stop: Nat, rest: String) -> Fields:
-  let next = Text.trimStart(textTake(rest, stop))
-  if looksLikeField(next) then consed(name, Text.trimEnd(value), startField(next, textDrop(rest, stop + 1n))) else continued(name, "{value},{textTake(rest, stop)}", textDrop(rest, stop + 1n))
-def both(first: Fields, second: Fields) -> Fields:
-  match first:
-    case found(f): sequenced(f.bindings, second)
-    case _: first
-def sequenced(bindings: Bindings, second: Fields) -> Fields:
-  match second:
-    case found(g): Fields.found({bindings: Lists.concat(bindings, g.bindings)})
-    case _: second
-def consed(name: String, value: String, fields: Fields) -> Fields:
-  match fields:
-    case found(f): Fields.found({bindings: Bindings.cons({head: {name: name, value: value}, tail: f.bindings})})
-    case _: fields
 # A field's value by name, "" when absent.
 def valueOf(bindings: Bindings, name: String) -> String:
   match bindings:

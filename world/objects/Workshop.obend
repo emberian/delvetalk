@@ -205,7 +205,7 @@ def create(state: State, input: {like: String}, context: Abi.Context) -> Activit
 # without a target) is completed from the reply's fields; anything else is the card's default
 # (a blank reply gets the usage card, prose goes on to the commonplace).
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Verdict>:
-  completing(Card.spellAction(input.text), input, context, state)
+  completing(input.spell.action, input, context, state)
 def completing(action: String, input: Card.Reply, context: Abi.Context, state: State) -> Activity<Verdict>:
   if action == "check" then checking(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "source"), context) else if action == "propose" then proposing(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "migration"), Spell.valueOf(input.fields, "source"), context, state) else Card.answerAs(input, context, forms(), render(state, context), answered)
 def answered(replied: Card.Replied) -> Verdict:
