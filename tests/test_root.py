@@ -10,6 +10,7 @@ retired card written, or a non-opener casting a power.
 
     python3 -W error -m unittest tests.test_root -v
 """
+import os
 import unittest
 
 from tests.test_chain import Chain
@@ -155,6 +156,8 @@ class Root(RootCase):
         self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
         r = self.root({"kind": "ignore", "height": first["receipt"]["height"]})
         self.assertEqual(r["receipt"]["outcome"]["before"], {"ignored": False}, r)
+        # The store is re-derived under the new set, and a snapshot of it written at once.
+        self.assertEqual(r["snapshot"], {"height": r["receipt"]["height"]}, r)
         # The second bump read version 1, which no longer exists: shadowed, reported, never re-judged.
         shadowed = [{"height": second["receipt"]["height"], "by": first["receipt"]["height"]}]
         def check():
@@ -167,7 +170,14 @@ class Root(RootCase):
         self.host = self.spawn()
         opened = self.host.send(op="world-open", path=self.path)
         self.assertEqual(opened["status"], "opened", opened)
-        self.assertEqual(opened["snapshot"]["resumed"], 0, opened)                     # the snapshot from before the ignore
+        self.assertEqual(opened["snapshot"]["resumed"], r["receipt"]["height"], opened)  # the one the ignore wrote
+        check()
+        # Without it, the snapshot from before the ignore is refused by name, and the journal replayed.
+        self.release()
+        os.remove(f"{self.path}.snapshot.{r['receipt']['height']}.cbor")
+        self.host = self.spawn()
+        opened = self.host.send(op="world-open", path=self.path)
+        self.assertEqual(opened["snapshot"]["resumed"], 0, opened)
         self.assertIn("an ignore after it", opened["snapshot"]["refused"][0]["reason"])
         check()
         verified = self.host.send(op="world-open", path=self.path, verify=True)

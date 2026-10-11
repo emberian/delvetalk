@@ -13,6 +13,7 @@ import json
 import unittest
 
 from deploy import genesis
+from transport.journal import entries as journal_entries
 from tests.test_turn_world import TurnWorld
 from tests.wire import field, label, listing, nat, nil, record, reference, relation
 from tests.bend import closure, declared
@@ -124,8 +125,7 @@ class Authority(TurnWorld):
 
     def last_entry(self):
         status = self.host.send(op="world-status")["height"]
-        with open(self.path) as handle:
-            return json.loads(handle.read().splitlines()[status - 1])
+        return journal_entries(self.path)[status - 1]
 
 
 class WriteIsSelfOnly(Authority):

@@ -6,6 +6,7 @@ A relation is the variant `rows {items}` (world/lib/Relation.obend).
 """
 import base64
 import hashlib
+import json
 
 
 def nat(n):
@@ -87,6 +88,22 @@ def cbor(value):
         return cbor_head(4, len(value)) + b"".join(cbor(v) for v in value)
     keys = sorted(value, key=lambda k: (len(k.encode()), k.encode()))
     return cbor_head(5, len(keys)) + b"".join(cbor(k) + cbor(value[k]) for k in keys)
+
+
+def write_journal(path, entries):
+    """Entries (each with its `hash`, as `transport.journal.entries` reads them) written as the host writes a
+    journal: each record (the entry without `hash`) appended to `<path>.blocks`, each link to `path`. What a
+    test forges is written as it is: the host's open finds it."""
+    store, lines = b"", []
+    for e in entries:
+        raw = cbor({k: v for k, v in e.items() if k != "hash"})
+        lines.append(json.dumps({"height": e["height"], "previous": e["previous"], "hash": e["hash"],
+                                 "at": len(store), "bytes": len(raw)}, separators=(",", ":")) + "\n")
+        store += raw
+    with open(str(path) + ".blocks", "wb") as f:
+        f.write(store)
+    with open(path, "w") as f:
+        f.write("".join(lines))
 
 
 def cid_of(value):

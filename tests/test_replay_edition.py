@@ -9,6 +9,8 @@ somewhere inside replay instead of at its head, or `world-status` not naming the
 import json
 import unittest
 
+from transport.journal import entries as journal_entries
+from tests.wire import write_journal
 from tests.host import HostCase
 from tests.wire import cid_of, nat, record
 from tests.bend import counter_modules
@@ -21,14 +23,12 @@ class ReplayEdition(HostCase):
         self.assertEqual(r["status"], "created", r)
         edition = self.host.send(op="world-status")["replay"]
         self.assertEqual(edition, 4)
-        with open(self.path) as f:
-            [first] = [json.loads(line) for line in f]
+        [first] = journal_entries(self.path)
         self.assertEqual(first["replay"], edition)
         # An edition-1 journal: the field absent, the hash made again so the chain itself is sound.
         del first["replay"], first["hash"]
         first["hash"] = cid_of(first)
-        with open(self.path, "w") as f:
-            f.write(json.dumps(first, separators=(",", ":")) + "\n")
+        write_journal(self.path, [first])
         self.release()
         self.host = self.spawn()
         opened = self.host.send(op="world-open", path=self.path)

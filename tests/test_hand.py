@@ -16,7 +16,9 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
+from transport.journal import records, size
 from tests.test_bridge import spell_post
+from tests.wire import write_journal
 from transport import delve, hand, identity, observe
 from transport.bridge import write_atomic
 from transport.http import Front
@@ -228,7 +230,8 @@ class Cli(HandCase):
                                                               for ago in (100, 200, 7200)))
         journal, backups = self.state / 'j' / 'world.journal', self.state / 'backups'
         journal.parent.mkdir()
-        journal.write_text('{"genesis":1}\n' + ''.join(json.dumps({'outcome': {'tag': 'suspended'}, 'pad': 'x' * n}, separators=(',', ':')) + '\n' for n in (10, 20, 30)))
+        shown = [{'genesis': 1}] + [{'outcome': {'tag': 'suspended'}, 'pad': 'x' * n} for n in (10, 20, 30)]
+        write_journal(journal, [dict(e, height=h, previous='p', hash='h%d' % h) for h, e in enumerate(shown, 1)])
         backups.mkdir()
         (backups / 'delvetalk-20261011T000000Z.tar.gz').write_bytes(b'x')
         (backups / 'last-verify').write_text('ok 20261011T000000Z\n')
@@ -239,7 +242,7 @@ class Cli(HandCase):
         self.assertEqual(p['reservations'], {'source': 'delve', 'used': 3, 'quota': 16, 'next': 60})
         self.assertEqual(p['interpretations'], {'pending': 1, 'maxAttempts': 0})
         self.assertEqual((p['journal']['height'], p['journal']['bytes'], p['journal']['medianSuspendedBytes']),
-                         (41, journal.stat().st_size, len(journal.read_text().splitlines()[2])))
+                         (41, size(journal), len(records(journal)[2][1])))  # the middle suspension's record
         self.assertEqual((p['backup']['newest'], p['backup']['verify']), ('delvetalk-20261011T000000Z.tar.gz', 'ok'))
         self.assertLess(p['backup']['ageSeconds'], 60)
         self.assertEqual(set(p) >= {'clock', 'observed', 'freeFraction', 'at'}, True)

@@ -13,6 +13,7 @@ import tempfile
 import unittest
 
 from tests.host import Host
+from transport.journal import size
 from tests.wire import nat, record
 from tests.bend import counter_modules
 
@@ -44,12 +45,12 @@ class JournalBound(unittest.TestCase):
         return self.host.send(op="world-turn", principal="e", object="c", method="bump", argument=record(), identity="b%d" % n)
 
     def test_an_append_near_the_bound_is_a_capacity_receipt_and_past_it_nothing_is_appended(self):
-        size = os.path.getsize(self.path)
+        start = size(self.path)                         # the chain and the block store
         # A journal over its bound does not open, and the bound is never raised past its cap.
-        for bound in (size - 1, 1 << 40, "big"):
+        for bound in (start - 1, 1 << 40, "big"):
             self.assertEqual(self.open(maxJournalBytes=bound)["status"], "error", bound)
-        self.assertIn("maxJournalBytes", self.open(maxJournalBytes=size - 1)["message"])
-        self.assertEqual(self.open(maxJournalBytes=size + MIB + 3000)["status"], "opened")
+        self.assertIn("maxJournalBytes", self.open(maxJournalBytes=start - 1)["message"])
+        self.assertEqual(self.open(maxJournalBytes=start + MIB + 3000)["status"], "opened")
         admitted = 0
         for n in range(40):
             r = self.bump(n)
@@ -63,16 +64,16 @@ class JournalBound(unittest.TestCase):
         # The refusal is journaled: the receipt answers by identity, and the journal reopens.
         again = self.host.send(op="world-receipt", principal="e", identity="b%d" % admitted)
         self.assertEqual(again["receipt"]["hash"], r["receipt"]["hash"])
-        self.assertLessEqual(os.path.getsize(self.path), size + MIB + 3000)
-        self.assertEqual(self.open(maxJournalBytes=size + MIB + 3000)["status"], "opened")
+        self.assertLessEqual(size(self.path), start + MIB + 3000)
+        self.assertEqual(self.open(maxJournalBytes=start + MIB + 3000)["status"], "opened")
         # Inside the headroom only refusals are written; one that would cross the bound is not.
-        full = self.open(maxJournalBytes=os.path.getsize(self.path) + 100)
+        full = self.open(maxJournalBytes=size(self.path) + 100)
         self.assertEqual(full["status"], "opened", full)
-        before = os.path.getsize(self.path)
+        before = size(self.path)
         r = self.bump(99)
         self.assertEqual(r["status"], "error", r)
         self.assertIn("maxJournalBytes", r["message"])
-        self.assertEqual(os.path.getsize(self.path), before)
+        self.assertEqual(size(self.path), before)
 
 if __name__ == "__main__":
     unittest.main()

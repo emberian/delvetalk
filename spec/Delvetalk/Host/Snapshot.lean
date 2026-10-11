@@ -1,17 +1,21 @@
-/- Snapshots: the store at a journal height, in canonical bytes, so `world-open` replays only
-   the entries after it. A snapshot is derived: the journal stays the only source of truth, and
-   a snapshot that fails any check is refused by name and the previous one (or full replay) used.
+/- Snapshots: the store and every index `record` derives, at a journal height, in canonical bytes, so
+   `world-open` reads them and replays only the entries after it. A snapshot is derived: the journal
+   stays the only source of truth, and a snapshot that fails any check is refused by name and the
+   previous one (or full replay) used.
 
    File: `<journal>.snapshot.<height>.cbor`, the DAG-CBOR of `{body, cid}` where `cid` is the CID
-   of `body`'s canonical bytes. `body` holds what replay computes at a price (objects with their
-   state, law, read policy, ledger, compile inputs by CID, method table; the state types by pin;
-   libraries; grants; posts; settings) and, as cross-checks, what the journal derives cheaply
-   (clock, pending deliveries, suspended activities). Everything `record` derives from entries
-   (receipts, history index, outbox, modules, pending, suspended, clock) is rebuilt by a
-   bookkeeping pass over the entries up to the snapshot height, and must agree with the copies.
+   of `body`'s canonical bytes. `body` holds the store (`storeJson`: objects with their state, law,
+   read policy, ledger, compile inputs by CID, method table; the state types by pin; libraries;
+   grants; posts; settings; the clock) and the indexes (`indexJson`: receipts, the history and
+   change indexes, subscriptions, pending deliveries, suspensions, the outbox, publications, where
+   each source and block lies, reservations, attempts, the root and moderation indexes, the hour's
+   and the day's counts).
 
-   Loading checks, in order: the CID, the edition, its height against the journal, its head against the journal's hash at that height, the
-   derived copies, and finally that every later entry replays on it. -/
+   Loading checks, in order: the CID, the edition, its height against the chain, its head against
+   the chain's hash at that height, that no later `ignore` names a height at or before it, each
+   object's state against the entry its newest change names, and that every later entry, read and
+   checked against the chain, replays on it. `world-open {verify: true}` replays from height 0 and
+   compares every snapshot with the replayed world, which is the proof of the fast path. -/
 import Delvetalk.Host.Ops
 import Delvetalk.Canonical
 
@@ -20,70 +24,7 @@ open Lean (Json toJson)
 open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
 open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
-def edition : String := "delvetalk.snapshot.v2"
-
-/-! ## Canonical bytes back to JSON
-
-`Canonical.encodeJson` writes the snapshot; this reads exactly that subset back (unsigned and
-negative integers, big naturals, text, arrays, maps with text keys, true, false, null). -/
-
-partial def readArg (b : ByteArray) (pos info : Nat) : Except String (Nat × Nat) := do
-  let be := fun (width : Nat) => do
-    if pos + width > b.size then throw "truncated snapshot"
-    return ((List.range width).foldl (fun acc i => acc * 256 + (b.get! (pos + i)).toNat) 0, pos + width)
-  if info < 24 then return (info, pos)
-  else if info == 24 then be 1
-  else if info == 25 then be 2
-  else if info == 26 then be 4
-  else if info == 27 then be 8
-  else throw "snapshot has an indefinite or reserved length"
-
-partial def readJson (b : ByteArray) (pos depth : Nat) : Except String (Json × Nat) := do
-  if depth == 0 then throw "snapshot nesting capacity"
-  if pos ≥ b.size then throw "truncated snapshot"
-  let ib := (b.get! pos).toNat
-  let major := ib / 32
-  let info := ib % 32
-  if major == 7 then
-    if info == 20 then return (Json.bool false, pos + 1)
-    else if info == 21 then return (Json.bool true, pos + 1)
-    else if info == 22 then return (Json.null, pos + 1)
-    else throw "snapshot holds a simple value outside JSON"
-  let (n, p) ← readArg b (pos + 1) info
-  match major with
-  | 0 => return (toJson n, p)
-  | 1 => return (toJson (-(Int.ofNat n) - 1), p)
-  | 2 =>
-    if p + n > b.size then throw "truncated snapshot"
-    return (toJson ((b.extract p (p + n)).foldl (fun acc x => acc * 256 + x.toNat) 0), p + n)
-  | 3 =>
-    if p + n > b.size then throw "truncated snapshot"
-    let some s := String.fromUTF8? (b.extract p (p + n)) | throw "snapshot text is not UTF-8"
-    return (Json.str s, p + n)
-  | 4 =>
-    let mut items : Array Json := #[]
-    let mut at_ := p
-    for _ in [0:n] do
-      let (j, q) ← readJson b at_ (depth - 1)
-      items := items.push j
-      at_ := q
-    return (Json.arr items, at_)
-  | 5 =>
-    let mut fields : Array (String × Json) := #[]
-    let mut at_ := p
-    for _ in [0:n] do
-      let (k, q) ← readJson b at_ (depth - 1)
-      let .str key := k | throw "snapshot map key is not text"
-      let (v, r) ← readJson b q (depth - 1)
-      fields := fields.push (key, v)
-      at_ := r
-    return (Json.mkObj fields.toList, at_)
-  | _ => throw "snapshot holds a CBOR item outside JSON"
-
-def decodeBytes (b : ByteArray) : Except String Json := do
-  let (j, p) ← readJson b 0 Limits.dataDepth
-  unless p == b.size do throw "trailing bytes after the snapshot"
-  return j
+def edition : String := "delvetalk.snapshot.v3"
 
 /-! ## Writing -/
 
@@ -118,15 +59,108 @@ def knownByCid (w : World) (inputs : Json) : Json :=
     | .ok src => if w.modules.contains (sourceCid src) then compact else inputs
     | .error _ => compact
 
-/-- The suspended activities and pending deliveries `record` derives, as their identities. -/
-def derived (w : World) : List (String × Json) :=
-  [("clock", toJson w.clock),
-   ("pending", toJson (w.pending.toList.map fun p => (p.getObjValAs? String "id").toOption.getD "")),
-   ("suspended", toJson (w.suspended.toList.map fun s => (s.getObjValAs? String "hash").toOption.getD ""))]
+/-! ### The indexes -/
 
-/-- The body of a snapshot of `w`. A law that does not read back from its text is refused: the
-    snapshot would judge by another law than replay. -/
-def body (w : World) : Except String Json := do
+def mapJson {α : Type} (m : Std.HashMap String α) (f : α → Json) : Json :=
+  Json.mkObj (m.toList.map fun (k, v) => (k, f v))
+
+def mapOf {α : Type} (j : Json) (f : Json → Except String α) : Except String (Std.HashMap String α) := do
+  (← j.getObj?).toList.foldlM (init := {}) fun m (k, v) => do return m.insert k (← f v)
+
+def pairJson (a b : Nat) : Json := Json.arr #[toJson a, toJson b]
+
+def pairOf (j : Json) : Except String (Nat × Nat) := do
+  let #[a, b] := ← j.getArr? | throw "an index pair is not two naturals"
+  return (← a.getNat?, ← b.getNat?)
+
+def textPairOf (j : Json) : Except String (String × String) := do
+  let #[a, b] := ← j.getArr? | throw "an index pair is not two texts"
+  return (← a.getStr?, ← b.getStr?)
+
+def arrOf {α : Type} (j : Json) (f : Json → Except String α) : Except String (Array α) := do
+  (← j.getArr?).mapM f
+
+/-- Every index `record` derives from the entries up to the world's height (`Ops.recordCore`,
+    `recordActs`, `recordInert`), so an open reads them instead of reading those entries. -/
+def indexJson (w : World) : Json :=
+  Json.mkObj [
+    ("receipts", mapJson w.receipts toJson),
+    ("touched", mapJson w.touched toJson),
+    ("touches", mapJson w.touches fun ts => Json.arr (ts.map fun t => pairJson t.version t.height)),
+    ("anchors", mapJson w.anchors fun a => Json.arr #[toJson a.version, toJson a.pin, toJson a.law]),
+    ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
+    ("subscriptions", mapJson w.subscriptions fun xs => Json.arr (xs.map (·.json))),
+    ("pending", Json.arr w.pending),
+    ("suspended", Json.arr w.suspended),
+    ("replies", mapJson w.replies fun (p, i) => Json.arr #[toJson p, toJson i]),
+    ("handles", mapJson w.handles toJson),
+    ("modules", mapJson w.modules toJson),
+    ("blocks", mapJson w.blocks toJson),
+    ("outbox", mapJson w.outbox fun xs => Json.arr (xs.map fun (a, b) => pairJson a b)),
+    ("published", Json.arr (w.published.map fun (a, b) => pairJson a b)),
+    ("reservations", mapJson w.reservations (·.json)),
+    ("attempts", mapJson w.attempts fun (a, b) => pairJson a b),
+    ("interpretsStarted", mapJson w.interpretsStarted fun (a, b) => pairJson a b),
+    ("rootActs", toJson w.rootActs),
+    ("cards", mapJson w.cards toJson),
+    ("quiets", mapJson w.quiets fun (u, r) => Json.arr #[toJson u, toJson r]),
+    ("hidden", mapJson w.hidden id),
+    ("ignored", toJson w.ignored), ("ignoring", toJson w.ignoring), ("ignoreNamed", toJson w.ignoreNamed),
+    ("shadowed", Json.arr w.shadowed),
+    ("modelDay", pairJson w.modelDay.1 w.modelDay.2), ("hour", w.hourCounts.json),
+    ("forkedFrom", w.forkedFrom.getD Json.null)]
+
+/-- `w` with the indexes `indexJson` wrote. -/
+def installIndex (w : World) (j : Json) : Except String World := do
+  let field := fun (k : String) => j.getObjVal? k
+  let nats := fun (x : Json) => (Lean.fromJson? x : Except String (List Nat))
+  let quiet := fun (x : Json) => do
+    let #[u, r] := ← x.getArr? | throw "a quiet is not a clock and a reading"
+    return (← u.getNat?, ← r.getStr?)
+  let change := fun (x : Json) => do
+    let #[h, o, v, p] := ← x.getArr? | throw "a change is not four fields"
+    return ({ height := ← h.getNat?, object := ← o.getStr?, version := ← v.getNat?, principal := ← p.getStr? } : Change)
+  return { w with
+    receipts := ← mapOf (← field "receipts") (·.getNat?)
+    touched := ← mapOf (← field "touched") fun x => arrOf x (·.getNat?)
+    touches := ← mapOf (← field "touches") fun x => arrOf x fun t => do
+      let (version, height) ← pairOf t
+      return ({ version, height } : Touch)
+    anchors := ← mapOf (← field "anchors") fun x => do
+      let #[v, p, l] := ← x.getArr? | throw "an anchor is not three heights"
+      return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat? } : Anchor)
+    changes := ← arrOf (← field "changes") change
+    subscriptions := ← mapOf (← field "subscriptions") fun x => arrOf x Subscription.ofJson
+    pending := ← (← field "pending").getArr?
+    suspended := ← (← field "suspended").getArr?
+    replies := ← mapOf (← field "replies") textPairOf
+    handles := ← mapOf (← field "handles") (·.getStr?)
+    modules := ← mapOf (← field "modules") (·.getNat?)
+    blocks := ← mapOf (← field "blocks") (·.getNat?)
+    outbox := ← mapOf (← field "outbox") fun x => arrOf x pairOf
+    published := ← arrOf (← field "published") pairOf
+    reservations := ← mapOf (← field "reservations") Reservation.ofJson
+    attempts := ← mapOf (← field "attempts") pairOf
+    interpretsStarted := ← mapOf (← field "interpretsStarted") pairOf
+    rootActs := ← (← field "rootActs").getNat?
+    cards := ← mapOf (← field "cards") (·.getStr?)
+    quiets := ← mapOf (← field "quiets") quiet
+    hidden := ← mapOf (← field "hidden") pure
+    ignored := ← nats (← field "ignored")
+    ignoring := ← nats (← field "ignoring")
+    ignoreNamed := ← nats (← field "ignoreNamed")
+    shadowed := ← (← field "shadowed").getArr?
+    modelDay := ← pairOf (← field "modelDay")
+    hourCounts := ← HourCounts.ofJson (← field "hour")
+    forkedFrom := match field "forkedFrom" with
+      | .ok .null | .error _ => none
+      | .ok f => some f }
+
+/-! ### The store -/
+
+/-- The store of `w`: what replay computes at a price. A law that does not read back from its text is
+    refused: the snapshot would judge by another law than replay. A fork's genesis carries it too. -/
+def storeJson (w : World) : Except String Json := do
   let objects := sortedBy w.objects.toList (·.1)
   let mut types : List (String × Json) := []
   let mut out : Array Json := #[]
@@ -150,8 +184,7 @@ def body (w : World) : Except String Json := do
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
-  return Json.mkObj ([("edition", toJson edition), ("height", toJson w.height),
-    ("head", toJson w.head),
+  return Json.mkObj [("clock", toJson w.clock),
     ("library", toJson ((w.library.map (·.pin)).getD "")), ("libraryLaw", toJson w.libraryLaw),
     ("libraries", Json.arr (libraries.toArray.map fun (pin, l) =>
       Json.mkObj [("pin", toJson pin), ("modules", modulesJson l.modules)])),
@@ -162,9 +195,13 @@ def body (w : World) : Except String Json := do
       (if w.name.isEmpty then [] else [("name", toJson w.name)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
     ("grants", Json.arr (grants.toArray.map fun (_, g) => (g.json).setObjVal! "revoked" (toJson g.revoked))),
-    ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))] ++
-    (if w.shadowed.isEmpty then [] else [("shadowed", Json.arr w.shadowed)]) ++
-    derived w)
+    ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))]
+
+/-- The body of a snapshot of `w`: its edition, height and head, the store and the indexes. -/
+def body (w : World) : Except String Json := do
+  let store ← storeJson w
+  return Json.mkObj (((store.getObj?.toOption.map (·.toList)).getD []) ++ [("edition", toJson edition),
+    ("height", toJson w.height), ("head", toJson w.head), ("index", indexJson w)])
 
 def fileOf (journal : String) (height : Nat) : String := s!"{journal}.snapshot.{height}.cbor"
 
@@ -181,7 +218,7 @@ def encode (w : World) : Except String ByteArray := do
 def split (b : ByteArray) : Except String (String × ByteArray) := do
   let text := fun (pos : Nat) => do
     if pos ≥ b.size || (b.get! pos).toNat / 32 != 3 then throw "the snapshot is not {cid, body}"
-    let (n, p) ← readArg b (pos + 1) ((b.get! pos).toNat % 32)
+    let (n, p) ← Delvetalk.Canonical.readArg b (pos + 1) ((b.get! pos).toNat % 32)
     if p + n > b.size then throw "truncated snapshot"
     let some s := String.fromUTF8? (b.extract p (p + n)) | throw "snapshot text is not UTF-8"
     return (s, p + n)
@@ -191,7 +228,7 @@ def split (b : ByteArray) : Except String (String × ByteArray) := do
   let (k2, p) ← text p
   unless k1 == "cid" && k2 == "body" do throw "the snapshot is not {cid, body}"
   unless p < b.size && (b.get! p).toNat / 32 == 2 do throw "the snapshot body is not bytes"
-  let (n, p) ← readArg b (p + 1) ((b.get! p).toNat % 32)
+  let (n, p) ← Delvetalk.Canonical.readArg b (p + 1) ((b.get! p).toNat % 32)
   unless p + n == b.size do throw "the snapshot body is not its length"
   return (cid, b.extract p (p + n))
 
@@ -228,24 +265,10 @@ def write (journal : String) (w : World) : IO (Except String Nat) := do
       return .ok w.height
   catch e => return .error s!"snapshot write failed: {e}"
 
-/-! ## Reading -/
-
-/-- The checked body of a snapshot file's bytes, refused by name. -/
-def verifiedBody (bytes : ByteArray) (height : Nat) (entries : Array Json) : Except String Json := do
-  if bytes.size > Limits.maxSnapshotBytes then throw "exceeds its byte capacity"
-  let (cid, raw) ← split bytes
-  unless cid == Delvetalk.Canonical.cid raw do throw "its bytes are not its CID's"
-  let b ← decodeBytes raw
-  unless (← b.getObjValAs? String "edition") == edition do throw "another snapshot edition"
-  unless (← natField b "height") == height do throw "its height is not its file name's"
-  if height == 0 || height > entries.size then throw "the journal is shorter than its height"
-  unless (entries[height - 1]!.getObjValAs? String "hash").toOption == some (← b.getObjValAs? String "head") do
-    throw "its head is not the journal's hash at its height"
-  return b
-
-/-- The store a snapshot body holds (objects, types, libraries, grants, posts, settings). -/
-def install (b : Json) (modules : Std.HashMap String String) : Except String World := do
-  let mut w : World := { modules }
+/-- `base` with the store a snapshot body (or a fork's genesis) holds: objects, types, libraries,
+    grants, posts, settings, the clock. Compile inputs name sources through `base`'s journal. -/
+def install (b : Json) (base : World) : Except String World := do
+  let mut w := base
   let mut libraries : Std.HashMap String Library := {}
   for l in ← (← b.getObjVal? "libraries").getArr? do
     let pin ← l.getObjValAs? String "pin"
@@ -318,34 +341,7 @@ def install (b : Json) (modules : Std.HashMap String String) : Except String Wor
   for p in ← (← b.getObjVal? "posts").getArr? do
     let (uri, post) ← Post.ofJson p
     posts := posts.insert uri post
-  return { w with objects, grants, posts }
-
-/-- The bookkeeping `record` derives from entries, with no judging: receipts, the history index,
-    outbox, publications, sources, pending deliveries, suspensions, the clock. -/
-def recordAll (w : World) (entries : Array Json) : Except String World := do
-  let mut w := w
-  let shadowed := w.shadowed.toList.filterMap (·.getObjValAs? Nat "height" |>.toOption)
-  for entry in entries do
-    -- An ignored or shadowed entry has no effect to book.
-    if w.ignoring.contains (w.height + 1) || shadowed.contains (w.height + 1) then
-      w := recordInert w entry
-      continue
-    let identity ← entry.getObjVal? "identity"
-    let key := identityKey (← identity.getObjValAs? String "principal") (← identity.getObjValAs? String "intent")
-    -- `touched` is the objects an entry wrote, created or held a grant of, as `commit` indexed it.
-    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
-    let ids := fun (k : String) => (((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
-      fun x => (x.getObjValAs? String "object").toOption
-    let touch := match tagOf entry with
-      | "admitted" =>
-        let written := ids "writes"
-        let holders := (((outcome.getObjVal? "grants").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
-          fun g => (g.getObjValAs? String "holder").toOption
-        written ++ ids "creates" ++ (holders.filter (!written.contains ·)).eraseDups
-      | "created" | "posted" => ((outcome.getObjValAs? String "object").toOption.map ([·])).getD []
-      | _ => []
-    w := record w entry key touch
-  return w
+  return { w with objects, grants, posts, clock := ← natField b "clock" }
 
 /-! ## Forks
 
@@ -366,7 +362,7 @@ def forkGenesis (w : World) (principal world : String) (height : Nat) (cid : Str
   let grants := w.grants.filter fun _ g => keeps g.object
   let shown : World := { w with objects := carried, modules := {}, posts := {}, grants, opener := principal,
                                 clockPrincipal := principal, settled := true, libraryLaw := lawText }
-  let state ← body shown
+  let state ← storeJson shown
   let pending := w.pending.filter fun p => keeps ((p.getObjValAs? String "to").toOption.getD "")
   let suspended ← (w.suspended.filter fun e => keeps (((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
       |>.bind (·.getObjValAs? String "object" |>.toOption)).getD "")).mapM fun e => do
@@ -391,9 +387,9 @@ def forkGenesis (w : World) (principal world : String) (height : Nat) (cid : Str
     ("turn", toJson 0), ("request", toJson (Journal.bodyHash origin)), ("outcome", outcome)]
   return (entry, omitted)
 
-/-- The world a fork's genesis entry starts: its store installed, its carried pending deliveries
-    and suspended activities, handles and origin, and the entry recorded. -/
-def installFork (entry : Json) : Except String World := do
+/-- The world a fork's genesis entry (the first of `entries`) starts: its store installed, its carried
+    pending deliveries and suspended activities, handles and origin, and the entry recorded. -/
+def installFork (entries : Entries) (entry : Json) : Except String World := do
   let outcome ← entry.getObjVal? "outcome"
   let state ← outcome.getObjVal? "state"
   let w ← install state {}
@@ -401,195 +397,196 @@ def installFork (entry : Json) : Except String World := do
   let handles := (arr "handles").foldl (fun m h => match h.getObjValAs? String "did", h.getObjValAs? String "handle" with
     | .ok d, .ok x => m.insert d x
     | _, _ => m) ({} : Std.HashMap String String)
-  let clock ← natField state "clock"
   let forkedFrom := (outcome.getObjVal? "forkedFrom").toOption
   let cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {}
-  let w := { w with clock, pending := arr "pending", suspended := arr "suspended", handles, forkedFrom, cachedPackets }
+  let w := { w with pending := arr "pending", suspended := arr "suspended", handles, forkedFrom, cachedPackets,
+                    entries := entries.upTo 1 }
   let identity ← entry.getObjVal? "identity"
   return record w entry (identityKey (← identity.getObjValAs? String "principal") (← identity.getObjValAs? String "intent")) []
 
-/-- Where replay of a journal starts: a fork's installed genesis and one entry consumed, else an empty world. -/
-def startOf (entries : Array Json) (caches : Caches := {}) : Except String (World × Nat) := do
-  match entries[0]? with
-  | some e => if tagOf e == "forked" then return ((← installFork e).withCaches caches, 1) else return (({} : World).withCaches caches, 0)
-  | none => return (({} : World).withCaches caches, 0)
+/-! ## Reading -/
 
-/-- What the entries say each object is, without judging: created (with its pin), then each
-    admitted write's recorded version and each reprogram's new pin. -/
-def expectedObjects (entries : Array Json) (inert : List Nat := []) : Std.HashMap String (Nat × String) := Id.run do
-  let mut out : Std.HashMap String (Nat × String) := {}
-  for (entry, i) in entries.zipIdx do
-    if inert.contains (i + 1) then continue
-    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
-    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
-    let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
-    match tagOf entry with
-    | "forked" =>
-      for o in ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[] do
-        out := out.insert (text o "id") ((o.getObjValAs? Nat "version").toOption.getD 0, text o "pin")
-    | "created" => out := out.insert (text outcome "object") (0, text outcome "pin")
-    | "admitted" =>
-      for c in arr "creates" do out := out.insert (text c "object") (0, text c "pin")
-      for x in arr "writes" do
-        let id := text x "object"
-        let pin := ((out[id]?).map (·.2)).getD ""
-        out := out.insert id ((x.getObjValAs? Nat "version").toOption.getD 0, pin)
-      for r in arr "reprograms" do
-        let id := text r "object"
-        out := out.insert id (((out[id]?).map (·.1)).getD 0, text r "newPin")
-    | "root" =>
-      -- A root act names the version and pin it leaves (`set state`, `owner`, `version`, `program`, `pin`).
-      let id := text outcome "object"
-      let after := (outcome.getObjVal? "after").toOption.getD Json.null
-      if actOf outcome == "delete" then out := out.erase id else
-      if let some (v, pin) := out[id]? then
-        let v := (outcome.getObjValAs? Nat "version").toOption.getD
-          (if text outcome "field" == "version" then (after.getNat?.toOption.getD v) else v)
-        let pin := match text outcome "field" with
-          | "pin" => (after.getStr?.toOption).getD pin
-          | "program" => (outcome.getObjValAs? String "pin").toOption.getD pin
-          | _ => pin
-        out := out.insert id (v, pin)
-    | _ => pure ()
-  return out
+/-- The checked body of a snapshot file's bytes, refused by name. -/
+def verifiedBody (bytes : ByteArray) (height : Nat) (entries : Entries) : Except String Json := do
+  if bytes.size > Limits.maxSnapshotBytes then throw "exceeds its byte capacity"
+  let (cid, raw) ← split bytes
+  unless cid == Delvetalk.Canonical.cid raw do throw "its bytes are not its CID's"
+  let b ← Delvetalk.Canonical.decodeJson raw Limits.dataDepth
+  unless (← b.getObjValAs? String "edition") == edition do throw "another snapshot edition"
+  unless (← natField b "height") == height do throw "its height is not its file name's"
+  if height == 0 || height > entries.count then throw "the journal is shorter than its height"
+  unless entries.hashAt? (height - 1) == some (← b.getObjValAs? String "head") do
+    throw "its head is not the journal's hash at its height"
+  return b
 
-/-- The law text each object holds by the entries, without judging: a fork genesis's, a creation's
-    (`lawText`, or the `law` a creating turn journals), then each amendment's `new`. An object whose
-    creation journals no law (a journal from before host12) is absent. -/
-def expectedLaws (entries : Array Json) (inert : List Nat := []) : Std.HashMap String String := Id.run do
-  let mut out : Std.HashMap String String := {}
-  for (entry, i) in entries.zipIdx do
-    if inert.contains (i + 1) then continue
-    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
-    let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
-    let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption
-    match tagOf entry with
-    | "forked" =>
-      for o in ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[] do
-        if let (some id, some law) := (text o "id", text o "law") then out := out.insert id law
-    | "created" =>
-      if let (some id, some law) := (text outcome "object", text outcome "lawText") then out := out.insert id law
-    | "admitted" =>
-      for c in arr "creates" do
-        if let (some id, some law) := (text c "object", text c "law") then out := out.insert id law
-      for a in arr "amendments" do
-        if let (some id, some law) := (text a "object", text a "new") then out := out.insert id law
-    | "root" | "moderated" =>
-      let act := actOf outcome
-      if let some id := text outcome "object" then
-        if act == "delete" then out := out.erase id
-        else if (act == "set" && text outcome "field" == some "law") || act == "retire" || act == "unretire" then
-          if let some law := (outcome.getObjVal? "after").toOption.bind (·.getStr?.toOption) then out := out.insert id law
-    | _ => pure ()
-  return out
-
-/-- The state CIDs the journal itself commits to, by object and version: a created state (its
-    seed is the whole state) and a write's `cid` (host7). -/
-def anchoredStates (entries : Array Json) (inert : List Nat := []) : Std.HashMap (String × Nat) String := Id.run do
-  let mut out : Std.HashMap (String × Nat) String := {}
-  for (entry, i) in entries.zipIdx do
-    if inert.contains (i + 1) then continue
-    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
-    let arr := fun (j : Json) (k : String) => ((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
-    let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
-    match tagOf entry with
-    | "forked" =>
-      for o in ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[] do
-        if let (.ok v, .ok c) := (o.getObjValAs? Nat "version", o.getObjValAs? String "stateCid") then
-          out := out.insert (text o "id", v) c
-    | "created" =>
-      if let .ok seed := outcome.getObjVal? "seed" then out := out.insert (text outcome "object", 0) (Journal.bodyHash seed)
-    | "admitted" =>
-      for c in arr outcome "creates" do
-        if let .ok seed := c.getObjVal? "seed" then out := out.insert (text c "object", 0) (Journal.bodyHash seed)
-      for x in arr outcome "writes" do
-        if let (.ok v, .ok c) := (x.getObjValAs? Nat "version", x.getObjValAs? String "cid") then
-          out := out.insert (text x "object", v) c
-    | "root" =>
-      if let (.ok v, .ok c) := (outcome.getObjValAs? Nat "version", outcome.getObjValAs? String "cid") then
-        out := out.insert (text outcome "object", v) c
-    | _ => pure ()
-  return out
-
-/-- A world from a snapshot body and the journal's entries: the store installed, the entries up
-    to its height recorded, the derived copies compared, the later entries replayed. -/
-def resume (b : Json) (entries : Array Json) (caches : Caches := {}) : Except String World := do
+/-- The world a snapshot body holds over `entries` (its height's prefix): the indexes, then the store. -/
+def installBody (b : Json) (entries : Entries) (caches : Caches) : Except String World := do
   let height ← natField b "height"
-  let early := entries.extract 0 height
-  -- An ignore after the snapshot changes what every entry before it did (docs/ROOT.md §1.3).
-  if (entries.extract height entries.size).any isIgnoreAct then throw "an ignore after it changes what it holds"
-  let (start, skip) ← startOf entries caches
-  let shadowed := ((b.getObjVal? "shadowed").toOption.bind (·.getArr?.toOption)).getD #[]
-  let inert := ignoreSet entries ++ shadowed.toList.filterMap (·.getObjValAs? Nat "height" |>.toOption)
-  let booked ← recordAll { start with ignoring := ignoreSet entries, ignoreNamed := ignoreNamed entries, shadowed } (early.extract skip early.size)
-  let w ← install b booked.modules
-  let w := { booked with library := w.library, libraries := w.libraries, libraryLaw := w.libraryLaw,
-                         objects := w.objects, grants := w.grants, posts := w.posts,
-                         cachedPackets := w.objects.fold (fun m _ o =>
-                           if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {},
-                         clockPrincipal := w.clockPrincipal, postQuota := w.postQuota, opener := w.opener,
-                         interpretQuota := w.interpretQuota, modelQuota := w.modelQuota,
-                         settled := w.settled }
-  for (k, v) in derived w do
-    unless (b.getObjVal? k).toOption == some v do throw s!"its {k} is not the journal's"
-  let expected := expectedObjects early inert
-  unless expected.size == w.objects.size do throw "its objects are not the journal's"
+  let base ← installIndex { entries := entries.upTo height, height, head := ← b.getObjValAs? String "head" } (← b.getObjVal? "index")
+  let w ← install b base
+  return { w.withCaches caches with
+    cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {} }
+
+/-- Each object against the entries its anchors name (`World.anchors`): the version, the state's CID
+    where that entry names one, the pin and the law text are the journal's. A forger who recomputes a
+    snapshot's CIDs moves no entry. -/
+def checkAnchors (w : World) : Except String Unit := do
+  let mut read : Std.HashMap Nat Json := {}
   for (id, o) in w.objects.toList do
-    unless expected[id]? == some (o.version, o.pin) do throw s!"object {id} is not at the journal's version and pin"
-  -- Each law against the one the journal gives it (codex host 7: a forger who rewrites a law and
-  -- recomputes the snapshot's CID moves no version, pin or state).
-  let laws := expectedLaws early inert
-  for (id, o) in w.objects.toList do
-    if let some law := laws[id]? then
-      unless law == o.lawText do throw s!"the law of {id} is not the journal's"
-  -- Each state against the CID the journal commits to at its version, where it names one.
-  let anchored := anchoredStates entries inert
-  for (id, o) in w.objects.toList do
-    if let some cid := anchored[(id, o.version)]? then
+    let some a := w.anchors[id]? | throw s!"object {id} is not the journal's"
+    let mut entries : List (Nat × Json) := []
+    for h in [a.version, a.pin, a.law].eraseDups do
+      match read[h]? with
+      | some e => entries := (h, e) :: entries
+      | none =>
+        let some e := w.entries.get? (h - 1) | throw s!"the entry at height {h}, which {id} rests on, is not readable"
+        read := read.insert h e
+        entries := (h, e) :: entries
+    let at_ := fun (h : Nat) => (entries.lookup h).getD Json.null
+    unless versionIn (at_ a.version) id == some o.version do throw s!"object {id} is not at the journal's version and pin"
+    if let some cid := stateCidIn (at_ a.version) id o.version then
       unless cid == stateCid o.state do throw s!"the state of {id} is not the one the journal commits to at version {o.version}"
-  let mut w := w
-  for entry in entries.extract height entries.size do
-    match replayStep w entry with
-    | .ok w' => w := w'
-    | .error e => throw s!"the entry at height {w.height + 1} does not replay on it: {e}"
+    unless pinIn (at_ a.pin) id == some o.pin do throw s!"object {id} is not at the journal's version and pin"
+    if let some law := lawIn (at_ a.law) id then
+      unless law == o.lawText do throw s!"the law of {id} is not the journal's"
+
+/-- The entry at index `i` of `src`, checked against the chain: its record is its CID's (`Entries.get?`
+    reads only such), its height is `i + 1`, and it names the entry before it (the genesis, or for a
+    fork's genesis the entry it was forked from). -/
+def checkedEntry (src : Entries) (i : Nat) : Except String Json := do
+  let fail {α : Type} (what : String) : Except String α := throw s!"journal broken at height {i + 1}: {what}"
+  let some entry := src.get? i | fail "its record is missing or not its CID's"
+  unless (entry.getObjValAs? Nat "height").toOption == some (i + 1) do fail "height out of sequence"
+  let previous := (entry.getObjValAs? String "previous").toOption.getD ""
+  let expected := if i > 0 then (src.hashAt? (i - 1)).getD "" else if tagOf entry == "forked" then
+      ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "forkedFrom" |>.toOption)
+        |>.bind (·.getObjValAs? String "cid" |>.toOption)).getD ""
+    else Limits.genesis
+  unless previous == expected do
+    fail (if i == 0 && tagOf entry == "forked" then "a fork's genesis must chain to the cid it was forked from"
+      else "previous hash does not chain")
+  return entry
+
+/-- `w` with the entry at its next height replayed from `src` (`Ops.replayStep`), the entries it may
+    read being `src`'s up to and including that one. -/
+def replayNext (w : World) (src : Entries) : Except String World := do
+  let entry ← checkedEntry src w.height
+  replayStep { w with entries := src.upTo (w.height + 1) } entry
+
+/-- The ignore set and the named heights the root `ignore`/`unignore` entries of `src` from index
+    `start` leave, over `ignoring` and `named` (read in order: the last act on a height wins). An act
+    naming a height at or below `floor` (a snapshot's) changes what that snapshot holds. -/
+def ignoresFrom (src : Entries) (start : Nat) (ignoring named : List Nat) (floor : Nat := 0) :
+    Except String (List Nat × List Nat) := do
+  let mut ignoring := ignoring
+  let mut named := named
+  for i in [start:src.count] do
+    let entry ← checkedEntry src i
+    unless isIgnoreAct entry do continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let h := (outcome.getObjValAs? Nat "height").toOption.getD 0
+    if h ≤ floor then throw "an ignore after it changes what it holds"
+    ignoring := if actOf outcome == "ignore" then (ignoring.erase h) ++ [h] else ignoring.erase h
+    named := if named.contains h then named else named ++ [h]
+  return (ignoring, named)
+
+/-- Where replay of a journal starts: a fork's installed genesis and one entry consumed, else an empty world. -/
+def startOf (src : Entries) (caches : Caches := {}) : Except String World := do
+  if src.count == 0 then return ({ entries := src.upTo 0 } : World).withCaches caches
+  let first ← checkedEntry src 0
+  if tagOf first == "forked" then return (← installFork src first).withCaches caches
+  return ({ entries := src.upTo 0 } : World).withCaches caches
+
+/-- Full replay from height 0: the slow path, which `verify` compares every snapshot with. -/
+def replayAll (src : Entries) (caches : Caches := {}) : Except String World := do
+  let start ← startOf src caches
+  let (ignoring, ignoreNamed) ← ignoresFrom src start.height [] []
+  let mut w := { start with ignoring, ignoreNamed }
+  while w.height < src.count do
+    w ← (replayNext w src).mapError fun e => if e.startsWith "journal broken" then e else s!"journal broken at height {w.height + 1}: {e}"
+  return w
+
+/-- A world from a snapshot body: the indexes and the store installed, every object's state against
+    its anchor, then every later entry checked against the chain and replayed. An `ignore` or
+    `unignore` after it that names a height at or before it would change what it holds. -/
+def resume (b : Json) (src : Entries) (caches : Caches := {}) : Except String World := do
+  let height ← natField b "height"
+  let w ← installBody b src caches
+  let (ignoring, ignoreNamed) ← ignoresFrom src height w.ignoring w.ignoreNamed height
+  checkAnchors w
+  let mut w := { w with ignoring, ignoreNamed }
+  while w.height < src.count do
+    w ← (replayNext w src).mapError fun e => s!"the entry at height {w.height + 1} does not replay on it: {e}"
   return w
 
 /-! ## Opening -/
 
-/-- The journal's lines, parsed and hash-walked from genesis (cheap: no judging, no compiling). -/
-def entriesOf (content : String) : Except String (Array Json) := do
+/-- The block store beside a journal. -/
+def storeOf (journal : String) : String := journal ++ ".blocks"
+
+/-- The chain file's links, each naming the one before it (`Blocks.Link`); a line that is not a link
+    (the line format, whole entries per line, before the block store) is refused by name. -/
+def chainOf (journal content : String) : Except String (Array Link) := do
   let lines := content.splitOn "\n"
   let (complete, tail) := (lines.dropLast, lines.getLast?.getD "")
   if complete.length ≥ Limits.maxJournalEntries then throw "journal exceeds entry capacity"
-  let mut out : Array Json := #[]
-  let mut head := Limits.genesis
+  let mut out : Array Link := #[]
   for line in complete do
     let height := out.size + 1
-    let entry ← match Json.parse line with
-      | .ok e => pure e
-      | .error _ => throw s!"journal broken at height {height}: unparsable line"
-    -- A fork's genesis chains to the forked world's entry at its height, which it names.
-    if height == 1 && tagOf entry == "forked" then
-      let previous := (entry.getObjValAs? String "previous").toOption.getD ""
-      unless ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "forkedFrom" |>.toOption)
-          |>.bind (·.getObjValAs? String "cid" |>.toOption)) == some previous do
-        throw "journal broken at height 1: a fork's genesis must chain to the cid it was forked from"
-      head := previous
-    Journal.verify height head entry
-    head := (entry.getObjValAs? String "hash").toOption.getD ""
-    out := out.push entry
+    if height == 1 && (line.splitOn "\"outcome\"").length > 1 then
+      throw s!"{journal} holds whole entries, one per line (the format before the block store): `delvetalk-obend migrate --journal {journal} --out NEW` writes it as a chain and a block store"
+    let some link := Link.ofLine line | throw s!"journal broken at height {height}: unparsable line"
+    unless link.height == height do throw s!"journal broken at height {height}: height out of sequence"
+    if let some prev := out.back? then
+      unless link.previous == prev.hash do throw s!"journal broken at height {height}: previous hash does not chain"
+    out := out.push link
   unless tail.isEmpty do throw s!"journal broken at height {out.size + 1}: unterminated final line"
   return out
 
-/-- Full replay of verified entries. -/
-def replayAll (entries : Array Json) (caches : Caches := {}) : Except String World := do
-  let (start, skip) ← startOf entries caches
-  let mut w := { start with ignoring := ignoreSet entries, ignoreNamed := ignoreNamed entries }
-  for entry in entries.extract skip entries.size do
-    match replayStep w entry with
-    | .ok w' => w := w'
-    | .error e => throw s!"journal broken at height {w.height + 1}: {e}"
-  return w
+/-- The journal at `journal` as `Entries`: its chain, read whole, over its block store, read only when
+    asked. Every link must lie inside the store. -/
+def openEntries (journal : String) : IO (Except String Entries) := do
+  let chain ← if ← System.FilePath.pathExists journal then IO.FS.readFile journal else pure ""
+  let links ← match chainOf journal chain with
+    | .ok l => pure l
+    | .error e => return .error e
+  let store := storeOf journal
+  unless ← System.FilePath.pathExists store do
+    if links.isEmpty then return .ok { depth := Limits.dataDepth }
+    return .error s!"journal broken: its block store {store} is missing"
+  let size := (← System.FilePath.metadata store).byteSize.toNat
+  let handle ← IO.FS.Handle.mk store .read
+  let mut e : Entries := { store := some handle, depth := Limits.dataDepth }
+  for l in links do
+    if l.offset + l.bytes > size then return .error s!"journal broken at height {l.height}: its record lies past the block store's end"
+    e := e.pushStored l.hash (l.offset, l.bytes)
+  return .ok e
+
+/-- Every entry of the journal at `journal`, read and checked (`root-edit`, `migrate`'s check). -/
+def journalEntries (journal : String) : IO (Except String (Array Json)) := do
+  match ← openEntries journal with
+  | .error e => return .error e
+  | .ok src => return (List.range src.count).toArray.mapM (checkedEntry src)
+
+/-- Entries as a fresh journal: each record appended to `<path>.blocks`, then each link to `path`.
+    Neither file may exist. -/
+def writeJournal (path : String) (entries : Array Json) : IO (Except String Unit) := do
+  try
+    if (← System.FilePath.pathExists path) || (← System.FilePath.pathExists (storeOf path)) then
+      return .error s!"{path} already exists"
+    let mut records := ByteArray.empty
+    let mut lines := ""
+    for e in entries do
+      let r ← match recordBytes e with
+        | .ok r => pure r
+        | .error err => return .error s!"an entry has no canonical form: {err}"
+      let link := Link.of e records.size r.size
+      records := records ++ r
+      lines := lines ++ link.json.compress ++ "\n"
+    IO.FS.writeBinFile (storeOf path) records
+    IO.FS.writeFile path lines
+    return .ok ()
+  catch e => return .error s!"journal write failed: {e}"
 
 /-- What an open did with the snapshots: the height it resumed from (0: full replay) and each
     snapshot it refused, by name. -/
@@ -601,51 +598,62 @@ def Report.json (r : Report) : Json :=
   Json.mkObj [("resumed", toJson r.resumed), ("refused", Json.arr (r.refused.toArray.map fun (h, why) =>
     Json.mkObj [("height", toJson h), ("reason", toJson why)]))]
 
-/-- Open a journal's content: the newest snapshot that passes every check, else full replay.
-    With `verify`, replay everything and compare every snapshot with the replayed store at its
-    height; a snapshot that disagrees is refused by name. -/
-def openContent (journal content : String) (verify : Bool := false) (caches : Caches := {}) :
-    IO (Except String (World × Report)) := do
-  let entries ← match entriesOf content with
-    | .ok e => pure e
-    | .error e => return .error e
-  -- A journal of another replay edition is refused by name before anything is replayed.
-  if let some first := entries[0]? then
-    let edition := (first.getObjValAs? Nat "replay").toOption.getD 1
-    if edition != Limits.replayEdition then
-      return .error s!"journal replay edition {edition}; this host is {Limits.replayEdition}; a world from another host's edition does not reopen: make it again with a new genesis"
-  let snaps ← files journal
+/-- The world `src` holds: from the newest snapshot that passes every check, else by full replay.
+    `world-open` and the re-derivation after an `ignore` both come here. -/
+def reopen (journal : String) (src : Entries) (caches : Caches := {}) : IO (Except String (World × Report)) := do
   let mut report : Report := {}
-  if verify then
-    let heights := snaps.map (·.1)
-    let (start, skip) ← match startOf entries caches with
-      | .ok r => pure r
-      | .error e => return .error s!"journal broken at height 1: {e}"
-    let mut w := { start with ignoring := ignoreSet entries, ignoreNamed := ignoreNamed entries }
-    for entry in entries.extract skip entries.size do
-      match replayStep w entry with
-      | .ok w' => w := w'
-      | .error e => return .error s!"journal broken at height {w.height + 1}: {e}"
-      if heights.contains w.height then
-        let some (_, f) := snaps.find? (·.1 == w.height) | continue
-        let bytes ← IO.FS.readBinFile f
-        match verifiedBody bytes w.height entries, body w with
-        | .ok mine, .ok replayed =>
-          if mine != replayed then
-            report := { report with refused := report.refused ++ [(w.height, "it disagrees with replay at its height")] }
-        | .error e, _ | _, .error e =>
-          report := { report with refused := report.refused ++ [(w.height, e)] }
-    return .ok (w, report)
-  for (height, f) in snaps do
+  for (height, f) in ← files journal do
+    if height > src.count then
+      report := { report with refused := report.refused ++ [(height, "the journal is shorter than its height")] }
+      continue
     let attempt ← try
         let bytes ← IO.FS.readBinFile f
-        pure (verifiedBody bytes height entries >>= fun b => resume b entries caches)
+        pure (verifiedBody bytes height src >>= fun b => resume b src caches)
       catch e => pure (.error s!"unreadable: {e}")
     match attempt with
     | .ok w => return .ok (w, { report with resumed := height })
     | .error e => report := { report with refused := report.refused ++ [(height, e)] }
-  match replayAll entries caches with
-  | .ok w => return .ok (w, report)
-  | .error e => return .error e
+  return (replayAll src caches).map (·, report)
+
+/-- Open a journal: the newest snapshot that passes every check, else full replay. With `verify`,
+    replay everything and compare every snapshot with the replayed world at its height; a snapshot
+    that disagrees is refused by name. A journal of another replay edition is refused first. -/
+def openJournal (journal : String) (verify : Bool := false) (caches : Caches := {}) :
+    IO (Except String (World × Report)) := do
+  let src ← match ← openEntries journal with
+    | .ok s => pure s
+    | .error e => return .error e
+  if src.count > 0 then
+    let first ← match checkedEntry src 0 with
+      | .ok e => pure e
+      | .error e => return .error e
+    let edition := (first.getObjValAs? Nat "replay").toOption.getD 1
+    if edition != Limits.replayEdition then
+      return .error s!"journal replay edition {edition}; this host is {Limits.replayEdition}; a world from another host's edition does not reopen: make it again with a new genesis"
+  unless verify do return ← reopen journal src caches
+  let snaps ← files journal
+  let heights := snaps.map (·.1)
+  let mut report : Report := {}
+  let start ← match startOf src caches with
+    | .ok w => pure w
+    | .error e => return .error e
+  let (ignoring, ignoreNamed) ← match ignoresFrom src start.height [] [] with
+    | .ok r => pure r
+    | .error e => return .error e
+  let mut w := { start with ignoring, ignoreNamed }
+  while w.height < src.count do
+    match replayNext w src with
+    | .ok w' => w := w'
+    | .error e => return .error (if e.startsWith "journal broken" then e else s!"journal broken at height {w.height + 1}: {e}")
+    if heights.contains w.height then
+      let some (_, f) := snaps.find? (·.1 == w.height) | continue
+      let bytes ← IO.FS.readBinFile f
+      match verifiedBody bytes w.height src, body w with
+      | .ok mine, .ok replayed =>
+        if mine != replayed then
+          report := { report with refused := report.refused ++ [(w.height, "it disagrees with replay at its height")] }
+      | .error e, _ | _, .error e =>
+        report := { report with refused := report.refused ++ [(w.height, e)] }
+  return .ok (w, report)
 
 end Delvetalk.Host.Snapshot

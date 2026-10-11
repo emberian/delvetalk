@@ -2,7 +2,6 @@
    inside its hash, carrying the value it replaced. `rootBefore`, `applyRoot` and `recordActs`
    (Ops.lean) are what live and replay share; this file reads the request and runs `as`. -/
 import Delvetalk.Host.TurnLoop
-import Delvetalk.Host.Snapshot
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -121,8 +120,8 @@ def rootFieldsOf (w : World) (kind : String) (act : Json) (reason : String) : Ex
 /-- `world-root {principal, reason, act}` (docs/ROOT.md §1.1): the opener's act, unjudged except
     `as`, which runs an ordinary turn under `act.principal` with `root {by, reason}` beside it. Every
     other act journals `{identity {opener, root:<n>}, root: true, reason, outcome {tag: root, kind,
-    object?, field?, before, after}}`; an `ignore`/`unignore` then re-derives the store from the
-    journal under the new ignore set. -/
+    object?, field?, before, after}}`; after an `ignore`/`unignore` the session re-derives the store
+    under the new ignore set (`Session`, `Snapshot.reopen`). -/
 def rootOp (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   if w.opener.isEmpty || principal != w.opener then throw "world-root is the opener's"
@@ -154,16 +153,13 @@ def rootOp (w : World) (j : Json) : Except String (World × Json) := do
      ("turn", toJson 0), ("roots", rootsJson []),
      ("request", toJson (Journal.bodyHash (Json.mkObj [("act", act), ("reason", toJson reason)]))),
      ("outcome", outcome)] (if id.isEmpty then [] else [id])
-  -- An ignore changes what every later entry did: the store is the journal's under the new set.
-  let w3 ← if isIgnoreAct entry then (Snapshot.replayAll w2.entries w2.caches).map (·.withCachesOf w2) else pure w2
   let extra := (match (outcome.getObjVal? "after").toOption.bind (·.getObjValAs? Nat "clock" |>.toOption) with
       | some c => if kind == "settings" then clockAffected w c else []
       | none => []) ++
     (if kind == "set" && (outcome.getObjValAs? String "field").toOption == some "pin" then
       [("note", toJson "the pin is stored alone: the object's turns still run the closure its sources compile to, and world-inspect shows the stored pin, until program is set")]
-     else []) ++
-    (if w3.shadowed.isEmpty then [] else [("shadowed", Json.arr w3.shadowed)])
-  return (w3, Json.mkObj ([("status", toJson "root"), ("kind", toJson kind), ("receipt", slugged entry)] ++ extra))
+     else [])
+  return (w2, Json.mkObj ([("status", toJson "root"), ("kind", toJson kind), ("receipt", slugged entry)] ++ extra))
 
 /-- `world-settings {principal, reading, identity?, postQuota?, interpretQuota?, modelQuota?}`: the
     opener replaces quotas without a genesis (docs/ROOT.md §2.2). -/

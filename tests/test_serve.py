@@ -16,6 +16,8 @@ import threading
 import unittest
 from pathlib import Path
 
+from transport.journal import copy as journal_copy
+from transport.journal import entries as journal_entries
 from tests.host import Host, binary, served as Served
 from tests.test_reflection import WORLD_LIBRARY
 from transport.host import HostClient
@@ -88,7 +90,7 @@ class Serve(unittest.TestCase):
         [t.join() for t in threads]
         self.assertEqual(results, {'a': ['admitted'] * 30, 'b': ['admitted'] * 30})
         copy = self.state.parent / 'copy.journal'
-        shutil.copy(self.state / 'town.journal', copy)
+        journal_copy(self.state / 'town.journal', copy)
         h = Host()
         try:
             opened = h.send(op='world-open', path=str(copy))
@@ -116,8 +118,8 @@ class Serve(unittest.TestCase):
         who = 'did:plc:' + 'q' * 24
         got = self.client.send({'op': 'world-arrive', 'principal': 'transport', 'did': who, 'handle': 'q.delve.town'})
         self.assertEqual([c['object'] for c in got.get('created', [])], [who, 'env/' + who, 'wake/' + who], got)
-        settings = [json.loads(l)['outcome'] for l in (self.state / 'town.journal').read_text().splitlines()
-                    if json.loads(l)['outcome'].get('tag') == 'settings']
+        settings = [e['outcome'] for e in journal_entries(self.state / 'town.journal')
+                    if e['outcome'].get('tag') == 'settings']
         self.assertEqual(settings[0]['opener'], OPENER)
 
     def test_the_stateless_session_holds_the_library_and_compiles_by_pin(self):
@@ -260,7 +262,7 @@ class Restart(unittest.TestCase):
                 self.assertEqual(send(server.sock, {'op': 'world-status', 'world': 'ring'})['status'], 'world')
             finally:
                 server.stop()
-            shutil.copy(state / 'ring.journal', state / 'moor.journal')
+            journal_copy(state / 'ring.journal', state / 'moor.journal')
             server = Served(str(state))
             try:
                 r = send(server.sock, {'op': 'world-status', 'world': 'moor'})

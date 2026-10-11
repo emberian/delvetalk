@@ -25,6 +25,7 @@ from deploy import genesis  # noqa: E402
 from transport import interpret, model  # noqa: E402
 from deploy.serve import LIBRARY, Pipe, Served  # noqa: E402
 from transport.host import HostClient  # noqa: E402
+from transport import journal as chain  # noqa: E402
 from transport import post as post_py  # noqa: E402
 
 OWNER = genesis.OPENER  # ember.delve.town (docs/GENESIS.md)
@@ -250,7 +251,7 @@ GRAMMAR = [
 def grammar_probes(out, binary):
     probe = out / 'probe'
     probe.mkdir(exist_ok=True)
-    shutil.copy(out / 'state' / 'town.journal', probe / 'world.journal')
+    chain.copy(out / 'state' / 'town.journal', probe / 'world.journal')
     host = Pipe(binary, probe / 'world.journal', clock='transport')
     results = []
     try:
@@ -388,7 +389,7 @@ def snapshot_replay(out, binary, cuts=4):
     and hold the straight replay's height, head, clock, posts, pending work and every object's state CID
     at every version. Last, `world-open {verify: true}` replays everything and checks each snapshot."""
     src = out / 'state' / 'town.journal'  # serve's journal for its home world (HOST-HANDOFF 125)
-    lines = src.read_bytes().splitlines(keepends=True)
+    lines = chain.links(src)  # one per entry; the block store beside it is copied whole, or cut to a prefix of these
     base = out / 'snapshot'
     shutil.rmtree(base, ignore_errors=True)
 
@@ -399,13 +400,13 @@ def snapshot_replay(out, binary, cuts=4):
         snapped = None
         stderr = ''
         if prefix:
-            j.write_bytes(b''.join(lines[:prefix]))
+            chain.copy(src, j, prefix)
             h = Opened(binary, j)
             snapped = dict(h.send({'op': 'world-snapshot'}), openedAt=h.opened.get('height'))
             stderr += h.close()
         for f in snapshots:  # a snapshot belongs to the journal it is named after: <journal>.snapshot.<height>.cbor
             shutil.copy(f, d / ('world.journal.snapshot.' + f.name.split('.snapshot.', 1)[1]))
-        j.write_bytes(b''.join(lines))
+        chain.copy(src, j)
         h = Opened(binary, j, verify=verify)
         try:
             got = {'opened': h.opened.get('status'), 'snapshot': h.opened.get('snapshot'), 'seconds': h.seconds,
@@ -423,7 +424,7 @@ def snapshot_replay(out, binary, cuts=4):
     # And one cut inside a settling: between two deliveries in a row that one post caused, as a crash between
     # two appends of one durable write leaves it. The open finishes the settling; it must append the entries
     # the run wrote, and the snapshot it writes then is at the settling's end.
-    entries = [json.loads(l) for l in lines]
+    entries = chain.entries(src)
     origin = lambda e: ((e.get('delivery') or {}).get('from') or {}).get('intent')
     inside = next((i for i in range(2, len(entries)) if origin(entries[i]) and origin(entries[i]) == origin(entries[i - 1])), None)
     if inside:
@@ -446,14 +447,14 @@ def snapshot_replay(out, binary, cuts=4):
 
 
 def journal_stats(path):
-    lines = [l for l in open(path, 'rb') if l.strip()]
-    entries = [json.loads(l) for l in lines]
+    entries = chain.entries(path)
+    lengths = [len(raw) for _, raw in chain.records(path)]  # an entry weighs its record's bytes in the block store
     sizes, suspended = collections.defaultdict(list), collections.defaultdict(list)
-    for l, e in zip(lines, entries):
+    for n, e in zip(lengths, entries):
         o = e.get('outcome') or {}
-        sizes[o.get('tag', '?')].append(len(l))
+        sizes[o.get('tag', '?')].append(n)
         if o.get('tag') == 'suspended':
-            suspended[(o.get('activity') or {}).get('object', '?')].append(len(l))
+            suspended[(o.get('activity') or {}).get('object', '?')].append(n)
     journal_stats.sizes = {t: {'count': len(v), 'bytes': sum(v), 'max': max(v), 'median': sorted(v)[len(v) // 2]} for t, v in sizes.items()}
     journal_stats.suspended = {o: {'count': len(v), 'bytes': sum(v), 'first': v[0], 'max': max(v), 'median': sorted(v)[len(v) // 2]}
                                for o, v in suspended.items()}
@@ -541,7 +542,7 @@ def main(argv=None):
         # Offers the host holds for each principal, against what the outbox drafted (by height).
         drafted = {int(p.name.split('-')[0]) for p in (r.state / 'outbox').glob('*.json')}
         held = []
-        for principal in sorted({e['identity']['principal'] for e in map(json.loads, open(r.state / 'town.journal')) if 'identity' in e}):
+        for principal in sorted({e['identity']['principal'] for e in chain.entries(r.state / 'town.journal') if 'identity' in e}):
             got = r.host.send({'op': 'world-offers', 'principal': principal})
             for o in got.get('offers') or []:
                 if (o.get('identity') or {}).get('intent') not in by_uri:
@@ -556,8 +557,8 @@ def main(argv=None):
     results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
     results['snapshotReplay'] = snapshot_replay(r.out, str(Path(a.binary).resolve()))
     entries, tags, classes, reasons = journal_stats(r.state / 'town.journal')
-    results['journal'] = {'height': len(entries), 'bytes': (r.state / 'town.journal').stat().st_size,
-                          'sha256': __import__('hashlib').sha256((r.state / 'town.journal').read_bytes()).hexdigest(),
+    results['journal'] = {'height': len(entries), 'bytes': chain.size(r.state / 'town.journal'),
+                          'sha256': __import__('hashlib').sha256((r.state / 'town.journal').read_bytes() + (r.state / 'town.journal.blocks').read_bytes()).hexdigest(),
                           'outcomes': dict(tags), 'refusedByClass': dict(classes), 'refusals': reasons,
                           'bytesByOutcome': journal_stats.sizes, 'suspendedByObject': journal_stats.suspended}
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))

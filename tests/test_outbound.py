@@ -14,6 +14,8 @@ import shutil
 import tempfile
 import unittest
 
+from transport.journal import entries as journal_entries
+from tests.wire import write_journal
 from tests.host import posted, whole
 
 from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
@@ -370,15 +372,12 @@ class Projection(Reflection):
         self.assertEqual(cid_at("bob", "vault", 0)["status"], "denied")
         # An entry from before carrying a root `cid` replays: the field is ignored.
         self.release()
-        with open(self.path) as f:
-            lines = f.read().splitlines()
-        last = json.loads(lines[-1])
+        entries = journal_entries(self.path)
+        last = entries[-1]
         last["roots"][0]["cid"] = before["vault"]
         del last["hash"]
         last["hash"] = cid_of(last)
-        lines[-1] = json.dumps(last, separators=(",", ":"))
-        with open(self.path, "w") as f:
-            f.write("\n".join(lines) + "\n")
+        write_journal(self.path, entries)
         self.host = self.spawn()
         self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
 

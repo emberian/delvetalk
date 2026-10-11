@@ -427,7 +427,7 @@ def receiptReplies (entry : Json) : List Data :=
 /-- The settled entry of an identity, if it has one (a suspension is not settled). -/
 def settled (w : World) (principal intent : String) : Option Json :=
   match w.receipts[identityKey principal intent]? with
-  | some i => let e := w.entries[i]!; if tagOf e == "suspended" then none else some e
+  | some i => (w.entries.get? i).bind fun e => if tagOf e == "suspended" then none else some e
   | none => none
 
 /-- The id a create with an empty `requireAbsent` gets: `<creator>/<package, lowercased>/<n>`, the
@@ -1830,7 +1830,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         match s.world.objects[fromId]? with
         | none => pure (none, some s!"there is no object {fromId} to have been made from")
         | some fromObj =>
-          if !(s.world.entries.any fun e => (e.getObjValAs? String "hash").toOption == some receipt) then
+          if (s.world.entries.indexOf? receipt).isNone then
             pure (none, some s!"there is no receipt {receipt} in the journal")
           else do
             recordRoot fromId fromObj.version
@@ -2002,7 +2002,7 @@ def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
   match w.receipts[identityKey r.principal r.intent]? with
   | none => none
   | some index =>
-    let entry := w.entries[index]!
+    let entry := w.entries.getD index
     let same := (entry.getObjValAs? String "turnRequest").toOption == some r.digest
     if isTransient entry then none
     else if same then some (turnReply w (reply entry))
@@ -2322,7 +2322,7 @@ def textField (state : Data) (name : String) : Option String :=
 
 /-- The hash of the entry that made `id`'s current version (its newest touching entry). -/
 def versionReceipt (w : World) (id : String) : String :=
-  (((w.touched[id]?).bind (·.back?)).bind fun i => w.entries[i]?.bind fun e => (e.getObjValAs? String "hash").toOption).getD ""
+  (((w.touched[id]?).bind (·.back?)).bind w.entries.hashAt?).getD ""
 
 /-- The opener's powers (docs/ROOT.md §2.2), each a receipted turn under the opener's identity with a
     required reading: on `world`, `quiet`/`unquiet {who, hours}` (their turns refused `quiet` until

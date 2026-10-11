@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from rehearsal.rehearse import journal_stats  # noqa: E402
+from transport import journal as chain  # noqa: E402
 
 ARCS = {'garden': ('plant', 'rain', 'cistern'), 'workshop': ('check', 'propose', 'adopt'), 'rooms': ('enter', 'choose', 'leave')}
 SPELL = re.compile(r'^\s*delvetalk\s+([\w:./-]+)\s+(\S+)', re.M)
@@ -77,7 +78,7 @@ def harvest(run):
     awaiting = {json.loads(p.read_text())['uri'] for p in (state / 'awaiting').glob('*.json')} if (state / 'awaiting').exists() else set()
     steps, spend, hand = jsonl(run / 'bridge.log'), jsonl(state / 'model-spend.jsonl'), jsonl(state / 'hand-log.jsonl')
     r = {'run': str(run), 'observed': dict(collections.Counter(o['kind'] for o in obs)), 'journal': {
-        'height': len(entries), 'bytes': journal.stat().st_size if journal else 0, 'outcomes': dict(tags), 'refusedByClass': dict(classes),
+        'height': len(entries), 'bytes': chain.size(journal) if journal else 0, 'outcomes': dict(tags), 'refusedByClass': dict(classes),
         'medianSuspendedBytes': getattr(journal_stats, 'sizes', {}).get('suspended', {}).get('median', 0)}}
     r['refusals'] = [{'class': c, **it} for c, items in reasons.items() for it in items]
     r['drafts'] = {'total': len(drafts), 'posted': sum(1 for d in drafts if d.get('posted')), 'skipped': sum(1 for d in drafts if d.get('skipped')),

@@ -7,8 +7,11 @@ create and await: objects born in turns, turns suspended on other turns' receipt
 
 The clock is `world-advance`; the host never reads wall time.
 """
+import json
 import unittest
 
+from transport.journal import entries as journal_entries
+from tests.wire import write_journal
 from tests.host import posted
 
 from tests.test_chain import Chain, garden_seed, town_kinds
@@ -230,13 +233,13 @@ class Suspend(Await):
         self.bell()
         self.strike()
         self.release()
-        with open(self.path) as f:
-            text = f.read()
-        i = text.index('"items"', text.rindex("\n", 0, len(text) - 1))  # the strike's checkpoint tokens, journaled as blocks
-        with open(self.path, "w") as f:
-            # A v2 checkpoint's tokens are bare: change the first number in the blocks.
-            j = next(k for k in range(i, len(text)) if text[k].isdigit() and text[k - 1] in "[,")
-            f.write(text[:j] + "9" + text[j:])
+        entries = journal_entries(self.path)
+        text = json.dumps(entries[-1], separators=(",", ":"))
+        i = text.index('"items"')  # the strike's checkpoint tokens, journaled as blocks
+        # A v2 checkpoint's tokens are bare: change the first number in the blocks. The entry keeps its old hash.
+        j = next(k for k in range(i, len(text)) if text[k].isdigit() and text[k - 1] in "[,")
+        entries[-1] = json.loads(text[:j] + "9" + text[j:])
+        write_journal(self.path, entries)
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")

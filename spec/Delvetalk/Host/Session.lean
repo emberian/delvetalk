@@ -33,20 +33,24 @@ def Durability.ofJson? : Option Lean.Json → Except String Durability
 
 structure Open where
   world : World
+  /-- The journal's chain (`Blocks`), held open for appends and locked for the session's life. -/
   path : String
   handle : IO.FS.Handle
+  /-- The block store beside it (`<path>.blocks`), open for appends. -/
+  store : IO.FS.Handle
   /-- The directory the library was loaded from, for `world-library`. -/
   libraryPath : Option String := none
   /-- Height of the newest snapshot written or resumed from; the next is written once the
-      journal is `Limits.snapshotEvery` entries past it. -/
+      journal is `every` entries past it. -/
   snapshotAt : Nat := 0
+  /-- The snapshot cadence (`world-open {snapshotEvery}`, default `Limits.snapshotEvery`). Per process. -/
+  every : Nat := Limits.snapshotEvery
   /-- What the open did with snapshots, for the `world-open` reply. -/
   report : Snapshot.Report := {}
   /-- How appends are made durable (`Durability`). Per process, never journaled. -/
   sync : Durability := .fsync
-  /-- The journal's bytes now, and the bound appends meet (`Limits.maxJournalBytes`, or lower for
-      this process: `world-open {maxJournalBytes}`). -/
-  bytes : Nat := 0
+  /-- The bound the journal's bytes (chain and block store) meet at append (`Limits.maxJournalBytes`,
+      or lower for this process: `world-open {maxJournalBytes}`). -/
   bound : Nat := Limits.maxJournalBytes
 
 abbrev Session := Option Open
@@ -69,25 +73,33 @@ def loadLibrary (path : String) : IO (Except String Library) := do
     return sealLibrary modules
   catch e => return .error s!"library unreadable: {e}"
 
-/-- Open and replay a journal. The handle takes an exclusive advisory lock (`flock`, through
-    `IO.FS.Handle.tryLock`) for the life of the session, so a second process cannot append to
-    (or replay) a journal another holds. `held` is this process's own handle on the same path. -/
-def openWorld (path : String) (held : Option IO.FS.Handle := none) (verify : Bool := false) (caches : Caches := {})
-    (bound : Nat := Limits.maxJournalBytes) : IO (Except String Open) := do
+/-- The size of a file, 0 when there is none. -/
+def fileSize (path : String) : IO Nat := do
+  if ← System.FilePath.pathExists path then return (← System.FilePath.metadata path).byteSize.toNat else return 0
+
+/-- The bytes of a journal: its chain and its block store. -/
+def journalBytes (path : String) : IO Nat := return (← fileSize path) + (← fileSize (Snapshot.storeOf path))
+
+/-- Open a journal (`Snapshot.openJournal`). The chain's handle takes an exclusive advisory lock
+    (`flock`, through `IO.FS.Handle.tryLock`) for the life of the session, so a second process cannot
+    append to (or replay) a journal another holds. `held` is this process's own handle on the same path. -/
+def openWorld (path : String) (held : Option (IO.FS.Handle × IO.FS.Handle) := none) (verify : Bool := false)
+    (caches : Caches := {}) (bound : Nat := Limits.maxJournalBytes) : IO (Except String Open) := do
   try
     let handle ← match held with
-      | some h => pure h
+      | some (h, _) => pure h
       | none => IO.FS.Handle.mk path IO.FS.Mode.append
     if held.isNone then
       unless ← handle.tryLock (exclusive := true) do return .error "journal is open in another process"
-    let exists_ ← System.FilePath.pathExists path
-    let bytes ← if exists_ then pure (← System.FilePath.metadata path).byteSize.toNat else pure 0
+    let store ← match held with
+      | some (_, s) => pure s
+      | none => IO.FS.Handle.mk (Snapshot.storeOf path) IO.FS.Mode.append
+    let bytes ← journalBytes path
     if bytes > bound then
       return .error s!"journal exceeds byte capacity: {bytes} bytes, past maxJournalBytes ({bound})"
-    let content ← if exists_ then IO.FS.readFile path else pure ""
-    match ← Snapshot.openContent path content verify caches with
+    match ← Snapshot.openJournal path verify caches with
     | .error e => return .error e
-    | .ok (world, report) => return .ok { world, path, handle, report, snapshotAt := report.resumed, bytes, bound }
+    | .ok (world, report) => return .ok { world, path, handle, store, report, snapshotAt := report.resumed, bound }
   catch e => return .error s!"journal unreadable: {e}"
 
 /-- Write a snapshot of the open world now: `{height}`, or `{refused}` naming why not. -/
@@ -96,13 +108,46 @@ def snapshotNow (s : Open) : IO (Open × Json) := do
   | .ok h => return ({ s with snapshotAt := h }, Json.mkObj [("height", toJson h)])
   | .error e => return ({ s with snapshotAt := s.world.height }, Json.mkObj [("refused", toJson e)])
 
-/-- Run a pure world step and make its entry durable before the reply exists. The turns its
-    settling pass ran are shown as `reader` (the request's principal) may see them (`settledFor`). -/
-def durable (s : Open) (reader : String) (step : World → Except String (World × Json)) : IO (Session × Except String Json) := do
+/-- Make a handle's appends durable as the session says (`Durability`). -/
+def syncAs (sync : Durability) (h : IO.FS.Handle) : IO Unit :=
+  match sync with
+  | .none => h.flush
+  | .fsync => syncHandle h false
+  | .full => syncHandle h true
+
+/-- The chain lines and the spans of entries whose records are appended to a store `start` bytes long. -/
+def linksAt (entries : Array Json) (records : Array ByteArray) (start : Nat) : String × Array (Nat × Nat) := Id.run do
+  let mut at_ := start
+  let mut spans : Array (Nat × Nat) := #[]
+  let mut lines := ""
+  for (entry, r) in entries.zip records do
+    spans := spans.push (at_, r.size)
+    lines := lines ++ (Link.of entry at_ r.size).json.compress ++ "\n"
+    at_ := at_ + r.size
+  return (lines, spans)
+
+/-- Append the entries a step made: every record to the block store, made durable, then their links
+    (`linksAt`, from the store's size now) to the chain, made durable. A crash between leaves records
+    no link names, which nothing reads. -/
+def appendJournal (s : Open) (w : World) (records : Array ByteArray) : IO (Except String Open) := do
+  try
+    s.store.flush
+    let (lines, spans) := linksAt w.entries.unwritten records (← fileSize (Snapshot.storeOf s.path))
+    for r in records do s.store.write r
+    syncAs s.sync s.store
+    s.handle.putStr lines
+    syncAs s.sync s.handle
+    return .ok { s with world := { w with entries := w.entries.written spans } }
+  catch e => return .error s!"journal write failed: {e}"
+
+/-- Run a world step and make its entries durable before the reply exists. The turns its settling
+    pass ran are shown as `reader` (the request's principal) may see them (`settledFor`). -/
+def durableIO (s : Open) (reader : String) (step : World → IO (Except String (World × Json))) : IO (Session × Except String Json) := do
   -- A step, then whatever it let go on: resumptions follow in the same durable write.
   let settled := fun (w : World) => w.suspended.isEmpty && w.pending.isEmpty
+  let stepped ← step s.world
   match (do
-      let (w', r) ← step s.world
+      let (w', r) ← stepped
       -- What the settling pass runs is no request's: no turn of it is the public socket's.
       let w' := { w' with resident := false }
       if settled w' then return (w', r, #[], #[])
@@ -116,37 +161,44 @@ def durable (s : Open) (reader : String) (step : World → Except String (World 
     let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr (quiet resumed))
     let r := if delivered.isEmpty then r else r.setObjVal! "delivered" (Json.arr (quiet delivered))
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
-    let fresh := (w'.entries.extract s.world.height w'.height).map (·.compress ++ "\n")
-    if fresh.any (·.utf8ByteSize > Limits.maxEntryBytes + 1) then
+    let recordsOf := fun (w : World) => w.entries.unwritten.mapM recordBytes
+    let records ← match recordsOf w' with
+      | .ok rs => pure rs
+      | .error e => return (some s, .error s!"journal entry has no canonical form: {e}")
+    if records.any (·.size > Limits.maxEntryBytes) then
       return (some s, .error "journal entry exceeds capacity")
     if w'.height > Limits.maxJournalEntries then
       return (some s, .error "journal is full")
     let full := s!"journal is full: appending would pass maxJournalBytes ({s.bound} bytes)"
-    let size := fun (lines : Array String) => lines.foldl (· + ·.utf8ByteSize) 0
+    -- What an append adds: the records, and their links as the chain will hold them.
+    let start ← fileSize (Snapshot.storeOf s.path)
+    let bytes := start + (← fileSize s.path)
+    let size := fun (w : World) (rs : Array ByteArray) => rs.foldl (· + ·.size) (linksAt w.entries.unwritten rs start).1.utf8ByteSize
     -- Near the bound only a refusal is written (OPERATIONS §c 1): a turn is refused `capacity` naming
     -- the bound, journaled into the headroom, so the operator sees it before any restart would.
-    let (w', r, fresh) ← if s.bytes + size fresh + Limits.journalHeadroom ≤ s.bound then pure (w', r, fresh) else
+    let (w', r, records) ← if bytes + size w' records + Limits.journalHeadroom ≤ s.bound then pure (w', r, records) else
       let identity := (r0.getObjVal? "receipt").toOption.bind (·.getObjVal? "identity" |>.toOption)
       match identity.bind (·.getObjValAs? String "principal" |>.toOption), identity.bind (·.getObjValAs? String "intent" |>.toOption) with
       | some principal, some intent =>
         let p : Proposal := { principal, intent, roots := [], writes := [], turn := s.world.height + 1 }
         let (wR, rR) := commit s.world p [] (some { cls := "capacity", reason := some "maxJournalBytes" })
-        let lines := (wR.entries.extract s.world.height wR.height).map (·.compress ++ "\n")
-        if s.bytes + size lines > s.bound then return (some s, .error full)
-        pure (wR, turnReply wR rR, lines)
+        let some rs := (recordsOf wR).toOption | return (some s, .error full)
+        if bytes + size wR rs > s.bound then return (some s, .error full)
+        pure (wR, turnReply wR rR, rs)
       | _, _ => return (some s, .error full)
-    try
-      for line in fresh do s.handle.putStr line
-      match s.sync with
-      | .none => s.handle.flush
-      | .fsync => syncHandle s.handle false
-      | .full => syncHandle s.handle true
-    catch e => return (some s, .error s!"journal write failed: {e}")
-    let s := { s with bytes := s.bytes + size fresh }
-    -- The entries are durable; a snapshot is derived from them and its failure refuses nothing.
-    if w'.height < s.snapshotAt + Limits.snapshotEvery then return (some { s with world := w' }, .ok r)
-    let (o, note) ← snapshotNow { s with world := w' }
+    let ignored := w'.entries.unwritten.any isIgnoreAct
+    let s ← match ← appendJournal s w' records with
+      | .ok s => pure s
+      | .error e => return (some s, .error e)
+    -- The entries are durable; a snapshot is derived from them and its failure refuses nothing. After
+    -- an `ignore`, one is written at once, so the next open need not replay from before it.
+    if !ignored && w'.height < s.snapshotAt + s.every then return (some s, .ok r)
+    let (o, note) ← snapshotNow s
     return (some o, .ok (r.setObjVal! "snapshot" note))
+
+/-- `durableIO` of a pure step. -/
+def durable (s : Open) (reader : String) (step : World → Except String (World × Json)) : IO (Session × Except String Json) :=
+  durableIO s reader (fun w => pure (step w))
 
 /-- `world-fork {principal, height?, into}`: write a new journal at `into` (a path that does not
     exist) whose genesis is the open world's store at `height` (default the head; an earlier height
@@ -163,16 +215,16 @@ def forkWorld (s : Open) (j : Json) : IO (Except String Json) := do
     | .error e => return .error e
   if height == 0 || height > s.world.height then return .error s!"height must be 1..{s.world.height}"
   if into == s.path || (← System.FilePath.pathExists into) then return .error s!"{into} already exists"
+  -- An earlier height is the world from the newest snapshot at or below it.
   let w ← if height == s.world.height then pure s.world else
-    match Snapshot.replayAll (s.world.entries.extract 0 height) s.world.caches with
-    | .ok w => pure w
+    match ← Snapshot.reopen s.path (s.world.entries.upTo height) s.world.caches with
+    | .ok (w, _) => pure w
     | .error e => return .error e
-  let cid := ((s.world.entries[height - 1]?).bind fun e => (e.getObjValAs? String "hash").toOption).getD ""
+  let cid := (s.world.entries.hashAt? (height - 1)).getD ""
   match Snapshot.forkGenesis w principal s.path height cid with
   | .error e => return .error e
   | .ok (entry, omitted) =>
-    try IO.FS.writeFile into (entry.compress ++ "\n")
-    catch e => return .error s!"fork write failed: {e}"
+    if let .error e ← Snapshot.writeJournal into #[entry] then return .error s!"fork write failed: {e}"
     return .ok (Json.mkObj [("status", toJson "forked"), ("into", toJson into),
       ("forkedFrom", Json.mkObj [("world", toJson s.path), ("height", toJson height), ("cid", toJson cid)]),
       ("carried", toJson (w.objects.size - omitted.length)), ("omitted", toJson omitted)])
@@ -203,7 +255,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
     | .error e => return (session, .error e)
     | .ok path =>
       let held := match session with
-        | some o => if o.path == path then some o.handle else none
+        | some o => if o.path == path then some (o.handle, o.store) else none
         | none => none
       let verify ← match request.getObjVal? "verify" with
         | .ok (.bool b) => pure b
@@ -220,11 +272,18 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
             return (session, .error s!"maxJournalBytes may lower the bound ({Limits.maxJournalBytes}), never raise it")
           pure b
         | .error e => return (session, .error e)
+      -- How many entries apart this process writes snapshots.
+      let every ← match optNat request "snapshotEvery" with
+        | .ok none => pure Limits.snapshotEvery
+        | .ok (some n) =>
+          if n == 0 then return (session, .error "snapshotEvery must be at least 1")
+          pure n
+        | .error e => return (session, .error e)
       -- What this process compiled for the world it had open stays compiled for the next.
       match ← openWorld path held verify ((session.map (·.world.caches)).getD {}) bound with
       | .error e => return (session, .error e)
       | .ok o =>
-        let o := { o with sync }
+        let o := { o with sync, every }
         -- The first open naming a clock principal or a posting quota journals them.
         let o ← match (do
             let quota ← match request.getObjVal? "postQuota" with
@@ -320,7 +379,18 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
       | "world-reprogram" => durable s reader (fun w => reprogramOp w request)
       | "world-amend" => durable s reader (fun w => amendOp w request)
       | "world-revoke" => durable s reader (fun w => revokeOp w request)
-      | "world-root" => durable s reader (fun w => rootOp w request)
+      | "world-root" => durableIO s reader (fun w => do
+          match rootOp w request with
+          | .error e => return .error e
+          | .ok (w2, r) =>
+            -- An ignore changes what every later entry did: the store is the journal's under the new
+            -- set, from the newest snapshot before the height it names (`Snapshot.reopen`).
+            unless w2.entries.unwritten.any isIgnoreAct do return .ok (w2, r)
+            match ← Snapshot.reopen s.path w2.entries w2.caches with
+            | .error e => return .error e
+            | .ok (w3, _) =>
+              let w3 := w3.withCachesOf w2
+              return .ok ({ w3 with entries := w2.entries }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
       | "world-settings" => durable s reader (fun w => worldSettingsOp w request)
       | "world-advance" => durable s reader (fun w => advance w request)
       | "world-propose" => durable s reader (fun w => do return commit w (← parseProposal request))

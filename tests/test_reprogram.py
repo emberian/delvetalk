@@ -5,8 +5,11 @@ Evidence for FOUNDATION §3, §4 (layer: host).
 
 Programmable from within: reprogram and amend, judged by the object's own law.
 """
+import json
 import unittest
 
+from transport.journal import entries as journal_entries
+from tests.wire import write_journal
 from tests.test_turn_world import TurnWorld, fixture
 from tests.wire import label, nat, record
 from tests.bend import MODULES, closure, declared
@@ -157,10 +160,12 @@ class Restart(Reprogram):
         self.make()
         self.reprogram(ADDS_TWO)
         self.release()
-        with open(self.path) as f:
-            text = f.read()
-        with open(self.path, "w") as f:
-            f.write(text.replace("add 2n", "add 9n", 1))
+        entries = journal_entries(self.path)
+        text = "\n".join(json.dumps(e, separators=(",", ":")) for e in entries)
+        self.assertIn("add 2n", text)
+        # The first occurrence lies in one entry; it keeps its old hash.
+        tampered = text.replace("add 2n", "add 9n", 1).split("\n")
+        write_journal(self.path, [json.loads(t) for t in tampered])
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")

@@ -507,9 +507,11 @@ A tarball pulled off the box comes back the same way (`scp` it beside its `.sha2
 `restore.sh` checks the checksum and replays before touching the data, refuses
 while the lock is held, and moves the current data to `v2.before-<stamp>`.
 
-**A torn tail.** If the host stopped mid-append (power lost inside the write-back
-window), the next start refuses the journal by name, `journal broken at height N:
-unterminated final line`, and the host stays down: it never cuts its own file.
+**A torn tail.** A journal is its chain (`<world>.journal`, one link a line) and its block store
+(`<world>.journal.blocks`, the entries' records; HOST-HANDOFF 5.137); an append syncs the records before the
+links. If the host stopped mid-append (power lost inside the write-back window), the next start refuses the
+chain by name, `journal broken at height N: unterminated final line`, and the host stays down: it never cuts
+its own file. Records past the last whole link are bytes nothing reads.
 Recover through a verified copy; it loses only the entry that was never
 acknowledged, since the host replies after fsync:
 

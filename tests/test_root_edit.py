@@ -17,6 +17,7 @@ import os
 import subprocess
 import unittest
 
+from transport.journal import entries as journal_entries
 from tests.host import binary
 from tests.test_chain import field
 from tests.test_reflection import Reflection
@@ -25,8 +26,7 @@ from tests.test_turn_world import label, nat, record
 
 
 def lines(path):
-    with open(path) as f:
-        return [json.loads(line) for line in f]
+    return journal_entries(path)
 
 
 class RootEdit(Reflection):
@@ -147,6 +147,7 @@ class RootEdit(Reflection):
         self.release()
         state = self.dir.name
         os.rename(self.path, os.path.join(state, "ring.journal"))
+        os.rename(self.path + ".blocks", os.path.join(state, "ring.journal.blocks"))
         for name in os.listdir(state):
             if name.startswith("world.journal.snapshot."):
                 os.rename(os.path.join(state, name), os.path.join(state, name.replace("world.journal", "ring.journal")))

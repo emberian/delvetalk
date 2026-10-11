@@ -16,6 +16,7 @@ import os
 import tempfile
 import unittest
 
+from transport.journal import entries as journal_entries
 from tests.host import whole
 
 from tests.test_reflection import Reflection
@@ -146,8 +147,7 @@ class Changes(Reflection):
         return self.turn(watcher, method, record(target=label(target), field=label(field)), principal=principal)["result"]
 
     def entries(self):
-        with open(self.path) as f:
-            return [json.loads(line) for line in f.read().splitlines()]
+        return journal_entries(self.path)
 
     def test_a_watched_field_tells_its_subscriber_and_another_field_does_not(self):
         self.make2("w", WATCHER)

@@ -11,8 +11,11 @@ sending turn's reply carries them as `delivered`; `world-deliver` runs what is l
 The Bell/Door/Lantern shapes are one fixture package instantiated three times;
 Loop is the same package sending to itself.
 """
+import json
 import unittest
 
+from transport.journal import entries as journal_entries
+from tests.wire import write_journal
 from tests.test_turn_world import TurnWorld
 from tests.wire import label, nat, record
 from tests.bend import closure, declared
@@ -125,8 +128,7 @@ class Deliveries(TurnWorld):
 
     def entries(self):
         import json
-        with open(self.path) as f:
-            return [json.loads(line) for line in f]
+        return journal_entries(self.path)
 
 
 class Chain(Deliveries):
@@ -256,11 +258,11 @@ class Restart(Deliveries):
         self.make("loop")
         self.turn("loop", "spin", arg("loop"))
         self.release()
-        with open(self.path) as f:
-            lines = f.read().splitlines()
-        lines[1] = lines[1].replace('"depth":99', '"depth":999')     # the sending entry, height 2
-        with open(self.path, "w") as f:
-            f.write("\n".join(lines) + "\n")
+        entries = journal_entries(self.path)
+        text = json.dumps(entries[1], separators=(",", ":"))
+        self.assertIn('"depth":99', text)
+        entries[1] = json.loads(text.replace('"depth":99', '"depth":999'))     # the sending entry, height 2, under its old hash
+        write_journal(self.path, entries)
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")
