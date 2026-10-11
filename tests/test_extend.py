@@ -218,6 +218,22 @@ class HostSpells(Reflection):
         self.reopen()
         self.assertEqual(self.turn("c", "bump", principal="eve")["receipt"]["outcome"].get("clause"), "circle")
 
+    def test_adopt_takes_a_law_written_inline(self):
+        """The second playtest's F2: `adopt / law:` taught that a law is adopted only by id. A value that
+        starts `law ` is the clause set itself, with its reading; the usage says both."""
+        self.assertIn("delvetalk c adopt\nlaw: law <name> \"<reading>\": <expression>, or a kind's or a page's id\n",
+                      self.say("delvetalk c ?")["text"])
+        r = self.say('delvetalk c adopt\nlaw: law small "ten at most": new.count <= 10', identity="i1")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual([x["object"] for x in r["receipt"]["roots"]], ["c"], r)
+        laws = self.host.send(op="world-inspect", principal="ember", object="c", source=False)["laws"]
+        self.assertIn(("small", "ten at most"), [(l["name"], l.get("reading")) for l in laws])
+        bad = self.say("delvetalk c adopt\nlaw: law broken: new.count <<< 2", identity="i2")["receipt"]["outcome"]
+        self.assertEqual((bad["class"], bad["clause"]), ("programRefused", "law syntax"), bad)
+        unknown = self.say("delvetalk c adopt\nlaw: kind/none", identity="i3")["receipt"]["outcome"]
+        self.assertEqual((unknown["class"], unknown["clause"]), ("badSpell", "unknownLaw"), unknown)
+        self.assertIn("or write the law", unknown["reason"])
+
     def test_lend_grants_a_method_until_a_clock_and_the_borrower_runs_it_as_the_lender(self):
         version = self.host.send(op="world-view", principal="ember", object="c")["version"]
         a = self.host.send(op="world-amend", principal="ember", identity="own", object="c", version=version,

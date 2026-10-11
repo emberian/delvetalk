@@ -1191,10 +1191,13 @@ def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : 
   let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", [], w.clock, id, citedStates w o.law⟩
   (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
 
+/-- `adopt`'s field as the usage prints it: a law written inline, or the id of what holds one. -/
+def adoptLine : String := "law: law <name> \"<reading>\": <expression>, or a kind's or a page's id"
+
 /-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
 def hostUsage (w : World) (o : Object) (principal card : String) : String :=
   let lines := (if kindAdmits w o principal 1 then [s!"delvetalk {card} become\nkind: <a kind's id>\n"] else []) ++
-    (if kindAdmits w o principal 2 then [s!"delvetalk {card} adopt\nlaw: <a kind's or a page's id>\n"] else []) ++
+    (if kindAdmits w o principal 2 then [s!"delvetalk {card} adopt\n{adoptLine}\n"] else []) ++
     (if ((offeredRows o.methods).getArr?.toOption.getD #[]).any (fun m => match (m.getObjValAs? String "name").toOption with
         | some n => isActionRow m && methodAdmits w o principal n == Json.bool true | none => false)
       then [s!"delvetalk {card} lend\nto: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n"] else [])
@@ -2313,7 +2316,9 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
 /-- One turn: drive the method, then one `commit`. Request errors (unknown method,
     wrong arity) journal nothing, except for a delivery, which must be consumed. -/
 def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String (World × Json) := do
-  if let some r := retainedTurn w req then return (w, r)
+  -- The reply names the card the turn ran on (a spell's card as resolved), so a turn line names it.
+  let named := fun (r : Json) => if (r.getObjVal? "receipt").isOk then r.setObjVal! "object" (toJson req.object) else r
+  if let some r := retainedTurn w req then return (w, named r)
   let ledger := how.ledger.getD ((w.objects[req.object]?).map (·.chain) |>.getD Ledger.start)
   let ticks ← match Delvetalk.Turn.budgets req.limits with
     | .ok b => pure b.ticks
@@ -2353,6 +2358,7 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
       rerun := how.rerun
       root := how.root }
   let (w', r) ← finishTurn w ctx result st
+  let r := named r
   return (w', if req.profile then r.setObjVal! "profile" (profileJson st.profile) else r)
 
 /-- Journal a `badSpell` refusal of the turn as asked (its identity binds, so a resend is a new
@@ -2482,9 +2488,11 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
     - `become / kind: <id>` lays the kind's `body` (a layer source; the kind is any object whose state
       has a text `body`) over the card's package: a reprogram in extend mode, `madeFrom {object, pin,
       receipt}` naming the kind, the pin it runs and the entry that made its current version.
-    - `adopt / law: <id>` appends the named clause set (the text `law` of a kind, or of a library page
-      kept as an object) to the card's law: an amendment by the speaker under the metarule, the
-      clauses' readings with them; a clause name the card's law already has is refused `lawClash`.
+    - `adopt / law: <law text or id>` appends a clause set to the card's law: the text itself when it
+      starts `law ` (`law NAME "reading": EXPR`, a block for several), else the text `law` of the kind
+      or library page the id names (a root of the turn); an amendment by the speaker under the
+      metarule, the clauses' readings with them; a clause name the card's law already has is refused
+      `lawClash`.
     - `lend / to: <handle or me> / method: <m> / until: +<n>` grants `to` the running of `m` on the
       card as the speaker until clock now + n (a grant held by the card, with a reading); only a
       method the card offers and its law admits the speaker to run (else `notYours`). -/
@@ -2497,7 +2505,7 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
   let base := entryBase ctx 0
   let template := (s!"delvetalk {id} {action}\n" ++ match action with
     | "become" => "kind: <a kind's id>\n"
-    | "adopt" => "law: <a kind's or a page's id>\n"
+    | "adopt" => adoptLine ++ "\n"
     | _ => "to: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n")
   match action with
   | "become" =>
@@ -2515,16 +2523,19 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
       | .ok prog => commit (cacheProgram w o body "" prog true) p base
     return (w', turnReply w' r)
   | "adopt" =>
-    let some srcId := value "law" | refuseSpell w req id "missingField" "adopt takes law: the id of a kind or a page." template
-    let some src := (w.objects[srcId]?).filter (·.read.permits req.principal)
-      | refuseSpell w req id "unknownLaw" s!"There is no kind or page {srcId}." template
-    let some clauses := (textField src.state "law").filter (!·.isEmpty)
-      | refuseSpell w req id "noLaw" s!"{srcId} names no law to adopt." template
+    let some given := value "law" | refuseSpell w req id "missingField" "adopt takes law: a law written inline, or the id of a kind or a page." template
+    -- A law written inline is adopted as it stands; an id names the kind or page holding one, read as a root.
+    let (clauses, source) ← if given.trimAscii.toString.startsWith "law " then pure (given.trimAscii.toString, []) else
+      let some src := (w.objects[given]?).filter (·.read.permits req.principal)
+        | return ← refuseSpell w req id "unknownLaw" s!"There is no kind or page {given}; or write the law: law <name> \"<reading>\": <expression>." template
+      let some clauses := (textField src.state "law").filter (!·.isEmpty)
+        | return ← refuseSpell w req id "noLaw" s!"{given} names no law to adopt." template
+      pure (clauses, [(given, src.version)])
     let existing := (lawClauses o.lawText).map (·.1)
     if let some (n, _, _) := (lawClauses clauses).find? (existing.contains ·.1) then
       return ← refuseSpell w req id "lawClash" s!"{id}'s law already has a clause {n}; adopt a set whose names are new." template
     let text := if o.lawText.isEmpty then clauses else s!"{o.lawText}\n{clauses}"
-    let p : Proposal := { principal := req.principal, intent := req.intent, roots := [(id, o.version), (srcId, src.version)],
+    let p : Proposal := { principal := req.principal, intent := req.intent, roots := (id, o.version) :: source,
                           writes := [], laws := [(id, text)], turn := w.height + 1 }
     let (w', r) := match parseLawText text with
       | .error message => commit w p base (some { cls := "programRefused", clause := some "law syntax", object := some id, reason := some message })
@@ -3416,29 +3427,68 @@ def proposalVerdict (w : World) (target self : String) (obj : Object) (bounds : 
   return (w, Json.mkObj [("tag", toJson "proposal"), ("object", toJson target), ("method", toJson method),
     ("argument", dataJson argument), ("spell", toJson spell)])
 
+/-- A form offered to the interpreter: its spell form and its `source` fields (`Form.Kind.source`),
+    which a spell's ```obend block fills (`withFence`). -/
+structure OfferedForm where
+  form : Spell.Form
+  sources : List String
+
+def OfferedForm.ofData : Data → Option OfferedForm
+  | .record f =>
+    let fields := ((f.lookup "fields").bind listOf).getD []
+    let isSource := fun (d : Data) => match d with
+      | .record g => match g.lookup "kind" with | some (.variant "source" _) => true | _ => false
+      | _ => false
+    let sources := fields.filter isSource |>.filterMap fun
+      | .record g => (g.lookup "name").bind labelOf
+      | _ => none
+    let rest := Data.record (f.map fun (k, v) => if k == "fields" then (k, listData (fields.filter (!isSource ·))) else (k, v))
+    (Spell.Form.ofData rest).map ({ form := ·, sources })
+  | _ => none
+
 /-- What a model's text says to a suspended activity of the message dialect, fitted against the
     offered forms as a reply's spell is (WHOLENESS §2, "Interpretation"): a spell naming an offered
     form that fits is that form's proposal; one that misfits, or misses fields, is `unclear` naming
     why or what it needs; a spell naming no offered form is `unclear`. A text with no spell line whose
     first field line names an offered action or field is that form's spell (`Card.withBare`). `none`
     when the text is no spell: the object hears it as `replied`. -/
-def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (List String) (String × String × Data)) :=
-  let fitted := fun (form : Spell.Form) (fields : List Spell.Binding) =>
+def spellVerdict (offered : List OfferedForm) (text : String) : Option (Except (List String) (String × String × Data)) :=
+  -- A reply's ```obend block is the value of the form's first `source` field the spell lacks, as
+  -- `withFence` binds it for a typed spell: a block and a fenced reply are one value.
+  let fence := firstFence text
+  let fitted := fun (offer : OfferedForm) (fields : List Spell.Binding) =>
+    let form := offer.form
+    match offer.sources.find? (fun n => !fields.any (·.name == n)), fence with
+    | some name, none => Except.error [name]
+    | source, code =>
     match Spell.fit (.spell form.card form.action fields) form with
-    | .proposal _ action entries => Except.ok (form.card, action, spellArgument entries)
+    | .proposal _ action entries =>
+      let bound := match source, code with
+        | some name, some c => [(name, Data.label c)]
+        | _, _ => []
+      Except.ok (form.card, action, match spellArgument entries with
+        | .record fs => .record (fs ++ bound)
+        | other => other)
     | .unclear needs => .error needs
     | .refused _ reason => .error [reason]
   match Spell.parse text with
   | .spell card action fields =>
-    match offered.find? fun f => Spell.fold f.card == Spell.fold card && f.action == action with
+    match offered.find? fun f => Spell.fold f.form.card == Spell.fold card && f.form.action == action with
     | some form => some (fitted form fields)
     | none => some (.error [s!"{card} {action} is not one of the offered actions"])
   | .quotation reason => some (.error [reason])
-  | .notASpell _ fielded => do
-    guard fielded
-    let first ← (Spell.bare text).head?
-    let form ← offered.find? fun f => f.action == first.name || f.fields.any (·.name == first.name)
-    some (fitted form ((Spell.bare text).filter fun b => b.name == form.action || form.fields.any (·.name == b.name)))
+  | .notASpell _ fielded =>
+    if fielded then do
+      let first ← (Spell.bare text).head?
+      let offer ← offered.find? fun f => f.form.action == first.name || f.form.fields.any (·.name == first.name)
+      some (fitted offer ((Spell.bare text).filter fun b => b.name == offer.form.action || offer.form.fields.any (·.name == b.name)))
+    -- A reply that is one ```obend block and no spell settles the one offered form that takes source
+    -- (the workshop's drafting: the model answers with the Bend, playtest 2's D3).
+    else do
+      let _ ← fence
+      match offered.filter (!·.sources.isEmpty) with
+      | [offer] => some (fitted offer [])
+      | _ => none
 
 /-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
     (`proposalVerdict`: a method of the object, one of the offered actions, with an argument that
@@ -3490,7 +3540,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
         -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
         let segments := Spell.segments text
         if segments.length > 1 then
-          let offered := forms.filterMap Spell.Form.ofData
+          let offered := forms.filterMap OfferedForm.ofData
           let mut w := w
           let mut items : Array Json := #[]
           for segment in segments.take Limits.spellsPerReply do
@@ -3508,7 +3558,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
             items := items.push (if (item.getObjValAs? String "tag").toOption == some "proposal" then item
               else Json.mkObj [("tag", toJson "unclear"), ("reasons", (item.getObjVal? "needs").toOption.getD (Json.arr #[]))])
           return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)])
-        match spellVerdict (forms.filterMap Spell.Form.ofData) text with
+        match spellVerdict (forms.filterMap OfferedForm.ofData) text with
         | some (.ok (card, action, argument)) =>
           -- The form names its card: the proposal is checked against that object, which may be
           -- another than the asking one (a directory offers its doors' forms).

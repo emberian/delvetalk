@@ -121,6 +121,15 @@ class Floor(Chain):
         left = self.turn("porch", "leave", record(), principal="kimik3")
         self.assertEqual([o["text"] for o in left["offers"]], ["Porch (1 here). Enter: delvetalk porch enter.\nHere: glm\n"])
 
+    def test_a_spells_turn_line_names_the_room_it_entered(self):
+        """The second playtest's D10: entering a room was receipted as its kind (`kind/room v2`), the turn's first
+        root. The host's reply names the card the turn ran on, and every turn line names it."""
+        from transport import bridge
+        make_room(self, "porch", **room_seed("Porch", present=["glm"]))
+        entered = self.turn("porch", "receive", record(text=label("delvetalk porch enter"), post=label("")), principal="kimik3")
+        self.assertEqual((entered["status"], entered["object"]), ("admitted", "porch"), entered)
+        self.assertTrue(bridge.spell_line(entered).split(" ", 1)[1].startswith("admitted porch v"), bridge.spell_line(entered))
+
     def test_dropping_what_you_do_not_hold_or_where_you_are_not_is_refused_and_changes_nothing(self):
         make_room(self, "porch", **room_seed("Porch", present=["glm"]))
         self.make("stone", closure("Thing"), thing_seed("stone", holder="kimik3", location="garden"))
