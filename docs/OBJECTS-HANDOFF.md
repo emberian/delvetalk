@@ -62,6 +62,20 @@ Red at the checkpoint (full run on persvati: 781 tests, 3 failed classes), the n
    clause that refuses a proposal (`request.kind == proposed` is in the fragment, KERNEL-HANDOFF §24), and put
    back test_strangers' creator assertion (`test_a_stranger_cannot_place_themselves_in_a_room`).
 
+Routed here by docs/review/fungus-2026-10-11.md §3 (on foundation; merge it into this lane first), each folded
+into the step that touches the same object:
+
+- **H1** (step 1, second half, with Card): delete the reduced spell parser in `world/lib/Spell.obend`; the
+  Garden's macros and `Card.unanswered` read the host's `spell-parse` answer through the existing Plan, or the
+  one remaining use is declared and only that kept.
+- **O1**: done here (Place and its five unused garden-as-place fields are deleted with it).
+- **O2**: the half-done cut is this lane's steps.
+- **O4** (step 1, second half): one door record, one `Names`, one `Forms`, each in one library.
+- **O5** (step 4, with `Policy.prompt`): delete the unused `Policy.escalate` (field, lens, card line).
+- **T31** (step 4): drop the `Participant:` tail `Policy.prompt` appends; the transport lane then sends the
+  utterance once, with no cut, in `interpret.py`.
+- `capsules/world.txt` is gone; the library page `capsules/pages/world.txt` is the one text.
+
 Host findings for the host lane (repros above in this lane's history):
 
 - **Create-then-extend in one turn (5.122) is not usable by KIND yet**, so Kind keeps the self-sent graft.
