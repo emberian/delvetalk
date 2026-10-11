@@ -249,7 +249,7 @@ def laid(context: Abi.Context) -> Activity<Done>:
   let written(_) = write {things: insert {world: context.world, object: context.caller}}
   Done.done({})
 def methods() -> Lists.List<String>:
-  Text.words("~take ~put ~inspirited")
+  Text.words("take put inspirited")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("enter choose leave say emote whisper write lines"), if context.principal == state.owner then Text.words("door undoor example") else Text.words(""))
 # A ```spween block makes a room under this one, by this room's kind (its `makeUnder`, which reads

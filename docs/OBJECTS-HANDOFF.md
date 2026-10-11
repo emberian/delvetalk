@@ -52,6 +52,17 @@ Done (67184b62 H1, ad6baf8b inspirit, da3f45cc the silent turns and the library'
 - **A made kind is sent no `made`** (the host lane's finding): Kind's `finished` sends `made` only to a made record
   (a kind has no such method, so every kind creation journaled a delivered `noMethod`); test_kinds asserts a
   resident's `kinds make` and a make on that kind deliver no refusal.
+- **Foundation adbab7d5 merged** (host18's batch: a refused turn offers nothing, refusals under a kind name the
+  inner clause, sums in laws, optional `text 0..N` fields, dedented spell blocks). test_wakes, test_tending and
+  test_strangers now assert the inner clause (`level`, `alive`, `sealed`, `owner`). `kinds make / name / of` alone
+  makes a kind and its make a thing (test_kinds); PLAYTEST-2's room spells drop `/ spween: / id:`.
+- **`kinds shape` once**: a second shape laid a layer over the package's module, which a shaped kind no longer runs
+  (the live redeploy's compile refusal). `shape` is kept for a kind created whole (genesis's `kinds`), is `~shape`
+  (unoffered), and refuses `shaped` ("Already shaped; its make stands") when the kind already has its make.
+- **A wake on a card not there yet** reads "There is no card garden/bell/1 that you may see (yet): nothing to
+  watch." (was "cannot be watched (denied)"): the hand lane's `wake rows` on garden/bell/1 ran before any bell was
+  planted. A bell's `lines` are already subscribable by anyone who may read it: test_genesis.Rows has a resident's
+  wake count seven rains on another's bell and note its avatar.
 - **Library `laws` follows `under`**: a clause `under "<object>"` is followed to that object's `law` field (a made
   thing's kind), whose clauses follow the card's own ("Under kind/bell's law:"), expressions dropped when the whole
   passes the clip. The miss line names the commonplace, not the directory.
@@ -69,8 +80,10 @@ Remaining, in order (each a commit, the full suite green on persvati, pins re-re
 3. The hand-on refused `capacity`: a wait inside a call is not supported (`mayWait`, depth > 0), so the hand-on
    cannot join the card's turn; objects alone cannot fix it. Host: re-deliver a send refused transiently, or route
    prose a card does not take to the commonplace itself.
-4. `kinds make / name / of` once host18's optional fields land.
-5. Step 4 as below.
+4. Foundation 0e54c215 (kernel15: `Relations.count`/`lookup` force no row / one row) is not merged here: merge it
+   with the rebuilt binary, drop `lookup`'s unused `keyOf` at the call sites KERNEL-HANDOFF §16 item 15a lists, and
+   prefer `count`/`lookup` to scans where a card reads one row or a count (the menu, door counts, a bell's rains).
+5. Step 4 as below. H1's host half: host18's batch did not add `action` to `Heard`; still the host's.
 
 
 ## lane/rewrite9 (2026-10-11): hob's said; step 3, first part

@@ -60,6 +60,16 @@ class Kinds(Chain):
                 self.assertEqual([f["value"]["value"] for f in r["result"]["payload"]["fields"]], [clause, reading], r)
         self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
 
+    def test_a_kind_from_a_name_and_what_it_is_of_alone(self):
+        """PLAYTEST-2's first move: `kinds make / name / of`, the rest omitted (optional text fields), makes a kind
+        whose make then makes a thing."""
+        said = lambda who, obj, line: self.turn(obj, "receive", record(text=label(line), post=label("at://x/" + line[-8:])), principal=who)
+        kind = said(KIM, "kinds", "delvetalk kinds make / name: lamp / of: record")
+        self.assertEqual((kind["status"], kind["result"]["label"]), ("admitted", "made"), kind)
+        lamp = said(GLM, "kind/lamp", "delvetalk kind/lamp make")
+        self.assertEqual((lamp["status"], lamp["result"]["label"]), ("admitted", "made"), lamp)
+        self.assertIn("Made, at lamp/1", text(lamp))
+
     def test_a_kind_is_shaped_once(self):
         """The live redeploy: `kinds shape` a second time laid a layer over the package's module, which a shaped
         kind no longer runs, and the compile refused it. A shaped kind, or one `kinds` made, is refused by name."""

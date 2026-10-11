@@ -329,9 +329,10 @@ class Run:
         unoffered = set(re.findall(r"~(\w+)", " ".join(re.findall(r"^  Text\.words\(\"([^\"]*)\"\)", "\n".join(p.read_text() for p in (ROOT / "world").rglob("*.obend")), re.M))))
         probed = 0
         for obj in listed["ids"]:
-            # "~m": declared, callable, not offered; another principal's wake lists none to the opener, so those are read
-            # from the sources' `methods()` (`~arrived`, `~watchBell`)
-            public = {m.lstrip("~") for m in listed["methods"].get(obj, [])} | (unoffered if "did:" in obj else set())
+            # "~m": declared, callable, not offered; another principal's wake lists none to the opener, and a record
+            # with a body lists its package's (Record's `~made`), not its body's (`~changedNat`), so those are read
+            # from the sources' `methods()` for every object
+            public = {m.lstrip("~") for m in listed["methods"].get(obj, [])} | unoffered
             for helper in self.rng.sample([n for n in names if n not in public and n not in CONVENTIONAL], 6):
                 got = self.turn(self.who(), obj, helper, record(), retry=False)
                 probed += 1

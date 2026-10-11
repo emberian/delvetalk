@@ -307,7 +307,7 @@ class Wakes(Chain):
         drained = self.host.send(op="world-propose", principal=OWNER, identity="drain", roots=[{"object": "cistern/1", "version": version}],
                                  writes=[{"object": "cistern/1", "edits": [record(owner=keep, keeper=keep, keeperHandle=keep, lines=keep, admitted=keep, marks=keep,
                                                                                   next={"tag": "variant", "label": "set", "payload": record(value=nat(1))}, cites=keep)]}])
-        self.assertEqual((drained["status"], drained["receipt"]["outcome"].get("clause")), ("refused", "kind"), drained)  # kind/cistern's `level`, cited by the cistern (`under "kind/cistern"`)
+        self.assertEqual((drained["status"], drained["receipt"]["outcome"].get("clause")), ("refused", "level"), drained)  # kind/cistern's `level`, cited by the cistern (`under "kind/cistern"`)
 
     # --- Tide ------------------------------------------------------------------------
 
