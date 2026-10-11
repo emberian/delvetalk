@@ -280,7 +280,7 @@ class Proposed(Reflection):
         self.reopen()
         self.assertEqual(field(self.state("p"), "count")["value"], "7")
         kinds = self.host.send(op="world-inspect", principal="kim", object="p")["requestKinds"]
-        self.assertEqual(kinds, {"write": 0, "reprogram": 1, "amend": 2, "proposed": 3})
+        self.assertEqual(kinds, {"write": 0, "reprogram": 1, "amend": 2, "proposed": 3, "rule": 4})
 
     def test_a_law_naming_kind_three_judges_proposals_and_migrations(self):
         a = self.host.send(op="world-amend", principal="ember", identity="a1", object="p", version=0,
@@ -466,6 +466,32 @@ class Atoms(Reflection):
         self.assertEqual(clause(put("kim", "kim", 5)), ("refused", "quorum"))
         self.reopen()
         self.assertEqual(clause(put("ann", "ann", 6)), ("refused", "quorum"))
+
+    def test_one_text_holds_laws_rules_and_wants_and_its_laws_judge(self):
+        """OVERHAUL §2 (KERNEL-HANDOFF §27): a thing's text holds law, rule and want lines in one grammar, and
+        so does its kind's; the laws judge every write (`%`, `request.verb`, the kind's through `under`), the
+        rules and wants stand beside them for the host to fire and pose, and a want reading past the thing
+        as it stands refuses the text by name."""
+        kind = ('law small "two at most": new.count <= 2\n'
+                'rule rang "rings at two": new.count >= 2 and old.count <= 1 then delvetalk {request.object} ring\n'
+                'want poked "wants a poke": new.count <= 0 asks delvetalk {request.object} poke')
+        self.assertEqual(self.create("kind/x", KIND_LAW, self.OWNER, record(law=label(kind)))["status"], "created")
+        text = ('law kind: under "kind/x"\n'
+                'law odd "an even count is a bump\'s": request.kind == amend or new.count % 2 == 1 or request.verb == "bump"\n'
+                'rule echo: request.verb == "poke" then delvetalk me note / text: {request.object} poked to {new.count}\n'
+                'want started: new.count <= 0 and not "kind/x" wants poked asks delvetalk {request.object} poke\n' + self.OWNER)
+        made = self.create("g", PLAIN, text)
+        self.assertEqual(made["status"], "created", made)
+        clause = lambda r: (r["status"], r["receipt"]["outcome"].get("clause"))
+        self.assertEqual(clause(self.turn("g", "poke", identity="p1")), ("admitted", None))
+        self.assertEqual(clause(self.turn("g", "poke", identity="p2")), ("refused", "odd"))
+        self.assertEqual(clause(self.turn("g", "bump", record(n=nat(1)), identity="b1")), ("admitted", None))
+        self.assertEqual(clause(self.turn("g", "poke", identity="p3")), ("refused", "small"))
+        self.reopen()
+        self.assertEqual(field(self.state("g"), "count"), nat(2))
+        bad = self.create("h", PLAIN, 'want w: old.count <= 0 asks delvetalk {request.object} poke\n' + self.OWNER)
+        self.assertEqual(bad["status"], "error", bad)
+        self.assertIn("`old.count` in a want", bad["message"])
 
 
 SEALED = declared("""edition ObjectiveBend 1

@@ -233,10 +233,11 @@ structure EntryCompiled where
   /-- Each law's reading (`law NAME "reading": EXPR`; "" when none), by law name. -/
   readings : List (String × String)
 
-/-- The readings the entry module's source gives its laws (`law NAME "reading": EXPR`). -/
+/-- The readings the entry module's source gives its clauses (`law NAME "reading": EXPR`, a rule's,
+a want's), by name: names are unique across the clauses. -/
 def lawReadings (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) : List (String × String) :=
   ast.decls.filterMap fun d => match d with
-    | .law name _ reading _ => some (name, reading)
+    | .clause _ name _ reading _ => some (name, reading)
     | _ => none
 
 /-- The artifact's `laws` table, `[{name, reading}]`: one entry per law the package

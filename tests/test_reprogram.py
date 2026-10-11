@@ -131,7 +131,7 @@ class Law(Reprogram):
         self.make(source=with_law(COUNTER, EMBER_ONLY))
         out = self.amend('law counter: request.subject == "nobody"')["receipt"]["outcome"]
         self.assertEqual((out["class"], out["clause"], out["reading"]), ("lawRefused", "amendable", 'law does not admit an amendment by its proposer ember: counter: request.subject == "nobody"'))
-        self.assertEqual(self.amend("law counter: new.count >= 1")["receipt"]["outcome"]["clause"], "law syntax")
+        self.assertEqual(self.amend("law counter: new.count > 1")["receipt"]["outcome"]["clause"], "law syntax")
         self.assertEqual(self.amend(BOTH)["status"], "admitted")
 
 class DefaultLaw(Reprogram):

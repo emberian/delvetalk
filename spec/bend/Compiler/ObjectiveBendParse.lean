@@ -877,10 +877,6 @@ def typeAliasRe : Re := seqs [str "type", many1 space, group 1 ident, many space
 def sumCaseRe : Re := seqs [group 1 ident, many space, chr ':', many space, group 2 (many1 dot), .done]
 def recordRe : Re := seqs [str "record", many1 space, group 1 ident, chr ':', .done]
 def fieldRe : Re := seqs [group 1 (.alt ident quoted), chr ':', many space, group 2 (many1 dot), .done]
-/-- `law NAME "reading": EXPR`, a top-level ENFORCED law of the package (`Compiler.ObjectiveBendLaw`);
-the optional reading (a string literal) is what a refusal by it quotes. -/
-def lawRe : Re := seqs [str "law", many1 space, group 1 ident, opt (seqs [many1 space, group 3 quoted]), many space,
-  chr ':', many space, group 2 (many1 dot), .done]
 
 /-- `String.prototype.split` on one character. -/
 def splitChar (s : List Char) (sep : Char) : List (List Char) :=
@@ -1233,21 +1229,15 @@ def declarations (lines : Array Line) :
           methods := methods.push (← signature m.text m)
       decls := decls.push (.record (cap line.text caps 1) methods.toList fields.toList line.span)
       continue
-    -- `law NAME: EXPR` is a law the kernel enforces on every object of the package; its text is
-    -- parsed here (a refusal names the construct outside the fragment) and again by the
-    -- elaborator's module decoder, which keeps the law itself.
-    if let some (_, caps) ← matchAt line lawRe line.text then
-      let text := cap line.text caps 2
-      if let .error message := ObjectiveBendLaw.parse text then fail line message
-      let reading ← match capture line.text caps 3 with
-        | none => pure ""
-        | some quotedText => match Lean.Json.parse (String.ofList quotedText) with
-          | .ok (.str r) => pure r
-          | _ => fail line "a law's reading is a string literal: law name \"what it means\": EXPR"
-      decls := decls.push (.law (cap line.text caps 1) text reading line.span)
-      continue
-    if startsWith line.text "law " || line.text == "law".toList || startsWith line.text "law:" then
-      fail line (ObjectiveBendLaw.refusal ("`" ++ String.ofList line.text ++ "`") "a top-level law is law NAME \"reading\": EXPR")
+    -- `law`, `rule` and `want` lines are the package's text (`Compiler.ObjectiveBendLaw`), parsed
+    -- here by the one clause parser (a refusal names the construct outside the fragment) and kept
+    -- by the elaborator's module decoder: a law is enforced on every object of the package.
+    if ObjectiveBendLaw.keywords.contains (String.ofList (line.text.takeWhile ObjectiveBendLaw.identChar)) then
+      match ObjectiveBendLaw.parseClauseSource (String.ofList line.text) with
+      | .error message => fail line message
+      | .ok (c, source) =>
+        decls := decls.push (.clause c.modality.keyword c.name source c.reading line.span)
+        continue
     if let some (_, caps) ← matchAt line genericDefRe line.text then
       let typeParameters ← liftAt line (genericParameters ((capture line.text caps 2).getD []))
       let sig ← signature ((capture line.text caps 1).getD [] ++ (capture line.text caps 3).getD []) line

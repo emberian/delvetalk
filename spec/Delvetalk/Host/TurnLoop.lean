@@ -548,7 +548,8 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
       ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
   | .ok (again, built) =>
     let o := again.object
-    let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", [], s.world.clock, id, citedStates s.world o.law⟩
+    let facts : Law.Facts := { subject := s.principal, caller := self, height := s.world.height + 1, turn := s.world.height + 1,
+                                 pin := o.pin, kind := 1, clock := s.world.clock, object := id, reads := citedStates s.world o.law }
     if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
       return ← refusedReading bounds responseType clause ((o.readings.lookup clause).getD s!"the law of {id} does not admit this layer.")
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
@@ -1050,7 +1051,8 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
     that reads the state is judged on it too (codex agent 11: `request.subject == new.owner or …`
     refuses a stranger whatever the method writes, unless the method moves the owner). -/
 def methodAdmits (w : World) (o : Object) (principal method : String) (id : String := "") : Json :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, [], w.clock, id, citedStates w o.law⟩
+  let facts : Law.Facts := { subject := principal, caller := "", height := w.height + 1, turn := w.height + 1, pin := o.pin,
+                              method, verb := method, clock := w.clock, object := id, reads := citedStates w o.law }
   match o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause with
   | none => Json.bool true
   | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
@@ -1190,7 +1192,8 @@ def cardPowers : List String := ["retire", "unretire", "hide", "show"]
 /-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
     it stands? As `methodAdmits` judges a method. -/
 def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : String := "") : Bool :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", [], w.clock, id, citedStates w o.law⟩
+  let facts : Law.Facts := { subject := principal, caller := "", height := w.height + 1, turn := w.height + 1, pin := o.pin,
+                              kind, clock := w.clock, object := id, reads := citedStates w o.law }
   (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
 
 /-- `adopt`'s field as the usage prints it: a law written inline, or the id of what holds one. -/
