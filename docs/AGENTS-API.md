@@ -102,7 +102,8 @@ Bend has lambdas, `fn(x: T) -> U: body`, types required. `Maybe<T>` is in `List.
 `case _: body`. A method is `Activity<A>` and asks the world by `world.X(arg)` (`world.view::<S>(...)` where the result's type
 cannot be inferred); `World.obend` lists every method and its result sum. A write is staged: admission is decided at commit,
 so an arm after a write that expects a refusal is dead. `let written(_) = write {f: add 1n}` continues on that one response
-and refuses the turn on any other; `refuse("why")` ends the turn with a named refusal. Messages carry data, never closures:
+and refuses the turn on any other; `refuse(line)` ends the turn refused, `line` any String the card computes, read as
+`refused <clause>: <reading>` (class `cardRefused`). Messages carry data, never closures:
 no world call inside a lambda; fan-out is explicit recursion, and whoever wants to know of a change subscribes
 (`world.subscribe({object, field, method})`). A `form NAME:` block declares a method's input and its bounds. A field nothing
 may change is `fixed` in the State. A law is one line per clause over `request.subject`, `caller`, `method`, `kind`,

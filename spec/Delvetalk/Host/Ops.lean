@@ -477,7 +477,7 @@ def Proposal.digest (p : Proposal) : String :=
 def refusalClasses : List String :=
   ["staleRoot", "typeMismatch", "capacity", "absentItem", "lawRefused", "unknownObject",
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
-   "keyTaken", "duplicateKey", "badSpell", "quota", "noMethod", "quiet"]
+   "keyTaken", "duplicateKey", "badSpell", "quota", "noMethod", "quiet", "cardRefused"]
 
 open Lean Elab Term in
 /-- `natsIn% N`: every `Nat` definition of namespace `N`, as `[(its name, its value)]` in name order, so a
@@ -507,8 +507,33 @@ structure Refusal where
   next : Option Nat := none
   /-- For `lawRefused`: the refusing clause's reading, wherever the law came from (the package, a law
       given at creation or by amendment, a Bend verdict, a kind's clause it cites, the host's own clauses).
-      Journaled beside `reason`, which `voiced` writes from it: `refused <clause>: <reading>`. -/
+      For `cardRefused`: the reading of the card's own line. Journaled beside `reason`, which `voiced`
+      writes from it: `refused <clause>: <reading>`. -/
   reading : Option String := none
+
+/-- `text` within `bytes` UTF-8 bytes: whole, or its longest prefix of whole characters that fits
+    followed by `…`. -/
+def withinBytes (text : String) (bytes : Nat) : String :=
+  if text.utf8ByteSize ≤ bytes then text else
+  (text.foldl (fun (kept : String × Nat) c =>
+    if kept.2 + c.utf8Size ≤ bytes then (kept.1.push c, kept.2 + c.utf8Size) else (kept.1, bytes + 1)) ("", 0)).1 ++ "…"
+
+/-- A card's own refusal (`refuse(line)` in its Bend, class `cardRefused`), refused by `object`: the
+    clause and reading of a line `refused <clause>: <reading>` (the clause one word, split at the first
+    `: `), else clause `card` and the whole line as the reading. The reading is journaled within
+    `Limits.maxRefusalBytes` (`withinBytes`): the card's refusal stands, its text is bounded. -/
+def cardRefusal (object line : String) : Refusal :=
+  let parsed : Option (String × String) :=
+    if line.startsWith "refused " then
+      match (line.drop "refused ".length).toString.splitOn ": " with
+      | clause :: reading :: more =>
+        if clause.isEmpty || clause.any Char.isWhitespace || clause.utf8ByteSize > Limits.maxMethodBytes then none
+        else some (clause, ": ".intercalate (reading :: more))
+      | _ => none
+    else none
+  let (clause, reading) := parsed.getD ("card", line)
+  { cls := "cardRefused", clause := some clause, object := some object,
+    reading := some (withinBytes reading Limits.maxRefusalBytes) }
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
@@ -583,7 +608,7 @@ def Refusal.voiced (r : Refusal) : Refusal :=
     | "keyTaken" => some "another row holds that key; upsert, or add an ordinal."
     | "duplicateKey" => some "the write names one key twice."
     | "budgetExhausted" => given.map exhaustedReason
-    | "lawRefused" => (r.reading.map fun t => s!"refused {r.clause.getD "law"}: {t}") <|> given
+    | "lawRefused" | "cardRefused" => (r.reading.map fun t => s!"refused {r.clause.getD "law"}: {t}") <|> given
     | _ => given
   { r with reason }
 

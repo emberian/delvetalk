@@ -387,13 +387,15 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
   | done {context : Context} {value : Term} {planType response result : Ty} {uses : Uses} :
       PartialTyping assumptions context value result uses → result.isComputation = false →
       PartialTyping assumptions context (.done value) (.computation planType response result) uses
-  /-- Hosted extension: refuse the turn, naming why. Only an activity refuses, at any
-  activity type over a message Plan and a data response; it uses nothing. -/
-  | refuse {context : Context} {reason : String} {planType response result : Ty} :
+  /-- Hosted extension: refuse the turn, naming why, the reason a String computed before the
+  turn ends. Only an activity refuses, at any activity type over a message Plan and a data
+  response; it uses what its reason uses. -/
+  | refuse {context : Context} {reason : Term} {planType response result : Ty} {uses : Uses} :
+      PartialTyping assumptions context reason .label uses →
       planType.isPlanUnder assumptions.bounds assumptions.rigid = true →
       response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true →
       result.isComputation = false →
-      PartialTyping assumptions context (.refuse reason) (.computation planType response result) (zeroUses context)
+      PartialTyping assumptions context (.refuse reason) (.computation planType response result) uses
   /-- Sequencing: the activity's result selects an arm; every arm is an activity
   over the same plan/response types. This is the only `bind`. -/
   | effectCase {context : Context} {scrutinee : Term} {arms : List (String × Term)}
@@ -729,20 +731,23 @@ def inferAt {α : Type} (assumptions : Assumptions) (here : α → Option Lambda
         some ⟨.computation annotation.domain annotation.codomain value.type, value.uses,
           .done value.derivation hn⟩
       else none
-  | _ + 1, .refuse _ => do
+  | fuel + 1, .refuse reason => do
       -- The annotation at `refuse` names the activity type it stands in for, as its
-      -- codomain.
+      -- codomain; the reason is a String.
       let annotation ← here position
-      match annotation.codomain with
-      | .computation planType response result =>
-        if hp : planType.isPlanUnder assumptions.bounds assumptions.rigid = true then
-          if hr : response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
-            if hn : result.isComputation = false then
-              some ⟨.computation planType response result, zeroUses context, .refuse hp hr hn⟩
+      let r ← inferAt assumptions here child context (child position 0) fuel reason
+      if hl : r.type = .label then
+        match annotation.codomain with
+        | .computation planType response result =>
+          if hp : planType.isPlanUnder assumptions.bounds assumptions.rigid = true then
+            if hr : response.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
+              if hn : result.isComputation = false then
+                some ⟨.computation planType response result, r.uses, .refuse (hl ▸ r.derivation) hp hr hn⟩
+              else none
             else none
           else none
-        else none
-      | _ => none
+        | _ => none
+      else none
 
 def inferFieldsAt {α : Type} (assumptions : Assumptions) (here : α → Option LambdaAnnotation)
     (child : α → Nat → α) (context : Context) (position : α) (index : Nat) : Nat → (fields : List (String × Term)) → Option (InferredFields assumptions context fields)
@@ -1507,7 +1512,7 @@ def decodeTerm : Nat → Json → Except String Term
     | "relationCount" => return .relationCount (← sub "relation")
     | "relationLookup" =>
       return .relationLookup (← sub "relation") (← decodeTexts (← value.getObjVal? "key")) (← sub "probe")
-    | "refuse" => return .refuse (← value.getObjValAs? String "reason")
+    | "refuse" => return .refuse (← sub "reason")
     | _ => .error "unknown Objective runtime constructor"
 
 def decodeLambda (table : Array (Ty × Nat)) (value : Json) : Except String LambdaAnnotation := do
@@ -1803,18 +1808,30 @@ theorem data_not_eliminated :
 /-- Rule refuse: a refusal arm stands for the activity type its annotation names, beside
 an arm that continues, so `let written(_) = perform(p)` types as its match... -/
 theorem refusal_arm_accepted :
-    (check ⟨writeActivity (.done (.nat 1)) (.refuse "unexpected response refused"),
+    (check ⟨writeActivity (.done (.nat 1)) (.refuse (.label "unexpected response refused")),
       performAt [0] (fun position => if position = [1,0] then some doneSignature
         else if position = [1,1] then some ⟨.computation planType .data .natural,
           .computation planType .data .natural,.unrestricted,.reusable⟩ else none),{}⟩ [] 32).map
       (fun checked => checked.type) = some (.computation planType .data .natural) := by decide
 /-- ...a refusal is never a pure value... -/
 theorem pure_refusal_refused :
-    (check ⟨.refuse "no",fun position => if position = [] then
+    (check ⟨.refuse (.label "no"),fun position => if position = [] then
       some ⟨.natural,.natural,.unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
 /-- ...and never sits in a shared position (here a record field). -/
 theorem refusal_in_field_refused :
-    (check ⟨.record [("next",.refuse "no")],fun position => if position = [0] then
+    (check ⟨.record [("next",.refuse (.label "no"))],fun position => if position = [0] then
+      some ⟨.computation planType .data .natural,.computation planType .data .natural,
+        .unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
+
+/-- A refusal's reason is a String the program computes (here `"refused " ++ "late"`)... -/
+theorem computed_refusal_accepted :
+    (check ⟨.refuse (.binary .textConcat (.label "refused ") (.label "late")),fun position => if position = [] then
+      some ⟨.computation planType .data .natural,.computation planType .data .natural,
+        .unrestricted,.reusable⟩ else none,{}⟩ [] 32).map
+      (fun checked => checked.type) = some (.computation planType .data .natural) := by decide
+/-- ...and only a String: a number is no reason. -/
+theorem natural_refusal_reason_refused :
+    (check ⟨.refuse (.nat 1),fun position => if position = [] then
       some ⟨.computation planType .data .natural,.computation planType .data .natural,
         .unrestricted,.reusable⟩ else none,{}⟩ [] 32).isNone = true := by decide
 
@@ -1846,6 +1863,7 @@ theorem message_closure_result_refused :
 #assert_axioms message_sites_accepted message_closure_result_refused
 #assert_axioms record_to_data_accepted closure_to_data_refused data_not_eliminated
 #assert_axioms refusal_arm_accepted pure_refusal_refused refusal_in_field_refused
+  computed_refusal_accepted natural_refusal_reason_refused
 #assert_axioms exhaustive_case_accepted reordered_arms_accepted missing_arm_refused
   extra_arm_refused undeclared_injection_refused unannotated_injection_refused
   arm_results_must_agree equality_branch_accepted label_condition_refused label_equality_accepted

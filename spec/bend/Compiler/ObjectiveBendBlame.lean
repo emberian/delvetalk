@@ -235,7 +235,12 @@ partial def explain (a : Assumptions) (ann : Annotations) (ctx : Context) (pos :
       match sub ctx 0 inner with
       | none => down ctx 0 inner
       | some v => at_ pos (child 0) "an activity's result must be data, not another activity" .other none (some v.type)
-    | .refuse _ => at_ pos pos "refuse stands only where an activity over a Plan sum finishes"
+    | .refuse reason =>
+      match sub ctx 0 reason with
+      | none => down ctx 0 reason
+      | some r =>
+        if r.type != .label then mismatch pos (child 0) "refuse takes a String, the reason" .label r.type
+        else at_ pos pos "refuse stands only where an activity over a Plan sum finishes"
     | .specification m e | .prototype m e | .mix m e | .fix m e =>
       match sub ctx 0 m with
       | none => down ctx 0 m
@@ -289,7 +294,7 @@ children `i`; an extension's fields and a match's arms are children `1, i`). -/
 def step : ATerm → List Nat → Option (ATerm × List Nat)
   | .lam _ b, 0 :: rest | .reflect b, 0 :: rest | .metadata b, 0 :: rest | .project b, 0 :: rest
   | .unary _ b, 0 :: rest | .get b _, 0 :: rest | .inject _ _ _ b, 0 :: rest | .perform _ _ b, 0 :: rest
-  | .done _ _ b, 0 :: rest | .toData _ b, 0 :: rest => some (b, rest)
+  | .done _ _ b, 0 :: rest | .toData _ b, 0 :: rest | .refuse _ b, 0 :: rest => some (b, rest)
   | .app a _, 0 :: rest | .mix a _, 0 :: rest | .fix a _, 0 :: rest | .specification a _, 0 :: rest
   | .prototype a _, 0 :: rest | .binary _ a _, 0 :: rest | .textJoin a _, 0 :: rest
   | .relationCount a, 0 :: rest | .relationLookup a _ _, 0 :: rest => some (a, rest)

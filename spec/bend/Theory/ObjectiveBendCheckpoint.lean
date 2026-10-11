@@ -84,7 +84,7 @@ def encodeTerm : Term → Tokens
   | .unary primitive argument => .nat 23 :: .nat (unaryCode primitive) :: encodeTerm argument
   | .toData value => .nat 24 :: encodeTerm value
   | .textJoin list separator => .nat 25 :: (encodeTerm list ++ encodeTerm separator)
-  | .refuse reason => [.nat 26, .text reason]
+  | .refuse reason => .nat 26 :: encodeTerm reason
   | .relationCount relation => .nat 27 :: encodeTerm relation
   | .relationLookup relation key probe => .nat 28 :: (encodeTerm relation ++ encodeTexts key ++ encodeTerm probe)
 def encodeFields : List (String × Term) → Tokens
@@ -128,7 +128,7 @@ def encodeTermOnto : Term → Tokens → Tokens
   | .unary primitive argument, acc => .nat 23 :: .nat (unaryCode primitive) :: encodeTermOnto argument acc
   | .toData value, acc => .nat 24 :: encodeTermOnto value acc
   | .textJoin list separator, acc => .nat 25 :: encodeTermOnto list (encodeTermOnto separator acc)
-  | .refuse reason, acc => .nat 26 :: .text reason :: acc
+  | .refuse reason, acc => .nat 26 :: encodeTermOnto reason acc
   | .relationCount relation, acc => .nat 27 :: encodeTermOnto relation acc
   | .relationLookup relation key probe, acc =>
       .nat 28 :: encodeTermOnto relation (encodeTexts key ++ encodeTermOnto probe acc)
@@ -139,11 +139,11 @@ end
 
 mutual
 theorem encodeTermOnto_eq : (t : Term) → (acc : Tokens) → encodeTermOnto t acc = encodeTerm t ++ acc
-  | .bound _, _ | .nat _, _ | .boolean _, _ | .label _, _ | .refuse _, _ => by
+  | .bound _, _ | .nat _, _ | .boolean _, _ | .label _, _ => by
       simp [encodeTermOnto, encodeTerm]
   | .lam a, acc | .reflect a, acc | .metadata a, acc | .project a, acc | .get a _, acc
   | .inject _ a, acc | .perform a, acc | .done a, acc | .unary _ a, acc | .toData a, acc
-  | .relationCount a, acc => by
+  | .relationCount a, acc | .refuse a, acc => by
       simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a]
   | .relationLookup a _ b, acc => by
       simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a, encodeTermOnto_eq b]
@@ -218,7 +218,7 @@ def decodeTerm : Nat → Tokens → Option (Term × Tokens)
         pure (.unary primitive argument, rest)
     | 24, _ => one .toData
     | 25, _ => two .textJoin
-    | 26, .text reason :: rest => some (.refuse reason, rest)
+    | 26, _ => one .refuse
     | 27, _ => one .relationCount
     | 28, _ => do
         let (relation, rest) ← decodeTerm fuel rest
@@ -332,7 +332,7 @@ def encodeDataFieldsFast (fs : List (String × Data)) : Tokens := encodeDataFiel
 @[csimp] theorem encodeDataFields_eq_onto : @encodeDataFields = @encodeDataFieldsFast :=
   funext fun fs => by simp [encodeDataFieldsFast, encodeDataFieldsOnto_eq]
 
-#assert_axioms encodeTerm_eq_onto encodeFields_eq_onto encodeData_eq_onto encodeDataFields_eq_onto
+#assert_axioms encodeTerm_eq_onto encodeFields_eq_onto encodeData_eq_onto encodeDataFields_eq_onto encodeTermOnto_eq
 
 mutual
 def decodeData : Nat → Tokens → Option (Data × Tokens)
@@ -426,6 +426,7 @@ def encodeFrame : Frame → Tokens
   | .relationProbe key probe payload => .nat 20 :: (encodeTexts key ++ [.nat probe, .nat payload])
   | .relationSearch key probe field low high =>
       .nat 21 :: (encodeTexts key ++ [.nat probe, .text field, .nat low, .nat high])
+  | .refuse => [.nat 22]
 def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
   | .nat 0 :: rest => do
       let (term, rest) ← decodeTerm fuel rest; let (environment, rest) ← decodeAddresses rest
@@ -435,6 +436,7 @@ def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
   | .nat 3 :: rest => some (.reflect, rest)
   | .nat 4 :: rest => some (.metadata, rest)
   | .nat 5 :: rest => some (.project, rest)
+  | .nat 22 :: rest => some (.refuse, rest)
   | .nat 6 :: rest => do
       let (fields, rest) ← decodeFields fuel rest; let (environment, rest) ← decodeAddresses rest
       pure (.extend fields environment, rest)

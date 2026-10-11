@@ -186,7 +186,7 @@ partial def freeRows (t : Term) : Array (String × List Nat) :=
       | .textJoin a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "textJoin", union x y)
       | .relationCount a => let (acc, x) := go acc a; (acc, "relationCount", x)
       | .relationLookup a _ b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "relationLookup", union x y)
-      | .refuse _ => (acc, "refuse", [])
+      | .refuse a => let (acc, x) := go acc a; (acc, "refuse", x)
     (acc.set! index (tag, free), free)
   (go #[] t).1
 
@@ -210,7 +210,7 @@ def storedRows (request : Json) (rows repeats : Nat) : IO Unit := do
     Json.mkObj [("field", toJson "rains"), ("key", toJson ["n"])],
     Json.mkObj [("field", toJson "marks"), ("key", toJson ["n"])]]))
   let ticksOf : Delvetalk.Turn.Step → Nat
-    | .finished _ _ t | .yielded _ _ _ _ t | .exhausted _ t => t
+    | .finished _ _ t | .yielded _ _ _ _ t | .exhausted _ t | .refused _ t => t
   let mut best := 1000000000000
   let mut ticks : List Nat := []
   let mut held := 0

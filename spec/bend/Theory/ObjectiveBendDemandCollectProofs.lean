@@ -966,7 +966,7 @@ theorem related_stepRaw {f : Nat → Nat} {D : Nat → Prop} {s t : State} (rela
     | ifBool condition whenTrue whenFalse => exact ⟨hr, envIn, rfl, frames_cons envIn stackIn, rfl⟩
     | done value => exact ⟨hr, envIn, rfl, stackIn, rfl⟩
     | toData value => exact ⟨hr, envIn, rfl, stackIn, rfl⟩
-    | refuse reason => exact ⟨hr, allIn_nil D, rfl, stackIn, rfl⟩
+    | refuse reason => exact ⟨hr, envIn, rfl, frames_cons (allIn_nil D) stackIn, rfl⟩
     | unary primitive argument => exact ⟨hr, envIn, rfl, frames_cons (allIn_nil D) stackIn, rfl⟩
     | textJoin list separator => exact ⟨hr, envIn, rfl, frames_cons envIn stackIn, rfl⟩
     | relationCount relation => exact ⟨hr, envIn, rfl, frames_cons (allIn_nil D) stackIn, rfl⟩
@@ -1011,6 +1011,7 @@ theorem related_stepRaw {f : Nat → Nat} {D : Nat → Prop} {s t : State} (rela
         | prototype spec target =>
           exact ⟨hr, allIn_cons (valueIn spec (by simp [valueAddresses])) (allIn_nil D), rfl, restIn, rfl⟩
         | _ => exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
+      | refuse => cases v <;> exact ⟨hr, allIn_nil D, rfl, restIn, rfl⟩
       | metadata =>
         cases v with
         | specification descriptor extension =>

@@ -1,7 +1,7 @@
 """Closed core terms in the evaluators' JSON array wire, for conformance.
 
 Wire (shared by impl/c, impl/js, impl/python and the `evaluate-term` op):
-  ["bound", i] ["nat", "123"] ["boolean", true] ["label", "s"] ["refuse", "reason"] ["lam", b]
+  ["bound", i] ["nat", "123"] ["boolean", true] ["label", "s"] ["refuse", reason] ["lam", b]
   ["app", f, a] ["mix", l, u] ["fix", s, i] ["specification", m, e]
   ["prototype", s, t] ["reflect"|"metadata"|"project"|"perform"|"done"|"toData", x] ["textJoin", list, separator]
   ["relationCount", relation] ["relationLookup", relation, [column, ...], probe]
@@ -9,7 +9,7 @@ Wire (shared by impl/c, impl/js, impl/python and the `evaluate-term` op):
   ["inject", "label", x] ["ifZero", v, z, s] ["ifBool", c, t, f]
   ["record", [[name, term], ...]] ["extend", x, fields] ["case", x, arms]
 A job is {"name", "term", "responses", "fuel"}; generated cases also carry a "kind"
-(term, activity, stuck, diverge, shared-effect, exotic-value, chain) which the runner strips.
+(term, activity, stuck, diverge, shared-effect, exotic-value, chain, stored, refuse) which the runner strips.
 
 Terms are built by kind (nat, bool, label, record, sum, function) so most
 evaluate; a share is deliberately ill-kinded (stuck), diverging, or performs.
@@ -95,8 +95,8 @@ class Gen:
         if c == 2:
             cond, yes, no = self.g_bool(env, h // 2), self.g_nat(env, h // 2), self.g_nat(env, h // 2)
             if r.random() < 0.1:
-                # refuse has no reduction: stuck when this arm is taken, inert when not.
-                refusal = ["refuse", r.choice(STRINGS)]
+                # A refusal at a label has no reduction: stuck when this arm is taken, inert when not.
+                refusal = ["refuse", ["label", r.choice(STRINGS)]]
                 yes, no = (refusal, no) if r.random() < 0.5 else (yes, refusal)
             return ["ifBool", cond, yes, no]
         if c == 3:
@@ -272,10 +272,11 @@ def stuck(g, rng):
         ["project", n], ["reflect", rec], ["metadata", n], ["extend", n, [["a", n]]],
         ["binary", "textTake", n, n], ["binary", "textSpan", l, n], ["ifZero", bo, n, n],
         ["done", ["binary", "add", l, l]],
-        ["refuse", rng.choice(STRINGS)], ["binary", "add", ["refuse", "operand"], n],
-        ["ifBool", ["boolean", True], ["refuse", "taken"], n], ["ifBool", ["boolean", False], n, ["refuse", "taken"]],
-        ["ifBool", ["boolean", True], n, ["refuse", "never"]], ["app", ["lam", ["refuse", "body"]], n],
-        ["case", ["inject", "ok", n], [["ok", ["refuse", "arm"]]]],
+        ["refuse", ["label", rng.choice(STRINGS)]], ["binary", "add", ["refuse", ["label", "operand"]], n],
+        ["ifBool", ["boolean", True], ["refuse", ["label", "taken"]], n],
+        ["ifBool", ["boolean", False], n, ["refuse", ["label", "taken"]]],
+        ["ifBool", ["boolean", True], n, ["refuse", ["label", "never"]]], ["app", ["lam", ["refuse", ["label", "body"]]], n],
+        ["case", ["inject", "ok", n], [["ok", ["refuse", ["label", "arm"]]]]],
     ])
 
 
@@ -318,6 +319,25 @@ def chain(g, rng):
     return ["binary", "modulo", term, ["nat", "1000003"]]
 
 
+def literal(d):
+    """A Data JSON value as the literal term the evaluators read (a list as its cons chain)."""
+    tag = d["tag"]
+    if tag == "natural":
+        return ["nat", d["value"]]
+    if tag == "label":
+        return ["label", d["value"]]
+    if tag == "boolean":
+        return ["boolean", d["value"]]
+    if tag == "record":
+        return ["record", [[f["name"], literal(f["value"])] for f in d["fields"]]]
+    if tag == "variant":
+        return ["inject", d["label"], literal(d["payload"])]
+    items = ["inject", "nil", ["record", []]]
+    for item in reversed(d["items"]):
+        items = ["inject", "cons", ["record", [["head", literal(item)], ["tail", items]]]]
+    return items
+
+
 def stored_cases(rng, count=32):
     """A function of a state holding a relation `r` of rows {k, v, w}, reading none, some or all
     of its rows (KERNEL-HANDOFF section 15). The machine runs the function on the state with `r`
@@ -328,23 +348,6 @@ def stored_cases(rng, count=32):
             {"name": "k", "value": {"tag": "natural", "value": str(i)}},
             {"name": "v", "value": {"tag": "label", "value": rng.choice(LABELS) + str(i)}},
             {"name": "w", "value": {"tag": "natural", "value": str(rng.choice(NATS[:8]))}}]}
-
-    def literal(d):
-        tag = d["tag"]
-        if tag == "natural":
-            return ["nat", d["value"]]
-        if tag == "label":
-            return ["label", d["value"]]
-        if tag == "boolean":
-            return ["boolean", d["value"]]
-        if tag == "record":
-            return ["record", [[f["name"], literal(f["value"])] for f in d["fields"]]]
-        if tag == "variant":
-            return ["inject", d["label"], literal(d["payload"])]
-        items = ["inject", "nil", ["record", []]]
-        for item in reversed(d["items"]):
-            items = ["inject", "cons", ["record", [["head", literal(item)], ["tail", items]]]]
-        return items
 
     rows = ["case", ["get", ["bound", 0], "r"], [["rows", ["get", ["bound", 0], "items"]]]]
 
@@ -404,21 +407,6 @@ def relation_cases(rng, count=16):
             {"name": "r", "value": {"tag": "variant", "label": "rows", "payload": {"tag": "record", "fields": [
                 {"name": "items", "value": {"tag": "list", "items": rows}}]}}}]}
 
-    def literal(d):
-        tag = d["tag"]
-        if tag == "natural":
-            return ["nat", d["value"]]
-        if tag == "label":
-            return ["label", d["value"]]
-        if tag == "record":
-            return ["record", [[f["name"], literal(f["value"])] for f in d["fields"]]]
-        if tag == "variant":
-            return ["inject", d["label"], literal(d["payload"])]
-        items = ["inject", "nil", ["record", []]]
-        for item in reversed(d["items"]):
-            items = ["inject", "cons", ["record", [["head", literal(item)], ["tail", items]]]]
-        return items
-
     relation = ["get", ["bound", 0], "r"]
 
     def probe(k):
@@ -455,6 +443,39 @@ def relation_cases(rng, count=16):
     cases.append(case("relation-2048-hit", big, read(6), [3]))
     cases.append(case("relation-2048-miss", big, read(7), []))
     return cases
+
+
+def refusal_cases():
+    """`refuse` with its reason a term (KERNEL-HANDOFF section 26): a literal, a reason computed
+    from literals, one computed from a bound value, one read from a stored row (the card's state, held
+    stored by the machine), one past a yield, and a reason that is no String or never ends."""
+    owner = ["binary", "textConcat", ["label", "refused owner: only "], ["get", ["bound", 0], "owner"]]
+    state = {"tag": "record", "fields": [
+        {"name": "owner", "value": {"tag": "label", "value": "Kestrel"}},
+        {"name": "r", "value": {"tag": "variant", "label": "rows", "payload": {"tag": "record", "fields": [
+            {"name": "items", "value": {"tag": "list", "items": [
+                {"tag": "record", "fields": [{"name": "k", "value": {"tag": "natural", "value": str(k)}},
+                                             {"name": "v", "value": {"tag": "label", "value": f"v{k}"}}]}
+                for k in range(3)]}}]}}}]}
+    row = ["case", ["case", ["get", ["bound", 0], "r"], [["rows", ["get", ["bound", 0], "items"]]]],
+           [["nil", ["label", "none"]], ["cons", ["get", ["get", ["bound", 0], "head"], "v"]]]]
+    from_row = ["lam", ["refuse", ["binary", "textConcat", ["label", "refused kept: "], row]]]
+    cases = [
+        ("refuse-literal", ["refuse", ["label", "refused card: no"]], []),
+        ("refuse-computed", ["refuse", ["binary", "textConcat", ["label", "refused late: "],
+                                        ["unary", "natText", ["binary", "add", ["nat", "40"], ["nat", "2"]]]]], []),
+        ("refuse-bound", ["app", ["lam", ["refuse", owner]], literal(state)], []),
+        ("refuse-yielded", ["refuse", ["case", ["perform", ["record", [["method", ["label", "view"]]]]],
+                                       [["viewed", ["bound", 0]]]]], [["inject", "viewed", ["label", "a reading"]]]),
+        ("refuse-natural", ["refuse", ["nat", "7"]], []),
+        ("refuse-diverge", ["refuse", diverge(None)], []),
+    ]
+    out = [{"name": name, "kind": "refuse", "term": term, "responses": responses, "fuel": 100000}
+           for name, term, responses in cases]
+    out.append({"name": "refuse-stored", "kind": "stored", "term": ["app", from_row, literal(state)], "responses": [],
+                "fuel": 100000, "stored": {"function": from_row, "state": state,
+                                           "relations": [{"field": "r", "key": ["k"]}], "reads": [0]}})
+    return out
 
 
 def generate(count, seed=1025):
@@ -496,6 +517,7 @@ def generate(count, seed=1025):
     # Stored state, after the seeded stream from a stream of its own (no generated case moves).
     cases.extend(stored_cases(random.Random(seed + 15)))
     cases.extend(relation_cases(random.Random(seed + 16)))
+    cases.extend(refusal_cases())
     return cases
 
 

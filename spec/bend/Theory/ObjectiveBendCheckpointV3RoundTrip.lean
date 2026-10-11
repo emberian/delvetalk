@@ -223,6 +223,7 @@ theorem frameV3_roundTrip (frame : Frame) (fuel : Nat) (rest : Tokens)
   | reflect => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
   | metadata => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
   | project => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
+  | refuse => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
   | relationRows walk => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame, walk_roundTrip]
   | relationList walk => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame, walk_roundTrip]
   | relationProbe key probe payload => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]

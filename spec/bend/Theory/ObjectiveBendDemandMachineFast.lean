@@ -172,10 +172,10 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
     | .record fields => (size+fields.length,depth)
     | .app _ _ | .reflect _ | .metadata _ | .project _ | .get _ _ | .extend _ _
     | .ifZero _ _ _ | .binary _ _ _ | .unary _ _ | .case _ _ | .ifBool _ _ _ | .textJoin _ _
-    | .relationCount _ => (size,depth+1)
+    | .relationCount _ | .refuse _ => (size,depth+1)
     | .relationLookup _ _ _ => (size+1,depth+1)
     | .perform _ => if forcingShared state.stack then (size,depth) else (size+1,depth)
-    | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ | .toData _ | .refuse _ => (size,depth)
+    | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ | .toData _ => (size,depth)
   | .returned value => match state.stack with
     | [] => (size,depth)
     | frame::_ => match frame,value with

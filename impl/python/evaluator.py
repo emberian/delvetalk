@@ -50,7 +50,7 @@ def validate(term):
     elif tag == "boolean":
         if type(term[1]) is not bool:
             raise ValueError("boolean literal must be a JSON Boolean")
-    elif tag in {"label", "refuse"}:
+    elif tag == "label":
         if not valid_string(term[1]):
             raise ValueError(f"{tag} must be a Unicode scalar string")
     elif tag in {"get", "inject"}:
@@ -93,7 +93,7 @@ def walk(term, variable, depth=0):
     tag = term[0]
     if tag == "bound":
         return variable(term[1], depth)
-    if tag in {"nat", "boolean", "label", "refuse"}:
+    if tag in {"nat", "boolean", "label"}:
         return term
     if tag == "lam":
         return [tag, walk(term[1], variable, depth + 1)]
@@ -274,7 +274,7 @@ def focus(term):
         tag = term[0]
         index = None
         if tag in {"app", "get", "extend", "reflect", "metadata", "project",
-                   "ifZero", "ifBool", "case"} and term[1][0] not in VALUES:
+                   "ifZero", "ifBool", "case", "refuse"} and term[1][0] not in VALUES:
             index = 1
         elif tag == "unary" and term[2][0] not in VALUES:
             index = 2

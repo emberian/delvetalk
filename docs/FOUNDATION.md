@@ -81,7 +81,8 @@ reaches, and the closure is checked once per package.
 elaborator inserts it where `Data` is expected); Bend never takes it apart. A
 message carries any payload as `Data`; the host checks it at the callee.
 
-An activity ends its turn with a named refusal by `refuse("why")`.
+An activity ends its turn refused by `refuse(line)`, the line any String it computes;
+the host journals `cardRefused` with the clause and reading of `refused <clause>: <reading>`.
 `let written(_) = world.X(...)` continues with the one response it names and
 refuses the turn, by the response's label, on any other.
 

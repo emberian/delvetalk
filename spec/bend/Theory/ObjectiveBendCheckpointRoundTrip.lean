@@ -108,7 +108,9 @@ theorem term_roundTrip : ∀ (term : Term) (fuel : Nat) (rest : Tokens),
   | .textJoin l s, fuel+1, rest, h => by
       simp only [encodeTerm,List.length_cons,List.length_append] at h
       simp [encodeTerm,decodeTerm,List.append_assoc,term_roundTrip l fuel _ (by omega),term_roundTrip s fuel rest (by omega)]
-  | .refuse reason, _+1, rest, _ => by simp [encodeTerm,decodeTerm]
+  | .refuse reason, fuel+1, rest, h => by
+      simp only [encodeTerm,List.length_cons] at h
+      simp [encodeTerm,decodeTerm,term_roundTrip reason fuel rest (by omega)]
   | .relationCount r, fuel+1, rest, h => by
       simp only [encodeTerm,List.length_cons] at h
       simp [encodeTerm,decodeTerm,term_roundTrip r fuel rest (by omega)]

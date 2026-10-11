@@ -501,6 +501,7 @@ REFUSED = [
      ["refused (let-response)"]),
     (TURN_HEAD + "def f(n: Nat) -> Nat:\n  refuse(\"no\")\n", "f", (), True, (), ["refused (refuse-outside-activity)"]),
     (TURN_HEAD + "def g(n: Nat) -> Activity<Nat>:\n  if refuse(\"no\") then n else 0n\n", "g", (), True, (), ["refused (refuse-outside-tail)"]),
+    (TURN_HEAD + "def g(n: Nat) -> Activity<Nat>:\n  refuse(n)\n", "g", (), True, (), ["refused (refuse-reason): refuse takes a String, the reason; this is Nat"]),
     *[(SCENE + "def f(s: State) -> String:\n  " + text + "\n", "f", (), False, (), [words])
       for text, words in (("\"a {s.title\"", "is not closed"), ("\"a } b\"", "written }}"), ("\"a {s.title s.title}\"", "holds one expression"))],
     (HEAD + "form plant:\n  seed: text 1..80\n", "plantForm", FORM_LIB, False, (), ["a form block needs the Form library"]),
@@ -631,15 +632,17 @@ class Sugar(unittest.TestCase):
                 {"name": "clause", "value": {"tag": "label", "value": "owner"}}]}), ("later", None)):
             with self.subTest(response=label):
                 reply = self.h.resume(art, self.h.start(art, [nat(4)])["checkpoint"], variant(label, payload))
-                self.assertEqual(reply, {"status": "error", "message": "turn refused: unexpected response " + label})
+                self.assertEqual((reply["status"], reply["reason"]), ("refused", "unexpected response " + label), reply)
         # The second statement refuses after the first continues.
         art = self.compiled(TWICE_SUGARED, "twice", world=True)
         second = self.h.resume(art, self.h.start(art, [nat(1)])["checkpoint"], variant("written"))
         self.assertEqual(second["status"], "yielded", second)
-        self.assertEqual(self.h.resume(art, second["checkpoint"], variant("written"))["message"], "turn refused: unexpected response written")
-        # In both branches of a tail `if`, refuse is where the activity finishes.
-        art = self.compiled(TURN_HEAD + "def h(n: Nat) -> Activity<Nat>:\n  if n == 0n then refuse(\"zero\") else n\n", "h", world=True)
-        self.assertEqual(self.h.start(art, [nat(0)])["message"], "turn refused: zero")
+        self.assertEqual(self.h.resume(art, second["checkpoint"], variant("written"))["reason"], "unexpected response written")
+        # In both branches of a tail `if`, refuse is where the activity finishes; its reason is any
+        # String, computed before the turn ends (KERNEL-HANDOFF section 26).
+        art = self.compiled(TURN_HEAD + "def h(n: Nat) -> Activity<Nat>:\n  if n < 2n then refuse(\"refused small: {natText(n)} is under 2\") else n\n", "h", world=True)
+        self.assertEqual((self.h.start(art, [nat(0)])["status"], self.h.start(art, [nat(1)])["reason"]),
+                         ("refused", "refused small: 1 is under 2"))
         self.assertEqual(self.h.start(art, [nat(3)])["value"], nat(3))
 
     def test_a_source_field_is_the_source_kind_of_a_form_library_that_has_it(self):

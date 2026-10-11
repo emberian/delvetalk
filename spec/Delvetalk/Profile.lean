@@ -33,7 +33,7 @@ def frameKind : Frame → String
   | .ifBool .. => "ifBool" | .joinSeparator .. => "joinSeparator" | .joinList .. => "joinList"
   | .joinCons .. => "joinCons" | .joinHead .. => "joinHead"
   | .relationRows _ => "relationRows" | .relationList _ => "relationList"
-  | .relationProbe .. => "relationProbe" | .relationSearch .. => "relationSearch"
+  | .relationProbe .. => "relationProbe" | .relationSearch .. => "relationSearch" | .refuse => "refuse"
 
 def stateKind (state : State) : String :=
   match state.control with
