@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -92,7 +92,7 @@ Outcomes:
 
 - `created`: `{object, pin, sourcesSha256, compile, seed, read, chain, supervisor?, owner?}`; `roots []`, `turn 0`. Replay recompiles, requires the pin to match the source closure, the seed to conform and the amendment dry run to pass at the entry's height.
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
-- `refused`: `{class, clause?, object?, reason?, reading?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a law refusal with a reading journals it as `reading` and `voiced` writes `reason: "refused <clause>: <reading>"` from it (5.154). Replay checks only that the class is known; `publicRefusal` shows a law refusal's reason and reading.
+- `refused`: `{class, clause?, object?, reason?, reading?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient), cardRefused (5.157). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a law refusal with a reading journals it as `reading` and `voiced` writes `reason: "refused <clause>: <reading>"` from it (5.154), as for a card's own refusal (5.157). Replay checks only that the class is known; `publicRefusal` shows a law refusal's reason and reading.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
@@ -1617,6 +1617,22 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      spell's card as resolved); `bridge` drafts, `spell_line`, the play page's `turn_line` and the hand's
      `speak`/`ask` name it instead of guessing from the first root (`kind/room` for an entered room). Test:
      `test_rooms.Floor` (a spell entering a porch names the porch).
+157. **A card's own refusal refuses its turn (kernel16; playtest 2's D6; replay edition 8).** `refuse(line)` takes
+   any String the card computes (KERNEL-HANDOFF §26), and the kernel answers it as `Turn.Step.refused line`, an
+   outcome, where it was a `turn refused: …` error the turn loop journaled `evaluation` (transient). `drive` throws
+   `Abort.card (cardRefusal self line)`; `finishTurn` commits it with nothing of the turn (no writes, creates,
+   sends, offers or publishes; a supervisor hears it only when the await timed out). `Ops.cardRefusal`: class
+   `cardRefused`, binding; `clause` and `reading` from `refused <clause>: <reading>` (the clause one word of at
+   most `maxMethodBytes`, split at the first `: `), else clause `card` and the line whole; `object` the card that
+   refused, a callee as well (its refusal refuses the caller's turn, as before); the reading within
+   `Limits.maxRefusalBytes` (4096; `withinBytes` keeps the whole characters that fit, then `…`). `voiced` writes
+   `reason: "refused <clause>: <reading>"` as for `lawRefused`; `publicRefusal` shows a stranger the class and root
+   only (the reading is computed and may carry state). Being binding, a delivered send a card refuses is consumed,
+   not delivered again. The catalogue (`transport/static/catalogue.json`) has the class; `evaluation` now means
+   only a host or kernel failure. Edition 8: a class replay checks, checkpoint term tag 26 of a new shape, the
+   packets of every refusing program. Test: `test_card_refusal` (a reading from the state, the write before it
+   dropped; the `card` clause; a callee's refusal names the callee; a long reading kept within its bound; a
+   stranger sees no reading; reopened).
 
 ## 6. Gotchas
 
@@ -1631,7 +1647,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126); 4 is host16 (roots
   read by their cells, the per-cell bound and ledger; 5.136); 5 is host17 (a layered package's shape is
   its stack's, 5.138; the relational atoms judged and their citations roots, 5.139); 6 is host18 (a send refused
-  transiently stays pending, 5.150). Test:
+  transiently stays pending, 5.150); 7 is host19 (`context.sender`, 5.155); 8 is kernel16 (`cardRefused`, 5.157). Test:
   `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -1649,27 +1665,13 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 ## 7. Open
 
 The queue after host19 (5.153 to 5.156; of host18's queue, the misfit signal, the readings and `context.sender` are
-done, with the coordinator's D3, F2 and D10), in order. The owner's standing order binds every item: "maturify and take
+done, with the coordinator's D3, F2 and D10; D6, a card's refusal, is kernel16's 5.157), in order. The owner's standing order binds every item: "maturify and take
 forward everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
 together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things', no scar
 and growth tissue." So each replacement deletes what it replaces in the same commit, and this file describes only what
 is.
 
-1. **D6, a card's refusal refuses its turn (the coordinator's, owned by this lane for the kernel's grammar file;
-   not started).** Bend's `refuse(...)` takes one string literal (`refuseCall`, ObjectiveBendElaborate.lean ~880;
-   `Term.refuse (reason : String)`, ObjectiveBendOpenRecursion.lean 76), so a card cannot refuse with the reading it
-   computes and answers an admitted turn with a refusal card instead. The honest change is a computed reason in the
-   term: `Term.refuse (reason : Term)` (or a `refuseWith`) evaluated to a label before the machine refuses, which
-   touches the typing rule and its proofs (ObjectiveBendTyping 392, 732, 1510), the demand machine and its collect
-   and settle proofs (DemandMachine 328, DemandCollect 349/404/449, DemandCollectProofs 969, DemandSettleProofs
-   110, DemandMachineFast 178), both checkpoint codecs and the round trip (Checkpoint 87/131/221, CheckpointV3
-   70/140, CheckpointRoundTrip 111), the term wire (TermWire 27/66/157), the elaborator (363, 397, 459, 880-893,
-   1284, 1450, 2126, 2662, 3001), `EvaluateTerm`, `Entry`, `Profile`, `CompileProfile`. Then decide the class: a
-   program refusal is `evaluation` with the reason as given; the objects lane wants `refused <clause>: <reading>`,
-   so either `refuse(clause, reading)` journaled as a `lawRefused`-like card class with `reading` (5.154) or the
-   reason voiced by the card. Do not desugar into a hidden `world.` yield: the refusal belongs to the term.
-
-2. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
+1. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
    old path: T30 reach as a host op (`world-reach {text, replyTo, root, kind, author, chain: [{uri, author,
    replyTo}]}` answering `{object, slot, how}` or nothing: the host holds `posts` (the addressee walk), the spell
    parse (`Parsed.spell`'s card), the commonplace's doors (`named_door`) and the summon rule; the bridge passes only
@@ -1688,17 +1690,17 @@ is.
    (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls; the
    "directory" strings (`otherCard`'s "the directory lists the doors", the unknownObject hint: the first card is
    `commonplace`).
-3. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
+2. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
    `inspect` and `viewField` of a foreign object; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
    `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the
    hand's SCRATCHES page.
-4. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
+3. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
    the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
    per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).
-5. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
+4. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
    sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; held worlds never closed;
    `world-inspect`'s `cites` per clause.
-6. Smaller, standing:
+5. Smaller, standing:
    - `hand.speak` (transport) casts one spell through `spell-parse`; a hand post of several spells answers
      `{status: "spells"}` without a top `receipt`, which it reports as an error. Teach it the turns, or keep it one.
    - `tests/test_pull_backups.Retention` depends on the time of day (names built from `now - 12h` and `now - 6h`
@@ -1706,7 +1708,7 @@ is.
    - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new `root:<n>`;
      `set pin` stores the pin alone; `as` runs the method as named; `root-edit` does not rewrite CIDs inside
      checkpoints and states. `openerActs`' interpret-quota exemption ignores `resident`: decide.
-   - Deploy: edition 7 (5.155) needs a new genesis for every world.
+   - Deploy: edition 8 (5.155, 5.157) needs a new genesis for every world.
    - The objects lane, after 5.153: fold `Card.Reply` into `Heard` and delete `Record.misfitted`, the room's
      `Super.misfitted` arm, the commonplace's `isNobody(state.policy)` misfit refusal; credit a delivered write to
      `context.sender` (the weather's rain, 5.155).

@@ -53,7 +53,7 @@ def frameAddresses : Frame → List Nat
   | .argument _ environment | .extend _ environment | .condition _ _ environment
   | .binaryLeft _ _ environment | .case _ environment | .ifBool _ _ environment => environment
   | .update address => [address]
-  | .field _ | .reflect | .metadata | .project | .nativeArgument _ | .unary _ => []
+  | .field _ | .reflect | .metadata | .project | .nativeArgument _ | .unary _ | .refuse => []
   | .binaryRight _ value => valueAddresses value
   | .joinSeparator _ environment => environment
   | .joinList .. | .joinCons .. => []
@@ -123,6 +123,7 @@ def renameFrame (f : Nat → Nat) : Frame → Frame
   | .relationList walk => .relationList (renameWalk f walk)
   | .relationProbe key probe payload => .relationProbe key (f probe) (f payload)
   | .relationSearch key probe field low high => .relationSearch key (f probe) field low high
+  | .refuse => .refuse
 
 def renameControl (f : Nat → Nat) : Control → Control
   | .evaluate term environment => .evaluate term (environment.map f)
@@ -345,8 +346,9 @@ def Term.freeIn : Term → Nat → Bool
   | .app a b, j | .mix a b, j | .fix a b, j | .specification a b, j | .prototype a b, j
   | .binary _ a b, j | .textJoin a b, j | .relationLookup a _ b, j => a.freeIn j || b.freeIn j
   | .reflect a, j | .metadata a, j | .project a, j | .unary _ a, j | .get a _, j
-  | .inject _ a, j | .perform a, j | .done a, j | .toData a, j | .relationCount a, j => a.freeIn j
-  | .nat _, _ | .boolean _, _ | .label _, _ | .refuse _, _ => false
+  | .inject _ a, j | .perform a, j | .done a, j | .toData a, j | .relationCount a, j
+  | .refuse a, j => a.freeIn j
+  | .nat _, _ | .boolean _, _ | .label _, _ => false
   | .extend a fields, j => a.freeIn j || Term.fieldsFreeIn fields j
   | .record fields, j => Term.fieldsFreeIn fields j
   | .ifZero a zero successor, j => a.freeIn j || zero.freeIn j || successor.freeIn (j + 1)
@@ -400,8 +402,8 @@ def Term.markFree : Term → Nat → Array Bool → Array Bool
   | .reflect a, depth, marks | .metadata a, depth, marks | .project a, depth, marks
   | .unary _ a, depth, marks | .get a _, depth, marks | .inject _ a, depth, marks
   | .perform a, depth, marks | .done a, depth, marks | .toData a, depth, marks
-  | .relationCount a, depth, marks => a.markFree depth marks
-  | .nat _, _, marks | .boolean _, _, marks | .label _, _, marks | .refuse _, _, marks => marks
+  | .relationCount a, depth, marks | .refuse a, depth, marks => a.markFree depth marks
+  | .nat _, _, marks | .boolean _, _, marks | .label _, _, marks => marks
   | .extend a fields, depth, marks => Term.fieldsMarkFree fields depth (a.markFree depth marks)
   | .record fields, depth, marks => Term.fieldsMarkFree fields depth marks
   | .ifZero a zero successor, depth, marks =>
@@ -444,9 +446,9 @@ theorem markFree_spec : ∀ (t : Term) (depth : Nat) (marks : Array Bool) (j : N
   | .reflect a, depth, marks, j | .metadata a, depth, marks, j | .project a, depth, marks, j
   | .unary _ a, depth, marks, j | .get a _, depth, marks, j | .inject _ a, depth, marks, j
   | .perform a, depth, marks, j | .done a, depth, marks, j | .toData a, depth, marks, j
-  | .relationCount a, depth, marks, j => by
+  | .relationCount a, depth, marks, j | .refuse a, depth, marks, j => by
     simp only [Term.markFree, Term.freeIn]; exact markFree_spec a depth marks j
-  | .nat _, _, marks, j | .boolean _, _, marks, j | .label _, _, marks, j | .refuse _, _, marks, j => by
+  | .nat _, _, marks, j | .boolean _, _, marks, j | .label _, _, marks, j => by
     simp [Term.markFree, Term.freeIn]
   | .extend a fields, depth, marks, j => by
     simp only [Term.markFree, Term.freeIn]; rw [fieldsMarkFree_spec fields, markFree_spec a]
@@ -572,6 +574,6 @@ theorem collect_garbageExample_roots :
 
 #assert_axioms collect_garbageExample_heap_size
 #assert_axioms collect_garbageExample_roots
-#assert_axioms trimCell_eq_fast
+#assert_axioms trimCell_eq_fast markFree_spec
 
 end Delvetalk.Theory.ObjectiveBendDemandCollect

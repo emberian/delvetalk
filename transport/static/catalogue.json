@@ -544,6 +544,11 @@
    "hint": "source",
    "means": "the card's law refused the change; `clause` names the law line and `reason` reads `refused <clause>: <reading>`"
   },
+  "cardRefused": {
+   "transient": false,
+   "hint": "source",
+   "means": "the card refused the turn by its own Bend; `object` names the card, `clause` and `reading` its line, and `reason` reads `refused <clause>: <reading>`"
+  },
   "unknownObject": {
    "transient": false,
    "hint": "world",
@@ -557,7 +562,7 @@
   "evaluation": {
    "transient": true,
    "hint": "source",
-   "means": "the program refused by name or a Plan was malformed; `reason` says which"
+   "means": "the host or kernel could not run the turn (a Plan was malformed, a call went too deep); `reason` says which"
   },
   "budget": {
    "transient": true,

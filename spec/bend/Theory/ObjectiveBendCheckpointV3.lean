@@ -67,7 +67,7 @@ def termHash : Term → UInt64
   | .done a => mix 24 (termHash a)
   | .toData a => mix 25 (termHash a)
   | .textJoin a b => mix (mix 26 (termHash a)) (termHash b)
-  | .refuse r => mix 27 (hash r)
+  | .refuse a => mix 27 (termHash a)
   | .relationCount a => mix 28 (termHash a)
   | .relationLookup a k b => mix (mix (mix 29 (termHash a)) (hash k)) (termHash b)
 def fieldsHash : List (String × Term) → UInt64
@@ -137,7 +137,7 @@ partial def addTerm (d : Dictionary) : Term → Dictionary × UInt64
       | .done a => let (d, x) := addTerm d a; (d, mix 24 x)
       | .toData a => let (d, x) := addTerm d a; (d, mix 25 x)
       | .textJoin a b => let (d, x) := addTerm d a; let (d, y) := addTerm d b; (d, mix (mix 26 x) y)
-      | .refuse r => (d.addString r, mix 27 (hash r))
+      | .refuse a => let (d, x) := addTerm d a; (d, mix 27 x)
       | .relationCount a => let (d, x) := addTerm d a; (d, mix 28 x)
       | .relationLookup a k b =>
         let (d, x) := addTerm (k.foldl Dictionary.addString d) a; let (d, y) := addTerm d b

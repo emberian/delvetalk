@@ -133,3 +133,6 @@ genesis's render and casts each seed post's spells, so a card change fails it un
 7. **`workshop check / target:` of a layered card** (a bell, the garden) reports `import must name an earlier
    supplied module: ./Record.obend`: `inspect`'s source is the layer alone. Host: give the closure, or check a
    target by its pin.
+
+
+**D6 unblocked (2026-10-11, lane/kernel16, edition 8):** `refuse(line)` takes a computed String; a card's refusal refuses its turn as `cardRefused` with the clause and reading parsed from `refused <clause>: <reading>` (else clause `card`). Next: `Card.refusing` becomes `refuse(refusalLine(refusal))`, and every method that announces a refusal with `tell` refuses instead.

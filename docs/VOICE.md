@@ -278,7 +278,8 @@ words were involved, and nothing when a spell was.
 | --- | --- | --- |
 | staleRoot | `{object} moved while you wrote; send the same spell again.` | nothing: a spell again is the whole answer |
 | budget | `the turn ran out of {ticks, heap, stack, nodes, bytes or law ticks}; make it smaller, or send it again later.` | nothing |
-| evaluation | the program's own words (`refuse("why")`) | nothing |
+| evaluation | the host's or kernel's words for a turn it could not run | nothing |
+| cardRefused | `refused {clause}: {reading}`, the card's own line (`refuse(line)`; clause `card` when the line has no clause) | nothing |
 | capacity | `the host's {limit} is full; try later.` | nothing |
 | quota | `the interpreter has read {n} this hour; reply with the spell itself, or wait.`, with `next` | `hob: my hour is spent; the spell itself needs no reading.` |
 | typeMismatch | `not what {method} takes; reply delvetalk {object} ? for its spell.` | nothing: `?` is the answer |

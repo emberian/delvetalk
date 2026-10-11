@@ -104,10 +104,10 @@ theorem freeIn_rename : ∀ (t : Term) (rename : Nat → Nat) (j : Nat),
   | .reflect a, rename, j, h | .metadata a, rename, j, h | .project a, rename, j, h
   | .unary _ a, rename, j, h | .get a _, rename, j, h | .inject _ a, rename, j, h
   | .perform a, rename, j, h | .done a, rename, j, h | .toData a, rename, j, h
-  | .relationCount a, rename, j, h => by
+  | .relationCount a, rename, j, h | .refuse a, rename, j, h => by
     simp only [Term.rename, Term.freeIn] at h
     obtain ⟨i, hi, free⟩ := freeIn_rename a rename j h; exact ⟨i, hi, by simp [Term.freeIn, free]⟩
-  | .nat _, _, _, h | .boolean _, _, _, h | .label _, _, _, h | .refuse _, _, _, h => by
+  | .nat _, _, _, h | .boolean _, _, _, h | .label _, _, _, h => by
     simp [Term.rename, Term.freeIn] at h
   | .extend a fields, rename, j, h => by
     simp only [Term.rename, Term.freeIn, Bool.or_eq_true] at h

@@ -37,8 +37,10 @@ def sayChars : Nat := 300
     shape is its stack's: public methods, relations and law shape kept from below, `compileObject`; the
     law's relational atoms judged, what a law cites recorded as roots); 6: host18 (a send refused transiently
     stays pending, `attempts` and `next` on it, up to `deliveryAttempts`); 7: host19 (a Bend law's context
-    names the turn's `sender`, read on replay from the pending delivery the entry consumes). -/
-def replayEdition : Nat := 7
+    names the turn's `sender`, read on replay from the pending delivery the entry consumes); 8: kernel16
+    (a card's own refusal is the class `cardRefused`, its reason a term: checkpoint term tag 26 and the
+    packets of every refusing program changed shape). -/
+def replayEdition : Nat := 8
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -125,6 +127,9 @@ def maxPackageBytes : Nat := Bounds.maxPackageBytes
 /-- Law text of an `amend`, and the clauses in it. -/
 def maxLawBytes : Nat := 4096
 def maxLawClauses : Nat := 16
+/-- Bytes of the reading a card's own refusal journals (`refuse(line)`, class `cardRefused`): a law
+    reading's size; a longer one is kept to its first characters within it, then `…`. -/
+def maxRefusalBytes : Nat := 4096
 /-- How deep `under "O"` citations are followed: a cited law's `under` is judged one level down, and at
     depth 0 an `under` is false, so a cycle ends (docs/LAW.md §4 F). -/
 def lawDepth : Nat := 4

@@ -113,8 +113,8 @@ Lambdas are `fn(x: T) -> U: body`, types required; `Maybe<T>` (`none | some {val
 `sum Name:` then `label: {fields}`, matched by `case label(x): body`, `case _: body`. A method is `Activity<A>` and
 asks the world by `world.X(arg)` (`world.view::<S>(...)` where the type cannot be inferred); `World.obend` lists every
 method and its result sum. A write is staged and judged at commit, so an arm after a write that expects a refusal is
-dead; `let written(_) = write {f: add 1n}` continues on that response alone; `refuse("why")` ends the turn (a
-literal). Messages carry data, never closures: no world call inside a lambda; fan-out is explicit recursion; whoever
+dead; `let written(_) = write {f: add 1n}` continues on that response alone; `refuse(line)` ends the turn
+refused, `line` any String, read as `refused <clause>: <reading>` (class `cardRefused`). Messages carry data, never closures: no world call inside a lambda; fan-out is explicit recursion; whoever
 wants to know of a change subscribes (`world.subscribe({object, field, method})`). A `form NAME:` block declares a
 method's input and bounds; a field nothing may change is `fixed`; `context.sender` is the object whose send a turn
 delivers. Beside the text law, an optional `def law(old, new, request) -> Verdict` in Bend.

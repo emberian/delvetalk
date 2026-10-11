@@ -113,6 +113,8 @@ inductive Frame where
   | relationProbe (key : List String) (probe payload : Address)
   /-- The stored key at the middle of positions `low` to `high` is being probed. -/
   | relationSearch (key : List String) (probe : Address) (field : String) (low high : Nat)
+  /-- `refuse`: its reason is being evaluated; the label it returns is the refusal. -/
+  | refuse
   deriving Repr
 inductive Refusal where
   | unbound | missingCell | missingField | wrongValue | invalidUpdate | capacity | missingArm
@@ -120,7 +122,7 @@ inductive Refusal where
   stack): its effect would be cached and shared, so it is refused. Typed programs
   never reach it (computation types are never cell types). -/
   | sharedEffect
-  /-- The program refused its turn by name (`Term.refuse`). -/
+  /-- The program refused its turn by name (`Term.refuse`), with the text its reason evaluated to. -/
   | program (reason : String)
   /-- A stored row was entered with no host store to fetch it from (`stepRaw` alone, or the
   store has no such row). -/
@@ -325,7 +327,7 @@ def stepRaw (state : State) : State :=
     | .case scrutinee arms => {state with control:=.evaluate scrutinee environment, stack:=.case arms environment::state.stack}
     | .ifBool condition whenTrue whenFalse => {state with control:=.evaluate condition environment, stack:=.ifBool whenTrue whenFalse environment::state.stack}
     | .done value | .toData value => {state with control:=.evaluate value environment}
-    | .refuse reason => {state with control:=.refused (.program reason)}
+    | .refuse reason => {state with control:=.evaluate reason environment, stack:=.refuse::state.stack}
     | .textJoin list separator =>
       {state with control:=.evaluate separator environment, stack:=.joinSeparator list environment::state.stack}
     | .relationCount relation =>
@@ -466,6 +468,9 @@ def stepRaw (state : State) : State :=
           {state with heap:=state.heap.push (.stored (.found field ((low + high) / 2)) none), control:=.returned (.variant "some" address), stack:=rest}
         | .natural _ => searchStep state.heap key probe field low ((low + high) / 2) rest
         | _ => {state with control:=.refused .wrongValue,stack:=rest}
+      | .refuse => match value with
+        | .label reason => {state with control:=.refused (.program reason),stack:=rest}
+        | _ => {state with control:=.refused .wrongValue,stack:=rest}
 
 /-- A blackhole is a non-result divergence observation, not a catchable language
 exception. Tick exhaustion and allocation capacity suspend with the EXACT
@@ -549,6 +554,14 @@ theorem perform_yields (heap : Array Cell) (plan : Term) (environment : Environm
       ⟨heap.push (.suspended ⟨plan,environment⟩),.yielded heap.size,stack⟩ := by
   simp [stepRaw, direct]
 
-#assert_axioms perform_yields perform_under_update_refused resume_requires_yield
+/-- A refusal evaluates its reason before the turn ends: `refuse (a ++ b)` stops, seven
+transitions on, refused with the text `a ++ b`, the heap and the stack as they were. -/
+theorem refuse_evaluates_its_reason (heap : Array Cell) (a b : String) (environment : Environment)
+    (stack : List Frame) :
+    Nat.repeat stepRaw 7 ⟨heap,.evaluate (.refuse (.binary .textConcat (.label a) (.label b))) environment,stack⟩ =
+      ⟨heap,.refused (.program (a ++ b)),stack⟩ := by
+  simp [Nat.repeat, stepRaw, valueTerm, scalarValue, primitiveResult]
+
+#assert_axioms perform_yields perform_under_update_refused resume_requires_yield refuse_evaluates_its_reason
 
 end Delvetalk.Theory.ObjectiveBendDemandMachine

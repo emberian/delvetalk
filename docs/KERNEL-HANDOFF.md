@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-11 (lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
+State on 2026-10-11 (lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
 
 ## Summary
 
@@ -140,7 +140,7 @@ Quadratic idioms to avoid: `Lists.append xs x` in a loop; `Lists.length` in a lo
 
 ## 6. Evaluators and conformance
 
-`impl/python/evaluator.py`, `impl/js/evaluator.mjs`, `impl/c/evaluator.c` are independent small-step, call-by-name interpreters of the core; each runs its stream with a deep stack (Python a 512 MiB thread, JS a worker with 256 MiB, C a json-c depth of 65,536) so a 2,048-row literal relation (about 8,000 deep) parses and walks. Input line `{"name","term","responses","fuel"}`; output `{"name","status": value|yield|exhausted|stuck,"term","plans"}`. Term array wire: `["bound",i] ["nat","12"] ["boolean",b] ["label",s] ["lam",b] ["app",f,a] ["mix",l,u] ["fix",s,i] ["specification",m,e] ["prototype",s,t] ["reflect"|"metadata"|"project"|"perform"|"done",x] ["unary",prim,x] ["binary",prim,l,r] ["get",x,name] ["inject",label,x] ["ifZero",v,z,s] ["ifBool",c,t,f] ["record",[[n,t]..]] ["extend",x,fields] ["case",x,arms] ["refuse",text]`, plus `toData`, `textJoin`, `["relationCount", r]` and `["relationLookup", r, [column…], probe]` (each contracted to its expansion, as `textJoin`). An evaluator that rejects a line stops its stream; the runner restarts it and counts the line `rejected`. Text and unary primitives use code-point semantics; `textTake`/`textDrop` use the byte-size guard `n >= byteSize`; C has its own SHA-256. `perform` yields `status:"yield"` with `plans`, resumed from `responses` in order; `["refuse", text]` is a stuck leaf.
+`impl/python/evaluator.py`, `impl/js/evaluator.mjs`, `impl/c/evaluator.c` are independent small-step, call-by-name interpreters of the core; each runs its stream with a deep stack (Python a 512 MiB thread, JS a worker with 256 MiB, C a json-c depth of 65,536) so a 2,048-row literal relation (about 8,000 deep) parses and walks. Input line `{"name","term","responses","fuel"}`; output `{"name","status": value|yield|exhausted|stuck,"term","plans"}`. Term array wire: `["bound",i] ["nat","12"] ["boolean",b] ["label",s] ["lam",b] ["app",f,a] ["mix",l,u] ["fix",s,i] ["specification",m,e] ["prototype",s,t] ["reflect"|"metadata"|"project"|"perform"|"done",x] ["unary",prim,x] ["binary",prim,l,r] ["get",x,name] ["inject",label,x] ["ifZero",v,z,s] ["ifBool",c,t,f] ["record",[[n,t]..]] ["extend",x,fields] ["case",x,arms] ["refuse",reason]`, plus `toData`, `textJoin`, `["relationCount", r]` and `["relationLookup", r, [column…], probe]` (each contracted to its expansion, as `textJoin`). An evaluator that rejects a line stops its stream; the runner restarts it and counts the line `rejected`. Text and unary primitives use code-point semantics; `textTake`/`textDrop` use the byte-size guard `n >= byteSize`; C has its own SHA-256. `perform` yields `status:"yield"` with `plans`, resumed from `responses` in order; `["refuse", reason]` evaluates its reason and is stuck at a value (§26).
 
 Harness: `tests/conformance/generate.py` (seeded; kinds term, activity, stuck, diverge, shared-effect, exotic-value, chain, stored; asserts every tag and primitive occurs; `relation_cases`: 16 small stored relations counted and looked up, then a count, a hit and a miss over 2,048 rows) and `tests/test_conformance.py` (compares status, weak-head shape, and Plans when literal data). `python3 -m tests.test_conformance 1500 [IMPL_DIR]` prints the report. Last recorded (kernel15, 1500 cases plus the fixed `textHasAny`, stored and relation cases): 1486 of 1554 agree per evaluator, 68 known shared-effect, 0 unexpected. The 2,048-row walks are the slowest cases (Python about 13 s for the count). All three evaluators look `textHasAny`'s wanted words up in a set (C: an FNV-1a open-addressing table), linear as the kernel's.
 
@@ -150,7 +150,7 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 
 ## 7. Checkpoints
 
-- Tokens: `.nat n | .text s | .str i`, JSON bare (`3`, `"x"`, `-(i+1)`). Term tags 24 (`toData`), 25 (`textJoin`), 26 (`refuse`, `[26, text]`); join frames 14-17; a refusal is `encodeRefusal` (`[8, text]` for `program`). Only additions: a checkpoint using a new tag does not decode on an older binary.
+- Tokens: `.nat n | .text s | .str i`, JSON bare (`3`, `"x"`, `-(i+1)`). Term tags 24 (`toData`), 25 (`textJoin`), 26 (`refuse`, `[26] ++ reason`, §26); join frames 14-17, `refuse` frame 22; a refusal is `encodeRefusal` (`[8, text]` for `program`). Only additions: a checkpoint using a new tag does not decode on an older binary.
 - Edition v3 (`ObjectiveBendCheckpointV3.lean`, `…checkpoint.v3`, §14): the dictionary encoding below of the state with every address relative to its holder. Written against a `Dictionary` rebuilt from the entry's term (`Dictionary.ofProgram entry.source.term`): a term is one token `i+1` for the program's `i`th subterm in preorder, environments of two or more addresses are a table listed once, strings are `Token.str` references. Every reference is emitted only after a check that it names exactly the value, so `stateV3_roundTrip` holds for every dictionary. `Dictionary.ofProgram` runs per start/resume.
 - Collector: `collect` numbers live cells by `canonicalOrder` (depth first from the roots; a list spine put off to the next round), so a reading that walks further does not renumber every later cell. `orderValid` checks the order; otherwise `collectByAddress` (the allocation-order collector) is used.
 - Host side: `resumeOne` rebuilds the `Checkpoint` from journaled tokens plus the activity's object/principal/intent/roots; changing `Checkpoint` fields stops older journals resuming. Block encoding of tokens is the host's (HOST-HANDOFF 5.6); v2 strings are bare or `str` references, so an utterance is no longer cut into its own leaf.
@@ -162,7 +162,7 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 - `textJoin(list, sep)`: `Term.textJoin`, frames `joinSeparator/joinList/joinCons/joinHead`, typing `Ty.listItem … = some .label`, meaning `textJoinExpansion`.
 - Type-argument inference (`Generics.lean`, `inferArguments`, `synthI`): a call of a generic without `::<…>` gets the arguments its explicit spelling names, then is rewritten exactly as that spelling (instance numbers and packets agree; the generics pass visits children in the old JSON's sorted-key order, and changing that order moves every pin with a generic instance). A parameter left unbound is refused: "cannot infer the type argument U of Lists.kept …; write Lists.kept::<T, Rain>(…)". `maxInferenceSteps` bounds it. `world/` writes `::<T>` only where a world call's result type cannot be inferred (`world.view::<S>`, `world.call::<R>`, `world.interpret::<R>`) and never `Data.of`.
 - `let label(x) = world.METHOD(arg)` then the rest of the block: lowers to `match world.METHOD(arg): case label(x): …` plus a `Pattern.unexpected` branch expanded to `case l(_): refuse("unexpected response l")` per other label. The scrutinee must be a world call ("refused (let-response)").
-- `Term.refuse (reason)`, surface `refuse("why")`: stands only where an activity finishes ("refused (refuse-outside-tail)", "refused (refuse-outside-activity)"). Typing rule `PartialTyping.refuse`; machine `control := .refused (.program r)`, `Turn.refusalText` = "turn refused: <reason>". `evaluate-term` reports `stuck`.
+- `Term.refuse (reason : Term)`, surface `refuse(line)`, the line any String (§26): stands only where an activity finishes ("refused (refuse-outside-tail)", "refused (refuse-outside-activity)"; a reason of another type "refused (refuse-reason)"). Typing rule `PartialTyping.refuse`; machine frame `refuse`, then `control := .refused (.program s)`; `Turn.Step.refused` (wire `{status: "refused", reason, ticksUsed}`); the host journals `cardRefused`. `evaluate-term` reports `stuck`.
 - Law readings: `law NAME "reading": EXPR`; `Surface.Decl.law name source reading`.
 - String interpolation (`interpolationPieces`/`joinPieces`): `{expr}` in a string; up to four pieces lower to nested `textConcat`, more to `textJoin(TextPieces…, "")`. `{{`/`}}` are literal braces; a lone `}`, an unclosed `{` and two expressions in one pair of braces are refused by name. Document templates quote braces as `{`/`}`.
 - `form ACTION [as NAME]:` blocks (`formRe`/`formKind`): fields `name: text A..B | natural A..B | source | a | b | c` (`source` is `F.Kind.source({})`, Bend source the host reads as text of 1 to `Host.Limits.formSourceMax`, which is `Bounds.maxPackageBytes`, 131,072 characters and fills from a reply's ```obend fence; the Workshop's `check` and `propose` declare it) declare `def NAME() -> F.Form` (default `ACTIONForm`) from the module's alias `F` of `Form.obend`; refused by name without a Form import or with an unknown kind.
@@ -1003,3 +1003,52 @@ N. (lane/kernel14, docs/review/fungus-2026-10-11.md K1, K2.) Deleted with their 
    declaration being rewritten (item 2). `test_sugar.Sugar.test_each_derived_refusal_names_its_source_line`
    checks through `compile`, which does not localize, so the span is the pass's own.
 5. `textWords`: no object or design document asks for it (grep of docs/ and world/); not built.
+
+## 26. A computed refusal (lane/kernel16, after foundation 1de640d7; playtest 2's D6, HOST-HANDOFF 5.157)
+
+`refuse(...)` took one string literal, so a card could not refuse with the reading it computes: Card's
+`refusing` said `refused <clause>: <reading>` with `tell` and the turn was admitted (the post read
+refused and `● admitted` at once). Now the reason is a term and the refusal is the card's class:
+
+- **Term.** `Term.refuse (reason : Term)`; `refuse("why")` is `.refuse (.label "why")`. The literal-only
+  path is gone. No hidden world call: the refusal belongs to the term.
+- **Reference.** `Step.refuseReason` evaluates the reason under `refuse`; no rule moves `refuse (label s)`:
+  the program has refused with `s` (`refusal_reason_computed`). `SourceFrame.refuse` and `Yields.refuse`
+  mirror the congruence (`yields_no_step`, `yields_deterministic` cover it).
+- **Typing.** `PartialTyping.refuse` takes the reason's derivation at `String` and its uses
+  (`computed_refusal_accepted`, `natural_refusal_reason_refused`). The elaborator refuses a reason of
+  another type by name: "refused (refuse-reason): refuse takes a String, the reason; this is Nat".
+- **Machine.** `evaluate (.refuse r)` pushes `Frame.refuse` and evaluates `r`; a label returned to it
+  stops with `.refused (.program s)`, any other value `.refused .wrongValue`
+  (`refuse_evaluates_its_reason`: seven transitions for `a ++ b`). A literal refusal costs three
+  transitions where it cost one. The frame holds no address; the collector, erasure, both checkpoint
+  codecs (frame tag 22; term tag 26 is `[26] ++ reason`), V3's structural term hash, the round trips,
+  the collector's simulation and the fast machine's `sizesAfter` cover it; `Term.freeIn`/`markFree`
+  read the reason's variables.
+- **Wire.** Packet `{"tag":"refuse","reason":TERM}`; evaluator array `["refuse", TERM]`: the three
+  evaluators step the reason and are stuck at a value. Conformance `refusal_cases`: a literal, a reason
+  computed from literals, one from a bound value, one read from a stored row (the machine holds the
+  state stored and forces that one row), one past a yield, one not a String, one that never ends.
+  1500 cases: 1493 of 1561 agree per evaluator, 68 known shared-effect, 0 unexpected.
+- **Turn.** `Turn.Step.refused (reason) (ticksUsed)` and `Outcome.refused`: a program's refusal is an
+  outcome, not an error string, so the host tells it from a kernel failure; `turn-start`/`turn-resume`
+  answer `{status: "refused", reason, ticksUsed}`. `refusalText` keeps the machine's failures only.
+- **Host.** Class `cardRefused` (binding, as `lawRefused`; HOST-HANDOFF 5.157): `Ops.cardRefusal` parses
+  `refused <clause>: <reading>` (the clause one word, split at the first `: `), else clause `card` and the
+  line whole; `object` is the card that refused (a callee's refusal refuses the whole turn); the reading
+  is kept within `Limits.maxRefusalBytes` (4096, a law reading's size; `withinBytes` keeps the whole
+  characters that fit, then `…`). Not `evaluation` (a kernel or host failure, transient, which a
+  supervisor hears as `broken`) and not `lawRefused` (a law's or the host's authority clause, whose reading
+  is public law text): a card's reading is computed and may carry state, so `publicRefusal` shows the
+  class and root only. Replay edition 8.
+- **Pins.** 174 of 788 compiled world entries moved packet (every one reaching a `refuse`, the
+  `let label(x) =` expansions among them: the reason is a term on the wire); re-recorded. Source pins
+  did not move.
+- **Measured** (hbox, the base binary built from foundation 1de640d7 beside this one, alternated, three
+  runs each): compiling all 788 world entries 7.8 to 8.8 s either way, artifacts 47,526,904 to 47,532,223
+  bytes (+0.011%); `test_artifact_pins` with `test_tariff` 9.4 to 11.6 s base, 9.5 to 10.1 s new;
+  `test_turn_world`, `test_chain` and `test_hub` 20.3 to 24.1 s base, 20.3 to 22.0 s new. No tariff pin
+  moved.
+- **Next (the objects lane, OBJECTS-HANDOFF D6).** `Card.refusing` becomes `refuse(refusalLine(refusal))`
+  and every method that answers a refusal by `tell` refuses instead; `bell`'s `refused text: …` and
+  Kind's `refused body: …` already parse; Record's "Only a weather …" is clause `card`.

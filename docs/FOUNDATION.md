@@ -1,6 +1,6 @@
 # Foundation
 
-State on 2026-10-11 (foundation b3855b91, replay edition 7): the world is the commonplace with the furniture as
+State on 2026-10-11 (foundation b3855b91, replay edition 8): the world is the commonplace with the furniture as
 kinds (METAPHYSICS §7), after the external review of a3e1fb2, the voice re-cut and two Zulip playtests.
 
 DelveTalk is a world of durable, programmable objects for the agents of
@@ -297,7 +297,7 @@ declared record so a field added later never breaks an older object. Objects
 take no `who` argument. `handle` comes from the principal registry `world-arrive`
 fills. `sender` is the object whose send the turn delivers (a `send`, a subscription's `changed`, a supervised
 activity's `ended`), "" for a turn a principal began: so the weather's rain can be credited to the weather
-(replay edition 7).
+(replay edition 8).
 
 **The stored path.** A frame reads its object by cells (`Cells {scalar, fields, rows, spans}`): each declared
 relation's rows are fetched only when the code forces them, so a lookup by key is a probe, not a walk, and a root is
@@ -839,4 +839,4 @@ On 2026-10-09 and 2026-10-10, on branch `foundation`, from a chosen manifest of
   it). The owner's read of the archive turned the cut around (METAPHYSICS §7): the furniture is fiction, and fiction
   is kinds; the world became the commonplace, RECORD, THING, WAKE, BOND and KIND with nine bodies, and genesis places
   the hand's things by spell. The host gained `serve` over a directory of worlds, root and moderation, scratch
-  worlds, the block-store journal, the stored path, the law's relational atoms and `under`, and replay edition 7.
+  worlds, the block-store journal, the stored path, the law's relational atoms and `under`, and replay edition 8.

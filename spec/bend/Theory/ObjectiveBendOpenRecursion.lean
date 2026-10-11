@@ -71,9 +71,10 @@ inductive Term where
   it natively with an accumulator, so a join costs linear work in its output. -/
   | textJoin (list separator : Term)
   /-- Hosted extension, not upstream: refuse the turn, naming why. Typed at any
-  activity type and never a value: `Step` has no rule for it (a program stuck here
-  has refused), and the machine stops with `Refusal.program reason`. -/
-  | refuse (reason : String)
+  activity type, its reason a String, and never a value: `Step` evaluates the reason
+  (`refuseReason`) and has no rule for `refuse (label s)` (a program stuck there has
+  refused with `s`), and the machine stops with `Refusal.program s`. -/
+  | refuse (reason : Term)
   /-- Hosted extension, not upstream: the number of rows of a relation (`Relation<T> =
   rows {items: List<T>}`). Its meaning is `relationCountExpansion`, a walk of the items; the
   machine walks natively, and answers a stored relation from its handle without forcing a row. -/
@@ -95,14 +96,14 @@ mutual
 /-- The constructors of a term (a field list's entries count through their terms). -/
 def Term.nodes : Term → Nat
   | .lam a | .reflect a | .metadata a | .project a | .unary _ a | .get a _ | .inject _ a
-  | .perform a | .done a | .toData a => 1 + a.nodes
+  | .perform a | .done a | .toData a | .refuse a => 1 + a.nodes
   | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b
   | .textJoin a b | .relationLookup a _ b => 1 + a.nodes + b.nodes
   | .relationCount a => 1 + a.nodes
   | .ifZero a b c | .ifBool a b c => 1 + a.nodes + b.nodes + c.nodes
   | .extend a fields | .case a fields => 1 + a.nodes + Term.fieldNodes fields
   | .record fields => 1 + Term.fieldNodes fields
-  | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ => 1
+  | .bound _ | .nat _ | .boolean _ | .label _ => 1
 def Term.fieldNodes : List (String × Term) → Nat
   | [] => 0
   | (_, body) :: rest => body.nodes + Term.fieldNodes rest
@@ -140,7 +141,7 @@ def Term.rename (rename : Nat → Nat) : Term → Term
   | .done value => .done (value.rename rename)
   | .toData value => .toData (value.rename rename)
   | .textJoin list separator => .textJoin (list.rename rename) (separator.rename rename)
-  | .refuse reason => .refuse reason
+  | .refuse reason => .refuse (reason.rename rename)
   | .relationCount relation => .relationCount (relation.rename rename)
   | .relationLookup relation key probe => .relationLookup (relation.rename rename) key (probe.rename rename)
 
@@ -193,7 +194,7 @@ def Term.substitute (substitution : Nat → Term) : Term → Term
   | .done value => .done (value.substitute substitution)
   | .toData value => .toData (value.substitute substitution)
   | .textJoin list separator => .textJoin (list.substitute substitution) (separator.substitute substitution)
-  | .refuse reason => .refuse reason
+  | .refuse reason => .refuse (reason.substitute substitution)
   | .relationCount relation => .relationCount (relation.substitute substitution)
   | .relationLookup relation key probe =>
       .relationLookup (relation.substitute substitution) key (probe.substitute substitution)
@@ -476,6 +477,8 @@ inductive Step : Term → Term → Prop where
   | toData (value : Term) : Step (.toData value) value
   /-- `textJoin` unfolds to its fold (`textJoinExpansion`). -/
   | textJoin (list separator : Term) : Step (.textJoin list separator) (textJoinExpansion list separator)
+  /-- A refusal's reason is evaluated where it stands; `refuse (label s)` has no rule. -/
+  | refuseReason {reason next : Term} : Step reason next → Step (.refuse reason) (.refuse next)
   /-- `relationCount` unfolds to its walk (`relationCountExpansion`). -/
   | relationCount (relation : Term) : Step (.relationCount relation) (relationCountExpansion relation)
   /-- `relationLookup` unfolds to its walk (`relationLookupExpansion`). -/
@@ -506,7 +509,7 @@ inductive SourceFrame where
   | condition (zero successorBody : Term)
   | case (arms : List (String × Term))
   | ifBool (whenTrue whenFalse : Term)
-  | reflect | metadata | project
+  | reflect | metadata | project | refuse
   deriving Repr
 
 def SourceFrame.plug : SourceFrame → Term → Term
@@ -522,6 +525,7 @@ def SourceFrame.plug : SourceFrame → Term → Term
   | .reflect, hole => .reflect hole
   | .metadata, hole => .metadata hole
   | .project, hole => .project hole
+  | .refuse, hole => .refuse hole
 
 /-- Plug a hole into a context listed innermost first. -/
 def plug (context : List SourceFrame) (hole : Term) : Term :=
@@ -559,6 +563,8 @@ inductive Yields : Term → Term → List SourceFrame → Prop where
       Yields target plan context → Yields (.metadata target) plan (context ++ [.metadata])
   | project {target plan : Term} {context : List SourceFrame} :
       Yields target plan context → Yields (.project target) plan (context ++ [.project])
+  | refuse {reason plan : Term} {context : List SourceFrame} :
+      Yields reason plan context → Yields (.refuse reason) plan (context ++ [.refuse])
 
 /-- An activity's run against a list of turns: each turn yields a plan and is
 resumed with the kernel's response; the last segment finishes with a value.
@@ -744,6 +750,9 @@ theorem yields_no_step {term plan : Term} {context : List SourceFrame}
       intro next step; cases step with
       | projectPrototype => cases inner
       | projectStep prior => exact ih _ prior
+  | refuse inner ih =>
+      intro next step; cases step with
+      | refuseReason prior => exact ih _ prior
 
 /-- The yielded plan and its continuation are unique. -/
 theorem yields_deterministic {term plan plan' : Term} {context context' : List SourceFrame}
@@ -789,6 +798,9 @@ theorem yields_deterministic {term plan plan' : Term} {context context' : List S
   | project inner ih =>
       cases second with
       | project inner' => obtain ⟨h1,h2⟩ := ih inner'; exact ⟨h1,by rw [h2]⟩
+  | refuse inner ih =>
+      cases second with
+      | refuse inner' => obtain ⟨h1,h2⟩ := ih inner'; exact ⟨h1,by rw [h2]⟩
 
 /-- A one-turn activity: perform a write, resume with `written`, select the arm.
 The plan and the response are both ordinary injected data. -/
@@ -799,9 +811,19 @@ theorem one_turn_interaction (plan : Term) :
   refine .finish ⟨.next (.caseInject "written" (.record []) _ (.done (.nat 1)) rfl) ?_,.natural 1⟩
   simpa [instantiate, Term.substitute] using Steps.next (Step.done (.nat 1)) (.refl _)
 
+/-- A refusal's reason is computed before the turn ends: `refuse (a ++ b)` reaches
+`refuse (label (a ++ b))`, where no rule moves it: it has refused with that text. -/
+theorem refusal_reason_computed (a b : String) :
+    Steps (.refuse (.binary .textConcat (.label a) (.label b))) (.refuse (.label (a ++ b))) ∧
+      ∀ next, ¬ Step (.refuse (.label (a ++ b))) next := by
+  refine ⟨.next (.refuseReason (.primitive .textConcat _ _ _ (.label a) (.label b) rfl)) (.refl _), ?_⟩
+  intro next step
+  cases step with
+  | refuseReason prior => exact value_no_step (.label _) prior
+
 #assert_axioms label_equality_boolean_exact label_equality_booleans_refused
   case_selects_injected_arm equality_drives_branch yields_no_step yields_deterministic yields_plug
   one_turn_interaction subtract_truncated_exact divide_floor_exact order_exact nat_primitives_refuse_labels
-  divide_modulo_reconstruct
+  divide_modulo_reconstruct refusal_reason_computed
 
 end Delvetalk.Theory.ObjectiveBendOpenRecursion

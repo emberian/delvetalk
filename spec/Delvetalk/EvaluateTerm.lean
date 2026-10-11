@@ -62,7 +62,7 @@ def termOf : Nat → Json → Except String Term
     | "relationLookup" => do
       let key ← (← (items[2]?.getD Json.null).getArr?).toList.mapM (·.getStr?)
       return .relationLookup (← child 1) key (← child 3)
-    | "refuse" => return .refuse (← (items[1]?.getD Json.null).getStr?)
+    | "refuse" => return .refuse (← child 1)
     | "unary" => return .unary (← unaryOfName (← (items[1]?.getD Json.null).getStr?)) (← child 2)
     | "binary" => return .binary (← primitiveOfName (← (items[1]?.getD Json.null).getStr?)) (← child 2) (← child 3)
     | "get" => return .get (← child 1) (← (items[2]?.getD Json.null).getStr?)

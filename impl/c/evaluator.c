@@ -54,14 +54,13 @@ static void validate(J *t) {
   for(size_t i=0;i<k;i++) if(s[i]<'0'||s[i]>'9') fail("invalid natural");
  } else if(tag(t,"boolean")) { if(n!=2||!json_object_is_type(a,json_type_boolean)) fail("invalid boolean"); }
  else if(tag(t,"label")) { if(n!=2||!isstr(a)) fail("invalid label"); }
- else if(tag(t,"refuse")) { if(n!=2||!isstr(a)) fail("invalid refuse"); }
  else if(tag(t,"relationLookup")) {
   if(n!=4) fail("wrong relation lookup arity");
   J *cols=AT(t,2); if(!json_object_is_type(cols,json_type_array)) fail("relation columns must be an array");
   for(size_t i=0;i<LEN(cols);i++) if(!isstr(AT(cols,i))) fail("relation column must be a string");
   validate(a); validate(AT(t,3));
  }
- else if(named(AT(t,0),"lam reflect metadata project perform done toData relationCount")) { if(n!=2) fail("wrong unary arity"); validate(a); }
+ else if(named(AT(t,0),"lam reflect metadata project perform done toData relationCount refuse")) { if(n!=2) fail("wrong unary arity"); validate(a); }
  else if(named(AT(t,0),"app mix fix specification prototype textJoin")) { if(n!=3) fail("wrong binary arity"); validate(a); validate(AT(t,2)); }
  else if(tag(t,"record")) { if(n!=2) fail("wrong record arity"); fields(a); }
  else if(tag(t,"extend")||tag(t,"case")) { if(n!=3) fail("wrong field operation arity"); validate(a); fields(AT(t,2)); }
@@ -88,7 +87,7 @@ static J *walk(J *t,uint64_t depth,int mode,uint64_t delta,J *arg) {
   if(!mode&&k>SAFE-delta) fail("bound index exceeds portable wire range");
   return one("bound",json_object_new_uint64(mode?k-1:k+delta));
  }
- if(named(AT(t,0),"nat boolean label refuse")) return keep(t);
+ if(named(AT(t,0),"nat boolean label")) return keep(t);
  J *r=arr(); add(r,keep(AT(t,0)));
  for(size_t i=1;i<LEN(t);i++) {
   int fs=(tag(t,"record")&&i==1)||((tag(t,"extend")||tag(t,"case"))&&i==2);
@@ -239,6 +238,7 @@ static int reducible(J *t) {
  if(tag(t,"ifZero")) return tag(a,"nat")||reducible(a);
  if(tag(t,"ifBool")) return tag(a,"boolean")||reducible(a);
  if(tag(t,"case")) return tag(a,"inject")?lookup(b,AT(a,1))!=NULL:reducible(a);
+ if(tag(t,"refuse")) return !value(a)&&reducible(a);
  return 0;
 }
 static Transition advance(J *t,J *response);
@@ -322,6 +322,8 @@ static Transition advance(J *t,J *response) {
  }
  if(tag(t,"ifBool")) { if(tag(a,"boolean")) return result(keep(AT(t,json_object_get_boolean(AT(a,1))?2:3))); return context(t,1,response); }
  if(tag(t,"case")) { if(tag(a,"inject")) { J *body=lookup(b,AT(a,1)); return result(body?inst(body,AT(a,2)):NULL); } return context(t,1,response); }
+ /* A refusal's reason is evaluated; at a value it has refused, and is stuck. */
+ if(tag(t,"refuse")) { if(value(a)) return result(NULL); return context(t,1,response); }
  return result(NULL);
 }
 static J *run(J *job) {

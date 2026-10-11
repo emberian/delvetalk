@@ -61,11 +61,9 @@ def failureName : Failure → String
   | .refused => "machine refused the program"
   | .yielded => "yielded"
 
-/-- What a refused turn says: the program's own reason when it refused by name
-(`Term.refuse`), else the failure's name. -/
+/-- What a machine failure says (a program's own refusal is an outcome, `Step.refused`). -/
 def refusalText (failure : Failure) (state : State) : String :=
   match failure, state.control with
-  | .refused, .refused (.program reason) => reason
   | .refused, .refused .unfetched =>
     "a stored row is missing from the store or exceeds the cell bound, or a lookup's key is not its relation's declared key"
   | _, _ => failureName failure
@@ -242,6 +240,8 @@ inductive Outcome where
   /-- A budget ran out: `resource` is one of ticks, heap, stack, nodes, bytes. Not an
   error: the turn is a named silence the host journals as class `budget`. -/
   | exhausted (resource : String) (ticksUsed : Nat)
+  /-- The program refused its turn (`Term.refuse`) with the text its reason evaluated to. -/
+  | refused (reason : String) (ticksUsed : Nat)
 
 def Outcome.toJson : Outcome → Json
   | .finished value result ticks => Json.mkObj [("status", Lean.toJson "finished"),
@@ -251,6 +251,8 @@ def Outcome.toJson : Outcome → Json
       ("checkpoint", checkpoint.toJson), ("ticksUsed", Lean.toJson ticks)]
   | .exhausted resource ticks => Json.mkObj [("status", Lean.toJson "exhausted"),
       ("resource", Lean.toJson resource), ("ticksUsed", Lean.toJson ticks)]
+  | .refused reason ticks => Json.mkObj [("status", Lean.toJson "refused"),
+      ("reason", Lean.toJson reason), ("ticksUsed", Lean.toJson ticks)]
 
 open Delvetalk.Theory.ObjectiveBendDemandMachine in
 /-- Which budget a machine failure names, if it is budget exhaustion. A capacity
@@ -340,6 +342,7 @@ inductive Step where
   | finished (value : Data) (result : Ty) (ticksUsed : Nat)
   | yielded (plan : Data) (planType responseType : Ty) (suspension : Suspension) (ticksUsed : Nat)
   | exhausted (resource : String) (ticksUsed : Nat)
+  | refused (reason : String) (ticksUsed : Nat)
 
 /-- The outcome a caller outside this process sees: a yield's checkpoint made. -/
 def Step.outcome : Step → Outcome
@@ -347,6 +350,7 @@ def Step.outcome : Step → Outcome
   | .yielded plan planType responseType suspension ticks =>
     .yielded plan planType responseType suspension.checkpoint ticks
   | .exhausted resource ticks => .exhausted resource ticks
+  | .refused reason ticks => .refused reason ticks
 
 open Delvetalk.Theory.ObjectiveBendDemandCollect in
 /-- Turn the outcome of a bounded run into a typed step; a yield holds the collected state. -/
@@ -381,6 +385,9 @@ def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (b
               | some i => .ok (.yielded extracted.value plan (sites[i]?.map (·.2) |>.getD response) (held (some i)) ticks)
               | none => .error "turn refused: the yielded message has no call site in this entry"
   | .error (failure, st, rem) =>
+      match failure, st.control with
+      | .refused, .refused (.program reason) => .ok (.refused reason (b.ticks - rem.ticks))
+      | _, _ =>
       match exhaustedResource limits failure st rem fetch with
       | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
       | none => .error ("turn refused: " ++ refusalText failure st)

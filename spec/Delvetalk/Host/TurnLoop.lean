@@ -108,6 +108,8 @@ inductive Abort where
   /-- The turn is refused with a named class other than `evaluation` (`typeMismatch`: the
       argument does not conform to the method's input type, `expected` what it takes). -/
   | refused (cls reason : String) (expected : Option Json := none)
+  /-- A card refused the turn by its own Bend (`refuse(line)`): `cardRefused` (`Ops.cardRefusal`). -/
+  | card (refusal : Refusal)
   /-- The turn's principal has started its hour's interpretations (`interpretQuota`): a transient
       refusal of class `quota`, naming the clock at which the next may start. -/
   | quota (reason : String) (next : Nat)
@@ -1394,6 +1396,9 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
   | .exhausted resource used =>
     spend used
     throw (.budget resource)
+  | .refused line used =>
+    spend used
+    throw (.card (cardRefusal self line))
   | .yielded message _ responseType suspension used =>
     spend used
     countPlan
@@ -2212,6 +2217,9 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
   | .error (.refused cls reason expected) =>
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls, reason := some reason, object := some ctx.object, expected }) (onEnd := endedIfLate)
+    return (w', turnReply w' r)
+  | .error (.card refusal) =>
+    let (w', r) := commit w { proposal with writes := [], creates := [] } base (some refusal) (onEnd := endedIfLate)
     return (w', turnReply w' r)
   | .error (.quota reason next) =>
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
@@ -3358,6 +3366,7 @@ def abortText : Abort → String
   | .request m | .evaluation m => m
   | .budget r => s!"{r} budget exhausted"
   | .refused cls r _ => s!"{cls}: {r}"
+  | .card r => s!"{r.cls}: {(r.voiced.reason).getD ""}"
   | .quota r _ => s!"quota: {r}"
   | .suspend .. => "unexpected suspension"
 
