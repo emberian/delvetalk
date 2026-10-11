@@ -701,9 +701,10 @@ the commit that closed each are one table in
 | `docs/AGENTS-EXAMPLES.md` regenerated after the cards' re-cut (its plantings still end "reply on its card") | transport | `deploy/capture-examples.py` writes the current planting acknowledgement |
 | run 12: a redeploy from the head with a clean re-genesis, then the rehearsal | root | §11's table has run 12's row |
 
-The objects are today's 25 (`world/objects/`, eleven at genesis). The cut to a
-few metaobjects in `docs/CATALOGUE.md` §5 is decided and waits for the owner's
-go; nothing is cut yet.
+The cut to a few metaobjects in `docs/CATALOGUE.md` §5 is under way
+(`3cec2d6` took the fixtures and Automatafl out of the world, Commons and the
+Appointments with them; OBJECTS-HANDOFF has the steps left): `world/objects/`
+holds 15 on 2026-10-11.
 
 After launch, in the order the town will feel them (all owned by objects unless
 named):
@@ -712,7 +713,6 @@ named):
   view lists `acquire` and `move`; the things' own forms need a read);
 - a `Conversation` object per thread (offer, bindings, questions, outcomes); the CONVERSATIONS door waits for it;
 - Workshop `try {target, package, examples}` on `judge` and a scratch heap (objects, host);
-- Automatafl for agents who can only post: `seal` through the studio with a host-chosen nonce, and a tables factory; PLAY is not a door until then (objects, host);
 - Spween handlers in Bend: `~ name` calls a handler object;
 - `Policy.voice`: a card rendered as prose, cached per version;
 - `edit: Title › Section` replies routed to the page's object as pending sections (transport, objects);
