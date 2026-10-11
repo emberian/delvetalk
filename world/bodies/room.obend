@@ -226,19 +226,30 @@ def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<C
 def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 # A thing takes itself off the floor into the hands of the principal, who must be here, and puts
-# itself down where its holder stands; only the thing itself (the calling object) does either.
+# itself down where its holder stands, or where the room's owner lays it; only the thing itself
+# (the calling object) does either. A thing lying here that is inspirited gives the room its line,
+# under the one who inspirited it, and a mark, so the card lists it among the claimed.
+def inspirited(state: State, input: {line: String}, context: Abi.Context) -> Activity<Done>:
+  if context.caller == "" then Done.refused({clause: "notAThing", reading: "Only a thing is inspirited."}) else if holds(state.things, {world: context.world, object: context.caller}) == false then Done.refused({clause: "notLying", reading: "That is not lying here."}) else spirited(input.line, context, state)
+def spirited(line: String, context: Abi.Context, state: State) -> Activity<Done>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, text: if textLength(line) > 280n then "{textTake(line, 279n)}…" else line, at: context.height, n: state.next}, next: add 1n, marks: insert {name: claimMark(context.caller), who: context.principal, handle: context.handle, at: context.height}}
+  Done.done({})
+def claimMark(thing: String) -> String:
+  "inspirited {thing}"
+def claimed(thing: Plans.Reference, state: State) -> Bool:
+  Super.marked(state, claimMark(thing.object))
 def take(state: State, context: Abi.Context) -> Activity<Done>:
   if context.caller == "" then Done.refused({clause: "notAThing", reading: "Only a thing can take itself."}) else if isHere(context, state) == false then Done.refused({clause: "notPresent", reading: "Only someone here can take things."}) else if holds(state.things, {world: context.world, object: context.caller}) == false then Done.refused({clause: "notLying", reading: "That is not lying here."}) else lifted(context)
 def lifted(context: Abi.Context) -> Activity<Done>:
   let written(_) = write {things: retract {object: context.caller}}
   Done.done({})
 def put(state: State, context: Abi.Context) -> Activity<Done>:
-  if context.caller == "" then Done.refused({clause: "notAThing", reading: "Only a thing can put itself down."}) else if isHere(context, state) == false then Done.refused({clause: "notPresent", reading: "Only someone here can put things down."}) else if holds(state.things, {world: context.world, object: context.caller}) then Done.refused({clause: "alreadyLying", reading: "That is already lying here."}) else laid(context)
+  if context.caller == "" then Done.refused({clause: "notAThing", reading: "Only a thing can put itself down."}) else if isHere(context, state) == false && context.principal != state.owner then Done.refused({clause: "notPresent", reading: "Only someone here can put things down."}) else if holds(state.things, {world: context.world, object: context.caller}) then Done.refused({clause: "alreadyLying", reading: "That is already lying here."}) else laid(context)
 def laid(context: Abi.Context) -> Activity<Done>:
   let written(_) = write {things: insert {world: context.world, object: context.caller}}
   Done.done({})
 def methods() -> Lists.List<String>:
-  Text.words("take put")
+  Text.words("~take ~put ~inspirited")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("enter choose leave say emote whisper write lines"), if context.principal == state.owner then Text.words("door undoor example") else Text.words(""))
 def blurb() -> Card.Door:
@@ -284,11 +295,22 @@ def varLine(v: Var) -> String:
 def firstEight(lines: Lists.List<String>) -> String:
   let more = if Lists.length(lines) > 8n then "… and {natText(Lists.length(lines) - 8n)} more\n" else ""
   "{textJoin(Lists.take(lines, 8n), \"\")}{more}"
-# What lies here, one line of at most 400 characters, then how many more.
+# What lies here, the unclaimed first with the spell that inspirits one, each line at most 400
+# characters, eight things in all, then how many more.
 def lyingLine(state: State) -> String:
-  let shown = textTake(textJoin(Lists.map(Lists.take(Relations.rows(state.things), 8n), fn(t: Plans.Reference) -> String: t.object), ", "), 400n)
-  let more = if Relations.count(state.things) > 8n then " and {natText(Relations.count(state.things) - 8n)} more" else ""
-  if Relations.count(state.things) == 0n then "" else "Lying here: {shown}{more}\n"
+  let all = Lists.take(Relations.rows(state.things), 8n)
+  let open = Lists.filter(all, fn(t: Plans.Reference) -> Bool: claimed(t, state) == false)
+  let kept = Lists.filter(all, fn(t: Plans.Reference) -> Bool: claimed(t, state))
+  let more = if Relations.count(state.things) > 8n then "… and {natText(Relations.count(state.things) - 8n)} more\n" else ""
+  "{unclaimedLine(open)}{keptLine(kept)}{more}"
+def keptLine(kept: Lists.List<Plans.Reference>) -> String:
+  if Lists.length(kept) == 0n then "" else "Lying here: {idsOf(kept)}\n"
+def unclaimedLine(open: Lists.List<Plans.Reference>) -> String:
+  match open:
+    case nil(_): ""
+    case cons(c): "Unclaimed here: {idsOf(open)}. Inspirit one: delvetalk {c.head.object} inspirit / surrounding: <1 to 400 characters>\n"
+def idsOf(things: Lists.List<Plans.Reference>) -> String:
+  textTake(textJoin(Lists.map(things, fn(t: Plans.Reference) -> String: t.object), ", "), 400n)
 def presentLine(state: State) -> String:
   if Relations.count(state.presence) == 0n then "" else "Here: {textJoin(Lists.map(Lists.take(Relations.rows(state.presence), 8n), fn(p: Presence) -> String: Card.handle(p.who)), \", \")}{if Relations.count(state.presence) > 8n then \" and {natText(Relations.count(state.presence) - 8n)} more\" else \"\"}\n"
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:

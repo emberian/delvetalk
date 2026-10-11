@@ -234,7 +234,7 @@ class Floor(Chain):
         reply = self.turn("hall", "receive", record(text=label(""), post=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
-        self.assertIn("Lying here: thing00, thing01, thing02, thing03, thing04, thing05, thing06, thing07 and 56 more\n", text)
+        self.assertIn("Unclaimed here: thing00, thing01, thing02, thing03, thing04, thing05, thing06, thing07. Inspirit one: delvetalk thing00 inspirit / surrounding: <1 to 400 characters>\n… and 56 more\n", text)
         self.assertLess(len(text), 1400)
 
     def test_an_avatar_with_a_full_inbox_describes_under_the_default_budget(self):
@@ -278,7 +278,7 @@ class Floor(Chain):
         self.assertEqual(self.result_label(back), "moved", back["receipt"]["outcome"])
         dropped = self.turn("stone", "drop", record(at=reference("porch")), principal="glm")
         self.assertEqual(self.result_label(dropped), "done", dropped)
-        self.assertIn("Lying here: stone\n", self.card("porch"))
+        self.assertIn("Unclaimed here: stone. Inspirit one: delvetalk stone inspirit", self.card("porch"))
 
     def test_an_avatar_from_nowhere_goes_to_a_room_and_then_walks_its_doors(self):
         """`go {to}` is that room's enter: from nowhere it enters by id and records it; from a room
