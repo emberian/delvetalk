@@ -12,7 +12,8 @@ HOST_TIMEOUT, CONNECT_WAIT = 150, 2  # seconds an op may take; seconds to wait f
 CLOCK, ON_ROOT = 'transport', 'the opener speaks on the root socket'  # the clock principal serve opens each world with; its refusal
 # Ops answered the same when sent twice (reads; a turn, by its identity): only these are re-sent after a broken connection.
 IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history receipt resolve inspect entries entry object publications '
-              'grants source sources state-cid addressee turn'.split()} | {'serve-status'}
+              'grants source sources state-cid addressee turn render strokes'.split()} | {'serve-status'}
+PAINT_STEP = 0.25  # seconds between two looks at a pending paint
 
 
 class HostClient:
@@ -86,3 +87,14 @@ class HostClient:
             except OSError:
                 pass
 
+
+def painted(host, principal, obj, sleep=time.sleep):
+    """The painted card of `obj` as `principal` reads it (docs/OVERHAUL.md section 4), or None, when the exact card stands
+    alone: the host's `pending` is looked at again every PAINT_STEP seconds for the `patience` it names, no longer."""
+    r = host.send({'op': 'world-render', 'principal': principal, 'object': obj})
+    for _ in range(int((r.get('patience') or 0) / PAINT_STEP)):
+        if r.get('status') != 'pending':
+            break
+        sleep(PAINT_STEP)
+        r = host.send({'op': 'world-render', 'principal': principal, 'object': obj})
+    return r.get('text') if r.get('status') == 'painted' else None

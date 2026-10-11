@@ -742,6 +742,28 @@ class Play(FrontCase):
         s, r = self.call('GET', '/AGENTS.md/receipt/' + line[3].decode(), token=tok)
         self.assertEqual((s, r['receipt']['height']), (200, int(line[2])), r)
 
+    def test_the_paint_stands_above_the_exact_card_and_never_without_it(self):
+        """OVERHAUL §4 (c): /play/ and /o/ show a card's verified paint above its exact card; with no worker attending, the
+        exact card alone, at once; a refused paint never."""
+        from transport import interpret
+        frame = b'<figure class="frame"><pre class="card">'
+        for path in ('/play/garden', '/play/'):
+            s, _, page = self.play(path)
+            self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept
+            self.assertIn(frame, page)
+        self.host.send({'op': 'world-renders'})  # the worker arrives, and finds both queued
+        paint = 'The night garden lies open under the moon, its beds waiting for a seed.'
+        replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
+        done = interpret.paint(self.host, lambda req: replied(paint if '"object":"garden"' in req['user'] else 'You are welcome here.'))
+        self.assertTrue(done['painted'], done)
+        for page in (self.play('/play/garden')[2], self.request('GET', '/o/garden', headers={'Cookie': self.cookie})[2],
+                     self.request('GET', '/o/garden')[2]):
+            at = page.find(b'<p class="paint">' + html.escape(paint).encode() + b'</p>')
+            self.assertTrue(0 <= at < page.find(frame), page[:2000])
+        # A card whose paint the host refused (second person, a welcome) shows exact alone.
+        s, _, page = self.play('/play/')
+        self.assertEqual((s, page.count(b'class="paint"')), (200, 0))
+
     def test_plant_by_prose_shows_the_interpreters_offer(self):
         out = {}
         t = threading.Thread(target=lambda: out.update(page=self.play('/play/', 'please plant me something violet for the owls')[2]))

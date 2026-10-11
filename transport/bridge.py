@@ -114,7 +114,8 @@ def revealed_lines(reply):
 def draft_text(reply, origin=None, addressed=None, handles=None):
     """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
     is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
-    receipt's name; no state, hash or CID. A usage answer is the host's text."""
+    receipt's name; no state, hash or CID. A usage answer is the host's text. An admitted reply carries the exact card
+    only, never its paint (`world-render`): whether a post carries paint is the fourth playtest's question (OVERHAUL §4)."""
     if reply.get('status') == 'usage':
         return str(reply.get('text', ''))
     receipt = reply['receipt']
