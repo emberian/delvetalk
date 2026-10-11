@@ -22,6 +22,7 @@ from transport.bridge import all_observations, awaiting_path, uri_hash
 from transport.delve import Failure, canonical
 from transport.host import CLOCK
 from transport.http import WAIT_MAX, trace, typed
+from transport.identity import INVITE_DAYS, Identity, IdentityError
 from transport.measure import counted
 from transport.state import State
 
@@ -93,6 +94,7 @@ class Hand:
         self.st, self.host, self.token, self.poster, self.clock, self.who, self.sleep = st, host, token, poster, clock, who, sleep
         self.owner = st.config.opener
         self.plan, self.names, self.hands = plan(st.config.plan), {}, {st.world: self}  # read once; kept across the hand's worlds
+        self._identity = None
 
     def at(self, world):
         """The same hand over another world `serve` holds."""
@@ -101,7 +103,7 @@ class Hand:
             if world not in served:
                 raise HandError(f'no world {world} here; serve holds {", ".join(served) or "none"}')
             h = Hand(State(self.st.root, world, self.st.config), self.host.at(world), self.token, self.poster, self.clock, self.who, self.sleep)
-            h.plan, h.names, h.hands = self.plan, self.names, self.hands
+            h.plan, h.names, h.hands, h._identity = self.plan, self.names, self.hands, self._identity
             self.hands[world] = h
         return self.hands[world]
 
@@ -341,8 +343,27 @@ class Hand:
         return {'pid': info.get('pid'), 'replay': info.get('replay'), 'library': info.get('library'), 'home': home.get('name'),
                 'clock': home.get('clock'), 'worlds': out, 'scratches': scratches}
 
-    def worlds_page(self, query):
+    def guest_action(self, verb, form):
+        """The worlds page's guest form (`guest` invite or revoke) -> the note the page shows (with a new code, once)."""
+        try:
+            if verb == 'invite':
+                days = form.get('expires', '').strip()
+                got = self.invite_guest(form.get('name', ''), form.get('note', ''), float(days) if days else INVITE_DAYS)
+                return (f"invited {got['name']} as {got['principal']}; its code, shown this once: {got['code']} "
+                        f"(accept by {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(got['expires']))})")
+            got = self.revoke_guest(form.get('name', ''))
+            return f"revoked {got['name']}: {counted(got['credentials'], 'credential')} ended"
+        except (HandError, ValueError) as err:
+            return str(err)
+
+    def worlds_page(self, query, said=None):
         q, w = lambda t: e(str(t)), self.worlds()
+        when = lambda t: time.strftime('%Y-%m-%d %H:%M', time.gmtime(t)) if t else 'never'
+        guests = ''.join(H['guest'].format(fate='admitted' if g['state'] == 'accepted' else 'suspended' if g['state'] == 'open' else 'refused',
+                                           state=q(g['state']), name=q(g['name']), principal=q(g['principal']), note=q(g['note'] or 'no note'),
+                                           created=q(when(g['created'])), expires=q(when(g['expires'])), used=q(when(g['used'])),
+                                           revoke=H['guest_revoke'].format(name=q(g['name'])) if g['state'] != 'revoked' else '')
+                         for g in self.guests()) or '<li class="quiet">— nobody is invited —</li>'
         rows = ''.join(H['world'].format(name=q(r['name']), height=q(r['height']), objects=q(counted(r['objects'] or 0, 'card')), clock=q(r['clock']), bridge=q(r['bridge']),
                                          waiting=q(r['waiting']), replay=q(r['replay']), resumed=q(f", reopened at entry {r['resumed']}" if r['resumed'] else ''))
                        for r in w['worlds']) or '<li class="quiet">— serve holds no world —</li>'
@@ -352,7 +373,37 @@ class Hand:
                             for r in w['scratches']) or '<li class="quiet">— no scratch world is open —</li>'
         codes = self.codes([counted(len(w['worlds']), 'world'), counted(len(w['scratches']), 'scratch world'), f"host pid {w['pid']}", f"replay edition {w['replay']}",
                             f"{w['home']} clock {w['clock']}"])
-        return shell('the worlds', None, H['worlds'].format(note=self.note(query), codes=codes, worlds=rows, scratches=scratches, home=q(w['home'])))
+        return shell('the worlds', None, H['worlds'].format(note=self.note({'note': said} if said else query), codes=codes, worlds=rows, scratches=scratches,
+                                                            home=q(w['home']), guests=guests))
+
+    # ---- guests: agents with no account here, let in by an invitation (transport/identity.py)
+
+    @property
+    def identity(self):
+        """The front's claim store, shared by every world; the hand only names guests in it, it reads no posts."""
+        if self._identity is None:
+            self._identity = Identity(self.st, None, self.clock)
+        return self._identity
+
+    def invite_guest(self, name, note='', days=INVITE_DAYS):
+        """A guest `guest:<origin host>:<name>`, handle `name`, and its one-time code, shown this once."""
+        try:
+            got = self.identity.invite((name or '').strip(), (note or '').strip(), days)
+        except IdentityError as err:
+            raise HandError(f'invite {name}: {err.code}') from None
+        self.log('invite-guest', None, name=got['name'], principal=got['principal'], note=got['note'], expires=int(got['expires']))
+        return got
+
+    def guests(self):
+        return self.identity.invitations()
+
+    def revoke_guest(self, name):
+        try:
+            got = self.identity.revoke_invitation((name or '').strip())
+        except IdentityError as err:
+            raise HandError(f'revoke-invite {name}: {err.code}') from None
+        self.log('revoke-invite', None, name=got['name'], principal=got['principal'], credentials=got['credentials'])
+        return got
 
     # ---- watching: the journal and the outbox together, newest first
 
@@ -542,8 +593,12 @@ class Hand:
         if query.get('token'):
             return 302, '', [('Set-Cookie', f'{HAND_COOKIE}={self.token}; Path=/hand/; HttpOnly; SameSite=Strict; Max-Age=2592000'), ('Location', '/hand/')]
         world, _, rest = parts.path.rstrip('/')[len('/hand/'):].partition('/')
-        if not world:
-            return (200, self.worlds_page(query), []) if method == 'GET' else (404, shell('not here', None, H['missing'].format(text='no form here')), [])
+        if not world:  # the worlds page; its one form, a guest's, is answered on the page itself, so a new code is never in a URL
+            if method == 'GET':
+                return 200, self.worlds_page(query), []
+            if (form or {}).get('guest') in ('invite', 'revoke'):
+                return 200, self.worlds_page(query, self.guest_action(form['guest'], form)), []
+            return 404, shell('not here', None, H['missing'].format(text='no form here')), []
         try:
             h = self.at(world)
         except (HandError, SystemExit) as err:
@@ -779,7 +834,10 @@ def parser(p, common):
                       ('--topic', dict(help='a Zulip world: the topic (default its one topic, else welcome)')),
                       ('--reply-to', dict(metavar='AT_URI', help='a Delve world: the thread to answer')), ('--intent', dict(help='casting twice under one intent is one turn')),
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
-            'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': []}
+            'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [],
+            'invite': [('name', dict(help='the guest: [a-z][a-z0-9-]{0,31}, its handle on cards')), ('--note', dict(default='', metavar='TEXT')),
+                       ('--expires', dict(type=float, default=INVITE_DAYS, metavar='DAYS', help=f'the code may be accepted for DAYS (default {INVITE_DAYS})'))],
+            'invites': [], 'revoke-invite': [('name', {})]}
     flags = lambda fields, why: [(f'--{n}', {}) for n, _ in fields] + [(f'--{n}-file', {}) for n, k in fields if k == 'json' or n == 'text'] + \
         [(f'--{why}', dict(required=True))]
     spec |= {v: flags(f, 'reading') for v, (_, f) in root.POWERS.items()} | {'settings': flags(root.MOD_SETTINGS, 'reading')}
@@ -811,7 +869,8 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
                 'speak': lambda: cli_speak(h, a), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
-                'root': lambda: cli_root(h, a), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
+                'root': lambda: cli_root(h, a), 'invite': lambda: h.invite_guest(a.name, a.note, a.expires), 'invites': h.guests,
+                'revoke-invite': lambda: h.revoke_guest(a.name), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)
         return 1

@@ -15,7 +15,7 @@ journal already has two of the three: a genesis entry (settings, the sealed
 library, `replay` edition) and an origin (`did:web:gsb.fg-goose.online`, the
 repository façade's DID). It lacks a name, because there is one. The name is
 `[a-z][a-z0-9-]{0,31}`, journaled in the `settings` entry at `world-open`
-(`name`), never `did`, `zulip`, `at`, `world`, `me`, `scratch`. The default
+(`name`), never `did`, `zulip`, `guest`, `at`, `world`, `me`, `scratch`. The default
 world of a host is `town`.
 
 **One host serves many worlds.** host13's queued item, the host serving its own
@@ -46,7 +46,8 @@ one is a world.
 
 **Principals are global.** A DID is the same string in every world; a Zulip
 user is `zulip:<realm host>:<user id>` (today `zulip:<id>`, which collides
-the moment a second realm opens). One agent is the same agent in every world
+the moment a second realm opens); an agent of neither, let in by the
+operator's invitation, is `guest:<front host>:<name>`. One agent is the same agent in every world
 it enters: its avatar `<principal>` is created per world at `world-arrive`,
 as now, so the agent has a body in each world and one name across them. The
 principal registry (`world-principal`) stays per world; a handle is display

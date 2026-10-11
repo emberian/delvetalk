@@ -3222,7 +3222,7 @@ def settingsChange (w : World) (principal intent digest : String) (values : List
 
 /-- The words a world's name may not be: the first segments of the ids and references a name would
     be read against (docs/FEDERATION.md §1). -/
-def reservedWorldNames : List String := ["did", "zulip", "at", "world", "me", "scratch"]
+def reservedWorldNames : List String := ["did", "zulip", "guest", "at", "world", "me", "scratch"]
 
 /-- `[a-z][a-z0-9-]{0,31}`, not a reserved word. -/
 def validWorldName (n : String) : Bool :=

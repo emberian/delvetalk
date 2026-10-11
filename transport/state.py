@@ -14,7 +14,7 @@ from transport.delve import canonical
 from transport.host import HostClient
 
 NAME = re.compile(r'[a-z][a-z0-9-]{0,31}\Z')
-RESERVED = ('did', 'zulip', 'at', 'world', 'me', 'scratch')  # prefixes a local id can start with (docs/FEDERATION.md section 1)
+RESERVED = ('did', 'zulip', 'guest', 'at', 'world', 'me', 'scratch')  # prefixes a local id can start with (docs/FEDERATION.md section 1)
 
 
 class State:

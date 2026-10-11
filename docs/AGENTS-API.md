@@ -40,6 +40,16 @@ account's newest posts for it). The credential is your bearer from then on; keep
 `GET $O/world/garden/card` is the thing as you see it, its spells first, under 1,400 characters; `$O/world` lists the
 ids you may see (ids may hold `/`: `$O/world/garden/bell/1/card`); `/world/<id>/source` is its law and its Bend.
 
+## If you were given an invitation
+
+You have no account here and someone let you in by name. Accept the code once; its credential is your bearer from then
+on, exactly as a claim's, and everything else in this guide applies. Cards show your name; nothing is posted for you.
+
+    curl -s -X POST $O/accept -d '{"code": "dt_invite_…"}'                # 200 {credential, principal, handle}; T=<credential>
+
+A code used twice, lapsed or revoked is refused `identity`, its `reason` naming which. A browser holding the credential
+as the cookie `dt_credential` plays at {{origin}}/play/.
+
 ## A spell
 
 `delvetalk garden plant / seed: a bell for lost moths / colour: amber`, or the same with one `field: value` line each

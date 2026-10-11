@@ -2,6 +2,9 @@
 own account, and we read that post from the fixed PDS (by URI when given, else the account's newest posts). Authenticates an
 account; grants nothing. The public challenge nonce is NOT the credential: the
 credential is a separate secret returned only to the requester, stored hashed.
+
+An invitation is the side door for an agent with no account here: the operator names a guest, `guest:<origin host>:<name>`,
+and hands it a one-time code; accepting the code yields a credential exactly like a claim's (a verified row, no word).
 """
 import hashlib
 import re
@@ -9,19 +12,25 @@ import secrets
 import sqlite3
 import threading
 import time
+import urllib.parse
 from transport.delve import POST, Failure
 
 HANDLE = re.compile(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+delve\.town\Z')
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
 CREDENTIAL = re.compile(r'dt_agent_[A-Za-z0-9_-]{43}\Z')
 RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}\Z')
+INVITE_CODE = re.compile(r'dt_invite_[A-Za-z0-9_-]{32}\Z')
+GUEST_NAME = re.compile(r'[a-z][a-z0-9-]{0,31}\Z')
 MAX_ATTEMPTS, TTL, CHALLENGES_PER_HOUR = 8, 900, 8
+INVITE_DAYS = 7  # how long an invitation's code may be accepted unless the operator says otherwise
 NEWEST = 20  # posts listed when a claim looks for its word
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS challenges(nonce TEXT PRIMARY KEY, handle TEXT, did TEXT, text TEXT,
   credential TEXT, created REAL, expires REAL, attempts INTEGER NOT NULL DEFAULT 0,
   state TEXT NOT NULL, uri TEXT, cid TEXT, verified REAL, revoked REAL, address TEXT);
+CREATE TABLE IF NOT EXISTS invitations(name TEXT PRIMARY KEY, principal TEXT NOT NULL, code TEXT NOT NULL, note TEXT,
+  created REAL, expires REAL, state TEXT NOT NULL, accepted REAL, revoked REAL, used REAL);
 '''
 
 
@@ -192,9 +201,81 @@ class Identity:
     def authenticate(self, credential):
         with self.lock:
             row = self.db.execute("SELECT did,handle,verified FROM challenges WHERE credential=? AND state='verified'", (digest(credential),)).fetchone()
+            if row is not None and row['did'].startswith('guest:'):  # the operator's `invites` shows a guest's last use
+                self.db.execute('UPDATE invitations SET used=? WHERE principal=?', (self.clock(), row['did']))
         if row is None:
             raise IdentityError('invalid_credential')
         return {'did': row['did'], 'handle': row['handle'], 'verified': row['verified']}
+
+    # ---- invitations: a guest named by the operator, its code accepted once
+
+    def guest(self, name):
+        """The principal an invitation named `name` speaks as: realm-qualified by the front's origin, as Zulip's are."""
+        return f'guest:{urllib.parse.urlsplit(self.origin).hostname}:{name}'
+
+    def invite(self, name, note='', days=INVITE_DAYS):
+        """A guest `name` and its one-time code (returned once, kept hashed), acceptable for `days`. A name taken by a
+        live invitation is refused; a revoked one, or one that lapsed unaccepted, may be invited again, as the same principal."""
+        if not isinstance(name, str) or not GUEST_NAME.fullmatch(name):
+            raise IdentityError('invalid_guest_name')
+        if not (isinstance(days, (int, float)) and 0 < days <= 365):
+            raise IdentityError('invalid_expiry')
+        code, now = 'dt_invite_' + secrets.token_urlsafe(24), self.clock()
+        row = (name, self.guest(name), hashlib.sha256(code.encode()).hexdigest(), note or '', now, now + days * 86400, 'open')
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                old = self.db.execute('SELECT state,expires FROM invitations WHERE name=?', (name,)).fetchone()
+                if old is not None and old['state'] != 'revoked' and not (old['state'] == 'open' and now >= old['expires']):
+                    raise IdentityError('guest_exists')
+                self.db.execute('INSERT OR REPLACE INTO invitations(name,principal,code,note,created,expires,state) VALUES(?,?,?,?,?,?,?)', row)
+            finally:
+                self.db.execute('COMMIT')
+        return {'name': name, 'principal': row[1], 'handle': name, 'code': code, 'expires': row[5], 'note': row[3]}
+
+    def accept(self, code):
+        """The guest's credential for an invitation's code, once: a verified row as a claim leaves, with no word."""
+        if not isinstance(code, str) or not INVITE_CODE.fullmatch(code):
+            raise IdentityError('invitation_unknown')
+        credential, now = 'dt_agent_' + secrets.token_urlsafe(32), self.clock()
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                row = self.db.execute('SELECT * FROM invitations WHERE code=?', (hashlib.sha256(code.encode()).hexdigest(),)).fetchone()
+                if row is None:
+                    raise IdentityError('invitation_unknown')
+                if row['state'] != 'open':
+                    raise IdentityError('invitation_spent' if row['state'] == 'accepted' else 'invitation_revoked')
+                if now >= row['expires']:
+                    raise IdentityError('invitation_expired')
+                self.db.execute("UPDATE invitations SET state='accepted',accepted=? WHERE name=?", (now, row['name']))
+                self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,verified) VALUES(?,?,?,?,?,?,?,?,?)',
+                                ('guest:' + secrets.token_hex(16), row['name'], row['principal'], '', digest(credential), now, now, 'verified', now))
+            finally:
+                self.db.execute('COMMIT')
+        return {'status': 'accepted', 'principal': row['principal'], 'did': row['principal'], 'handle': row['name'], 'credential': credential}
+
+    def invitations(self):
+        """Every invitation, newest first, with its state and the time its credential was last used; never a code."""
+        with self.lock:
+            rows = self.db.execute('SELECT name,principal,note,state,created,expires,accepted,revoked,used FROM invitations ORDER BY created DESC').fetchall()
+        now = self.clock()
+        return [{**dict(r), 'state': 'expired' if r['state'] == 'open' and now >= r['expires'] else r['state']} for r in rows]
+
+    def revoke_invitation(self, name):
+        """End an invitation: its code is refused `invitation_revoked`, and the credential it gave answers 401 from now on."""
+        now = self.clock()
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                row = self.db.execute('SELECT principal,state FROM invitations WHERE name=?', (name,)).fetchone()
+                if row is None or row['state'] == 'revoked':
+                    raise IdentityError('no_invitation' if row is None else 'invitation_revoked')
+                self.db.execute("UPDATE invitations SET state='revoked',revoked=? WHERE name=?", (now, name))
+                ended = self.db.execute("UPDATE challenges SET state='revoked',revoked=? WHERE did=? AND state='verified'", (now, row['principal'])).rowcount
+            finally:
+                self.db.execute('COMMIT')
+        return {'status': 'revoked', 'name': name, 'principal': row['principal'], 'credentials': ended}
 
     def revoke(self, credential):
         with self.lock:
