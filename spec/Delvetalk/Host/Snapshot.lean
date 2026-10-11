@@ -99,6 +99,7 @@ def indexJson (w : World) : Json :=
     ("subscriptions", mapJson w.subscriptions fun xs => Json.arr (xs.map (·.json))),
     ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
     ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
+    ("days", Json.arr (w.days.map fun (d, h) => pairJson d h)),
     ("pending", Json.arr w.pending),
     ("suspended", Json.arr w.suspended),
     ("replies", mapJson w.replies fun (p, i) => Json.arr #[toJson p, toJson i]),
@@ -142,6 +143,7 @@ def installIndex (w : World) (j : Json) : Except String World := do
     subscriptions := ← mapOf (← field "subscriptions") fun x => arrOf x Subscription.ofJson
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
+    days := ← arrOf (← field "days") pairOf
     pending := ← (← field "pending").getArr?
     suspended := ← (← field "suspended").getArr?
     replies := ← mapOf (← field "replies") textPairOf

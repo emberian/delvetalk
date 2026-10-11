@@ -415,6 +415,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-grants" => return (session, grantsOp s.world request)
       | "world-rules" => return (session, rulesOp s.world request false)
       | "world-wants" => return (session, rulesOp s.world request true)
+      | "world-chronicle" => return (session, chronicleOp s.world request)
       | "world-receipt" => return (session, receipt s.world request)
       | "world-history" => return (session, history s.world request)
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
@@ -422,7 +423,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
           ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world),
           ("modelQuota", Json.mkObj [("quota", toJson s.world.modelQuota), ("used", toJson
-            (if s.world.modelDay.1 == s.world.clock / 1440 then s.world.modelDay.2 else 0)), ("next", toJson ((s.world.clock / 1440 + 1) * 1440))]),
+            (if s.world.modelDay.1 == s.world.clock / Limits.clockDay then s.world.modelDay.2 else 0)), ("next", toJson ((s.world.clock / Limits.clockDay + 1) * Limits.clockDay))]),
           ("hour", (if s.world.hourCounts.hour == s.world.clock / 60 then s.world.hourCounts else { hour := s.world.clock / 60 }).json),
           ("shadowed", Json.arr s.world.shadowed), ("ignored", toJson s.world.ignored), ("replay", toJson Limits.replayEdition), ("locked", toJson true), ("sync", toJson s.sync.name),
           ("recompiledDifferently", toJson s.world.recompiledDifferently),

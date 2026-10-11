@@ -1221,11 +1221,6 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   | some name, some code => fields ++ [{ name, value := code }]
   | _, _ => fields
 
-/-- How a principal is named on a card: the handle the registry holds, else the principal. -/
-def shownName (w : World) (principal : String) : String :=
-  let h := handleOf w principal
-  if h.isEmpty then principal else h
-
 /-- `delvetalk <card> rules` (docs/REACTION.md §5): every rule the card carries, by name, owner,
     reading, condition and spell, and when it last fired (the entry and the receipt of the turn it
     delivered) or why it did not. -/
@@ -1756,9 +1751,9 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
       unless s.principal == w.opener || s.principal == w.clockPrincipal || used < w.interpretQuota do
         throw (.quota s!"the interpreter has read {w.interpretQuota} this hour; reply with the spell itself, or wait." ((hour + 1) * 60))
       -- The world's model calls per clock day (`modelQuota`, docs/OPERATIONS.md §b): nobody is exempt.
-      let day := w.clock / 1440
+      let day := w.clock / Limits.clockDay
       unless (if w.modelDay.1 == day then w.modelDay.2 else 0) < w.modelQuota do
-        throw (.quota s!"the world's {w.modelQuota} model readings for the day are spent; reply with the spell itself, or wait." ((day + 1) * 1440))
+        throw (.quota s!"the world's {w.modelQuota} model readings for the day are spent; reply with the spell itself, or wait." ((day + 1) * Limits.clockDay))
       mayWait depth self checkpoint (interpreting := true)
       let id := Journal.bodyHash (Json.arr #[toJson s.principal, toJson s.intent, toJson s.awaits])
       set { s with awaits := s.awaits + 1 }
@@ -2291,17 +2286,6 @@ def textField (state : Data) (name : String) : Option String :=
   match Law.rawField name state with
   | some (.label t) => some t
   | _ => none
-
-/-- Why a rule that held was not cast, in words (`Ops.reactions`'s `why`). -/
-def unfiredWords : String → String
-  | "hole" => "a hole in its spell read nothing"
-  | "spell" => "its filled line is not a spell"
-  | "noOwner" => "nobody owns it to act as"
-  | "quiet" => "its owner is quieted"
-  | "ruleDepth" => s!"the chain of rules is {Limits.ruleDepth} deep"
-  | "rulesPerCommit" => s!"{Limits.rulesPerCommit} rules fired on this write already"
-  | "pending" => s!"the world holds {Limits.maxPending} undelivered sends"
-  | other => other
 
 /-- An admitted entry's three host-rendered lines (docs/TENURE.md §4; docs/OVERHAUL.md §2 "The revealing
     reply"), each left out when empty: **what it moved** (each rule it fired, with the spell it cast under

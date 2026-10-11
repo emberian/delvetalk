@@ -2068,6 +2068,11 @@ def withLawReads (w : World) (p : Proposal) : Proposal :=
 def handleOf (w : World) (principal : String) : String :=
   (w.handles[principal]?).getD ""
 
+/-- How a principal is named on a card: the handle the registry holds, else the principal. -/
+def shownName (w : World) (principal : String) : String :=
+  let h := handleOf w principal
+  if h.isEmpty then principal else h
+
 /-- The principal the registry names by `handle` (case folded, as a DNS name is), if one. -/
 def principalNamed (w : World) (handle : String) : Option String :=
   let h := handle.toLower
@@ -2894,7 +2899,7 @@ def anchorsAfter (w : World) (height : Nat) (entry : Json) : Std.HashMap String 
     them), the clock hour's counts, and the day's model calls. The store's half is `applyRoot`. -/
 def recordActs (w : World) (entry : Json) : World := Id.run do
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
-  let day := w.clock / 1440
+  let day := w.clock / Limits.clockDay
   let mut w := { w with hourCounts := hourAfter w entry,
                         modelDay := if !modelCall entry then w.modelDay
                           else if w.modelDay.1 == day then (day, w.modelDay.2 + 1) else (day, 1) }
@@ -3077,6 +3082,8 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
     subscriptions := subscriptionsAfter w entry
     ruleLog := ruleLogAfter w entry
     wanting := wantingAfter w entry
+    days := if (w.days.back?.map (·.1)) == some (w.clock / Limits.clockDay) then w.days
+      else w.days.push (w.clock / Limits.clockDay, index + 1)
     touches := if tagOf entry != "admitted" then w.touches else
       (touchesOf (index + 1) entry).foldl (fun t (id, x) => t.insert id ((t.getD id #[]).push x)) w.touches
     changes := w.changes ++ changesOf (w.height + 1) entry
@@ -4765,6 +4772,78 @@ def rulesOp (w : World) (j : Json) (wants : Bool) : Except String Json := do
   if !o.read.permits reader then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
   let rows := if wants then wantRows w id o else (carriedRules w id o).map (ruleRow w id)
   return Json.mkObj [("status", toJson (if wants then "wants" else "rules")), ("object", toJson id), ("rows", Json.arr rows.toArray)]
+
+/-- Why a rule that held was not cast, in words (`Ops.reactions`'s `why`). -/
+def unfiredWords : String → String
+  | "hole" => "a hole in its spell read nothing"
+  | "spell" => "its filled line is not a spell"
+  | "noOwner" => "nobody owns it to act as"
+  | "quiet" => "its owner is quieted"
+  | "ruleDepth" => s!"the chain of rules is {Limits.ruleDepth} deep"
+  | "rulesPerCommit" => s!"{Limits.rulesPerCommit} rules fired on this write already"
+  | "pending" => s!"the world holds {Limits.maxPending} undelivered sends"
+  | other => other
+
+/-- `world-chronicle {principal, day}` (docs/TENURE.md §2; OVERHAUL §2 conflict 6): one clock day of the
+    journal folded into lines, derived at the read and never written. The day's span is `World.days`;
+    each line names what an entry of it did to a thing the reader may view: made, grown (a verb), fired
+    or not, came to want or stopped; then the refusals by class and the hands that acted, by handle.
+    At most `Limits.chronicleLines` lines of things, the rest counted. -/
+def chronicle (w : World) (reader : String) (day : Nat) : List String := Id.run do
+  let some i := w.days.findIdx? (·.1 == day) | return [s!"day {day}: nothing was journaled."]
+  let start := w.days[i]!.2
+  let stop := ((w.days[i + 1]?).map (·.2)).getD (w.height + 1)
+  let mut things : Array String := #[]
+  let mut refusals : List (String × Nat) := []
+  let mut hands : Array String := #[]
+  let mut admitted := 0
+  for h in [start:stop] do
+    let some e := w.entries.get? (h - 1) | continue
+    let who := ((e.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+    let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
+    let rows := fun (j : Json) (k : String) => (((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList
+    let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
+    let seen := fun (id : String) => viewable w reader id
+    match tagOf e with
+    | "refused" =>
+      let cls := text outcome "class"
+      refusals := if refusals.any (·.1 == cls) then refusals.map fun (c, n) => (c, if c == cls then n + 1 else n)
+        else refusals ++ [(cls, 1)]
+    | "created" =>
+      if !hands.contains (shownName w who) then hands := hands.push (shownName w who)
+      if seen (text outcome "object") then things := things.push s!"made {text outcome "object"} ({shownName w who}, entry {h})"
+    | "admitted" =>
+      admitted := admitted + 1
+      if !who.isEmpty && !hands.contains (shownName w who) then hands := hands.push (shownName w who)
+      for c in rows outcome "creates" do
+        if seen (text c "object") then things := things.push s!"made {text c "object"} ({shownName w who}, entry {h})"
+      for x in rows outcome "placements" do
+        if seen (text x "object") && !(text x "verb").isEmpty && !(text x "reading").isEmpty then
+          things := things.push s!"grew {text x "verb"} on {text x "object"} ({shownName w who}, entry {h})"
+      for f in rows e "fired" do
+        if seen (text f "sender") then
+          things := things.push s!"rule {text f "rule"} of {shownName w (text f "principal")} fired on {text f "sender"} at entry {h}"
+      for f in rows e "unfired" do
+        if seen (text f "object") then
+          things := things.push s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire on {text f "object"} at entry {h}: {unfiredWords (text f "why")}"
+      for x in rows e "wanted" do
+        if seen (text x "object") then things := things.push s!"{text x "object"} came to want {text x "want"} at entry {h}"
+      for x in rows e "unwanted" do
+        if seen (text x "object") then things := things.push s!"{text x "object"} stopped wanting {text x "want"} at entry {h}"
+    | _ => pure ()
+  let shown := things.toList.take Limits.chronicleLines
+  let more := things.size - shown.length
+  return [s!"day {day}: entries {start} to {stop - 1}, {admitted} admitted."] ++ shown ++
+    (if more == 0 then [] else [s!"and {more} more."]) ++
+    (if refusals.isEmpty then [] else ["refused: " ++ ", ".intercalate (refusals.map fun (c, n) => s!"{n} {c}")]) ++
+    (if hands.isEmpty then [] else ["hands: " ++ ", ".intercalate hands.toList])
+
+def chronicleOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let day ← match j.getObjValAs? Nat "day" with
+    | .ok d => pure d
+    | .error _ => pure (w.clock / Limits.clockDay)
+  return Json.mkObj [("status", toJson "chronicled"), ("day", toJson day), ("lines", toJson (chronicle w reader day))]
 
 /-- The pin and law text `id` had at `version`: its current ones, with each later reprogram and
     amendment undone (newest first), as the admitted entries that made later versions record them. -/
