@@ -78,11 +78,6 @@ theorem envRef_roundTrip (envs : Array Environment) (find : Environment → Opti
     · simp [decodeEnvRef, addressesV3_roundTrip]
   · simp [decodeEnvRef, addressesV3_roundTrip]
 
-theorem texts_roundTrip : ∀ (names : List String) (rest : Tokens),
-    decodeTexts names.length (names.map Token.text ++ rest) = some (names, rest)
-  | [], rest => by simp [decodeTexts]
-  | x :: others, rest => by simp [decodeTexts, texts_roundTrip others rest]
-
 theorem namesRef_roundTrip (lists : Array (List String)) (find : List String → Option Nat) (names : List String)
     (rest : Tokens) : decodeNamesRef lists (encodeNamesRef lists find names ++ rest) = some (names, rest) := by
   unfold encodeNamesRef
@@ -228,6 +223,10 @@ theorem frameV3_roundTrip (frame : Frame) (fuel : Nat) (rest : Tokens)
   | reflect => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
   | metadata => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
   | project => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
+  | relationRows walk => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame, walk_roundTrip]
+  | relationList walk => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame, walk_roundTrip]
+  | relationProbe key probe payload => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
+  | relationSearch key probe field low high => simp [encodeFrameV3, decodeFrameV3, encodeFrame, decodeFrame]
 
 theorem controlV3_roundTrip (control : Control) (fuel : Nat) (rest : Tokens)
     (enough : (encodeControlV3 r control).length ≤ fuel) :
@@ -383,8 +382,11 @@ theorem mapCell_inverse (c : Cell) : mapCellAddresses g (mapCellAddresses f c) =
   | stored part value => cases value <;> simp [mapCellAddresses, mapValue_inverse inv]
   | _ => simp [mapCellAddresses, mapValue_inverse inv, inv, Function.comp_def]
 
+theorem mapWalk_inverse (w : Walk) : mapWalkAddresses g (mapWalkAddresses f w) = w := by
+  cases w <;> simp [mapWalkAddresses, inv]
+
 theorem mapFrame_inverse (fr : Frame) : mapFrameAddresses g (mapFrameAddresses f fr) = fr := by
-  cases fr <;> simp [mapFrameAddresses, mapValue_inverse inv, inv, Function.comp_def]
+  cases fr <;> simp [mapFrameAddresses, mapValue_inverse inv, mapWalk_inverse inv, inv, Function.comp_def]
 
 theorem mapControl_inverse (c : Control) : mapControlAddresses g (mapControlAddresses f c) = c := by
   cases c <;> simp [mapControlAddresses, mapValue_inverse inv, inv, Function.comp_def]
@@ -414,6 +416,6 @@ theorem stateV3_roundTrip (d : Dictionary) (s : State) :
   simp only [Option.bind_some, plainV3_roundTrip, Option.map_some, absolute_relative]
 
 #assert_axioms plainV3_roundTrip stateV3_roundTrip
-#assert_axioms cellV3_roundTrip mapCell_inverse absolute_relative
+#assert_axioms cellV3_roundTrip mapCell_inverse absolute_relative mapWalk_inverse mapFrame_inverse frameV3_roundTrip
 
 end Delvetalk.Theory.ObjectiveBendCheckpointRoundTrip

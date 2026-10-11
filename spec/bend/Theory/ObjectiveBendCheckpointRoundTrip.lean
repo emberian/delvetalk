@@ -21,6 +21,15 @@ theorem refusal_roundTrip (reason : Refusal) (rest : Tokens) :
     decodeRefusal (encodeRefusal reason ++ rest) = some (reason, rest) := by
   cases reason <;> rfl
 
+theorem texts_roundTrip : ∀ (names : List String) (rest : Tokens),
+    decodeTexts names.length (names.map Token.text ++ rest) = some (names, rest)
+  | [], rest => by simp [decodeTexts]
+  | x :: others, rest => by simp [decodeTexts, texts_roundTrip others rest]
+
+@[simp] theorem textList_roundTrip (texts : List String) (rest : Tokens) :
+    decodeTextList (encodeTexts texts ++ rest) = some (texts, rest) := by
+  simp [encodeTexts, decodeTextList, texts_roundTrip]
+
 mutual
 theorem term_roundTrip : ∀ (term : Term) (fuel : Nat) (rest : Tokens),
     (encodeTerm term).length ≤ fuel → decodeTerm fuel (encodeTerm term ++ rest) = some (term,rest)
@@ -100,6 +109,13 @@ theorem term_roundTrip : ∀ (term : Term) (fuel : Nat) (rest : Tokens),
       simp only [encodeTerm,List.length_cons,List.length_append] at h
       simp [encodeTerm,decodeTerm,List.append_assoc,term_roundTrip l fuel _ (by omega),term_roundTrip s fuel rest (by omega)]
   | .refuse reason, _+1, rest, _ => by simp [encodeTerm,decodeTerm]
+  | .relationCount r, fuel+1, rest, h => by
+      simp only [encodeTerm,List.length_cons] at h
+      simp [encodeTerm,decodeTerm,term_roundTrip r fuel rest (by omega)]
+  | .relationLookup r key p, fuel+1, rest, h => by
+      simp only [encodeTerm,List.length_cons,List.length_append] at h
+      simp [encodeTerm,decodeTerm,List.append_assoc,term_roundTrip r fuel _ (by omega),
+        term_roundTrip p fuel rest (by omega)]
   | term, 0, rest, h => by cases term <;> simp [encodeTerm] at h
 theorem fields_roundTrip : ∀ (fields : List (String × Term)) (fuel : Nat) (rest : Tokens),
     (encodeFields fields).length ≤ fuel → decodeFields fuel (encodeFields fields ++ rest) = some (fields,rest)
@@ -182,7 +198,12 @@ theorem stored_roundTrip (part : Stored) (fuel : Nat) (rest : Tokens)
     simp only [encodeStored, List.length_cons, List.length_append] at enough
     simp [encodeStored, decodeStored, List.append_assoc, data_roundTrip (.record state) fuel _ (by omega),
       named_roundTrip]
+  | key field position key => simp [encodeStored, decodeStored, ← List.append_assoc]
   | _ => simp [encodeStored, decodeStored]
+
+theorem walk_roundTrip (walk : Walk) (rest : Tokens) :
+    decodeWalk (encodeWalk walk ++ rest) = some (walk, rest) := by
+  cases walk <;> simp [encodeWalk, decodeWalk]
 
 theorem frame_roundTrip (frame : Frame) (fuel : Nat) (rest : Tokens)
     (enough : (encodeFrame frame).length ≤ fuel) :
@@ -222,6 +243,8 @@ theorem frame_roundTrip (frame : Frame) (fuel : Nat) (rest : Tokens)
   | joinList s a first => cases first <;> simp [encodeFrame,decodeFrame]
   | joinCons s a first => cases first <;> simp [encodeFrame,decodeFrame]
   | joinHead s a first tail => cases first <;> simp [encodeFrame,decodeFrame]
+  | relationRows walk => simp [encodeFrame,decodeFrame,walk_roundTrip]
+  | relationList walk => simp [encodeFrame,decodeFrame,walk_roundTrip]
   | _ => simp [encodeFrame,decodeFrame]
 
 theorem length_le_flatMap {α : Type} (encode : α → Tokens) :
@@ -271,6 +294,6 @@ theorem control_roundTrip (control : Control) (fuel : Nat) (rest : Tokens)
   | _ => simp [encodeControl,decodeControl]
 
 #assert_axioms data_roundTrip control_roundTrip
-#assert_axioms stored_roundTrip refusal_roundTrip
+#assert_axioms stored_roundTrip refusal_roundTrip texts_roundTrip textList_roundTrip walk_roundTrip frame_roundTrip term_roundTrip
 
 end Delvetalk.Theory.ObjectiveBendCheckpointRoundTrip

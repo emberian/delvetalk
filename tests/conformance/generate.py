@@ -4,6 +4,7 @@ Wire (shared by impl/c, impl/js, impl/python and the `evaluate-term` op):
   ["bound", i] ["nat", "123"] ["boolean", true] ["label", "s"] ["refuse", "reason"] ["lam", b]
   ["app", f, a] ["mix", l, u] ["fix", s, i] ["specification", m, e]
   ["prototype", s, t] ["reflect"|"metadata"|"project"|"perform"|"done"|"toData", x] ["textJoin", list, separator]
+  ["relationCount", relation] ["relationLookup", relation, [column, ...], probe]
   ["unary", prim, x] ["binary", prim, l, r] ["get", x, "name"]
   ["inject", "label", x] ["ifZero", v, z, s] ["ifBool", c, t, f]
   ["record", [[name, term], ...]] ["extend", x, fields] ["case", x, arms]
@@ -20,7 +21,7 @@ import sys
 
 TAGS = ["bound", "lam", "app", "mix", "fix", "specification", "prototype", "reflect", "metadata",
         "project", "nat", "boolean", "label", "refuse", "unary", "binary", "extend", "record", "get", "ifZero",
-        "inject", "case", "ifBool", "perform", "done", "toData", "textJoin"]
+        "inject", "case", "ifBool", "perform", "done", "toData", "textJoin", "relationCount", "relationLookup"]
 BINARY = ["add", "multiply", "equal", "conjunction", "labelEqual", "subtract", "divide", "less",
           "lessEqual", "modulo", "textConcat", "textTake", "textDrop", "textSpan", "textBreak", "textHasAny",
           "textCanonicalCompare"]
@@ -34,31 +35,34 @@ FIELDS = ["a", "b", "c"]
 
 
 def size(term):
-    if not isinstance(term, list) or not term or not isinstance(term[0], str):
-        return 0
-    total = 1
-    for child in term[1:]:
-        if isinstance(child, list) and child and isinstance(child[0], str) and child[0] in TAGS:
-            total += size(child)
-        elif isinstance(child, list):
-            for field in child:
-                if isinstance(field, list) and len(field) == 2:
-                    total += size(field[1])
+    """Constructor count (iterative: a 2,048-row literal nests about 8,000 deep)."""
+    total, pending = 0, [term]
+    while pending:
+        term = pending.pop()
+        if not isinstance(term, list) or not term or not isinstance(term[0], str):
+            continue
+        total += 1
+        for child in term[1:]:
+            if isinstance(child, list) and child and isinstance(child[0], str) and child[0] in TAGS:
+                pending.append(child)
+            elif isinstance(child, list):
+                pending.extend(field[1] for field in child if isinstance(field, list) and len(field) == 2)
     return total
 
 
 def tags(term, out=None):
+    """The constructors (and `binary:`/`unary:` primitives) a term uses (iterative, as `size`)."""
     out = set() if out is None else out
-    if isinstance(term, list) and term and isinstance(term[0], str) and term[0] in TAGS:
-        out.add(term[0])
-        if term[0] in ("binary", "unary"):
-            out.add(term[0] + ":" + term[1])
-        for child in term[1:]:
-            tags(child, out)
-    elif isinstance(term, list):
-        for field in term:
-            if isinstance(field, list) and len(field) == 2:
-                tags(field[1], out)
+    pending = [term]
+    while pending:
+        term = pending.pop()
+        if isinstance(term, list) and term and isinstance(term[0], str) and term[0] in TAGS:
+            out.add(term[0])
+            if term[0] in ("binary", "unary"):
+                out.add(term[0] + ":" + term[1])
+            pending.extend(term[1:])
+        elif isinstance(term, list):
+            pending.extend(field[1] for field in term if isinstance(field, list) and len(field) == 2)
     return out
 
 
@@ -380,9 +384,76 @@ def stored_cases(rng, count=32):
         function = ["lam", body]
         cases.append({"name": f"stored-{index:02d}", "kind": "stored", "term": ["app", function, literal(state)],
                       "responses": responses, "fuel": 100000,
-                      "stored": {"function": function, "state": state, "relations": ["r"],
+                      "stored": {"function": function, "state": state, "relations": [{"field": "r", "key": ["k"]}],
                                  "reads": [[], [k] if k < size else [], list(range(size)), [],
                                            [k] if k < size else [], []][shape]}})
+    return cases
+
+
+def relation_cases(rng, count=16):
+    """`relationCount` and `relationLookup` over a state's relation `r` of rows {k, v} sorted by k
+    (KERNEL-HANDOFF section 16 item 15): held stored and keyed {k}, the machine answers a count from
+    the handle and binary-searches a lookup, fetching only the row it reads; the evaluators walk the
+    literal. Small relations from their own stream, then three over 2,048 rows (keys 0, 2, ..., 4094):
+    a count, a hit and a miss. Both must agree; `reads` are the rows the machine forces."""
+    def state(keys):
+        rows = [{"tag": "record", "fields": [{"name": "k", "value": {"tag": "natural", "value": str(k)}},
+                                             {"name": "v", "value": {"tag": "label", "value": f"v{k}"}}]}
+                for k in keys]
+        return {"tag": "record", "fields": [
+            {"name": "r", "value": {"tag": "variant", "label": "rows", "payload": {"tag": "record", "fields": [
+                {"name": "items", "value": {"tag": "list", "items": rows}}]}}}]}
+
+    def literal(d):
+        tag = d["tag"]
+        if tag == "natural":
+            return ["nat", d["value"]]
+        if tag == "label":
+            return ["label", d["value"]]
+        if tag == "record":
+            return ["record", [[f["name"], literal(f["value"])] for f in d["fields"]]]
+        if tag == "variant":
+            return ["inject", d["label"], literal(d["payload"])]
+        items = ["inject", "nil", ["record", []]]
+        for item in reversed(d["items"]):
+            items = ["inject", "cons", ["record", [["head", literal(item)], ["tail", items]]]]
+        return items
+
+    relation = ["get", ["bound", 0], "r"]
+
+    def probe(k):
+        column = ["get", ["bound", 0], "k"]
+        return ["lam", ["ifBool", ["binary", "less", column, ["nat", str(k)]], ["nat", "0"],
+                        ["ifBool", ["binary", "equal", column, ["nat", str(k)]], ["nat", "1"], ["nat", "2"]]]]
+
+    def read(k):
+        # The found row's v, which forces (fetches) that one row; "none" on a miss.
+        return ["case", ["relationLookup", relation, ["k"], probe(k)],
+                [["some", ["get", ["get", ["bound", 0], "value"], "v"]], ["none", ["label", "none"]]]]
+
+    def case(name, keys, body, reads):
+        function = ["lam", body]
+        st = state(keys)
+        return {"name": name, "kind": "stored", "term": ["app", function, literal(st)], "responses": [],
+                "fuel": 10000000, "stored": {"function": function, "state": st,
+                                             "relations": [{"field": "r", "key": ["k"]}], "reads": reads}}
+
+    cases = []
+    for index in range(count):
+        keys = sorted(rng.sample(range(12), rng.randrange(0, 7)))
+        shape = rng.randrange(3)
+        if shape == 0:
+            cases.append(case(f"relation-{index:02d}", keys, ["relationCount", relation], []))
+        else:
+            k = rng.randrange(12)
+            # shape 2 answers the Maybe unread: no row is forced, hit or miss.
+            body = read(k) if shape == 1 else ["relationLookup", relation, ["k"], probe(k)]
+            cases.append(case(f"relation-{index:02d}", keys, body,
+                              [keys.index(k)] if shape == 1 and k in keys else []))
+    big = list(range(0, 4096, 2))
+    cases.append(case("relation-2048-count", big, ["relationCount", relation], []))
+    cases.append(case("relation-2048-hit", big, read(6), [3]))
+    cases.append(case("relation-2048-miss", big, read(7), []))
     return cases
 
 
@@ -424,6 +495,7 @@ def generate(count, seed=1025):
                       "responses": [], "fuel": 100000})
     # Stored state, after the seeded stream from a stream of its own (no generated case moves).
     cases.extend(stored_cases(random.Random(seed + 15)))
+    cases.extend(relation_cases(random.Random(seed + 16)))
     return cases
 
 

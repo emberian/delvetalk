@@ -26,8 +26,9 @@ def depth : ATerm → Nat
   | .located _ b => depth b
   | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ _ => 1
   | .unary _ b | .lam _ b | .reflect b | .metadata b | .project b | .inject _ _ _ b | .perform _ _ b | .done _ _ b | .toData _ b => depth b + 1
-  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b | .textJoin a b =>
-      max (depth a) (depth b) + 1
+  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b | .textJoin a b
+  | .relationLookup a _ b => max (depth a) (depth b) + 1
+  | .relationCount a => depth a + 1
   | .ifZero a b c | .ifBool a b c => max (depth a) (max (depth b) (depth c)) + 1
   | .extend a fs | .case a fs => max (depth a) (fieldsDepth fs) + 1
   | .record fs => fieldsDepth fs + 1
@@ -65,6 +66,7 @@ theorem depth_pos : (t : ATerm) → 1 ≤ depth t
   | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ _ | .unary _ _ | .lam _ _ | .reflect _
   | .metadata _ | .project _ | .inject _ _ _ _ | .perform _ _ _ | .done _ _ _ | .toData _ _ | .app _ _
   | .mix _ _ | .fix _ _ | .specification _ _ | .prototype _ _ | .binary _ _ _ | .textJoin _ _
+  | .relationCount _ | .relationLookup _ _ _
   | .ifZero _ _ _ | .ifBool _ _ _ | .extend _ _ | .case _ _ | .record _ | .get _ _ => by simp [depth]
 
 theorem primitive_round {p : String} {prim : CorePrimitive} (h : primitiveOf p = .ok prim) :
@@ -154,6 +156,23 @@ theorem decode_json : (t : ATerm) → (n : Nat) → (e : CoreTerm) → depth t �
 
   | .refuse _ r, n+1, e, _, he => by
     simp [ATerm.erase] at he; subst he; rw [decodeTerm]; simp [ATerm.json]
+
+  | .relationCount r, n+1, e, hd, he => by
+    simp only [ATerm.erase, bind_ok] at he
+    obtain ⟨er, hr, he⟩ := he
+    simp only [depth] at hd
+    have dr := decode_json r n er (by omega) hr
+    simp at he; subst he
+    rw [decodeTerm]; simp [ATerm.json, dr]
+
+  | .relationLookup r k p, n+1, e, hd, he => by
+    simp only [ATerm.erase, bind_ok] at he
+    obtain ⟨er, hr, ep, hp, he⟩ := he
+    simp only [depth] at hd
+    have dr := decode_json r n er (by omega) hr
+    have dp := decode_json p n ep (by omega) hp
+    simp at he; subst he
+    rw [decodeTerm]; simp [ATerm.json, dr, dp, Delvetalk.Theory.ObjectiveBendTyping.decodeTexts_arr]
 
   | .textJoin f a, n+1, e, hd, he => by
     simp only [ATerm.erase, bind_ok] at he

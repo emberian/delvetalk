@@ -96,14 +96,15 @@ theorem freeIn_rename : ∀ (t : Term) (rename : Nat → Nat) (j : Nat),
     exact ⟨k, hk, by simpa [Term.freeIn] using free⟩
   | .app a b, rename, j, h | .mix a b, rename, j, h | .fix a b, rename, j, h
   | .specification a b, rename, j, h | .prototype a b, rename, j, h
-  | .binary _ a b, rename, j, h | .textJoin a b, rename, j, h => by
+  | .binary _ a b, rename, j, h | .textJoin a b, rename, j, h | .relationLookup a _ b, rename, j, h => by
     simp only [Term.rename, Term.freeIn, Bool.or_eq_true] at h
     rcases h with h | h
     · obtain ⟨i, hi, free⟩ := freeIn_rename a rename j h; exact ⟨i, hi, by simp [Term.freeIn, free]⟩
     · obtain ⟨i, hi, free⟩ := freeIn_rename b rename j h; exact ⟨i, hi, by simp [Term.freeIn, free]⟩
   | .reflect a, rename, j, h | .metadata a, rename, j, h | .project a, rename, j, h
   | .unary _ a, rename, j, h | .get a _, rename, j, h | .inject _ a, rename, j, h
-  | .perform a, rename, j, h | .done a, rename, j, h | .toData a, rename, j, h => by
+  | .perform a, rename, j, h | .done a, rename, j, h | .toData a, rename, j, h
+  | .relationCount a, rename, j, h => by
     simp only [Term.rename, Term.freeIn] at h
     obtain ⟨i, hi, free⟩ := freeIn_rename a rename j h; exact ⟨i, hi, by simp [Term.freeIn, free]⟩
   | .nat _, _, _, h | .boolean _, _, _, h | .label _, _, _, h | .refuse _, _, _, h => by
@@ -368,8 +369,16 @@ theorem trimValue_forceStored {heap heap' : Array Cell} {part : Stored} {value :
   | object state stored => simp [forceStored] at forced; rw [← forced.2]; rfl
   | spine field position size =>
     by_cases h : position < size <;> simp [forceStored, h] at forced <;> rw [← forced.2] <;> rfl
-  | row field position => simp [forceStored] at forced
+  | row field position | key field position key => simp [forceStored] at forced
   | _ => simp [forceStored] at forced; rw [← forced.2]; rfl
+
+@[simp] theorem storedItems_erase (cell : Option Cell) :
+    storedItems (cell.map eraseCell) = storedItems cell := by
+  cases cell with
+  | none => rfl
+  | some cell => cases cell with
+    | stored part value => cases part <;> rfl
+    | _ => rfl
 
 theorem forcingShared_erase (stack : List Frame) : forcingShared (stack.map eraseFrame) = forcingShared stack := by
   induction stack with
@@ -498,6 +507,27 @@ theorem erase_stepRaw (s : State) : eraseState (stepRaw (eraseState s)) = eraseS
           simp [stepRaw, eraseState, eraseControl, eraseFrame, valueTerm, Array.map_map, List.map_map] <;>
           (repeat' split) <;>
           simp_all [eraseControl, valueTerm, Array.map_map, List.map_map]
+      | relationRows walk =>
+        cases value with
+        | variant tag payload =>
+          simp only [stepRaw, eraseState, eraseControl, List.map_cons, eraseFrame, trimValue_variant,
+            Array.getElem?_map, storedItems_erase]
+          split
+          · rcases walk with counted | ⟨key, probe⟩ <;>
+              rcases found : storedItems heap[payload]? with _ | ⟨field, size⟩ <;>
+              simp [searchStep, eraseControl, eraseFrame, eraseCell, Array.map_map, List.map_map, Array.map_push,
+                trimEnv, Term.freeIn] <;> (try split) <;>
+              simp [eraseControl, eraseFrame, eraseCell, Array.map_push, trimEnv, Term.freeIn]
+          · simp [eraseControl, Array.map_map, List.map_map]
+        | _ => simp [stepRaw, eraseState, eraseControl, eraseFrame, Array.map_map, List.map_map]
+      | relationSearch key probe field low high =>
+        cases value with
+        | natural n =>
+          rcases n with _ | _ | n <;>
+            simp [stepRaw, eraseState, searchStep, eraseControl, eraseFrame, eraseCell, Array.map_map, List.map_map,
+              Array.map_push, trimEnv, Term.freeIn] <;> (try split) <;>
+            simp [eraseControl, eraseFrame, eraseCell, Array.map_push, trimEnv, Term.freeIn]
+        | _ => simp [stepRaw, eraseState, eraseControl, eraseFrame, Array.map_map, List.map_map]
       | _ =>
         cases value <;>
           simp [stepRaw, eraseState, eraseControl, eraseFrame, eraseCell, trimClosure, valueTerm,
@@ -613,7 +643,18 @@ theorem sizesAfter_erase (s : State) (depth : Nat) :
         cases value with
         | natural n => cases n <;> simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, eraseFrame]
         | _ => simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, eraseFrame]
-      | _ => cases value <;> simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, eraseFrame]
+      | relationProbe key probe payload =>
+        cases value with
+        | natural n => rcases n with _ | _ | n <;>
+            simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, eraseFrame]
+        | _ => simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, eraseFrame]
+      | relationSearch key probe field low high =>
+        cases value with
+        | natural n => rcases n with _ | _ | n <;>
+            simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, eraseFrame]
+        | _ => simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, eraseFrame]
+      | _ => cases value <;> simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl, eraseFrame,
+          Array.getElem?_map]
   | _ => simp [ObjectiveBendDemandMachineFast.sizesAfter, eraseState, eraseControl]
 
 theorem sizesAfter_agree {s t : State} (agree : Agree s t) (depth : Nat) :
@@ -641,21 +682,21 @@ theorem fetchable_erase (fetch : Fetch) (s : State) : fetchable fetch (eraseStat
     | none => rfl
     | some cell =>
       cases cell with
-      | stored part value => cases value <;> cases part <;> rfl
+      | stored part value => cases value <;> rfl
       | _ => rfl
   | _ => rfl
 
 theorem fetchable_agree (fetch : Fetch) {s t : State} (agree : Agree s t) : fetchable fetch s = fetchable fetch t := by
   rw [← fetchable_erase fetch s, ← fetchable_erase fetch t]; exact congrArg _ agree
 
-theorem erase_fetchStep (s : State) (address : Nat) (field : String) (position : Nat) (row : Data) :
-    eraseState (fetchStep (eraseState s) address field position row) = eraseState (fetchStep s address field position row) := by
+theorem erase_fetchStep (s : State) (address : Nat) (part : Stored) (data : Data) :
+    eraseState (fetchStep (eraseState s) address part data) = eraseState (fetchStep s address part data) := by
   obtain ⟨heap, control, stack⟩ := s
   simp [fetchStep, eraseState, erase_forceNative, erase_set!, eraseCell, trimValue_forceNative, Array.map_map,
     List.map_map]
 
-theorem agree_fetchStep {s t : State} (agree : Agree s t) (address : Nat) (field : String) (position : Nat) (row : Data) :
-    Agree (fetchStep s address field position row) (fetchStep t address field position row) := by
+theorem agree_fetchStep {s t : State} (agree : Agree s t) (address : Nat) (part : Stored) (data : Data) :
+    Agree (fetchStep s address part data) (fetchStep t address part data) := by
   unfold Agree
   rw [← erase_fetchStep s, ← erase_fetchStep t, agree]
 
@@ -667,13 +708,13 @@ theorem forceHostedFrom_succ (policy : State → Bool) (fetch : Fetch) (limits :
     forceHostedFrom policy fetch limits bytes (remaining + 1) state depth =
       if halted state.control then (runBounded limits 0 state, remaining + 1) else
       match fetchable fetch state with
-      | some (address, field, position, row) =>
-        if !policy state || (fetchCost row).2 > bytes then (.suspended .capacity state, remaining + 1)
-        else if (fetchCost row).1 > remaining + 1 then (.suspended .ticks state, remaining + 1)
-        else if state.heap.size + ObjectiveBendDemandMachineFast.nativeChildren row ≤ limits.heap && depth ≤ limits.stack then
-          forceHostedFrom policy fetch limits bytes (remaining + 1 - (fetchCost row).1)
-            (fetchStep state address field position row) depth
-        else (.suspended .capacity state, remaining + 1 - (fetchCost row).1)
+      | some (address, part, data) =>
+        if !policy state || (fetchCost data).2 > bytes then (.suspended .capacity state, remaining + 1)
+        else if (fetchCost data).1 > remaining + 1 then (.suspended .ticks state, remaining + 1)
+        else if state.heap.size + ObjectiveBendDemandMachineFast.nativeChildren data ≤ limits.heap && depth ≤ limits.stack then
+          forceHostedFrom policy fetch limits bytes (remaining + 1 - (fetchCost data).1)
+            (fetchStep state address part data) depth
+        else (.suspended .capacity state, remaining + 1 - (fetchCost data).1)
       | none =>
       let cost := textStepCost state (remaining + 1)
       if !policy state || cost.2 > bytes then (.suspended .capacity state, remaining + 1)
@@ -725,13 +766,13 @@ theorem agree_forceHostedFrom {policy : State → Bool} {fetch : Fetch}
     split
     · exact ⟨agree_runBounded_zero limits agree, rfl⟩
     split
-    · rename_i address field position row _
+    · rename_i address part data _
       split
       · exact ⟨same, rfl⟩
       split
       · exact ⟨sameTicks, rfl⟩
       split
-      · exact ih _ (by simp only [fetchCost]; omega) _ _ _ (agree_fetchStep agree address field position row)
+      · exact ih _ (by simp only [fetchCost]; omega) _ _ _ (agree_fetchStep agree address part data)
       · exact ⟨same, rfl⟩
     simp only []
     split
@@ -1214,6 +1255,7 @@ theorem trim_resume_segment {fetch : Fetch} {state resumed : State} {response : 
   agree_resume_segment (agree_trim state) yielded limits bytes ticks budget
 
 #assert_axioms agree_resume_segment agree_forceHostedFrom erase_stepRaw freeIn_rename
+#assert_axioms storedItems_erase sizesAfter_erase erase_stepRaw
 #assert_axioms erase_forceStored trimValue_forceStored erase_allocateObjectFields fetchable_agree agree_fetchStep
 #assert_axioms forceHostedFrom_succ sizesAfter_erase trim_heap_erased settle_resume_segment trim_resume_segment
 #assert_axioms agree_materializeWith agree_completeWith agree_yieldedPlanWith

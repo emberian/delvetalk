@@ -44,7 +44,7 @@ static void fields(J *fs) {
 }
 static void validate(J *t) {
  if(!json_object_is_type(t,json_type_array)||LEN(t)<2||!isstr(AT(t,0))) fail("invalid term array");
- if(!named(AT(t,0),"bound lam app mix fix specification prototype reflect metadata project nat boolean label refuse binary unary extend record get ifZero inject case ifBool perform done toData textJoin")) fail("unknown term constructor");
+ if(!named(AT(t,0),"bound lam app mix fix specification prototype reflect metadata project nat boolean label refuse binary unary extend record get ifZero inject case ifBool perform done toData textJoin relationCount relationLookup")) fail("unknown term constructor");
  J *a=AT(t,1); size_t n=LEN(t);
  if(tag(t,"bound")) { if(n!=2||!isint(a)) fail("invalid bound index"); }
  else if(tag(t,"nat")) {
@@ -55,7 +55,13 @@ static void validate(J *t) {
  } else if(tag(t,"boolean")) { if(n!=2||!json_object_is_type(a,json_type_boolean)) fail("invalid boolean"); }
  else if(tag(t,"label")) { if(n!=2||!isstr(a)) fail("invalid label"); }
  else if(tag(t,"refuse")) { if(n!=2||!isstr(a)) fail("invalid refuse"); }
- else if(named(AT(t,0),"lam reflect metadata project perform done toData")) { if(n!=2) fail("wrong unary arity"); validate(a); }
+ else if(tag(t,"relationLookup")) {
+  if(n!=4) fail("wrong relation lookup arity");
+  J *cols=AT(t,2); if(!json_object_is_type(cols,json_type_array)) fail("relation columns must be an array");
+  for(size_t i=0;i<LEN(cols);i++) if(!isstr(AT(cols,i))) fail("relation column must be a string");
+  validate(a); validate(AT(t,3));
+ }
+ else if(named(AT(t,0),"lam reflect metadata project perform done toData relationCount")) { if(n!=2) fail("wrong unary arity"); validate(a); }
  else if(named(AT(t,0),"app mix fix specification prototype textJoin")) { if(n!=3) fail("wrong binary arity"); validate(a); validate(AT(t,2)); }
  else if(tag(t,"record")) { if(n!=2) fail("wrong record arity"); fields(a); }
  else if(tag(t,"extend")||tag(t,"case")) { if(n!=3) fail("wrong field operation arity"); validate(a); fields(AT(t,2)); }
@@ -75,6 +81,7 @@ static J *walkfields(J *fs,uint64_t depth,int mode,uint64_t delta,J *arg) {
  J *r=arr(); for(size_t i=0;i<LEN(fs);i++) { J *f=AT(fs,i),*pair=arr(); add(pair,keep(AT(f,0))); add(pair,walk(AT(f,1),depth,mode,delta,arg)); add(r,pair); } return r;
 }
 static J *walk(J *t,uint64_t depth,int mode,uint64_t delta,J *arg) {
+ if(!mode&&!delta) return keep(t); /* shifting by nothing: nodes are immutable, share */
  if(tag(t,"bound")) {
   uint64_t k=json_object_get_uint64(AT(t,1)); if(k<depth) return keep(t);
   if(mode&&k==depth) return walk(arg,0,0,depth,NULL);
@@ -85,7 +92,7 @@ static J *walk(J *t,uint64_t depth,int mode,uint64_t delta,J *arg) {
  J *r=arr(); add(r,keep(AT(t,0)));
  for(size_t i=1;i<LEN(t);i++) {
   int fs=(tag(t,"record")&&i==1)||((tag(t,"extend")||tag(t,"case"))&&i==2);
-  int literal=((tag(t,"binary")||tag(t,"unary"))&&i==1)||(tag(t,"get")&&i==2)||(tag(t,"inject")&&i==1);
+  int literal=((tag(t,"binary")||tag(t,"unary"))&&i==1)||(tag(t,"get")&&i==2)||(tag(t,"inject")&&i==1)||(tag(t,"relationLookup")&&i==2);
   uint64_t d=depth+((tag(t,"lam")&&i==1)||(tag(t,"ifZero")&&i==3)||(tag(t,"case")&&i==2));
   add(r,literal?keep(AT(t,i)):fs?walkfields(AT(t,i),d,mode,delta,arg):walk(AT(t,i),d,mode,delta,arg));
  } return r;
@@ -209,7 +216,7 @@ static Transition result(J *t) { return (Transition){t?STEP:STUCK,t,NULL}; }
  * it could exceed the wire representation or allocate an enormous term. */
 static int reducible(J *t) {
  J *a=AT(t,1),*b=AT(t,2);
- if(tag(t,"done")||tag(t,"toData")||tag(t,"textJoin")||tag(t,"fix")||tag(t,"mix")) return 1;
+ if(tag(t,"done")||tag(t,"toData")||tag(t,"textJoin")||tag(t,"relationCount")||tag(t,"relationLookup")||tag(t,"fix")||tag(t,"mix")) return 1;
  if(tag(t,"app")) return tag(a,"lam")||tag(a,"specification")||reducible(a);
  if(tag(t,"reflect")||tag(t,"project")) return tag(a,"prototype")||reducible(a);
  if(tag(t,"metadata")) return tag(a,"specification")||reducible(a);
@@ -255,8 +262,38 @@ static J *join_expansion(J *items,J *separator) {
  add(outer,pair("cons",two("app",two("app",go,field_of("head")),field_of("tail"))));
  return two("case",keep(items),outer);
 }
+static J *parse(const char *s) { J *r=json_tokener_parse(s); if(!r) fail("internal expansion"); return r; }
+/* relationCount's meaning: case on the relation's rows, then the fold
+ * `go count rest` (a fix of four lambdas, closed) adding one per cons from zero. */
+static J *count_expansion(J *relation) {
+ J *go=parse("[\"fix\",[\"lam\",[\"lam\",[\"lam\",[\"lam\",[\"case\",[\"bound\",0],[[\"nil\",[\"bound\",2]],"
+  "[\"cons\",[\"app\",[\"app\",[\"bound\",4],[\"binary\",\"add\",[\"bound\",2],[\"nat\",\"1\"]]],[\"get\",[\"bound\",0],\"tail\"]]]]]]]]],[\"record\",[]]]");
+ J *arms=arr(); add(arms,pair("rows",two("app",two("app",go,nat_u64(0)),two("get",one("bound",json_object_new_int(0)),json_object_new_string("items")))));
+ return two("case",keep(relation),arms);
+}
+/* relationLookup's meaning: case on the relation's rows, then a fix of three
+ * lambdas over the list; each cons applies the probe (shifted by the five binders
+ * above it: rows arm, three lambdas, cons arm) to the head projected onto the
+ * columns, and counts 0 continue, 1 answer some, 2 or more answer none. */
+static J *lookup_expansion(J *relation,J *columns,J *probe) {
+ J *proj=arr();
+ for(size_t i=0;i<LEN(columns);i++) {
+  J *c=AT(columns,i),*head=two("get",one("bound",json_object_new_int(0)),json_object_new_string("head"));
+  add(proj,pair(str(c),two("get",head,json_object_new_string(str(c)))));
+ }
+ J *body=parse("[\"ifZero\",[\"bound\",0],[\"app\",[\"bound\",4],[\"get\",[\"bound\",1],\"tail\"]],"
+  "[\"ifZero\",[\"bound\",0],[\"inject\",\"some\",[\"record\",[[\"value\",[\"get\",[\"bound\",2],\"head\"]]]]],[\"inject\",\"none\",[\"record\",[]]]]]");
+ J *cons=two("app",one("lam",body),two("app",walk(probe,0,0,5,NULL),one("record",proj)));
+ J *inner=arr(); add(inner,pair("nil",two("inject",json_object_new_string("none"),one("record",arr()))));
+ add(inner,pair("cons",cons));
+ J *go=two("fix",one("lam",one("lam",one("lam",two("case",one("bound",json_object_new_int(0)),inner)))),one("record",arr()));
+ J *arms=arr(); add(arms,pair("rows",two("app",go,two("get",one("bound",json_object_new_int(0)),json_object_new_string("items")))));
+ return two("case",keep(relation),arms);
+}
 static Transition advance(J *t,J *response) {
  J *a=AT(t,1),*b=AT(t,2);
+ if(tag(t,"relationCount")) return result(count_expansion(a));
+ if(tag(t,"relationLookup")) return result(lookup_expansion(a,b,AT(t,3)));
  if(tag(t,"textJoin")) return result(join_expansion(a,b));
  if(tag(t,"perform")) return (Transition){YIELD,response?keep(response):NULL,keep(a)};
  if(tag(t,"done")||tag(t,"toData")) return result(keep(a));
@@ -363,7 +400,7 @@ int main(void) {
   int blank=1; for(ssize_t i=0;i<n;i++) if(!isspace((unsigned char)line[i])) { blank=0; break; } if(blank) continue;
   if(n>INT32_MAX) fail("JSON line exceeds parser capacity");
   scalar_utf8((const unsigned char *)line,(size_t)n); scalar_escapes(line,(size_t)n);
-  struct json_tokener *tok=json_tokener_new_ex(1024); json_tokener_set_flags(tok,JSON_TOKENER_STRICT|JSON_TOKENER_VALIDATE_UTF8);
+  struct json_tokener *tok=json_tokener_new_ex(65536); json_tokener_set_flags(tok,JSON_TOKENER_STRICT|JSON_TOKENER_VALIDATE_UTF8);
   J *job=json_tokener_parse_ex(tok,line,(int)n); size_t end=json_tokener_get_parse_end(tok);
   if(json_tokener_get_error(tok)!=json_tokener_success) fail("invalid JSON");
   for(size_t i=end;i<(size_t)n;i++) if(!isspace((unsigned char)line[i])) fail("trailing JSON data");

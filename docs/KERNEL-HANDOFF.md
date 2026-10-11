@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-11 (lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
+State on 2026-10-11 (lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
 
 ## Summary
 
@@ -10,7 +10,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Binary: `.lake/build/bin/delvetalk-obend` (`lake build`; `make build` also builds the proof-only modules in `PROOF_ONLY`). No `sorry` in `spec/`.
 - One dialect (§21): an activity is `Activity<A>` = `computation Message Data A`; its only yields are world calls `world.X(arg)` / `world.X::<T>(arg)` against `world/lib/World.obend`'s `protocol world` (§17), each resumed at its site's type. Surface `perform` and `Activity<P, R, A>` are refused by name.
 - The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`; a hand-written one beside blocks is not yet refused (§9).
-- Relations (§14, §22): law atoms `insertOnly`, `count`, column membership; `insert`/`upsert`/`retract` in `write {...}`; `canonicalCompare`; the artifact's `relations: [{field, key, limit, retain?}]`, evaluated once per package.
+- Relations (§14, §22, §15): law atoms `insertOnly`, `count`, column membership; `insert`/`upsert`/`retract` in `write {...}`; `canonicalCompare`; `relationCount(r)` and `relationLookup(r, key)` (core forms: a stored relation answers a count from its handle and a lookup by its declared key by binary search); the artifact's `relations: [{field, key, limit, retain?}]`, evaluated once per package.
 - Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
 - Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
@@ -129,6 +129,9 @@ Every machine transition costs 1 tick. Before a text primitive runs, `forceHoste
 - `labelEqual a b` (text `==`): `1 + min(|a|,|b|)` (kernel10; it was one tick whatever the length, `test_tariff.LabelEqual`).
 - `textLength`: `1+B`. `sha256Text`: `65 + 8*ceil(B/64) + 32*blocks`. `natText n`: `1 + bits^2`.
 - Natural arithmetic (`naturalStepCost`, kernel10): 1 tick while both operands are below 2^64; past a word, with x, y the operands' bytes (`log2/8 + 1`), `1 + 2(x+y)` plus `(x/8+1)(y/8+1)` for multiply, divide and modulo, reserving the result's bound (`max+1`, `x`, `x+y`, `x`). Before it, forty squarings of 2 cost one tick each and built a 128 GiB natural; now they are refused at the first unaffordable operand (`test_tariff.NaturalArithmetic`).
+- A fetched stored row or key (`fetchCost`): `1 + 2b`, reserving `b`, its canonical bytes.
+- `relationCount` of a stored relation: one transition (the `relationRows` frame); of a walked one, about five a cons cell.
+- `relationLookup` of a stored relation keyed by its columns: per probe, the key fetch (`1 + 2 * keyBytes`) and the probe's comparator (a `canonicalCompare`, linear in the key), at most `⌊log2 n⌋ + 1` probes; the found row's fetch only when it is read. Walked: the probe per row passed.
 - Everything else: 1 tick.
 
 `tests/test_tariff.py` pins the bump turn (73 + 10 ticks since day 4) and `Document.plain` over 1,025 leaves (129,272); library workloads are bounded where that code is tested (`test_hub`: glm's 1,788-character reply under a bell under 20,000 ticks, the directory's reading under 250,000). Update a pin with a reason when it moves. Profile before optimizing the interpreter: the Bend spell parse was 81% text primitives, and the host parses spells now.
@@ -137,9 +140,9 @@ Quadratic idioms to avoid: `Lists.append xs x` in a loop; `Lists.length` in a lo
 
 ## 6. Evaluators and conformance
 
-`impl/python/evaluator.py`, `impl/js/evaluator.mjs`, `impl/c/evaluator.c` are independent small-step, call-by-name interpreters of the core. Input line `{"name","term","responses","fuel"}`; output `{"name","status": value|yield|exhausted|stuck,"term","plans"}`. Term array wire: `["bound",i] ["nat","12"] ["boolean",b] ["label",s] ["lam",b] ["app",f,a] ["mix",l,u] ["fix",s,i] ["specification",m,e] ["prototype",s,t] ["reflect"|"metadata"|"project"|"perform"|"done",x] ["unary",prim,x] ["binary",prim,l,r] ["get",x,name] ["inject",label,x] ["ifZero",v,z,s] ["ifBool",c,t,f] ["record",[[n,t]..]] ["extend",x,fields] ["case",x,arms] ["refuse",text]`, plus `toData` and `textJoin`. An evaluator that rejects a line stops its stream; the runner restarts it and counts the line `rejected`. Text and unary primitives use code-point semantics; `textTake`/`textDrop` use the byte-size guard `n >= byteSize`; C has its own SHA-256. `perform` yields `status:"yield"` with `plans`, resumed from `responses` in order; `["refuse", text]` is a stuck leaf.
+`impl/python/evaluator.py`, `impl/js/evaluator.mjs`, `impl/c/evaluator.c` are independent small-step, call-by-name interpreters of the core; each runs its stream with a deep stack (Python a 512 MiB thread, JS a worker with 256 MiB, C a json-c depth of 65,536) so a 2,048-row literal relation (about 8,000 deep) parses and walks. Input line `{"name","term","responses","fuel"}`; output `{"name","status": value|yield|exhausted|stuck,"term","plans"}`. Term array wire: `["bound",i] ["nat","12"] ["boolean",b] ["label",s] ["lam",b] ["app",f,a] ["mix",l,u] ["fix",s,i] ["specification",m,e] ["prototype",s,t] ["reflect"|"metadata"|"project"|"perform"|"done",x] ["unary",prim,x] ["binary",prim,l,r] ["get",x,name] ["inject",label,x] ["ifZero",v,z,s] ["ifBool",c,t,f] ["record",[[n,t]..]] ["extend",x,fields] ["case",x,arms] ["refuse",text]`, plus `toData`, `textJoin`, `["relationCount", r]` and `["relationLookup", r, [column…], probe]` (each contracted to its expansion, as `textJoin`). An evaluator that rejects a line stops its stream; the runner restarts it and counts the line `rejected`. Text and unary primitives use code-point semantics; `textTake`/`textDrop` use the byte-size guard `n >= byteSize`; C has its own SHA-256. `perform` yields `status:"yield"` with `plans`, resumed from `responses` in order; `["refuse", text]` is a stuck leaf.
 
-Harness: `tests/conformance/generate.py` (seeded; kinds term, activity, stuck, diverge, shared-effect, exotic-value, chain; asserts every tag and primitive occurs) and `tests/test_conformance.py` (compares status, weak-head shape, and Plans when literal data). `python3 -m tests.test_conformance 1500 [IMPL_DIR]` prints the report. Last recorded (kernel10, 1500 cases plus the three fixed `textHasAny` cases of 2,000 words a side that `generate` appends after its seeded stream): 1435 of 1503 agree per evaluator, 68 known shared-effect, 0 unexpected. All three evaluators look `textHasAny`'s wanted words up in a set (C: an FNV-1a open-addressing table), linear as the kernel's.
+Harness: `tests/conformance/generate.py` (seeded; kinds term, activity, stuck, diverge, shared-effect, exotic-value, chain, stored; asserts every tag and primitive occurs; `relation_cases`: 16 small stored relations counted and looked up, then a count, a hit and a miss over 2,048 rows) and `tests/test_conformance.py` (compares status, weak-head shape, and Plans when literal data). `python3 -m tests.test_conformance 1500 [IMPL_DIR]` prints the report. Last recorded (kernel15, 1500 cases plus the fixed `textHasAny`, stored and relation cases): 1486 of 1554 agree per evaluator, 68 known shared-effect, 0 unexpected. The 2,048-row walks are the slowest cases (Python about 13 s for the count). All three evaluators look `textHasAny`'s wanted words up in a set (C: an FNV-1a open-addressing table), linear as the kernel's.
 
 Known divergence (`KNOWN_DIVERGENCE["shared-effect"]`): a `perform` reached while forcing a shared argument cell. The machine refuses it (`Refusal.sharedEffect`); call-by-name evaluators perform at each use. Typed programs cannot reach it (`noActivity`). Machine `divergent` and tick/capacity suspension map to `exhausted`. Not compared: step counts, deep values, non-literal plans.
 
@@ -156,7 +159,7 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 ## 8. Language features added since the lane-2 map
 
 - `Data` (`Ty.data`, `Term.toData`, `Data.of::<T>(value)`): any well-formed first-order data (`Data.wellFormed`), produced only by `toData`; no elimination (`data_not_eliminated`). Runtime: `toData` is its value. Turn arguments are quoted by their declared type at every depth (`Turn.quoteAt`). Implicit injection (`coerceAt`/`coerceArgs`/`coerceGo`): where `Data` is expected and the expression has type `T`, the term is wrapped `toData T`; a value whose type holds an arrow or computation is refused by name ("refused (data-injection): …"). `Plan.obend`'s `call`/`send`/`create` payloads are `Data`. The typed-data schema has `Schema.data`; admission charges `admissionWork` and refuses "typed data value at Data repeats a record field".
-- `textJoin(list, sep)`: `Term.textJoin`, frames `joinSeparator/joinList/joinCons/joinHead`, typing `Ty.isTextList`, meaning `textJoinExpansion`.
+- `textJoin(list, sep)`: `Term.textJoin`, frames `joinSeparator/joinList/joinCons/joinHead`, typing `Ty.listItem … = some .label`, meaning `textJoinExpansion`.
 - Type-argument inference (`Generics.lean`, `inferArguments`, `synthI`): a call of a generic without `::<…>` gets the arguments its explicit spelling names, then is rewritten exactly as that spelling (instance numbers and packets agree; the generics pass visits children in the old JSON's sorted-key order, and changing that order moves every pin with a generic instance). A parameter left unbound is refused: "cannot infer the type argument U of Lists.kept …; write Lists.kept::<T, Rain>(…)". `maxInferenceSteps` bounds it. `world/` writes `::<T>` only where a world call's result type cannot be inferred (`world.view::<S>`, `world.call::<R>`, `world.interpret::<R>`) and never `Data.of`.
 - `let label(x) = world.METHOD(arg)` then the rest of the block: lowers to `match world.METHOD(arg): case label(x): …` plus a `Pattern.unexpected` branch expanded to `case l(_): refuse("unexpected response l")` per other label. The scrutinee must be a world call ("refused (let-response)").
 - `Term.refuse (reason)`, surface `refuse("why")`: stands only where an activity finishes ("refused (refuse-outside-tail)", "refused (refuse-outside-activity)"). Typing rule `PartialTyping.refuse`; machine `control := .refused (.program r)`, `Turn.refusalText` = "turn refused: <reason>". `evaluate-term` reports `stuck`.
@@ -389,19 +392,63 @@ if a scalar changed, each inserted or replaced row). FOUNDATION's sentence: "Sta
 per cell: the scalar fields together and each relation row are at most 256 KiB of canonical
 bytes, a relation's length is its declared limit, and a write pays for the cells it changes."
 
-**Two primitives (after the cells; queued).** Both are `textJoin`-scale (a term form, frames,
-typing, both codecs, Fast, collector and settle cases, three evaluators):
-`relationCount(r) -> Nat` reads the handle's `size - position` from a stored spine without
-forcing it (one tick; on an ordinary list a walk), and records a whole-relation span;
-`relationLookup(r, key) -> Maybe<T>` binary-searches the stored positions by fetching keys
-(a `Store.key` the host adds then, charged `1 + 2 * keyBytes` each, `⌈log2 n⌉ + 1` of them) and fetches one row;
-on an ordinary list a walk by canonical bytes. `Relation.obend`'s `count` and `lookup` move
-onto them (objects lane).
+**Two primitives (built, lane/kernel15).** `Term.relationCount relation` and `Term.relationLookup
+relation key probe` (`key` the columns, `probe` a function of a row's projection onto them to 0
+below / 1 equal / more above the sought key). Their meaning is a walk, `relationCountExpansion` and
+`relationLookupExpansion` (Step rules), which the three evaluators implement literally. The machine:
+
+| frame | on | does |
+|---|---|---|
+| `relationRows walk` | `rows payload` | payload a stored `items f n`: a count pushes `stored (size f n) (some n)` and returns `n` (one transition, no row); a lookup starts `searchStep … 0 n`. Else enters the payload under `field "items"`, `relationList walk` |
+| `relationList walk` | `nil` / `cons p` | count: the tally / enter `p` under `field "tail"`, tally + 1. Lookup: `none` / push `⟨keyProjectionTerm key, [p]⟩` and apply the probe |
+| `relationProbe key probe p` | `0` / `1` / more | walk on to `p.tail` / `some {value: p.head}` / `none` |
+| `relationSearch key probe f low high` | `0` / `1` / more | search the upper half / push `stored (found f mid) none`, `some` / the lower half |
+
+`searchStep` probes the middle by pushing `stored (key f mid key) none` and applying the probe to it;
+an empty range pushes `stored (absent f low) none` and answers `none`. `Walk = count n | lookup key
+probe`. New `Stored` parts: `key` (fetched: the row's projection onto the lookup's columns), `found`
+(forced: `{value: row}` with the row unforced, so a presence test fetches nothing), `absent` (`{}`),
+`size` (the count). `Fetch := Stored → Option Data` answers `row` and `key` (`Stored.fetched`);
+`Turn.Store.bounded` answers a key only when the lookup's columns are the relation's declared key
+as a set (rows are in that key's order alone), so a search by other columns is refused `unfetched`,
+never answered wrong; the walk of a literal relation has no declared key and walks. The probe is
+written by the elaborator: `relationLookup(r, key)` is `(λk. relationLookup r columns (λx.
+canonicalCompare(x, k))) key`, the columns being the key record's fields, each refused by name
+unless a column of the row type of the same type ("refused (relation-lookup): …").
+
+Reads: `storedReach` is the furthest of `Cell.reach` per field: a forced spine at `j` (`j + 1`), a
+`found`/`absent` at `j`, forced or not (`j + 1`, `n + 1` past the end), a `size` (`n + 1`). Probed
+keys add nothing: the answer depends only on where the sought key falls. A hit's span is the prefix
+up to its key, as the Bend walk's was; an interval span (only the gap a miss observed, only the key
+a hit read) is a host-and-kernel follow-up (§16).
+
+Typing: `Ty.relationItem` (the closed one-case sum `rows {items: List<T>}`, `Ty.listItem` for the
+list, which `isTextList` folded into), `Ty.projection` (the key's record type), `Ty.maybe`; rules
+`PartialTyping.relationCount` and `.relationLookup` (the probe a reusable shareable arrow from the
+projection to `Nat`, `argumentAllowed … .unrestricted`), `infer` cases, `decodeTexts_arr`. Codecs:
+term tags 27-28, stored tags 6-9, frame tags 18-21 (additions only). Proofs, each with
+`#assert_axioms`: `sizesAfter_eq` (so `stepRawFast_eq_stepRaw`, `runFrom_eq_runBounded`), `related_stepRaw`
+(`searchStep_related`, `storedItems_rename`), `forceStored_related`, `erase_stepRaw`
+(`storedItems_erase`), the fetch lemmas over parts, `term_roundTrip`, `frame_roundTrip`,
+`walk_roundTrip`, `frameV3_roundTrip`, `mapWalk_inverse`, `decode_json`. Tests:
+`test_stored.RelationPrimitives`, `test_conformance` (`relation_cases`).
+
+Measured on hbox (one process, best of 15, `k15_measure.py` in the lane's scratchpad: the tree's own
+`world/lib/Relation.obend`, `run` and `turn-start`/`turn-resume` with `stored`, 2,048 rows):
+
+| | before (foundation 8f69bd7e) | after |
+|---|---|---|
+| card: a hit (row 1,536) | 292,448 ticks, 1,537 rows fetched, 347 ms | 270 ticks, 1 row, 18 ms |
+| card: a miss | 390,559 ticks, 2,048 rows, 568 ms | 744 ticks, 0 rows, 14 ms |
+| card: a count | 49,238 ticks, 85 ms | 51 ticks, 15 ms |
+| turn: write then count (resume) | 49,213 ticks, 120 ms start+resume | 26 ticks, 37 ms |
+
+The milliseconds after are the 2,048-row state on the wire.
 
 **Built (lane/kernel11).** Step 2: `Stored`, `Cell.stored`, `Refusal.unfetched` (checkpoint
 refusal code 9), `objectCell`/`allocateObjectFields`/`forceStored` (Machine); `storedChildren`,
 `forceStored_size` (Fast); `Fetch`, `fetchable`, `fetchStep`, `fetchCost`, `fetchable_spec`,
-`storedInitial`, `forcedRows`, `spineReach` and the fetch branch of `forceHostedFrom` (Data);
+`storedInitial`, `forcedRows`, `spineReach` (now `storedReach`) and the fetch branch of `forceHostedFrom` (Data);
 `encodeStored`/`decodeStored`, `stored_roundTrip`, v3 cell tag 5 (`cellV3_roundTrip`); collector,
 trim and erase cases; `erase_forceStored`, `fetchable_agree`, `agree_fetchStep`,
 `forceStored_related`, `related_fetchable`, `related_fetchStep`; `agree_*`, `related_*`, the three
@@ -472,36 +519,28 @@ reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `S
 state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with
 `keysChangedSince` and the span rule, the per-cell bound and ledger: 3 days.
 
-## 16. Queue for the successor (lane/kernel13, after foundation cb4af60)
+## 16. Queue for the successor (lane/kernel15, after foundation 8f69bd7e)
 
 Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the codex findings (kernel10,
 §24); lazy cells (kernel11, §15); the package and instance bounds, located generics refusals and
-LAW §4 A/E/H (kernel13, §25); the host requests of items 12 and 16 (host15: HOST-HANDOFF 133, 134, and the
-checkpoint digest the TurnLoop call sites pass). Remaining, in order:
+LAW §4 A/E/H (kernel13, §25); the law term language (kernel14, §25 M, N); item 15, the relation
+primitives (kernel15, §15 "Two primitives"). Remaining, in order:
 
-15. The two primitives of §15, `relationCount(r) -> Nat` and `relationLookup(r, key) -> Maybe<T>`,
-   then `Relation.obend`'s `count` and `lookup` onto them (objects lane). Not started by kernel13
-   (the bounds, the law insertion and item 9 took the lane). The shape, so the successor starts
-   cutting: two `Term` forms beside `textJoin` (`relationCount x`, `relationLookup x key keyType`, the
-   key's type carried so the fallback can compare canonically as `canonicalCompare` does); typing in
-   `PartialTyping` (argument a `Relation<T>` instance: the one-case `rows {items: List<T>}` sum
-   recognised as `Generics.relationItem` does; result `Nat`, or the `Maybe<T>` instance the
-   elaborator names, refused by name when the package has none); machine: entering
-   `relationCount` forces the argument to WHNF; a `stored (relation f n) _` or `stored (items …)`/
-   `stored (spine f j n)` cell answers `n - j` in one tick and adds the whole-relation span to
-   `Reads` (`spineReach` gains a `counted f` mark), any other value walks the list with a
-   `countList` frame; `relationLookup` on a stored spine binary-searches by `Store.key f j :
-   Option Data` (new; the host supplies key projections, charged `1 + 2 * keyBytes` each, `⌈log2 n⌉ + 1`
-   of them, reported as a span over the probed keys) and fetches the found row (`fetchCost`), else a
-   `lookupList` frame walking cons cells comparing canonical bytes. Proof cases: `stepRawFast` and
-   `sizesAfter`, collector `frameAddresses` and renamings for the two frames, `erase_stepRaw`, `agree_*`
-   for the key fetch (`Store.key` threaded as `fetch` is), checkpoint frame tags 18-19 and term tags
-   27-28 with `stateV3_roundTrip`. Evaluators: the reference meaning is the list walk (count;
-   first row whose key projection equals the key by canonical bytes), so Python, JS and C implement
-   the walk; the generator gains both forms (stored and literal relations), `KNOWN_DIVERGENCE`
-   none expected. Conformance and `test_stored` (a count reads no row and reports a whole span; a
-   lookup over 2,048 rows fetches one row and 12 keys) close it.
-   Estimate: 2 days kernel, half a day objects.
+15a. (Objects lane.) `Relation.obend`'s `count` and `lookup` are the primitives now, so every caller
+   already pays the stored tariff; what is left is theirs, by site:
+   - drop `keyOf` from every `Relations.lookup(r, key, keyOf)` (the primitive reads the key's own
+     columns; the parameter is unused until then, and then `lookup`'s signature is `(relation, key)`):
+     Library 56 and 82, commonplace 43 and 275, room 38, Workshop 124, Record 123 and 128, Deal 76,
+     Garden 206, Rows 96 (`presentAs`). Each was a walk of every row before the key (about 190 ticks a
+     row passed: 292,448 for row 1,536); it is now at most twelve probes over 2,048 rows and one row.
+   - Tide 94 `Relations.exists(state.subs, fn(s) -> s.who == sub.who)` is a lookup by the key `{who}`:
+     `relationLookup(state.subs, {who: sub.who})` (a presence test, no row fetched) instead of a scan.
+   - the `Relations.count` callers (Tide 94, room 69/79/287-292, Avatar 84/105/106/142/152/163/356/362,
+     Workshop 121/234, Garden 377, Env 61/62) already moved: about 24 ticks a row to one tick.
+15b. (Host and kernel.) Interval spans: a lookup reads the gap its key falls in (a miss) or one key (a
+   hit), not the prefix below it. `Reads.spans` as `{field, from, reach}`, the host's judging rule over
+   key intervals; the kernel's `found`/`absent` cells already name the positions. Closes when a write
+   below a looked-up key no longer conflicts with the lookup.
 7. `textWords(s) -> List<String>`: only if an object asks; none does (kernel13 grep of docs/, world/).
 10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
    be `F.Forms` and drop its List.obend requirement (Counter, Loop).
@@ -515,9 +554,11 @@ checkpoint digest the TurnLoop call sites pass). Remaining, in order:
    2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
    are elaborator refusals without a span; find them by making `localize` count its calls in
    `test_sugar` and `test_located`-style fixtures, then delete it when none is left.
+19. A card's stored refusal answers the `Failure` name (`…Failure.refused`), not `Turn.refusalText`
+   (a turn's does): `Package.executeDataEntryStored` should say why, as the turn path does.
 
 Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`),
-18 (LAW §6 items 2 and 3, kernel halves, kernel14: §25 item M).
+18 (LAW §6 items 2 and 3, kernel halves, kernel14: §25 item M), 15 (kernel15).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 

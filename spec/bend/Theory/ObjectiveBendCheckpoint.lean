@@ -41,6 +41,18 @@ def unaryCode : UnaryPrimitive → Nat
 def unaryOf : Nat → Option UnaryPrimitive
   | 0 => some .natText | 1 => some .textLength | 2 => some .sha256Text | _ => none
 
+/-- A list of texts, length first (a lookup's key columns). -/
+def encodeTexts (texts : List String) : Tokens := .nat texts.length :: texts.map .text
+
+def decodeTexts : Nat → Tokens → Option (List String × Tokens)
+  | 0, rest => some ([], rest)
+  | n + 1, .text x :: rest => do let (others, rest) ← decodeTexts n rest; pure (x :: others, rest)
+  | _ + 1, _ => none
+
+def decodeTextList : Tokens → Option (List String × Tokens)
+  | .nat count :: rest => decodeTexts count rest
+  | _ => none
+
 mutual
 def encodeTerm : Term → Tokens
   | .bound index => [.nat 0, .nat index]
@@ -73,6 +85,8 @@ def encodeTerm : Term → Tokens
   | .toData value => .nat 24 :: encodeTerm value
   | .textJoin list separator => .nat 25 :: (encodeTerm list ++ encodeTerm separator)
   | .refuse reason => [.nat 26, .text reason]
+  | .relationCount relation => .nat 27 :: encodeTerm relation
+  | .relationLookup relation key probe => .nat 28 :: (encodeTerm relation ++ encodeTexts key ++ encodeTerm probe)
 def encodeFields : List (String × Term) → Tokens
   | [] => [.nat 0]
   | (name,body) :: rest => .nat 1 :: .text name :: (encodeTerm body ++ encodeFields rest)
@@ -115,6 +129,9 @@ def encodeTermOnto : Term → Tokens → Tokens
   | .toData value, acc => .nat 24 :: encodeTermOnto value acc
   | .textJoin list separator, acc => .nat 25 :: encodeTermOnto list (encodeTermOnto separator acc)
   | .refuse reason, acc => .nat 26 :: .text reason :: acc
+  | .relationCount relation, acc => .nat 27 :: encodeTermOnto relation acc
+  | .relationLookup relation key probe, acc =>
+      .nat 28 :: encodeTermOnto relation (encodeTexts key ++ encodeTermOnto probe acc)
 def encodeFieldsOnto : List (String × Term) → Tokens → Tokens
   | [], acc => .nat 0 :: acc
   | (name,body) :: rest, acc => .nat 1 :: .text name :: encodeTermOnto body (encodeFieldsOnto rest acc)
@@ -125,8 +142,11 @@ theorem encodeTermOnto_eq : (t : Term) → (acc : Tokens) → encodeTermOnto t a
   | .bound _, _ | .nat _, _ | .boolean _, _ | .label _, _ | .refuse _, _ => by
       simp [encodeTermOnto, encodeTerm]
   | .lam a, acc | .reflect a, acc | .metadata a, acc | .project a, acc | .get a _, acc
-  | .inject _ a, acc | .perform a, acc | .done a, acc | .unary _ a, acc | .toData a, acc => by
+  | .inject _ a, acc | .perform a, acc | .done a, acc | .unary _ a, acc | .toData a, acc
+  | .relationCount a, acc => by
       simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a]
+  | .relationLookup a _ b, acc => by
+      simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a, encodeTermOnto_eq b]
   | .app a b, acc | .mix a b, acc | .fix a b, acc | .specification a b, acc | .prototype a b, acc
   | .binary _ a b, acc | .textJoin a b, acc => by
       simp [encodeTermOnto, encodeTerm, encodeTermOnto_eq a, encodeTermOnto_eq b]
@@ -199,6 +219,12 @@ def decodeTerm : Nat → Tokens → Option (Term × Tokens)
     | 24, _ => one .toData
     | 25, _ => two .textJoin
     | 26, .text reason :: rest => some (.refuse reason, rest)
+    | 27, _ => one .relationCount
+    | 28, _ => do
+        let (relation, rest) ← decodeTerm fuel rest
+        let (key, rest) ← decodeTextList rest
+        let (probe, rest) ← decodeTerm fuel rest
+        pure (.relationLookup relation key probe, rest)
     | _, _ => none
   | _ + 1, _ => none
 def decodeFields : Nat → Tokens → Option (List (String × Term) × Tokens)
@@ -339,6 +365,10 @@ def encodeStored : Stored → Tokens
   | .spine field position size => [.nat 3, .text field, .nat position, .nat size]
   | .cons field position size => [.nat 4, .text field, .nat position, .nat size]
   | .row field position => [.nat 5, .text field, .nat position]
+  | .key field position key => .nat 6 :: .text field :: .nat position :: encodeTexts key
+  | .found field position => [.nat 7, .text field, .nat position]
+  | .absent field position => [.nat 8, .text field, .nat position]
+  | .size field size => [.nat 9, .text field, .nat size]
 def decodeStored (fuel : Nat) : Tokens → Option (Stored × Tokens)
   | .nat 0 :: rest => do
       let (state, rest) ← decodeData fuel rest
@@ -350,6 +380,24 @@ def decodeStored (fuel : Nat) : Tokens → Option (Stored × Tokens)
   | .nat 3 :: .text field :: .nat position :: .nat size :: rest => some (.spine field position size, rest)
   | .nat 4 :: .text field :: .nat position :: .nat size :: rest => some (.cons field position size, rest)
   | .nat 5 :: .text field :: .nat position :: rest => some (.row field position, rest)
+  | .nat 6 :: .text field :: .nat position :: rest => do
+      let (key, rest) ← decodeTextList rest; pure (.key field position key, rest)
+  | .nat 7 :: .text field :: .nat position :: rest => some (.found field position, rest)
+  | .nat 8 :: .text field :: .nat position :: rest => some (.absent field position, rest)
+  | .nat 9 :: .text field :: .nat size :: rest => some (.size field size, rest)
+  | _ => none
+
+/-- A relation walk: `[0, counted]` or `[1, key…, probe]`. -/
+def encodeWalk : Walk → Tokens
+  | .count counted => [.nat 0, .nat counted]
+  | .lookup key probe => .nat 1 :: (encodeTexts key ++ [.nat probe])
+def decodeWalk : Tokens → Option (Walk × Tokens)
+  | .nat 0 :: .nat counted :: rest => some (.count counted, rest)
+  | .nat 1 :: rest => do
+      let (key, rest) ← decodeTextList rest
+      match rest with
+      | .nat probe :: rest => some (.lookup key probe, rest)
+      | _ => none
   | _ => none
 
 def encodeFrame : Frame → Tokens
@@ -373,6 +421,11 @@ def encodeFrame : Frame → Tokens
   | .joinCons separator accumulated first => [.nat 16, .text separator, .text accumulated, .nat (if first then 1 else 0)]
   | .joinHead separator accumulated first tail =>
       [.nat 17, .text separator, .text accumulated, .nat (if first then 1 else 0), .nat tail]
+  | .relationRows walk => .nat 18 :: encodeWalk walk
+  | .relationList walk => .nat 19 :: encodeWalk walk
+  | .relationProbe key probe payload => .nat 20 :: (encodeTexts key ++ [.nat probe, .nat payload])
+  | .relationSearch key probe field low high =>
+      .nat 21 :: (encodeTexts key ++ [.nat probe, .text field, .nat low, .nat high])
 def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
   | .nat 0 :: rest => do
       let (term, rest) ← decodeTerm fuel rest; let (environment, rest) ← decodeAddresses rest
@@ -417,6 +470,18 @@ def decodeFrame (fuel : Nat) : Tokens → Option (Frame × Tokens)
       some (.joinHead separator accumulated false tail, rest)
   | .nat 17 :: .text separator :: .text accumulated :: .nat 1 :: .nat tail :: rest =>
       some (.joinHead separator accumulated true tail, rest)
+  | .nat 18 :: rest => do let (walk, rest) ← decodeWalk rest; pure (.relationRows walk, rest)
+  | .nat 19 :: rest => do let (walk, rest) ← decodeWalk rest; pure (.relationList walk, rest)
+  | .nat 20 :: rest => do
+      let (key, rest) ← decodeTextList rest
+      match rest with
+      | .nat probe :: .nat payload :: rest => some (.relationProbe key probe payload, rest)
+      | _ => none
+  | .nat 21 :: rest => do
+      let (key, rest) ← decodeTextList rest
+      match rest with
+      | .nat probe :: .text field :: .nat low :: .nat high :: rest => some (.relationSearch key probe field low high, rest)
+      | _ => none
   | _ => none
 
 def encodeRefusal : Refusal → Tokens

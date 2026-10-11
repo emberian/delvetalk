@@ -23,6 +23,7 @@ def termKind : Term → String
   | .record _ => "record" | .get _ _ => "get" | .ifZero _ _ _ => "ifZero" | .inject _ _ => "inject"
   | .case _ _ => "case" | .ifBool _ _ _ => "ifBool" | .perform _ => "perform" | .done _ => "done"
   | .toData _ => "toData" | .textJoin _ _ => "textJoin" | .refuse _ => "refuse"
+  | .relationCount _ => "relationCount" | .relationLookup _ _ _ => "relationLookup"
 
 def frameKind : Frame → String
   | .argument .. => "argument" | .nativeArgument _ => "nativeArgument" | .update _ => "update"
@@ -31,6 +32,8 @@ def frameKind : Frame → String
   | .binaryLeft .. => "binaryLeft" | .binaryRight .. => "binaryRight" | .case .. => "case"
   | .ifBool .. => "ifBool" | .joinSeparator .. => "joinSeparator" | .joinList .. => "joinList"
   | .joinCons .. => "joinCons" | .joinHead .. => "joinHead"
+  | .relationRows _ => "relationRows" | .relationList _ => "relationList"
+  | .relationProbe .. => "relationProbe" | .relationSearch .. => "relationSearch"
 
 def stateKind (state : State) : String :=
   match state.control with
@@ -50,8 +53,8 @@ def stateKind (state : State) : String :=
 
 abbrev Tally := Std.HashMap String (Nat × Nat)
 
-/-- `forceHostedFrom`'s loop with attribution (the unrestricted policy), fetching a stored row from
-`fetch` as the hosted runner does (`fetch`, charged `fetchCost`). -/
+/-- `forceHostedFrom`'s loop with attribution (the unrestricted policy), fetching a stored row or
+key from `fetch` as the hosted runner does (charged `fetchCost`, tallied `fetch.row`/`fetch.key`). -/
 def profileFrom (fetch : Fetch) (limits : Limits) (bytes : Nat) : Nat → State → Nat → Tally → Tally
   | 0, _, _, tally => tally
   | fuel + 1, state, depth, tally =>
@@ -59,14 +62,15 @@ def profileFrom (fetch : Fetch) (limits : Limits) (bytes : Nat) : Nat → State 
     | .complete _ | .refused _ | .blackhole _ | .yielded _ => tally
     | _ =>
       match fetchable fetch state with
-      | some (address, field, position, row) =>
-        let cost := fetchCost row
+      | some (address, part, data) =>
+        let cost := fetchCost data
         if cost.2 > bytes || cost.1 > fuel + 1 then tally
         else
           let spent := max 1 cost.1
-          let (count, ticks) := tally.getD "fetch" (0, 0)
-          profileFrom fetch limits (bytes - cost.2) (fuel + 1 - spent) (fetchStep state address field position row) depth
-            (tally.insert "fetch" (count + 1, ticks + spent))
+          let key := match part with | .key .. => "fetch.key" | _ => "fetch.row"
+          let (count, ticks) := tally.getD key (0, 0)
+          profileFrom fetch limits (bytes - cost.2) (fuel + 1 - spent) (fetchStep state address part data) depth
+            (tally.insert key (count + 1, ticks + spent))
       | none =>
       let cost := textStepCost state (fuel + 1)
       if cost.2 > bytes || cost.1 > fuel + 1 then tally
