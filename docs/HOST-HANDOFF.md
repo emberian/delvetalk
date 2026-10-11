@@ -1513,6 +1513,11 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `refusedBy` is its name; the judge voices the cited reading, else the object's own (`readingOf`). Tests:
    `Law.lean`'s `#guard refusal`; `test_law.Atoms` (the kind's clause and reading).
 
+146. **A sum left of `<=` (host18; the kernel's grammar file, by the coordinator's leave).** `old.last + old.gap <=
+   request.clock` parses: `ATOM ::= … | REF + TERM <= TERM`, a sum whose first part is a reference
+   (`LawTerm.referenceSum`); `==` still starts with a reference and `1 + old.last <= …` still refuses. `denote`
+   already read sums. Proofs: `parse_accepts`, `render_reads_back` (`canonical`), `refusals_name_what_and_why`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

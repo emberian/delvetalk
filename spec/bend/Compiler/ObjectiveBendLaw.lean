@@ -7,7 +7,7 @@ write, the state after it and the request's facts (docs/LAW.md §1). The host ju
 grammar and render it one way. Anything outside it refuses, naming what it found and the rule.
 
     EXPR   ::= EXPR implies EXPR | EXPR or EXPR | EXPR and EXPR | not EXPR | ( EXPR ) | ATOM
-    ATOM   ::= REF == TERM | REF <= TERM
+    ATOM   ::= REF == TERM | REF <= TERM | REF + TERM <= TERM
              | TERM in [INT, …] | TERM in new.FIELD | TERM in new.FIELD.COLUMN
              | TERM in "OBJECT".FIELD.COLUMN
              | RULE(FIELD) | changed(new.FIELD.COLUMN) by TERM | under "OBJECT"
@@ -259,7 +259,7 @@ def factRule : String :=
   "a law reads " ++ ", ".intercalate (LawFact.all.map fun f => "request." ++ f.name)
 def pathRule : String := "a law reads top-level fields only: new.FIELD, old.FIELD"
 def countRule : String := "a count is count(new.FIELD) or count(old.FIELD), optionally with where COLUMN == TERM"
-def atomRule : String := "an atom is REF == TERM, REF <= TERM, TERM in …, RULE(FIELD), \
+def atomRule : String := "an atom is REF == TERM, REF <= TERM, REF + TERM <= TERM, TERM in …, RULE(FIELD), \
   changed(new.FIELD.COLUMN) by TERM or under \"OBJECT\""
 def underRule : String := "law by reference is under \"OBJECT\", the object's id in quotes"
 def placeRule : String := "membership is in [INT, …], new.FIELD, new.FIELD.COLUMN or \"OBJECT\".FIELD.COLUMN"
@@ -363,6 +363,11 @@ def LawTerm.reference : LawTerm → Bool
   | .int _ | .text _ | .sum _ _ => false
   | _ => true
 
+/-- A sum that starts with a reference (`old.last + old.gap`): what may stand left of `<=`. -/
+def LawTerm.referenceSum : LawTerm → Bool
+  | .sum left _ => left.reference || left.referenceSum
+  | _ => false
+
 /-- Whether a term may be added: anything but a text constant (a sum of texts reads as nothing). -/
 def LawTerm.addable : LawTerm → Bool
   | .text _ => false
@@ -457,7 +462,8 @@ def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × L
   match rest with
   | .sym op :: more =>
     if op != "==" && op != "<=" then refuse (found rest) atomRule
-    else if !left.reference then refuse ("`" ++ left.render ++ "` before " ++ op) "a comparison starts with a reference"
+    else if !(left.reference || (op == "<=" && left.referenceSum)) then
+      refuse ("`" ++ left.render ++ "` before " ++ op) "a comparison starts with a reference"
     else
       let (right, after) ← match left, more with
         | .fact .kind, .ident name :: after =>
@@ -615,6 +621,8 @@ def accepted : List (String × LawExpr) := [
       (.member (.field "owner") (.cited "circle/porch" "members" "principal"))),
   -- LAW §4 F: law by reference (a kind's instance under its kind's law).
   ("under \"kind/bell\"", .under "kind/bell"),
+  -- A sum on the left of <= (a gap after the last time): starts with a reference.
+  ("old.last + old.gap <= request.clock", .le (.sum (.old "last") (.old "gap")) (.fact .clock)),
   ("under \"kind/bell\" and request.subject == new.maker",
     .and (.under "kind/bell") (.eq (.fact .subject) (.field "maker"))),
   ("count(new.a where b == count(old.a)) == 0",
@@ -634,11 +642,12 @@ def refused : List String := [
   "request.subject in \"circle porch\".members.principal", "request.subject in \"\".members.principal",
   "request.subject in \"c\".members.principal.x", "request.height in \"c\".members.principal",
   "request.subject in \"c\".a/b.principal",
-  "under kind", "under", "under \"kind bell\"", "under \"kind/bell\".law", "under (\"kind/bell\")", "old.last + 0 <= request.clock", "new.a == \"x", "new.a == 1 ; new.b == 2", ""]
+  "under kind", "under", "under \"kind bell\"", "under \"kind/bell\".law",  "under (\"kind/bell\")", "1 + old.last <= request.clock", "old.last + 1 == request.clock", "new.a == \"x", "new.a == 1 ; new.b == 2", ""]
 
 /-- Laws whose rendering is their own text. -/
 def canonical : List String := [
   "request.clock <= old.tended + new.gap",
+  "old.last + old.gap <= request.clock",
   "(changed(new.lines.author) by request.subject) and (insertOnly(lines))",
   "count(new.lines where author == request.subject) <= 1",
   "count(new.votes where n == -1) <= count(old.votes where n == -1) + 2",
@@ -670,7 +679,7 @@ theorem refusals_name_what_and_why :
     refusalOf "under kind" = some (refusal "`kind`" underRule) ∧
     refusalOf "under \"kind bell\"" = some (refusal "\"kind bell\"" objectRule) ∧
     refusalOf "insertOnly(a.b)" = some (refusal "`insertOnly`" ruleRule) ∧
-    refusalOf "old.last + 0 <= request.clock" = some (refusal "`old.last + 0` before <=" "a comparison starts with a reference") ∧
+    refusalOf "1 + old.last <= request.clock" = some (refusal "`1 + old.last` before <=" "a comparison starts with a reference") ∧
     refusalOf "new.a >= 1" = some (refusal "`>`" "a law compares with == and <=, adds with +, and combines with and, or, not, implies") := by
   native_decide
 
