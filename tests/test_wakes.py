@@ -21,7 +21,7 @@ OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
 
 def event(kind="mention", actor="did:plc:mimo", text="hello", reply_to=""):
     return record(kind=label(kind), actor=label(actor), uri=label("at://x/p/1"), cid=label("bafy"), text=label(text),
-                  replyTo=label(reply_to), at=nat(0), handle=label(""))
+                  replyTo=label(reply_to), at=nat(0), n=nat(0), handle=label(""))
 
 
 def heard(text):

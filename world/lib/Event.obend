@@ -1,8 +1,9 @@
 edition ObjectiveBend 1
 # What happened in the network, as one principal's Env keeps it: the kind (mention,
 # reply, post, like, follow), who did it and their handle as the host knew it ("" when
-# unknown), the post's uri and CID, its text, the uri it replies to ("" for none), and the
-# journal height at which the Env took it in.
+# unknown), the post's uri and CID, its text, the uri it replies to ("" for none), the
+# journal height at which the Env took it in, and `n`, its place in the Env's buffer then (an
+# Env's rows are keyed {at, actor, uri, n}; whoever hands one in passes 0, and the Env numbers it).
 record Event:
   kind: String
   actor: String
@@ -12,6 +13,7 @@ record Event:
   text: String
   replyTo: String
   at: Nat
+  n: Nat
 # The id of a principal's Env: env/<did>. A spell names it as it is
 # (`delvetalk env/did:plc:… seen`): a card name is [a-z0-9:/.-]+.
 def envOf(did: String) -> String:
