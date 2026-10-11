@@ -209,7 +209,7 @@ def heldBy(principal: String, state: State) -> Held:
 # A reply that ran no method: the owner's `merge`; a planting spell missing fields, or the
 # missing lines completing one held for the speaker; a yes or no to a planting that waits; a
 # blank reply (the card); prose, which the policy's model reads, or with no policy goes on to
-# the directory.
+# the commonplace.
 # A misfit spell (`plant / colour: verdigris`) is read by hob with its clause and reason, which
 # asks one question; with no policy it is refused by its clause.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Reply>:
@@ -281,6 +281,7 @@ def fromCard(reply: Card.Replied) -> Reply:
     case usage(_): Reply.shown({})
     case unclear(u): Reply.unclear({needs: u.needs})
     case refused(r): Reply.refused(r)
+    case _: Reply.changed({})
 # Whether an understood planting waits for "yes" here is the owner's to set: `delvetalk
 # garden set` with `confirm: yes` or `confirm: no` adds or drops plant in confirmFor.
 def lenses() -> Lists.List<Form.Field>:
@@ -300,7 +301,7 @@ def asks(actions: Lists.List<String>, action: String) -> Bool:
 def confirmsPlant(policy: Policies.State, state: State) -> Bool:
   asks(state.confirmFor, "plant") || Card.confirms(policy, "plant")
 # Prose is given to the policy's model, which can only propose; with no policy it goes on to
-# the directory's reading (Card's default) and the garden offers nothing. Either way a
+# the commonplace's reading (Card's default) and the garden offers nothing. Either way a
 # proposal the speaker had waiting is dropped (this prose replaced it).
 def prose(input: Card.Reply, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   if Plans.isNobody(state.policy) then unplaced(input, found, context) else consulted(input, "", found, context, state)
@@ -352,7 +353,7 @@ def heldLine(found: Held) -> String:
   match found:
     case none(_): ""
     case some(s): if Lists.length(s.item.needs) == 0n then "a planting waiting for yes: seed \"{s.item.seed}\", colour {s.item.colour}" else "a planting with seed \"{s.item.seed}\"; still needs {Text.joined(s.item.needs)}"
-# Several spells: the garden takes the first (the directory runs each on its door).
+# Several spells: the garden takes the first (the commonplace runs each on its door).
 def firstPlanting(item: Lists.Maybe<World.Proposed<Planting>>, input: Card.Reply, policy: Policies.State, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   match item:
     case some(i): plantingItem(i.value, input, policy, found, context, state)

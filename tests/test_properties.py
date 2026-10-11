@@ -253,8 +253,8 @@ class Run:
         r, who = self.rng, self.who()
         pick = r.randrange(11)
         post = "at://%s/town.delve.feed.post/%d" % (who, len(self.log))
-        if pick == 0:  # a post of the archive, heard by the directory or the garden
-            return self.turn(who, r.choice(["directory", "garden"]), "receive", record(text=label(r.choice(UTTERANCES)), post=label(post)))
+        if pick == 0:  # a post of the archive, heard by the commonplace or the garden
+            return self.turn(who, r.choice(["commonplace", "garden"]), "receive", record(text=label(r.choice(UTTERANCES)), post=label(post)))
         if pick == 1:  # a spell of the archive, or a planting
             spell = r.choice(SPELLS) if r.random() < 0.5 else "delvetalk garden plant\nseed: %s\ncolour: %s" % (
                 text(r, 1, 80).replace("\n", " ") or "a fern", r.choice(["amber", "violet", "silver", "verdigris"]))
@@ -330,12 +330,12 @@ class Run:
         names = sorted(set(re.findall(r"^def (\w+)\(", "\n".join(p.read_text() for p in (ROOT / "world").rglob("*.obend")), re.M)))
         probed = 0
         for obj in listed["ids"]:
-            public = set(listed["methods"].get(obj, []))
+            public = {m.lstrip("~") for m in listed["methods"].get(obj, [])}  # "~m": declared, callable, not offered
             for helper in self.rng.sample([n for n in names if n not in public and n not in CONVENTIONAL], 6):
                 got = self.turn(self.who(), obj, helper, record(), retry=False)
                 probed += 1
                 if (got.get("status"), ((got.get("receipt") or {}).get("outcome") or {}).get("class")) != ("refused", "noMethod"):
-                    self.fail("an undeclared name ran from outside", got.get("request"), got.get("status"))
+                    self.fail("an undeclared name ran from outside", got.get("request"), got.get("status"), (got.get("receipt") or {}).get("outcome"))
         return probed
 
     def cards(self):

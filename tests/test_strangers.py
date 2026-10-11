@@ -17,6 +17,8 @@ Refuted by: any of the forged writes, reprograms or amendments below being admit
 """
 import unittest
 
+from deploy import genesis
+
 from tests.test_chain import Chain, garden_state
 from tests.wire import field, nil, reference, rows
 from tests.bend import MODULES, closure
@@ -68,9 +70,9 @@ class Forging(Chain):
         if clause:
             self.assertEqual(out.get("clause"), clause, out)
 
-    def create(self, name, module, seed, by=OWNER):
+    def create(self, name, module, seed, by=OWNER, law=None):
         r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name,
-                           modules=closure(module), entry="initial", seed=seed)
+                           modules=closure(module), entry="initial", seed=seed, **({"law": law} if law else {}))
         self.assertEqual(r["status"], "created", r)
 
 
@@ -80,8 +82,8 @@ class Strangers(Forging):
         self.create("policy", "Policy", record(owner=label(OWNER), model=label("m"), system=label("s"), lexicon=nil(), examples=nil(),
                                               escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
         self.create("garden", "Garden", garden_state(owner=OWNER))
-        self.create("dir", "Directory", record(owner=label(OWNER), doors=relation(), greeted=relation()))
-        for obj, module in (("policy", "Policy"), ("garden", "Garden"), ("dir", "Directory")):
+        self.create("commonplace", "Record", record(owner=label(OWNER), keeper=label(OWNER)), law=genesis.RECORD_LAW)
+        for obj, module in (("policy", "Policy"), ("garden", "Garden"), ("commonplace", "Record")):
             before = self.view(obj)
             r = self.host.send(op="world-reprogram", principal=STRANGER, identity="take-" + obj, object=obj,
                                version=before["version"], package=migrated(module, STRANGER), migration="migrate")

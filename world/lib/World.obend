@@ -64,7 +64,7 @@ sum Awaited:
   broken: {}
   refused: {clause: String}
 # A proposal names the object whose offered form the model's spell fits (an interpreting card
-# may offer other cards' forms, as the directory offers its doors'), that object's method, and
+# may offer other cards' forms, as the commonplace offers its doors'), that object's method, and
 # the spell it stands for ("" when a field has no spell form), for a card asking first to print back.
 # An answer with several spells is `proposals`, each item fitted as one spell is, in the order
 # said (at most three; HOST-HANDOFF 106).

@@ -167,7 +167,7 @@ class Pages(FrontCase):
         slug = None
         for path, method, form, cookie, code in (
                 ('/', 'GET', None, False, 200), ('/', 'GET', None, True, 200), ('/AGENTS.md/world', 'GET', None, True, 200),
-                ('/o/garden', 'GET', None, True, 200), ('/o/garden', 'GET', None, False, 200), ('/o/directory', 'GET', None, True, 200),
+                ('/o/garden', 'GET', None, True, 200), ('/o/garden', 'GET', None, False, 200), ('/o/commonplace', 'GET', None, True, 200),
                 ('/o/picker', 'GET', None, True, 200), ('/o/tide', 'GET', None, True, 200), ('/play/', 'GET', None, True, 200),
                 ('/play/garden', 'GET', None, True, 200), ('/play/garden', 'POST', {'method': 'plant', 'colour': 'amber', 'seed': 'a text fern'}, True, 200),
                 ('/AGENTS.md/world/garden/source', 'GET', None, True, 200), ('/AGENTS.md/me', 'GET', None, True, 200),

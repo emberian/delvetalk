@@ -230,10 +230,11 @@ class Scenes(test_chain.Chain):
                      "delvetalk scene enter\nprincipal: " + KIM,
                      "delvetalk scene choose\nwho: " + KIM + "\nchoice: Open"):
             with self.subTest(text=text):
-                # The host fits the spell against the method's input: a field it lacks is refused by name.
+                # The host fits the spell against the method's input; a field it lacks reaches the room's
+                # receive as a misfit (FLEX §2), which a room without a policy refuses by that clause.
                 r = self.turn("scene", "receive", heard(text), principal=GLM)
-                out = r["receipt"]["outcome"]
-                self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "badSpell", "unknownField"), r)
+                self.assertEqual((r["status"], r["result"]["label"], r["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), r)
+                self.assertIn("refused unknownField: ", r["offers"][0]["text"])
         self.assertEqual(self.view(), before)
         self.assertEqual([p["who"] for p in self.view()[1]["presence"]], [GLM])
         # Turn-level choose moves only the turn's principal.

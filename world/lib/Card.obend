@@ -12,8 +12,7 @@ import ./World.obend as World
 # The card protocol. Every object has a pure render(state, context) -> Document (its card as
 # the reader in the context sees it: a member may see more than a stranger; the host's
 # `card {object}` passes the reader's context), forms() (the actions its card offers, as
-# data; a form's card is "" there, the object's id in a spell), blurb() (its line in a
-# directory) and receive(state, input: Reply, context). The host reads a reply's spell and
+# data; a form's card is "" there, the object's id in a spell), blurb() (its word) and receive(state, input: Reply, context). The host reads a reply's spell and
 # runs the method it names, answers `?` and `set` (through the object's `lenses()` and its
 # `set` method); what runs no method reaches receive, which `answer` handles by default.
 record Door:
@@ -26,13 +25,18 @@ type Forms = Lists.List<Form.Form>
 record Refusal:
   clause: String
   reading: String
-# What receive answers when no method was acted on.
+# What receive answers when no method was acted on: the card's own (done, usage, unclear,
+# refused, silent), or, at the commonplace, where the words went: passed to a card (its spell
+# ran there, or the card took the words), asked first of the speaker, several spells in order.
 sum Replied:
   done: {action: String}
   usage: {}
   unclear: {needs: Form.Names}
   refused: Refusal
   silent: {}
+  passed: {card: String}
+  asked: {card: String}
+  several: {count: Nat}
 def named(form: Form.Form, card: String) -> Form.Form:
   {card: card, action: form.action, fields: form.fields}
 def hasField(form: Form.Form, name: String) -> Bool:
@@ -50,18 +54,19 @@ def template(card: String, form: Form.Form) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\n    delvetalk {card} {form.action}\n"), tail: Lists.map(form.fields, fn(field: Form.Field) -> Document.Document: Document.text("    {field.name}: {hint(field.kind)}\n"))})})
 def usage(card: String, forms: Forms) -> Document.Document:
   if Lists.length(forms) == 0n then Document.text("") else Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\nReply with a spell:\n"), tail: Lists.map(forms, fn(form: Form.Form) -> Document.Document: template(card, form))})})
-# The directory reads prose a card without a policy could not place: the card sends it
-# the reply (`receive {text, post}`, under the speaker) and offers nothing itself, so an
-# anthology line posted under a bell still reaches the anthology. A turn some object
-# started (context.caller) forwards nothing: the directory itself passes replies on.
-def directory(context: Abi.Context) -> Plans.Reference:
-  {world: context.world, object: "directory"}
-# A turn some object started, and the directory itself, hand nothing on. Whether the prose
-# names anything is the directory's to judge from what it learned of its doors (`mentions`),
+# The commonplace (the town's first card, world/bodies/commonplace.obend) reads prose a card
+# without a policy could not place: the card sends it the reply (`receive {text, post}`, under
+# the speaker) and offers nothing itself, so an anthology line posted under a bell still reaches
+# the anthology. A turn some object started (context.caller) forwards nothing: the commonplace
+# itself passes replies on.
+def hub(context: Abi.Context) -> Plans.Reference:
+  {world: context.world, object: "commonplace"}
+# A turn some object started, and the commonplace itself, hand nothing on. Whether the prose
+# names anything is the commonplace's to judge from what it learned of its doors (`mentions`),
 # before any model call: a card holds no word list (rehearsal run 7 counted 127 of 132
 # hand-ons "not addressed"), and a new door needs no edit here.
 def handsOn(text: String, context: Abi.Context) -> Bool:
-  context.caller == "" && context.object != directory(context).object
+  context.caller == "" && context.object != hub(context).object
 # A word without one run of marks at its end and one at its start ("anthology," "(play").
 def stripped(word: String, n: Nat) -> String:
   let core = textTake(word, n - textSpan(textDrop(word, n - 1n), marks()))
@@ -136,14 +141,22 @@ def keptLine(line: Document.Document, size: Nat, rest: Document.Documents, shown
   if shown == 0n || size + after > room then Document.Documents.cons({head: Document.text(more(left)), tail: Document.Documents.nil()}) else Document.Documents.cons({head: line, tail: kept(rest, shown - 1n, room - size, left - 1n)})
 def more(left: Nat) -> String:
   "… and {natText(left)} more\n"
-# Doors on any card (the convention): an object keeps `doors: Doorways` in its state and
-# its Edits (`Plans.Entries<Doorway, Doorway>`), offers the `door {label, to}` and `undoor
-# {label}` forms to its owner (`doorAdd`, `doorRemove`: refused by name to anyone else, and by
-# its owner law where it has one), and lists them on its card as one line of door words
-# (`doorLines`: `Doors: garden · rooms`); the card a word opens is its own description.
+# Doors on any card (the convention): a record keeps them as `cites` (Plans.Entries<Doorway,
+# Doorway> its edits), offers the `door {label, to}` and `undoor {label}` forms to its owner
+# (`doorAdd`, `doorRemove`: refused by name to anyone else, and by its owner law), and lists
+# them on its card as one line of door words (`doorLines`: `Doors: garden · rooms`). A door may
+# carry the spells a menu prints under it (`examples`: typed back whole, and `comes`, the
+# owner's words for what comes back, "" for none; never the model's); one whose `to` is nobody
+# is a link door, its `description` its line (the commonplace's STUDIO).
+record Example:
+  example: String
+  comes: String
+type Examples = Lists.List<Example>
 record Doorway:
   label: String
   to: Plans.Reference
+  description: String
+  examples: Examples
 type Doorways = Lists.List<Doorway>
 sum DoorEdit:
   edit: {entries: Plans.Entries<Doorway, Doorway>}
@@ -159,6 +172,13 @@ def added(doors: Doorways, door: Doorway) -> DoorEdit:
 def removed(doors: Doorways, label: String) -> DoorEdit:
   match Lists.find(doors, fn(d: Doorway) -> Bool: d.label == label):
     case some(d): DoorEdit.edit({entries: Plans.Entries.removeItem({item: d.value})})
+    case none(_): DoorEdit.refused({clause: "noDoor", reading: "There is no door called {label}"})
+# The owner gives a door a spell its card prints under it (and `comes`, what comes back).
+def doorExample(doors: Doorways, owner: String, label: String, example: Example, context: Abi.Context) -> DoorEdit:
+  if context.principal != owner then notDoorOwner(owner, context) else exampled(doors, label, example)
+def exampled(doors: Doorways, label: String, example: Example) -> DoorEdit:
+  match Lists.find(doors, fn(d: Doorway) -> Bool: d.label == label):
+    case some(d): if Lists.length(d.value.examples) >= 4n then DoorEdit.refused({clause: "examplesFull", reading: "A door prints four spells"}) else DoorEdit.edit({entries: Plans.Entries.amendItem({item: d.value, change: extend(d.value, {examples: Lists.append(d.value.examples, example)})})})
     case none(_): DoorEdit.refused({clause: "noDoor", reading: "There is no door called {label}"})
 def doorLines(doors: Doorways) -> Document.Documents:
   match doors:
@@ -357,7 +377,7 @@ def tellTo<T>(result: T, to: String, document: Document.Document) -> Activity<T>
 # The default receive. Blank text gets the card and its forms; a spell the host found missing
 # fields gets the card with what it still needs; anything else is not addressed to the card
 # (the quiet rule: no offer at all, so the bridge drafts nothing) and is handed on to the
-# directory. `answerAs` finishes with the object's own result type: `as` maps the Replied.
+# commonplace. `answerAs` finishes with the object's own result type: `as` maps the Replied.
 def answer(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Replied>:
   answerAs(input, context, forms, card, fn(replied: Replied) -> Replied: replied)
 def answerAs<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
@@ -372,12 +392,12 @@ def offeredCard<T>(result: T, card: Document.Document, why: String, context: Abi
 def offeredOnly(forms: Forms, offered: Document.Names) -> Forms:
   Lists.filter(forms, fn(f: Form.Form) -> Bool: Lists.any(offered, fn(n: String) -> Bool: n == f.action))
 # A reply to the card itself (no card handed it on) that fits no form gets the card and its
-# forms, once an hour per speaker across the town (the directory's `due` keeps the clock: a
+# forms, once an hour per speaker across the town (the commonplace's `due` keeps the clock: a
 # conversation in a card's thread costs at most one card); either way the prose is handed on.
 def owed<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
   if handsOn(input.text, context) then dueCard(input, context, forms, card, result) else result
 def dueCard<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
-  match world.call::<Bool>({object: directory(context), method: "due", argument: {}}):
+  match world.call::<Bool>({object: hub(context), method: "due", argument: {}}):
     case returned(r): if r.result then dueOffered(input, context, forms, card, result) else handingOn(input, context, result)
     case _: handingOn(input, context, result)
 def dueOffered<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
@@ -430,17 +450,14 @@ def answerCard(card: Document.Document, why: String, context: Abi.Context, forms
 # Refuses by name: the card with `refused <clause>: <reading>` and its forms.
 def answerRefused<T>(refusal: Refusal, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
   tell(as(Replied.refused(refusal)), answerCard(card, whyNot(Replied.refused(refusal)), context, forms))
-# Prose a card does not take is sent to the directory (`receive {text, post}`, under the
+# Prose a card does not take is sent to the commonplace (`receive {text, post}`, under the
 # speaker), which judges whether it names any door; the card offers nothing itself. A turn
-# some object started, and the directory itself, hand nothing on (`handsOn`). A send is a
-# delivery, whose reach asks hob of anything, even words that reached no one; a call would keep
-# this turn's reach, but hob's wait cannot run inside a call ("a wait inside a call is not
-# supported"). Host: a delivery keeps the reach of the turn that sent it (OBJECTS-HANDOFF,
-# lane/rewrite5).
+# some object started, and the commonplace itself, hand nothing on (`handsOn`). The send keeps
+# this turn's reach (HOST-HANDOFF 5.127), so words that reached no one cost no reading.
 def handOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
   if handsOn(input.text, context) then handingOn(input, context, result) else result
 def handingOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
-  match world.send({object: directory(context), method: "receive", argument: input}):
+  match world.send({object: hub(context), method: "receive", argument: input}):
     case _: result
 # Posts an object's page as its door word's wiki page; the post, or the refusal's clause.
 def publishPage(word: String, page: Page) -> Activity<String>:

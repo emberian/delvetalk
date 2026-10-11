@@ -312,7 +312,7 @@ def chosen(asked: Asked, after: Lists.List<String>, found: Lists.List<Named>, na
   match found:
     case nil(_): nouns(asked, after, named, context, state)
     case cons(c): if Lists.length(c.tail) > 0n then Card.tell(Card.Replied.refused({clause: "ambiguous", reading: "Which one?"}), Document.text("Which one: {textJoin(Lists.map(found, fn(n: Named) -> String: n.object.object), \", \")}?\n")) else acting(asked, c.head.object, after, context, state)
-# Else an object named by a word (the directory's doors are named by their ids).
+# Else an object named by a word (the commonplace's doors are named by their ids).
 def doors(asked: Asked, words: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match words:
     case nil(_): answered(asked.input, context, state)

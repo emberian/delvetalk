@@ -123,7 +123,7 @@ class ZulipCase(unittest.TestCase):
         self.addCleanup(self.server.stop)
         self.sock = self.server.sock
         self.host, self.root = HostClient(self.sock), HostClient(self.server.root)
-        for name in ('garden-1', 'directory'):
+        for name in ('garden-1', 'commonplace'):
             body = OFFERING.replace('"hello "', f'"{name} says "')
             r = self.root.send({'op': 'world-create', 'principal': OPENER, 'identity': 'mk-' + name, 'object': name,
                                 'modules': [{'name': 'Echo', 'source': CARD % ('', body)}], 'entry': 'initial', 'seed': record(seen=nat(5))})
@@ -216,11 +216,11 @@ class Bridging(ZulipCase):
         self.assertEqual([m['subject'] for m in self.zulip.mine()], ['mobo'])
 
 
-    def test_a_mention_of_the_bot_summons_the_directory_and_a_follow_up_in_its_topic_is_read(self):
+    def test_a_mention_of_the_bot_summons_the_commonplace_and_a_follow_up_in_its_topic_is_read(self):
         self.zulip.say('new', 'Carol', f'@**{BOT["full_name"]}** I planted a fern, what colour is it?')
         got = self.bridge()
         self.assertEqual(len(got['posted']), 1, got)
-        self.assertIn('directory says', self.zulip.mine()[0]['content'])
+        self.assertIn('commonplace says', self.zulip.mine()[0]['content'])
         self.zulip.say('new', 'Dana', '@**Carol** nice fern')  # to another resident only: not read
         self.zulip.say('new', 'Carol', 'and the moss too')  # in the topic the world answered: read, as a reply to the world's message
         from unittest import mock

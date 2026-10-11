@@ -273,10 +273,9 @@ def plain(data):
 
 
 def door_rows(view):
-    """The doors in an object's state, in menu order: a list, or a relation (`rows {items}`) ordered by each row's place."""
+    """The doors a record cites (its `cites` list, in the owner's order), those with an object."""
     state = plain(view.get('state') or {})
-    doors = (state.get('doors') if isinstance(state, dict) else None) or []
-    doors = sorted(doors.get('items') or [], key=lambda d: d.get('place', 0)) if isinstance(doors, dict) else doors
+    doors = (state.get('cites') if isinstance(state, dict) else None) or []
     return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
 
 
@@ -285,9 +284,9 @@ def route(host, obs, known=None):
     recorded post it answers (the host verifies a reply), or `reach`, the rule it matched (HOST-HANDOFF 118). (a) A reply reaches the card whose recorded post
     (the card's, or any of the world's replies under it) is its direct parent; on Zulip, where a topic is one thread, the
     nearest recorded message above it in the topic, unless it @-mentions only other residents. (b) A spell line reaches
-    its card, as the host reads it; a summons (a mention of the world, #gsb) reaches the directory, whose interpreter
+    its card, as the host reads it; a summons (a mention of the world, #gsb) reaches the commonplace, whose interpreter
     may answer `none`. (c) Field lines anywhere in a thread the world opened reach that thread's card, which completes
-    them, and (d) prose there that names one of the directory's doors reaches that door's card. Other prose deeper in a
+    them, and (d) prose there that names one of the commonplace's doors reaches that door's card. Other prose deeper in a
     thread, addressed to another resident, does not reach by the thread's root."""
     zulip = obs['uri'].startswith('zulip://')
     known, ancestor = known or {}, obs['replyTo']
@@ -300,7 +299,7 @@ def route(host, obs, known=None):
     if (read.get('spell') or {}).get('card'):
         return read['spell']['card'], None, {}  # the host reads the spell itself
     if obs['kind'] == 'summon':
-        return 'directory', None, {'reach': 'mention'}
+        return 'commonplace', None, {'reach': 'mention'}
     if zulip or not ancestor:
         return None
     root = obs.get('root')  # the thread's card: its nearest recorded ancestor, or its root
@@ -315,8 +314,8 @@ def route(host, obs, known=None):
 
 
 def named_door(host, obs):
-    """The card of the first door (of the directory's, as the host shows them) whose label the text names as a word."""
-    doors = {str(d.get('label', '')).lower(): d['to']['object'] for d in door_rows(host.send({'op': 'world-view', 'principal': CLOCK, 'object': 'directory'}))}
+    """The card of the first door (of the commonplace's, as the host shows them) whose label the text names as a word."""
+    doors = {str(d.get('label', '')).lower(): d['to']['object'] for d in door_rows(host.send({'op': 'world-view', 'principal': CLOCK, 'object': 'commonplace'}))}
     return next((doors[w] for w in re.findall(r"[\w'-]+", obs['text'].lower()) if w in doors), None)
 
 

@@ -195,7 +195,7 @@ BELL_BUDGET_PROBE = BUDGET_HEAD + "import ./Bell.obend as O\n" + REPEAT + """def
 def doors(n: Nat) -> Card.Doorways:
   match n:
     case 0: Card.Doorways.nil()
-    case 1+p: Card.Doorways.cons({head: {label: textConcat(rep(31n, "d"), natText(p)), to: {world: "", object: rep(160n, "t")}}, tail: doors(p)})
+    case 1+p: Card.Doorways.cons({head: {label: textConcat(rep(31n, "d"), natText(p)), to: {world: "", object: rep(160n, "t")}, description: "", examples: Lists.List.nil()}, tail: doors(p)})
 def one(n: Nat) -> String:
   Document.plain(O.render({colour: O.Colour.silver({}), seed: rep(80n, "s"), rains: Relations.Relation.rows({items: rains(64n)}), rung: false, planting: "p", planter: "did:plc:glm", planterHandle: rep(64n, "h"), doors: doors(8n)}, Card.stranger()))
 """

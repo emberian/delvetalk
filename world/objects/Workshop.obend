@@ -21,7 +21,7 @@ record State:
   next: Nat
   policy: Plans.Reference
 # What the workshop did, as data: nothing is a silent default (`silent` is prose handed on
-# to the directory). `held` names the clause the target's law refused.
+# to the commonplace). `held` names the clause the target's law refused.
 sum Verdict:
   clean: {}
   flawed: {diagnostics: Form.Names}
@@ -200,7 +200,7 @@ def create(state: State, input: {like: String}, context: Abi.Context) -> Activit
     case refused(r): refusing(r.clause, "No copy of {input.like}: {r.clause}")
 # A reply that ran no method: a check or proposal missing fields (a target alone, or a source
 # without a target) is completed from the reply's fields; anything else is the card's default
-# (a blank reply gets the usage card, prose goes on to the directory).
+# (a blank reply gets the usage card, prose goes on to the commonplace).
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Verdict>:
   completing(Card.spellAction(input.text), input, context, state)
 def completing(action: String, input: Card.Reply, context: Abi.Context, state: State) -> Activity<Verdict>:
