@@ -31,8 +31,6 @@ def initial() -> State:
 # 32 pages of at most 1,400 characters: about 48 KB.
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "pages", key: Text.words("name"), limit: 32n})
-def pageKey(page: Page) -> {name: String}:
-  {name: page.name}
 form read:
   page: text 1..120
 form laws:
@@ -51,7 +49,7 @@ def isWalk(page: Page) -> Bool:
 # The page named, else the first whose name is a whole word of what was given ("how do i read
 # laws" finds laws), a mark at either end aside.
 def found(state: State, said: String) -> Lists.Maybe<Page>:
-  match Relations.lookup(state.pages, {name: Text.trim(said)}, pageKey):
+  match Relations.lookup(state.pages, {name: Text.trim(said)}):
     case some(p): Lists.Maybe.some({value: p.value})
     case none(_): Lists.find(ordered(state), fn(p: Page) -> Bool: Lists.any(Text.words(said), fn(w: String) -> Bool: textLength(w) > 0n && Card.stripped(w, textLength(w)) == p.name))
 # Reading writes nothing and asks no model.
@@ -110,7 +108,7 @@ def readRow(name: String, after: String) -> World.LawRow:
 def shelve(state: State, input: {name: String, kind: Kind, title: String, body: String}, context: Abi.Context) -> Activity<Card.Replied>:
   if context.principal != state.owner then Card.tell(Card.Replied.refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page"}), Document.text("Not done: Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page\n")) else shelved(extend(input, {place: placeOf(input.name, state)}))
 def placeOf(name: String, state: State) -> Nat:
-  match Relations.lookup(state.pages, {name: name}, pageKey):
+  match Relations.lookup(state.pages, {name: name}):
     case some(p): p.value.place
     case none(_): Lists.fold(Relations.rows(state.pages), 0n, fn(p: Page) -> Nat -> Nat: fn(most: Nat) -> Nat: if p.place + 1n > most then p.place + 1n else most)
 def shelved(page: Page) -> Activity<Card.Replied>:

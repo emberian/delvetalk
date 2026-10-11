@@ -35,14 +35,8 @@ def doors(state: State) -> Lists.List<Door>:
   state.cites
 def menu(state: State) -> Lists.List<Door>:
   state.cites
-def greetingKey(greeting: Rows.Greeting) -> Rows.Greeting:
-  greeting
-def missedKey(m: Rows.Missed) -> {principal: String}:
-  {principal: m.principal}
 def greetedBefore(principal: String, state: State) -> Bool:
-  match Relations.lookup(state.greeted, greetingKey({principal: principal}), greetingKey):
-    case some(_): true
-    case none(_): false
+  Relations.has(state.greeted, {principal: principal})
 # The card without what changed (render is pure): the doors, with the spell that asks.
 def render(state: State, context: Abi.Context) -> Document.Document:
   Menu.trie(state.cites, "  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n", "", context)
@@ -278,7 +272,7 @@ def heardNothing(touched: Lists.List<Door>, context: Abi.Context, state: State) 
   let written(_) = write {missed: upsert {principal: context.principal, at: context.clock}}
   Card.tell(Card.Replied.usage({}), Menu.pruned(Menu.nothingHead(), if Lists.length(touched) == 0n then Lists.filter(all, fn(d: Door) -> Bool: Menu.isArc(all, d) == false) else touched, all, context))
 def missedLately(context: Abi.Context, state: State) -> Bool:
-  match Relations.lookup(state.missed, {principal: context.principal}, missedKey):
+  match Relations.lookup(state.missed, {principal: context.principal}):
     case some(m): context.clock < m.value.at + 60n
     case none(_): false
 # For a card's default receive (Card.answerAs): whether a reply to it that fits no form is owed

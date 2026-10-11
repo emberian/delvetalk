@@ -64,10 +64,12 @@ def found(m: Lists.Maybe<Row>) -> String:
     case none(_): "none"
     case some(s): s.value.note
 def looked(n: Nat) -> String:
-  let a = found(Relations.lookup(rel(), key(row("al", 10n, "")), key))
-  let b = found(Relations.lookup(rel(), key(row("al", 3n, "")), key))
-  let c = found(Relations.lookup(rel(), key(row("zz", 99n, "")), key))
-  "{a},{b},{c}"
+  let a = found(Relations.lookup(rel(), key(row("al", 10n, ""))))
+  let b = found(Relations.lookup(rel(), key(row("al", 3n, ""))))
+  let c = found(Relations.lookup(rel(), key(row("zz", 99n, ""))))
+  let d = if Relations.has(rel(), key(row("al", 10n, ""))) then "yes" else "no"
+  let e = if Relations.has(rel(), key(row("al", 3n, ""))) then "yes" else "no"
+  "{a},{b},{c},{d}{e}"
 def ordered(n: Nat) -> String:
   shown(Relations.order(rel(), byWho))
 def grouped(n: Nat) -> String:
@@ -109,7 +111,7 @@ CASES = [
     # key {n, who}: (2,c) (2,al) (2,bo) (10,al) (a shorter text first); the second (2,bo) is dropped.
     ("fromListed", "c2w,al2z,bo2x,al10y"),
     ("queried", "c2w,al2z,bo2x|c,al,bo,al|4|yesno"),       # where, project, count, exists
-    ("looked", "y,none,none"),                               # lookup finds by key and stops past it
+    ("looked", "y,none,none,yesno"),                         # lookup and has find by key and stop past it
     ("ordered", "c2w,al2z,al10y,bo2x"),                      # order and group by another key
     ("grouped", "1:c2w;2:al2z,al10y;1:bo2x"),
     ("joined", "al-cat,al-eel,bo-owl"),                      # pets {who, kind}, people {who}: al two, c none, dee no person

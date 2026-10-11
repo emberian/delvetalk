@@ -97,10 +97,6 @@ def lawText() -> String:
   "law owner \"the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission, a mark or a greeting is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))"
 def lineKey(line: Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
-def admissionKey(a: Rows.Admission) -> {n: Nat}:
-  {n: a.n}
-def markKey(m: Rows.Mark) -> {name: String}:
-  {name: m.name}
 # A line's author is the turn's principal, never an argument. The writer is answered with the
 # line's number and the record as it now stands; the result is the number.
 def write(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
@@ -132,14 +128,10 @@ def refusedCard(state: State, context: Abi.Context, refusal: Card.Refusal) -> Ac
 def lineNumbered(state: State, number: Nat) -> Lists.Maybe<Line>:
   Lists.find(Relations.rows(state.lines), fn(l: Line) -> Bool: l.n == number)
 def isAdmitted(state: State, n: Nat) -> Bool:
-  match Relations.lookup(state.admitted, {n: n}, admissionKey):
-    case some(_): true
-    case none(_): false
+  Relations.has(state.admitted, {n: n})
 # A named moment, once (a bell's `rung`); false when it was already marked.
 def marked(state: State, name: String) -> Bool:
-  match Relations.lookup(state.marks, {name: name}, markKey):
-    case some(_): true
-    case none(_): false
+  Relations.has(state.marks, {name: name})
 def mark(state: State, name: String, context: Abi.Context) -> Activity<Bool>:
   if marked(state, name) then false else markWritten({name: name, who: context.principal, handle: context.handle, at: context.height})
 def markWritten(m: Rows.Mark) -> Activity<Bool>:

@@ -76,7 +76,7 @@ def answered(done: Done, line: String, after: State, context: Abi.Context) -> Ac
 def party(state: State, who: String) -> Bool:
   Lists.any(state.parties, fn(p: String) -> Bool: p == who)
 def hasSigned(state: State, who: String) -> Bool:
-  match Relations.lookup(state.signatures, {principal: who}, signedBy):
+  match Relations.lookup(state.signatures, {principal: who}):
     case some(_): true
     case none(_): false
 def unsigned(state: State) -> Nat:

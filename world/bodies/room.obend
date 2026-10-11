@@ -32,12 +32,8 @@ type Departure = Rows.Departure
 type Done = Scenes.Done
 def leftKey(l: Departure) -> {at: Nat, who: String}:
   {at: l.at, who: l.who}
-def objectKey(reference: Plans.Reference) -> {object: String}:
-  {object: reference.object}
 def holds(relation: Relations.Relation<Plans.Reference>, reference: Plans.Reference) -> Bool:
-  match Relations.lookup(relation, objectKey(reference), objectKey):
-    case some(_): true
-    case none(_): false
+  Relations.has(relation, {object: reference.object})
 def here(context: Abi.Context, state: State) -> Lists.Maybe<Presence>:
   Rows.presentAs(state.presence, context.principal)
 def isHere(context: Abi.Context, state: State) -> Bool:

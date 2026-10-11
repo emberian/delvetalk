@@ -121,7 +121,7 @@ def dropping(state: State) -> String:
     case cons(c): if Relations.count(state.held) >= 12n then "The oldest held proposal, #{natText(c.head.n)}, was dropped.\n" else ""
     case nil(_): ""
 def heldNumbered(n: Nat, state: State) -> Lists.Maybe<Held>:
-  Relations.lookup(state.held, {n: n}, heldKey)
+  Relations.lookup(state.held, {n: n})
 # Adopt: the reprogram runs under the adopter, so the target's law judges it as theirs; the
 # owner's adoption applies it, anyone else's is refused by name, and a fault of the package
 # met now (the target moved on) is named as that. A held draft is its describer's to adopt.

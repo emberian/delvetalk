@@ -49,7 +49,7 @@ def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("knock lines door undoor example") else Text.words("knock lines")
 def openedBy(state: State, context: Abi.Context) -> String:
-  match Lists.find(Relations.rows(state.marks), fn(m: Rows.Mark) -> Bool: m.name == "open"):
+  match Relations.lookup(state.marks, {name: "open"}):
     case some(m): "open, opened by {Card.shown(m.value.who, m.value.handle, context)}"
     case none(_): "shut"
 def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Document:
