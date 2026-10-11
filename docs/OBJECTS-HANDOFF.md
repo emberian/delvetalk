@@ -1,749 +1,129 @@
 # Objects handoff
 
-## lane/rewrite11 (2026-10-11): 15a, THING me/lend/circle, BOND, H1 finished, O3's Event, playtest 2 (part)
-
-Inherited: the predecessor's tail (`cv show a40e1a1afb9005a08`, last 80 turns) adds nothing the section below lacks
-but the coordinator's two mid-task notes (inner clauses; kernel15's call sites), both already folded by it or here.
-Foundation's pins were stale after the rewrite10 merge (re-recorded in the first commit).
-
-persvati is down: every run was on hbox (`~/scratch/dt-rewrite11/`, the binary copied to its `bin/`: foundation's
-06:16 for 15a and THING/BOND, then dt-host18's 07:09, which carries ef170556 `spell` on receive, from H1 on).
-
-Done (each commit a full suite on hbox, pins re-recorded; changed cards verbatim in each message):
-
-- **eb66e626 15a.** `Relations.lookup(relation, key)`; `Relations.has(relation, key)`; every call site moved
-  (KERNEL-HANDOFF §16 item 15a), Tide's subscription scan and the door's `open` mark are key reads; the key
-  projections that fed only `lookup` are gone.
-- **6e74c811 THING `me`, `lend`, `circle`; BOND by spell; Deal deleted.**
-  - THING: who may change it is the law's alone (`set` checks nobody in code), so the host's `lend` of `set`
-    runs: the card shows its keeper `Lend its setting: delvetalk <id> lend / to: <a handle, or me> / method: set /
-    until: +<clock minutes>`. `circle` (owner's lens): naming a bond at rest (its `atRest` view) amends the
-    thing's own law to `lawWith(circle)`, whose keeper disjunct reads `request.subject in "<bond>".marks.who`;
-    the owner clause gains `(unchanged(circle) or request.subject == new.owner)`. The one offered reads `Offered
-    to you until clock N. Take it: delvetalk me accept / thing: <id>`. The package keeps its declared law (the
-    host voices a declared clause's reading in the outcome; see host findings); `lawText()` is test-checked to
-    carry the same clause names and readings.
-  - BOND: `world/bodies/bond.obend`, `kind/bond` in genesis's KINDS (`parties: text 1..400` handles, `terms`,
-    `amends: text 0..128`, `law: text 0..4096`; law RECORD_LAW + `SIGNER_LAW` `changed(new.marks.who) by
-    request.subject`). A countersignature is a mark `signed <handle>` (who the signer); the last puts it at rest
-    and amends `amends` to `law` (the bond as caller, the amended object's law judges, the metarule asks the last
-    signer); a party withdraws before rest (mark `withdrawn`). Parties are handles, matched to `context.handle`:
-    no handle-to-DID read was needed. tests/test_bond.py (by spell on a genesis town: countersign, refusals,
-    amendment at rest, withdrawal, the signer clause by a forged body, the goblet's circle, lend and `me accept`).
-- **adae3edf H1 finished** (foundation 25322ef0, host18's ef170556): `Card.Cast {card, action}` in `Reply` and
-  `Heard`; `Card.unanswered` and Workshop's `completing` read `input.spell.action`; `Spell.parse` and its readers,
-  `Card.spellMissing`, `Card.spellAction` and test_spell's `BendReading` are gone (Spell.obend keeps `Binding`,
-  `Bindings`, `valueOf`).
-- **261504eb O3, the Event half**: `Event` gains `n`; `Rows.Sensed` is gone; Env and Wake take `Events.Event`.
-- **The commit after 261504eb, playtest 2's D5, F1, F3**: the commonplace leaves out every principal's own
-  cards (`ownCard`: `wake/…`, `env/…`, any id whose first segment holds `:`, so Zulip principals too); the
-  doors are KINDS, WORKSHOP, then the places (the card clips the places from the end: with the arc it now shows
-  KINDS and WORKSHOP and "… and 4 more"); a `spween:` that is not a scene is refused `spween` at the make.
-
-Not done, with why:
-
-- **`Card.Reply` folding into `Heard` (O3's second half).** Tried whole: with `Card.answer` refusing a misfit by
-  its clause, every plain card's misfit spell becomes an admitted turn (9 test classes moved, the host's badSpell
-  hint lost): the opposite of playtest 2's D6. The fold needs the host to keep badSpell for a card that reads no
-  words (say, fill `misfit` only for an input that also declares a `policy`-reading marker, or a declared
-  `readsWords()`): the host lane's question first.
-- **The lost hand-on** (handoff item 3 below): host18 has not landed re-delivery of a transiently refused send.
-- **`world.principal {handle}`**: not in foundation; `offer / to:` still takes the avatar's id (a DID).
-
-Remaining, in order (each a commit, the full suite green on hbox, pins re-recorded):
-
-1. Playtest 2 (docs/review/zulip-playtest-2.md; the coordinator's list):
-   - **D6** a refusal inside a card's own Bend prints above an `admitted` receipt line: every method that answers a
-     refusal (`Card.tell(…refused…)`: Thing's "Not done", Bond's and Kind's `refusedCard`, Record's `refusedCard`,
-     Avatar, Env, Workshop) must `refuse(...)` so the turn is refused; the host drops a refused turn's offers
-     (5.144), so the refusal line is then the host's `refused evaluation: <reason>`: check that reads as
-     `refused <clause>: <reading>` (a `refuse` carrying the clause may need a host form) before sweeping.
-   - **D3** `workshop make` never drafts (Haiku copies the workshop's spell): the drafting prompt must hold no card
-     spells, show a minimal Bend package and ask for one fenced `obend` block only; test with the dry run's input.
-   - **D4** `kinds make` admits a law that does not parse: check the instance law at the kind's creation (create
-     the kind with a `law:` citing it, or ask the coordinator for a host parse op) and refuse by name.
-   - **D8** the library's `spells` and `laws` pages are over 1,400; **D9** `spells` names the walk `plant`, which is
-     no page until step 4's walks.
-   - **D10** rooms list principals, not names: `Rows.Presence` needs a `handle` column (room `enter` writes it).
-   - **F2** `adopt / law:` with inline law text (host parses already; the host spell's), **F5** a kind's `id:`
-     offered only to its maker (a per-reader form: host usage, or a separate owner's form `make` vs `name`).
-2. Step 4 whole, as below (genesis to §7's table with the library's pages and five walks; Policy.prompt per FLEX
-   with `say:` and `surrounding`; every card in VOICE's register; the previews re-cut from the live cards; the seed
-   posts; this file rewritten as the surface; `git branch -D lane/rewrite5-garden`). The door order is done.
-
-Host findings:
-
-- A refusal by a law given at creation or by amendment carries no `reading` in the outcome (only `reason`
-  "refused <clause>: <reading>"); a package-declared clause's does. test_properties now accepts the voiced
-  reason, but one rule would be better: the outcome's `reading` from the law text (`lawRowsOf`).
-- The `spell` field is host-filled like `fields`/`misfit` (test_properties' `HOST_FILLED`).
-
-## lane/rewrite10 (2026-10-11): H1 cut, inspirit, the silent turns, the library follows `under`
-
-Inherited: the predecessor's tail (`cv show a0d74c0be27d3d607`, last 80 turns) adds nothing the section below lacks
-but the coordinator's two notes, both folded: a refused `sealed/1 write` still offers "#1 is written" (host18's first
-item: the host drops a refused turn's offers), and H1 (the Bend reader disagrees with the cast rule).
-
-persvati went down at 05:06; the suites ran on hbox (`~/scratch/dt-rewrite10/`, the foundation binary rebuilt there
-at 05:33): 834 tests, 4 red classes, each red on pristine foundation too: test_hand's Speak and Measure (the same
-four tests), test_archive (a wake's receipt line names its DID, transport/host), test_pull_backups (date-bound).
-
-Done (67184b62 H1, ad6baf8b inspirit, da3f45cc the silent turns and the library's `laws`; the three were run as one tree):
-
-- **H1, as far as objects can go.** The host passes a spell it found missing fields to `receive` with the bound
-  fields and no action, so a card cannot tell `delvetalk anthology write` (no fields) from prose without reading the
-  spell line. `world/lib/Spell.obend`'s reader is cut to the host's cast rule (the last `delvetalk` line at the
-  margin; the quoted fallback, `isQuote` and the second candidate are gone); `test_spell.BendReading` asserts the
-  indented cases agree with `spell-parse`. **The rest is the host's** (fungus H1: "`Heard` carries card and
-  action"): `heardArgument` (TurnLoop ~995) fills `action` (and `card`) as it fills `fields` and `misfit`, from
-  `castSpell`'s `.unclear` arm (`receiveHeard w id target argument fields` gains the action); then `Card.unanswered`
-  reads `input.action`, Workshop's `completing` too, `Spell.parse` and every helper under it are deleted (Spell.obend
-  keeps `Binding`/`Bindings`/`valueOf`), and `test_spell.BendReading` goes. Host18's uncommitted `wholeSpell` (a post
-  that is one indented spell block is dedented and cast) is the one case the Bend reader still misses: such a spell
-  missing fields reaches the card as prose and is handed on to hob.
-- **inspirit** (pingwaves #5). THING gains `keeper`/`keeperHandle`; `form inspirit / surrounding: text 1..400`:
-  anyone, once, while `keeper` is ""; the surrounding becomes `description`, the caster `keeper`; lying in a room
-  (holder nobody, location set) the thing first calls the room's `~inspirited {line}`, which only a thing lying there
-  may call, writes the line under the caster ("<name>, inspirited by <handle>: <surrounding>", clipped at 280) and a
-  mark `inspirited <id>`. The room card lists unclaimed things first with the spell ("Unclaimed here: …. Inspirit
-  one: delvetalk <first> inspirit / surrounding: <1 to 400 characters>"), then "Lying here:" the claimed. Law:
-  `owner` (the owner stays and alone reprograms; name, description and copying are the keeper's once inspirited,
-  the owner's before: `request.subject == new.keeper or (request.subject == new.owner and old.keeper == "")`) and
-  `keeper` (`writeOnce(keeper) and (unchanged(keeper) or request.subject == new.keeper)`); `actions` offers
-  `inspirit` only while unclaimed, `acquire` while unheld, `offer`/`withdraw` to the holder, `set` to the keeper
-  (owner before). A thing lying nowhere (made, or a copy) is put down by its owner (`drop / at:`), and a room's
-  `put` admits its owner furnishing it. Genesis creates `porch/goblet`, `porch/ring`, `porch/gemstone` (THINGS, the
-  owner's words as names) and lays each on the porch; the lexicon gains `surrounding`, the examples an inspiriting.
-  The commonplace learns the first three cards under each door (was one), so hob is offered all three things'
-  `inspirit`. Tests: tests/test_inspirit.py (porch card, inspirit, the line, a second refused `keeper`, the
-  keeper's lens, the owner's refused, a proposed keeper refused); test_genesis's sequence gains the things.
-- **Silent turns**: Thing (`acquire`, `drop`, `offer`, `withdraw` answer the line and the card; refusals "Not
-  done: …"; a room's refusal told back), Deal (`countersign` "Countersigned, <handle>; N of the parties still to
-  sign." / "…: at rest." / "…, and <object> is amended.", `withdraw`, every refusal as `refused <clause>: <reading>`
-  over the card), Avatar (`note` by spell, `send`, `subscribe`, `watch`, `unsubscribe`, `accept`, `move`/`go`'s
-  refusals; a note an object leaves stays quiet), Env (`seen` "Read through #N; nothing before it is new again.",
-  `publish`, refusals), Kind `shape` ("Shaped. Make one:" and its spell; refusals over the card). Env's mention
-  (`write`) stays quiet by design: a post mentioning a resident is not a reply to the world.
-- **The `blurb()` sweep** (the commit after da3f45cc): `blurb()` and `Card.Door` are gone from every object, body,
-  fixture and automatafl module; the host's default page falls back to the object's id (genesis names every page);
-  Workshop's page is "workshop". The host's `blurbWord` (TurnLoop ~2262) is now dead: the host lane's to delete.
-- **A made kind is sent no `made`** (the host lane's finding): Kind's `finished` sends `made` only to a made record
-  (a kind has no such method, so every kind creation journaled a delivered `noMethod`); test_kinds asserts a
-  resident's `kinds make` and a make on that kind deliver no refusal.
-- **Foundation adbab7d5 merged** (host18's batch: a refused turn offers nothing, refusals under a kind name the
-  inner clause, sums in laws, optional `text 0..N` fields, dedented spell blocks). test_wakes, test_tending and
-  test_strangers now assert the inner clause (`level`, `alive`, `sealed`, `owner`). `kinds make / name / of` alone
-  makes a kind and its make a thing (test_kinds); PLAYTEST-2's room spells drop `/ spween: / id:`.
-- **`kinds shape` once**: a second shape laid a layer over the package's module, which a shaped kind no longer runs
-  (the live redeploy's compile refusal). `shape` is kept for a kind created whole (genesis's `kinds`), is `~shape`
-  (unoffered), and refuses `shaped` ("Already shaped; its make stands") when the kind already has its make.
-- **A wake on a card not there yet** reads "There is no card garden/bell/1 that you may see (yet): nothing to
-  watch." (was "cannot be watched (denied)"): the hand lane's `wake rows` on garden/bell/1 ran before any bell was
-  planted. A bell's `lines` are already subscribable by anyone who may read it: test_genesis.Rows has a resident's
-  wake count seven rains on another's bell and note its avatar.
-- **Library `laws` follows `under`**: a clause `under "<object>"` is followed to that object's `law` field (a made
-  thing's kind), whose clauses follow the card's own ("Under kind/bell's law:"), expressions dropped when the whole
-  passes the clip. The miss line names the commonplace, not the directory.
-
-Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded):
-
-1. THING `me`, `lend`, `circle`; BOND by spell. Design: `kind/bond` over RECORD (a body `bond.obend`; form `parties:`
-   handles, `terms:`, `amends:`, `law:`), a countersignature a `marks` row (`who` the signer: the circle reads
-   `request.subject in "bond/N".marks.who`, LAW §4 D), at rest `world.amend` as Deal does; Deal.obend and
-   test_deal's package path deleted in the same commit. A thing's `circle` lens amends its own law so the owner
-   clause's keeper disjunct reads the bond. `offer / to:` takes a handle the host cannot resolve in Bend: wait for
-   host18's `context.sender`/a handle read, or offer to `me`'s avatar id by the host's `me` resolution.
-2. O3: one Sensed (`Event` gains `n`, `Rows.Sensed` goes, `publish`/`sense` callers pass `n: 0`); `Card.Reply`
-   folds into `Heard` (the host fills `misfit` when the input declares it), `Card.heard` goes.
-3. The hand-on refused `capacity`: a wait inside a call is not supported (`mayWait`, depth > 0), so the hand-on
-   cannot join the card's turn; objects alone cannot fix it. Host: re-deliver a send refused transiently, or route
-   prose a card does not take to the commonplace itself.
-4. Foundation 0e54c215 (kernel15: `Relations.count`/`lookup` force no row / one row) is not merged here: merge it
-   with the rebuilt binary, drop `lookup`'s unused `keyOf` at the call sites KERNEL-HANDOFF §16 item 15a lists, and
-   prefer `count`/`lookup` to scans where a card reads one row or a count (the menu, door counts, a bell's rains).
-5. Step 4 as below. H1's host half: host18's batch did not add `action` to `Heard`; still the host's.
-
-
-## lane/rewrite9 (2026-10-11): hob's said; step 3, first part
-
-Inherited: the predecessor's tail (`cv show a0a66f925db192fbd`) adds only the `say:` decision, folded below. Its two
-Sonnet helpers' step-2 test diffs (2568a20c, 8812c5a9, 0baf5bed) read whole: no assertion was weakened to hide a
-defect; what was dropped tested deleted mechanisms (held plantings, yes/no, confirm lens, merge, the escalateTo copy).
-Found and fixed or queued: test_hub imports `tests.wire` twice; test_archive carries a history comment ("70 while the
-garden read words itself"); test_properties reads `~` methods by regex over `Text.words(...)` lines for ids holding
-`did:`; test_interpret_text's docstring still names the escalateTo copy (gone with O5 here); test_policy's capacity
-test changed identity p64 -> p65 because a hand-on refused `capacity` is lost: the garden's turn is admitted and the
-words never reach hob (queued below); test_genesis's commonplace test undoors TIDE to fit BELL (eight doors).
-
-Done:
-
-- **efb81dc9, hob's `said`** (host18's fifth answer): the commonplace renders `hob: <text>` above the card the words
-  were for (`saidBeside`, by `world.card`) or above the menu; `Card.Hob.said`; `Policy.prompt`'s `say:` line;
-  test_http.Play asserts the line beside the kinds card.
-- **Step 3, first part** (the commit after efb81dc9):
-  - Law atoms: Tide's `tooSoon`, `self`, `methods` are text (`changed(new.subs.who) by request.subject`; the clock as
-    `request.clock == old.last + old.gap or not (request.clock <= old.last + old.gap)`, since a comparison must start
-    with a reference: LAW §4 E's `old.last + old.gap <= request.clock` does not parse); Deal's `signer` is
-    `changed(new.signatures.principal) by request.subject`; Thing, Workshop, Seat, Table: `law methods`; Avatar keeps an
-    inline predicate so the host's default law (its creator alone reprograms it) stands; Workshop and Seat gained
-    `owner` clauses (a text law replaces the default law). `Plans.unnamed`/`proposedRefused` are gone.
-  - Kind: every made thing is created under `law kind "<kind>'s law holds": under "<kind>"` (`lawOf`); `kinds`' own
-    `law` field holds KIND_LAW (genesis). The `{maker}` hole in laws is gone (heads keep it).
-  - Tending: Record `tended` (clock), `tendedAt` (entry read), `tend`; Kind seeds both at making; RECORD_LAW's
-    `methods` keeps `tended` from proposals. kind/bell's law adds genesis `ALIVE_LAW` (`QUIET_AFTER` 1440); the bell
-    body's write (a rain) tends, refuses a quiet bell's rain with `refused alive: answers while tended within 1440
-    minutes. Tend it:`, heads "— quiet, untended since entry N. Tend it:", and declares the view `quietSince`. The
-    weather's rain tends the garden's bells; the free arc is the porch's sixth bell (`bell/1`, outside the garden,
-    cited by the porch as `the sixth bell`), quiet a day after genesis.
-  - No silent admission: Record `door`/`undoor`/`example` answer a line; Wake's spells answer the watch made
-    ("Watching bell/1's lines: 0 of 7 rows; at 7 your avatar is noted, then at every 7 more. Stop: ..."), `unwatch`
-    answers; room `enter`/`choose`/`leave`/`whisper` answer the room as left. Wake `rows` counts across deliveries
-    (`Trigger.seen`, fires at the count and keeps the remainder). `On.reply`, `Wake.act` deleted.
-  - O5/O6/O7 (helper): Policy `escalate`/`escalateTo`, their lenses and card lines; Card `hobbed`, `escalated*`,
-    `macroUsage`, `one`, `defaultPage`, `handOn`, `Answer`/`answerOf`/yes-no words; `Plans.indexOf`; Workshop's adopt
-    cites the holding turn's receipt hash (`madeFrom.receipt`); Library's `card` bound 128.
-  - tests/test_tending.py (window in body and law, quiet, tend, the law refusing a forgetful body, the view, a kind's
-    law amended re-laws its instances).
-
-Host findings (for the coordinator):
-
-- **A refusal by `under` names the citing clause** (`refused kind: kind/garden's law holds`), not the cited one
-  (`level`, `alive`, `owner`): `refusedBy` should descend into `under` and report the inner clause and reading.
-  Until then cistern's `level` and the garden's `owner` read `kind` (test_wakes, test_strangers, test_tending assert it).
-- The law fragment needs `>=` or a sum on the left (LAW §4 E's own Tide example does not parse).
-- transport/interpret.py:24-28 (the `Participant:` cut) is dead: `Policy.prompt` appends no utterance;
-  tests/test_model.py:127-138 goes with it.
-- test_http.Play `test_plant_by_prose_shows_the_interpreters_offer` races (http.py's wait reads offers, then
-  receipts, and stops if the turn settled between): red 2 of 3 on pristine foundation.
-- The dt-host18 binary (00:54) carries host18's cast-guard ahead of foundation: test_host_spell.Recorded and
-  test_spell.Grammar are red on pristine foundation with it.
-- A hand-on refused `capacity` loses the words (the handing turn is admitted).
-- **A refused turn still offers what its methods told** (`sealed/1 write` refused `lawRefused` offers "#1 is
-  written: ..."): an object cannot see its turn's verdict (`written` is the staged write), so the host (or the
-  bridge) must drop a refused turn's offers and let the refusal line stand with the card as it was. The test the
-  coordinator asked for (a write refused by a resident's sealing law shows no "is written") belongs with that fix.
-- **test_archive red here**: now that `wake unwatch` answers a line, the bridge's draft carries the receipt line
-  `admitted wake/did:plc:... v2` and the page URL with the DID: the turn line should name a principal's own cards by
-  handle (or `wake`), not by id. Transport/host; the card itself names no DID.
-- H1 is now urgent: foundation 95e2274a casts only a `delvetalk` line at a line's start; Spell.obend's reduced reader
-  keeps the old indented fallback and disagrees. Delete it; its users read the host's answer.
-
-Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded):
-
-3. (rest)
-   - **inspirit** (the coordinator's, from the owner's outreach, docs/previews/pingwaves.txt #5): a THING may lie
-     unclaimed (`keeper` "") in a room; its card names it and offers `inspirit / surrounding: <text 1..400>`, cast
-     once by anyone: description = surrounding, keeper = caster, and the room's line "the goblet, inspirited by
-     <handle>: <surrounding>" (a room method the thing calls, caller checked against `things`, writing the line under
-     the caster and a mark per thing so the card lists unclaimed things first); after that the keeper alone sets it
-     (Thing's owner clause admits `new.keeper`; `law keeper ...: writeOnce(keeper)`). Genesis creates `porch/goblet`,
-     `porch/ring`, `porch/gemstone` (Thing, by world-create: a Kind makes only records) and puts them on the porch;
-     the lexicon gains `surrounding`, an example teaches `inspirit` from prose. Tests: a stranger inspirits the
-     goblet, a second resident's is refused `keeper`, the room carries the line.
-   - Silent admissions left: Thing (`acquire`, `drop`, `offer`, `withdraw` return `Done.done` untold), Deal
-     (`countersign`, `withdraw`, its refusals), Avatar, Env (`Done.done` paths), Kind `shape`.
-   - THING `me`, `lend` (`delvetalk <thing> lend / to / method / until` over `world.grant`), the `circle` lens
-     (`request.subject in "<circle>".members.principal`, LAW §4 D); BOND from Deal by spell (over RECORD).
-   - H1 (Spell.obend's parser: needs the host's Heard to carry card and action), O3 (Sensed = Event + n: Env and
-     Wake inputs), the `blurb()` sweep (every object), Library `laws` following `under` to a kind's `law` field,
-     `kinds make / name / of` alone (host optional fields not in foundation yet).
-4. As below (unchanged): genesis to §7's table, the walks, the door order KINDS, WORKSHOP, then the places;
-   previews re-cut; GENESIS.md (add the sixth bell and the under-law); this file rewritten; `git branch -D
-   lane/rewrite5-garden`. STUDIO's line says "scratch worlds and REPL" (genesis); test_genesis still expects
-   "heap and REPL" nowhere: check.
-
-## lane/rewrite8 (2026-10-11): step 2 — the furniture as kinds
-
-Inherited (ClusterVision on lane/rewrite6's last 80 turns, `cv show a501e76149fbdf27e`): nothing the section below
-lacked; its create-then-extend Kind (the session scratchpad's `Kind-inturn.obend`) became Kind's `making` once
-host17's atomic make reached foundation (7884a972, merged here).
-
-Done (each commit's message quotes the cards it changed):
-
-- **One budget per reply** (6f8c60fb): a drafted reply is the card plus the receipt line the bridge stamps under it
-  (`receipt_line`), so `Card.limit(context)` is 1,400 less `Card.receipt(id)` (2 x the id + 120) and every renderer
-  clips with `Card.left(context, used)`; the policy's owner card names `?` instead of its full usage.
-- **Step 2.** `world/objects/Garden.obend` is deleted. Every piece of furniture is a record kind with a body in
-  `world/bodies/`: `garden` (`plant`/`dig` are make by another word; what it makes lies in its `things`; the
-  `byKind` view; no hob, no held planting, no confirm, no page of its own: prose goes on to the commonplace),
-  `weather` (subscribes to its tide's `ticks` when made; each tick rains on the first 32 bells its garden holds and
-  writes the garden's `weather` line through `Record.forecast`, which only a record's cited door may call),
-  `porch` (the room body by another name), `door` (`knock`; the first knock marks `open` with the knocker, a
-  calling object's id when an object knocks), `lantern` (subscribes to its door's `marks` when made; `open` marks
-  it `lit`). `Record.making` is the one making path (a garden's plant, a room's carved block): the kind is the
-  record's own or one its body's `makes(state)` names (the `makes` field and its law clause are gone), the made
-  thing is inserted into `things`, and the body's card (`said`) and result (`as`) answer. Kind: a make takes
-  `id` (blank mints; exact is the kind owner's alone), and after grafting a body it sends the made thing `made`
-  (Record's is a no-op; the bell's asks its planter's wake to watch for `rung`, which the garden used to send).
-  Wake `arrived` watches the garden's `things` (`changedThings`). Genesis makes the kinds, then the hand's
-  `garden`, `rooms` (The Moss Gate, by its `spween` field), `porch` and `weather` by spell (`HANDS`), then cites
-  the weather from the garden; PORCH is a door. docs/GENESIS.md is current.
-
-Decided here, against the plan's letter (the coordinator should confirm or overrule):
-
-- **Every kind is over RECORD.** A Kind can create only a package in its own sealed closure, and a lawful module
-  (Wake, Thing, Deal, Tide) can be neither imported nor named (`lowerElaborated`: "a law belongs to the package's
-  entry module"). So `kind/weather` and `kind/lantern` are record bodies with a subscription made in `made`, and
-  `kind/door` is a record whose `open` is a mark, not a THING; METAPHYSICS §7.2's "Over" column should say RECORD
-  for them. A tide by spell (`kind/tide`) needs the Tide as a record body (ticks as lines, `last` as `tended`, the
-  gap a law hole, subscriptions as a relation Record lacks): not done; `tide` is still created by world-create.
-- A bell's colour stays in its fixed `fields` (the head reads it).
-- A rain a weather sends is the ticker's line (the delivery's principal) and says whose weather it is; making an
-  object a line's author needs the host to tell a delivery from a call (a hub's `call` must stay the speaker's).
-
-Found with the garden gone (for step 3's seams): nothing calls `Card.hobbed`, `Card.escalated`/`escalatedTo` or
-`Card.macroUsage` now (the commonplace answers hob itself), so an ask is never copied to the policy's
-`escalateTo` while the Policy card still says "What a card cannot fit twice goes to …": delete them with O5.
-
-Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded):
-
-2. (rest) `kind/tide` as above, or the coordinator's call that the tide stays created; the sluice and lantern and
-   the porch's clapper in `deploy/seed.py`.
-   From the PLAYTEST-2 dry run (foundation 2f0e25f4), to fold here: (1) `kinds make / name / of` alone must make a
-   kind: today the host asks for every field of a form ("Almost. I still need: form, head, law, body", admitted
-   `unclear`, nothing made, which the bridge counts as admitted); defaults (empty form, the name as head, the
-   kind's own law, no body) need either optional form fields (a host question: a field with a default is not
-   asked for) or `kinds`' form cut to name and of with the rest set by the kind's owner after; (2) every admitted
-   turn answers a line (`door`, `wake rows`, a first `enter` draft nothing); (3) `wake rows / object:
-   garden/bell/1 / field: lines / where: / count: 7` subscribed and never fired after seven rows: Wake `rows` with
-   an empty `where` and `count` above 1 counts the rows of one delivery only (`matched` per `changedLines`), so
-   seven rains in seven turns never reach 7: it needs a running count per trigger (or `count` read as "the n-th
-   row", `n >= count`); (4) a kind instance's `write` takes `text`, not the kind's form fields: decide (the plan
-   assumed the form's fields; the honest cut is that a record's write is a line, and the form is the make's).
-   **hob's `say:` (the owner's decision; wait for the coordinator's word that lane/host18's `said {text}` is in
-   foundation):** `Policy.prompt` gains the `say:` example ("a question about what a card is or does: answer in at
-   most three sentences from the card, its forms and the library pages given, then the one spell that would act on
-   it"); Card/Record and the commonplace handle `said` by rendering `hob: <text>` beside the card (never inside the
-   card's facts), then the card itself.
-3. Tending: `tended` and `tend` as a RECORD option, the bell body's rain writing `tended`, the `alive` clause in
-   kind/bell's law (`request.method == "tend" or request.clock <= old.tended + 1440`), "quiet since entry N" from a
-   pure view, the free arc; THING with `me`, `lend`, `circle` (LAW §4 D is now in foundation: kernel14); BOND from
-   Deal by spell (over RECORD, per the decision above); the fungus seams (H1 Spell.obend's parser, O3 one
-   Names/Forms record, O5 `Policy.escalate`, the Participant tail). **The law atoms are denoted in foundation**
-   (head "Merge lane/host17: the law atoms denoted…"; KERNEL-HANDOFF §25 item M has the exact lines): the Tide's
-   `ownRows` family and `tooSoon` become text (`changed(new.subs.who) by request.subject`, `request.clock <= …`),
-   Deal's `signer` becomes `changed(new.signatures.who) by request.subject`, Kind's `lawOf` with `{maker}` holes
-   becomes `under "<kind id>"` cited by each instance, the library's law pages objects a law may cite; every Bend
-   predicate deleted, the readings kept.
-4. As the brief: genesis to §7's table with the library's walks and the seed posts' spells, `Policy.prompt` per
-   FLEX, every card in VOICE's register, the welcome and root-menu previews from a real genesis, seed posts, this
-   file rewritten as the surface, `git branch -D lane/rewrite5-garden`. From the deploy rehearsal (foundation
-   2f0e25f4): a door's published page lists only the forms the reader is offered, as a card does (the Rooms page
-   showed door, undoor, example, admit, take, put to the public: the host's default page, or a page each record
-   renders); the Workshop page needs its "How to reply"; `capsules/pages/world.txt`'s STUDIO line ("scratch worlds
-   and a REPL") stays. The library's walks (plant, check, enter, tide, submit: LIBRARY.md (d)) as
-   `capsules/pages/<walk>.txt` in PAGES; the commonplace's doors ordered KINDS, WORKSHOP, then the places (DOORS).
-
-## lane/rewrite6, continued (2026-10-11): steps 1a and 1b — the commonplace is the first card
-
-Inherited (ClusterVision on lane/rewrite6's last ~100 turns): nothing the section below lacks; its helper had
-dropped test_strangers' creator assertion (the loss), now restored.
-
-Done:
-
-- **1a** (4ad5e05a, merged as 49f3411d): RECORD's `law methods` (`request.kind == proposed implies` lines,
-  admitted, marks, presence, left, vars, things unchanged; `next` stays out so a cistern's drained level is its
-  `level` clause's); Spween reads `* [label] -> target`; publishPage is a host convention in test_properties.
-- **1b** (this commit): `world/objects/Directory.obend` is deleted. The first card is `commonplace`, a Record
-  the opener keeps (genesis `commonplace(opener)`: head THE COMMONPLACE, keeper, policy, `cites` = the doors)
-  with `world/bodies/commonplace.obend` laid over it. Its blank reply, a principal's greeting and `since
-  {entry}` render over `world.changed` (eight `<id> v<n> by <handle>, entry N`, the commonplace itself left
-  out), then `delvetalk kinds make / name: lamp / of: record`, `delvetalk <newest> ?`, then the door trie
-  (Menu.trieUnder, clipped whole branches, STUDIO never clipped). `render` (pure) is the trie with the
-  `since` spell. The hub moved whole: door words, field lines to the door whose form names them, hob with
-  macros, several proposals, asked-first, the pruned miss card, `missed`/`due` (Card.owed). Gone with it:
-  `add`/`remove`, `news` and the watched counts (what changed replaces them), `visits` (the greeting opens
-  on the door the words went through; no stored last door), `Directory.Listed`, `Menu.Door`/`News`/`Visit`.
-- **One door record** (fungus O4): `Card.Doorway {label, to, description, examples}`, `Card.Example
-  {example, comes}`; the owner's `example {label, spell, comes}` (Record) gives a door the spells a menu
-  prints (four at most); an arc is a door under another door's object. One `countWord` (Text.countWord /
-  Text.counted). `Card.hub` (was `Card.directory`) names "commonplace".
-- **Record** gains `policy`, `greeted` (insertOnly in `kept`), `missed`; its `receive` takes `Card.Heard`,
-  and a misfit spell to any record without a reading body is answered `refused <clause>` by that clause
-  (FLEX §2), admitted, nothing written (was the host's turn-level badSpell for records). `Card.Replied`
-  gains `passed {card}`, `asked {card}`, `several {count}` (the hub's outcomes).
-- Found: a direct reply's field line naming the card's own action is the host's spell for that card
-  (`write:` to the commonplace writes a line there), so a door is reached by a field line only through an
-  action the commonplace lacks.
-- Open from 1b: the host's own strings still say "directory" (the `otherCard` refusal "the directory lists
-  the doors", the unknownObject hint, a call reading; tests/test_call_reading.py 56, 61, test_outbound 403):
-  the host lane's. On persvati the dt-foundation binary is newer than foundation af254d69 (rebuilt 21:32):
-  test_archive, test_changes, test_commute, test_outbound Projection, test_turn_world, test_world_object fail
-  on its root shapes (`scalar`, `fields`); the full run is otherwise green (788 tests).
-
-Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded; the brief's words):
-
-2. **The furniture as kinds made by spell at genesis**, each with a maker. Design settled here:
-   - `kind/garden` (`world/bodies/garden.obend` over Record, `makes: [kind/bell, kind/cistern]`): `plant
-     {colour, seed}` and `dig {name}` call `Super.making`; Record.making should also write the made thing
-     into the record's `things` (`insert {object}`: what the garden holds, keyed so `garden/bell/10` follows
-     `/9`), which the garden's card counts ("3 planted") and lists newest first, and which `kind/weather`
-     reads. The garden needs no hob of its own: prose it does not take is handed to the commonplace, whose
-     hob is offered the garden's forms; Garden.obend's held plantings, confirm, macros and page go (the
-     policy's `confirmFor` and the hub's asked-first cover asking first; the host's default page is the
-     page). Keep `byColour` as the body's view (tests/test_derived_views.py). `weather` is a Record field
-     the weather writes (one line of text), shown in the garden's head. Delete Garden.obend; genesis's
-     `garden` becomes the hand's `kind/garden make / name: garden`-style spell (ids: KIND mints
-     `<name>/<n>`; the town's `garden` id needs `kinds`' make to take an exact id, or the door cites
-     `garden/1`: decide, then GARDEN's door and every test's `garden` follow).
-   - `kind/weather`: a body over WAKE (Kind.packageOf gains `wake` -> `Wake`; check arrival's sealed
-     library supplies Wake to `create`), subscribed to the tide's `ticks` (`changedNat`), which on each tick
-     views its garden's `things` and calls `rain {text}` on each (32 a turn, the host's sends bound), so rain
-     falls with nobody posting; its law `weather` names the garden it serves (seed field).
-   - `kind/bell` with `colour` a fixed seeded field (it is a form field now; make it a fixed Record field
-     the head reads, or keep it in `fields` and say so in METAPHYSICS §7.2's row).
-   - `kind/porch` (over Record with the room body, head only), `kind/door` (a THING whose `open` another's
-     call flips: the flood's sluice) and `kind/lantern` (a WAKE body watching a door's `open`).
-   - Genesis: the hand makes the garden, the Moss Gate (`kind/room make / name: The Moss Gate`, then its
-     scene by a ```spween block the hand posts to it, or a `spween` field), the tide and the porch by spell
-     (`world-turn ... make` as the opener with a post), so each has `maker` and `post`; the commonplace
-     cites each. The town's own ids: genesis's `kinds make` takes an exact `id:` for the hand's things
-     (the coordinator's decision), and the commonplace's doors cite them.
-   - **Atomic make is still red on 3c96c27d's binary** (reported to the host lane with this input):
-     Kind.making with `world.extend({object: c.object.object, package: state.body})` after `created`
-     admits the make and answers `reprogrammed`, but the made thing's next direct turn on a method its
-     body adds (`cistern/1 pour {text}`) is refused `typeMismatch` ("not what it takes"); a kind made
-     by `kinds` and extended in its creating turn refuses its own `make` the same way. Kind keeps the
-     self-sent `graft`/`shape` until a binary passes test_kinds and test_wakes with the in-turn extend.
-3. **Tending** (LAW §4 A, E are in the binary: `request.clock`, `old.F`): Record gains `tended: Nat` and the
-   `tend {}` spell (writes `context.clock`); `kind/bell`'s form carries the seed law string `law alive
-   "answers while tended within 1440 minutes": request.method == "tend" or request.clock <= old.tended +
-   1440`; the bell body's `rain` writes `tended`; "quiet since entry N" from a pure view; the free arc (a
-   bell the hand plants and never tends). THING with `me`, `lend`, the `circle` lens (LAW §4 D is not in a
-   binary: say so); BOND from Deal by spell (`kind/bond`); the fungus seams: H1 (delete Spell.obend's
-   parser: `Card.unanswered`/`spellAction`, Workshop, Avatar, the hub's `Spell.Binding` use read the
-   host's), O1 done, O4 done here, O5 (`Policy.escalate`), the Participant tail (T31), K7/K8 where a body
-   is touched, O6 dead symbols, O7 Workshop's receipt hash (HOST 5.127 landed), O8 done here.
-4. Genesis to §7's table with the library's pages and walks and the seed posts' spells; `Policy.prompt` per
-   FLEX; every card in VOICE's register (hob's lines on natural-language surfaces only); docs/GENESIS.md,
-   docs/previews/gsb-welcome-v6.txt and gsb-root-menu-v4.txt (render them from a real genesis: the
-   commonplace's blank-reply card after three plantings, one rain, four lines) and seed-posts current; this
-   file rewritten as the surface as it stands; `git branch -D lane/rewrite5-garden`.
-   Tide's `ownRows` family and Deal's `signer` wait on `changed(new.F.COL) by` (LAW §4 B; HOST-HANDOFF §7
-   item 4, not in a binary as of af254d69).
-
-Folkways and arcs (which body keeps each): folkway 1 and the seventh rain's `ring`/`strike` (bell body);
-folkway 3 (Record's `kept`, `admit`); folkway 5 (room body: `say`/`emote`/`whisper` to those present;
-folkway 4's traces are a visitor's line now); folkway 10 (room body: cooldown, `crowded`); the flood's level
-(cistern body's `level`); folkway 6 (Thing); 7 (Deal); 9 (the commonplace's hub: greeting once, hourly
-card); 2 (Tide). The unwritten passage is the room's scene; the seventh-door deal waits on BOND.
-
-## lane/rewrite6 (2026-10-11): step 1, first half — PLACE folded into RECORD
-
-Standing order (the owner, verbatim): "we can adopt these things. we need to maturify and take forward
-everything that we've started and bring it to its full sophistication and make sure the code is all
-'fungused together' (no seams or welds where rich semantic braiding is called for). approved, and let's not
-leave behind 'old things', no scar and growth tissue." The plan is METAPHYSICS §7 (§7.5, §7.6); the steps are
-the brief's: (1) the commonplace underneath, (2) the furniture as kinds by spell at genesis, (3) tending, THING
-with `me`/`go`/`lend`/`circle`, BOND from Deal, (4) genesis to §7's table, voice, GENESIS.md, previews, seed
-posts, this file rewritten, the parked branch `lane/rewrite5-garden` deleted.
-
-Inherited from lane/rewrite5 (its last turns, read with ClusterVision): it landed afee930 (one budget per
-card; `me`/`env`/`wake` on one's own cards; no DID or post address on cards) and b349587 (the policy card in
-one budget), both merged in foundation; it idled on the metaphysics decision with `lane/rewrite5-garden`
-(3a12ac9, red) untouched. Its parked garden-as-PLACE design (verbs/head on Place, the layer generator, held
-spells on Place) is superseded by this lane's shape: a garden is `kind/garden`, a RECORD with a body whose
-`plant` calls `Record.making` (below), so nothing of that branch is to be merged; delete it in step 4.
-
-Done here (commit "RECORD absorbs PLACE"):
-
-- **RECORD carries what PLACE and Scene had** (`world/objects/Record.obend`): `cites` (the doors: the field
-  renamed, the card's word stays *door*), `makes` (kinds a body makes under the record through
-  `Record.making(state, kind, fields, context)`: <record>/<kind>/<n>, citing it home, answered "Made, at
-  <id>."), and a room's `start`, `passages`, `cooldown`, `requires`, `presence` {who, at} (32), `vars`,
-  `left` (`Rows.Departure`, 64), `things` (256). `relationsWith(lines)` lets a body keep more lines (bell 768).
-  The record law's owner clause holds `cites`, `makes` and the scene unchanged for anyone but the owner, so a
-  room is revisable by its owner's reprogram (GROUND change 7) and a stranger's proposal is refused `owner`.
-  Traces are gone: a visit is a line the visitor writes (`write`), or none.
-- **`kind/room`** (`world/bodies/room.obend`, over RECORD): Scene's verdicts unchanged in substance (enter,
-  choose, leave, guards, effects, END, requires, cooldown and `crowded` as method refusals), Place's talk
-  (`say`, `emote`, `whisper` to those present) and floor (`take`, `put`); a room without passages is entered
-  at "". A ```spween block posted to a room makes a room under it by its kind (`makeUnder` with a `spween`
-  field the kind's seed reads into the scene). Results are `Scenes.Done` (world/lib/Scenes.obend), shared by
-  the avatar and the thing. Deleted: `Place.obend`, `Places.obend`, `Scene.obend`, `PLACE_LAW`, `Rows.Trace`,
-  Place's lenses and its generated `shape` layer.
-- **KIND**: ids minted past held ones (`requireAbsent` `<under>/<name>/`, HOST-HANDOFF 5.127; the await test
-  that waited on it now passes); `kind/place` is `kind/room` (`of: record`, body `room`, head `{name}`); the
-  kinds form's `body` bound is the package bound (131,072).
-- **Avatar** `go / to: <room>` is that room's `enter`; `move / exit:` reads the room's `cites` by
-  `viewField`; scoped resolution reads the room's `things` by `viewField` (arrival's sealed library no longer
-  needs a state mirror in world/lib). **Thing** takes itself from a room by calling its `take`.
-- **Wake** watches a room's `presence` where it watched traces. **genesis**: `rooms` is a Record seeded with
-  the Moss Gate and given the room's body by an extend; KINDS make record, bell, cistern, room.
-- Tests: test_places is test_rooms; test_scene, test_spween, test_kinds, test_strangers, test_lenses (the
-  place lenses deleted with them), test_hub, test_await, test_objects and the rest migrated.
-
-Host findings for the host lane (repros above in this lane's history):
-
-- **Create-then-extend in one turn (5.122) is not usable by KIND yet**, so Kind keeps the self-sent graft.
-  (a) A kind made by `kinds` (itself a layered Kind) and extended in the creating turn refuses every later
-  write of its own with `typeMismatch` naming it (make, makeUnder), and a later `shape` lays nothing
-  (`writes: []`); the same kind shaped in a later turn works. (b) A record made by a kind and extended with the
-  bell body in the creating turn is refused (the turn refuses "could not be given its body"): the made thing's
-  law judges the extend with the running kind as proposer, which the record law's `request.subject ==
-  new.owner` refuses. Repro: Kind.making with `world.extend` after `created` (this lane's first version).
-- A layer may import only modules its base's closure supplies, and a layer that imports Plan derives Edits
-  for every State field, so Record imports Spween (for the room) and the bell body imports Scenes.
-
-## lane/rewrite5 (2026-10-11): the neutral half of 4b; the garden as a seed parked
-
-The owner put the town picture on hold ("when we reconsidered the metaobjects we should also reconsider the
-metaphysics"): no garden as a seed, scene body, genesis table, seed posts or previews until that lands.
-
-Landed here (metaphysics-neutral):
-
-- **hob never prints the model's words** (cracks R2, playtest 68746). `Card.Hob.ask {needs}` keeps only the
-  offered fields a need names as a word (`Card.fieldNeeds`); the lines are VOICE's: a card's ask `hob: still
-  needs {fields}; the spell is below.` or `hob: not a spell as said; the spell is below.` over its first spell;
-  the root's `hob: no door takes that as said. The nearest:` (or `…; still needs {fields}. The nearest:`); the
-  escalation copy `{name} said: {words}; hob found no spell in it ({card}).`
-- **hob at the root is offered the first card under each door too** (`Mentions.doorForms`: a bell's rain).
-- **WATCH's spells** (GROUND §6 change 5) on the Wake: `writes / object / field / above`, `grows`, `turns`,
-  `rows / object / field / where / count` (`where` one `column op value` line: `=`, `>`, `<`, `has`; blank
-  for every row; anything else `refused badWhere`), `remind / at / every` (a schedule that notes the owner).
-  Form field names must be lower case: the host folds a spell's field names (5.119), so `atLeast` could never
-  be typed. The rename to WATCH and `do: say` wait: arrival names the Wake module, and `say` needs a place.
-- **`Kind.makeUnder` judges text fields against its form** (`Forms.fault`: `missing`, `badValue` with the
-  host's readings), so a place handing text cannot seed a value outside the form. Forms' generators take
-  the form's action (`<action><Field>Text`), for verbs other than `make`.
-
-Parked on `lane/rewrite5-garden` (3a12ac9, red, not for merge): the garden as a PLACE seed. Place gains
-`verbs` {action, kind, done} and `head` (owner text with holes); `shape` writes one form per verb with exactly
-its kind's fields, or one `make` that needs only its own kind's fields (completed in `receive`, which closes
-4a's finding); the garden's word handling on Place (held spells completed by their missing lines, no, macros,
-misfits, merge, hob with the newest made thing's forms, a proposal run by a call to the card it names, the
-place's own included); genesis `garden_seed`; tests/test_garden.py green, about half the other test files
-migrated. Before it can land: `Place.obend` is 51,672 bytes, past the 32 KiB bound a reprogram is held to, so
-the layer generator goes to a library (Forms) and the word handling to Card; Kind's closure (Kind, Record,
-Place) is near the 256 generic instances (`Generics.maxInstances`): every new type a Place helper maps over
-costs one, so Place uses `Spell.Binding` and `Forms.Spec` rather than new row types. An asked-first proposal
-cannot be held for yes: its argument is Data, which Bend cannot print or keep as text. Host: the proposal
-carries its spell text (then Card holds it and renders `hob: I read that as`; cracks L1).
-
-Open, found here:
-
-- **The hand-on costs no model call (landed, HOST-HANDOFF 127, 128):** a `send` of `receive` keeps the reach of the
-  turn that sent it, so prose that reached no one stays `not addressed` at the directory.
-- **Methods without input take `{}` only (landed, HOST-HANDOFF 132):** a field the input does not declare is a
-  `typeMismatch` naming it, and test_principal's `ignored` sends `{}`.
-- **An avatar keeps its first handle** after a second arrival under a new one (cracks): with THING.
-- rehearsal/rehearse.py reads the garden's `children`; with the parked garden it is `made` ({object, kind, n})
-  and `count` (rehearsal lane).
-
-## The cut in progress (lane/rewrite, 2026-10-10 evening; docs/CATALOGUE.md §5)
-
-Done, each green on hbox (1261 tests, 0 failed) with pins re-recorded:
-
-1. **Deletion** (3cec2d6): Counter, Loop, Door, Lantern in `tests/fixtures/objects/`; Seat, Table and the
-   game library in `examples/automatafl/`; Commons, Appointment, Appointments gone; genesis without
-   `commons` and `play`.
-2. **RECORD** (7b53d7a, f38ed9c): `world/objects/Record.obend` (lines {author, n} 128, `admitted` {n},
-   `marks` {name}, and the made header: head, kind, fields, maker, makerHandle, post, all fixed);
-   lawless, its law is `Record.lawText()` = genesis `RECORD_LAW`. The anthology is a Record seed. Env's
-   `mention` is `write`; watches and the menu read `lines` (`changedLines`).
-3. **KIND, first half** (97b522c): `world/objects/Kind.obend`, `world/bodies/{bell,cistern}.obend`,
-   genesis `kinds` + kind/record, kind/bell, kind/cistern; `tests/test_kinds.py`.
-
-Findings the successor builds on:
-
-- **A turn reaches what it created only by `extend` (host 122).** `extend` of an object created earlier in the
-  same turn lays the layer into the making; `call` and `write` to it still answer `unknownObject`. KIND still
-  grafts a body (and shapes a made kind) by a message it sends itself, delivered in the same settling
-  (`grafting`, `graft`, `shape`), so a make is not yet one create.
-- **A kind's make is a generated layer.** `Kind.layerSource(state)` writes `form make:` from the form's
-  field lines plus a `make` that calls `Super.making(state, <rows>, "", context)`, and a
-  `make<Field>Text` match per choice field (`a | b | c` -> sum `Make<Field>`). Field names must be Bend
-  identifiers; a choice option named like a keyword (`record`) does not compile, so `kinds`' `of` is
-  text. A layer may not retype what it overrides, which is why Kind itself has no `make`.
-- **Layers late-bind.** The bell body overrides only `headLine`, `entry`, `relations`, `write` (refuses
-  over 200 characters) and adds `rain`, `ring`, `strike`; Record's `write` then renders the bell's head.
-  A layer's form blocks replace the forms below, so a body re-declares the base forms it keeps
-  (`lines`, `door`, `undoor`) with one-line delegations.
-- **`Library.laws` reads `inspect` without the source (landed, HOST-HANDOFF 123):** `world.inspect({object,
-  source: false})` answers `laws` with readings and `offered`, so a long card's law page costs no source ticks.
-- **Usage cards list what the reader is offered (landed, HOST-HANDOFF 123):** `Card.offeredCard` and
-  `dueOffered` filter the forms by `inspect`'s `offered`.
-- Reader-specific: Record's `actions` shows admit to the keeper, door/undoor to the owner.
-
-Step 3b, done on lane/rewrite2 (d3bd6aa, 82136a0; 1288 tests, 0 failed): the garden plants through kind/bell
-and digs through kind/cistern (`makeUnder`, quiet, a door home); Bell.obend and Cistern.obend are test
-fixtures in tests/fixtures/objects (the host's view, subscription, layer, await and limit tests keep them);
-a wake watches a bell's `rung` as a `marks` row; the KINDS door ("KINDS · 3 made"); the WORKSHOP door
-teaches `workshop make / name / description` (hob drafts a `draft`, checked, held as #n for the describer,
-whose `adopt` `make`s it with `madeFrom`); the root menu's head and tail in v4's words; Spell.obend folds
-case as the host does; the library's laws page reads inspect's `laws`; kind/cistern adds `monotone(next)`.
-Tests use `tests.test_chain.town_kinds(send)` wherever a garden plants.
-
-Step 4a, done on lane/rewrite3 (d706f13; 1,334 tests, 0 failed; pins re-recorded): hob reads once and
-PLACE stands lawless.
-
-- **FLEX §2 in Bend.** `world.interpret` carries `held` and `misfit`; `Card.Heard {text, post, fields,
-  misfit}` is what Garden's and Directory's `receive` take (host 121), so a direct misfit spell reaches
-  them: with a policy hob sees `Misfit: <clause>, <reason>`, with none the card refuses by that clause
-  (Garden `Card.answerRefused`, Directory `refusing`). `Card.hobNeeds`/`hobSaid` read hob's answers;
-  `Card.hobbed` is none (silence), card (the card), ask (`hob: {q}` over the first spell, `askCard`, and
-  the escalateTo copy). The root's ask is `hob: {q} The nearest:` over the pruned menu. Gone: the second
-  attempt, `escalate` as a retry model (the field stays in Policy, unused), the mention gate, every
-  "I still need" card. Garden keeps a held planting through hob's none and shows it as `held`.
-  `Card.offeredCard` lists only inspect's `offered`. `Policy.prompt(state, asked)` is FLEX's text.
-- **PLACE** (Place.obend, state in `world/lib/Places.obend`): lawless (`PLACE_LAW`), exits are
-  `Card.Doorways` (owner's `door`/`undoor`), `keep` bounds traces (`traces` lens; 0 keeps none, the
-  card says nothing), `makes`/`made`/`count`, `making` calls the kind's `makeUnder`, the owner's `shape`
-  grafts `form make: kind: <choice>` plus the union of the makes' fields (`Forms.obend`, shared with
-  Kind). Also on the state for the garden to come: `policy`, `confirmFor`, `held` (Pending {principal,
-  kind, fields, needs}), `pageCheckpoint`. `kind/place` makes `place/<n>` from `name` (Kind's
-  `placeSeed`). Places.obend is not folded: arrival's sealed library is world/lib plus Avatar, Env and
-  Wake only (`Serve.arrival`, `Ops.arrivals`, hostproc `ARRIVAL`), and the avatar imports it.
-- **The root menu**: a link door is never clipped (`Menu.trieUnder` says it after the clipped branches);
-  the greeting's head drops "words reach hob; its spell runs unless the card asks first" (hob's line says
-  it). Seven doors and the bell arc fit 1,400 on the day the newest names show, greeting included
-  (`tests/test_genesis.py`). docs/previews/gsb-root-menu-v4.txt is that render.
-
-Open, found in 4a:
-
-- **A handed-on reply keeps its reach (landed, HOST-HANDOFF 127, 128):** `Card.handingOn` is a `send` and the
-  directory's turn carries the sender's reach, so a bell reply with no reach leaves nothing pending.
-- **Place's generated make requires every field of every kind** (the union, each required): a place
-  making bells and cisterns could not make a cistern without a colour. Either one form per kind
-  (`plant` for bell, `dig` for cistern: the alias design below) or Kind's form gaining optional fields.
-  (`Kind.makeUnder` now judges the text fields against its form, `Forms.fault`.)
-- `kind/place make` takes `name` only; description, traces and doors are the owner's lenses and spells
-  after. CATALOGUE §4's `/ traces: 0` and `/ makes: kind/bell` in one spell need optional fields.
-- hob is offered only the doors' own forms at the root (`Mentions.doorForms`); FLEX's 801-token root
-  counts the bell's rain as well. Decide: offer the first child's forms too, or say so in FLEX.
-
-Still open from 3b (the host side has landed; the objects side has not):
-
-- **Atomic make**: host 122 lays an `extend` into a creation of the same turn, and the `typeMismatch` on a method
-  the layer adds did not reproduce on foundation fixtures (HOST-HANDOFF 127); Kind still keeps the self-sent
-  graft (`grafting`/`graft`). Check: `kind/key make / seed: x` through create-then-extend.
-- **A taken id stops a kind**: the host mints under a prefix (`requireAbsent` ending in `/`, HOST-HANDOFF 127),
-  but Kind names `<under>/<name>/<count+1>` itself (`idOf`), so a held id is the turn's requiredAbsence
-  (tests/test_await.py expectedFailure stands until it asks for the prefix).
-- **The workshop's lineage needs the receipt hash**: an await's `Plans.Receipt` carries `hash` (HOST-HANDOFF 127),
-  but `adopt` still passes `madeFrom.receipt: ""` (`Workshop.making`); it should await the holding turn and
-  cite it.
-
-Remaining, in order (each a commit, the suite green, pins re-recorded):
-
-4b. **The garden as a PLACE seed.** genesis `garden` from Place with `makes: [kind/bell, kind/cistern]`,
-   `policy`, owner ember, then `shape`. Design to settle first: `plant` as the alias of make. Proposal:
-   Place gains `verbs: List<{action, kind}>` (seed; `plant` -> kind/bell, `dig` -> kind/cistern) and the
-   shape layer emits one form per verb with that kind's exact fields, each calling `Super.making`;
-   `make` stays for a place whose kinds share their fields. Garden.obend's prose handling (held
-   plantings, confirm, macros, `hobbed`) moves to Card as FLEX objects 4 says (`Card` holds the
-   asked-first proposal per principal; Place has `held` for it), so a Place with a policy reads words
-   with its makes' forms. The planted card (`Planted, {handle}: an amber bell, “{seed}”, at {id}; {n}
-   planted.` / `Rain on it:` / the spell / `Another:`) and the garden card are VOICE's, pinned by
-   tests/test_objects.py: Place's render needs a `head` (seed text) and the made line per kind, or a
-   garden body; CATALOGUE §5 lists no garden body, so prefer a seed `head` and a per-verb `»` line.
-   The directory's GARDEN door watches `made` (`count`) instead of `children`; Wake's `watchBell` send
-   moves with it; `byColour` and the page (`publishPage`, merge) need a home or go (decide with the
-   owner: the page is ember's wiki checkpoint). Delete Garden.obend; tests re-pointed by
-   `tests.test_chain.town_kinds` and a `town_garden` helper.
-4c. **The directory as a body over PLACE** (world/bodies/directory.obend). A layer cannot add state, so
-   Place's state must carry what the directory keeps: exits as the doors need `examples`, `watch` and
-   `place` (a `Card.Doorway` has only label and to): either Doorway grows (Record's doors too) or Place
-   gains `doors: Relation<Menu.Listed>` beside `exits`; and `greeted`, `news`, `visits`, `missed`. Its
-   laws (`greeted` insertOnly) join PLACE_LAW for the root (genesis passes a law per instance). Keep the
-   Directory's 32 KiB bound.
-4d. **The scene as a body over PLACE** (world/bodies/scene.obend; Scenes, Spween unchanged): Scene's
-   state (title, start, passages, presence, vars, cooldown, requires, left) onto Place as with 4c;
-   its Bend law (cooldown, `crowded`) needs a law in a layer or text law clauses. **Rooms revisable**:
-   `passages` and `start` out of `law fixed`, so only the owner's reprogram with a migration (kind 1,
-   which the Bend law does not judge) revises them; the Workshop's propose shows `v+1`. kind/scene.
-5. **WATCH** from Wake (forms for `rows`/`writes`/`grows`/`turns`, `where` as one `column op value`
-   line, `do: say`); tide as a body over WATCH; **THING** from Thing with the avatar body (`me`, `go`,
-   `lend`, the `circle` lens); **BOND** from Deal with `deals` by spell. Arrival still names Avatar,
-   Env, Wake modules (`Ops.lean` `arrivals`, `transport/hostproc.py` ARRIVAL): ask the host lane for
-   Record/Watch/Thing with seeds before Env and Wake files go. kind/watch, kind/thing, kind/bond.
-6. Genesis to §5's table; the library's walks (`capsules/pages/<walk>.txt`, kind `walk`) and the four
-   "how do I" macros (`find {words}`); every card in VOICE's register;
-   this file rewritten as the surface as it stands.
-
-Folkways and arcs so far: folkway 1 and the seventh rain's `ring`/`strike` (bell body); folkway 3
-(Record's `kept`, `admit`); folkways 4 and 5 (Place: traces, `notPresent`); the flood's level (cistern
-body's `next`); the rest are still in their old objects (Thing 6; Deal 7; Directory 9; Scene 10;
-Tide 2) and must move with them.
-
-## Summary
-
-World objects are `.obend` files in `world/objects/` (15: Avatar, Deal, Directory, Env, Garden, Kind, Library, Place, Policy, Record, Scene, Thing, Tide, Wake, Workshop; 3,619 lines), with two bodies, layers over RECORD, in `world/bodies/` (bell, cistern; 111 lines). Libraries are flat-named modules in `world/lib`, `world/lib/prelude` and `world/lib/document` (19 files, 2,251 lines); an object imports them by basename. Counter, Loop, Door, Lantern and a Bell and Cistern fixture are in `tests/fixtures/objects/`; Seat, Table and the game library are in `examples/automatafl/`; Commons, Appointment and Appointments are gone, and the Anthology is a Record seed.
-
-- Every object speaks the one dialect: methods are `Activity<A>` over `world.X(...)` (`world/lib/World.obend`), self-writes are `write {f: op v}` over `Edits`/`keep()` the kernel derives from `record State`, and a field nothing may change is `fixed` (lawless objects) or `unchanged` in law. No object writes `Edits`, `keep()`, a `Seed` ritual or a `perform`.
-- The host parses spells, resolves the card, and runs the declared method a spell names; `receive(state, input: Card.Reply, context)` gets only what runs no method (prose, a spell missing fields, field lines naming no form). Only declared methods are public: form-block actions, `methods()`, `views()`, conventional names (HOST-HANDOFF 5.62).
-- Needed first: `World.obend` (the protocol and its result sums), `Plan.obend` (`Reference`, `Edit`/`Entries`, `Slot`, `Receipt`: what messages carry), `Card.obend` (answer, tell, names, doors, pages, interpretation and macro helpers), `Relation.obend` and `Rows.obend` (relations and shared row types), `Form.obend`, `Text.obend`, `Policies.obend`, `Places.obend`. `Spell.obend` keeps only the binding types.
-- Run: `make check`; narrow `DELVETALK_OBEND=<binary> python3 -W ignore -m tests.run test_objects test_spell_turns …`. Compile-only: put a `delvetalk-obend` binary in `DELVETALK_OBEND`; never run `lake`, never commit the binary. `tests/host.py` fails any host reply whose card or offer text contains `bafy` (no hash in a card; cite `<object> v<n>`).
-- Tests: the count is in HOST-HANDOFF's Summary. Tick bounds tests hold: glm's 1,788-character reply under a bell under 25,000 (with the hourly `due` call and the card it owes) and the directory's reading under 250,000 (`test_hub`); `test_places` under 100,000.
-- Lawful objects (declare `law`): Deal, Directory, Env, Garden, Library, Policy, Scene, Thing, Tide, Wake. Place, Kind and Record declare none (a creator passes the law, `lawText()`), because a creator cannot import a lawful module; their owners make them with `world-create`. Bend predicates (`def law`): Thing (custody), Tide (`tooSoon`, `self`), Scene (cooldown, `crowded` retention), Deal (`signer`), and Workshop and Avatar beside the default law; every one refuses a write no method made (`Plans.unnamed`, clause `methods`).
-- Open: section 4.
-
-## 1. Conventions
-
-- **State and initial.** `record State` and `def initial() -> State`, the one constructor. The host's `create` lays a seed (a record of some State fields) over `initial()` and fills a text `owner` from the creating principal when the seed names none. `world-create` takes a partial State too. Scene keeps a `Scenes.Seed` of passage data.
-- **Edits are derived** (KERNEL-HANDOFF §23). A list or relation field is `Entries<X, X>`, a `Nat` `Edit<Nat, Nat>`, anything else `Edit<T, {}>`. `colour: fixed Colour` has no edit at all (Record's head, kind, fields, maker and post, set when a kind makes it); a lawful object says the same with `unchanged(F)` (Scene `law fixed`, Tide `law gap`, Deal `law fixed`).
-- **Card protocol.** Every object has `render(state, context) -> Document` (`Card.stranger()` is a nobody Context), `forms()` (the host reads their bounds, HOST-HANDOFF 5.69), `blurb()`, `methods()` when it has public State-first definitions beside its forms, and `receive(state, input: Card.Reply, context)` with `Reply {text, post, fields}`, answering `Card.Replied` (`done`, `usage`, `unclear`, `refused`). `Card.answer` (or `answerAs` for an own result type) offers the card or hands prose to the directory.
-- **Form blocks.** `form ACTION [as NAME]:` with field lines (`text A..B`, `natural A..B`, `source`, `a | b | c`, or a closed sum `T` in scope) declares the Form value and the method's input record `ActionInput`; Garden's `plant` takes `Planting`, whose `colour` is `Bell.Colour`. The kernel derives `forms()` from the blocks in source order (it needs `import ./List.obend`); Directory and Kind write an empty `forms()` (a kind's `make` is a generated layer).
-- **Handles and the clock.** `Card.name(did, context)` shows the reader's own observed handle (`context.handle`) and anyone else as `Card.handle`: never a raw DID; a handle stored when the host knew it shows by `Card.shown`. Deadlines compare `context.clock`, which only `world-advance` moves.
-- **Reader-specific cards.** `Card.reads(principal, context)`, `Card.mine(principal, context)` (" (yours)"). A member sees more: an Env's events, a Wake's triggers, an Avatar's notes and follows, a Deal's countersign spell, a Policy's teaching card, a Scene passage.
-- **Cards by characters.** `Card.clipped` keeps at most `Card.budget()` (1,200) characters of rows, its "… and N more" counted among them; `Card.clippedWithin` what a long head leaves. One budget per renderer: `Card.limit()` (1,400, what readers see) and `Card.left(used)` give each list what the card's other parts leave (Bell: head and doors; Scene: head, then choices; a Scene title shows 120 characters). A card prints its spells first.
-- **Spell shape** (the host's grammar, `Host/Spell.lean`). A card name is `[a-z0-9:/.-]+`, at most 160 bytes; actions and fields `[a-z0-9-]+`; `?` is an action. Fields follow the action after ` / ` or commas, or on field lines. The spell is the post's last delvetalk line that is not quotation (indented four or a tab; `>` and fence lines are never spell lines). Block values: `field: <<DELIM` … `DELIM`; unclosed is refused `unclosedBlock`. A `source` field the spell lacks takes the reply's first ```obend fence. A literal brace in Bend source is `{{`/`}}`.
-- **Lenses.** `def lenses() -> Lists.List<Form.Field>` and `set(state, input: {field, value: Form.Value}, context)`: the host judges the value against the field's kind and runs `set`, which refuses a stranger by name (the law judges the write); `?` lists the lenses; a `fixed` field is never a lens. Lenses: Policy (`model`, `escalate`, `escalate-to`, `system`), Avatar (`handle`), Place (`name`, `description`), Thing (`copyable`, `name`, `description`), Garden (`confirm`). `Card.valueText` reads a Value.
-- **Interpretation (Garden, Directory).** A card with a policy views it (`world.view::<Policies.State>`) and asks `world.interpret::<T>(Card.interpretation(...))`. The host fits the model's spell and answers `proposal {object, method, argument}` (the Directory calls that card's method), `proposals {items: List<World.Proposed<R>>}` for a reply holding two or three spells (`Policy.prompt` asks for each, one `delvetalk` line apiece; the Directory folds them in order as this turn, each call admitted or refused on its own, and offers a card listing each spell with `» admitted`, `» refused <clause>: <reading>`, `» asks first …` or `» unclear: …`; the Garden takes the first), `unclear {needs}`, `replied {text}` or `denied` (refused `policy`). hob answers once (4a): the spell meant, `ask: <question>` (`unclear {needs}`, read by `Card.hobNeeds`), `card` or `none` (`replied` or silence, read by `Card.hobSaid`), and `Card.hobbed` acts on the last three. There is no second attempt: `Policy.escalate` stays a field and a lens that nothing reads. An activity composes only in tail position, so the object owns the loop.
-- **Confirmation per action.** `Policies.State.confirmFor` (default reprogram, amend, offer; the owner's `delvetalk policy confirm / action: plant / ask: yes|no`) names what an interpreted proposal waits for a yes before (`Card.confirms`). Garden keeps its own `confirmFor`, empty at genesis (its `confirm` lens adds or drops plant). A card holding a proposal for its speaker reads a bare answer first: `Card.answerOf(text)` is yes (yes, y, yeah, yep, ok, okay, sure, go ahead, do it) or no (no, n, nope, cancel, never mind), a closing `.` or `!` aside; Garden answers a bare yes or no with nothing waiting `refused nothingWaiting`.
-- **Completing a spell.** A planting spell missing fields is held for its speaker (Garden `Pending {principal, colour, seed, needs}`, keyed {principal}; empty needs = waiting for yes); a reply whose `Reply.fields` name the missing fields completes it. The Directory passes field-only lines whose first name is a field of a door's form to that door.
-- **Macros.** Policy `macros` (owner: `delvetalk policy macro / name: … / pattern: moth for {who} / expansion: garden plant / colour: violet`; a same-named macro is replaced; sixteen; a pattern starts with a word). Garden and Directory check `Card.expanded(text, policy)` before the model; a hit is dispatched as a typed spell with no interpretation. Garden's `?` appends `Card.macroUsage`.
-- **Direct replies.** A reply to a card itself (no card handed it on: its thread, a summon, the play page) is never quiet the first time: prose that fits none of a card's forms gets the card and its forms (`Card.owed`), prose to the Directory naming nothing gets the menu under "I heard no door, spell or field in that." (pruned to the doors it named, when the model was asked and found nothing addressed), each at most once an hour per speaker across the town: the Directory's `missed` relation ({principal}, 64; 60 clock minutes) is the clock, marked by its greeting and its `due` method, which `Card.owed` calls. Whether the Directory's hob reads prose at all is the host's reach (a mention, a door's word, field lines or a direct turn: FLEX §2), so prose that reached no card costs no model call and a hub thread costs at most one card an hour. The owner is answered as anyone is.
-- **Handed to the directory.** Prose `Card.answer` does not take is sent to `directory` (`Card.directory`) as `receive {text, post, fields}` under the speaker; the card offers nothing. A turn some object started forwards nothing. The Directory learns its doors' declared forms by `inspect` in one pass a turn and `Mentions.touches` only prunes the menu hob's question stands over to the doors a reply names; it no longer gates the model.
-- **Link doors.** A Directory door whose `to` is nobody (genesis's STUDIO) answers its word with `<label>\n<description>`, prints its description on its door line, and is skipped when field lines and the model look for forms. The menu is ordered by each door row's `place`.
-- **The root menu** (docs/MENU.md §1; `world/lib/Menu.obend`, pure). The Directory card is a trie: per top door `DOOR · <count>`, each of its `examples` (`{example, comes}`: the spell typed back whole in the inline grammar, and the owner's `»` line, "" for none), then the examples of its arcs (door rows whose object is a card under the door's object, `garden/bell/1`). The reader's last door (`visits`, written in `passOn` and `calling`, only when it changes) leads; the rest follow `place`. Branches are clipped whole within what the head and the two-line tail leave of 1,400. A door's `watch` names the field of its object its line counts (`children`, `ticks`, `proposals`, `held`, `presence`): `add` reads the field's count (`viewField`), writes a `news` row and subscribes the directory to it (`Card.subscribing`, the owner's turn) with the receiver for its rows (`changedChildren`, `changedNat`, `changedProposals`, `changedHeld`, `changedPresence`: helpers, counting only the watched object's own change on a watched field); `remove` drops the row and the subscription. A news row keeps the count and the newest row's name (`garden/bell/3`, `#4`, `#2 for garden/bell/1`), shown for 1,440 clock minutes after it came. A door added before its object exists watches nothing, so genesis adds the doors after creating their objects. Prose reading (mention scan, learned forms, miss words) is `world/lib/Mentions.obend`; the Directory keeps under the 32 KiB package bound (`maxPackageBytes`) that a reprogram is held to.
-- **Env.** `Env.receive` and `mention` from anyone but the owner are taken in as a `mention` event; the law admits them (kind 0, `mention` or `receive`, owner, handle and seen unchanged). Arrival seeds `handle`; the card reads "ENV of <handle>" with the newest eight events. An Env lives at `env/<did>`. Its `buffer` holds 256 (the host drops the oldest).
-- **Workshop.** A package fault (compile, program, packageBytes, migration, stateType) is answered by name and never held; adoption names one met later as itself, keeping "Only the owner … adopts" for the law's refusals. `check {target, source}` and `propose {target, migration, source}` take Bend as a `source` field (a block or the reply's fence, 1 to 16,384 characters). It views its target (state type `Data`) and says "Was: <id> v1 / Now: <id> v2". A `propose` the target's law refuses is held (`held`, keyed {n}, sixteen) for the owner: `adopt / n` runs the reprogram under the adopter, `withdraw / n` is the proposer's. Compile, program, packageBytes and migration refusals are not held.
-- **Scoped resolution (Avatar).** An Avatar's own principal's prose with no spell names its object by the first word that is a thing lying in its place, else an object of that id; the avatar sends `receive {text: "delvetalk <id> <action>\n<field>: <rest>", post}`, which the host reads as a spell (HOST-HANDOFF 5.63). Two of a name are answered "Which one: …?"; `look` offers the place's card (`world.card`).
-- **Place.** Its State, Exit and Done are `Places.obend`'s; its law is `Place.lawText()`, passed by the creator (Place declares none): only the owner renames, redescribes, reprograms or changes exits and makes; anyone's kind-0 write keeps them. `say {line}`, `emote {line}`, `whisper {to, line}` offer the line to every avatar present (in key order, at most 32); someone not present is refused `notPresent`. Each enter, leave, take and put is traced as `Rows.Trace`, 64 kept (the card shows the newest eight).
-- **Thing.** `copyable` (default true; the owner's lens). The Workshop's `create / like: <thing>` sends `copy`; the thing creates a Thing from its own package with its state minus holder, offer and owner. Not copyable is refused by name.
-- **Doors on any card.** `Card.Doorway {label, to}`, `doors: Card.Doorways`, `Card.doorAdd`/`doorRemove` (owner's; eight at most; `doorTaken`, `doorsFull`), `Card.doorLines`. Record, Place and the bell and cistern bodies declare `form door`/`form undoor`; a thing a kind makes under a place has a door home to it.
-- **Wake.** Rules as data (`On`: `mention`, `keyword`, `reply`, `schedule`, `writes {object, field, above}`, `rows {object, field, where, atLeast}`; patterns `equals`, `above`, `below`, `contains`). It subscribes with typed receivers: a scalar to `changedNat`, a relation to one receiver per `Rows` type, its Env's `buffer` to `changedSensed`. Receivers are helpers and check `context.caller`.
-- **Deal.** Law `members`: every change is a party's, and a write is `countersign`'s or `withdraw`'s (so neither a stranger's amendment nor anyone's proposal passes); the Bend law refuses a new signature that is not the requester's (`signer`). `amendment {object, law}` (object "" for none). The countersignature that brings the deal to rest calls `amend` with the deal as caller, judged by the object's own law; a refusal is answered `amendRefused`, the signature standing. `countersign` takes `{}` and cites `context.inputOrigin.post` (a turn from no post is refused `unposted`).
-- **Hub.** The Directory greets each principal once (`greeted`, insert-only in law); with a policy, a first reply that names a door, action or field is read as any later reply first, and the menu follows whatever it drew, opening on the door a proposal or a macro went through (`greet` through `consulted` … `calling`, `welcomed`). A second miss is answered with the trie pruned to the doors whose word, object, or learned actions and fields the reply names (`Mentions.touches`, `Menu.pruned`), under hob's `no door takes that as said` line (`Directory.missLine`). It is silent to its owner and answers a door word with that door's card. Garden ends with no offer for prose the model calls `not addressed`. Tide answers subscribe and tick with its card.
-- **Pages.** The host publishes a default page (`## Card`, `## How to reply`) for `publishPage {page}` to a card that declares none (HOST-HANDOFF 5.68); Garden keeps its own (`page`, `Card.defaultPage`, `Card.pageText`). An object with a page keeps `owner` and `pageCheckpoint`; `Card.isMerge` reads the owner's `merge` reply.
-- **Library** (docs/LIBRARY.md). `library`: `pages` keyed {name} (32; `Page {name, kind: page | walk, title, body 1..1400, place}`); `read {page}` offers the page named, else the first whose name is a whole word of what was given, else hob's miss line and the index (nothing written, no model); `laws {card}` renders `world.inspect`'s law with readings from the source's law lines (a law given at creation has only the host's form, no readings); `shelve {name, kind, title, body}` is the owner's (refused `notOwner` by name, and by the law). `render` is the index, in shelving order. The action is `laws`, not `law`: a definition named `law` is a card's Bend predicate. Genesis shelves `capsules/pages/<name>.txt` (`deploy/genesis.py` `PAGES`), so a page in the world and its file are one text (`tests/test_library.py`).
-- **Anthology.** A RECORD seed (`anthology`, keeper the opener; Record.obend): anyone `write`s, the keeper `admit`s by number. A line's number is `next` when it came (keyed {n}, so it survives older lines being dropped); a write is answered "#N is written: <line>" before the card, a list with lines left ends with `delvetalk anthology lines / from: N`, and `lines {from}` shows the card from there. A stranger's admit is the keeper law's refusal, a missing number `noLine` with the card.
-- **Laws that guard fields** read `owner: unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(…)))`. Kind 0 is the object's own method writes; a `world-propose` write and a migration's state are kind 3 (`proposed`, HOST-HANDOFF 93), so the kind clause admits no proposal; without the kind, anyone's reprogram or amendment (which change no field) passes; without `unchanged(owner)`, a migration could write the owner that admits it. Never write `request.kind == 0 implies X`: it says nothing of kind 3. Tide has an owner (filled at creation) who alone reprograms or amends it. Every law has a reading. A Bend predicate may refuse with a reading (`Abi.Verdict.refused {clause, reading}`).
-- **Refusals are sums.** `Card.Refusal {clause, reading}`; a card shows `refused <clause>: <reading>` or `Not done: <reading>`. Such a result is an answer, not a turn's refusal: the turn is admitted and commits whatever it staged, so a method returns it before any write; to end a turn with nothing written, `refuse("why")` (`evaluation`, transient). One `refusal(w) -> Card.Refusal` match per object that names its own whys: Avatar, Deal, Garden, Place, Policy, Thing, Tide, Wake; Directory, Env, Record, Kind and Workshop carry `Card.Refusal` in their results.
-- **Mailbox.** An Avatar's `send` inserts a `Rows.Letter` into its `outbox` (keyed {at, n}, 64); `subscribe {to}` subscribes to another avatar's outbox, delivered to `mailed`; `watch {to, field}` follows any field (a bell's `rung`), delivered to `news`; `unsubscribe {to}` ends either. It follows at most 32; the host serves at most 32 changes a turn (`unserved`) and 64 subscribers an object. Its inbox is keyed {at, from, n}, 64 kept. There are no observers anywhere.
-- **Layers.** `world-reprogram {mode: extend}` with a module `type State = Super.State` overrides what it defines; `tests/test_layers.py` (Louder over Bell) keeps rain; `tests/test_extend.py` `LateBinding` grafts `layer over ./Bell.obend` by the `extend` message and a rain reply's card starts LOUDER.
-- **Scenes.** `world/lib/Scenes.obend` is the data (`sum Op`, `sum Test`, choices with effects and guards, passages of at most 600 characters); `world/lib/Spween.obend` lowers spween to it (refusing weight, `~ call`, `has:` by name); a ```spween block posted to a Scene makes `<scene>/<id>`. Scene has guards, effect lists, END, `requires`, a cooldown, `presence` keyed {who} (16) and `left` keyed {at, who} (64).
-- **Idioms.** `::<T>` only where a world call's result cannot be inferred (`world.view::<S>`, `world.call::<R>` when the result is read, `world.interpret::<R>`). Self-write `write {field: add n | set v | append x | remove x | amend x with c | insert r | upsert r | retract k, …}` (`remove` is `removeItem`, or `retract` on a relation); a computed edit is `world.write(extend(keep(), {…}))`; bind a write's answer with `let written(_) = write {…}`. Strings are interpolated (`"{expr}"`; an `if` inside a string is a `let` first). An activity composes only in tail position; a reusable method takes `then: Result -> T`. No `else match`: put the match in its own def. Payloads are Data: give the value where Data is expected.
-
-## 2. Relations (docs/RELATIONAL.md is the contract)
-
-- **The library** (`world/lib/Relation.obend`, imported `as Relations`). `sum Relation<T>: rows: {items: List<T>}`; `record Decl {field, key: List<String>, limit}`; an object declares its relation fields with `def relations() -> Relations.Decls`, which the kernel lists in the artifact. Pure queries: `rows`, `empty`, `where`, `project`, `count`, `exists`, `lookup(rel, key, keyOf)`, `order`, `group`, `joinOn(left, right, leftKey, rightKey)` (one merge; both sides in the order of their join keys), `fromList(items, keyOf)`, and `insert`/`upsert`/`retract`, the host's table applied in Bend so a card can show what its own write leaves.
-- **Keys in Bend.** A key is the key projection as a record (`rainKey(r) = {author: r.author, at: r.at, n: r.n}`), and `Relations.compare` is the kernel's `canonicalCompare` (0/1/2 by canonical DAG-CBOR bytes, the host's own order: a shorter map key first, so `{author, at, n}` sorts by `n`, then `at`, then `author`; a text by byte length, then bytes). Rows are records: a relation of principals is `Rows.Greeting {principal}`. Shared row types (`Rain`, `Greeting`, `Presence`, `Trace`, `Letter`, …) live in `world/lib/Rows.obend` so a Wake can import them.
-- **Ordinals.** A row an author may add twice at one height carries `n`, the relation's count at the turn's read, in its key. Since `n` sorts first and only grows while nothing is retracted, key order is the order of arrival. Only one author's two writes at one read height and count collide (`keyTaken`), which no current object does.
-- **Declared relations and limits.** Record `lines` {author, n} 128 (the bell body: 768, a rain 1 to 200 characters), `admitted` {n} 128 and `marks` {name} 16; Kind `made` {object} 1,024; Library `pages` {name} 32; Directory `doors` {label} 64 (rows `Listed {label, description, to, examples, watch, place}`, the menu ordered by `place`), `greeted` {principal} 2,048, `news` {card} 64 and `visits` {principal} 64; Deal `signatures` {principal} 64; Garden `pending` {principal} 64 and `children` {object} 2,048; Tide `subs` {who} 32 (`subsMax`, the sends one tick makes); Env `buffer` {at, actor, uri, n} 256 (an event keeps 280 characters of its text); Place `present` and `things` {object} 256, `traces` {at, who, action, n} 64; Avatar `inbox` {at, from, n} and `outbox` {at, n} 64; Scene `presence` {who} 16 and `left` {at, who} 64 (an entry is `crowded` while cooling departures, readers present and the entrant would pass 64, so a cooling row is never dropped); Place also `made` {object} 1,024 and `held` {principal} 64 (declared, and read by nothing: the parked garden's); Workshop `held` {n} 12. Every limit times its widest row fits in 256 KiB of canonical bytes (HOST-HANDOFF 108; `tests/test_relation_limits.py` fills the Bell, Garden, Directory, Workshop and Env to their limits at their widest and writes once more). Past the limit the host drops the first rows in key order. An unbounded collection is a sequence of child objects, never one relation. Still lists: doors on every card, Policy's teaching lists. Records by design: RELATIONAL §9 "Stays a record".
-- **Laws.** Tide's predicate merges old and new rows: every key added, replaced or retracted must be the requester's (`tests/test_wakes.py`). Directory's `greeted` and Deal's `signatures` are `insertOnly` in law text; a row the retention dropped does not count.
-- **Seeds on the wire.** A relation seed is the `rows` variant (`tests.test_turn_world.relation(*rows)`, rows in key order; `{"tag": "variant", "label": "rows", "payload": {items: [...]}}`); `deploy/genesis.py` seeds the directory's doors that way.
-- **Costs** (hbox, `tests/test_relation_lib.py`): `joinOn` of two stored 200-row relations 188,023 ticks with building them (about 400 a row); `fromList` of 64 reversed rows 57,457. A card joins at most a few dozen rows per turn, and sorting belongs to the host.
-- **Derived views.** `def views() -> Lists.List<String>` names pure definitions `(state, context) -> first-order data` another object reads with `world.viewDerived::<T>({object, view})`. Garden `byColour` (a relation of `Tally {colour, count}` from its children rows); Place `affordances` (a Document of `acquire` for each thing lying there and `move` for each exit). A view is declared, so `inspect` lists it and `viewDerived` calls it, but it has no form: `?` and the usage never show it, and no spell can invoke it (`TurnLoop.lean` filters views from the forms; `delvetalk garden ?` has no `byColour`). `tests/test_derived_views.py`, `tests/test_view_derived.py`.
-
-## 3. The surface as it stands
-
-What an object asks of the world, and the shape every object has at 189b534:
-
-- **The world.** `world/lib/World.obend`: `Message {object, method, argument}`, one closed result sum per method (`refused {clause}` on each, `denied {}` on reads), and `protocol world:` with `view`, `viewField`, `viewAt`, `viewDerived`, `write`, `judge`, `call`, `callVia`, `run`, `send`, `sendVia`, `create`, `createUnder`, `await`, `awaitUntil`, `awaitPost`, `awaitPostUntil`, `interpret`, `offer`, `publish`, `reprogram`, `extend`, `amend`, `inspect`, `check`, `grant`, `grantWith`, `revoke`, `objects`, `card`, `subscribe`, `unsubscribe`. `Changed {object, field, version, inserted, retracted}` is what a receiver takes, with its own row types for the two lists. There is no `spell` method: the host's spell path runs methods directly. `tests/test_world_protocol.py` runs a message-dialect object through the host.
-- **What went.** `Plan.obend`'s `Plan`/`Response`/`Handled` sums and their payload records, Card's Plan-dialect helpers (`Heard`, `Routed`, `route`, `withBare`, `fitting`, `answerLensed*`, `tellPlan`, `merge`, …), the observer convention (`Observer`, `broadcast`, `notified`, `notifyRows`), `Form.Lens`, Spell.obend's `fit`, `bare` and block and field-line readers (the host's `spell-parse` is the grammar; `tests/test_spell.py` and `tests/test_host_spell.py` test it against fixtures; a reduced reader of the last spell line stays for `Card.unanswered` and `spellAction`), `Relations.insertedOnly`, the Seed ritual, every hand-written `Edits`/`keep()`, the Wake's Bend law, the Directory's Bend greeting cap, Document's unused variants, `Encounter.obend` and `Phrasebook.obend` (WORLD-REVIEW, status section).
-- **Size.** `world/` is 6,046 lines (objects 3,619 in 15 files, bodies 111 in 2, libraries 2,251 in 19, READMEs 65), from 5,987 before the review.
-
-## 4. Open
-
-- VOICE "Card texts re-cut" and hob's lines (VOICE "For the lanes"): check each card against VOICE's strings. Queued, objects.
-- A hand-written `forms()` beside form blocks is not yet refused (kernel). Check: a named diagnostic in `test_sugar`.
-- **Per-reader actions.** The host offers a reader only what the law and a card's `actions(state, context)` leave (HOST-HANDOFF 103); the bell and cistern bodies declare `actions` (door and undoor for the owner alone), so the Directory's `learnedOf` no longer filters `Card.ownerActions` (gone). Other cards with guards kept in Bend (Deal's countersign, Avatar's owner-only methods, Workshop's adopt) may declare theirs. Queued, objects; check: a stranger's `world-inspect` of each lists no action its method refuses them.
-- A Scene passage is not editable once made; spween `tags`, custom fields, floats and negative numbers are skipped or compared as text; a scene near the 16 × 8 limit has not been measured.
-- `run` refuses variant arguments and recursive results: build in a probe module.
-- A kernel hint can mislead: an unbalanced parenthesis is reported with "there is no Maybe builtin" or "definitions are `def name(x: T) -> U:`".
-- `transport/http.py` `MAX_BODY` (64 KiB) answers 413 for a larger body.
-- **A Record drops lines past its limit** (128; the bell's 768), admitted ones with the rest: the record of admitted lines belongs in child pages (`anthology/page/n`). Queued, objects; check: an admitted line survives 129 later writes.
-- **A blank reply's answer card** is the card plus `Card.usage` (every form's template), which the renderers' budget does not count; a Record's passes 1,400 with eight long lines. Queued, objects (Card.answerCard); check: a blank reply to a full record is at most 1,400 characters.
-- **The tide's door line** says `tick N` without MENU's `next at clock C`: the delivery carries the new tick count but not the tide's `last` or `gap`. A second watched field per door (`last`) or a derived view would give it. Queued, objects; check: the genesis menu reads `TIDE · tick N, next at clock C`.
+The objects lane's surface as it stands (lane/rewrite12, 2026-10-11): what is in `world/`, how a card speaks, what
+genesis makes, and what is open. History is the git log (`git log -- world/ deploy/genesis.py`); this file says only
+what is.
+
+## Run
+
+- `make check`; narrow first: `DELVETALK_OBEND=<binary> python3 -W ignore -m tests.run test_kinds test_genesis …`.
+  Never run `lake` here; never commit a binary. Re-record pins in every commit touching `world/`
+  (`python3 -m tests.test_artifact_pins --record`).
+- persvati down: hbox, a lane directory under `~/scratch/`, the foundation binary
+  `~/scratch/dt-foundation/.lake/build/bin/delvetalk-obend`; rsync the tree, run `tests.run`, remove the directory
+  when the lane ends.
+- `tests/host.py` fails any reply whose card or offer carries `bafy`: a card cites `<object> v<n>`, never a hash.
+
+## The world
+
+`world/objects/` (Avatar, Env, Kind, Library, Policy, Record, Thing, Tide, Wake, Workshop), `world/bodies/` (layers
+over Record that a kind lays on each thing it makes: bell, bond, cistern, commonplace, door, garden, lantern, room,
+weather), `world/lib/` (Card, Event, Form, Forms, Mentions, Menu, Plan, Policies, Relation, Rows, Scenes, Spell,
+Spween, Text, World; `prelude/` Abi, List; `document/` Document). About 2,000 lines of libraries, 2,450 of objects,
+1,200 of bodies.
+
+**Kinds** (METAPHYSICS §5, §7). THING (`Thing.obend`: custody, offer and accept, copy, inspirit, a keeper, `lend`
+and a `circle`), RECORD (`Record.obend`: lines keyed {author, n}, admissions, marks, doors, the made header, a scene
+for rooms, things lying in it, tending), WAKE (`Wake.obend`: triggers as data, typed receivers, schedules), BOND (the
+`bond` body over RECORD: countersignatures as marks, an amendment at rest), KIND (`Kind.obend`: a form, a law its
+things are created under, a head and a body; `make` and the owner's `place`). PLACE folded into RECORD; Deal into
+BOND; the directory into the commonplace.
+
+**Lawful packages** (declare `law`): Env, Library, Policy, Thing, Tide, Wake, Workshop; Avatar and Thing keep a Bend
+predicate (`def law`) beside it. Record and Kind declare none: a lawful module cannot be imported and every kind
+imports the package it makes, so the creator passes the law (`Record.lawText()` = genesis `RECORD_LAW`,
+`Kind.lawText()` = `KIND_LAW`). A made thing is created under `law kind "<kind>'s law holds": under "<kind>"`
+(`Kind.lawOf`): the kind's `law` field governs every instance, and the kind's owner amends it once for all.
+
+## How a card speaks (docs/VOICE.md)
+
+- **Protocol.** `render(state, context) -> Document` is the card as that reader sees it (`Card.reads`,
+  `Card.mine`); form blocks declare the spells; `methods()` lists other public definitions (`~` hides one from
+  `?`); `actions(state, context)` narrows what a reader is offered (Kind offers `place` to its owner alone, Record
+  `admit` to the keeper and doors to the owner). `receive` gets only what ran no method: `Card.Reply {text, post,
+  fields, spell: Cast}`, or `Card.Heard` (with `misfit`) for a card that reads words (the commonplace, a room).
+- **One budget.** A reply is the card plus the receipt line the bridge stamps (`Card.limit(context)` = 1,400 less
+  twice the id and 120); every renderer clips with `Card.left`/`Card.clippedWithin`, "… and N more" counted. The
+  library's pages are at most 1,266 characters (`shelve`'s body bound) for the same reason.
+- **Register.** The thing speaks in the third person, present; nobody on a card says I (hob's lines are hob's, at
+  a line's head). A spell is indented, typed back whole, with `»` and what comes back; a blank is `<1 to 80
+  characters>`, `<up to 200 characters>`, `<amber, violet or silver>`, `<a number from 1 to 9>` (`Forms.blank`).
+  A principal is named by handle (`Card.shown(did, handle)`, `Card.name`), never by DID.
+- **Refusals.** Every refusal is answered by `Card.refusing(result, refusal, context)`: one line, `refused
+  <clause>: <reading>` (`Card.refusalLine`), the reading carrying the next line to type when there is one; nothing
+  is written. An object that called another gets the refusal back as data and passes it on without saying it again
+  (Record's making, Avatar's moves, Thing's room calls). The turn is still admitted: see Open 1.
+- **Words.** A card with a policy asks `world.interpret` (`Card.interpretation`); `Policy.prompt(state, asked)` is
+  FLEX §2's prompt (hob's line, the card as the speaker reads it, its forms, the lexicon, held and misfit, the
+  examples, five answers: spells, `ask:`, `card`, `say:` in at most two sentences, `none`), or, when one offered
+  form takes source, the drafting prompt (no card, no spell, the `object` page's package, one ```obend block back).
+  Prose a card does not take is handed on to the commonplace (`Card.handingOn`).
+
+## The objects
+
+- **The commonplace** (Record + `bodies/commonplace.obend`): the first card. Its doors are its `cites`
+  (`Card.Doorway {label, to, description, examples}`), drawn as a trie (`world/lib/Menu.obend`): KINDS, WORKSHOP,
+  GARDEN, ROOMS, TIDE, PORCH, ANTHOLOGY with one spell each, STUDIO (a link door), then YOURS; `since / entry: N`
+  adds what changed (`world.changed`), a principal's own cards left out. It greets each principal once under hob's
+  line, reads words with the policy (macros first, then the model), runs a proposal on its door, answers a miss with
+  the doors the words touched, at most hourly per speaker (`missed`, `due`).
+- **Kinds** (`kinds`, of kind; `kind/<name>`): `kinds make / name / of / form / head / law / body` makes a kind and
+  lays its generated layer (`Kind.layerSource`: `make` with the form's fields, and for a kind of things `place` with
+  `id: text 1..64`); a law that does not read is refused `badValue` before anything is made (`Kind.lawChecked`:
+  `law ` lines, each checked by `world.check` in a minimal package). `makeUnder` takes text fields from a record
+  making under itself (a garden's `plant`, a room's spween block), judged against the form by `Forms.fault`.
+- **Records with bodies.** bell (rain, tend, lines; rings at its seventh rain: the planter's wake, asked by the
+  bell's `made`, calls `ring` on the row numbered 7 and notes the `rung` mark; quiet past `QUIET_AFTER` untended,
+  then `tend` alone, by kind/bell's `alive`), garden (`plant` and `dig` make bells and cisterns under it; its
+  weather line), weather (subscribes to its tide's ticks; rains on the garden's first 32 bells and writes the
+  garden's weather), room and porch (the scene: enter, choose, leave, say, emote, whisper; presence by handle;
+  unclaimed things to inspirit; a ```spween block makes a room under it), door (`knock` marks `open`), lantern
+  (watches a door's marks), cistern (`pour`; `law level`), bond (parties by handle, countersign, withdraw; at rest it
+  amends `amends` to `law`).
+- **Things.** `porch/goblet`, `porch/ring`, `porch/gemstone` lie unclaimed on the porch; `inspirit / surrounding`
+  makes the caster the keeper, once, and writes the porch's line. `acquire`, `drop / at`, `offer / to / until`,
+  `withdraw`, `me accept / thing`; lenses `name`, `description`, `copyable`, `circle` (a bond at rest whose signers
+  set it too); the host's `lend` lends `set`.
+- **Avatar, Env, Wake** (made at a principal's arrival): the avatar is where it last entered (`go`, `move`), what it
+  holds, its notes, its outbox and follows (`send`, `subscribe`, `watch`); the env takes mentions as events
+  (`observe`, `seen`); the wake's triggers (`mention`, `keyword`, `rows`, `writes`, `grows`, `turns`, `remind`,
+  `unwatch`) note the avatar or call a card.
+- **Workshop**: `check` (a block, or a target's source), `propose` (held for the target's owner when its law
+  refuses), `adopt`, `withdraw`, `draft` and `make` (a describer's package, held, then made with its lineage),
+  `create / like` (a thing's copy).
+- **Tide**: `tick` (gap 1; too soon `refused tooSoon`), `subscribe / every / note`; the opener's wake ticks it
+  every 60 clock minutes.
+- **Library**: six pages and five walks (`capsules/pages/`), `read / page` by name or a word of what was said,
+  `laws / card` (inspect's law with readings, following `under` to a kind's law), `shelve` (the owner's).
+- **Policy**: model, hob's system line, a lexicon, examples, macros, `confirmFor`; taught by its owner.
+
+## Genesis (docs/GENESIS.md is the order)
+
+`deploy/genesis.py`: the opener arrives; creates `policy`, `commonplace` (then its body), `tide`, `workshop`,
+`kinds` (shaped), `anthology`, `library`; `kinds` makes `KINDS` (record, bell, cistern, room, porch, garden,
+weather, door, lantern, bond); the hand places `HANDS` by spell (`garden`, `rooms` the Moss Gate, `porch`, `weather`,
+`bell/1` the sixth bell); the garden cites its weather, the porch the sixth bell; `THINGS` lie on the porch; the
+opener's wake runs `arrived` and the tide schedule; the library shelves `PAGES`; each door publishes its page.
+
+## Open, in order
+
+1. **A refusal refuses the turn** (playtest 2's D6). Bend's `refuse` takes only a string literal
+   (`ObjectiveBendElaborate.refuseCall`); the kernel's `refuse(<String expression>)` (host lane, lane/host19) lets
+   `Card.refusing` end a cast turn with its line: `if context.caller == "" then refuse(refusalLine(r)) else
+   tell(…)`, and each test asserting `("admitted", "refused")` becomes `("refused", …)` (a refused turn drafts the
+   reason and the receipt's name, tested by probe). Check: `delvetalk kind/moss make / id: x` by a stranger is a
+   refused turn whose draft is `refused notOwner: …` and the receipt name.
+2. **`workshop make` drafts** (D3's host half). The host binds a reply that is one ```obend block to the offered
+   form's source field (withFence's rule for interpretations); Workshop offers `check` alone. Check: the dry run's
+   `workshop make / name: lamp / description: a lamp anyone lights` holds `#1`.
+3. **`adopt / law:` takes law text** (F2's host half: TurnLoop's `adopt` and its usage, "<a kind's or a page's id>").
+4. **The receipt names the card addressed** (D10's other half): `transport/bridge.py` `turn_root` names `kind/room`
+   for a spell on `room/1`. Transport.
+5. **`kind/orchard`** (METAPHYSICS §7.2's table: a room kind by another name, a head line only): add to `KINDS` once
+   the third playtest is over (genesis's ids were held still while it ran). Check: test_genesis's kinds.
+6. **Docs owned elsewhere that describe gone surfaces**: VOICE.md's surfaces table (Directory, Garden.confirmCard,
+   hob's miss line now a `refused noPage` line), LIBRARY.md (the walk texts, `body 1..1400`, `submit`), SEEDING.md
+   (Place, Deal, the clapper and the ledger). Voice lane.
+7. **`workshop check / target:` of a layered card** (a bell, the garden) reports `import must name an earlier
+   supplied module: ./Record.obend`: `inspect`'s source is the layer alone. Host: give the closure, or check a
+   target by its pin.
