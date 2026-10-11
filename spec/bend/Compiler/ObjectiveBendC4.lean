@@ -2,7 +2,7 @@
 pommette.scm `c4-linearize`; its published vectors are compiled theorems in
 `Compiler.ObjectiveBendC4Vectors`. Specifications are identified by declaration keys. -/
 import Std.Data.HashMap
-namespace Minidregg.Compiler.ObjectiveBendC4
+namespace Delvetalk.Compiler.ObjectiveBendC4
 set_option autoImplicit false
 
 /-- Why a linearization refuses. Running out of fuel is NOT an inconsistency of the graph
@@ -188,4 +188,4 @@ def OrderedPresentationInvariant : Prop :=
       (linearize (g.rename to back) (head.map to) (parents.map (·.map to))).toOption =
         (linearize g head parents).toOption.map (fun r => (r.1.map to, r.2.map to))
 
-end Minidregg.Compiler.ObjectiveBendC4
+end Delvetalk.Compiler.ObjectiveBendC4

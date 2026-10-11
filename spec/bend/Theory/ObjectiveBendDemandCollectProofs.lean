@@ -1,8 +1,7 @@
 /- The behaviour theorem for collecting the demand heap at a yield, for this edition's
 machine (native cells, `nativeApplication`, `unary`, `toData`, `textJoin` and its join
 frames) and its hosted runner (`forceHostedFrom`: the text tariff and exact heap
-admission). Ported from Mini's `ObjectiveBendDemandCollectProofs`; definitions:
-`Theory.ObjectiveBendDemandCollect`.
+admission). Definitions: `Theory.ObjectiveBendDemandCollect`.
 
 The relation is a renaming simulation. `Related f D s t` says `t` is `s` renamed by `f`
 on a domain `D` that contains the roots and everything past `s`'s heap and is closed
@@ -25,14 +24,13 @@ heap ends and `f` maps one end to the other.
 * `collect_resume_segment`, and `checkpoint_resume_segment` for what a yield stores,
   `checkpoint = collect (settle s)` (composed with `settle_resume_segment`).
 
-Not ported: Mini's typing transfer (`typed_collect`), as this edition has no
-state-typing judgment. -/
+No typing transfer: this edition has no state-typing judgment. -/
 import Theory.ObjectiveBendDemandCollect
 import Theory.ObjectiveBendDemandSettleProofs
-namespace Minidregg.Theory.ObjectiveBendDemandCollect
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
+namespace Delvetalk.Theory.ObjectiveBendDemandCollect
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandMachine
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 /-! ## Marking is sound: the marks contain the roots and are closed -/
@@ -1306,7 +1304,7 @@ against the heap limit. A collected state's heap is smaller by the gap `collect`
 given limits short by exactly that gap (`ExactRoom`, which `limitsPast` provides), both
 runs take the same transitions and spend the same ticks, capacity suspensions included. -/
 
-open Minidregg.Theory.ObjectiveBendDemandData
+open Delvetalk.Theory.ObjectiveBendDemandData
 
 /-- `limits'` gives the related state exactly the room `limits` gives the original: the
 heap limit short by the gap between the two heaps, the same stack limit. -/
@@ -1815,7 +1813,7 @@ inductive Verdict where
   | refused (reason : Refusal)
   | yielded
 
-def _root_.Minidregg.Theory.ObjectiveBendDemandMachine.Outcome.verdict : Outcome → Verdict
+def _root_.Delvetalk.Theory.ObjectiveBendDemandMachine.Outcome.verdict : Outcome → Verdict
   | .finished _ _ => .finished
   | .suspended reason _ => .suspended reason
   | .divergent _ _ => .divergent
@@ -1963,4 +1961,4 @@ theorem checkpoint_resume_segment {fetch : Fetch} {state resumed : State} {respo
 #assert_axioms forceHostedFrom_active related_forceHostedWith related_completeWith related_yieldedPlanWith
 #assert_axioms objectCell_rename objectCell_addresses forceHostedFrom_inactive
 
-end Minidregg.Theory.ObjectiveBendDemandCollect
+end Delvetalk.Theory.ObjectiveBendDemandCollect

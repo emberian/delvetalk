@@ -5,7 +5,7 @@
 
    A read is a memo of a pure function: `read kind key` is `none` in the model (compile as if
    cold), and in this process the file's JSON when one of `kind` names `key`. Every packet read is
-   decoded and re-checked by Mini before it is used (`Ops.builtOf`, `Ops.compiledOfPacket`), so a
+   decoded and re-checked by the type checker before it is used (`Ops.builtOf`, `Ops.compiledOfPacket`), so a
    damaged file fails closed to a compile. The directory is in the TCB as the binary is: a forged
    packet that type-checks need not be its source's. Writes are the session's (IO), after a step. -/
 import Lean.Data.Json

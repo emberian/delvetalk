@@ -9,8 +9,8 @@ import Theory.ObjectiveBendDemandData
 import Theory.ObjectiveBendFiniteDataTyping
 import Theory.ObjectiveBendCheckpoint
 import Theory.ObjectiveBendCheckpointRoundTrip
-import Theory.ObjectiveBendCheckpointV2
-import Theory.ObjectiveBendCheckpointV2RoundTrip
+import Theory.ObjectiveBendCheckpointV3
+import Theory.ObjectiveBendCheckpointV3RoundTrip
 import Theory.ObjectiveBendDemandCollect
 import Theory.ObjectiveBendDemandSettleProofs
 import Theory.ObjectiveBendDemandCollectProofs
@@ -22,13 +22,13 @@ import Delvetalk.Entry
 import Std.Data.HashSet
 
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendTyping
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendDemandData
-open Minidregg.Compiler.ObjectiveBendDataWire
-open Minidregg.Theory.ObjectiveBendCheckpoint (Dictionary encodeStateV3 decodeCheckpoint)
+open Delvetalk.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendDemandMachine
+open Delvetalk.Theory.ObjectiveBendDemandData
+open Delvetalk.Compiler.ObjectiveBendDataWire
+open Delvetalk.Theory.ObjectiveBendCheckpoint (Dictionary encodeStateV3 decodeCheckpoint)
 
 namespace Delvetalk.Turn
 
@@ -102,7 +102,7 @@ def budgets (limits : Json) : Except String Budgets := do
     ← bounded limits "nodes" Bounds.nodesDefault Bounds.nodesMax,
     ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax⟩
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 /-- A token as itself: a natural a JSON number, a text a JSON string, a string
 reference a negative number (`-(i+1)`). -/
 def tokenJson : Token → Json
@@ -110,11 +110,11 @@ def tokenJson : Token → Json
   | .text s => toJson s
   | .str i => toJson (-((i : Int) + 1))
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 /-- The JSON of a checkpoint's tokens: bare numbers and strings. -/
 def tokensJson (tokens : Tokens) : Json := Json.arr (tokens.map tokenJson).toArray
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 def tokensOfJson (json : Json) : Except String Tokens := do
   let items ← json.getArr?
   items.toList.mapM fun item => do
@@ -128,9 +128,6 @@ def tokensOfJson (json : Json) : Except String Tokens := do
 
 /-- Digests are CIDs of canonical bytes (Canonical.lean). -/
 def packetDigest (packet : Json) : String := Delvetalk.Canonical.cidJson packet
-
-def tokensDigest (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) : String :=
-  Delvetalk.Canonical.cidJson (tokensJson tokens)
 
 /-- SHA-256 of the canonical roots list: `[{object, version}]` in recorded order. -/
 def rootsDigest (roots : List (String × Nat)) : String :=
@@ -156,7 +153,7 @@ def Binding.ofJson (j : Json) : Except String Binding := do
   return Binding.make (← j.getObjValAs? String "object") (← j.getObjValAs? String "principal")
     (← j.getObjValAs? String "intent") pairs
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 /-- A suspended activity: its collected machine state as canonical tokens, bound
 to the exact packet and the binding it was produced under, and to its own
 contents by a digest covering all of them. -/
@@ -169,7 +166,7 @@ structure Checkpoint where
   tokens : Tokens
   digest : String
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 /-- A token's canonical CBOR, as `Canonical.writeJson` writes its `tokensJson` form: a natural,
 a text, or a string reference as the negative integer `-(i+1)`. -/
 def writeToken (out : ByteArray) : Token → ByteArray
@@ -177,7 +174,7 @@ def writeToken (out : ByteArray) : Token → ByteArray
   | .text t => Canonical.text out t
   | .str i => Canonical.head out 1 i
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 /-- The canonical CBOR of the checkpoint's digest preimage, written straight from the tokens:
 the map `{packetSha256, object, principal, intent, rootsDigest, tokens}` with its keys in
 DAG-CBOR order (by byte length, then bytes: intent, object, tokens, principal, rootsDigest,
@@ -193,11 +190,11 @@ def checkpointPreimage (packetSha256 object principal intent rootsDigest : Strin
   let out := Canonical.text (Canonical.text out "rootsDigest") rootsDigest
   Canonical.text (Canonical.text out "packetSha256") packetSha256
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 def checkpointDigest (packetSha256 object principal intent rootsDigest : String) (tokens : Tokens) : String :=
   Canonical.cid (checkpointPreimage packetSha256 object principal intent rootsDigest tokens)
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 /-- The digest as it was defined, through `Json`: the reference `checkpointDigest` agrees
 with (the guards below, and `test_turn`'s digests of real checkpoints). -/
 def checkpointDigestJson (packetSha256 object principal intent rootsDigest : String) (tokens : Tokens) : String :=
@@ -205,7 +202,7 @@ def checkpointDigestJson (packetSha256 object principal intent rootsDigest : Str
     ("object", Lean.toJson object), ("principal", Lean.toJson principal), ("intent", Lean.toJson intent),
     ("rootsDigest", Lean.toJson rootsDigest), ("tokens", tokensJson tokens)])
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 -- v3 tokens (naturals past 2^64, negative string references, non-ASCII text), site-prefixed
 -- tokens and an empty list, each against the `Json` definition.
 #guard
@@ -218,12 +215,12 @@ open Minidregg.Theory.ObjectiveBendCheckpoint in
     checkpointDigest "bafy" "garden/bell/1" "did:plc:x" "intent-1" "bafyroots" t ==
       checkpointDigestJson "bafy" "garden/bell/1" "did:plc:x" "intent-1" "bafyroots" t
 
-def Checkpoint.makeFor (pin : String) (binding : Binding) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) :
+def Checkpoint.makeFor (pin : String) (binding : Binding) (tokens : Delvetalk.Theory.ObjectiveBendCheckpoint.Tokens) :
     Checkpoint :=
   ⟨pin, binding.object, binding.principal, binding.intent, binding.rootsDigest, tokens,
     checkpointDigest pin binding.object binding.principal binding.intent binding.rootsDigest tokens⟩
 
-def Checkpoint.make (packet : Json) (binding : Binding) (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) :
+def Checkpoint.make (packet : Json) (binding : Binding) (tokens : Delvetalk.Theory.ObjectiveBendCheckpoint.Tokens) :
     Checkpoint :=
   Checkpoint.makeFor (packetDigest packet) binding tokens
 
@@ -254,7 +251,7 @@ def Outcome.toJson : Outcome → Json
   | .exhausted resource ticks => Json.mkObj [("status", Lean.toJson "exhausted"),
       ("resource", Lean.toJson resource), ("ticksUsed", Lean.toJson ticks)]
 
-open Minidregg.Theory.ObjectiveBendDemandMachine in
+open Delvetalk.Theory.ObjectiveBendDemandMachine in
 /-- Which budget a machine failure names, if it is budget exhaustion. A capacity
 suspension keeps the pre-step state: whichever of heap or stack the next step would
 exceed is the resource; otherwise the step's text allocation exceeded `bytes`. -/
@@ -267,7 +264,7 @@ def exhaustedResource (limits : Limits) (failure : Failure) (state : State) (rem
       -- A row fetch suspends before its step: its heap is the row's fields.
       match fetchable fetch state with
       | some (_, _, _, row) =>
-        some (if state.heap.size + Minidregg.Theory.ObjectiveBendDemandMachineFast.nativeChildren row > limits.heap
+        some (if state.heap.size + Delvetalk.Theory.ObjectiveBendDemandMachineFast.nativeChildren row > limits.heap
           then "heap" else "bytes")
       | none =>
       let next := stepRaw state
@@ -295,37 +292,24 @@ def yieldedSite (sites : Array (Term × Ty)) (state : State) : Option Nat :=
   match state.control with
   | .yielded address => match state.heap[address]? with
     | some (.suspended c) | some (.evaluating c) | some (.cached c _) =>
-      sites.findIdx? fun (t, _) => Minidregg.Theory.ObjectiveBendCheckpoint.termEq t c.term
+      sites.findIdx? fun (t, _) => Delvetalk.Theory.ObjectiveBendCheckpoint.termEq t c.term
     | _ => none
   | _ => none
 
-open Minidregg.Theory.ObjectiveBendCheckpoint in
+open Delvetalk.Theory.ObjectiveBendCheckpoint in
 /-- A checkpoint's site index and its state tokens. -/
 def splitSite : Tokens → Option Nat × Tokens
   | .text edition :: .nat i :: rest => if edition == siteEdition then (some i, rest) else (none, .text edition :: .nat i :: rest)
   | tokens => (none, tokens)
 
 /-- The response type a yield resumes at: its site's. -/
-def resumeTypeAt (sites : Option (Array (Term × Ty))) (_response : Ty) : Option Nat → Except String Ty
+def resumeTypeAt (sites : Option (Array (Term × Ty))) : Option Nat → Except String Ty
   | none => .error "checkpoint names no call site of this entry"
   | some i => match sites with
     | some s => match s[i]? with
       | some (_, t) => .ok t
       | none => .error "checkpoint names no call site of this entry"
     | none => .error "checkpoint does not decode"
-
-open Minidregg.Theory.ObjectiveBendCheckpoint in
-/-- The response type a checkpoint resumes at, and its state tokens. -/
-def resumeType (sites : Option (Array (Term × Ty))) (response : Ty) (tokens : Tokens) :
-    Except String (Ty × Tokens) := do
-  let (site, rest) := splitSite tokens
-  return (← resumeTypeAt sites response site, rest)
-
-/-- The dictionary a packet's checkpoints are written against: its entry term's. -/
-def programDictionary (packet : Json) : Dictionary :=
-  match decodePacket packet with
-  | .ok decoded => Dictionary.ofProgram decoded.source.term
-  | .error _ => {}
 
 /-- A yield held in this process: the yielded state as the machine left it, with what its
 checkpoint binds (pin, binding) and is written against (dictionary, site). A host that
@@ -345,7 +329,7 @@ structure Suspension where
 /-- The checkpoint of a held yield: the state's v3 tokens (after the site prefix, for a
 message activity), bound and digested. -/
 def Suspension.checkpoint (s : Suspension) : Checkpoint :=
-  let tokens := encodeStateV3 s.dictionary (Minidregg.Theory.ObjectiveBendDemandCollect.checkpoint s.state)
+  let tokens := encodeStateV3 s.dictionary (Delvetalk.Theory.ObjectiveBendDemandCollect.checkpoint s.state)
   Checkpoint.makeFor s.pin s.binding (match s.site with
     | some i => .text siteEdition :: .nat i :: tokens
     | none => tokens)
@@ -363,7 +347,7 @@ def Step.outcome : Step → Outcome
     .yielded plan planType responseType suspension.checkpoint ticks
   | .exhausted resource ticks => .exhausted resource ticks
 
-open Minidregg.Theory.ObjectiveBendDemandCollect in
+open Delvetalk.Theory.ObjectiveBendDemandCollect in
 /-- Turn the outcome of a bounded run into a typed step; a yield holds the collected state. -/
 def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
     (outcome : Except (Failure × State × Budget) (Data × Budget))
@@ -402,7 +386,7 @@ def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (b
 
 /-! ## A decoded, checked entry: no packet decoding or re-checking per turn -/
 
-open Minidregg.Theory.ObjectiveBendCheckpoint Minidregg.Theory.ObjectiveBendDemandCollect in
+open Delvetalk.Theory.ObjectiveBendCheckpoint Delvetalk.Theory.ObjectiveBendDemandCollect in
 /-- A checkpoint's state, checked against the entry and the binding and decoded, with the site
 it names. `issued` is the digest the caller recorded when the checkpoint was made (the host's
 journal, a session's issued table): the tokens and binding must hash to it. The `digest` carried
@@ -427,9 +411,9 @@ def resumeState (entry : Delvetalk.CheckedEntry) (state : State) (site : Option 
     Except String (DataBounds × Ty × Ty × Ty × State) := do
   let assumptions := entry.source.assumptions
   let (plan, response, result) ← activityShape assumptions (peelArrows Bounds.entryArrowDepth entry.type)
-  let response ← resumeTypeAt entry.sites response site
+  let response ← resumeTypeAt entry.sites site
   unless value.conformsUnder assumptions.bounds response do throw "turn refused: response does not conform to the response type"
-  let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
+  let some resumed := Delvetalk.Theory.ObjectiveBendDemandMachine.resume value.term state
     | throw "turn refused: checkpoint is not a yielded state"
   return (assumptions.bounds, plan, response, result, resumed)
 
@@ -618,7 +602,7 @@ every stored cell it still holds unforced replaced by the native data it stands 
 fields so replaced: what a checkpoint kept past this process holds, so that resuming it fetches
 nothing (forcing a native cell is forcing the stored cell it replaced). -/
 def materializeStored (store : Store) (yielded : State) : State × List String :=
-  let state := Minidregg.Theory.ObjectiveBendDemandCollect.checkpoint yielded
+  let state := Delvetalk.Theory.ObjectiveBendDemandCollect.checkpoint yielded
   let fieldsOf : Stored → List String
     | .object _ stored => stored.map (·.1)
     | .relation f _ | .items f _ | .spine f _ _ | .cons f _ _ | .row f _ => [f]
@@ -648,7 +632,7 @@ def resumeSuspended (entry : Delvetalk.CheckedEntry) (suspension : Suspension) (
   unless suspension.binding.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
   let (_, plan, response, result, resumed) ← resumeState entry suspension.state suspension.site value
   runStored entry store suspension.dictionary binding plan response result b
-    (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state) resumed
+    (Delvetalk.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state) resumed
 
 /-- Resume a stored turn's checkpoint whose digest the caller recorded (`issued`). -/
 def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issued : String)
@@ -658,7 +642,7 @@ def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issu
   let (state, site) ← checkpointState entry checkpoint issued binding dictionary
   let (_, plan, response, result, resumed) ← resumeState entry state site value
   runStored entry store dictionary binding plan response result b
-    (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) resumed
+    (Delvetalk.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) resumed
 
 def wantsProfile (request : Json) : Bool := (request.getObjValAs? Bool "profile").toOption.getD false
 
@@ -714,6 +698,6 @@ def resumeEntryJson (entry : Delvetalk.CheckedEntry) (issued : String → Bool) 
   let (state, site) ← checkpointState entry checkpoint checkpoint.digest binding dictionary
   let (_, _, _, _, resumed) ← resumeState entry state site value
   return reply.setObjVal! "profile" (Delvetalk.Profile.profile
-    (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) b.bytes b.ticks resumed store.bounded)
+    (Delvetalk.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) b.bytes b.ticks resumed store.bounded)
 
 end Delvetalk.Turn

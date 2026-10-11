@@ -1,9 +1,9 @@
 import Delvetalk.PackageDataAdmission
 import Delvetalk.PackageDataSchemaProofs
 namespace Delvetalk.PackageData
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendTyping
-open Minidregg.Theory.ObjectiveBendDemandData
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendDemandData
 set_option autoImplicit false
 
 theorem dereference_matches {a : Assumptions} {graph : SchemaGraph} {schema target : Schema}
@@ -156,7 +156,7 @@ theorem quoteRecordFields_native_admitted {a : Assumptions} {graph : SchemaGraph
 termination_by (depth, 1, types.length)
 end
 
-/-- The actual receiving normalizer cannot return data without a Mini literal
+/-- The actual receiving normalizer cannot return data without a literal
 admission derivation. The graph premise is supplied by the executed builder. -/
 theorem normalizeNative_admitted {a : Assumptions} {depth : Nat} {input output : Data}
     {declared : Ty} {fuel remaining : Nat}
@@ -176,7 +176,7 @@ theorem normalizeNative_typing {a : Assumptions} {depth : Nat} {input output : D
     {declared : Ty} {fuel remaining : Nat}
     (success : (normalizeNative a depth input declared).run fuel = .ok (output,remaining)) :
     ∃ term, Literal term output ∧
-      Minidregg.Theory.ObjectiveBendTyping.PartialTyping a [] term declared [] :=
+      Delvetalk.Theory.ObjectiveBendTyping.PartialTyping a [] term declared [] :=
   (normalizeNative_admitted success).typing
 
 theorem prepareNativeArguments_admitted {α : Type}

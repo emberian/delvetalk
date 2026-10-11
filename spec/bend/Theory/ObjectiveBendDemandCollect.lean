@@ -22,9 +22,9 @@ addresses must be added to `frameAddresses`/`cellAddresses`/`controlAddresses` a
 renamings, or `related_stepRaw` stops building. -/
 import Theory.ObjectiveBendDemandMachine
 import Theory.AxiomPin
-namespace Minidregg.Theory.ObjectiveBendDemandCollect
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandMachine
+namespace Delvetalk.Theory.ObjectiveBendDemandCollect
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandMachine
 set_option autoImplicit false
 
 /-! ## The addresses a machine object holds -/
@@ -291,8 +291,7 @@ so a forced accumulator keeps alive every environment it was ever computed from 
 `settle` gives every cached cell the SELF origin `⟨.bound 0, [address]⟩` ("read this
 cell"): it retains nothing but the cell itself, it is lexically valid wherever the cell
 is, and it is typed at the cell's own assigned type, so a settled state is typed exactly
-when the state was (Mini's `typed_settle`; this edition has no state-typing judgment
-to port it to). Suspended and evaluating cells are untouched (their
+when the state was (this edition has no state-typing judgment to state it in). Suspended and evaluating cells are untouched (their
 origin is what they will run). Settling changes no transition (`settle_resume_segment`
 in `Theory.ObjectiveBendDemandSettleProofs`: every bounded run, extraction and resume
 agrees exactly, capacity suspensions included, because heap sizes are unchanged). -/
@@ -321,8 +320,8 @@ closures at the cell itself (an address that is live wherever the cell is); coll
 drops what only those slots held. Trimming changes no transition
 (`trim_resume_segment`, Theory.ObjectiveBendDemandSettleProofs). -/
 
-end Minidregg.Theory.ObjectiveBendDemandCollect
-namespace Minidregg.Theory.ObjectiveBendOpenRecursion
+end Delvetalk.Theory.ObjectiveBendDemandCollect
+namespace Delvetalk.Theory.ObjectiveBendOpenRecursion
 mutual
 /-- Whether de Bruijn index `j` is free in a term. -/
 def Term.freeIn : Term → Nat → Bool
@@ -343,10 +342,10 @@ def Term.fieldsFreeIn : List (String × Term) → Nat → Bool
   | [], _ => false
   | (_, t) :: rest, j => t.freeIn j || Term.fieldsFreeIn rest j
 end
-end Minidregg.Theory.ObjectiveBendOpenRecursion
-namespace Minidregg.Theory.ObjectiveBendDemandCollect
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandMachine
+end Delvetalk.Theory.ObjectiveBendOpenRecursion
+namespace Delvetalk.Theory.ObjectiveBendDemandCollect
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandMachine
 
 /-- The environment with every slot `keep` does not name replaced by `dummy`. -/
 def trimEnv (keep : Nat → Bool) (dummy : Nat) : Environment → Environment
@@ -372,8 +371,8 @@ def trimCell (address : Nat) : Cell → Cell
 /-! The compiled trim marks a closure's free slots in one traversal of its term
 (`Term.markFree`), instead of one traversal per slot; `trimCell_eq_fast` (`@[csimp]`). -/
 
-end Minidregg.Theory.ObjectiveBendDemandCollect
-namespace Minidregg.Theory.ObjectiveBendOpenRecursion
+end Delvetalk.Theory.ObjectiveBendDemandCollect
+namespace Delvetalk.Theory.ObjectiveBendOpenRecursion
 mutual
 /-- Mark, in `marks`, each slot `j` with `j + depth` free in the term. -/
 def Term.markFree : Term → Nat → Array Bool → Array Bool
@@ -453,10 +452,10 @@ theorem fieldsMarkFree_spec : ∀ (fields : List (String × Term)) (depth : Nat)
     simp only [Term.fieldsMarkFree, Term.fieldsFreeIn]; rw [fieldsMarkFree_spec rest, markFree_spec t]
     cases marks[j]? <;> simp [Bool.or_assoc]
 end
-end Minidregg.Theory.ObjectiveBendOpenRecursion
-namespace Minidregg.Theory.ObjectiveBendDemandCollect
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandMachine
+end Delvetalk.Theory.ObjectiveBendOpenRecursion
+namespace Delvetalk.Theory.ObjectiveBendDemandCollect
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandMachine
 
 /-- `trimEnv` from marks: slot `i` kept when `marks[i]` is set. -/
 def trimByMarks (marks : Array Bool) (dummy : Nat) (env : Environment) : Environment :=
@@ -556,4 +555,4 @@ theorem collect_garbageExample_roots :
 #assert_axioms collect_garbageExample_roots
 #assert_axioms trimCell_eq_fast
 
-end Minidregg.Theory.ObjectiveBendDemandCollect
+end Delvetalk.Theory.ObjectiveBendDemandCollect

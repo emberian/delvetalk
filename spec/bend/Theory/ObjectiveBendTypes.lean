@@ -1,6 +1,6 @@
 import Lean
 import Theory.AxiomPin
-namespace Minidregg.Theory.ObjectiveBendTypes
+namespace Delvetalk.Theory.ObjectiveBendTypes
 set_option autoImplicit false
 
 /-- Quantities are obligations of this edition. -/
@@ -417,4 +417,4 @@ theorem binary_method_changes_with_future_self (first second : Ty) :
     (Ty.arrow .reusable .unrestricted (.variable 0) (.variable 0)).instantiate
       (fun _ => second) = Ty.arrow .reusable .unrestricted second second := ⟨rfl, rfl⟩
 
-end Minidregg.Theory.ObjectiveBendTypes
+end Delvetalk.Theory.ObjectiveBendTypes

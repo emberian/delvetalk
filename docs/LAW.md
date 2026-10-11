@@ -175,8 +175,8 @@ mechanism's and should stay there.
 ## 4. The additions worth making
 
 Each: grammar, denotation in `Law.lean`'s terms, root recorded, cost, lines
-deleted. Every new atom compiles in `ObjectiveBendLaw.compile` as the relation
-atoms do (host-judged); the kernel's `Pred` is untouched.
+deleted. Every atom is the host's to judge (`Law.denote`); the grammar is one
+term language (KERNEL-HANDOFF §25 item M).
 
 **A. `request.clock`.** `REF ::= … | request.clock`. `Facts` gains
 `clock : Nat`; `read … .clock => some (.num facts.clock)`; `judge`,

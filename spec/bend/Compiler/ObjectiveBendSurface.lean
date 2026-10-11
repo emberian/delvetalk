@@ -12,7 +12,7 @@ are still identity-bearing and are rendered from here: an import edge (`Import.j
 in each packet's `sourceModules`) and a spec's requirement and method signatures
 (`Signature.json`, `Method.signatureJson`, inside the spec's interface label). -/
 import Lean
-namespace Minidregg.Compiler.ObjectiveBendSurface
+namespace Delvetalk.Compiler.ObjectiveBendSurface
 open Lean
 set_option autoImplicit false
 
@@ -516,4 +516,4 @@ def Module.mapSpans (f : Span → Span) (m : Module) : Module :=
     { b with span := f b.span, fields := b.fields.map fun x => { x with span := f x.span } }
   { m with imports, decls, implements, forms }
 
-end Minidregg.Compiler.ObjectiveBendSurface
+end Delvetalk.Compiler.ObjectiveBendSurface

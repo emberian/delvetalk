@@ -26,9 +26,9 @@ with `lake build compile-profile`.
 import Delvetalk.PackageSession
 import Std.Data.HashMap
 open Lean (Json toJson)
-open Minidregg.Compiler
-open Minidregg.Compiler.ObjectiveBendFrontEnd
-open Minidregg.Theory.ObjectiveBendTyping
+open Delvetalk.Compiler
+open Delvetalk.Compiler.ObjectiveBendFrontEnd
+open Delvetalk.Theory.ObjectiveBendTyping
 
 def ms (a b : Nat) : String := toString (((b - a) / 10000).toFloat / 100.0) ++ " ms"
 
@@ -52,7 +52,7 @@ def splitTopRef (text : String) (sep : String) : List String :=
       else if depth == 0 && sepChars.isPrefixOf (c :: rest) then
         go fuel ((c :: rest).drop sepChars.length) (sepChars.getLast?) depth [] (String.ofList current.reverse :: parts)
       else go fuel rest (some c) depth (c :: current) parts
-  (go (chars.length + 1) chars none 0 [] []).reverse.map Minidregg.Compiler.ObjectiveBendElaborate.trimStr
+  (go (chars.length + 1) chars none 0 [] []).reverse.map Delvetalk.Compiler.ObjectiveBendElaborate.trimStr
 
 /-- `ticksUsed` of a reply, a number or a decimal string. -/
 def ticksOf (reply : Json) : Nat :=
@@ -110,7 +110,7 @@ def replay (lines : Array String) (dir : String) (filter : String) (repeats : Na
 /-! SHA-256 as it was written before the unboxed-window rounds (the reference for
 `Sha256.digest` in `self-check`): the schedule stored in an `Array`. -/
 namespace ShaRef
-open Minidregg.Compiler.Sha256
+open Delvetalk.Compiler.Sha256
 def schedule (bytes : ByteArray) (offset : Nat) : Array UInt32 := Id.run do
   let mut w : Array UInt32 := Array.mkEmpty 64
   for t in [0:16] do w := w.push (word bytes (offset + 4 * t))
@@ -142,7 +142,7 @@ def digest (message : ByteArray) : Array UInt32 := Id.run do
   return state
 end ShaRef
 
-open Minidregg.Theory.ObjectiveBendOpenRecursion in
+open Delvetalk.Theory.ObjectiveBendOpenRecursion in
 /-- Per subterm of `t`, in the preorder `Dictionary.ofProgram` numbers them: its constructor
 and its free de Bruijn indices (for checkpoint liveness analysis). -/
 partial def freeRows (t : Term) : Array (String × List Nat) :=
@@ -188,7 +188,7 @@ partial def freeRows (t : Term) : Array (String × List Nat) :=
     (acc.set! index (tag, free), free)
   (go #[] t).1
 
-open Minidregg.Theory.ObjectiveBendDemandData (Data) in
+open Delvetalk.Theory.ObjectiveBendDemandData (Data) in
 /-- `compile-profile stored REQUEST ROWS R`: the entry REQUEST compiles (an activity of one
 `State` argument whose `rains` and `marks` are relations of `{n, text}` / `{n, by}` rows, as
 `tests/test_stored.py`'s `RAINS`), run R times from a state of ROWS rains held as stored cells
@@ -246,9 +246,9 @@ def main (args : List String) : IO Unit := do
         str := str ++ [alphabet[seed % alphabet.size]!]
       let sep := seps[seed % 4]!
       let t := String.ofList str
-      if splitTopRef t sep != Minidregg.Compiler.ObjectiveBendElaborate.splitTop t sep then
+      if splitTopRef t sep != Delvetalk.Compiler.ObjectiveBendElaborate.splitTop t sep then
         bad := bad + 1
-        if bad < 10 then IO.println s!"differ {repr t} {repr sep}: {splitTopRef t sep} vs {Minidregg.Compiler.ObjectiveBendElaborate.splitTop t sep}"
+        if bad < 10 then IO.println s!"differ {repr t} {repr sep}: {splitTopRef t sep} vs {Delvetalk.Compiler.ObjectiveBendElaborate.splitTop t sep}"
     IO.println s!"splitTop mismatches {bad}"
     let splitBad := bad
     let alphabet := "ab_1n\"\\\n:-><=!&|{}().,+*/%x é".toList.toArray
@@ -261,12 +261,12 @@ def main (args : List String) : IO Unit := do
       for _ in [0:len] do
         seed := (seed * 1103515245 + 12345) % 2147483648
         str := str ++ [alphabet[seed % alphabet.size]!]
-      let viaRe := match Minidregg.Compiler.ObjectiveBendParse.anchored Minidregg.Compiler.ObjectiveBendParse.tokenRe str with
+      let viaRe := match Delvetalk.Compiler.ObjectiveBendParse.anchored Delvetalk.Compiler.ObjectiveBendParse.tokenRe str with
         | .ok (some (stop, _)) => some stop
         | _ => none
-      if viaRe != Minidregg.Compiler.ObjectiveBendParse.tokenLength str then
+      if viaRe != Delvetalk.Compiler.ObjectiveBendParse.tokenLength str then
         bad := bad + 1
-        if bad < 10 then IO.println s!"differ on {repr (String.ofList str)}: {viaRe} vs {Minidregg.Compiler.ObjectiveBendParse.tokenLength str}"
+        if bad < 10 then IO.println s!"differ on {repr (String.ofList str)}: {viaRe} vs {Delvetalk.Compiler.ObjectiveBendParse.tokenLength str}"
     IO.println s!"tokenLength mismatches {bad}"
     let tokenBad := bad
     -- SHA-256: FIPS 180-4 vectors, then the reference on every length 0..400 and 1 MB
@@ -275,20 +275,20 @@ def main (args : List String) : IO Unit := do
         ("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
         ("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
           "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")] do
-      if Minidregg.Compiler.Sha256.hexString text != expected then
+      if Delvetalk.Compiler.Sha256.hexString text != expected then
         bad := bad + 1
-        IO.println s!"sha256 {repr text} is {Minidregg.Compiler.Sha256.hexString text}"
+        IO.println s!"sha256 {repr text} is {Delvetalk.Compiler.Sha256.hexString text}"
     seed := 4242
     for len in [0:401] do
       let mut bytes := ByteArray.empty
       for _ in [0:len] do
         seed := (seed * 1103515245 + 12345) % 2147483648
         bytes := bytes.push (UInt8.ofNat (seed % 256))
-      if Minidregg.Compiler.Sha256.digest bytes != ShaRef.digest bytes then
+      if Delvetalk.Compiler.Sha256.digest bytes != ShaRef.digest bytes then
         bad := bad + 1
         if bad < 10 then IO.println s!"sha256 differs at length {len}"
     let big := (String.ofList (List.replicate 1000000 'a')).toUTF8
-    if Minidregg.Compiler.Sha256.digest big != ShaRef.digest big then bad := bad + 1
+    if Delvetalk.Compiler.Sha256.digest big != ShaRef.digest big then bad := bad + 1
     IO.println s!"sha256 mismatches {bad}"
     if splitBad + tokenBad + bad > 0 then IO.Process.exit 1
     return
@@ -308,7 +308,7 @@ def main (args : List String) : IO Unit := do
   if args[0]! == "sha" then
     let big := String.ofList (List.replicate 1000000 'a')
     for _ in [0:3] do
-      discard <| timed "sha256 1MB" fun _ => pure (Minidregg.Compiler.Sha256.hexString big)
+      discard <| timed "sha256 1MB" fun _ => pure (Delvetalk.Compiler.Sha256.hexString big)
     return
   let req ← IO.ofExcept (Json.parse (← IO.FS.readFile args[0]!))
   let entries := args.drop 1
@@ -323,7 +323,7 @@ def main (args : List String) : IO Unit := do
     let n := entries[2]!.toNat!
     let (modules, _, asts) ← IO.ofExcept ((Delvetalk.Package.modulesAndAsts req).mapError (·.message))
     let srcs := (modules.zip asts).map fun (module, ast) => Delvetalk.Generics.Source.mk module ast
-    let specialized ← IO.ofExcept (Delvetalk.Generics.run srcs.toArray)
+    let specialized ← IO.ofExcept ((Delvetalk.Generics.run srcs.toArray).mapError (·.message))
     let elaborated ← IO.ofExcept (ObjectiveBendElaborate.elaboratePackage specialized.modules)
     let limits := Delvetalk.Package.getLimits req
     let whole := elaborated.whole
@@ -332,7 +332,7 @@ def main (args : List String) : IO Unit := do
     for i in [0:n] do
       let r : Nat ← match stage with
         | "parse" => IO.ofExcept ((Delvetalk.Package.modulesAndAsts (req.setObjVal! "x" (toJson i))).map (·.1.length) |>.mapError (·.message))
-        | "generics" => IO.ofExcept ((Delvetalk.Generics.run (srcs.toArray.push default |>.pop)).map (·.modules.length))
+        | "generics" => IO.ofExcept ((Delvetalk.Generics.run (srcs.toArray.push default |>.pop)).map (·.modules.length) |>.mapError (·.message))
         | "elaborate" => IO.ofExcept ((ObjectiveBendElaborate.elaboratePackage (specialized.modules ++ [])).map (·.fields.length))
         | "lower" => pure (Lowering.make whole whole.term (toString i) modules limits 4096 []).packet.compress.length
         | "check" => pure (match check { pk.source with assumptions := { pk.source.assumptions with rigid := [i + 100000] } } [] pk.fuel with | some _ => 1 | none => 0)
@@ -343,7 +343,7 @@ def main (args : List String) : IO Unit := do
     IO.println s!"--- round {round}"
     let (modules, sources, asts) ← timed "parse (modulesAndAsts)" fun _ => (Delvetalk.Package.modulesAndAsts req).mapError (·.message)
     let srcs := (modules.zip asts).map fun (module, ast) => Delvetalk.Generics.Source.mk module ast
-    let specialized ← timed "generics" fun _ => Delvetalk.Generics.run srcs.toArray
+    let specialized ← timed "generics" fun _ => (Delvetalk.Generics.run srcs.toArray).mapError (·.message)
     let elaborated ← timed "elaboratePackage" fun _ => ObjectiveBendElaborate.elaboratePackage specialized.modules
     let limits := Delvetalk.Package.getLimits req
     let typeFuel ← IO.ofExcept ((options limits).mapError (·.message))
@@ -374,5 +374,5 @@ def main (args : List String) : IO Unit := do
       discard <| timed "    cid" fun _ => pure (Delvetalk.Canonical.cidJson lowered.packet)
       let bytes ← timed "    cbor" fun _ => Delvetalk.Canonical.encodeJson lowered.packet
       IO.println s!"    cbor bytes {bytes.size}"
-      discard <| timed "    sha of cbor" fun _ => pure (Minidregg.Compiler.Sha256.digest bytes)
+      discard <| timed "    sha of cbor" fun _ => pure (Delvetalk.Compiler.Sha256.digest bytes)
       discard <| timed "    compileEntryFrom total" fun _ => (Delvetalk.Package.compileEntryFrom request e).mapError (·.message)

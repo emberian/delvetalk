@@ -2,7 +2,7 @@ import Theory.ObjectiveBendTypes
 import Theory.ObjectiveBendOpenRecursion
 import Theory.AxiomPin
 import Std.Data.HashMap
-namespace Minidregg.Theory.ObjectiveBendTyping
+namespace Delvetalk.Theory.ObjectiveBendTyping
 open ObjectiveBendTypes ObjectiveBendOpenRecursion
 set_option autoImplicit false
 
@@ -1604,28 +1604,28 @@ theorem refusal_kind_label_conjunction :
 theorem refusal_kind_custody_in_reusable_closure :
     refusalKind ⟨custodyCapture .reusable, [⟨.custody 17,.linear⟩], 8⟩ = .typing := by decide +kernel
 /--
-info: 'Minidregg.Theory.ObjectiveBendTyping.refusal_kind_duplicate_affine' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendTyping.refusal_kind_duplicate_affine' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
 #guard_msgs in
 #print axioms refusal_kind_duplicate_affine
 /--
-info: 'Minidregg.Theory.ObjectiveBendTyping.refusal_kind_starved_fuel' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendTyping.refusal_kind_starved_fuel' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
 #guard_msgs in
 #print axioms refusal_kind_starved_fuel
 /--
-info: 'Minidregg.Theory.ObjectiveBendTyping.refusal_kind_label_conjunction' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendTyping.refusal_kind_label_conjunction' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
 #guard_msgs in
 #print axioms refusal_kind_label_conjunction
 /--
-info: 'Minidregg.Theory.ObjectiveBendTyping.refusal_kind_custody_in_reusable_closure' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendTyping.refusal_kind_custody_in_reusable_closure' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -1802,4 +1802,4 @@ theorem message_closure_result_refused :
   shadowed_once_closure_laundering_refused shadowed_shareable_member_accepted
   shadowed_override_accepted agree_never_manufactures_shareability
 
-end Minidregg.Theory.ObjectiveBendTyping
+end Delvetalk.Theory.ObjectiveBendTyping

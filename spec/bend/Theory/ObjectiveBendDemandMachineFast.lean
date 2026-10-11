@@ -20,7 +20,7 @@ pre-state (`sizesAfter`, proved equal to the sizes of `stepRaw`'s result), so no
 pre-state is retained on the success path; the stack depth is carried as a
 counter; the four push sites read the size before pushing. -/
 import Theory.ObjectiveBendDemandMachine
-namespace Minidregg.Theory.ObjectiveBendDemandMachineFast
+namespace Delvetalk.Theory.ObjectiveBendDemandMachineFast
 open ObjectiveBendOpenRecursion ObjectiveBendDemandMachine
 open ObjectiveBendDemandData (Data)
 set_option autoImplicit false
@@ -382,13 +382,13 @@ theorem forceWithFast_unique (F : (State → Bool) → Limits → Nat → State 
 /-! ## Axiom pins: exact sets (no Classical.choice, no compiler trust, no sorry) -/
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.allocateFieldsFast_eq' does not depend on any axioms
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.allocateFieldsFast_eq' does not depend on any axioms
 -/
 #guard_msgs in
 #print axioms allocateFieldsFast_eq
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -396,7 +396,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast_eq_stepRaw' d
 #print axioms stepRawFast_eq_stepRaw
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRaw_eq_fast' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.stepRaw_eq_fast' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -404,13 +404,13 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRaw_eq_fast' depends 
 #print axioms stepRaw_eq_fast
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.allocateFields_size' depends on axioms: [propext, Quot.sound]
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.allocateFields_size' depends on axioms: [propext, Quot.sound]
 -/
 #guard_msgs in
 #print axioms allocateFields_size
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.sizesAfter_eq' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.sizesAfter_eq' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -418,7 +418,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.sizesAfter_eq' depends on
 #print axioms sizesAfter_eq
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepFast_eq_step' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.stepFast_eq_step' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -426,7 +426,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.stepFast_eq_step' depends
 #print axioms stepFast_eq_step
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_eq_fast' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.step_eq_fast' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -434,7 +434,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_eq_fast' depends on 
 #print axioms step_eq_fast
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runFrom_eq_runBounded' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.runFrom_eq_runBounded' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -442,7 +442,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runFrom_eq_runBounded' de
 #print axioms runFrom_eq_runBounded
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_eq_fast' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.runBounded_eq_fast' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -450,7 +450,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_eq_fast' depen
 #print axioms runBounded_eq_fast
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_of_moving' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.step_of_moving' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -458,7 +458,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.step_of_moving' depends o
 #print axioms step_of_moving
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_moving' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_moving' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -466,7 +466,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_moving
 #print axioms runBounded_zero_of_moving
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_stopped' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_stopped' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -474,7 +474,7 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.runBounded_zero_of_stoppe
 #print axioms runBounded_zero_of_stopped
 
 /--
-info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.forceWithFast_unique' depends on axioms: [propext,
+info: 'Delvetalk.Theory.ObjectiveBendDemandMachineFast.forceWithFast_unique' depends on axioms: [propext,
  Classical.choice,
  Quot.sound]
 -/
@@ -483,4 +483,4 @@ info: 'Minidregg.Theory.ObjectiveBendDemandMachineFast.forceWithFast_unique' dep
 
 #assert_axioms foldl_push_size allocateObjectFields_size forceStored_size sizesAfter_eq stepRawFast_eq_stepRaw
 
-end Minidregg.Theory.ObjectiveBendDemandMachineFast
+end Delvetalk.Theory.ObjectiveBendDemandMachineFast

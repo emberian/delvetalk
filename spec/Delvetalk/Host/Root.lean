@@ -5,8 +5,8 @@ import Delvetalk.Host.TurnLoop
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 /-- The acts of `world-root`. -/
 def rootKinds : List String :=

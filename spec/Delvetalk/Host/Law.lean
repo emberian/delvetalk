@@ -1,7 +1,6 @@
 /- Meaning of the enforced law fragment (`Compiler/ObjectiveBendLaw.lean`) over
-   old and new state `Data` plus request facts. Ported from Mini's
-   `Kernel/ObjectLaw.lean` `LawExpr.denote`; the one extension is that a
-   principal is text: `subject` and `caller` read as a number when the principal
+   old and new state `Data` plus request facts: the one judge of every clause.
+   A principal is text: `subject` and `caller` read as a number when the principal
    is a decimal numeral and as text otherwise, so `request.subject ==
    request.caller` holds for any principal while order and constants need
    numerals. Absent or mistyped readings fail closed. -/
@@ -10,8 +9,8 @@ import Delvetalk.Canonical
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host.Law
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Compiler.ObjectiveBendLaw (LawExpr LawRef)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Compiler.ObjectiveBendLaw (LawExpr LawTerm)
 
 structure Facts where
   subject : String
@@ -63,7 +62,7 @@ def rawField (name : String) : Data → Option Data
 def fieldOf (name : String) (d : Data) : Option Int := (rawField name d).bind scalarOf
 
 /-- Canonical form of a value: the compressed wire JSON. -/
-def canon (d : Data) : String := (Minidregg.Compiler.ObjectiveBendDataWire.dataJson d).compress
+def canon (d : Data) : String := (Delvetalk.Compiler.ObjectiveBendDataWire.dataJson d).compress
 
 /-- The items of a `List<T>` on the wire (`nil {} | cons {head, tail}`), as canonical text. -/
 partial def listItems (acc : List String) : Data → Option (List String)
@@ -125,25 +124,60 @@ def emptyReading (name : String) (new : Data) : Option Reading :=
     | .text _ => .text ""
     | .num _ => .num 0
 
-def read (facts : Facts) (old : Option Data) (new : Data) : LawRef → Option Reading
-  | .field name => fieldReading name new
-  | .subject => some (principalReading facts.subject)
-  | .caller => some (principalReading facts.caller)
-  | .height => some (.num facts.height)
-  | .turn => some (.num facts.turn)
-  | .pin => some (.text facts.pin)
-  | .kind => some (.num facts.kind)
-  | .method => some (.text facts.method)
-  | .clock => some (.num facts.clock)
-  | .object => some (.text facts.object)
+/-- The rows a count reads: of `new.F`, or of `old.F` (none before a creation: no rows). -/
+def rowsAt (old : Option Data) (new : Data) : LawTerm → Option (List Data)
+  | .field name => (rawField name new).bind rowsOf
   | .old name => match old with
-    | some o => fieldReading name o
-    | none => emptyReading name new
+    | none => some []
+    | some before => (rawField name before).bind rowsOf
+  | _ => none
 
 def number (reading : Option Reading) : Option Int :=
   match reading with
   | some (.num n) => some n
   | _ => none
+
+def read (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option Reading
+  | .field name => fieldReading name new
+  | .old name => match old with
+    | some o => fieldReading name o
+    | none => emptyReading name new
+  | .fact .subject => some (principalReading facts.subject)
+  | .fact .caller => some (principalReading facts.caller)
+  | .fact .height => some (.num facts.height)
+  | .fact .turn => some (.num facts.turn)
+  | .fact .pin => some (.text facts.pin)
+  | .fact .kind => some (.num facts.kind)
+  | .fact .method => some (.text facts.method)
+  | .fact .clock => some (.num facts.clock)
+  | .fact .object => some (.text facts.object)
+  | .count of .all => (rowsAt old new of).map fun rows => .num rows.length
+  | .int value => some (.num value)
+  | .text text => some (.text text)
+  | .sum left right => match number (read facts old new left), number (read facts old new right) with
+    | some x, some y => some (.num (x + y))
+    | _, _ => none
+  -- The host lane denotes the filter (docs/LAW.md §4 C); until then it fails closed.
+  | .count _ (.eq _ _) => none
+
+/-- The exact text a term reads as: a principal as given, a text field, a constant. -/
+def textOf (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option String
+  | .fact .subject => some facts.subject
+  | .fact .caller => some facts.caller
+  | .fact .pin => some facts.pin
+  | .fact .method => some facts.method
+  | .fact .object => some facts.object
+  | .text text => some text
+  | term => match read facts old new term with
+    | some (.text s) => some s
+    | _ => none
+
+/-- The value a term stands for in a membership, compared by canonical bytes. -/
+def memberData (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option Data
+  | .field name => rawField name new
+  | .old name => old.bind (rawField name)
+  | .int value => if value < 0 then none else some (.natural value.toNat)
+  | term => (textOf facts old new term).map .label
 
 /-- Text form for comparing a numeral principal with a numeric reading. -/
 def Reading.render : Reading → String
@@ -151,65 +185,47 @@ def Reading.render : Reading → String
   | .text s => s
 
 def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
-  | .eqC ref value => number (read facts old new ref) == some value
-  | .leC ref value => match number (read facts old new ref) with
-      | some x => decide (x ≤ value)
-      | none => false
-  | .eqS ref text => match ref with
-      | .subject => facts.subject == text
-      | .caller => facts.caller == text
-      | .pin => facts.pin == text
-      | .method => facts.method == text
-      | .object => facts.object == text
-      | _ => false
-  | .inC ref values => match number (read facts old new ref) with
-      | some x => values.contains x
-      | none => false
-  | .eqR left right => match read facts old new left, read facts old new right with
+  | .eq left right => match right with
+    | .text text => textOf facts old new left == some text
+    | .int value => number (read facts old new left) == some value
+    | _ => match read facts old new left, read facts old new right with
       | some x, some y => x == y || x.render == y.render
       | _, _ => false
-  | .leR left right => match number (read facts old new left), number (read facts old new right) with
-      | some x, some y => decide (x ≤ y)
-      | _, _ => false
-  | .leROff left right offset => match number (read facts old new left), number (read facts old new right) with
-      | some x, some y => decide (x ≤ y + offset)
-      | _, _ => false
-  | .leRSum left right addend =>
-    match number (read facts old new left), number (read facts old new right), number (read facts old new addend) with
-      | some x, some y, some z => decide (x ≤ y + z)
-      | _, _, _ => false
-  | .monotone field => match old.bind (fieldOf field), fieldOf field new with
-      | some before, some after => decide (before ≤ after)
-      | _, _ => false
-  | .writeOnce field => match old with
-      | none => true
-      | some before => match rawField field before, rawField field new with
-        | some a, some b => emptyValue a || canon a == canon b
-        | _, _ => false
-  | .appendOnly field => match old with
-      | none => (listItems [] ((rawField field new).getD (.boolean false))).isSome
-      | some before => match (rawField field before).bind (listItems []),
-          (rawField field new).bind (listItems []) with
-        | some a, some b => isPrefix a b
-        | _, _ => false
-  | .unchanged field => match old with
-      | none => true
-      | some before => match rawField field before, rawField field new with
-        | some a, some b => canon a == canon b
-        | _, _ => false
-  | .member ref field =>
-    let who := match ref with
-      | .subject => some facts.subject
-      | .caller => some facts.caller
-      | _ => none
-    match who, (rawField field new).bind (listItems []) with
-    | some w, some items => items.contains (canon (.label w))
+  | .le left right => match number (read facts old new left), number (read facts old new right) with
+    | some x, some y => decide (x ≤ y)
     | _, _ => false
+  | .member term (.ints values) => match number (read facts old new term) with
+    | some x => values.contains x
+    | none => false
+  | .member term (.list field) => match memberData facts old new term, (rawField field new).bind (listItems []) with
+    | some w, some items => items.contains (canon w)
+    | _, _ => false
+  | .member term (.column field col) => match memberData facts old new term, (rawField field new).bind rowsOf with
+    | some w, some rows => rows.any fun r => (rawField col r).map canon == some (canon w)
+    | _, _ => false
+  | .rule .monotone field => match old.bind (fieldOf field), fieldOf field new with
+    | some before, some after => decide (before ≤ after)
+    | _, _ => false
+  | .rule .writeOnce field => match old with
+    | none => true
+    | some before => match rawField field before, rawField field new with
+      | some a, some b => emptyValue a || canon a == canon b
+      | _, _ => false
+  | .rule .appendOnly field => match old with
+    | none => (listItems [] ((rawField field new).getD (.boolean false))).isSome
+    | some before => match (rawField field before).bind (listItems []), (rawField field new).bind (listItems []) with
+      | some a, some b => isPrefix a b
+      | _, _ => false
+  | .rule .unchanged field => match old with
+    | none => true
+    | some before => match rawField field before, rawField field new with
+      | some a, some b => canon a == canon b
+      | _, _ => false
   -- Relations (RELATIONAL §5). Rows are compared whole by canonical bytes: a relation holds no
   -- key twice, so "every old row is in new" is "new ⊇ old by key, every old row unchanged".
   -- A row the declared retention dropped while this write was applied (`Facts.evicted`, as the
   -- edits ran: codex host 8) was not retracted by the write, so it does not count.
-  | .insertOnly field => match (rawField field new).bind rowsOf with
+  | .rule .insertOnly field => match (rawField field new).bind rowsOf with
     | none => false
     | some after => match old with
       | none => true
@@ -218,25 +234,8 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
           let now := after.map canon
           rows.all fun r => now.contains (canon r) || facts.evicted.any fun (f, x) => f == field && canon x == canon r
         | none => false
-  | .countLe field bound => match (rawField field new).bind rowsOf with
-    | some rows => decide ((rows.length : Int) ≤ bound)
-    | none => false
-  -- At creation there is no old relation: it counts as empty.
-  | .countGrowth field offset =>
-    let before := match old with
-      | none => some 0
-      | some o => ((rawField field o).bind rowsOf).map (·.length)
-    match before, ((rawField field new).bind rowsOf).map (·.length) with
-    | some b, some a => decide ((a : Int) ≤ b + offset)
-    | _, _ => false
-  | .memberColumn ref field column =>
-    let who := match ref with
-      | .subject => some facts.subject
-      | .caller => some facts.caller
-      | _ => none
-    match who, (rawField field new).bind rowsOf with
-    | some w, some rows => rows.any fun r => (rawField column r).map canon == some (canon (.label w))
-    | _, _ => false
+  -- The host lane denotes them (docs/LAW.md §4 B, D, F); until then they fail closed.
+  | .changed _ _ _ | .member _ (.cited _ _ _) | .under _ => false
   | .not body => !denote facts old new body
   | .and left right => denote facts old new left && denote facts old new right
   | .or left right => denote facts old new left || denote facts old new right
@@ -253,9 +252,9 @@ def refusedBy (law : Law) (facts : Facts) (old : Option Data) (new : Data) : Opt
 /-! Small tests. Parsed laws go through the real parser. -/
 
 private def parsed (text : String) : LawExpr :=
-  match Minidregg.Compiler.ObjectiveBendLaw.parse text with
+  match Delvetalk.Compiler.ObjectiveBendLaw.parse text with
   | .ok e => e
-  | .error _ => .or (.eqC .height 0) (.not (.eqC .height 0))
+  | .error _ => .or (.eq (.fact .height) (.int 0)) (.not (.eq (.fact .height) (.int 0)))
 
 private def rec1 (n : Nat) : Data := .record [("count", .natural n), ("open", .boolean true)]
 private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", [], 0, ""⟩
@@ -314,7 +313,9 @@ private def withList (xs : List String) (by_ : String) : Data :=
 #guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, ""⟩ none (withList ["forge"] "x") (parsed "request.caller in new.entries")
 #guard denote ⟨"a", "", 1, 0, "", 0, "ring", [], 0, ""⟩ none (rec1 1) (parsed "request.method == \"ring\"")
 #guard !denote ⟨"a", "", 1, 0, "", 0, "toll", [], 0, ""⟩ none (rec1 1) (parsed "request.method == \"ring\"")
-#guard (Minidregg.Compiler.ObjectiveBendLaw.parse "request.height in new.entries").toBool == false
+#guard (Delvetalk.Compiler.ObjectiveBendLaw.parse "request.height in new.entries").toBool == false
+#guard denote facts none (withList ["a", "x"] "x") (parsed "new.lastBy in new.entries")
+#guard !denote facts none (withList ["a"] "x") (parsed "new.lastBy in new.entries")
 #guard refusedBy [("a", parsed "new.count <= 5"), ("b", parsed "new.count <= 2")] facts none (rec1 3) == some "b"
 
 private def rain (a : String) (t : Nat) (x : String) : Data :=
@@ -353,7 +354,7 @@ private def limited : Facts := { facts with evicted := [("rains", rain "ann" 1 "
 private def tended (t gap : Nat) : Data := .record [("tended", .natural t), ("gap", .natural gap), ("name", .label "fern")]
 private def when (clock : Nat) (method object : String) : Facts := { facts with clock, method, object }
 private def alive : String := "request.method == \"tend\" or request.clock <= old.tended + 1440"
-#guard (Minidregg.Compiler.ObjectiveBendLaw.parse alive).toBool
+#guard (Delvetalk.Compiler.ObjectiveBendLaw.parse alive).toBool
 #guard denote (when 1500 "rain" "bell") (some (tended 100 0)) (tended 100 0) (parsed alive)
 #guard !denote (when 1600 "rain" "bell") (some (tended 100 0)) (tended 100 0) (parsed alive)
 #guard denote (when 1600 "tend" "bell") (some (tended 100 0)) (tended 1600 0) (parsed alive)

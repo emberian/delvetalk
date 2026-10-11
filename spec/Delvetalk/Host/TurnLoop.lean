@@ -11,9 +11,9 @@ import Delvetalk.Host.Spell
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
-open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
+open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 structure TurnRequest where
   principal : String
@@ -70,7 +70,7 @@ def parseTurn (j : Json) : Except String TurnRequest := do
   let object ← boundedText "object id" Limits.maxObjectIdBytes (← j.getObjValAs? String "object")
   let method ← boundedText "method" Limits.maxMethodBytes (← j.getObjValAs? String "method")
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
-  unless Minidregg.Compiler.ObjectiveBendParse.isIdent method.toList do throw "invalid method name"
+  unless Delvetalk.Compiler.ObjectiveBendParse.isIdent method.toList do throw "invalid method name"
   let argument ← decodeData Limits.dataDepth (← j.getObjVal? "argument")
   let given ← match j.getObjVal? "limits" with
     | .ok l@(.obj _) => pure l
@@ -786,7 +786,7 @@ def expectedInput (obj : Object) (id method : String) (compiled : Compiled)
   let row := ((obj.methods.getArr?.toOption).getD #[]).find? fun m => (m.getObjValAs? String "name").toOption == some method
   let type := match (row.bind fun r => (r.getObjVal? "input").toOption), compiled.type with
     | some input, _ => input
-    | none, .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) => Minidregg.Theory.ObjectiveBendTyping.typeJson domain
+    | none, .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) => Delvetalk.Theory.ObjectiveBendTyping.typeJson domain
     | none, _ => Json.null
   -- The card's declared bounds (`declaredForms`), as the spell path judges by: the hint and the
   -- front's actions agree.
@@ -1369,7 +1369,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     let (next, reads) ← liftEval (Delvetalk.Turn.resumeSuspended entry suspension held.store binding response b)
     held.note reads
     noteProfile fun _ => (Delvetalk.Turn.resumeState entry suspension.state suspension.site response |>.map fun (_, _, _, _, resumed) =>
-      Delvetalk.Profile.profile (Minidregg.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state)
+      Delvetalk.Profile.profile (Delvetalk.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state)
         b.bytes b.ticks resumed held.store.bounded)
     drive depth self caller compiled binding held next 0
 
@@ -1770,7 +1770,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
                      unsubscribes := s.unsubscribes ++ (mine.filter (standing.contains ·)) }
         respond bounds responseType "subscribed" [emptyRecord]
       else if mine.contains x then respond bounds responseType "subscribed" [emptyRecord]
-      else if !(Minidregg.Compiler.ObjectiveBendParse.isIdent receiver.toList) ||
+      else if !(Delvetalk.Compiler.ObjectiveBendParse.isIdent receiver.toList) ||
           !(((s.world.objects[self]?).map (hasMethod · receiver)).getD false) then
         refusedWith bounds responseType "method"
       else if mine.isEmpty && ((standing ++ s.subscribes).filter (·.object == id) |>.length |> (· ≥ Limits.subscribersPerObject)) then

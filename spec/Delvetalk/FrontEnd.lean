@@ -7,15 +7,9 @@ import Delvetalk.Generics
 
 namespace Delvetalk.FrontEnd
 open Lean
-open Minidregg.Compiler
+open Delvetalk.Compiler
 open ObjectiveBendFrontEnd
 set_option autoImplicit false
-
-structure Parsed where
-  ast : ObjectiveBendSurface.Module
-  /-- Equivalent ordinary source for inspection, with the generated import
-  made explicit. Package identity still uses the original source bytes. -/
-  expandedSource : String
 
 def parseExpanded (name : String) (expanded : DocumentTemplate.Expansion) :
     Except Diagnostic ObjectiveBendSurface.Module := do
@@ -29,18 +23,15 @@ def parseExpanded (name : String) (expanded : DocumentTemplate.Expansion) :
 /-- The sealed package loader resolves this exact edge to an earlier supplied
 module and its source hash. We neither search a filesystem basename nor choose
 an ambient prelude. A revised explicit dependency remains source-owned. -/
-def parse (name source : String) : Except Diagnostic Parsed := do
+def parseSource (name source : String) : Except Diagnostic ObjectiveBendSurface.Module := do
   let expanded ← (DocumentTemplate.lower source).mapError fun message =>
     { stage := "document-template", message, sourceModule := some name }
   let ast ← parseExpanded name expanded
-  let some binding := expanded.binding | return ⟨ast, source⟩
+  let some binding := expanded.binding | return ast
   let some dependency := ast.imports.find? (·.path == "./Document.obend")
     | throw { stage := "document-template", sourceModule := some name, message := "doc literals require an explicit import of ./Document.obend (any alias is allowed); no document library is supplied implicitly" }
   let edge : ObjectiveBendSurface.Import := ⟨"./Document.obend", binding, dependency.span⟩
-  return ⟨{ ast with imports := ast.imports ++ [edge] }, "import ./Document.obend as " ++ binding ++ "\n" ++ expanded.source⟩
-
-def parseSource (name source : String) : Except Diagnostic ObjectiveBendSurface.Module := do
-  return (← parse name source).ast
+  return { ast with imports := ast.imports ++ [edge] }
 
 /-- A closure through elaboration, checked once (the normal typed frontend on hosted parsed
 modules; original source hashes and the exact derived import transcript travel through the

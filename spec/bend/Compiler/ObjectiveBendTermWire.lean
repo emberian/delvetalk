@@ -13,10 +13,10 @@ rendered object has literally distinct keys. -/
 import Compiler.ObjectiveBendElaborate
 import Theory.ObjectiveBendTyping
 import Theory.AxiomPin
-namespace Minidregg.Compiler.ObjectiveBendTermWire
+namespace Delvetalk.Compiler.ObjectiveBendTermWire
 open Lean
-open Minidregg.Compiler.ObjectiveBendElaborate
-open Minidregg.Theory.ObjectiveBendTyping (DecodedPacket decodePacket decodeTerm decodePrimitive jsonNat
+open Delvetalk.Compiler.ObjectiveBendElaborate
+open Delvetalk.Theory.ObjectiveBendTyping (DecodedPacket decodePacket decodeTerm decodePrimitive jsonNat
   termNestingCapacity requireSome decodeUnaryPrimitive)
 set_option autoImplicit false
 
@@ -336,4 +336,4 @@ theorem decodePacket_term {v j : Json} {p : DecodedPacket} (decoded : decodePack
 #assert_axioms getObjVal_mkObj
 #assert_axioms decode_json
 #assert_axioms decodePacket_term
-end Minidregg.Compiler.ObjectiveBendTermWire
+end Delvetalk.Compiler.ObjectiveBendTermWire
