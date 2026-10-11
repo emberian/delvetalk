@@ -30,9 +30,9 @@ law tooSoon "A tick may not come sooner than the gap after the last.": new.ticks
 law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
 def initial() -> State:
   {owner: "", ticks: 0n, last: 0n, gap: 60n}
-# The tide as edition 8 kept it: subscribers a tick noted, and a gap the opener's wake kept to an
-# hour. A carry lays this package over it: the subscribers go (a rule on the tide is how a tick
-# reaches anyone now), and it ticks itself hourly.
+# The tide as edition 8 kept it: `subs`, the notes a tick owed, and a gap the opener's wake kept to
+# an hour. A carry lays this package over it: `subs` goes (a rule on the tide is how a tick reaches
+# anyone now), and it ticks itself hourly.
 record Subscription8:
   who: String
   every: Nat
