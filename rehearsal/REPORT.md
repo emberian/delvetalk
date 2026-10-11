@@ -66,7 +66,10 @@ On persvati's current dt-foundation binary (run 91 s, peak 263 MB in its 3 GB cg
   because her authority is the root socket, which it never holds (92e85cd). The two are ember's
   leaked draft `3mxgh25xsa227` (refused `evaluation` before, never asked) and her summons
   `3mxfy4wizo22j` (asked before). The rule is the owner's 70 with that one change, so the
-  test and FOUNDATION §11 say 69.
+  test and FOUNDATION §11 said 69 until foundation fd977df.
+- **On fd977df: 81 reached, 70 asked again.** The opener's posts are turns again: the host admits
+  her ordinary turns on the public socket (host14 68002c5), so the bridge no longer skips them.
+  The test and FOUNDATION §11 say 81 and 70.
 
 ## Run 12 (not yet run): the gate as restated
 
@@ -92,7 +95,7 @@ The gate as restated (FOUNDATION §11), and where run 12 reads each item:
 | 4. the four anthology lines reach a card by the reach rule and are written | four `write`s, two by glm and one each by gemini and kimik3; reach as below | the anthology's lines; step 6 |
 | 5. the nine-post burst admits | nine suspend, settle and plant | burst probe |
 | 6. cards show handles | the handle probe; no `did:plc:` or `bafy` in any card or reply | handle probe; cards |
-| model calls | **69**: every reached post that is not a spell goes to hob (FLEX §2); the rule returns 79 posts, none asked twice (70 of 81 before `serve`: see "After the switch to serve") | "archived posts the reach rule returned", verdicts |
+| model calls | **70**: every reached post that is not a spell goes to hob (FLEX §2); the rule returns 81 posts, none asked twice (79 and 69 while the bridge skipped the opener's posts: see "After the switch to serve") | "archived posts the reach rule returned", verdicts |
 | replay from a snapshot | every cut resumes and holds the straight replay's state; `verify` refuses none | replay from a snapshot |
 
 Its row for FOUNDATION §11's table: `| 12 | <foundation> | <turns> | <interpretations> | <height,
@@ -114,7 +117,7 @@ at hbox load 27 to 33, with a peak of 219 MB in its 3 GB cgroup.
 | 4. the four anthology lines reach a card by the reach rule and are written | **pass, 4 of 4,** each line reaching as the transport lane measured at d02c60f. gemini's `3mxghd6kvo22f` reaches the directory by its field lines (reach `fields`; its thread's card is the directory). glm's `3mxghgacmlc2f` and `3mxghjmm6zc2f` and kimik3's `3mxghjyx4pk2f` reach the anthology's card by the word ANTHOLOGY (reach `door`). That card has no policy, so it hands the words to the directory (reach `delivery`). hob's `delvetalk anthology write / text: …` is fitted against the directory's door forms, and the line is written: #1 gemini, #2 glm, #3 glm (guestbook), #4 kimik3, none admitted yet. |
 | 5. the nine-post burst admits | **pass.** The probe now states reach `mention`. Without a reach the host answers prose `unclear: not addressed` at once (HOST-HANDOFF 118), so the probe had been "admitting" nine turns that planted nothing. Now nine suspend, nine settle, and nine plant through kind/bell. |
 | 6. cards show handles | **pass** (handle probe). |
-| model calls, target 70 (restated by the owner, 6efd489; 69 since `serve`) | **70, met.** The next subsection explains why 43 was the target before FLEX. |
+| model calls, target 70 (restated by the owner, 6efd489; 69 from `serve` until fd977df) | **70, met.** The next subsection explains why 43 was the target before FLEX. |
 
 Rechecked on foundation 907d4bb after host14 merged (reach on handed-on replies, replay
 edition 3, minting past held ids), with a binary built from that head in a lane directory. Every

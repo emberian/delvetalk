@@ -642,10 +642,11 @@ reply to glm's bell, and both cisterns are written as plantings (item 3 passes
 on a probe pair). Under the cut a garden holds many cisterns, so item 3 is what
 the world now does; the refusal it used to name was the prototype's
 `requiredAbsence`, not a folkway. Item 4's writes rest on the mock's four
-answers, hob's `anthology write` spell for each. The reach rule returns 79 of
+answers, hob's `anthology write` spell for each. The reach rule returns 81 of
 the archive's posts, and every reached post that is not a spell goes to hob
-(FLEX §2): the target is **69 model calls**, each post asked at most once (70
-of 81 before `serve`, when the bridge still sent ember's own posts). The
+(FLEX §2): the target is **70 model calls**, each post asked at most once. The
+opener's posts are turns again: the host admits her ordinary turns on the
+public socket (host14 68002c5), so the bridge sends them as anyone's. The
 43 that d02c60f measured for the same rule predates FLEX: the directory's
 mention gate, deleted in step 4a, still answered prose naming no door without
 the model (`rehearsal/REPORT.md`, "Run 12"). Run 11 is the pre-review run: the tree an
