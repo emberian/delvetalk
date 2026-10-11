@@ -92,18 +92,18 @@ class Hand:
     def __init__(self, st, host, token='', poster=post.post_draft, clock=time.time, who='owner'):
         self.st, self.host, self.token, self.poster, self.clock, self.who = st, host, token, poster, clock, who
         self.owner = st.config.opener
-        self.plan, self.names = plan(st.config.plan), {}
+        self.plan, self.names, self.hands = plan(st.config.plan), {}, {st.world: self}  # read once; kept across the hand's worlds
 
     def at(self, world):
         """The same hand over another world `serve` holds."""
-        if world == self.st.world:
-            return self
-        served = [w.get('name') for w in self.host.send({'op': 'serve-status'}).get('worlds') or []]
-        if world not in served:
-            raise HandError(f'no world {world} here; serve holds {", ".join(served) or "none"}')
-        h = Hand(State(self.st.root, world, self.st.config), self.host.at(world), self.token, self.poster, self.clock, self.who)
-        h.plan, h.names = self.plan, self.names
-        return h
+        if world not in self.hands:
+            served = [w.get('name') for w in self.host.send({'op': 'serve-status'}).get('worlds') or []]
+            if world not in served:
+                raise HandError(f'no world {world} here; serve holds {", ".join(served) or "none"}')
+            h = Hand(State(self.st.root, world, self.st.config), self.host.at(world), self.token, self.poster, self.clock, self.who)
+            h.plan, h.names, h.hands = self.plan, self.names, self.hands
+            self.hands[world] = h
+        return self.hands[world]
 
     def log(self, what, draft, **more):
         self.st.append(self.st.hand_log, canonical({'what': what, 'who': self.who, 'world': self.st.world, 'at': int(self.clock()), 'draft': draft, **more}))
@@ -298,7 +298,7 @@ class Hand:
         scratches = []
         for s in info.get('scratches') or []:
             name = s['world'].removeprefix('scratch/')
-            seen = self.host.at(s['world']).send({'op': 'world-status', 'principal': s['principal']})
+            seen = self.host.send({'op': 'world-status', 'world': s['world'], 'principal': s['principal']})  # a request naming its world keeps it
             scratches.append({'world': s['world'], 'name': name, 'principal': s['principal'], 'owner': self.handle_of(s['principal']),
                               'height': seen.get('height'), 'objects': seen.get('objects'), 'lastTurn': s['lastTurn'], 'expires': s['expires'],
                               'idle': (home.get('clock') or 0) - s['lastTurn'], 'left': s['expires'] - (home.get('clock') or 0)})
@@ -344,30 +344,35 @@ class Hand:
                 return got[::-1][:limit]
             after = got[-1]['height']
 
-    def watch(self, object=None, limit=30):
-        """The journal (or one object's history) and the outbox, newest first: each entry with its principal's handle, the
-        turn as it was typed, the first line of the card it offered, its receipt's name, the object it reached and the
-        drafts it made; the hand's own drafts that wait on no entry (an invitation, a reply by hand) above them."""
-        seen, by_height, loose = self.observed(), {}, []
-        spells = {(d.get('speak') or {}).get('intent'): d['speak']['spell'] for _, _, d in self.drafts() if (d.get('speak') or {}).get('spell')}
+    def drafted(self):
+        """The outbox as the watch joins it to the journal: the spells the hand cast, by intent; the drafts, by the height of
+        the entry they answer; the hand's own that wait on no entry (an invitation, a reply by hand)."""
+        spells, by_height, loose = {}, {}, []
         for i, _, d in self.drafts():
+            speak = d.get('speak') or {}
+            if speak.get('spell'):
+                spells[speak['intent']] = speak['spell']
             height = next((x['height'] for x in (d.get('receipt'), d.get('offer'), d.get('publication')) if x and x.get('height')), None)
             row = {'id': i, 'state': self.summary(i, d)['state'], 'first': first_line(d['text'])}
             if height:
                 by_height.setdefault(height, []).append(row)
             elif row['state'] == 'waiting' and d['text']:
-                loose.append(dict(row, who='the hand', turn=(d.get('speak') or {}).get('invitation') is not None and f"invitation T+{d['speak']['invitation']}" or 'by hand',
+                loose.append(dict(row, who='the hand', turn=f"invitation T+{speak['invitation']}" if 'invitation' in speak else 'by hand',
                                   object=d.get('object'), outcome='drafted', tag='', height=None, slug=None, drafts=[]))
-        return loose[::-1] + self.rows(self.entries(object, limit), seen, spells, by_height)
+        return spells, by_height, loose[::-1]
 
-    def rows(self, entries, seen=None, spells=None, by_height=None):
-        """Journal entries as the watch shows them (`watched`), each keeping its raw entry."""
-        if seen is None:
-            seen, spells, by_height = self.observed(), {}, {}
-            for i, _, d in self.drafts():
-                spells.update({d['speak']['intent']: d['speak']['spell']} if (d.get('speak') or {}).get('spell') else {})
-                height = next((x['height'] for x in (d.get('receipt'), d.get('offer'), d.get('publication')) if x and x.get('height')), None)
-                by_height.setdefault(height, []).append({'id': i, 'state': self.summary(i, d)['state'], 'first': first_line(d['text'])})
+    def watch(self, object=None, limit=30):
+        """The journal (or one object's history) and the outbox, newest first: each entry with its principal's handle, the
+        turn as it was typed, the first line of the card it offered, its receipt's name, the object it reached and the
+        drafts it made; the hand's own drafts that wait on no entry above them."""
+        spells, by_height, loose = self.drafted()
+        return loose + [{k: v for k, v in r.items() if k != 'raw'} for r in self.rows(self.entries(object, limit), spells, by_height)]
+
+    def rows(self, entries, spells=None, by_height=None):
+        """Journal entries as the watch shows them (`watched`), each keeping its raw entry for root."""
+        if spells is None:
+            spells, by_height, _ = self.drafted()
+        seen = self.observed()
         return [dict(self.watched(x, seen, spells, by_height), raw=x) for x in entries]
 
     def watched(self, x, seen, spells, by_height):

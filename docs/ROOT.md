@@ -151,7 +151,8 @@ rule across the top and the reason box on every form:
   textarea; Save is `world-root set` for the fields that changed, one entry
   each. `hand root set OBJ FIELD --value-file F --reason R`.
 - **The journal browser**: `hand root entries [--after N] [--object O]
-  [--principal P]` pages `world-entries` raw; each entry has Ignore/Unignore
+  [--principal P]` pages the journal whole, read from its file (the host projects
+  another's refusal even to the opener), as the watch shows it; each entry has Ignore/Unignore
   (`hand root ignore N --reason R`) and Edit, which prints the `root-edit
   rewrite` command with the entry saved to a file, since an in-place edit
   is offline.

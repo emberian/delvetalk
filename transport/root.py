@@ -1,6 +1,7 @@
 """The hand's root console and its moderation verbs (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126): one table, read by
-the CLI (`hand root <verb>`, `hand <power>`) and the web face (`/hand/root/`), each verb one request on the root socket
-under the opener. Every write carries a reason (root) or a reading (moderation); the journal is the record.
+the CLI (`hand root <verb>`, `hand <power>`) and the web face (`/hand/<world>/root/`), each write one request on the root
+socket under the opener, each carrying a reason (root) or a reading (moderation); the journal is the record, and root's
+journal browser reads it whole.
 """
 import json
 import time
@@ -113,9 +114,9 @@ def find(host, opener, text, observed=()):
             **({'receipt': host.send({'op': 'world-resolve', 'principal': opener, 'slug': t})} if SLUG.fullmatch(t) else {})}
 
 
-def edit_command(entry, height, journal, path):
+def edit_command(entry, height, journal_path, path):
     """An entry cannot be edited in place: save its record (without the slug and size the reader derived) and print the
     offline `root-edit rewrite` (ROOT 1.5)."""
     Path(path).write_text(json.dumps({k: v for k, v in entry.items() if k not in ('slug', 'bytes')}, indent=1, sort_keys=True) + '\n')
-    return (f'docker compose down && deploy/backup.sh ... && delvetalk-obend root-edit --journal {journal} --out {journal}.edited '
+    return (f'docker compose down && deploy/backup.sh ... && delvetalk-obend root-edit --journal {journal_path} --out {journal_path}.edited '
             f'--reason REASON rewrite --height {height} --entry {path}')
