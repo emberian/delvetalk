@@ -49,10 +49,13 @@ imports the package it makes, so the creator passes the law (`Record.lawText()` 
   a line's head). A spell is indented, typed back whole, with `»` and what comes back; a blank is `<1 to 80
   characters>`, `<up to 200 characters>`, `<amber, violet or silver>`, `<a number from 1 to 9>` (`Forms.blank`).
   A principal is named by handle (`Card.shown(did, handle)`, `Card.name`), never by DID.
-- **Refusals.** Every refusal is answered by `Card.refusing(result, refusal, context)`: one line, `refused
-  <clause>: <reading>` (`Card.refusalLine`), the reading carrying the next line to type when there is one; nothing
-  is written. An object that called another gets the refusal back as data and passes it on without saying it again
-  (Record's making, Avatar's moves, Thing's room calls). The turn is still admitted: see Open 1.
+- **Refusals.** Every refusal is answered by `Card.refusing(result, refusal, context)`, one line `refused
+  <clause>: <reading>` (`Card.refusalLine`), the reading carrying the next line to type when there is one. A spell
+  cast on the card refuses its turn with it (`refuse(line)`, the host's `cardRefused`): nothing written, nothing
+  offered. Called by another object, the card says the line and gives the refusal back as data: a record making
+  under itself, an avatar entering a room and a thing on a room's floor then refuse their own turn with it; a
+  wake's scheduled call and the commonplace's call on a door go on (a tide's tooSoon must not end the wake's
+  `due` turn).
 - **Words.** A card with a policy asks `world.interpret` (`Card.interpretation`); `Policy.prompt(state, asked)` is
   FLEX §2's prompt (hob's line, the card as the speaker reads it, its forms, the lexicon, held and misfit, the
   examples, five answers: spells, `ask:`, `card`, `say:` in at most two sentences, `none`), or, when one offered
@@ -113,26 +116,19 @@ genesis's render and casts each seed post's spells, so a card change fails it un
 
 ## Open, in order
 
-1. **A refusal refuses the turn** (playtest 2's D6). Bend's `refuse` takes only a string literal
-   (`ObjectiveBendElaborate.refuseCall`); the kernel's `refuse(<String expression>)` (host lane, lane/host19) lets
-   `Card.refusing` end a cast turn with its line: `if context.caller == "" then refuse(refusalLine(r)) else
-   tell(…)`, and each test asserting `("admitted", "refused")` becomes `("refused", …)` (a refused turn drafts the
-   reason and the receipt's name, tested by probe). Check: `delvetalk kind/moss make / id: x` by a stranger is a
-   refused turn whose draft is `refused notOwner: …` and the receipt name.
-2. **`workshop make` drafts** (D3's host half). The host binds a reply that is one ```obend block to the offered
+1. **`workshop make` drafts** (D3's host half). The host binds a reply that is one ```obend block to the offered
    form's source field (withFence's rule for interpretations); Workshop offers `check` alone. Check: the dry run's
    `workshop make / name: lamp / description: a lamp anyone lights` holds `#1`.
-3. **`adopt / law:` takes law text** (F2's host half: TurnLoop's `adopt` and its usage, "<a kind's or a page's id>").
-4. **The receipt names the card addressed** (D10's other half): `transport/bridge.py` `turn_root` names `kind/room`
+2. **`adopt / law:` takes law text** (F2's host half: TurnLoop's `adopt` and its usage, "<a kind's or a page's id>").
+3. **The receipt names the card addressed** (D10's other half): `transport/bridge.py` `turn_root` names `kind/room`
    for a spell on `room/1`. Transport.
-5. **`kind/orchard`** (METAPHYSICS §7.2's table: a room kind by another name, a head line only): add to `KINDS` once
+4. **`kind/orchard`** (METAPHYSICS §7.2's table: a room kind by another name, a head line only): add to `KINDS` once
    the third playtest is over (genesis's ids were held still while it ran). Check: test_genesis's kinds.
-6. **Docs owned elsewhere that describe gone surfaces**: VOICE.md's surfaces table (Directory, Garden.confirmCard,
+5. **Docs owned elsewhere that describe gone surfaces**: VOICE.md's surfaces table (Directory, Garden.confirmCard,
    hob's miss line now a `refused noPage` line), LIBRARY.md (the walk texts, `body 1..1400`, `submit`), SEEDING.md
    (Place, Deal, the clapper and the ledger). Voice lane.
-7. **`workshop check / target:` of a layered card** (a bell, the garden) reports `import must name an earlier
+6. **`workshop check / target:` of a layered card** (a bell, the garden) reports `import must name an earlier
    supplied module: ./Record.obend`: `inspect`'s source is the layer alone. Host: give the closure, or check a
    target by its pin.
 
 
-**D6 unblocked (2026-10-11, lane/kernel16, edition 8):** `refuse(line)` takes a computed String; a card's refusal refuses its turn as `cardRefused` with the clause and reading parsed from `refused <clause>: <reading>` (else clause `card`). Next: `Card.refusing` becomes `refuse(refusalLine(refusal))`, and every method that announces a refusal with `tell` refuses instead.
