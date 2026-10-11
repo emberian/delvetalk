@@ -61,7 +61,7 @@ def modulesAndAsts (j : Json) :
     let source ← lift (value.getObjValAs? String "source")
     unless Minidregg.Compiler.ObjectiveBendParse.isIdent name.toList do throw (requestRefusal "invalid module name")
     if modules.any (fun m => m.name == name) then throw (requestRefusal "duplicate module name")
-    if source.utf8ByteSize > Bounds.maxModuleBytes then throw (requestRefusal "source exceeds 512 KiB")
+    if source.utf8ByteSize > Bounds.maxModuleBytes then throw (requestRefusal s!"module {name} exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)")
     let ast ← FrontEnd.parseSource name source
     let mut imports : List LockedImport := []
     for edge in ast.imports do
@@ -933,16 +933,16 @@ def job (j : Json) : Except String Json := do
       if names.contains name then throw "duplicate module name"
       names := name :: names
       let source ← value.getObjValAs? String "source"
-      if source.utf8ByteSize > Bounds.maxModuleBytes then throw "source exceeds 512 KiB"
+      if source.utf8ByteSize > Bounds.maxModuleBytes then throw s!"module {name} exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)"
       total := total + source.utf8ByteSize
-      if total > Bounds.maxPackageSourceBytes then throw "source import request exceeds 1 MiB"
+      if total > Bounds.maxPackageSourceBytes then throw s!"source import request exceeds maxPackageSourceBytes ({Bounds.maxPackageSourceBytes} bytes)"
       let ast ← (FrontEnd.parseSource name source).mapError (fun d => d.json.compress)
       parsed := parsed.push (Json.mkObj [("name", toJson name),
         ("imports", Json.arr (ast.imports.map (·.json)).toArray)])
     return Json.mkObj [("status", toJson "parsed-imports"), ("modules", Json.arr parsed)]
   | "template-expand" =>
     let source ← j.getObjValAs? String "source"
-    if source.utf8ByteSize > Bounds.maxModuleBytes then throw "source exceeds 512 KiB"
+    if source.utf8ByteSize > Bounds.maxModuleBytes then throw s!"source exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)"
     let expanded ← (FrontEnd.parse "Template" source).mapError (fun d => d.json.compress)
     return Json.mkObj [("status", toJson "expanded"), ("source", toJson expanded.expandedSource),
       ("schema", toJson "delvetalk.document-template-expansion.v1")]

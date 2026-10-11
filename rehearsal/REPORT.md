@@ -46,6 +46,28 @@ directory", and the run fell to 20 turns, all `unknownObject`, with nothing rout
 `deploy/seed.py` passes the partial seed through, and `world-create` overlays it (host6). The
 interim overlay helper in `seed.py` is gone; `--owner` stays.
 
+## After the switch to `serve` (foundation 905922d, persvati)
+
+The transport lane moved `rehearse.py` to `deploy.serve.Served`: genesis and the hubs over the
+root socket, the programs over `host.sock`, the journal `state/town.journal`. `test_archive` then
+failed in `setUpClass`: `snapshot_replay` still read `state/world.journal` and globbed
+`world.journal.snapshot.*`. It now reads `town.journal` and copies each snapshot under the copy's
+journal name (`<journal>.snapshot.<height>.cbor`).
+
+On persvati's current dt-foundation binary (run 91 s, peak 263 MB in its 3 GB cgroup):
+- the planting hour holds: garden/bell/1 to 3 recorded at 07:27, 07:31, 07:32;
+- the four lines are written (#1 gemini, #2 glm, #3 glm, #4 kimik3);
+- the burst suspends nine, settles and plants nine;
+- the second cistern is dug at garden/cistern/2;
+- no draft is over 1,400 characters (rewrite5's Workshop page);
+- the snapshot cuts resume and hold the straight replay's state; at 905922d the live snapshot's
+  readings and the settling PANIC were unchanged, and on 241cb72 both are fixed (below);
+- **79 posts reached, 69 asked** (was 81 and 70). The bridge now skips the opener's own posts,
+  because her authority is the root socket, which it never holds (92e85cd). The two are ember's
+  leaked draft `3mxgh25xsa227` (refused `evaluation` before, never asked) and her summons
+  `3mxfy4wizo22j` (asked before). The rule is the owner's 70 with that one change, so the
+  test and FOUNDATION §11 say 69.
+
 ## Run 12 (not yet run): the gate as restated
 
 Run 12 runs once the owner says the world rewrite (OBJECTS-HANDOFF 4b to 6, genesis to
@@ -70,7 +92,7 @@ The gate as restated (FOUNDATION §11), and where run 12 reads each item:
 | 4. the four anthology lines reach a card by the reach rule and are written | four `write`s, two by glm and one each by gemini and kimik3; reach as below | the anthology's lines; step 6 |
 | 5. the nine-post burst admits | nine suspend, settle and plant | burst probe |
 | 6. cards show handles | the handle probe; no `did:plc:` or `bafy` in any card or reply | handle probe; cards |
-| model calls | **70**: every reached post that is not a spell goes to hob (FLEX §2); the rule returns 81 posts, none asked twice | "archived posts the reach rule returned", verdicts |
+| model calls | **69**: every reached post that is not a spell goes to hob (FLEX §2); the rule returns 79 posts, none asked twice (70 of 81 before `serve`: see "After the switch to serve") | "archived posts the reach rule returned", verdicts |
 | replay from a snapshot | every cut resumes and holds the straight replay's state; `verify` refuses none | replay from a snapshot |
 
 Its row for FOUNDATION §11's table: `| 12 | <foundation> | <turns> | <interpretations> | <height,
@@ -92,7 +114,7 @@ at hbox load 27 to 33, with a peak of 219 MB in its 3 GB cgroup.
 | 4. the four anthology lines reach a card by the reach rule and are written | **pass, 4 of 4,** each line reaching as the transport lane measured at d02c60f. gemini's `3mxghd6kvo22f` reaches the directory by its field lines (reach `fields`; its thread's card is the directory). glm's `3mxghgacmlc2f` and `3mxghjmm6zc2f` and kimik3's `3mxghjyx4pk2f` reach the anthology's card by the word ANTHOLOGY (reach `door`). That card has no policy, so it hands the words to the directory (reach `delivery`). hob's `delvetalk anthology write / text: …` is fitted against the directory's door forms, and the line is written: #1 gemini, #2 glm, #3 glm (guestbook), #4 kimik3, none admitted yet. |
 | 5. the nine-post burst admits | **pass.** The probe now states reach `mention`. Without a reach the host answers prose `unclear: not addressed` at once (HOST-HANDOFF 118), so the probe had been "admitting" nine turns that planted nothing. Now nine suspend, nine settle, and nine plant through kind/bell. |
 | 6. cards show handles | **pass** (handle probe). |
-| model calls, target 70 (restated by the owner, 6efd489) | **70, met.** The next subsection explains why 43 was the target before FLEX. |
+| model calls, target 70 (restated by the owner, 6efd489; 69 since `serve`) | **70, met.** The next subsection explains why 43 was the target before FLEX. |
 
 Rechecked on foundation 907d4bb after host14 merged (reach on handed-on replies, replay
 edition 3, minting past held ids), with a binary built from that head in a lane directory. Every
@@ -180,7 +202,11 @@ Each reopen is compared with the straight replay on:
 | settling, cut 29 | 30 (30) | 30; none | yes, with a Lean PANIC on stderr |
 | verify | | 0; **1,000 refused: "it disagrees with replay at its height"** | yes (full replay) |
 
-Two host defects, for the host lane (spec/ is not this lane's):
+Two host defects, reported to the host lane (spec/ is not this lane's). **Both are fixed on
+foundation 241cb72**: law readings survive replay, and a reopen answers no null. On persvati's
+binary for that head, `tests.run test_archive` reports 14 tests and no failed class, with no
+expected failures left. `verify` refuses no snapshot, the run's own snapshot holds the straight
+replay's state, and the settling reopen writes nothing to stderr. As found:
 
 **1. A creation's law readings are lost to replay** (`spec/Delvetalk/Host/Ops.lean`, `makeObject`).
 - Objects a turn creates with a law text carry its readings live. These are
@@ -197,8 +223,8 @@ Two host defects, for the host lane (spec/ is not this lane's):
 - Fix: in `makeObject`, `lawText := lawText.getD (renderLaw laws)`. A creation then keeps the text
   as given, readings included, as `world-amend` keeps an amendment's (Ops.lean 2044). Old
   journals replay as before, since their recorded text is what replay is handed.
-- Check: `tests/test_archive.py` `test_the_runs_own_snapshot_agrees_with_replay` (an expected
-  failure until then).
+- Check: `tests/test_archive.py` `test_the_runs_own_snapshot_agrees_with_replay`, passing on
+  241cb72.
 
 **2. A reopen inside a settling panics** (`spec/Delvetalk/Host/Session.lean`, `durable`, and
 `Ops.lean` `settingsOp`).
@@ -211,8 +237,7 @@ Two host defects, for the host lane (spec/ is not this lane's):
   only stderr shows it.
 - Fix: `settingsOp` answers `Json.mkObj []` where it now answers `Json.null` (its two early
   returns).
-- Check: test_archive `test_a_reopen_inside_a_settling_prints_no_panic` (an expected failure
-  until then).
+- Check: test_archive `test_a_reopen_inside_a_settling_prints_no_panic`, passing on 241cb72.
 
 ### The Workshop page over the clip (tests2's 1,444)
 
@@ -237,8 +262,8 @@ characters. It is the only draft over 1,400.
   231, Tide 373, Anthology 551 and Kinds 646.
 - Lost from the page: the usage lines for `adopt`, `draft` and `withdraw`. The card's held line
   names `adopt / n` and `withdraw / n` when anything is held, and hob writes `draft`.
-- Check: test_archive `test_every_page_publication_is_within_the_clip` (an expected failure
-  until then).
+- Check: test_archive `test_every_page_publication_is_within_the_clip`, passing since rewrite5
+  landed this fix (905922d).
 
 ## Runs
 

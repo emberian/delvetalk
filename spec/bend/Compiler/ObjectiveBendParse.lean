@@ -903,7 +903,7 @@ record the library uses, `F` being the module's alias of `Form.obend`:
 `{card: "", action: "plant", fields: F.Fields.cons({head: {name: "colour", kind:
 F.Kind.choice({options: F.Names.cons(...)})}, tail: ...})}`, each list ending in `nil({})`.
 `source` is `F.Kind.source({})`: Bend source, which the host reads as text of 1 to
-`Host.Limits.formSourceMax` characters and fills from a reply's fenced `obend` block. -/
+`Host.Limits.formSourceMax` characters (`Delvetalk.Bounds.maxPackageBytes` is the program bound it follows) and fills from a reply's fenced `obend` block. -/
 def formRe : Re := seqs [str "form", many1 space, group 1 ident,
   opt (seqs [many1 space, str "as", many1 space, group 2 ident]), many space, chr ':', .done]
 def rangeKindRe : Re := seqs [group 1 (alts [str "text", str "natural"]), many1 space,

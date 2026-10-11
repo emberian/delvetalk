@@ -11,6 +11,7 @@ from pathlib import Path
 
 BINARY = os.environ.get('DELVETALK_OBEND', 'delvetalk-obend')
 LIBRARY = Path(__file__).resolve().parent.parent / 'world' / 'lib'
+READY = 30  # seconds a started serve has to answer its first op
 _pins = {}
 
 
@@ -51,6 +52,16 @@ class Served:
                 self.stop()
                 raise RuntimeError('serve did not listen within 120 s')
             time.sleep(0.02)
+        from transport.host import HostClient
+        ready, client = time.monotonic() + READY, HostClient(self.sock, None)
+        try:  # a socket file is not yet a server answering: the first op waits for `hostd-info` (under load it lags the file)
+            while (got := client.send({'op': 'hostd-info'})).get('status') != 'hostd':
+                if self.proc.poll() is not None or time.monotonic() > ready:
+                    self.stop()
+                    raise RuntimeError(f'serve did not answer hostd-info within {READY} s: {got.get("message")}')
+                time.sleep(0.05)
+        finally:
+            client.close()
 
     def stop(self):
         """SIGTERM to this child alone: serve finishes the op in hand and removes its sockets and pid file."""

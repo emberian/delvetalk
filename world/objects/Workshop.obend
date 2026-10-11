@@ -222,6 +222,10 @@ form propose:
   source: source
 def methods() -> Lists.List<String>:
   Text.words("adopt withdraw create")
+# The Workshop's page is its card alone: the host's default page would append every form's usage
+# and pass the 1,400-character clip (genesis's `wiki: Workshop` was 1,444).
+def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
+  Card.publishPage(Card.pageName(input.page, blurb().word), Card.Page.cons({head: {title: "Card", body: render(state, Card.public(context))}, tail: Card.Page.nil()}))
 def blurb() -> Card.Door:
   {word: "workshop", blurb: "Check Bend from a post; see what an object runs."}
 def render(state: State, context: Abi.Context) -> Document.Document:

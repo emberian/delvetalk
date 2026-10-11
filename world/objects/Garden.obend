@@ -116,7 +116,7 @@ def inWords(state: State) -> String:
 # bells, newest first, eight of them and a count of the rest.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let card = Card.called(context, "garden")
-  let head = Document.text("✾ THE NIGHT GARDEN\n\n{waiting(context, state)}To plant, reply:\n\n    delvetalk {card} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n{inWords(state)}{Card.checkpointLine(state.pageCheckpoint)}{natText(state.planted)} planted, newest first:\n")
+  let head = Document.text("✾ THE NIGHT GARDEN\n\n{waiting(context, state)}To plant, reply:\n\n    delvetalk {card} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n\n{inWords(state)}{natText(state.planted)} planted, newest first:\n")
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clipped(Lists.map(Lists.reverse(Relations.rows(state.children)), childLine), 8n)})})
 # The garden's page: its card, how to reply, then one section per bell, newest first,
 # sixteen of them; the card section counts the rest.
@@ -220,7 +220,7 @@ def merging(post: String, context: Abi.Context, state: State) -> Activity<Reply>
   if state.owner == "" || context.principal != state.owner then Card.tell(Reply.refused({clause: "notOwner", reading: Card.notOwner(ownerName(state, context))}), Document.text("Not merged: {Card.notOwner(ownerName(state, context))}\n")) else if post == "" then Card.tell(Reply.refused(refusal(Why.noPost({}))), Document.text("Not merged: a merge names the post it answers.\n")) else merged(post)
 def merged(post: String) -> Activity<Reply>:
   let written(_) = write {pageCheckpoint: set post}
-  Card.tell(Reply.merged({post: post}), Document.text("Page checkpointed at {post}.\n"))
+  Card.tell(Reply.merged({post: post}), Document.text("Page checkpointed.\n"))
 def heard(input: Card.Reply, action: String, found: Held, context: Abi.Context, state: State) -> Activity<Reply>:
   if action == "plant" || action == "" && plantFielded(input.fields) then completing(input.fields, found, context, state) else if action != "" then Card.answerAs(input, context, forms(), render(state, context), fromCard) else answered(input, found, context, state)
 # Field lines naming the planting (`plant:`, `seed:`, `colour:`), with no spell line.

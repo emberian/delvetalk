@@ -8,7 +8,7 @@ The section 10 hour, from the archive itself: glm's planting grows a bell and it
 for it; a reply to a planting post rains on that bell; a second cistern line digs garden/cistern/2;
 the four anthology lines reach a card by the reach rule and are written; the nine-post burst admits;
 every card shows handles, stays within the clip and cites no hash; no program fails. The reach rule
-returns 81 posts, each asked of the model at most once: 70 model calls (FLEX section 2; 43 at
+returns 79 posts, each asked of the model at most once: 69 model calls (FLEX section 2; 43 at
 d02c60f, before FLEX, with the mention gate). The journal reopened from a snapshot holds what its
 straight replay holds.
 """
@@ -24,12 +24,14 @@ from tests import host
 
 ROOT = Path(__file__).resolve().parent.parent
 GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6jlibkzlobkuu', 'did:plc:j2hnfjwlnm2mau24vnmpir6d'
-# The posts `transport.bridge.route` sends as turns: the same 81 at d02c60f and at ad785ec.
-REACHED = 81
-# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 81 less the 11 the host
-# reads itself make 70 calls on ad785ec and 907d4bb. d02c60f measured 43 for the same rule while the
+# The posts `transport.bridge.route` sends as turns: 81 at d02c60f, ad785ec and 907d4bb; 79 since the switch
+# to `serve` (92e85cd), where ember's own posts are the root socket's and the bridge skips them (her leaked
+# draft 3mxgh25xsa227 and her summons 3mxfy4wizo22j).
+REACHED = 79
+# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 79 less the 10 the host
+# reads itself make 69 calls (70 before the switch, with ember's summons). d02c60f measured 43 for the same rule while the
 # directory's mention gate (deleted in step 4a) still answered prose naming no door without the model.
-INTERPRETATIONS = 70
+INTERPRETATIONS = 69
 
 
 def rehearse(out):
@@ -93,10 +95,9 @@ class Archive(unittest.TestCase):
             self.assertNotIn('did:plc:', t)
             self.assertNotIn('bafy', t)
 
-    @unittest.expectedFailure
     def test_every_page_publication_is_within_the_clip(self):
-        """The workshop's page is the host's default page, its card (755 characters) and every form's usage
-        (663): 1,444. The objects lane's fix is a `publishPage` in Workshop.obend that publishes the card alone
+        """Every published page fits the clip. The workshop's was the host's default page, its card (755
+        characters) and every form's usage (663): 1,444; Workshop.obend's `publishPage` publishes the card alone
         (rehearsal/REPORT.md, run 12 section)."""
         over = [(d['text'].split('\n')[0], d['chars']) for d in self.r['drafts'] if d['outcome'] == 'publication' and d['chars'] > 1400]
         self.assertEqual(over, [])
@@ -110,12 +111,10 @@ class Archive(unittest.TestCase):
         for name, c in cuts.items():
             self.assertEqual((c['snapshot']['resumed'], c['snapshot']['refused'], c['same']), (c['written']['height'], [], True), (name, c))
 
-    @unittest.expectedFailure
     def test_the_runs_own_snapshot_agrees_with_replay(self):
-        """The snapshot written live at height 1,000 carries law readings for the seven objects a turn created
-        with a law text (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3); replay rebuilds
-        them without, because a creation journals `renderLaw`'s text, which drops the readings. `verify`
-        refuses that snapshot, and a reopen from it differs from the straight replay in exactly those readings."""
+        """The snapshot written live at height 1,000 agrees with replay: `verify` refuses none, and a reopen from it
+        holds the straight replay's state, law readings included for the objects a turn created with a law text
+        (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3), which replay once rebuilt without."""
         cases = self.r['snapshotReplay']['cases']
         self.assertEqual((cases['verify']['snapshot']['refused'], cases['run']['same']), ([], True), cases['run']['differs'])
 
@@ -129,10 +128,9 @@ class Archive(unittest.TestCase):
         cut, c = self.settling()
         self.assertTrue(c['same'] and c['written']['openedAt'] > cut and c['snapshot']['resumed'] == c['written']['height'], c)
 
-    @unittest.expectedFailure
     def test_a_reopen_inside_a_settling_prints_no_panic(self):
-        """`world-open {clock}` attaches the settled turns to settingsOp's `null` answer (Session.lean `durable`),
-        and Lean prints `PANIC at Lean.Json.setObjVal!` on stderr."""
+        """`world-open {clock}` finishing a settling writes nothing to stderr (it once attached the settled turns to
+        settingsOp's `null` answer, and Lean printed `PANIC at Lean.Json.setObjVal!`)."""
         self.assertEqual(self.settling()[1]['stderr'], '')
 
     def test_the_reach_rule_returns_the_recorded_posts_and_each_is_asked_at_most_once(self):
@@ -140,8 +138,7 @@ class Archive(unittest.TestCase):
         self.assertEqual({u: n for u, n in self.r['asked'].items() if n > 1 or u not in self.r['reached']}, {})
 
     def test_the_routing_asks_the_model_as_often_as_recorded(self):
-        """The reach rule's 81 posts less the 11 no model reads: ten spells or field lines the host reads itself,
-        and ember's leaked draft, refused `evaluation`."""
+        """The reach rule's 79 posts less the 10 spells or field lines the host reads itself."""
         self.assertEqual(sum(self.r['verdicts'].values()), INTERPRETATIONS, self.r['verdicts'])
 
 

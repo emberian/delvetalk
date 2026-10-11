@@ -119,6 +119,8 @@ def read (facts : Facts) (new : Data) : LawRef → Option Reading
   | .pin => some (.text facts.pin)
   | .kind => some (.num facts.kind)
   | .method => some (.text facts.method)
+  -- Read by the host lane once `Facts` carries them (docs/LAW.md §6 item 1); until then fail closed.
+  | .clock | .object | .old _ => none
 
 def number (reading : Option Reading) : Option Int :=
   match reading with
@@ -153,6 +155,10 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
   | .leROff left right offset => match number (read facts new left), number (read facts new right) with
       | some x, some y => decide (x ≤ y + offset)
       | _, _ => false
+  | .leRSum left right addend =>
+    match number (read facts new left), number (read facts new right), number (read facts new addend) with
+      | some x, some y, some z => decide (x ≤ y + z)
+      | _, _, _ => false
   | .monotone field => match old.bind (fieldOf field), fieldOf field new with
       | some before, some after => decide (before ≤ after)
       | _, _ => false

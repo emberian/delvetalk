@@ -593,6 +593,32 @@ class Sugar(unittest.TestCase):
         self.assertEqual(bad["status"], "error", bad)
         self.assertIn("relations(): a limit is a Nat", bad["message"])
 
+    def test_each_derived_refusal_names_its_source_line(self):
+        # `compile` does not localize (check-package's `localize` recompiles each function alone to
+        # find a spanless refusal): a span here is the generics pass's own (KERNEL-HANDOFF §16 item 9).
+        tags = ("refused (fixed): note", "refused (form-kind)", "refused (form-input): form", "refused (derived-edits): State.")
+        seen = set()
+        for source, entry, library, world, extra, words in REFUSED:
+            if not words or not words[0].startswith(tags):
+                continue
+            with self.subTest(refusal=words[0]):
+                reply = self.h.send({"op": "compile", "entry": entry, "modules": modules(source, library, world, extra)})
+                self.assertEqual(reply["status"], "error", reply)
+                d = json.loads(reply["message"])
+                self.assertIn(words[0], d["message"])
+                self.assertIn("line", d.get("span", {}), d)
+                self.assertTrue(d.get("module"), d)
+                line = (modules(source, library, world, extra)[-1]["source"] if d["module"] == "Package" else
+                        next(m["source"] for m in modules(source, library, world, extra) if m["name"] == d["module"])).split("\n")[d["span"]["line"] - 1]
+                if "form-kind" in words[0]:
+                    self.assertIn("shade: Mixed", line)
+                if "declares PlantInput" in words[0]:
+                    self.assertIn("record PlantInput", line)
+                if "State.items" in words[0]:
+                    self.assertIn("items: Outer.Items", line)
+                seen.add(words[0][:24])
+        self.assertEqual(len(seen), 4, seen)
+
     def test_let_response_continues_on_its_response_and_refuses_any_other_by_name(self):
         art = self.compiled(BUMP_SUGARED, "bump", world=True)
         started = self.h.start(art, [nat(4)])

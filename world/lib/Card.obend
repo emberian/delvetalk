@@ -37,12 +37,14 @@ def named(form: Form.Form, card: String) -> Form.Form:
   {card: card, action: form.action, fields: form.fields}
 def hasField(form: Form.Form, name: String) -> Bool:
   Lists.any(form.fields, fn(f: Form.Field) -> Bool: f.name == name)
+# A source field's bound is the host's package bound, `Bounds.maxPackageBytes` (131,072 bytes),
+# which Bend cannot read: the literal is that number.
 def hint(kind: Form.Kind) -> String:
   match kind:
     case text(t): "<text, {natText(t.min)} to {natText(t.max)} characters>"
     case natural(n): "<a number from {natText(n.min)} to {natText(n.max)}>"
     case choice(c): "<{Text.joined(c.options)}>"
-    case source(_): "<Bend source, 1 to 16384 characters, as a <<BEND block or a ```obend block>"
+    case source(_): "<Bend source, 1 to 131072 characters, as a <<BEND block or a ```obend block>"
 # One form as the spell a reader copies.
 def template(card: String, form: Form.Form) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\n    delvetalk {card} {form.action}\n"), tail: Lists.map(form.fields, fn(field: Form.Field) -> Document.Document: Document.text("    {field.name}: {hint(field.kind)}\n"))})})
@@ -79,7 +81,14 @@ def stranger() -> Abi.Context:
 # The card's own id for a spell it prints: the object rendering it, or `word` for a card
 # rendered outside the world (a probe, a page).
 def called(context: Abi.Context, word: String) -> String:
-  if context.object == "" then word else context.object
+  if context.object == "" then word else spellName(context.object, context)
+# The name a spell uses for a card: the reader's own avatar, env and wake are `me`, `env` and
+# `wake` (the host resolves them to the speaker's), so a card never prints a DID to its owner.
+def spellName(card: String, context: Abi.Context) -> String:
+  if card != "" && card == context.principal then "me" else if card == "wake/{context.principal}" then "wake" else if card == "env/{context.principal}" then "env" else card
+# Whether a name can be printed: another's avatar, env or wake is named by a DID, never shown.
+def printable(name: String) -> Bool:
+  (Text.starts(name, "did:") || Text.starts(name, "env/did:") || Text.starts(name, "wake/did:")) == false
 def reads(principal: String, context: Abi.Context) -> Bool:
   principal != "" && principal == context.principal
 def mine(principal: String, context: Abi.Context) -> String:
@@ -166,9 +175,6 @@ def isMerge(text: String) -> Bool:
 # owner: the owner as the card names it (`shown`), "" for none.
 def notOwner(owner: String) -> String:
   if owner == "" then "This page has no owner to merge it." else "Only the page's owner, {owner}, merges it."
-# The card's line for it: "" before the first merge.
-def checkpointLine(post: String) -> String:
-  if post == "" then "" else "page checkpointed at {post}\n"
 # The object-owned wiki page (FOUNDATION section 5): a list of sections, each a title
 # and a Document. The default is the card, then how to reply; an object overrides
 # page(state, context) to add its own sections. pageText renders the agentwiki body:
@@ -231,7 +237,7 @@ def hobbed<T>(hob: Hob, policy: Policies.State, utterance: String, context: Abi.
   match hob:
     case none(_): result
     case card(_): tell(result, card)
-    case ask(a): escalated(policy, utterance, context, askCard(a.needs, context.object, forms), result)
+    case ask(a): escalated(policy, utterance, context, askCard(a.needs, spellName(context.object, context), forms), result)
 def escalated<T>(policy: Policies.State, utterance: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
   if policy.escalateTo == "" then tell(result, card) else escalatedTo(policy, utterance, context, card, result)
 def escalatedTo<T>(policy: Policies.State, utterance: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
@@ -411,9 +417,16 @@ def whyNot(replied: Replied) -> String:
     case unclear(u): "\nNot done: Almost. I still need: {Text.joined(u.needs)}.\n"
     case refused(r): "\nrefused {r.clause}: {r.reading}\n"
     case _: ""
-# The card a reply that ran no method gets: the object's card, then why, then its forms.
+# The card a reply that ran no method gets: the object's card, then why, then its forms, all
+# within one budget: forms that would pass Card.limit() are the one line naming `?` instead (or
+# nothing, when even that would pass it), and a card named by another's DID prints no spells.
 def answerCard(card: Document.Document, why: String, context: Abi.Context, forms: Forms) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why), tail: Document.Documents.cons({head: usage(context.object, forms), tail: Document.Documents.nil()})})})})
+  let name = spellName(context.object, context)
+  let spells = if printable(name) then usage(name, forms) else Document.text("")
+  let used = Document.size(card) + textLength(why)
+  let short = Document.text("\nIts spells: delvetalk {name} ?\n")
+  let tail = if used + Document.size(spells) <= limit() then spells else if printable(name) && used + Document.size(short) <= limit() then short else Document.text("")
+  Document.Document.sequence({items: Document.Documents.cons({head: card, tail: Document.Documents.cons({head: Document.text(why), tail: Document.Documents.cons({head: tail, tail: Document.Documents.nil()})})})})
 # Refuses by name: the card with `refused <clause>: <reading>` and its forms.
 def answerRefused<T>(refusal: Refusal, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
   tell(as(Replied.refused(refusal)), answerCard(card, whyNot(Replied.refused(refusal)), context, forms))

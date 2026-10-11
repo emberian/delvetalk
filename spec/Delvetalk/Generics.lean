@@ -11,7 +11,13 @@ open ObjectiveBendFrontEnd
 open ObjectiveBendSurface (Span Param Expr Body Signature Decl)
 set_option autoImplicit false
 
-def maxInstances : Nat := 256
+/-- Generic instances one package specializes. Measured on persvati (lane/kernel13): a closure
+of N row types each used through Relation insert, count, retract and rows (about eleven
+instances each) checks and compiles an entry reaching every instance in 0.15 s at 354 instances,
+0.73 s at 1,025 (107 MB resident, a 2.0 MB packet), 1.12 s at 1,410 and 2.7 s at 2,818: 1,024 is
+the most whose check and compile together stay under a second. The world's largest closure
+(Kind) is 197. -/
+def maxInstances : Nat := 1024
 /-- Surface nodes visited, over all rewriting. -/
 def maxExpansionNodes : Nat := 262144
 def maxExpansionStringBytes : Nat := 8388608
@@ -55,6 +61,15 @@ partial def GType.isClosed : GType → Bool
   | .row fields => fields.all (fun p => p.2.isClosed)
   | .overlay a b => a.isClosed && b.isClosed
 
+/-- A type as a refusal names it (`Lists.List<Rows.Rain>`). -/
+partial def GType.brief : GType → String
+  | .atom n => n
+  | .named m n _ => m ++ "." ++ n
+  | .applied n args => n ++ "<" ++ ", ".intercalate (args.map GType.brief) ++ ">"
+  | .arrow a b => a.brief ++ " -> " ++ b.brief
+  | .row fields => "{" ++ ", ".intercalate (fields.map fun (n, t) => n ++ ": " ++ t.brief) ++ "}"
+  | .overlay a b => a.brief ++ " with " ++ b.brief
+
 structure Instance where
   key : String
   declaration : String
@@ -91,8 +106,32 @@ structure State where
   /-- Instances by their fresh name. -/
   instanceByName : Std.HashMap String Nat := {}
   inferRemaining : Nat := maxInferenceSteps
+  /-- The declaration being rewritten (module, name), which an instance is specialized for. -/
+  current : String × String := ("", "")
 
-abbrev M := StateT State (Except String)
+/-- A refusal of the pass: its message and, when known, the module and the span of the source
+that asked for it. A refusal raised inside a declaration's rewriting is placed at that
+declaration (`run`) unless it names a span of its own. -/
+structure Refusal where
+  message : String
+  module : Option String := none
+  span : Option Span := none
+  deriving Inhabited
+
+instance : Coe String Refusal := ⟨fun message => { message }⟩
+instance : MonadLift (Except String) (Except Refusal) := ⟨fun e => e.mapError (fun message => { message })⟩
+
+abbrev M := StateT State (Except Refusal)
+
+/-- The pass throws and catches text (`throw "…"`, `tryCatch … fun message => …`); a refusal
+placed at a span is thrown with `throwThe Refusal`, and text caught is its message alone. -/
+instance : MonadExceptOf String M where
+  throw message := throwThe Refusal { message }
+  tryCatch x handle := tryCatchThe Refusal x fun r => handle r.message
+
+/-- A refusal at `span` of `module`. -/
+def refusalAt (module : String) (span : Span) (message : String) : Refusal :=
+  { message, module := some module, span := some span }
 
 def spend : M Unit := do
   let s ← get
@@ -671,8 +710,11 @@ def instantiate : Nat → Declaration → List GType → M GType
         return .named state.generatedModule priorInstance.name priorInstance.key
     let argumentId := Minidregg.Compiler.Sha256.hexString argumentIdentity
     let key := Minidregg.Compiler.Sha256.hexString (toJson [declarationId, argumentId]).compress
-    if let some priorInstance := state.instances.find? (·.key == key) then return .named state.generatedModule priorInstance.name priorInstance.key
-    if state.instances.size >= maxInstances then throw "generic specialization exceeds instance budget"
+    if state.instances.size >= maxInstances then
+      let (module, name) := state.current
+      throw (s!"refused (generic-instances): the package needs more than {maxInstances} generic instances; " ++
+        s!"{module}.{name} asks for instance {maxInstances + 1}, {declaration.name} at " ++
+        ", ".intercalate (arguments.map GType.brief) ++ " (Generics.maxInstances)")
     let name ← fresh
     let index := (← get).instances.size
     modify fun s => { s with
@@ -1150,6 +1192,10 @@ def relationItem (g : GType) : M (Option GType) := do
 def derivedRefusal (module message : String) (tag := "derived-edits") : String :=
   "refused (" ++ tag ++ "): " ++ message ++ " (module " ++ module ++ ")"
 
+/-- A derivation refusal at the source line that occasions it (KERNEL-HANDOFF §16 item 9). -/
+def derivedAt {α : Type} (module : String) (span : Span) (message : String) (tag := "derived-edits") : M α :=
+  throwThe Refusal (refusalAt module span (derivedRefusal module message tag))
+
 /-- The State record's fields and the module they are written in. -/
 def stateFields (index : Nat) (ast : ObjectiveBendSurface.Module) :
     M (Option (List ObjectiveBendSurface.Field × Nat × Span)) := do
@@ -1240,9 +1286,10 @@ def checkFixed (index : Nat) : M Unit := do
   let some (fields, _, _) ← effectiveStateFields (← get).sources.size index | return
   let fixed := (fields.filter (·.fixed)).map (·.name)
   if fixed.isEmpty then return
-  for name in source.ast.decls.flatMap declWritten do
-    if fixed.contains name then
-      throw (derivedRefusal source.module.name (name ++ " is fixed; no edit names it") "fixed")
+  for d in source.ast.decls do
+    for name in declWritten d do
+      if fixed.contains name then
+        derivedAt source.module.name d.span (name ++ " is fixed; no edit names it") "fixed"
 
 /-- The derived `Edits` and `keep()` of module `index`, when it gets them. -/
 def deriveEdits (index : Nat) : M (Option (List Decl)) := do
@@ -1261,11 +1308,11 @@ def deriveEdits (index : Nat) : M (Option (List Decl)) := do
       match ← entriesItem g with
       | some x =>
         let some x ← spell index x
-          | throw (derivedRefusal module ("State." ++ f.name ++ " holds items of a type from a module " ++ module ++ " does not import; import it"))
+          | derivedAt module f.span ("State." ++ f.name ++ " holds items of a type from a module " ++ module ++ " does not import; import it")
         pure ("Entries", x ++ ", " ++ x)
       | none =>
         let some t ← (if home == index then pure (some f.type) else spell index g)
-          | throw (derivedRefusal module ("State." ++ f.name ++ " has a type from a module " ++ module ++ " does not import; import it"))
+          | derivedAt module f.span ("State." ++ f.name ++ " has a type from a module " ++ module ++ " does not import; import it")
         pure ("Edit", t ++ ", {}")
     let name := if ObjectiveBendParse.isIdent f.name.toList then f.name else (toJson f.name).compress
     lines := lines.push ("  " ++ name ++ ": " ++ plans ++ "." ++ sum ++ "<" ++ args ++ ">\n")
@@ -1274,7 +1321,7 @@ def deriveEdits (index : Nat) : M (Option (List Decl)) := do
     ", ".intercalate keeps.toList ++ "}\n"
   match ObjectiveBendParse.parseObjective text with
   | .ok parsed => return some (parsed.decls.map (·.mapSpans fun _ => span))
-  | .error d => throw (derivedRefusal module ("State does not derive its Edits: " ++ d.message))
+  | .error d => derivedAt module span ("State does not derive its Edits: " ++ d.message)
 
 /-! ## The pass -/
 
@@ -1318,15 +1365,15 @@ of its labels), and, when the module declares form blocks and no `forms()`,
 `def forms() -> L.List<F.Form>` of the blocks' values in source order. -/
 
 /-- The labels of the closed sum of empty cases `type` names in module `index`. -/
-def closedLabels (index : Nat) (module action field type : String) : M (List String) := do
-  let refusal := derivedRefusal module ("form " ++ action ++ " offers " ++ field ++ ": " ++ type ++
-    ", which is not a closed sum of empty cases") "form-kind"
-  let some g ← tryCatch (some <$> typeOf maxNesting index [] type) (fun _ => pure none) | throw refusal
-  let .named m n _ := g | throw refusal
-  if m == (← get).generatedModule then throw refusal
-  let some declaration := (← get).byName[(m, n)]? | throw refusal
-  let .sum _ cases [] _ := declaration.ast | throw refusal
-  unless cases.all (fun c => trim c.type == "{}") do throw refusal
+def closedLabels (index : Nat) (module action field type : String) (span : Span) : M (List String) := do
+  let refusal := refusalAt module span (derivedRefusal module ("form " ++ action ++ " offers " ++ field ++ ": " ++ type ++
+    ", which is not a closed sum of empty cases") "form-kind")
+  let some g ← tryCatch (some <$> typeOf maxNesting index [] type) (fun _ => pure none) | throwThe Refusal refusal
+  let .named m n _ := g | throwThe Refusal refusal
+  if m == (← get).generatedModule then throwThe Refusal refusal
+  let some declaration := (← get).byName[(m, n)]? | throwThe Refusal refusal
+  let .sum _ cases [] _ := declaration.ast | throwThe Refusal refusal
+  unless cases.all (fun c => trim c.type == "{}") do throwThe Refusal refusal
   return cases.map (·.name)
 
 structure DerivedForms where
@@ -1354,26 +1401,26 @@ def deriveForms (index : Nat) : M DerivedForms := do
         | .natural .. => pure ("Nat", f.kind)
         | .choice options =>
           let sum := block.choiceSum f.name
-          if ast.decls.any (·.name == sum) then
-            throw (derivedRefusal module ("form " ++ block.action ++ " declares the sum " ++ sum ++ " of " ++ f.name ++
-              "'s choices, and so does the module; delete it or name an existing sum: " ++ f.name ++ ": " ++ sum) "form-input")
+          if let some clash := ast.decls.find? (·.name == sum) then
+            derivedAt module clash.span ("form " ++ block.action ++ " declares the sum " ++ sum ++ " of " ++ f.name ++
+              "'s choices, and so does the module; delete it or name an existing sum: " ++ f.name ++ ": " ++ sum) "form-input"
           text := text ++ "sum " ++ sum ++ ":\n" ++ String.join (options.map ("  " ++ · ++ ": {}\n"))
           pure (sum, f.kind)
         | .named type =>
-          let options ← closedLabels index module block.action f.name type
+          let options ← closedLabels index module block.action f.name type f.span
           labels := (type, options) :: labels
           pure (type, .choice options)
       fields := fields.push ("  " ++ f.name ++ ": " ++ type ++ "\n")
       resolved := resolved.push { f with kind }
-    if ast.decls.any (·.name == block.input) then
-      throw (derivedRefusal module ("form " ++ block.action ++ " declares " ++ block.input ++
-        ", its method's input, and so does the module; delete it") "form-input")
+    if let some clash := ast.decls.find? (·.name == block.input) then
+      derivedAt module clash.span ("form " ++ block.action ++ " declares " ++ block.input ++
+        ", its method's input, and so does the module; delete it") "form-input"
     text := text ++ (if fields.isEmpty then "type " ++ block.input ++ " = {}\n"
       else "record " ++ block.input ++ ":\n" ++ String.join fields.toList)
     forms := forms.push { block with fields := resolved.toList }
   if !ast.decls.any (·.name == "forms") then
     let some lists := (ast.imports.find? (fileOf ·.path == "List.obend")).map (·.importAlias)
-      | throw (derivedRefusal module "forms() is derived as a List of the form blocks' values; import ./List.obend" "derived-forms")
+      | derivedAt module ((ast.forms.head?.map (·.span)).getD default) "forms() is derived as a List of the form blocks' values; import ./List.obend" "derived-forms"
     let list := ast.forms.foldr (fun b acc => lists ++ ".List.cons({head: " ++ b.value ++ "(), tail: " ++ acc ++ "})")
       (lists ++ ".List.nil({})")
     text := text ++ "def forms() -> " ++ lists ++ ".List<" ++ formAlias ++ ".Form>:\n  " ++ list ++ "\n"
@@ -1381,7 +1428,7 @@ def deriveForms (index : Nat) : M DerivedForms := do
   | .ok parsed =>
     let span := (ast.forms.head?.map (·.span)).getD default
     return { decls := parsed.decls.map (·.mapSpans fun _ => span), labels, forms := forms.toList }
-  | .error d => throw (derivedRefusal module ("form blocks do not derive their inputs: " ++ d.message) "form-input")
+  | .error d => derivedAt module ((ast.forms.head?.map (·.span)).getD default) ("form blocks do not derive their inputs: " ++ d.message) "form-input"
 
 /-- A form field's closed-sum marker as its choice of labels. -/
 def resolveChoices (labels : List (String × List String)) : Expr → Expr
@@ -1395,7 +1442,7 @@ def resolveChoices (labels : List (String × List String)) : Expr → Expr
 
 /-- Each module's derived declarations (`Edits`, `keep()`, form inputs, `forms()`; empty where
 it gets none) and form blocks. Types are resolved in a pass of their own whose state is dropped. -/
-def derivedDecls (sources : Array Source) : Except String (Array (List Decl × DerivedForms × List String)) := do
+def derivedDecls (sources : Array Source) : Except Refusal (Array (List Decl × DerivedForms × List String)) := do
   let probe : M (Array (List Decl × DerivedForms × List String)) := do
     preamble
     let mut out := #[]
@@ -1410,7 +1457,14 @@ def derivedDecls (sources : Array Source) : Except String (Array (List Decl × D
     return out
   return (← probe.run (← initialState sources)).1
 
-def run (sources : Array Source) : Except String Output := do
+/-- Rewrite one declaration of module `index`, every refusal placed at the declaration unless
+it names a span of its own. -/
+def rewriteTop (site : Site) (d : Decl) : M Decl := do
+  modify fun s => { s with current := (site.target, d.name) }
+  tryCatchThe Refusal (rewriteDecl maxNesting site [] d) fun e =>
+    throwThe Refusal (if e.span.isSome then e else { e with module := some site.target, span := some d.span })
+
+def run (sources : Array Source) : Except Refusal Output := do
   if !sources.any (fun s => s.ast.decls.any declGenerics) then
     let modules ← sources.toList.mapM fun source =>
       ObjectiveBendElaborate.ofSurface source.module.name source.module.aliases source.ast
@@ -1441,13 +1495,13 @@ def run (sources : Array Source) : Except String Output := do
       let mut ordinary : Array Decl := #[]
       for d in source.ast.decls.take (source.ast.decls.length - derived[index]!.length) do
         if (d matches .typeAlias ..) || !d.typeParameters.isEmpty then continue
-        ordinary := ordinary.push (← rewriteDecl maxNesting site [] d)
+        ordinary := ordinary.push (← rewriteTop site d)
       rewritten := rewritten ++ [(source.module.name, { source.ast with decls := ordinary.toList })]
     for index in [:sources.size] do
       if derived[index]!.isEmpty then continue
       let source := sources[index]!
       let site : Site := { origin := index, target := source.module.name, bindings := [], lifted := false }
-      let own ← (derived[index]!.filter fun d => !(d matches .typeAlias ..)).mapM (rewriteDecl maxNesting site [])
+      let own ← (derived[index]!.filter fun d => !(d matches .typeAlias ..)).mapM (rewriteTop site)
       rewritten := rewritten.set index (source.module.name, { source.ast with
         decls := (rewritten[index]!.2.decls) ++ own })
     let state ← get

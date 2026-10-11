@@ -141,7 +141,7 @@ class Serve(unittest.TestCase):
         client = HostClient(self.sock)
         client.send({'op': 'world-status'})
         client.local.conn[0].shutdown(2)
-        self.assertEqual(client.send({'op': 'world-advance', 'principal': 'transport', 'height': 1})['message'], 'hostd unavailable')
+        self.assertTrue(client.send({'op': 'world-advance', 'principal': 'transport', 'height': 1})['message'].startswith(f'hostd unavailable at {self.sock} after '))
         client.send({'op': 'world-status'})
         client.local.conn[0].shutdown(2)
         self.assertEqual(client.send({'op': 'world-status'})['status'], 'world')
@@ -269,6 +269,52 @@ class Restart(unittest.TestCase):
             finally:
                 server.stop()
 
+
+
+class Startup(unittest.TestCase):
+    """A town's first op waits for its serve (persvati at load 31: a second town's first request met a socket not yet up)."""
+
+    def test_a_client_waits_for_a_socket_that_comes_up_and_names_one_that_does_not(self):
+        import socket as sockets
+        import time
+        with tempfile.TemporaryDirectory() as d:
+            path = str(Path(d) / 'late.sock')
+
+            def late():  # a server that binds half a second after the client first asks
+                time.sleep(0.5)
+                srv = sockets.socket(sockets.AF_UNIX)
+                srv.bind(path)
+                srv.listen(1)
+                conn, _ = srv.accept()
+                conn.makefile('rb').readline()
+                conn.sendall(b'{"status": "hostd"}\n')
+                conn.close()
+                srv.close()
+            t = threading.Thread(target=late)
+            t.start()
+            self.assertEqual(HostClient(path).send({'op': 'hostd-info'}), {'status': 'hostd'})
+            t.join()
+            gone = HostClient(Path(d) / 'never.sock').send({'op': 'world-status'})
+            self.assertRegex(gone['message'], r'^hostd unavailable at .*/never\.sock after [2-9]\.\d s$')
+
+    def test_two_towns_started_together_on_a_slow_start_each_answer_their_first_op(self):
+        with tempfile.TemporaryDirectory() as d:
+            slow = Path(d) / 'slow-obend'  # the artificial delay: a second before serve itself starts
+            slow.write_text(f'#!/bin/sh\nsleep 1\nexec {binary()} "$@"\n')
+            slow.chmod(0o755)
+            from deploy.serve import Served as Start
+            answers, servers = {}, []
+
+            def town(name):
+                server = Start(Path(d) / name, slow)
+                servers.append(server)
+                answers[name] = HostClient(server.sock).send({'op': 'world-status'}).get('status')
+            threads = [threading.Thread(target=town, args=(n,)) for n in ('town', 'moor')]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+            for server in servers:
+                server.stop()
+            self.assertEqual(answers, {'town': 'world', 'moor': 'world'})
 
 if __name__ == '__main__':
     unittest.main()
