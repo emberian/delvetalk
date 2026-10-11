@@ -1591,6 +1591,18 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    projection's `reading`); test_properties holds every `lawRefused` to a clause, a reading and the reason
    voiced from them.
 
+155. **`context.sender` (host19; replay edition 7).** `Abi.Context` gains `sender`: the object whose send the
+   turn delivers (a `send`, a subscription's `changed`, a supervised activity's `ended`), "" for a turn a
+   principal began. It is the turn's (`TurnState.sender`, from `TurnMeta.caller` when the turn is a
+   delivery, and from the journaled activity's caller on a resume), so every frame of the turn sees it, while
+   `caller` stays the frame's calling object: in a delivered `rain` that calls the ledger, the ledger sees
+   `sender=weather caller=bell`. A Bend law's context carries it too (`Proposal.sender`), and replay reads it
+   from the pending delivery the entry consumes: edition 7. So the weather's rain may be credited to the
+   weather (`author: if context.sender != "" then context.sender else context.principal`, the objects lane's).
+   `fitRecord` keeps an object compiled under an older Abi running. Pins re-recorded (Abi is in every
+   closure). Card's `stranger()` and the tests' hand-built Contexts carry `sender: ""`. Tests: `tests/test_sender.py` (a delivery's frames, a call's, a direct turn's; a Bend
+   law refusing a sender, the same law admitting a call, a verifying reopen).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1627,10 +1639,6 @@ bring it to its full sophistication and make sure the code is all 'fungused toge
 semantic braiding is called for); let's not leave behind 'old things', no scar and growth tissue." So each
 replacement deletes what it replaces in the same commit, and this file describes only what is.
 
-1. **Asked by the objects lane, not started (host18 stopped at its budget):**
-   - `context.sender`: a delivered turn's top frame carries the sending object (`TurnMeta.caller` is it today,
-     but `caller` is also a call's), so the weather's rain is credited to the weather. One field in
-     `Abi.Context` and `contextData`; `fitRecord` keeps objects compiled without it running.
 2. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
    old path: T30 reach as a host op (`reach-of {text, replyTo, thread}` answering `{object, slot, how}`; `bridge.py`'s
    `route`, `walk`, `named_door` go; the Zulip rule of 9f48f6d5, the author's own messages passed and another
@@ -1667,6 +1675,6 @@ replacement deletes what it replaces in the same commit, and this file describes
    - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new `root:<n>`;
      `set pin` stores the pin alone; `as` runs the method as named; `root-edit` does not rewrite CIDs inside
      checkpoints and states. `openerActs`' interpret-quota exemption ignores `resident`: decide.
-   - Deploy: edition 6 (5.150) needs a new genesis for every world.
+   - Deploy: edition 7 (5.155) needs a new genesis for every world.
    - `readerActions` compiles `actions` per read; `methodAdmits` judges on the state as it stands; a `call` or
      `write` to an object created in the same turn is `unknownObject`.

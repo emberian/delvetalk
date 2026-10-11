@@ -276,6 +276,9 @@ structure Proposal where
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
       moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
   rebaseOwn : Option String := none
+  /-- The object whose send the turn delivers ("" for a direct turn): the law's `context.sender`.
+      Replay reads it from the pending delivery the entry consumes. -/
+  sender : String := ""
 
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
     amendment that no write of the proposal already names. -/
@@ -1882,13 +1885,15 @@ def principalNamed (w : World) (handle : String) : Option String :=
     `handle` is the principal's display handle from the registry (`world-principal`), ""
     when unknown; `caller` is the calling object's id (empty for the turn's own method),
     `intent` the turn's identity, `height` the journal height the turn read, `clock` the world
-    clock (`world-advance`) the frame runs at, which deadlines compare against, and
-    `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none. None is chosen
-    by the client. -/
+    clock (`world-advance`) the frame runs at, which deadlines compare against,
+    `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none, and `sender`
+    the object whose send this turn delivers (a subscription's changed object, a supervised
+    activity's), the same in every frame of the turn and in its law's context, "" for a turn a
+    principal began. None is chosen by the client. -/
 def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String)
-    (post : String := "") : Data :=
+    (post : String := "") (sender : String := "") : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
-    ("handle", .label handle), ("caller", .label caller), ("intent", .label intent), ("height", .natural height),
+    ("handle", .label handle), ("caller", .label caller), ("sender", .label sender), ("intent", .label intent), ("height", .natural height),
     ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false), ("post", .label post)])]
@@ -1907,7 +1912,7 @@ partial def fitRecord (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBend
 
 /-- The fields `contextData` fills. -/
 def contextFields : List String :=
-  ["world", "object", "principal", "handle", "caller", "intent", "height", "clock", "inputOrigin"]
+  ["world", "object", "principal", "handle", "caller", "sender", "intent", "height", "clock", "inputOrigin"]
 
 /-- A Context type: a record (through the bounds) naming the principal and the intent, every
     field of which the host fills. An older library's Context with fewer fields is one too. -/
@@ -1961,7 +1966,7 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
                       reading := some s!"the law of {id} reads {r}, which you may not see." }
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
-  let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method
+  let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method (sender := p.sender)
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
@@ -3971,8 +3976,12 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let subs := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Subscription.ofJson
     let subscribes ← subs "subscribes"
     let unsubscribes ← subs "unsubscribes"
+    -- A delivered entry's sender is the pending send it consumes (checked by `checkDelivery`).
+    let delivered := ((entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption)
+    let sender := (delivered.bind fun id => w.pending.find? fun s => (s.getObjValAs? String "id").toOption == some id).bind
+      (fun s => (s.getObjValAs? String "sender").toOption) |>.getD ""
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, cells, madeFrom }
+                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, cells, madeFrom, sender }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))

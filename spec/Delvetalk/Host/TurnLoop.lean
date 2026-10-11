@@ -162,6 +162,9 @@ structure TurnState where
   /-- The running frame's post (`inputOrigin.post`): its own `receive {text, post}`'s, else the
       calling frame's; journaled with a suspension. -/
   post : String := ""
+  /-- The object whose send this turn delivers ("" for a turn a principal began): every frame's
+      `context.sender` and its law's. -/
+  sender : String := ""
   /-- How the turn's words reached it (`TurnRequest.reach`, `delivery` for a delivered turn, `direct`
       for a method other than `receive`); journaled with a suspension. -/
   reach : String := ""
@@ -852,7 +855,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   recordRoot handler obj.version
   let c ← compiledMethod obj "handle"
   let entry ← entryOf c
-  let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "handle" "" s.post
+  let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "handle" "" s.post s.sender
   let (domain, arguments) := match c.type with
     | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ ct _)) => (d, [obj.state, plan, fitRecord c.bounds ct context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
@@ -1339,7 +1342,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
           (some ((← expectedNow).setObjVal! "cases" (Json.mkObj [("at", toJson path), ("given", toJson word), ("cases", toJson cases)]))))
     else pure argument
   let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
-    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post
+    (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post s.sender
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([storedState obj, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([storedState obj, fitRecord compiled.bounds ct context], r)
@@ -1873,7 +1876,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | some (id, o) =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       recordCells id o.version { scalar := true }
-      let context := contextData id s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "view" view s.post
+      let context := contextData id s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "view" view s.post s.sender
       match ← derivedView id o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
@@ -2182,7 +2185,8 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       spent := st.spent
       subscribes := st.subscribes
       unsubscribes := st.unsubscribes
-      cells := st.cells }
+      cells := st.cells
+      sender := st.sender }
   let base := entryBase ctx used ++ (if st.cites.isEmpty then [] else [("cites", Json.arr st.cites)])
   -- An activity of a supervised object that ends broken, out of budget, or after its await
   -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
@@ -2316,6 +2320,7 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
     | .error e => throw e
   let init : TurnState := { world := w, principal := req.principal, intent := req.intent, subject := req.principal,
                             direct := how.delivery.isNone, receiver := how.receiver, ticks, limits := req.limits, profiling := req.profile,
+                            sender := if how.delivery.isSome then how.caller else "",
                             origin := req.origin, command := req.command,
                             post := if req.post.isEmpty then (heardPost req.method req.argument).getD "" else req.post,
                             reach := if how.delivery.isSome then how.reach.getD "delivery"
@@ -2874,6 +2879,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       via := via
       argument := argument
       direct := delivery.isNone
+      sender := if delivery.isSome then (act.getObjValAs? String "caller").toOption.getD "" else ""
       grants := grants
       revokes := strings (act.getObjVal? "revokes").toOption
       subscribes := ((act.getObjVal? "subscribes").toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.filterMap

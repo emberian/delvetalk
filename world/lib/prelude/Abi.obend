@@ -13,6 +13,7 @@ record Context:
   principal: String
   handle: String
   caller: String
+  sender: String
   intent: String
   height: Nat
   clock: Nat
@@ -20,8 +21,9 @@ record Context:
 # The two-tier law: a package's optional pure predicate
 #   def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict
 # judged by the host beside the law text (FOUNDATION section 4). A refusal names its
-# clause and gives its reading, as a law text's does (the host copies it into the receipt's
-# `reason`).
+# clause and gives its reading, as a law text's does (the receipt's `reading`, voiced in its
+# `reason`). `Context.sender` is the object whose send the turn delivers, "" for a turn a
+# principal began; `caller` is the frame's calling object.
 sum Verdict:
   admitted: {}
   refused: {clause: String, reading: String}

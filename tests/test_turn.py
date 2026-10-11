@@ -491,7 +491,7 @@ def context_data(principal, intent, obj):
     text = lambda k, v: {"name": k, "value": label(v)}
     return {"tag": "record", "fields": [
         text("world", ""), text("object", obj), text("principal", principal), text("handle", ""),
-        text("caller", ""), text("intent", intent), {"name": "height", "value": nat(0)},
+        text("caller", ""), text("sender", ""), text("intent", intent), {"name": "height", "value": nat(0)},
         {"name": "clock", "value": nat(0)},
         {"name": "inputOrigin", "value": {"tag": "record", "fields": [
             text("kind", "request"), text("object", ""), text("command", "bump"), text("program", ""),
