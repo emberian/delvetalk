@@ -11,20 +11,24 @@ The fragment, exactly (G1B-ENFORCED-LAW-DESIGN; anything else refuses
 
     EXPR  ::= EXPR implies EXPR | EXPR or EXPR | EXPR and EXPR | not EXPR | ( EXPR ) | ATOM
     ATOM  ::= REF == INT | REF <= INT | REF in [INT, …]
-            | REF == REF | REF <= REF | REF <= REF + INT
+            | REF == REF | REF <= REF | REF <= REF + INT | REF <= REF + REF
             | monotone(FIELD) | writeOnce(FIELD)
             | appendOnly(FIELD) | unchanged(FIELD) | REF in new.FIELD
             | insertOnly(FIELD) | REF in new.FIELD.COLUMN
             | count(new.FIELD) <= INT | count(new.FIELD) <= count(old.FIELD) + INT
-    REF   ::= new.FIELD | request.subject | request.caller | request.height | request.turn
-            | request.pin | request.kind | request.method
+    REF   ::= new.FIELD | old.FIELD | request.subject | request.caller | request.height
+            | request.turn | request.pin | request.kind | request.method | request.clock
+            | request.object
     INT   ::= -?[0-9]+
 
 `implies` binds loosest and associates to the right; `or` then `and` associate to the left;
 `not` applies to the atom (or parenthesised expression) after it. Edition 1 reads TOP-LEVEL
-fields only: `new.a.b` refuses by name. `old.` is readable only through `monotone` and
-`writeOnce`, `appendOnly` and `unchanged` (all the kernel's predicate can say about the old
-state). `appendOnly` holds when the new list is the old list with zero or more items appended;
+fields only: `new.a.b` and `old.a.b` refuse by name. `old.F` is the field before the write
+(docs/LAW.md §4 E); at creation, when there is no before, it reads as the empty value of
+`new.F`'s type, as `writeOnce` treats an empty field. `request.clock` is the world clock at the
+write, in minutes; `request.object` the written object's own id (LAW §4 A, H). The kernel's
+predicate reads the clock and the object as slots; an atom reading `old.F`, and the three-slot
+bound `REF <= REF + REF`, compile to `any []` and the host judges them, as it judges relations. `appendOnly` holds when the new list is the old list with zero or more items appended;
 `unchanged` when the field is equal in old and new. `new.F == request.subject` compares a
 text field with the principal. -/
 import Theory.AssertCompiled
@@ -50,6 +54,13 @@ inductive LawRef where
   | kind
   /-- The method whose run made the change, "" for an op (host extension). -/
   | method
+  /-- The world clock at the write, in minutes (host extension; LAW §4 A). -/
+  | clock
+  /-- The written object's own id (host extension; LAW §4 H). -/
+  | object
+  /-- `old.name`: the top-level field before the write; at creation the empty value (host
+  extension; LAW §4 E). -/
+  | old (name : String)
   deriving DecidableEq, Repr, Inhabited
 
 /-- The enforced fragment. `old.` appears only through `monotone` and `writeOnce`. -/
@@ -62,6 +73,8 @@ inductive LawExpr where
   | eqR (left right : LawRef)
   | leR (left right : LawRef)
   | leROff (left right : LawRef) (offset : Int)
+  /-- `REF <= REF + REF`, the three-slot bound (`request.clock <= old.tended + new.gap`; host). -/
+  | leRSum (left right addend : LawRef)
   | monotone (field : String)
   | writeOnce (field : String)
   /-- The new list is the old list with items appended (host extension). -/
@@ -87,12 +100,13 @@ inductive LawExpr where
 
 /-- The fields a law reads, in source order (with repetition). -/
 def LawRef.fields : LawRef → List String
-  | .field name => [name]
+  | .field name | .old name => [name]
   | _ => []
 
 def LawExpr.fields : LawExpr → List String
   | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.fields
   | .eqR left right | .leR left right | .leROff left right _ => left.fields ++ right.fields
+  | .leRSum left right addend => left.fields ++ right.fields ++ addend.fields
   | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => [field]
   | .member ref field | .memberColumn ref field _ => ref.fields ++ [field]
   | .insertOnly field | .countLe field _ | .countGrowth field _ => [field]
@@ -107,13 +121,14 @@ def plainName (name : String) : Bool :=
 
 /-- Every field a law reads is a plain name. -/
 def LawRef.plain : LawRef → Bool
-  | .field name => plainName name
+  | .field name | .old name => plainName name
   | _ => true
 
 /-- Every field a law names is a law field name. -/
 def LawExpr.fieldsPlain : LawExpr → Bool
   | .eqC ref _ | .leC ref _ | .inC ref _ | .eqS ref _ => ref.plain
   | .eqR left right | .leR left right | .leROff left right _ => left.plain && right.plain
+  | .leRSum left right addend => left.plain && right.plain && addend.plain
   | .monotone field | .writeOnce field | .appendOnly field | .unchanged field => plainName field
   | .member ref field => ref.plain && plainName field
   | .memberColumn ref field column => ref.plain && plainName field && plainName column
@@ -133,18 +148,30 @@ def LawRef.slot : LawRef → Slot
   | .pin => "request/pin"
   | .kind => "request/kind"
   | .method => "request/method"
+  | .clock => "request/clock"
+  | .object => "request/object"
+  | .old name => "old/" ++ name
+
+/-- Whether a reference reads the state before the write, which no view slot holds. -/
+def LawRef.readsOld : LawRef → Bool
+  | .old _ => true
+  | _ => false
 
 /-- The predicate the kernel installs for a law (`Kernel.ObjectLaw.compile_sound`: it evaluates
 to the law's meaning on every view the kernel judges). -/
 def compile : LawExpr → Pred
-  | .eqC ref value => .eq ref.slot value
+  -- `old.F` is no view slot: an atom reading it is the host's to judge.
+  | .eqC ref value => if ref.readsOld then Pred.any [] else .eq ref.slot value
   -- Text constants have no integer reading: the kernel predicate refuses (host laws judge them).
   | .eqS _ _ => Pred.any []
-  | .leC ref value => .le ref.slot value
-  | .inC ref values => .memberOf ref.slot values
-  | .eqR left right => .eqSlots left.slot right.slot
-  | .leR left right => .leSlots left.slot right.slot
-  | .leROff left right offset => .leSlotsOff left.slot right.slot offset
+  | .leC ref value => if ref.readsOld then Pred.any [] else .le ref.slot value
+  | .inC ref values => if ref.readsOld then Pred.any [] else .memberOf ref.slot values
+  | .eqR left right => if left.readsOld || right.readsOld then Pred.any [] else .eqSlots left.slot right.slot
+  | .leR left right => if left.readsOld || right.readsOld then Pred.any [] else .leSlots left.slot right.slot
+  | .leROff left right offset =>
+    if left.readsOld || right.readsOld then Pred.any [] else .leSlotsOff left.slot right.slot offset
+  -- A sum of two slots is beyond the kernel predicate: the host judges it.
+  | .leRSum _ _ _ => Pred.any []
   | .monotone field => .monotone ("state/" ++ field)
   | .writeOnce field => .writeOnce ("state/" ++ field)
   -- Lists and equality of whole fields are beyond the kernel predicate: host laws judge them.
@@ -173,6 +200,9 @@ def LawRef.render : LawRef → String
   | .pin => "request.pin"
   | .kind => "request.kind"
   | .method => "request.method"
+  | .clock => "request.clock"
+  | .object => "request.object"
+  | .old name => "old." ++ name
 
 def LawExpr.render : LawExpr → String
   | .eqC ref value => s!"{ref.render} == {value}"
@@ -182,6 +212,7 @@ def LawExpr.render : LawExpr → String
   | .eqR left right => s!"{left.render} == {right.render}"
   | .leR left right => s!"{left.render} <= {right.render}"
   | .leROff left right offset => s!"{left.render} <= {right.render} + {offset}"
+  | .leRSum left right addend => s!"{left.render} <= {right.render} + {addend.render}"
   | .monotone field => s!"monotone({field})"
   | .writeOnce field => s!"writeOnce({field})"
   | .appendOnly field => s!"appendOnly({field})"
@@ -274,6 +305,8 @@ def requestFact : String → Option LawRef
   | "pin" => some .pin
   | "kind" => some .kind
   | "method" => some .method
+  | "clock" => some .clock
+  | "object" => some .object
   | _ => none
 
 def parseRef : List Tok → Except String (LawRef × List Tok)
@@ -286,9 +319,14 @@ def parseRef : List Tok → Except String (LawRef × List Tok)
     match requestFact fact with
     | some ref => .ok (ref, rest)
     | none => refuse ("request." ++ fact ++ " (a law reads request.subject, request.caller, request.height, request.turn, \
-        request.pin, request.kind and request.method)")
-  | .ident "old" :: _ => refuse "old.FIELD outside monotone, writeOnce, appendOnly, unchanged, insertOnly and count(old.FIELD)"
-  | t :: _ => refuse (t.render ++ " where a reference new.FIELD or request.FACT was expected")
+        request.pin, request.kind, request.method, request.clock and request.object)")
+  | .ident "old" :: .sym "." :: .ident field :: rest =>
+    match rest with
+    | .sym "." :: _ => refuse ("the nested field path old." ++ field ++ ".… (edition 1 reads top-level fields of the \
+        declared state only)")
+    | _ => .ok (.old field, rest)
+  | .ident "old" :: _ => refuse "old without a field name (a reference is old.FIELD)"
+  | t :: _ => refuse (t.render ++ " where a reference new.FIELD, old.FIELD or request.FACT was expected")
   | [] => refuse "a comparison missing its reference"
 
 def parseIntList : Nat → List Tok → Except String (List Int × List Tok)
@@ -310,8 +348,8 @@ def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × L
   match rest with
   | .sym "==" :: .str text :: after =>
     match left with
-    | .subject | .caller | .pin | .method => return (.eqS left text, after)
-    | _ => refuse "a text constant compares with request.subject, request.caller, request.pin or request.method only"
+    | .subject | .caller | .pin | .method | .object => return (.eqS left text, after)
+    | _ => refuse "a text constant compares with request.subject, request.caller, request.pin, request.method or request.object only"
   | .sym "==" :: .ident name :: after =>
     if left == .kind && name != "new" && name != "request" && name != "old" then
       match kindNumber name with
@@ -335,8 +373,12 @@ def parseComparison (fuel : Nat) (toks : List Tok) : Except String (LawExpr × L
       let (right, after) ← parseRef more
       match after with
       | .sym "+" :: offset =>
-        let (k, after') ← parseInt offset
-        return (.leROff left right k, after')
+        if startsInt offset then
+          let (k, after') ← parseInt offset
+          return (.leROff left right k, after')
+        else
+          let (addend, after') ← parseRef offset
+          return (.leRSum left right addend, after')
       | _ => return (.leR left right, after)
   | .ident "in" :: .ident "new" :: .sym "." :: .ident field :: after =>
     match left, after with
@@ -452,7 +494,7 @@ theorem parse_precedence :
         (.and (.eqR .caller (.field "c")) (.leROff (.field "d") (.field "e") 3))) := by native_decide
 
 theorem parse_refuses_nested :
-    (parse "new.a.b == 1").toBool = false ∧ (parse "old.a == 1").toBool = false ∧
+    (parse "new.a.b == 1").toBool = false ∧ (parse "old.a.b == 1").toBool = false ∧ (parse "old == 1").toBool = false ∧
       (parse "new.a >= 1").toBool = false ∧ (parse "witnessed(x)").toBool = false ∧
       (parse "new.a == 1 claim").toBool = false ∧ (parse "request.target == 1").toBool = false := by
   native_decide
@@ -477,6 +519,34 @@ theorem parse_kind_names :
       (parse "new.a == proposed").toBool = false := by
   native_decide
 
+/-- LAW §4 A, E, H: the clock, the object and the state before the write. METAPHYSICS's `alive`
+clause in clock minutes; the three-slot bound; `old.F` against `new.F`; the object's id. -/
+theorem parse_clock_old_object :
+    (parse "request.method == \"tend\" or request.clock <= old.tended + 1440").toOption =
+      some (.or (.eqS .method "tend") (.leROff .clock (.old "tended") 1440)) ∧
+    (parse "request.clock <= old.tended + new.gap").toOption =
+      some (.leRSum .clock (.old "tended") (.field "gap")) ∧
+    (parse "new.ticks <= old.ticks or old.last + 0 <= request.clock").toBool = false ∧
+    (parse "new.ticks <= old.ticks or old.last <= request.clock").toOption =
+      some (.or (.leR (.field "ticks") (.old "ticks")) (.leR (.old "last") .clock)) ∧
+    (parse "request.object == \"tide\" and request.subject == request.object").toOption =
+      some (.and (.eqS .object "tide") (.eqR .subject .object)) ∧
+    (parse "request.clock == \"noon\"").toBool = false ∧
+    (parse "request.clock <= old.a.b + 1").toBool = false := by
+  native_decide
+
+/-- The clock and the object compile to view slots; an atom reading `old.F` and the three-slot
+bound compile to `any []`, the host's to judge; `fields` lists what `old.F` reads. -/
+theorem compile_clock_old_object :
+    compile (.leC .clock 1440) = .le "request/clock" 1440 ∧
+    compile (.eqR .subject .object) = .eqSlots "request/subject" "request/object" ∧
+    compile (.leROff .clock (.old "tended") 1440) = Pred.any [] ∧
+    compile (.leRSum .clock (.old "tended") (.field "gap")) = Pred.any [] ∧
+    (LawExpr.leRSum .clock (.old "tended") (.field "gap")).fields = ["tended", "gap"] ∧
+    (parse "request.clock <= old.tended + new.gap").toOption.map LawExpr.render =
+      some "request.clock <= old.tended + new.gap" := by
+  native_decide
+
 end Minidregg.Compiler.ObjectiveBendLaw
 
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_tally
@@ -485,3 +555,5 @@ end Minidregg.Compiler.ObjectiveBendLaw
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_relational
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_kind_names
 #assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_refuses_relational
+#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_clock_old_object
+#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.compile_clock_old_object

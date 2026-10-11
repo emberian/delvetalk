@@ -867,3 +867,16 @@ Card's declarations alone (one entry module, `check-package`, 20 entries in one 
    places one more precisely. The dead linear `instances.find?` by key (a key is a hash of the pair
    `instanceOf` already indexes) is gone. Packets do not move (pins: 0 recompiled).
    `test_package_bounds.InstanceBound`.
+L. (Coordinator's insertion, docs/LAW.md §4 A, E, H; §6 item 1, kernel half.) `ObjectiveBendLaw`:
+   `LawRef.clock` (`request.clock`, the world clock at the write in minutes), `LawRef.object`
+   (`request.object`, the written object's id; text-comparable: `request.object == "tide"`),
+   `LawRef.old F` (`old.F` as a reference; at creation the empty value, as `writeOnce` reads an empty
+   field; `old.a.b` refused by name), and `LawExpr.leRSum` (`REF <= REF + REF`, so
+   `request.clock <= old.tended + new.gap` is one atom). `compile`: clock and object are the slots
+   `request/clock`, `request/object`; an atom reading `old.F` and the three-slot bound are `any []`
+   (host-judged, as relations). `fields`, `fieldsPlain`, `render`, the parser and its refusals cover
+   them. Theorems `parse_clock_old_object` (METAPHYSICS `alive` as `request.method == "tend" or
+   request.clock <= old.tended + 1440`) and `compile_clock_old_object`, `native_decide`,
+   `#assert_compiled`. `Host/Law.lean` gained only fail-closed arms (`read` of clock, object, old is
+   `none`; `leRSum` denotes over `read`), so a law using them refuses every write until the host lane
+   adds `Facts.clock`, `Facts.object` and `read` over `old`.
