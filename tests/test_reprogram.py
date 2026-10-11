@@ -198,10 +198,11 @@ class PlansInTurn(Reprogram):
         self.assertNotIn("reprograms", r["receipt"]["outcome"])
 
 class Maximum(Reprogram):
-    def test_a_sixty_four_kib_package_is_refused_by_name_and_a_thirty_one_kib_one_is_admitted(self):
+    def test_a_package_past_128_kib_is_refused_by_name_and_a_thirty_one_kib_one_is_admitted(self):
         self.make()
-        big = self.reprogram(pad(ADDS_TWO, 64 * 1024))
+        big = self.reprogram(pad(ADDS_TWO, 129 * 1024))
         self.assertEqual(big["receipt"]["outcome"]["clause"], "packageBytes")
+        self.assertIn("package source exceeds maxPackageBytes (131072 bytes)", big["receipt"]["outcome"]["reason"])
         self.assertEqual(self.count("c1"), (0, "0"))
         source = pad(ADDS_TWO, 31 * 1024)
         self.assertGreater(len(source.encode()), 30 * 1024)

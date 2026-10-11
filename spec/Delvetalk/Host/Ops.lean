@@ -778,7 +778,7 @@ def entrySource (o : Object) : String :=
     `"<module>:<line>: <stage>: <message>"`, none when it is clean. Nothing is installed. -/
 def checkSource (w : World) (source : String) : List String :=
   if source.utf8ByteSize > Limits.maxPackageBytes then
-    [s!"Checked:0: package-request: package source exceeds {Limits.maxPackageBytes} bytes"]
+    [s!"Checked:0: package-request: package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)"]
   else
     -- The front end elaborates every declaration of every module whatever entry is selected,
     -- so the entry only has to exist: `initial` when declared, else the first `def`, else a
@@ -1173,7 +1173,7 @@ def checkRelations (decls : List RelDecl) (bounds : DataBounds) (stateType : Min
 def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false) :
     Except (String × String) Program := do
   if source.utf8ByteSize > Limits.maxPackageBytes then
-    throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
+    throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
   let replaced ← (if extend then extendInputs o.inputs source else replaceSource o.inputs source).mapError (("compile", ·))
   -- A reprogram is compiled against the library the world has now.
   let inputs ← (match w.library with

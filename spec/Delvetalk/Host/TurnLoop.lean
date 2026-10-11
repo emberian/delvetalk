@@ -429,7 +429,7 @@ def mintUnder (pfx : String) : M String := do
     chain (a name), or the source of one more module over that chain. -/
 def creationInputs (creator : Object) (package : String) : Except (String × String) Json := do
   if package.utf8ByteSize > Limits.maxPackageBytes then
-    throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
+    throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
   let limits := (creator.inputs.getObjVal? "limits").toOption
   let finish := fun (fields : List (String × Json)) =>
     Json.mkObj (fields ++ [("entry", toJson "initial")] ++ (limits.map fun l => [("limits", l)]).getD [] ++
@@ -453,7 +453,7 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   -- A layer an `extend` of the same turn lays into the making: one closure, one pin.
   let inputs ← if layer.isEmpty then pure inputs else do
     if layer.utf8ByteSize > Limits.maxPackageBytes then
-      throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
+      throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
     (extendInputs inputs layer).mapError (("compile", ·))
   let built ← (compileObject w inputs).mapError (("compile", ·))
   let initial ← (initialState built).mapError (("compile", ·))

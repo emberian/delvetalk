@@ -61,7 +61,7 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_durability` (§2 Durability): Each sync mode opens, writes and reopens a journal to the same head.
 - `test_extend` (§8 extend): Extend, not replace: a layer grafted by reprogram or the extend Plan overrides what it defines, stacks, survives snapshots and replay, and is judged by the object's law.
 - `test_fork` (§8 fork): A fork is a private journal seeded from the shared world at a height: its turns never touch the shared journal, and private objects stay with their readers.
-- `test_form_bounds` (§5): A spell, and a direct turn, are judged by the card's own form bounds; a `source` field takes Bend up to 16 KiB.
+- `test_form_bounds` (§5): A spell, and a direct turn, are judged by the card's own form bounds; a `source` field takes Bend up to 128 KiB (`Bounds.maxPackageBytes`).
 - `test_grants` (§4 Capabilities): A grant lets one grantee run one method of one object as its grantor, until a clock height, for a number of uses, until revoked; a law naming the grantor admits it.
 - `test_handlers` (§8 handlers): A handler object answers a callee's Plans before the host does, and judge answers the law's verdict on edits without committing them.
 - `test_host_spell` (§5): The host's `spell-parse` answers every recorded input as the fixtures say: parse, bare and fit, with the refusal clause names.
