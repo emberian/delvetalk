@@ -129,9 +129,6 @@ def tokensOfJson (json : Json) : Except String Tokens := do
 /-- Digests are CIDs of canonical bytes (Canonical.lean). -/
 def packetDigest (packet : Json) : String := Delvetalk.Canonical.cidJson packet
 
-def tokensDigest (tokens : Minidregg.Theory.ObjectiveBendCheckpoint.Tokens) : String :=
-  Delvetalk.Canonical.cidJson (tokensJson tokens)
-
 /-- SHA-256 of the canonical roots list: `[{object, version}]` in recorded order. -/
 def rootsDigest (roots : List (String × Nat)) : String :=
   Delvetalk.Canonical.cidJson (Json.arr (roots.map fun (object, version) =>
@@ -306,26 +303,13 @@ def splitSite : Tokens → Option Nat × Tokens
   | tokens => (none, tokens)
 
 /-- The response type a yield resumes at: its site's. -/
-def resumeTypeAt (sites : Option (Array (Term × Ty))) (_response : Ty) : Option Nat → Except String Ty
+def resumeTypeAt (sites : Option (Array (Term × Ty))) : Option Nat → Except String Ty
   | none => .error "checkpoint names no call site of this entry"
   | some i => match sites with
     | some s => match s[i]? with
       | some (_, t) => .ok t
       | none => .error "checkpoint names no call site of this entry"
     | none => .error "checkpoint does not decode"
-
-open Minidregg.Theory.ObjectiveBendCheckpoint in
-/-- The response type a checkpoint resumes at, and its state tokens. -/
-def resumeType (sites : Option (Array (Term × Ty))) (response : Ty) (tokens : Tokens) :
-    Except String (Ty × Tokens) := do
-  let (site, rest) := splitSite tokens
-  return (← resumeTypeAt sites response site, rest)
-
-/-- The dictionary a packet's checkpoints are written against: its entry term's. -/
-def programDictionary (packet : Json) : Dictionary :=
-  match decodePacket packet with
-  | .ok decoded => Dictionary.ofProgram decoded.source.term
-  | .error _ => {}
 
 /-- A yield held in this process: the yielded state as the machine left it, with what its
 checkpoint binds (pin, binding) and is written against (dictionary, site). A host that
@@ -427,7 +411,7 @@ def resumeState (entry : Delvetalk.CheckedEntry) (state : State) (site : Option 
     Except String (DataBounds × Ty × Ty × Ty × State) := do
   let assumptions := entry.source.assumptions
   let (plan, response, result) ← activityShape assumptions (peelArrows Bounds.entryArrowDepth entry.type)
-  let response ← resumeTypeAt entry.sites response site
+  let response ← resumeTypeAt entry.sites site
   unless value.conformsUnder assumptions.bounds response do throw "turn refused: response does not conform to the response type"
   let some resumed := Minidregg.Theory.ObjectiveBendDemandMachine.resume value.term state
     | throw "turn refused: checkpoint is not a yielded state"
