@@ -16,11 +16,12 @@ IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history r
 
 
 class HostClient:
-    """send(request) -> the host's reply. heap=<did> addresses a private heap; stateless=True the journal-less session.
+    """send(request) -> the host's reply. `world` addresses a world served here (`town`, or `scratch/<name>` for the request's principal's scratch world);
+    stateless=True the journal-less session.
     One persistent connection per thread, re-made on EOF or when the socket file is a new one (serve restarted)."""
 
-    def __init__(self, path, world='town', heap=None, stateless=False, timeout=HOST_TIMEOUT):
-        self.path, self.world, self.heap, self.stateless, self.timeout = str(path), world, heap, stateless, timeout
+    def __init__(self, path, world='town', stateless=False, timeout=HOST_TIMEOUT):
+        self.path, self.world, self.stateless, self.timeout = str(path), world, stateless, timeout
         self.local = threading.local()
 
     def _connection(self):
@@ -52,7 +53,7 @@ class HostClient:
         return self.local.conn[0], self.local.conn[1], True
 
     def send(self, request):
-        envelope = {**({'world': self.world} if self.world else {}), **request, **({'heap': self.heap} if self.heap else {}),
+        envelope = {**({'world': self.world} if self.world else {}), **request,
                     **({'stateless': True} if self.stateless else {})}  # a request naming its own world keeps it
         data, began = (json.dumps(envelope) + '\n').encode(), time.monotonic()
         for _ in (0, 1):
@@ -73,8 +74,9 @@ class HostClient:
                     break
         return {'status': 'error', 'class': 'hostUnavailable', 'message': f'the host is unavailable at {self.path} after {time.monotonic() - began:.1f} s'}
 
-    def at(self, heap):
-        return HostClient(self.path, self.world, heap=heap, timeout=self.timeout)
+    def at(self, world):
+        """A client for another world served here, e.g. `at('scratch/try')`."""
+        return HostClient(self.path, world, timeout=self.timeout)
 
     def close(self):
         held, self.local.conn = getattr(self.local, 'conn', None), None

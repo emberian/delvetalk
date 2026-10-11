@@ -132,6 +132,10 @@ structure Send where
 
 structure TurnState where
   world : World
+  /-- What this segment read of other worlds (`Foreign`): `{world, object, version, stateCid, height,
+      head}` each, journaled as `cites` on the entry it ends in. Not roots: two journals do not commit
+      together, so a foreign read can go stale without refusing the turn. -/
+  cites : Array Json := #[]
   roots : List (String × Nat) := []
   writes : List (String × List Written) := []
   /-- How each root not read whole was read (`Cells`, by object): a stored frame's scalar part,
@@ -292,6 +296,13 @@ def referenceId : Data → Option String
 
 def emptyRecord : Data := .record []
 
+/-- A `Reference` to another world's object: `(world, object)` when `world` is not "". -/
+def foreignRef : Data → Option (String × String)
+  | .record f => match (f.lookup "world").bind labelOf, (f.lookup "object").bind labelOf with
+      | some world, some id => if world.isEmpty then none else some (world, id)
+      | _, _ => none
+  | _ => none
+
 /-- A `List<T>` value on the wire: `nil {} | cons {head, tail}`. -/
 def listData (items : List Data) : Data :=
   items.foldr (fun x tail => .variant "cons" (.record [("head", x), ("tail", tail)]))
@@ -315,6 +326,21 @@ def refusedWith (bounds : DataBounds) (responseType : Ty) (clause : String) : M 
 def refusedReading (bounds : DataBounds) (responseType : Ty) (clause reading : String) : M Data :=
   respond bounds responseType "refused"
     [.record [("clause", .label clause), ("reading", .label reading)], .record [("clause", .label clause)], emptyRecord]
+
+/-- A read of another world's object (`World.foreign`): that world's own answer, shaped for the call site
+    by `shape`, and its citation kept for the entry (`TurnState.cites`); `denied` when that world denies
+    the reader or has no such object; `foreignWorld` when no world of that name is served here. -/
+def foreignRead (bounds : DataBounds) (responseType : Ty) (world op id : String)
+    (shape : Json → Option (String × Data)) : M Data := do
+  let s ← get
+  match s.world.foreign.read world op id s.subject with
+  | none => refusedReading bounds responseType "foreignWorld" s!"{world} is not a world served here"
+  | some (reply, cite) =>
+    match shape reply with
+    | some (label, payload) =>
+      modify fun s => { s with cites := s.cites.push cite }
+      respond bounds responseType label [payload]
+    | none => respond bounds responseType "denied" [emptyRecord]
 
 /-- The reading of a refused call: the voiced reason of the refusal it names. -/
 def callReading (cls object : String) (expected : Option Json := none) : String :=
@@ -497,8 +523,8 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   let (relations, state) ← (relationsFor built state).mapError fun e =>
     (if e.startsWith "duplicateKey" then "duplicateKey" else "key", e)
   let lawText := if lawArg.startsWith "law " then some lawArg else none
-  let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
-    (fun e => (if isAmendmentRefusal e then "law"
+  let (object, sources) ← (makeObject w built inputs state none none principal height lawText).mapError
+    (fun e => (if isAmendmentRefusal e || e.startsWith "under: " then "law"
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
   return ({ object := { object with relations }, sources, seed := dataJson state }, built)
 
@@ -519,7 +545,7 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
       ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
   | .ok (again, built) =>
     let o := again.object
-    let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", [], s.world.clock, id⟩
+    let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", [], s.world.clock, id, citedStates s.world o.law⟩
     if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
       return ← refusedReading bounds responseType clause s!"refused {clause}: the law of {id} does not admit this layer"
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
@@ -995,7 +1021,7 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
     that reads the state is judged on it too (codex agent 11: `request.subject == new.owner or …`
     refuses a stranger whatever the method writes, unless the method moves the owner). -/
 def methodAdmits (w : World) (o : Object) (principal method : String) (id : String := "") : Json :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, [], w.clock, id⟩
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, [], w.clock, id, citedStates w o.law⟩
   match o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause with
   | none => Json.bool true
   | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
@@ -1134,7 +1160,7 @@ def cardPowers : List String := ["retire", "unretire", "hide", "show"]
 /-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
     it stands? As `methodAdmits` judges a method. -/
 def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : String := "") : Bool :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", [], w.clock, id⟩
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", [], w.clock, id, citedStates w o.law⟩
   (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
 
 /-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
@@ -1504,6 +1530,10 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
 partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
   | .variant "view" (.record f) =>
+    if let some (world, id) := (f.lookup "object").bind foreignRef then
+      return ← foreignRead bounds responseType world "view" id fun r => do
+        let state ← (r.getObjVal? "state").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+        return ("viewed", .record [("version", .natural ((r.getObjValAs? Nat "version").toOption.getD 0)), ("state", state)])
     match (f.lookup "object").bind referenceId with
     | none => respond bounds responseType "denied" [emptyRecord]
     | some id =>
@@ -1710,6 +1740,10 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         ("by", .label (if handle.isEmpty then c.principal else handle))]
     respond bounds responseType "changed" [.record [("items", listData (items.map item)), ("more", .boolean more)]]
   | .variant "card" (.record f) =>
+    if let some (world, id) := (f.lookup "object").bind foreignRef then
+      return ← foreignRead bounds responseType world "card" id fun r => do
+        let document ← (r.getObjVal? "document").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+        return ("carded", .record [("document", document)])
     let s ← get
     match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
     | none => respond bounds responseType "denied" [emptyRecord]
@@ -2115,7 +2149,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       subscribes := st.subscribes
       unsubscribes := st.unsubscribes
       cells := st.cells }
-  let base := entryBase ctx used
+  let base := entryBase ctx used ++ (if st.cites.isEmpty then [] else [("cites", Json.arr st.cites)])
   -- An activity of a supervised object that ends broken, out of budget, or after its await
   -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
   let ended := fun (how : String) (h : Nat) (out : Json) =>
@@ -3099,7 +3133,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
     return Json.mkObj ([("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText),
       -- The law's clauses with their readings, and whether a Bend `law(old, new, request)` judges after it.
-      ("laws", openerRow w (lawRows o)), ("bendLaw", toJson o.predicate)] ++
+      ("laws", openerRow w (lawRows o)), ("cites", toJson (lawCitations w o.law)), ("bendLaw", toJson o.predicate)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
       -- Its canonical bytes, and its scalar part's, which `Bounds.maxCellBytes` bounds as it bounds each row.

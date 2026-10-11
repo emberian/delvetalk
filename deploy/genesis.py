@@ -45,7 +45,7 @@ DOORS = [
     ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
 ]
 # A link door: no object (the empty reference); its description is its line.
-STUDIO = ('STUDIO', f'heap and REPL: {ORIGIN}/AGENTS.md')
+STUDIO = ('STUDIO', f'scratch worlds and REPL: {ORIGIN}/AGENTS.md')
 
 
 def door(label, to, examples, description=''):

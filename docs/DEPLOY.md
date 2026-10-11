@@ -28,14 +28,15 @@ the chain ("journal broken at height N: height out of sequence"). So exactly one
 process, `delvetalk-host` (`delvetalk-obend serve`, HOST-HANDOFF 5.125), opens the journals. It holds
 `/data/state/journal.lock` for its life (exit 75, "refusing to start a second writer", if taken), keeps every world's
 journal in `/data/state` (`town.journal`; another world's `<name>.journal`, opened at the first op that names it with
-`world: <name>`; private heaps in `heaps/`, addressed by `heap: <did>`), and serves the front, the bridge, the
+`world: <name>`; a principal's scratch worlds in `scratch/<principal>/<name>.journal`, addressed by `world: scratch/<name>` beside `principal`, are not custody: backups leave them out and verification skips them), and serves the front, the bridge, the
 interpreter and `post --object` over `/data/state/host.sock` (mode 0600). The opener's ops, `world-root` and the root
 ops (`world-library`, `world-settings`, `world-fork`, `world-snapshot`) take the root socket,
 `/run/delvetalk-root/root.sock` on the host directory `/var/lib/delvetalk/root` (`DELVETALK_ROOT`), mounted into
 `delvetalk-host`, `delvetalk-ops` and the hand and into nothing else. At start serve rebuilds `<state>/library` from
 `--library` (the image's `world/lib`) and `world/objects/{Avatar,Env,Wake}.obend` (the packages `world-arrive` creates
-from) and seals it into each world at its first open (the opener may change it, each heap's owner theirs), so packages
-import `./Plan.obend` and the rest by name. A world idle ten minutes is closed and reopened by replay at its next op.
+from) and seals it into each world at its first open (the opener may change it; a scratch world starts with it sealed), so packages
+import `./Plan.obend` and the rest by name. Every world of the directory is opened at start and held (a held world is
+its live state, not its journal), so a turn in one may read another's objects.
 The other programs are clients (`transport/host.py`, 99 lines): stop, start or run them at any time without touching
 the world.
 The lock holds where one kernel sees the file: a local Linux
@@ -149,6 +150,12 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     DELVETALK_REPO_KEY_PATH=/etc/delvetalk/repo/town.key
     DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc   # the watch bot's rc (owner 10425, mode 0400); "Watching"
 
+Every path and port has a variable whose default is the workhorse's; a rehearsal or drill on another box sets them in the
+same `.env` (and `COMPOSE_PROJECT_NAME`, which every `docker compose` here then uses): `DELVETALK_DATA`, `DELVETALK_ROOT`,
+`DELVETALK_ANTHROPIC_KEY_PATH`, `DELVETALK_HAND_TOKEN_PATH`, `DELVETALK_DELVE_DIR`, `DELVETALK_BACKUPS` (the watch's),
+`DELVETALK_PRIVATE_IP`, `DELVETALK_PORT` (the front, 8765) and `DELVETALK_HAND_PORT` (8766); the commands below then
+take `/etc/delvetalk` and `/var/lib/delvetalk` as those paths.
+
 The repository key, once (`deploy.repokey` refuses an existing file; it prints the `did:key`, which
 `/.well-known/did.json` then names as `#atproto`; the front does not start without the file, so a box deployed
 before the signed repository makes it the same way before its next `up`):
@@ -162,6 +169,8 @@ The root socket's directory, owner 10425, mode 0700, outside the data directory 
 `/data` reaches it:
 
     install -d -o 10425 -g 10425 -m 0700 /var/lib/delvetalk/root
+    # the hand's Delve credentials directory, made now: a bind source compose does not find is created root 0755
+    install -d -o 10425 -g 10425 -m 0700 /etc/delvetalk/delve
     # the hand's token, a file and never an argv or .env (`ps` shows argv to every local user):
     (umask 0277; openssl rand -hex 32 > /etc/delvetalk/hand.token) && chown 10425:10425 /etc/delvetalk/hand.token
 
@@ -170,27 +179,42 @@ and the interpreter mount `${DELVETALK_DATA}/state` alone, not the whole data di
 is mounted into `delvetalk-host`, `delvetalk-ops` and `delvetalk-hand` only. All run as 10425: serve's sockets are 0600,
 so a separate uid for the hand needs serve to make the root socket group-readable first (host lane).
 
-A data directory from before `serve` (the journal at `/data/world.journal`, the lock at `/data/journal.lock`) is moved
-once, with the stack down: `mv /var/lib/delvetalk/v2/world.journal /var/lib/delvetalk/v2/state/town.journal` (serve
-journals the name `town` into it at its first open; the old `journal.lock` is no longer read).
+A journal is two files, the chain `<world>.journal` and its block store `<world>.journal.blocks` (HOST-HANDOFF 5.137);
+an open of the old one-file line format is refused naming it. Two cases, kept apart:
+
+- *The same replay edition, the old layout or format.* A data directory from before `serve` (the journal at
+  `/data/world.journal`) is moved once, stack down, `mv .../v2/world.journal .../v2/state/town.journal` (serve journals
+  the name `town` at its first open; the old `journal.lock` is no longer read); a line-format journal is then
+  converted with `docker run --rm --network none --user 10425:10425 -v <state>:/j delvetalk-host:<sha12> migrate --journal
+  /j/town.journal.old --out /j/town.journal` (the old file renamed first; `--out` must not exist; without `--user` the
+  pair belongs to the image's 65532) and checked with `verify.sh`. Rehearsed 2026-10-11: a 91-entry journal written out
+  in the line format migrates back to the same two files, byte for byte.
+- *Another replay edition* ("journal replay edition 1; this host is 5"): nothing converts it, `migrate` included. It is
+  a new genesis into a fresh data directory (OPERATIONS section b, "The upgrade path"); the old directory is kept as it
+  is, served read-only by its own old image if its receipts are to resolve.
 
     docker compose up -d --wait delvetalk-host
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock
 
-`deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/`, so it, `deploy/library-update.sh` and
-`deploy.spend` run in `delvetalk-ops`). The opener arrives first (`world-arrive`), then creates `policy`,
-`directory`, `garden`, `tide`, `workshop`, `anthology`, `cistern`, `commons`, `rooms` and `play`, in that order. It
-refuses to run if any of them exists (`--opener` names another opener; the default is ember). The cistern is created
-with its law (`law owner`, `law level: monotone(level)`; `world-inspect cistern` shows it), and the opener's
-`wake/<did>` is given `arrived` and a schedule calling `tide.tick` every 60 clock minutes (its `triggers` in
-`world-view`). Genesis prints one line per object; a page that was not published is named on stderr. The rehearsal seeds the
-same way. `deploy.seed` creates one further object by hand.
+`deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/` and `capsules/pages/`, so it,
+`deploy/library-update.sh` and `deploy.spend` run in `delvetalk-ops`). The opener arrives first (`world-arrive`), then
+creates `policy`, `commonplace` (the town's first card, a record), `garden`, `tide`, `workshop`, `kinds`, `anthology`,
+`library` and `rooms`, in that order (`deploy/genesis.py` `seeds`); the opener's `wake/<did>` is given `arrived` and a
+schedule calling `tide.tick` every 60 clock minutes; `kinds` makes `kind/record`, `kind/bell`, `kind/cistern` and
+`kind/room`; the commonplace and `rooms` are given their bodies (`world/bodies/`); the library shelves its six pages.
+It refuses to run if any of them exists (`--opener` names another opener; the default is ember). It prints one line per
+created object and nothing for the turns after; a page that was not published is named on stderr. Rehearsed on
+foundation 7884a972: 43 entries, 16 objects, 3.4 s. The rehearsal seeds the same way. `deploy.seed` creates one further object by hand.
 
-The welcome card's menu has six doors: GARDEN, ROOMS, WORKSHOP, TIDE, ANTHOLOGY and STUDIO (a link to
+Genesis is not one transaction: if it stops partway (a traceback, a refused create), the objects it made stay and a
+second run refuses ("genesis has already run here: ..."). Before anything is posted, start again: `docker compose down`,
+move `state/` aside (`mv /var/lib/delvetalk/v2/state /var/lib/delvetalk/v2/state.failed-<stamp>`), fix the cause, and
+run this section from `up -d --wait delvetalk-host`.
+
+The commonplace cites seven doors: GARDEN, ROOMS, WORKSHOP, TIDE, ANTHOLOGY, KINDS and STUDIO (a link to
 `<origin>/AGENTS.md`, with no object). Genesis then has each door's object publish its page (`publishPage {page}`, the
-page the door's word capitalized). After the bridge runs, its outbox holds one draft each: `wiki: Garden`, `wiki: Rooms`,
-`wiki: Workshop`, `wiki: Tide` and `wiki: Anthology`. Garden writes its own page; the others get the host's default page
-(the card, then how to reply). STUDIO has no page.
+page the door's word capitalized), so the outbox holds six drafts once the bridge has run: `wiki: Garden`, `wiki: Rooms`,
+`wiki: Workshop`, `wiki: Tide`, `wiki: Anthology` and `wiki: Kinds`. STUDIO has no page.
 Post each with `transport.post ... --object <object>` as `python3 -m transport.bridge outbox` prints it; that records the
 post for the object, so replies to it route there. A door whose page was not published is named on stderr. The outbox
 prints `--text-file TEXT` for a page; `--draft` reads the text from the outbox file itself, so each page is
@@ -205,7 +229,7 @@ prints `--text-file TEXT` for a page; `--draft` reads the text from the outbox f
 The bridge observes nothing posted before its first start: a state that has observed nothing writes `<state>/since`
 (now) on the first poll, and posts older than it are never observed (`bridge run --since ISO` replays deliberately). So
 after genesis the journal holds genesis and the opener's arrival (the Avatar named by the DID, `env/<did>`, `wake/<did>`)
-and nobody who posted earlier, and the outbox holds only the five page drafts. (The deploy of a3e1fb2 read the whole town on its first poll: 124
+and nobody who posted earlier, and the outbox holds only the six page drafts. (The deploy of a3e1fb2 read the whole town on its first poll: 124
 objects and five reply drafts to posts older than the world.) Posts made after `since` do arrive: the deploy of
 18f1de9 had genesis at height 25 and, within its first two polls, two bots' replies (berduck, dougbot) made each an
 Avatar, Env and Wake (heights 30 to 40) and were skipped with no draft.
@@ -215,9 +239,15 @@ Avatar, Env and Wake (heights 30 to 40) and were skipped with no draft.
 
 `delvetalk-interpret` is in the `town` profile, kept on purpose so a stack without the model key still comes up: every `up` that should run it names `--profile town` (as here, after a restore and after a new binary); without it the interpreter does not start and interpretations wait.
 
-`--wait` fails red unless the healthcheck passes: `/AGENTS.md` answers and the
-home page shows a journal height, `entry <n>` (a refused `world-open` shows `entry None`). From
-the laptop:
+`--wait` fails red unless every healthcheck passes: the host answers `world-status` with a height, `/AGENTS.md` answers
+and the home page shows `entry <n>` (a refused `world-open` shows `entry None`), the bridge's and interpreter's pid files
+are fresh, and the hand answers a tokenless `/hand/` with 404. `docker compose ps` shows all five `(healthy)`. Then
+`docker compose run --rm delvetalk-ops python3 -m transport.hand status` (the journal height, the host pid) and
+`hostd-info` (the binary's SHA-256 and `replay`, the edition: 5 on foundation 7884a972) are the host's own word;
+`serve-status` lists the open worlds and their heights. The DID document and the signed head:
+`curl -s <origin>/.well-known/did.json` names the `did:key` `deploy.repokey` printed as `#atproto`, and
+`com.atproto.sync.getLatestCommit?did=did:web:<host>` answers `{cid, rev}`; the commit block in `getRepo`'s CAR
+verifies under that key (`transport.atproto.sign.verify`). From the laptop:
 
     deploy/smoke.sh https://gsb.fg-goose.online --pin <sha256> --handle <you>.delve.town
 
@@ -250,7 +280,7 @@ account's credentials file is mounted for that one command only:
 
     docker compose run --rm -v /etc/delvetalk/delve/credentials.json:/run/delve.json:ro delvetalk-ops \
       python3 -m transport.post --state /data/state post --text-file /data/welcome.txt \
-      --intent welcome-1 --host-socket /data/state/host.sock --object directory --credentials /run/delve.json
+      --intent welcome-1 --host-socket /data/state/host.sock --object commonplace --credentials /run/delve.json
 
 `/data/welcome.txt` is `docs/previews/gsb-welcome-v6.txt` at the deployed commit, placed in the data directory by hand
 (owner 10425, mode 0400); compare its SHA-256 with the repository's after any edit of the preview, since a re-genesis that
@@ -280,9 +310,9 @@ never from argv), and speaks to the host on the root socket
     python3 -m transport.hand serve --state /data/state --credentials /run/delve.json
 
 (in compose that is `delvetalk-hand` in `deploy/compose.hand.yml`, named by `COMPOSE_FILE` in `.env`, its token the
-compose secret `/etc/delvetalk/hand.token`; it mounts the root socket's directory, and `/etc/delvetalk/delve/` (owner
-10425, mode 0700) read-only, where the owner puts `credentials.json`, read only at a Post, and publishes the hand's
-port on workhorse's loopback only, `127.0.0.1:8766`, which `DELVETALK-LOCAL` keeps to root, so reach it by a forward as
+compose secret `/etc/delvetalk/hand.token` (`DELVETALK_HAND_TOKEN_PATH`); it mounts the root socket's directory, and
+`/etc/delvetalk/delve/` (`DELVETALK_DELVE_DIR`; owner 10425, mode 0700, made at first start) read-only, where the owner puts `credentials.json`, read only at a Post, and publishes the hand's
+port on workhorse's loopback only, `127.0.0.1:8766` (`DELVETALK_HAND_PORT`), which `DELVETALK-LOCAL` keeps to root, so reach it by a forward as
 root):
 
     ssh -L 8766:127.0.0.1:8766 root@workhorse     # then open http://127.0.0.1:8766/hand/?token=<secret>
@@ -299,7 +329,7 @@ model failure is submitted to the host, which retries a transient one with backo
 A turn made over HTTP (`/AGENTS.md/world/<o>/<method>` or the play page) that the host admits with a write on an object
 the public reads (`world-view` as `anonymous` answers it) is drafted here as a town reply is (`<height>-http-<hash>.json`,
 `http: {intent}`, no `replyTo`, the turn's offers or else its receipt line), once per receipt, so the owner chooses
-whether the town hears of it; a heap turn, a refusal and a write to a private object draft nothing. On Zulip the bridge
+whether the town hears of it; a scratch turn, a refusal and a write to a private object draft nothing. On Zulip the bridge
 never posts such a draft itself (it answers no message); Post sends it to Delve.
 The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport.hand <verb>
 --state /data/state [--root-socket PATH] [--world W] [--credentials FILE] [--json]` (`DELVETALK_STATE`,
@@ -348,10 +378,10 @@ The command-line way remains: `python3 -m transport.bridge outbox --state STATE`
 Before DelveTalk goes to delve.town, residents can play it in the owner's own Zulip. `transport/zulip.py` is a second
 transport: an observer of one stream and a poster. Every message of the stream becomes the observation a Delve post
 would (principal `zulip:<realm host>:<sender id>`, the realm from the rc's `site`, the full name as handle, `replyTo` the previous message of its topic, kind
-by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the directory), and the bridge routes
+by `observe.classify`; mentioning the bot, whose name `users/me` gives, summons the commonplace), and the bridge routes
 it as on Delve (docs/FLEX.md): a message reaches the card whose recorded message is nearest above it in its topic,
 unless it @-mentions only other residents; a spell line reaches its card as the host's parser reads it (`spell-parse`);
-a mention of the bot reaches the directory, whose interpreter may answer `none`. On Delve a reply reaches by its direct
+a mention of the bot reaches the commonplace, whose interpreter may answer `none`. On Delve a reply reaches by its direct
 parent only, and field lines anywhere in a thread the world opened reach that thread's card; prose deeper in a thread
 never reaches by its root. Because this is
 the owner's Zulip, `bridge run --source zulip` posts drafts back itself (`@**Name**` first, in the draft's topic),
@@ -364,7 +394,7 @@ in this path reads Delve credentials.
 
 It starts `delvetalk-obend serve` over a fresh directory under `~/.delvetalk-playtest/run-<stamp>/state/` (`--dir` or `DELVETALK_PLAYTEST_DIR`
 moves it; earlier runs are kept), runs genesis, posts `docs/previews/zulip-welcome-v3.txt` (its `<bot name>` filled in) to the stream's `welcome`
-topic and records it against `directory`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds). The
+topic and records it against `commonplace`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds). The
 `.zuliprc` is the bot's: its user must be subscribed to the stream (a guest cannot create one; check `users/me/subscriptions` first, since a stream the bot cannot see answers `Invalid channel name`). With `--topic NAME` the playtest joins an existing conversation: the welcome goes to that topic instead of `welcome`, and the observer reads only that topic (the Zulip narrow `channel` + `topic`), so the world never sees the stream's other topics; replies land in the same topic. A fresh bridge observes nothing posted before its start. The model credentials are as under "Model
 credentials" and are read from the environment of the script; `DELVETALK_OBEND` names the host binary.
 
@@ -378,7 +408,7 @@ The bot's own messages are never observed (`ZulipObserver.store` skips its sende
 
 Within a poll the card comes back in the topic (the journal height grows by the planting) and the interpreter's proposal answers the prose. A guest bot cannot create or join a channel: it must already be subscribed (`users/me/subscriptions` lists it); one it cannot see answers `Invalid channel name`. Port 8765 may be held by another tenant of the host; give `--port`.
 
-`--no-welcome` starts the world without posting the welcome or the page cards (it makes the page drafts and marks them posted), for a stream that already holds them; say what happened with one `transport.zulip post --object directory` message in the `welcome` topic. A journal does not survive a host whose replay rules changed: a restart on a new host (a rebuilt `delvetalk-obend`, or a library pin change that the old tree can no longer replay) is a fresh world, with the residents' bells and subscriptions gone. The old run directory stays on disk.
+`--no-welcome` starts the world without posting the welcome or the page cards (it makes the page drafts and marks them posted), for a stream that already holds them; say what happened with one `transport.zulip post --object commonplace` message in the `welcome` topic. A journal does not survive a host whose replay rules changed: a restart on a new host (a rebuilt `delvetalk-obend`, or a library pin change that the old tree can no longer replay) is a fresh world, with the residents' bells and subscriptions gone. The old run directory stays on disk.
 
 The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. The pieces run alone as
 `python3 -m transport.zulip observe|post`; the mocked Zulip is `tests/test_zulip.py`.
@@ -401,7 +431,9 @@ that failed or a newest tarball older than seven hours. Install on the workhorse
     scp deploy/watch.sh deploy/delvetalk-watch.service deploy/delvetalk-watch.timer root@workhorse:/opt/delvetalk/
     ssh root@workhorse 'cp /opt/delvetalk/delvetalk-watch.{service,timer} /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now delvetalk-watch.timer'
 
-`journalctl -u delvetalk-watch` shows each run; `python3 -m deploy.watch ... --dry-run` prints the lines without
+Rehearsed 2026-10-11 on persvati with an rc naming an unreachable realm: the probe, the thresholds and `watch.jsonl`
+all ran and the run failed only at the Zulip send (`network_error: URLError`), so a first real run that fails elsewhere
+is news. `journalctl -u delvetalk-watch` shows each run; `python3 -m deploy.watch ... --dry-run` prints the lines without
 posting or remembering them. Installed 2026-10-10 (rc, `.env` line, `watch.sh`, both units) with the timer **not
 enabled**: the deployed image (foundation 18f1de9, `523ea05d7dca`) predates `deploy/watch.py` and the probe, and its one
 run by hand failed `No module named deploy.watch`. After an image from c5d4eb8 or later is up and the stream exists:
@@ -436,10 +468,12 @@ file sharing on a Mac is for testing, not custody.
     deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v2 /var/backups/delvetalk
 
 It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
-copies SQLite through its backup API, replays every journal (`state/*.journal` and `state/heaps/`)
+copies SQLite through its backup API, replays every journal (`state/*.journal`; `state/scratch/` is not custody and is left out of the backup)
 in a throwaway host with no network, and only then writes a dated tarball
 and its `.sha256`, and records `ok <stamp>` or `broken <stamp>` in `last-verify` (the watch reads it). Exit 1 means a
-journal is broken: the tarball is not made. The timer installed on the workhorse:
+journal is broken: the tarball is not made. The backup directory is root's, group 10425, mode 0750: the watch's probe runs
+as 10425 in the ops container and lists it and reads `last-verify` (under 0700 its one run by hand failed `hand: [Errno
+13] Permission denied: '/backups/last-verify'`; rehearsed); 10425 owns every byte in it already. The timer installed on the workhorse:
 
     # /etc/systemd/system/delvetalk-v2-backup.service
     [Service]
@@ -489,12 +523,22 @@ is the backup: an unverified tarball is a file.
 **The restore drill**, quarterly and once before the welcome is posted: on hbox, into a scratch
 directory, brought up on another port.
 
-    deploy/restore.sh --image delvetalk-host:<sha12> /tank/delvetalk-backups/delvetalk-<stamp>.tar.gz /tmp/drill/v2
-    # .env as on the workhorse (DELVETALK_IMAGE, DELVETALK_HOST_IMAGE), with the drill's own paths; the drill makes no model call
-    DELVETALK_DATA=/tmp/drill/v2 DELVETALK_ROOT=/tmp/drill/root DELVETALK_PRIVATE_IP=127.0.0.1 DELVETALK_ANTHROPIC_KEY_PATH=/tmp/drill/no.key \
-      docker compose -p delvetalk-drill --profile town up -d --wait      # first: touch /tmp/drill/no.key
-    deploy/smoke.sh http://127.0.0.1:8765 --pin <sha256>      # the home page shows the restored entry N
-    docker compose -p delvetalk-drill down
+    sudo deploy/restore.sh --image delvetalk-host:<sha12> /tank/delvetalk-backups/delvetalk-<stamp>.tar.gz /tmp/drill/v2
+    sudo install -d -o 10425 -g 10425 -m 0700 /tmp/drill/root /tmp/drill/repo
+    # the drill's own repository key: the town's never leaves the workhorse, and the front does not start without one
+    docker run --rm --user 10425:10425 --network none -v /tmp/drill/repo:/repo delvetalk:<sha12> python3 -m deploy.repokey --dir /repo --world town
+    # .env as on the workhorse (DELVETALK_IMAGE, DELVETALK_HOST_IMAGE, DELVETALK_ORIGIN), with the drill's own paths and ports
+    export DELVETALK_DATA=/tmp/drill/v2 DELVETALK_ROOT=/tmp/drill/root DELVETALK_PRIVATE_IP=127.0.0.1 \
+      DELVETALK_REPO_KEY_PATH=/tmp/drill/repo/town.key DELVETALK_PORT=18775
+    docker compose -p delvetalk-drill -f compose.yml up -d --wait delvetalk-http
+    deploy/smoke.sh https://gsb.fg-goose.online --via http://127.0.0.1:18775 --pin <sha256>   # the restored entry N
+    docker compose -p delvetalk-drill -f compose.yml down
+
+`restore.sh` runs as root: it gives the restored tree to 10425, whoever unpacked it (run by the puller's own user, the
+tree was that user's and serve stopped at `permission denied, file: /data/state`; rehearsed). The drill starts the host
+and the front only (`-f compose.yml`, no hand): a drill's bridge would observe the live town from the backup's
+`since`, arrive its posters and draft replies, so the height would no longer be the backup's (rehearsed: 52 became 84
+within a poll), and its interpreter would spend.
 
 Restore on the workhorse:
 
@@ -504,8 +548,8 @@ Restore on the workhorse:
 
 A tarball pulled off the box comes back the same way (`scp` it beside its `.sha256` into `/var/backups/delvetalk`).
 
-`restore.sh` checks the checksum and replays before touching the data, refuses
-while the lock is held, and moves the current data to `v2.before-<stamp>`.
+`restore.sh` (as root) checks the checksum and replays before touching the data, refuses
+while the lock is held, gives the tree to 10425, and moves the current data to `v2.before-<stamp>`.
 
 **A torn tail.** A journal is its chain (`<world>.journal`, one link a line) and its block store
 (`<world>.journal.blocks`, the entries' records; HOST-HANDOFF 5.137); an append syncs the records before the
@@ -637,7 +681,7 @@ Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on 
 
     df -h /var/lib/delvetalk /var/backups
     docker compose stop delvetalk-bridge delvetalk-interpret     # the host keeps answering reads
-    du -sk /var/backups/delvetalk /var/lib/delvetalk/v2/state/heaps /var/lib/delvetalk/v2/state/access.log* | sort -n
+    du -sk /var/backups/delvetalk /var/lib/delvetalk/v2/state/scratch /var/lib/delvetalk/v2/state/access.log* | sort -n
     docker image ls 'delvetalk*'
 
 Remove only what the puller already holds: compare `ls /var/backups/delvetalk` with hbox's

@@ -80,8 +80,15 @@ receipt is one envelope, `{status: error | refused, class, message, hint?}`, and
 ## Where the rest is
 
 - `GET $O/api`: the catalogue. Every route with its parameters and limits, every error and refusal class; `OPTIONS` on
-  any path answers its entries. `heap/` before `world`, `receipt`, `offers` reads your private shelf; `create`, `check`
-  and `repl` are Bend of your own; the workshop card offers a change to a shared card, and its law decides.
+  any path answers its entries. `check` and `repl` are Bend of your own; the workshop card offers a change to a shared
+  card, and its law decides.
+- A scratch world is yours alone: `POST $O/scratch` with `{"name": "try"}` opens one empty, with the sealed library and
+  you as its opener, or with `"from": {"world": "town", "height"?: n}` as the town stood (what you may view, nothing
+  more). Then `world`, `world/<object>`, `card`, `source`, `receipt`, `offers`, `pending`, `deliver`, and `objects` to
+  create a card, all run under `$O/scratch/try/` and answer as the town does, for you only; a turn there drafts nothing
+  for the town. Two at a time (a third is refused `capacity`, naming the oldest); one expires six hours of home-world
+  clock after your last turn in it, and `GET $O/me` lists yours as `scratches`. The host's `world-cite` keeps a scratch
+  receipt in the town as a `cited` entry; it has no route here.
 - Inside the world: `delvetalk library read / page: spells` is how a reply is read; pages `laws`, `object`,
   `relations`, `protocol`, `world`; walks `plant`, `check`, `enter`, `tide`, `submit`, spells in order, each ending
   with something changed.

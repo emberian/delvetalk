@@ -114,7 +114,7 @@ directory per world for everything that is the world's, the town's included
 (it was the top level, every other world `worlds/<w>/`):
 
     <state>/delvetalk.toml            the config
-    <state>/<world>.journal(.blocks)  serve's, with journal.lock, hostd.pid, binary-pin, library/, heaps/
+    <state>/<world>.journal(.blocks)  serve's, with journal.lock, hostd.pid, binary-pin, library/, scratch/
     <state>/host.sock, root/root.sock serve's sockets (host_socket, root_socket move them)
     <state>/identity.sqlite           claims: a principal is global
     <state>/access.log(.1)            the front's, `... <did or -> <world>`

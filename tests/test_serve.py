@@ -2,8 +2,8 @@
 docs/ROOT.md §1.4): named worlds and the root socket beside the public one.
 
 Evidence for FOUNDATION §7 (layer: host). Refuted by a socket others may open, a second writer that starts, a
-chain broken under concurrent clients, a restart that answers a retried turn differently, a heap or the stateless
-session that sees the world, a library without arrival's packages, a world opened under another name, or an
+chain broken under concurrent clients, a restart that answers a retried turn differently, a scratch world or the
+stateless session that sees the world, a library without arrival's packages, a world opened under another name, or an
 opener's op or a root op that the public socket takes.
 """
 import json
@@ -106,11 +106,14 @@ class Serve(unittest.TestCase):
         self.assertIn('second writer', p.stderr)
         self.assertEqual(self.client.send({'op': 'world-status'})['status'], 'world')
 
-    def test_heaps_and_stateless_are_separate_worlds_in_one_server(self):
-        heap = HostClient(self.sock, heap=DID)
-        self.assertEqual(heap.send({'op': 'world-view', 'principal': 'e', 'object': self.c})['status'], 'unknown')
-        self.assertTrue((self.state / 'heaps' / f'{DID}.journal').exists())
-        self.assertEqual(HostClient(self.sock, heap='../../etc/passwd').send({'op': 'world-status'})['status'], 'error')
+    def test_scratch_worlds_and_stateless_are_separate_worlds_in_one_server(self):
+        opened = self.client.send({'op': 'world-scratch', 'principal': DID, 'name': 'apart'})
+        self.assertEqual((opened['status'], opened['world']), ('scratch', 'scratch/apart'), opened)
+        scratch = HostClient(self.sock, world='scratch/apart')
+        self.assertEqual(scratch.send({'op': 'world-view', 'principal': DID, 'object': self.c})['status'], 'unknown')
+        self.assertTrue((self.state / 'scratch' / DID / 'apart.journal').exists())
+        self.assertEqual(HostClient(self.sock, world='scratch/../../etc').send({'op': 'world-status', 'principal': DID})['status'], 'error')
+        self.assertEqual(HostClient(self.sock, world='scratch/apart').send({'op': 'world-status', 'principal': '../x'})['status'], 'error')
         self.assertEqual(self.client.send({'op': 'world-view', 'principal': 'e', 'object': self.c})['status'], 'viewed')
         self.assertEqual(HostClient(self.sock, stateless=True).send({'op': 'compile', 'modules': [], 'entry': 'x'})['status'], 'error')
 
@@ -133,7 +136,8 @@ class Serve(unittest.TestCase):
 
     def test_the_library_is_sealed_so_one_module_imports_it_by_name_in_the_town_and_in_a_heap(self):
         one = [{'name': 'Tally', 'source': TALLY}]
-        for client, who, name in ((HostClient(self.root), OPENER, 'tally-town'), (HostClient(self.sock, heap=DID), DID, 't')):
+        self.client.send({'op': 'world-scratch', 'principal': DID, 'name': 'sealed'})
+        for client, who, name in ((HostClient(self.root), OPENER, 'tally-town'), (HostClient(self.sock, world='scratch/sealed'), DID, 't')):
             made = client.send({'op': 'world-create', 'principal': who, 'identity': 'mk-' + name, 'object': name,
                                 'modules': one, 'entry': 'initial', 'seed': record()})
             self.assertEqual(made['status'], 'created', made)

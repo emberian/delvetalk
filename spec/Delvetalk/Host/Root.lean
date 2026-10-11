@@ -11,7 +11,7 @@ open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 /-- The acts of `world-root`. -/
 def rootKinds : List String :=
   ["set", "delete", "as", "settings", "library", "ignore", "unignore", "card", "quiet", "hide", "show",
-   "retire", "unretire", "revoke", "expire", "unquiet"]
+   "retire", "unretire", "revoke", "unquiet"]
 
 /-- What a backward or forward clock touches: the suspensions whose deadline and the grants whose
     end lie between the two clocks (docs/ROOT.md §1.1). -/
@@ -114,7 +114,6 @@ def rootFieldsOf (w : World) (kind : String) (act : Json) (reason : String) : Ex
     let g ← text "grant"
     unless w.grants.contains g do throw s!"no grant {g}"
     return [("grant", toJson g), ("after", Json.mkObj [("revoked", toJson true)])]
-  | "expire" => throw "expire waits on scratch worlds (docs/FEDERATION.md §3), which this host does not hold yet"
   | k => throw s!"no root act {k}; one of {", ".intercalate rootKinds}"
 
 /-- `world-root {principal, reason, act}` (docs/ROOT.md §1.1): the opener's act, unjudged except

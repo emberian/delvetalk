@@ -226,11 +226,11 @@ structure Session where
   world : Host.Session := none
 
 /-- World ops own their journal file; everything else is `step`. -/
-def stepIO (session : Session) (request : Json) : IO (Session × Except String Json) := do
+def stepIO (session : Session) (request : Json) (foreign : Host.Foreign := {}) : IO (Session × Except String Json) := do
   match request.getObjValAs? String "op" with
   | .ok op =>
     if Host.isWorldOp op then
-      let (world, result) ← Host.stepWorld session.world request
+      let (world, result) ← Host.stepWorld session.world request foreign
       return ({ session with world }, result)
     else if op == "library-load" then
       let (cache, result) ← libraryLoad session.cache request

@@ -917,7 +917,7 @@ M. (lane/kernel14, docs/LAW.md §4 B, C, D, F, G; §6 items 2 and 3, kernel half
    `packageLaw`, `LawRef.slot` and the `Pred` library (892 lines; nothing called them, and the
    agreement theorem `Kernel.ObjectLaw.compile_sound` the module cited does not exist in this tree,
    so no proved fact went). `Host/Law.lean` was ported arm for arm; what it does not yet denote fails
-   closed. **The host lane's exact request (lane/host15):**
+   closed. **The host lane's request (lane/host15), done by lane/host17 (HOST-HANDOFF 5.139):**
    - `Facts` gains `reads : List (String × Data)`: the state of every object the law cites,
      transitively through `under`, at the version recorded as its root. (`clock`, `object` and `read`
      over `old` landed with HOST-HANDOFF 133 and are carried through the port.)

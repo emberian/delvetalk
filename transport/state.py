@@ -1,5 +1,5 @@
 """The transport's files (docs/OPERATIONS.md section b): every path under `<state>/` is named here once, and no other
-module joins one. `<state>/` is serve's directory too (its journals, lock, library, heaps and sockets); what the
+module joins one. `<state>/` is serve's directory too (its journals, lock, library, scratch/ worlds and sockets); what the
 transport keeps is either shared by every world (the claims, the access log, the hand's log, the model's spend, the
 bridge rows) or a world's own, under `worlds/<world>/`, the town's like any other's."""
 import json
@@ -25,7 +25,7 @@ class State:
         self.config = config or Config.load(self.root)
         c, r = self.config, self.root
         # serve's, read here
-        self.journal, self.heaps = r / f'{world}.journal', r / 'heaps'
+        self.journal = r / f'{world}.journal'
         self.host_socket = Path(c.host_socket) if c.host_socket else r / 'host.sock'
         self.root_socket = Path(c.root_socket) if c.root_socket else r / 'root' / 'root.sock'
         # every world's

@@ -30,7 +30,8 @@ def cardShownChars : Nat := 1400
     3: host14 (root entries, ignored and shadowed entries, moderation, the metarule widened to the opener,
     later settings, `unposted`); 4: host16 (roots read by their cells: `scalar`, `fields`, `rows`,
     `spans`; the per-cell bound and the storage ledger by changed cells); 5: host17 (a layered package's
-    shape is its stack's: public methods, relations and law shape kept from below, `compileObject`). -/
+    shape is its stack's: public methods, relations and law shape kept from below, `compileObject`; the
+    law's relational atoms judged, what a law cites recorded as roots). -/
 def replayEdition : Nat := 5
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
@@ -115,6 +116,15 @@ def maxPackageBytes : Nat := Bounds.maxPackageBytes
 /-- Law text of an `amend`, and the clauses in it. -/
 def maxLawBytes : Nat := 4096
 def maxLawClauses : Nat := 16
+/-- How deep `under "O"` citations are followed: a cited law's `under` is judged one level down, and at
+    depth 0 an `under` is false, so a cycle ends (docs/LAW.md §4 F). -/
+def lawDepth : Nat := 4
+/-- Scratch worlds (docs/FEDERATION.md §3): how many one principal holds open, the journal and object
+    bounds of each, and the home world's clock minutes after its last op at which it is discarded. -/
+def scratchPerPrincipal : Nat := 2
+def scratchJournalBytes : Nat := 16777216
+def scratchObjects : Nat := 1000
+def scratchMinutes : Nat := 360
 /-- Compiled packages kept in memory (`World.builds`). -/
 def maxBuilds : Nat := 1024
 /-- Prepared reprograms kept in memory. -/
@@ -456,6 +466,15 @@ def HourCounts.ofJson (j : Json) : Except String HourCounts := do
            refused := ← (← (← j.getObjVal? "refused").getObj?).toList.mapM fun (c, n) => do return (c, ← n.getNat?),
            interpretations := ← j.getObjValAs? Nat "interpretations", attempts := ← j.getObjValAs? Nat "attempts" }
 
+/-- What a turn may read of the other worlds one host serves (docs/FEDERATION.md §2), built by `serve`
+    for each request: `read world op object reader` is that world's own answer to `world-<op>` (`view`,
+    `card`) of `object` as `reader` sees it there, and the citation the reading turn journals
+    (`{world, object, version, stateCid, height, head}`); none for a world not served here. -/
+structure Foreign where
+  read : String → String → String → String → Option (Json × Json) := fun _ _ _ _ => none
+
+instance : Inhabited Foreign := ⟨{}⟩
+
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),
       and the text of the world law that judges a library change. -/
@@ -485,6 +504,11 @@ structure World where
       the opener's privileges (amending another's thing, revoking any grant, the powers, naming an
       owner) are the root socket's (docs/ROOT.md §1.4). Never journaled: replay admits what either did. -/
   resident : Bool := false
+  /-- Memory only: the objects this world may hold (`Limits.maxObjects`, or lower for this process:
+      `world-open {maxObjects}`, a scratch world's `Limits.scratchObjects`). -/
+  objectBound : Nat := Limits.maxObjects
+  /-- Memory only, set per request by `serve`: the other worlds it serves, for reads (`Foreign`). -/
+  foreign : Foreign := {}
   /-- Standing subscriptions by the object they watch, in the order they were made; derived by
       `record` from entries' `subscribes`/`unsubscribes`. -/
   subscriptions : Std.HashMap String (Array Subscription) := {}
