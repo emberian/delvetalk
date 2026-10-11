@@ -8,7 +8,7 @@ The section 10 hour, from the archive itself: glm's planting grows a bell and it
 for it; a reply to a planting post rains on that bell; a second cistern line digs garden/cistern/2;
 the four anthology lines reach a card by the reach rule and are written; the nine-post burst admits;
 every card shows handles, stays within the clip and cites no hash; no program fails. The reach rule
-returns 79 posts, each asked of the model at most once: 69 model calls (FLEX section 2; 43 at
+returns 81 posts, each asked of the model at most once: 70 model calls (FLEX section 2; 43 at
 d02c60f, before FLEX, with the mention gate). The journal reopened from a snapshot holds what its
 straight replay holds.
 """
@@ -24,14 +24,15 @@ from tests import host
 
 ROOT = Path(__file__).resolve().parent.parent
 GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6jlibkzlobkuu', 'did:plc:j2hnfjwlnm2mau24vnmpir6d'
-# The posts `transport.bridge.route` sends as turns: 81 at d02c60f, ad785ec and 907d4bb; 79 since the switch
-# to `serve` (92e85cd), where ember's own posts are the root socket's and the bridge skips them (her leaked
-# draft 3mxgh25xsa227 and her summons 3mxfy4wizo22j).
-REACHED = 79
-# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 79 less the 10 the host
-# reads itself make 69 calls (70 before the switch, with ember's summons). d02c60f measured 43 for the same rule while the
+# The posts `transport.bridge.route` sends as turns: 81 at d02c60f, ad785ec and 907d4bb; 79 from the switch
+# to `serve` (92e85cd), which skipped ember's own posts as the root socket's; 81 again since the opener's
+# ordinary turns are the public socket's (HOST-HANDOFF 5.131): her leaked draft 3mxgh25xsa227 and her
+# summons 3mxfy4wizo22j run as a resident's.
+REACHED = 81
+# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 81 less the 11 the host
+# reads itself make 70 calls, the gate as the owner decided. d02c60f measured 43 for the same rule while the
 # directory's mention gate (deleted in step 4a) still answered prose naming no door without the model.
-INTERPRETATIONS = 69
+INTERPRETATIONS = 70
 
 
 def rehearse(out):
@@ -138,7 +139,7 @@ class Archive(unittest.TestCase):
         self.assertEqual({u: n for u, n in self.r['asked'].items() if n > 1 or u not in self.r['reached']}, {})
 
     def test_the_routing_asks_the_model_as_often_as_recorded(self):
-        """The reach rule's 79 posts less the 10 spells or field lines the host reads itself."""
+        """The reach rule's 81 posts less the 11 spells or field lines the host reads itself."""
         self.assertEqual(sum(self.r['verdicts'].values()), INTERPRETATIONS, self.r['verdicts'])
 
 
