@@ -1,8 +1,9 @@
-"""Every relation's declared limit times its widest row fits in 256 KiB (HOST-HANDOFF 108): an object
-whose relation is full, every row at its widest, is under `maxStateBytes` and still takes a write.
+"""An object whose relations are full, every row at its widest, keeps each cell under
+`Bounds.maxCellBytes` (its scalar part and every row, KERNEL-HANDOFF §15 step 4) and still takes a
+write.
 
-Evidence for FOUNDATION's scale rule (layer: objects). Refuted by a full relation past 262,144
-canonical bytes, or a write to it refused `capacity`.
+Evidence for FOUNDATION's scale rule (layer: objects). Refuted by a full object's scalar part past
+262,144 canonical bytes, or a write to it refused `capacity`.
 """
 import unittest
 
@@ -31,7 +32,7 @@ class FullRelations(Chain):
     def full(self, name, module, seed, by="ember"):
         r = self.host.send(op="world-create", principal=by, identity="mk-" + name, object=name, modules=closure(module), entry="initial", seed=seed)
         self.assertEqual(r["status"], "created", r)
-        size = self.host.send(op="world-inspect", principal=by, object=name, source=False)["stateBytes"]
+        size = self.host.send(op="world-inspect", principal=by, object=name, source=False)["scalarBytes"]
         self.assertLess(size, MAX, name)
         return size
 

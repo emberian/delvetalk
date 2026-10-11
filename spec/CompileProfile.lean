@@ -12,7 +12,7 @@ with `lake build compile-profile`.
                                                  the stored-schedule reference
     compile-profile sha                          SHA-256 throughput on 1 MB
     compile-profile stored REQUEST ROWS R        a relation of ROWS rows read for one row,
-                                                 quoted and stored (`storedRows`)
+                                                 its rows held as stored cells (`storedRows`)
     compile-profile replay LINES DIR FILTER R    host requests (one JSON per line, as the
                                                  binary reads them) through
                                                  `PackageSession.stepIO`, with `world-open`
@@ -191,10 +191,9 @@ partial def freeRows (t : Term) : Array (String × List Nat) :=
 open Minidregg.Theory.ObjectiveBendDemandData (Data) in
 /-- `compile-profile stored REQUEST ROWS R`: the entry REQUEST compiles (an activity of one
 `State` argument whose `rains` and `marks` are relations of `{n, text}` / `{n, by}` rows, as
-`tests/test_stored.py`'s `RAINS`), run R times from a state of ROWS rains, quoted as today
-(`startEntryStep`, `resumeSuspended`) and stored (`startEntryStored`, `resumeSuspendedStored`):
-the fastest wall time of a start and its resume, their ticks, and the canonical bytes of the
-suspension's checkpoint (KERNEL-HANDOFF §15). -/
+`tests/test_stored.py`'s `RAINS`), run R times from a state of ROWS rains held as stored cells
+(`startEntry`, `resumeSuspended`): the fastest wall time of a start and its resume, their
+ticks, the rows forced, and the canonical bytes of the suspension's checkpoint (KERNEL-HANDOFF §15). -/
 def storedRows (request : Json) (rows repeats : Nat) : IO Unit := do
   let compiled ← IO.ofExcept ((Delvetalk.Package.compileEntry request).mapError (·.message))
   let entry := compiled.entry
@@ -210,27 +209,19 @@ def storedRows (request : Json) (rows repeats : Nat) : IO Unit := do
     Json.mkObj [("field", toJson "marks"), ("key", toJson ["n"])]]))
   let ticksOf : Delvetalk.Turn.Step → Nat
     | .finished _ _ t | .yielded _ _ _ _ t | .exhausted _ t => t
-  let mut quoted := 1000000000000
-  let mut stored := 1000000000000
+  let mut best := 1000000000000
   let mut ticks : List Nat := []
-  let mut held : Nat × Nat := (0, 0)
+  let mut held := 0
   for _ in [0:repeats] do
     let t0 ← IO.monoNanosNow
-    let first ← IO.ofExcept (Delvetalk.Turn.startEntryStep entry [state] binding b)
-    let .yielded _ _ _ suspension _ := first | throw (IO.userError "quoted turn did not yield")
-    let done ← IO.ofExcept (Delvetalk.Turn.resumeSuspended entry suspension binding written b)
+    let (first, _) ← IO.ofExcept (Delvetalk.Turn.startEntry entry [state] store binding b)
+    let .yielded _ _ _ suspension _ := first | throw (IO.userError "the turn did not yield")
+    let (done, reads) ← IO.ofExcept (Delvetalk.Turn.resumeSuspended entry suspension store binding written b)
     let t1 ← IO.monoNanosNow
-    let (firstS, _) ← IO.ofExcept (Delvetalk.Turn.startEntryStored entry [state] store binding b)
-    let .yielded _ _ _ suspensionS _ := firstS | throw (IO.userError "stored turn did not yield")
-    let (doneS, readsS) ← IO.ofExcept (Delvetalk.Turn.resumeSuspendedStored entry suspensionS store binding written b)
-    let t2 ← IO.monoNanosNow
-    quoted := min quoted (t1 - t0)
-    stored := min stored (t2 - t1)
-    ticks := [ticksOf first, ticksOf done, ticksOf firstS, ticksOf doneS, readsS.rows.length]
-    let bytes := fun (s : Delvetalk.Turn.Suspension) =>
-      ((Delvetalk.Canonical.encodeJson s.checkpoint.toJson).toOption.map (·.size)).getD 0
-    held := (bytes suspension, bytes suspensionS)
-  IO.println s!"rows {rows}: quoted {quoted / 1000} us, stored {stored / 1000} us; ticks quoted {ticks.take 2}, stored {(ticks.drop 2).take 2}, rows forced {ticks.drop 4}; suspension quoted {held.1} B, stored {held.2} B"
+    best := min best (t1 - t0)
+    ticks := [ticksOf first, ticksOf done, reads.rows.length]
+    held := ((Delvetalk.Canonical.encodeJson suspension.checkpoint.toJson).toOption.map (·.size)).getD 0
+  IO.println s!"rows {rows}: {best / 1000} us; ticks {ticks.take 2}, rows forced {ticks.drop 2}; suspension {held} B"
 
 def main (args : List String) : IO Unit := do
   if args[0]! == "stored" then

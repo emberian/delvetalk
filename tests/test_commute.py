@@ -81,7 +81,7 @@ class Moved(Reflection):
         self.assertEqual(resumed["status"], "admitted", resumed)
         entry = resumed["receipt"]
         # The root keeps the version the strike read; that (since moved) state's CID is the created seed's.
-        self.assertEqual(entry["roots"], [{"object": "bell", "version": 0}])
+        self.assertEqual(entry["roots"], [{"object": "bell", "version": 0, "scalar": True}])
         self.assertEqual(self.host.send(op="world-state-cid", principal="ann", object="bell", version=0)["status"], "stateCid")
         self.assertEqual(entry["outcome"]["writes"][0]["version"], 3)
         self.assertEqual(self.bell(), ("3", ["drip", "drop", "struck"]))
