@@ -164,12 +164,12 @@ CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it
                'invalid_handle': '{handle} is not a handle this town knows. Check the spelling.'}
 
 
-def turn_line(r, addressed=None):
+def turn_line(r, addressed=None, handles=None):
     """A turn's receipt in one line: `admitted garden v3, entry 9, receipt <slug>`, `refused owner: <reading>`, `suspended, entry 9`."""
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
-        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, addressed)
+        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, addressed, handles)
     if r.get('status') == 'refused':
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
@@ -912,7 +912,7 @@ class Handler(BaseHTTPRequestHandler):
             if r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
                 said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
             else:
-                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r, name)),
+                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r, name, self.server.handles(pages.A_DID.findall(name)))),
                                               offers=''.join(pages.framed(t) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it

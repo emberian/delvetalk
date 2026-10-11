@@ -567,5 +567,18 @@ class Daemon(unittest.TestCase):
             st.daemon('bridge', stop.set, stop)
 
 
+class Names(unittest.TestCase):
+    """A turn line never carries a DID to a post: a person's own cards are named by their handle."""
+
+    def test_a_persons_cards_are_named_by_handle(self):
+        did = 'did:plc:' + 'k' * 24
+        handles = {did: 'kestrel'}
+        for obj, name in (('wake/' + did, "kestrel's wake"), ('env/' + did, "kestrel's env"), (did, "kestrel's avatar"),
+                          ('garden', 'garden'), ('wake/did:plc:' + 'z' * 24, 'wake/did:plc:' + 'z' * 24)):
+            self.assertEqual(bridge.card_name(obj, handles), name)
+        receipt = {'height': 9, 'slug': 'lodif-rukuz', 'roots': [{'object': 'wake/' + did, 'version': 3}], 'outcome': {'tag': 'admitted'}}
+        self.assertEqual(bridge.turn_words(receipt, handles=handles), "admitted kestrel's wake v3, entry 9, receipt lodif-rukuz")
+
+
 if __name__ == '__main__':
     unittest.main()
