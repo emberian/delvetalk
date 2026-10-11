@@ -15,7 +15,7 @@ from tests.test_turn_world import relation
 from tests.test_replay import rows
 from tests.test_chain import Chain
 from tests.test_objects import closure
-from tests.test_places import listing
+from tests.test_rooms import listing
 from tests.test_replay import get
 from tests.test_turn_world import label, record
 

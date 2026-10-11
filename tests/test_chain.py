@@ -52,8 +52,8 @@ def garden_state(planted=0, owner="ember"):
 
 
 def town_kinds(send, owner="ember", names=("bell", "cistern")):
-    """kind/bell and kind/cistern as genesis makes them (deploy/genesis.py KINDS): a Kind created under its law,
-    then shaped, so a garden plants and digs through them. `send(**request)` is the host's."""
+    """The named kinds as genesis makes them (deploy/genesis.py KINDS; bell and cistern unless told): a Kind created
+    under its law, then shaped, so a garden plants and digs through them and a room carves rooms. `send(**request)` is the host's."""
     from deploy import genesis
     from tests.test_objects import closure as module_closure
     for name, of, form, head, law, body in genesis.KINDS:

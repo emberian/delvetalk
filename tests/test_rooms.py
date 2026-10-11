@@ -1,15 +1,10 @@
-"""Places, things and avatars are ordinary objects: moving, taking, offering and accepting, scoped
-commands, talk, copies and traces, each refused by name where it should be.
+"""Rooms, things and avatars are ordinary objects: a room is a record with the room's body
+(world/bodies/room.obend); entering, leaving, choosing, talking, taking and putting down, offering
+and accepting, scoped commands and copies, each refused by name where it should be.
 
-Evidence for FOUNDATION §8 MUD floor (layer: objects).
-
-Places, things and avatars: the MUD floor as ordinary objects.
-
-Compile-level types for every method, then turns through the real host.
-
-The host implements the `remove` list edit, so leave, take, move and acquire run
-end to end.
+Evidence for docs/METAPHYSICS.md §7.2 (layer: objects).
 """
+import os
 import unittest
 
 from deploy import genesis
@@ -18,6 +13,7 @@ from tests.test_chain import Chain, boolean, reference
 from tests.test_objects import closure
 from tests.test_turn_world import label, nat, record
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NOBODY = reference("")
 
 
@@ -25,23 +21,29 @@ def listing(items):
     return {"tag": "list", "items": list(items)}
 
 
-def make_place(chain, name, seed):
-    """A Place created under its law (the package declares none; genesis.PLACE_LAW is the place's own)."""
-    owner = {f["name"]: f["value"] for f in seed["fields"]}.get("owner", label("ember"))["value"]
-    r = chain.host.send(op="world-create", principal=owner, identity="mk-" + name, object=name,
-                        modules=closure("Place"), entry="initial", seed=seed, law=genesis.PLACE_LAW)
+def body(name):
+    with open(os.path.join(ROOT, "world", "bodies", name + ".obend")) as handle:
+        return handle.read()
+
+
+def make_room(chain, name, owner="ember", **fields):
+    """A room as kind/room makes one: a Record under its law (genesis.RECORD_LAW), the room's body laid over it."""
+    r = chain.host.send(op="world-create", principal=owner, identity="mk-" + name, object=name, modules=closure("Record"),
+                        entry="initial", seed=record(owner=label(owner), **fields), law=genesis.RECORD_LAW)
     chain.assertEqual(r["status"], "created", r)
+    r = chain.host.send(op="world-reprogram", principal=owner, identity="body-" + name, object=name, version=0, package=body("room"), mode="extend")
+    chain.assertEqual(r["status"], "admitted", r)
 
 
-def place_seed(name, exits=(), present=(), things=(), owner="ember"):
-    return record(owner=label(owner), name=label(name), description=label("about " + name),
-                  exits=listing([record(label=label(l), to=reference(t)) for l, t in exits]),
-                  present=relation(*[reference(p) for p in keyed(present)]),
-                  things=relation(*[reference(t) for t in keyed(things)]))
+def room_seed(name, doors=(), present=(), things=()):
+    """The fields of a room: its head, the doors it cites, who is in it, what lies in it."""
+    return dict(head=label(name), cites=listing([record(label=label(l), to=reference(t)) for l, t in doors]),
+                presence=relation(*[record(who=label(p), at=label("")) for p in keyed(present)]),
+                things=relation(*[reference(t) for t in keyed(things)]))
 
 
 def keyed(ids):
-    """Object ids in the order of their key {object}: canonical text order, length then bytes."""
+    """Object ids in the order of their key: canonical text order, length then bytes."""
     return sorted(ids, key=lambda i: (len(i.encode()), i.encode()))
 
 
@@ -61,8 +63,8 @@ def names(wire):
 class Floor(Chain):
 
     def world(self):
-        make_place(self, "porch", place_seed("Porch", [("in", "garden")], present=["glm"]))
-        make_place(self, "garden", place_seed("Garden", [("out", "porch")], things=["stone"]))
+        make_room(self, "porch", **room_seed("Porch", [("in", "garden")], present=["glm"]))
+        make_room(self, "garden", **room_seed("Garden", [("out", "porch")], things=["stone"]))
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
         self.make("stone", closure("Thing"), thing_seed("stone", location="garden"))
 
@@ -70,7 +72,6 @@ class Floor(Chain):
         """The card is what receive offers for an empty reply, here to someone not in the room."""
         reply = self.turn(name, "receive", record(text=label(""), post=label("")), principal=principal)
         self.assertEqual(reply["status"], "admitted", reply)
-        # The card without the spells it teaches (a place's are say, emote and whisper).
         return reply["offers"][0]["text"].split("\nReply with a spell:")[0]
 
     def version(self, name):
@@ -87,35 +88,32 @@ class Floor(Chain):
         return fields[-1]["value"]["value"]
 
     def refusal_clause(self, reply):
-        """A refusal names its clause (Thing.Why, Place.Why) beside its reading."""
+        """A refusal names its clause beside its reading."""
         return reply["result"]["payload"]["fields"][0]["value"]["value"]
 
     # --- paths that do not need remove -------------------------------------------------
 
 
-    def test_enter_appends_in_order_and_a_second_entry_is_refused(self):
-        make_place(self, "porch", place_seed("Porch"))
+    def test_enter_in_key_order_and_a_second_entry_is_refused_writing_nothing(self):
+        make_room(self, "porch", **room_seed("Porch"))
         for who in ("glm", "kimik3"):
-            self.assertEqual(self.result_label(self.turn("porch", "enter", record(), principal=who)), "done")
-        self.assertIn("Here: glm\nHere: kimik3\n", self.card("porch"))
+            self.assertEqual(self.result_label(self.turn("porch", "enter", record(), principal=who)), "entered")
+        self.assertIn("Porch (2 here). Enter: delvetalk porch enter.\nHere: glm, kimik3\n", self.card("porch"))
         before = self.version("porch")
         again = self.turn("porch", "enter", record(), principal="glm")
         self.assertEqual(self.refusal_reason(again), "Already here.")
-        # The refusal changes who is here not at all, and leaves a trace.
-        self.assertEqual(self.version("porch"), before + 1)
-        self.assertIn("Traces, the last eight, refusals too:\n  glm enter: refused alreadyHere\n", self.card("porch"))
+        self.assertEqual(self.version("porch"), before)
 
 
     def test_dropping_what_you_do_not_hold_or_where_you_are_not_is_refused_and_changes_nothing(self):
-        make_place(self, "porch", place_seed("Porch", present=["glm"]))
+        make_room(self, "porch", **room_seed("Porch", present=["glm"]))
         self.make("stone", closure("Thing"), thing_seed("stone", holder="kimik3", location="garden"))
         reply = self.turn("stone", "drop", record(at=reference("porch")), principal="glm")
         self.assertEqual(self.refusal_reason(reply), "You are not holding it.")
         reply = self.turn("stone", "drop", record(at=reference("porch")), principal="kimik3")
         self.assertEqual(self.refusal_reason(reply), "Only someone here can put things down.")
-        # Nothing moved; the porch keeps a trace of the refused put.
+        # Nothing moved.
         self.assertEqual((self.version("porch"), self.version("stone")), (1, 0))
-        self.assertIn("Traces, the last eight, refusals too:\n  kimik3 put: refused notPresent\n", self.card("porch"))
 
     # --- giving is offer and accept ------------------------------------------------------
 
@@ -223,14 +221,13 @@ class Floor(Chain):
         self.assertEqual({o: self.version(o) for o in versions}, versions)
 
 
-    def test_a_place_with_64_things_renders_under_the_default_budget(self):
+    def test_a_room_with_64_things_renders_under_the_default_budget(self):
         things = ["thing%02d" % i for i in range(64)]
-        make_place(self, "hall", place_seed("Hall", [("out", "porch")], present=["glm", "kimik3"], things=things))
+        make_room(self, "hall", **room_seed("Hall", [("out", "porch")], present=["glm", "kimik3"], things=things))
         reply = self.turn("hall", "receive", record(text=label(""), post=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
-        self.assertEqual(text.count("Lying here: "), 8)
-        self.assertIn("… and 56 more\n", text)
+        self.assertIn("Lying here: thing00, thing01, thing02, thing03, thing04, thing05, thing06, thing07 and 56 more\n", text)
         self.assertLess(len(text), 1400)
 
     def test_an_avatar_with_a_full_inbox_describes_under_the_default_budget(self):
@@ -253,19 +250,19 @@ class Floor(Chain):
     # --- paths through remove -----------------------------------------------------------
 
 
-    def test_a_place_hears_take_and_put_only_from_the_thing_itself(self):
-        make_place(self, "garden", place_seed("Garden", present=["glm"], things=["stone"]))
+    def test_a_room_hears_take_and_put_only_from_the_thing_itself(self):
+        make_room(self, "garden", **room_seed("Garden", present=["glm"], things=["stone"]))
         for method in ("take", "put"):
             reply = self.turn("garden", method, record(), principal="glm")
             self.assertEqual(self.refusal_reason(reply), "Only a thing can %s itself%s." % (("take", "") if method == "take" else ("put", " down")))
-        self.assertEqual(self.version("garden"), 0)
+        self.assertEqual(self.version("garden"), 1)
 
     def test_an_avatar_walks_porch_to_garden_and_back_carrying_a_thing(self):
         self.world()
         moved = self.turn("glm", "move", record(exit=label("in")), principal="glm")
         self.assertEqual(self.result_label(moved), "moved", moved["receipt"]["outcome"])
         self.assertIn("Here: glm\n", self.card("garden"))
-        self.assertNotIn("Here: glm\n", self.card("porch"))
+        self.assertNotIn("Here: glm", self.card("porch"))
         got = self.turn("stone", "acquire", record(), principal="glm")
         self.assertEqual(self.result_label(got), "done", got["receipt"]["outcome"])
         self.assertNotIn("Lying here", self.card("garden"))
@@ -276,23 +273,32 @@ class Floor(Chain):
         self.assertEqual(self.result_label(dropped), "done", dropped)
         self.assertIn("Lying here: stone\n", self.card("porch"))
 
-    def test_an_avatar_from_nowhere_goes_to_a_place_and_then_walks_its_exits(self):
-        """SEEDING §7: no public path set `at`, so an avatar from nowhere could never `move`. `go
-        {place}` enters the place by id and records it; from a place it leaves first; only the
-        avatar's principal goes."""
+    def test_an_avatar_from_nowhere_goes_to_a_room_and_then_walks_its_doors(self):
+        """`go {to}` is that room's enter: from nowhere it enters by id and records it; from a room
+        it leaves first; only the avatar's principal goes."""
         self.world()
         self.make("kimik3", closure("Avatar"), avatar_seed("kimik3"))
         self.assertEqual(self.refusal_clause(self.turn("kimik3", "move", record(exit=label("in")), principal="kimik3")), "nowhere")
-        self.assertEqual(self.refusal_clause(self.turn("kimik3", "go", record(place=label("porch")), principal="glm")), "notMine")
-        went = self.turn("kimik3", "go", record(place=label("porch")), principal="kimik3")
+        self.assertEqual(self.refusal_clause(self.turn("kimik3", "go", record(to=label("porch")), principal="glm")), "notMine")
+        went = self.turn("kimik3", "go", record(to=label("porch")), principal="kimik3")
         self.assertEqual(self.result_label(went), "moved", went)
-        self.assertIn("Here: kimik3\n", self.card("porch"))
+        self.assertIn("Here: glm, kimik3\n", self.card("porch"))
         self.assertEqual(self.result_label(self.turn("kimik3", "move", record(exit=label("in")), principal="kimik3")), "moved")
         self.assertIn("Here: kimik3\n", self.card("garden"))
-        back = self.turn("kimik3", "go", record(place=label("porch")), principal="kimik3")
+        back = self.turn("kimik3", "go", record(to=label("porch")), principal="kimik3")
         self.assertEqual(self.result_label(back), "moved", back)
-        self.assertNotIn("Here: kimik3\n", self.card("garden"))
-        self.assertIn("Here: kimik3\n", self.card("porch"))
+        self.assertNotIn("Here: kimik3", self.card("garden"))
+        self.assertIn("Here: glm, kimik3\n", self.card("porch"))
+
+    def test_a_reader_at_a_passage_of_long_choices_and_vars_sees_a_card_under_1400(self):
+        from tests.test_scene import choice, passage
+        long = [choice("c" * 60 + str(i), "gate") for i in range(8)]
+        make_room(self, "well", head=label("W" * 120), start=label("gate"), passages=listing([passage("gate", "p" * 600, long)]),
+                  vars=listing([record(name=label("v%02d" % i + "n" * 20), value=label("x" * 60)) for i in range(16)]))
+        self.assertEqual(self.result_label(self.turn("well", "enter", record(), principal="glm")), "entered")
+        card = self.card("well", principal="glm")
+        self.assertLessEqual(len(card), 1400, (len(card), card))
+        self.assertIn("Choices:\n  * " + "c" * 60 + "0\n", card)
 
 
 if __name__ == "__main__":
@@ -306,7 +312,7 @@ class Scoped(Chain):
 
     def setUp(self):
         super().setUp()
-        make_place(self, "porch", place_seed("Porch", [("in", "garden")], present=["glm", "kimik3"], things=["stone"]))
+        make_room(self, "porch", **room_seed("Porch", [("in", "garden")], present=["glm", "kimik3"], things=["stone"]))
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
         self.make("kimik3", closure("Avatar"), avatar_seed("kimik3", "porch"))
         self.make("stone", closure("Thing"), thing_seed("stone", location="porch"))
@@ -334,11 +340,11 @@ class Scoped(Chain):
 
 
 class Talk(Chain):
-    """say and emote offer a line to every avatar present; whisper to one; only someone here talks."""
+    """say and emote offer a line to everyone in the room; whisper to one; only someone here talks."""
 
     def setUp(self):
         super().setUp()
-        make_place(self, "porch", place_seed("Porch", present=["glm", "kimik3"]))
+        make_room(self, "porch", **room_seed("Porch", present=["glm", "kimik3"]))
 
     def say(self, text, who):
         r = self.turn("porch", "receive", record(text=label(text), post=label("at://x/1")), principal=who)
@@ -365,7 +371,7 @@ class Copies(Chain):
     like: stone` has the thing copy itself from its own package, without holder and offer."""
 
     def test_create_like_copies_a_thing_and_the_owner_may_forbid_it(self):
-        make_place(self, "porch", place_seed("Porch", present=["glm"], things=["stone"]))
+        make_room(self, "porch", **room_seed("Porch", present=["glm"], things=["stone"]))
         self.make("stone", closure("Thing"), thing_seed("stone", location="porch"))
         self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
         ask = lambda who, ident: self.turn("workshop", "receive", record(text=label("delvetalk workshop create / like: stone"), post=label("at://x/" + ident)),

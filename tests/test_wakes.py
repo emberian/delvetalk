@@ -13,7 +13,7 @@ import unittest
 
 from tests.test_chain import Chain, nil, reference, town_kinds
 from tests.test_objects import closure
-from tests.test_places import avatar_seed
+from tests.test_rooms import avatar_seed
 from tests.test_replay import get, items, relation, rows
 from tests.test_turn_world import label, nat, record
 
@@ -311,7 +311,7 @@ class Wakes(Chain):
         keep = {"tag": "variant", "label": "keep", "payload": record()}
         drained = self.host.send(op="world-propose", principal=OWNER, identity="drain", roots=[{"object": "cistern/1", "version": version}],
                                  writes=[{"object": "cistern/1", "edits": [record(owner=keep, keeper=keep, keeperHandle=keep, lines=keep, admitted=keep, marks=keep,
-                                                                                  next={"tag": "variant", "label": "set", "payload": record(value=nat(1))}, doors=keep)]}])
+                                                                                  next={"tag": "variant", "label": "set", "payload": record(value=nat(1))}, cites=keep)]}])
         self.assertEqual((drained["status"], drained["receipt"]["outcome"].get("clause")), ("refused", "level"), drained)
 
     # --- Tide ------------------------------------------------------------------------

@@ -15,7 +15,7 @@ import unittest
 
 from tests import test_chain
 from tests.test_objects import closure
-from tests.test_places import avatar_seed
+from tests.test_rooms import avatar_seed
 from tests.test_turn_world import label, nat, record, relation
 from tests.test_wakes import event
 

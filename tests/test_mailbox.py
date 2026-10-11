@@ -17,7 +17,7 @@ dropping the oldest; a letter reaching a follower that unsubscribed.
 import unittest
 
 from tests import test_chain
-from tests.test_places import avatar_seed
+from tests.test_rooms import avatar_seed
 from tests.test_replay import get, items, rows
 from tests.test_turn_world import closure, label, record
 

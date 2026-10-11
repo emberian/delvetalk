@@ -73,12 +73,12 @@ def passage(pid, text, choices):
     return rec(id=lab(pid), text=lab(text), choices=lst(*choices))
 
 
-# tests/test_scene.py's smallest scene, owned by the opener (a whole Scene state, as that test creates it).
+# tests/test_scene.py's smallest scene: a record whose scene genesis seeds, then lays the room's body over
+# (world/bodies/room.obend), as kind/room does in the turn that makes a room.
 def moss_gate(opener):
-    return rec(owner=lab(opener), title=lab('The Moss Gate'), start=lab('gate'),
+    return rec(owner=lab(opener), head=lab('The Moss Gate'), kind=lab('kind/room'), start=lab('gate'),
                passages=lst(passage('gate', 'A moss gate, ajar.', [choice('Open', 'yard', 'gate', 'open'), choice('Wait', 'gate')]),
-                            passage('yard', 'A quiet yard.', [choice('Back', 'gate'), choice('Knock', 'yard', 'knock', 'twice')])),
-               presence=relation(), vars=lst(), cooldown=nat(0), requires=lst(), left=relation())
+                            passage('yard', 'A quiet yard.', [choice('Back', 'gate'), choice('Knock', 'yard', 'knock', 'twice')])))
 
 
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
@@ -102,37 +102,31 @@ def page_body(name):
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
 # package it makes; its creator passes it (tests/test_genesis.py compares the two).
-RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the doors or the code; anyone else only by its spells": '
-              'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(doors)))\n'
+RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the doors, what it makes, its scene or its code; anyone else only by its spells": '
+              'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(cites) and unchanged(makes) '
+              'and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\n'
               'law kept "a line is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
               'and (unchanged(admitted) or request.subject == new.keeper)')
 
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
 # Kind.lawText() (tests/test_kinds.py compares the two).
-KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nlaw: text 0..4096\nbody: text 0..16384'
+KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
 KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head or the body; anyone makes": '
             'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(form) and unchanged(law) '
             'and unchanged(head) and unchanged(body)))')
 
 
-# Place.lawText() (world/objects/Place.obend): a place's package declares no law either (tests/test_genesis.py compares the two).
-PLACE_LAW = ('law owner "the owner stays; only the owner renames, redescribes or reprograms it; anyone comes and goes by its spells": '
-             'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(ownerHandle) and unchanged(name) '
-             'and unchanged(description) and unchanged(exits) and unchanged(makes) and unchanged(keep) and unchanged(policy) '
-             'and unchanged(confirmFor) and unchanged(pageCheckpoint)))')
-
-
 # The law each package's objects are created with, where its source declares none.
-LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW, 'Place': lambda _: PLACE_LAW}
+LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
 
 
-# The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's bell and
-# cistern, whose bodies are world/bodies/<name>.obend, layers over Record.obend grafted on each instance.
+# The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's bell,
+# cistern and room, whose bodies are world/bodies/<name>.obend, layers over Record.obend laid on each instance.
 KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW, 'bell'),
          ('cistern', 'record', '', '', RECORD_LAW + '\nlaw level "the level only rises": monotone(next)', 'cistern'),
-         ('place', 'place', 'name: text 1..64', '', PLACE_LAW, '')]
+         ('room', 'record', 'name: text 1..64', '{name}', RECORD_LAW, 'room')]
 
 
 def body_of(name):
@@ -151,7 +145,7 @@ def seeds(opener):
             ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM))),  # shaped, then makes KINDS
             ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
-            ('rooms', 'Scene', moss_gate(opener))]
+            ('rooms', 'Record', moss_gate(opener))]  # created with RECORD_LAW, then given the room's body
 
 
 def existing(host, opener):
@@ -201,6 +195,9 @@ def run(host, opener=OPENER):
     kinds['made'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'make', 'identity': 'genesis-kind-' + name,
                                 'argument': rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), law=lab(law), body=lab(body_of(body)))}).get('status')
                      for name, of, form, head, law, body in KINDS]
+    rooms = next(m for m in made if m['object'] == 'rooms')
+    rooms['body'] = host.send({'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-rooms-body', 'object': 'rooms', 'version': 0,
+                               'package': body_of('room'), 'mode': 'extend'}).get('status')
     library = next(m for m in made if m['object'] == 'library')
     library['pages'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'shelve', 'identity': 'genesis-shelve-' + name,
                                    'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),

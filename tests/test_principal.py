@@ -16,7 +16,7 @@ from deploy import genesis
 from tests.test_laws import anthology_seed
 from tests.test_chain import Chain, garden_seed, town_kinds
 from tests.test_objects import closure
-from tests.test_places import make_place, avatar_seed, names, place_seed
+from tests.test_rooms import make_room, avatar_seed, room_seed
 from tests.test_replay import bell_seed, get, rows
 from tests.test_turn_world import label, record
 
@@ -72,10 +72,10 @@ class Principal(Chain):
         self.ignored("lantern", "light", "by")
         self.assertEqual(get(self.state("lantern"), "litBy"), label(ACTOR))
 
-    def test_entering_a_place_records_the_principals_avatar(self):
-        make_place(self, "porch", place_seed("Porch"))
+    def test_entering_a_room_records_the_principal(self):
+        make_room(self, "porch", **room_seed("Porch"))
         self.ignored("porch", "enter", "by")
-        self.assertEqual(names(get(self.state("porch"), "present")), [ACTOR])
+        self.assertEqual([get(p, "who") for p in rows(get(self.state("porch"), "presence"))], [label(ACTOR)])
 
     # A planting spell runs `plant` directly, and a method does not see the reply's post (the bell's
     # strike awaits it): the garden takes the turn's intent, which the bridge makes the post. Expected

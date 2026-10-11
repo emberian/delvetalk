@@ -27,8 +27,8 @@ def field(state, name):
 
 
 def opened(case, wake=None):
-    """Open the case's world on the deployed library (world/lib, where Places, which the Avatar
-    imports, is) joined by the newcomer's packages; `wake` replaces Wake's source."""
+    """Open the case's world on the deployed library (world/lib, which the Avatar
+    imports) joined by the newcomer's packages; `wake` replaces Wake's source."""
     case.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
     case.addCleanup(shutil.rmtree, case.lib, True)
     shutil.copytree(os.path.join(ROOT, "world", "lib"), case.lib, dirs_exist_ok=True)

@@ -51,7 +51,7 @@ class Genesis(unittest.TestCase):
                              'identity': 'door-' + word})
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']
-        self.assertTrue(said['ROOMS'].startswith('SCENE The Moss Gate'), said)
+        self.assertTrue(said['ROOMS'].startswith('The Moss Gate (0 here). Enter: delvetalk rooms enter.'), said)
         # The link door has no object: naming it reaches Plan.card on the empty reference (the Directory answers
         # "The door to  opens on nothing yet."), so only the menu carries its URL.
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
@@ -72,14 +72,15 @@ class Genesis(unittest.TestCase):
         self.assertEqual(ticks(), '2')
 
 
-    def test_the_place_law_is_the_package_s_own(self):
+    def test_the_room_kind_carries_the_record_law_and_the_rooms_body(self):
         from tests.test_objects import run_pure
-        # Place declares no law (every kind imports the package it makes); genesis passes it with the `place` kind
-        self.assertEqual(run_pure("Place", "lawText")["value"]["value"], genesis.PLACE_LAW)
-        kinds = next(m for m in self.made if m['object'] == 'kinds')
-        self.assertIn('place', [name for name, *_ in genesis.KINDS])
-        state = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/place'})['state']
-        self.assertEqual({f['name']: f['value'] for f in state['fields']}['law']['value'], genesis.PLACE_LAW)
+        # Record declares no law (every kind imports the package it makes); genesis passes it with each record kind
+        self.assertEqual(run_pure("Record", "lawText")["value"]["value"], genesis.RECORD_LAW)
+        self.assertIn('room', [name for name, *_ in genesis.KINDS])
+        state = {f['name']: f['value'] for f in self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/room'})['state']['fields']}
+        self.assertEqual((state['law']['value'], state['body']['value']), (genesis.RECORD_LAW, genesis.body_of('room')))
+        rooms = next(m for m in self.made if m['object'] == 'rooms')
+        self.assertEqual(rooms['body'], 'admitted')
 
     def test_every_door_with_an_object_publishes_its_page_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}

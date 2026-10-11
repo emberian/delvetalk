@@ -14,7 +14,7 @@ from deploy.genesis import DOORS
 from tests.test_replay import relation, rows
 from tests.test_chain import Chain, field, garden_seed, reference, town_kinds
 from tests.test_objects import closure
-from tests.test_places import listing
+from tests.test_rooms import listing
 from tests.test_turn_world import label, nat, record
 
 ROOT_DOORS = DOORS  # (label, description, object, watched field, [(spell, what comes back)])

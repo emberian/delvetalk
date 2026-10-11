@@ -1,7 +1,6 @@
 """Derived views (FOUNDATION §16): pure definitions an object names in `views()`, of its state
 and the reader's context, that another object asks for with `viewDerived {object, view}`.
-Garden's `byColour` counts its bells by colour as a relation keyed {colour}; Place's
-`affordances` is what can be done there, as spells. The pure definitions run here through
+Garden's `byColour` counts its bells by colour as a relation keyed {colour}. The pure definitions run here through
 the checker; asking for one through the host waits for the host's `viewDerived`
 (HOST-HANDOFF §7 item 6), so that case is an expected failure until it lands.
 """

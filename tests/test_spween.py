@@ -20,7 +20,8 @@ import unittest
 
 from tests import test_chain
 from tests.test_objects import run_pure
-from tests.test_scene import GATE, GLM, heard, plain, scene_state
+from tests.test_scene import GATE, GLM, heard, plain, scene_fields
+from tests.test_rooms import make_room
 from tests.test_objects import closure
 from tests.test_turn_world import label, record
 
@@ -143,13 +144,13 @@ class Parse(unittest.TestCase):
 
 
 class Made(test_chain.Chain):
-    WELL_ID = "scene/wishing-well"
+    """A spween block posted to a room makes a room under it by kind/room, the poster its owner."""
+    WELL_ID = "scene/room/1"
 
     def setUp(self):
         super().setUp()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-scene", object="scene",
-                           modules=closure("Scene"), entry="initial", seed=scene_state(GATE))
-        self.assertEqual(r["status"], "created", r)
+        test_chain.town_kinds(self.host.send, names=("room",))
+        make_room(self, "scene", kind=label("kind/room"), **scene_fields(GATE))
 
     def say(self, obj, text, principal=GLM, identity=None):
         return self.turn(obj, "receive", heard(text), principal=principal, identity=identity)
@@ -169,23 +170,22 @@ class Made(test_chain.Chain):
     def made(self):
         r = self.say("scene", "A scene for the square:\n\n```spween\n" + WELL + "```\n", identity="post-well")
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "done"), r)
+        self.deliver_all()
         return r
 
-    def test_a_spween_block_makes_a_scene_and_a_second_is_refused_its_name(self):
+    def test_a_spween_block_makes_a_room_and_a_second_is_the_next(self):
         r = self.made()
-        self.assertEqual(r["offers"][0]["text"], "SCENE The Wishing Well is at scene/wishing-well: 2 passages. "
-                                                 "Reply delvetalk scene/wishing-well enter to begin.\n")
+        self.assertEqual(r["offers"][0]["text"], "ROOM The Wishing Well is at scene/room/1. Enter: delvetalk scene/room/1 enter\n")
         _, state = self.view(self.WELL_ID)
-        self.assertEqual((state["title"], state["start"], state["cooldown"], len(state["passages"])), ("The Wishing Well", "intro", "3", 2))
-        # The poster owns the scene they made.
-        self.assertEqual(state["owner"], GLM)
+        self.assertEqual((state["head"], state["start"], state["cooldown"], len(state["passages"])), ("The Wishing Well", "intro", "3", 2))
+        # The poster owns the room they made; it cites the room it was posted to.
+        self.assertEqual((state["owner"], state["kind"], [c["to"]["object"] for c in state["cites"]]), (GLM, "kind/room", ["scene"]))
         again = self.say("scene", "```spween\n" + WELL + "```\n", identity="post-well-2")
-        out = again["receipt"]["outcome"]
-        self.assertEqual((again["status"], out["class"]), ("refused", "requiredAbsence"), again)
+        self.assertEqual(again["offers"][0]["text"], "ROOM The Wishing Well is at scene/room/2. Enter: delvetalk scene/room/2 enter\n")
         bad = self.say("scene", "```spween\n" + TAVERN + "```\n", identity="post-tavern")
         self.assertEqual(self.refusal(bad), ("spween", "weight: a scene is entered by name here, never drawn by weight"))
 
-    def test_guards_effects_end_and_the_cooldown_as_a_law(self):
+    def test_guards_effects_end_and_the_cooldown(self):
         self.made()
         well = self.WELL_ID
         self.assertEqual(self.say(well, "delvetalk %s enter" % well)["result"]["label"], "entered")
@@ -205,16 +205,16 @@ class Made(test_chain.Chain):
         [left] = state["left"]
         self.assertEqual(left["who"], GLM)
         at = int(left["at"])
-        # Inside the cooldown: refused by name, and the same write proposed directly by the law (no
-        # method made it).
+        # Inside the cooldown: refused by name; the same write proposed by anyone but the owner is the
+        # record's law to refuse (no method made it).
         early = self.say(well, "delvetalk %s enter" % well)
-        self.assertEqual(self.refusal(early), ("cooldown", "You left at clock %d; enter again from clock %d." % (at, at + 3)))
+        self.assertEqual(self.refusal(early), ("cooldown", "One who left enters again only after the cooldown: from clock %d." % (at + 3)))
         append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), at=label("intro")))}
         keep = {"tag": "variant", "label": "keep", "payload": record()}
-        forged = self.host.send(op="world-propose", principal=GLM, identity="forged", roots=[{"object": well, "version": version}],
+        forged = self.host.send(op="world-propose", principal="did:plc:kimik3", identity="forged", roots=[{"object": well, "version": version}],
                                 writes=[{"object": well, "edits": [record(presence=append, vars=keep, left=keep)]}])
         self.assertEqual((forged["status"], forged["receipt"]["outcome"]["class"], forged["receipt"]["outcome"].get("clause")),
-                         ("refused", "lawRefused", "methods"), forged)
+                         ("refused", "lawRefused", "owner"), forged)
         self.host.send(op="world-advance", height=at + 3)
         back = self.say(well, "delvetalk %s enter" % well)
         self.assertEqual(back["result"]["label"], "entered", back)
@@ -224,8 +224,9 @@ class Made(test_chain.Chain):
     def test_an_unmet_requirement_keeps_everyone_out(self):
         sealed = WELL.replace("wishing_well", "sealed_well").replace("not: [well_sealed]", "flags: [well_open]")
         self.assertEqual(self.say("scene", "```spween\n" + sealed + "```\n", identity="post-sealed")["result"]["label"], "done")
-        r = self.say("scene/sealed-well", "delvetalk scene/sealed-well enter")
-        self.assertEqual(self.refusal(r), ("unmet", "The scene requires well_open."))
+        self.deliver_all()
+        r = self.say("scene/room/1", "delvetalk scene/room/1 enter")
+        self.assertEqual(self.refusal(r), ("unmet", "The room requires well_open."))
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ Evidence for FOUNDATION §3, §5, §8 and the voice (layer: scenarios).
   owner checkpoints its page with `merge`, and nobody else does.
 - Workshop: a flawed block is checked with a located diagnostic; a proposal to another's card is held
   for its owner; a stranger cannot adopt it; the owner adopts and the target runs the new source.
-- Scene: a reader enters, chooses, and moves; a stranger's card shows the scene but not the reader's
+- Room: a reader enters, chooses, and moves; a stranger's card shows the room but not the reader's
   place; a choice the passage does not offer is refused and writes nothing.
 
 The deal signed by two is `test_deal`; the claim of a handle and the login are `test_transport`
@@ -142,8 +142,8 @@ class Workshop(Arc):
         self.assertNotEqual(self.pin("library"), pin, adopted)
 
 
-class Scene(Arc):
-    def test_a_reader_enters_and_chooses_and_a_stranger_sees_the_scene_not_the_reader(self):
+class Room(Arc):
+    def test_a_reader_enters_and_chooses_and_a_stranger_sees_the_room_not_the_reader(self):
         entered = self.say(KIM, "rooms", "delvetalk rooms enter")
         self.assertEqual((entered["status"], entered["result"]["label"]), ("admitted", "entered"), entered)
         mine = self.card(self.say(KIM, "rooms", ""))

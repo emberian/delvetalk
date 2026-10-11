@@ -1,9 +1,10 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Text.obend as Text
+import ./Card.obend as Card
 # A scene as data: passages, choices with their effects and guards, the scene's own
-# requirements and cooldown. world/objects/Scene.obend keeps one; world/lib/Spween.obend
-# lowers spween's text to its Seed.
+# requirements and cooldown. A room (world/bodies/room.obend over RECORD) keeps one;
+# world/lib/Spween.obend lowers spween's text to its Seed.
 #
 # An effect sets a variable (`set`), adds to it or subtracts from it (`add`, `sub`, on
 # naturals; a missing or non-numeric value counts 0, a subtraction stops at 0). A clause
@@ -53,6 +54,14 @@ record Var:
   name: String
   value: String
 type Vars = Lists.List<Var>
+# What a room answers to enter, choose, leave, take and put, and what a thing and an avatar
+# answer of their own: a refusal by name, or what happened.
+sum Done:
+  done: {}
+  entered: {at: String}
+  moved: {to: String}
+  left: {}
+  refused: Card.Refusal
 # A choice whose target is END ends the reader's visit.
 def ending() -> String:
   "END"

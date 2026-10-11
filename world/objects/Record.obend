@@ -9,22 +9,33 @@ import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
-# RECORD (docs/CATALOGUE.md §3): what was said, by whom, in order. A line is written, never
-# edited; a keeper, when there is one, admits lines by number, and a record with no keeper
-# lets every line stand as written. The anthology is a record kept by its owner; a bell, a
-# cistern and an env are records with a body laid over them.
+import ./Scenes.obend as Scenes
+import ./Spween.obend as Spween
+# RECORD (docs/METAPHYSICS.md §7): the commonplace's one page. What was said, by whom, in order; a
+# line is written, never edited; a keeper, when there is one, admits lines by number, and a record
+# with no keeper lets every line stand as written. The anthology is a record kept by its owner; a
+# bell, a cistern and a room are records with a body laid over them (world/bodies).
 #
 # A line is keyed {author, n}: `n` is `next` when it came, which only counts up, so key order
 # is the order of writing, a line keeps its number after older lines are dropped, and two
 # writers who read one `next` both stand. `admitted` holds the keeper's admissions by number;
 # `marks` the record's named moments, each once (a bell's `rung`). `head`, `kind`, `fields`,
-# `maker`, `makerHandle` and `post` are set when it is made (KIND's `make`) and never after:
-# the card's first line, the kind it was made from, the values the kind's form took, who made
-# it and the post that made it.
+# `maker`, `makerHandle` and `post` are set when it is made (KIND's `make`) and never after.
+#
+# Where a record stands is what it cites and what it makes. `cites` are its doors (the card's
+# word): `{label, to}` rows the owner hangs, eight at most. `makes` are the kinds whose things a
+# body makes under it (`making`): <record>/<kind>/<n>, each with a door home.
+#
+# A room is a record whose body (world/bodies/room.obend) reads the rest: `start`, `passages`,
+# `cooldown` and `requires` are its scene (world/lib/Scenes.obend), set when it is made and
+# changed only by its owner's reprogram; `presence` who is in it and at which passage; `vars`
+# what its choices set; `left` when each reader last left; `things` what lies in it.
 #
 # The package declares no law: a lawful module cannot be imported, and every kind imports the
 # package it makes. Its creator passes the law (`lawText` is the record's own).
 type Line = Rows.Line
+type Presence = Rows.Presence
+type Departure = Rows.Departure
 record State:
   owner: String
   keeper: String
@@ -39,16 +50,35 @@ record State:
   admitted: Relations.Relation<Rows.Admission>
   marks: Relations.Relation<Rows.Mark>
   next: Nat
-  doors: Card.Doorways
+  cites: Card.Doorways
+  makes: Lists.List<Plans.Reference>
+  start: String
+  passages: Lists.List<Scenes.Passage>
+  cooldown: Nat
+  requires: Scenes.Guard
+  presence: Relations.Relation<Presence>
+  vars: Lists.List<Scenes.Var>
+  left: Relations.Relation<Departure>
+  things: Relations.Relation<Plans.Reference>
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, doors: Lists.List.nil()}
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), makes: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty()}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
+# A body that keeps shorter lines keeps more of them (`relationsWith`).
 def relations() -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: 128n}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n})
-# The record's law, as a kind passes it: the owner stays and alone changes the keeper, the doors
-# or the code; a line is only added, an admission only added, and only the keeper admits.
+  relationsWith(128n)
+def relationsWith(lines: Nat) -> Relations.Decls:
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n})
+# Who may be in a room at once: one turn offers a line to at most 32 (the host's sendsPerTurn).
+def presenceMax() -> Nat:
+  32n
+# Departures kept; one still cooling is never dropped for a newer one (the room's `crowded`).
+def leftMax() -> Nat:
+  64n
+# The record's law, as a kind passes it: the owner stays and alone changes the keeper, the doors,
+# what it makes, its scene or its code; a line is only added, an admission only added, and only
+# the keeper admits.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the keeper, the doors or the code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(doors)))\nlaw kept \"a line is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)"
+  "law owner \"the owner stays; only the owner changes the keeper, the doors, what it makes, its scene or its code; anyone else only by its spells\": unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(cites) and unchanged(makes) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)"
 def lineKey(line: Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
 def admissionKey(a: Rows.Admission) -> {n: Nat}:
@@ -100,18 +130,40 @@ def field(state: State, name: String) -> String:
   match Lists.find(state.fields, fn(f: Rows.Field) -> Bool: f.name == name):
     case some(f): f.value.value
     case none(_): ""
-# Doors on the card are the owner's.
+# Doors on the card are the owner's: what the record cites.
 def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorAdd(state.doors, state.owner, {label: input.label, to: {world: context.world, object: input.to}}, context), "door")
+  doored(Card.doorAdd(state.cites, state.owner, {label: input.label, to: {world: context.world, object: input.to}}, context), "door")
 def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorRemove(state.doors, state.owner, input.label, context), "undoor")
+  doored(Card.doorRemove(state.cites, state.owner, input.label, context), "undoor")
 def doored(edit: Card.DoorEdit, action: String) -> Activity<Card.Replied>:
   match edit:
     case refused(r): Card.tell(Card.Replied.refused(r), Document.text("refused {r.clause}: {r.reading}\n"))
     case edit(e): doorWritten(e.entries, action)
 def doorWritten(entries: Plans.Entries<Card.Doorway, Card.Doorway>, action: String) -> Activity<Card.Replied>:
-  let written(_) = world.write(extend(keep(), {doors: entries}))
+  let written(_) = world.write(extend(keep(), {cites: entries}))
   Card.Replied.done({action: action})
+# Making under the record (`makes`): a body's verb (a garden's plant) names one of its kinds and
+# the fields the kind's form takes, as text; the kind judges them and makes <record>/<kind>/<n>
+# with a door home, answering quietly, and the record answers the maker. A kind the record does
+# not make is refused by name; the kind's refusal keeps its clause.
+sum Made:
+  made: {object: String}
+  refused: Card.Refusal
+def making(state: State, kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context) -> Activity<Made>:
+  if Lists.any(state.makes, fn(r: Plans.Reference) -> Bool: r.object == kind) then calling(kind, fields, context) else notMade({clause: "notMade", reading: makesReading(state)})
+def makesReading(state: State) -> String:
+  if Lists.length(state.makes) == 0n then "This record makes nothing." else "This record makes {textJoin(Lists.map(state.makes, fn(r: Plans.Reference) -> String: r.object), \", \")}."
+def notMade(refusal: Card.Refusal) -> Activity<Made>:
+  Card.tell(Made.refused(refusal), Document.text("Not done: {refusal.reading}\n"))
+def calling(kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context) -> Activity<Made>:
+  match world.call::<Made>({object: {world: context.world, object: kind}, method: "makeUnder", argument: {under: context.object, fields: fields}}):
+    case returned(r): madeHere(r.result, context)
+    case refused(r): notMade({clause: r.clause, reading: r.reading})
+    case denied(_): notMade({clause: "denied", reading: "{kind} does not answer."})
+def madeHere(made: Made, context: Abi.Context) -> Activity<Made>:
+  match made:
+    case made(m): Card.tellTo(made, context.principal, Document.text("Made, at {m.object}.\n"))
+    case refused(r): notMade(r)
 form write:
   text: text 1..280
 form admit:
@@ -159,7 +211,7 @@ def render(state: State, context: Abi.Context) -> Document.Document:
 def renderFrom(state: State, context: Abi.Context, from: Nat, used: Nat) -> Document.Document:
   let id = Card.called(context, "record")
   let head = headLine(state, context, id)
-  let doors = Card.doorLines(state.doors)
+  let doors = Card.doorLines(state.cites)
   let left = Card.left(used + Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
   let room = if left < Card.budget() then left else Card.budget()
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(numbered(state, context, Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: l.n >= from), 8n, if room < left then room else left, id), doors)})})

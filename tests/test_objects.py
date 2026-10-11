@@ -263,20 +263,7 @@ def doors(n: Nat) -> Card.Doorways:
 def one(n: Nat) -> String:
   Document.plain(O.render({colour: O.Colour.silver({}), seed: rep(80n, "s"), rains: Relations.Relation.rows({items: rains(64n)}), rung: false, planting: "p", planter: "did:plc:glm", planterHandle: rep(64n, "h"), doors: doors(8n)}, Card.stranger()))
 """
-SCENE_BUDGET_PROBE = BUDGET_HEAD + "import ./Scene.obend as O\nimport ./Scenes.obend as Scenes\nimport ./Rows.obend as Rows\n" + REPEAT + """def choices(n: Nat) -> Lists.List<Scenes.Choice>:
-  match n:
-    case 0: Lists.List::<Scenes.Choice>.nil()
-    case 1+p: Lists.List::<Scenes.Choice>.cons({head: {label: textConcat(rep(120n, "c"), natText(p)), to: "gate", effects: Lists.List::<Scenes.Effect>.nil(), guard: Lists.List::<Scenes.Clause>.nil()}, tail: choices(p)})
-def vars(n: Nat) -> Lists.List<Scenes.Var>:
-  match n:
-    case 0: Lists.List::<Scenes.Var>.nil()
-    case 1+p: Lists.List::<Scenes.Var>.cons({head: {name: textConcat("v", natText(p)), value: rep(200n, "x")}, tail: vars(p)})
-def one(n: Nat) -> String:
-  let gate = {id: "gate", text: rep(600n, "p"), choices: choices(8n)}
-  let here = Relations.Relation::<Rows.Presence>.rows({items: Lists.List::<Rows.Presence>.cons({head: {who: "did:plc:glm", at: "gate"}, tail: Lists.List::<Rows.Presence>.nil()})})
-  let state = {owner: "ember", title: rep(200n, "T"), start: "gate", passages: Lists.List::<Scenes.Passage>.cons({head: gate, tail: Lists.List::<Scenes.Passage>.nil()}), presence: here, vars: vars(16n), cooldown: 0n, requires: Lists.List::<Scenes.Clause>.nil(), left: Relations.Relation::<O.Left>.rows({items: Lists.List::<O.Left>.nil()})}
-  Document.plain(O.render(state, extend(Card.stranger(), {principal: "did:plc:glm"})))
-"""
+
 
 
 class Budgets(unittest.TestCase):
@@ -297,6 +284,3 @@ class Budgets(unittest.TestCase):
         self.assertLessEqual(len(text), 1400, (len(text), text[-200:]))
         self.assertIn("Doors: ", text)
 
-    def test_a_scene_passage_with_long_choices_and_vars_stays_under_1400(self):
-        text = self.text("Scene", SCENE_BUDGET_PROBE)
-        self.assertLessEqual(len(text), 1400, (len(text), text[-200:]))
