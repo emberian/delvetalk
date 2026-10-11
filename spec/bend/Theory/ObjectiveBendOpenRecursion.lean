@@ -74,6 +74,18 @@ inductive Term where
   activity type and never a value: `Step` has no rule for it (a program stuck here
   has refused), and the machine stops with `Refusal.program reason`. -/
   | refuse (reason : String)
+  /-- Hosted extension, not upstream: the number of rows of a relation (`Relation<T> =
+  rows {items: List<T>}`). Its meaning is `relationCountExpansion`, a walk of the items; the
+  machine walks natively, and answers a stored relation from its handle without forcing a row. -/
+  | relationCount (relation : Term)
+  /-- Hosted extension, not upstream: look a row up by `key`, the columns the `probe` reads.
+  `probe` maps a row's projection onto `key` (a record of those columns) to 0 when it lies
+  below the sought key, 1 when it is the sought key, more when it lies above. The meaning is
+  `relationLookupExpansion`: walk the items, continue past 0, answer `some {value: row}` at 1
+  and `none {}` past it or at the end. The machine binary-searches a stored relation whose
+  declared key is exactly `key`, probing the host's key projections, and fetches the one row
+  found only when it is read. -/
+  | relationLookup (relation : Term) (key : List String) (probe : Term)
   deriving Repr
 
 def liftRename (rename : Nat → Nat) : Nat → Nat
@@ -85,7 +97,8 @@ def Term.nodes : Term → Nat
   | .lam a | .reflect a | .metadata a | .project a | .unary _ a | .get a _ | .inject _ a
   | .perform a | .done a | .toData a => 1 + a.nodes
   | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b
-  | .textJoin a b => 1 + a.nodes + b.nodes
+  | .textJoin a b | .relationLookup a _ b => 1 + a.nodes + b.nodes
+  | .relationCount a => 1 + a.nodes
   | .ifZero a b c | .ifBool a b c => 1 + a.nodes + b.nodes + c.nodes
   | .extend a fields | .case a fields => 1 + a.nodes + Term.fieldNodes fields
   | .record fields => 1 + Term.fieldNodes fields
@@ -128,6 +141,8 @@ def Term.rename (rename : Nat → Nat) : Term → Term
   | .toData value => .toData (value.rename rename)
   | .textJoin list separator => .textJoin (list.rename rename) (separator.rename rename)
   | .refuse reason => .refuse reason
+  | .relationCount relation => .relationCount (relation.rename rename)
+  | .relationLookup relation key probe => .relationLookup (relation.rename rename) key (probe.rename rename)
 
 termination_by source => sizeOf source
 decreasing_by
@@ -179,6 +194,9 @@ def Term.substitute (substitution : Nat → Term) : Term → Term
   | .toData value => .toData (value.substitute substitution)
   | .textJoin list separator => .textJoin (list.substitute substitution) (separator.substitute substitution)
   | .refuse reason => .refuse reason
+  | .relationCount relation => .relationCount (relation.substitute substitution)
+  | .relationLookup relation key probe =>
+      .relationLookup (relation.substitute substitution) key (probe.substitute substitution)
 
 termination_by source => sizeOf source
 decreasing_by
@@ -207,6 +225,35 @@ def textJoinExpansion (list separator : Term) : Term :=
   let go : Term := .fix (.lam (.lam (.lam (.lam body)))) (.record [])
   .case list [("nil", .label ""),
     ("cons", .app (.app go (.get (.bound 0) "head")) (.get (.bound 0) "tail"))]
+
+/-- The meaning of `relationCount relation`: a case on the relation's one constructor `rows`,
+then `go 0 items` (a `fix` of `λself. λ_. λcounted. λrest.`) adding one per `cons` cell. Only
+the spine is read: no row. -/
+def relationCountExpansion (relation : Term) : Term :=
+  let body : Term := .case (.bound 0)
+    [("nil", .bound 2),
+     ("cons", .app (.app (.bound 4) (.binary .add (.bound 2) (.nat 1))) (.get (.bound 0) "tail"))]
+  let go : Term := .fix (.lam (.lam (.lam (.lam body)))) (.record [])
+  .case relation [("rows", .app (.app go (.nat 0)) (.get (.bound 0) "items"))]
+
+/-- A row's projection onto `key`, the cons payload being variable 0: one field per column,
+each a lazy read of the head's column. -/
+def keyProjectionTerm (key : List String) : Term :=
+  .record (key.map fun column => (column, .get (.get (.bound 0) "head") column))
+
+/-- The meaning of `relationLookup relation key probe`: a case on `rows`, then `go items` (a
+`fix` of `λself. λ_. λrest.`) applying `probe` to each row's projection onto `key`: 0 walks
+on, 1 answers `some {value: head}`, anything more `none {}`, and the end `none {}`. Inside
+`go`'s cons arm the probe sits under the rows arm, three lambdas and the cons arm: five. -/
+def relationLookupExpansion (relation : Term) (key : List String) (probe : Term) : Term :=
+  let body : Term := .ifZero (.bound 0) (.app (.bound 4) (.get (.bound 1) "tail"))
+    (.ifZero (.bound 0) (.inject "some" (.record [("value", .get (.bound 2) "head")]))
+      (.inject "none" (.record [])))
+  let walk : Term := .case (.bound 0)
+    [("nil", .inject "none" (.record [])),
+     ("cons", .app (.lam body) (.app (probe.rename (· + 5)) (keyProjectionTerm key)))]
+  let go : Term := .fix (.lam (.lam (.lam walk))) (.record [])
+  .case relation [("rows", .app go (.get (.bound 0) "items"))]
 
 def instantiate (body argument : Term) : Term :=
   body.substitute (fun index => match index with | 0 => argument | n + 1 => .bound n)
@@ -429,6 +476,11 @@ inductive Step : Term → Term → Prop where
   | toData (value : Term) : Step (.toData value) value
   /-- `textJoin` unfolds to its fold (`textJoinExpansion`). -/
   | textJoin (list separator : Term) : Step (.textJoin list separator) (textJoinExpansion list separator)
+  /-- `relationCount` unfolds to its walk (`relationCountExpansion`). -/
+  | relationCount (relation : Term) : Step (.relationCount relation) (relationCountExpansion relation)
+  /-- `relationLookup` unfolds to its walk (`relationLookupExpansion`). -/
+  | relationLookup (relation : Term) (key : List String) (probe : Term) :
+      Step (.relationLookup relation key probe) (relationLookupExpansion relation key probe)
 
 inductive Steps : Term → Term → Prop where
   | refl (term : Term) : Steps term term

@@ -66,7 +66,8 @@ def failureName : Failure → String
 def refusalText (failure : Failure) (state : State) : String :=
   match failure, state.control with
   | .refused, .refused (.program reason) => reason
-  | .refused, .refused .unfetched => "a stored row is missing from the store or exceeds the cell bound"
+  | .refused, .refused .unfetched =>
+    "a stored row is missing from the store or exceeds the cell bound, or a lookup's key is not its relation's declared key"
   | _, _ => failureName failure
 
 /-- The activity shape a turn requires of a checked type. -/
@@ -263,7 +264,7 @@ def exhaustedResource (limits : Limits) (failure : Failure) (state : State) (rem
   | .suspended =>
       -- A row fetch suspends before its step: its heap is the row's fields.
       match fetchable fetch state with
-      | some (_, _, _, row) =>
+      | some (_, _, row) =>
         some (if state.heap.size + Delvetalk.Theory.ObjectiveBendDemandMachineFast.nativeChildren row > limits.heap
           then "heap" else "bytes")
       | none =>
@@ -436,14 +437,26 @@ structure StoredRelation where
 canonical key order, at the turn's read height). -/
 structure Store where
   relations : List StoredRelation
-  fetch : Fetch
+  fetch : String → Nat → Option Data
 
-def Store.empty : Store := ⟨[], Fetch.none⟩
+def Store.empty : Store := ⟨[], fun _ _ => none⟩
 
-/-- What the kernel fetches: the store's rows within the cell bound (`Bounds.maxCellBytes`); a
-larger one is refused as missing (`refusalText`). -/
-def Store.bounded (store : Store) : Fetch := fun field position =>
-  (store.fetch field position).filter (·.canonicalBytes ≤ Bounds.maxCellBytes)
+def keyProjection (key : List String) : Data → Data
+  | .record fields => .record (key.filterMap fun column => (fields.lookup column).map (column, ·))
+  | row => row
+
+/-- What the kernel fetches (`Fetch`): a row within the cell bound (`Bounds.maxCellBytes`; a larger
+one is refused as missing, `refusalText`), and a lookup's probe key, that row's projection onto the
+lookup's columns, only when they are the relation's declared key (as a set): rows are in the order
+of that key alone, so a search by any other columns is refused, never answered wrong. -/
+def Store.bounded (store : Store) : Fetch
+  | .row field position => (store.fetch field position).filter (·.canonicalBytes ≤ Bounds.maxCellBytes)
+  | .key field position columns => do
+    let relation ← store.relations.find? (·.field == field)
+    unless columns.length == relation.key.length && columns.all relation.key.contains do none
+    let row ← (store.fetch field position).filter (·.canonicalBytes ≤ Bounds.maxCellBytes)
+    return keyProjection columns row
+  | _ => none
 
 /-- A forced row: its relation field, its key projection (a record of the key columns), and
 its canonical bytes. -/
@@ -452,22 +465,18 @@ structure Read where
   key : Data
   bytes : Nat
 
-/-- A segment's reads: the rows it forced and, per stored field, how far its spine was forced
-(`n + 1` once its `nil` was: the whole key set was observed). -/
+/-- A segment's reads: the rows it forced and, per stored field, how far into its key order it
+looked (`storedReach`: a spine forced, a lookup's answer, a count; `n + 1` is the whole key set). -/
 structure Reads where
   rows : List Read
   spans : List (String × Nat)
-
-def keyProjection (key : List String) : Data → Data
-  | .record fields => .record (key.filterMap fun column => (fields.lookup column).map (column, ·))
-  | row => row
 
 def Store.readsOf (store : Store) (state : State) : Reads :=
   { rows := (forcedRows state).filterMap fun (field, position) => do
       let relation ← store.relations.find? (·.field == field)
       let row ← store.fetch field position
       return ⟨field, keyProjection relation.key row, row.canonicalBytes⟩
-    spans := spineReach state }
+    spans := storedReach state }
 
 def Reads.toJson (r : Reads) : Json :=
   Json.mkObj [("rows", Json.arr (r.rows.map fun read => Json.mkObj [("field", Lean.toJson read.field),
@@ -596,6 +605,10 @@ def storedData (store : Store) : Stored → Option Data
   | .spine f j n => storedList store f j n
   | .cons f j n => do return .record [("head", ← store.fetch f j), ("tail", ← storedList store f (j + 1) n)]
   | .row f j => store.fetch f j
+  | .key f j columns => (store.fetch f j).map (keyProjection columns)
+  | .found f j => do return .record [("value", ← store.fetch f j)]
+  | .absent _ _ => some (.record [])
+  | .size _ n => some (.natural n)
 
 /-- A yielded state, collected as its checkpoint is (`ObjectiveBendDemandCollect.checkpoint`), with
 every stored cell it still holds unforced replaced by the native data it stands for, and the stored
@@ -605,7 +618,8 @@ def materializeStored (store : Store) (yielded : State) : State × List String :
   let state := Delvetalk.Theory.ObjectiveBendDemandCollect.checkpoint yielded
   let fieldsOf : Stored → List String
     | .object _ stored => stored.map (·.1)
-    | .relation f _ | .items f _ | .spine f _ _ | .cons f _ _ | .row f _ => [f]
+    | .relation f _ | .items f _ | .spine f _ _ | .cons f _ _ | .row f _ | .key f _ _ | .found f _
+    | .absent f _ | .size f _ => [f]
   let (heap, fields) := state.heap.foldl (fun (heap, fields) cell => match cell with
     | .stored part none => match storedData store part with
       | some d => (heap.push (.native d), fields ++ fieldsOf part)

@@ -137,9 +137,9 @@ theorem allocateObjectFields_size (heap : Array Cell) (stored : List (String × 
 /-- The cells forcing a stored part allocates (none for a row, which `stepRaw` refuses). -/
 def storedChildren : Stored → Nat
   | .object state _ => state.length
-  | .relation _ _ | .items _ _ | .spine _ _ _ => 1
+  | .relation _ _ | .items _ _ | .spine _ _ _ | .found _ _ => 1
   | .cons _ _ _ => 2
-  | .row _ _ => 0
+  | .row _ _ | .key _ _ _ | .absent _ _ | .size _ _ => 0
 
 theorem forceStored_size (heap : Array Cell) (part : Stored) :
     (match forceStored heap part with | some (h, _) => h.size | none => heap.size) =
@@ -148,6 +148,11 @@ theorem forceStored_size (heap : Array Cell) (part : Stored) :
   | spine field position size =>
     by_cases h : position < size <;> simp [forceStored, storedChildren, h]
   | _ => simp [forceStored, storedChildren, allocateObjectFields_size]
+
+/-- The sizes after `searchStep` over `low` to `high`: one cell either way; the probe's two
+frames replace the search's one, or the search ends. -/
+def searchSizes (size depth low high : Nat) : Nat × Nat :=
+  (size + 1, if low < high then depth + 1 else depth - 1)
 
 /-- The heap size and stack length `stepRaw` produces, computed without building
 its result; `depth` stands for the pre-state's stack length. -/
@@ -166,7 +171,9 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
     | .specification _ _ | .prototype _ _ => (size+2,depth)
     | .record fields => (size+fields.length,depth)
     | .app _ _ | .reflect _ | .metadata _ | .project _ | .get _ _ | .extend _ _
-    | .ifZero _ _ _ | .binary _ _ _ | .unary _ _ | .case _ _ | .ifBool _ _ _ | .textJoin _ _ => (size,depth+1)
+    | .ifZero _ _ _ | .binary _ _ _ | .unary _ _ | .case _ _ | .ifBool _ _ _ | .textJoin _ _
+    | .relationCount _ => (size,depth+1)
+    | .relationLookup _ _ _ => (size+1,depth+1)
     | .perform _ => if forcingShared state.stack then (size,depth) else (size+1,depth)
     | .bound _ | .lam _ | .nat _ | .boolean _ | .label _ | .mix _ _ | .done _ | .toData _ | .refuse _ => (size,depth)
   | .returned value => match state.stack with
@@ -187,6 +194,26 @@ def sizesAfter (state : State) (depth : Nat) : Nat × Nat :=
         match fields.find? (fun field => field.1 == "head"), fields.find? (fun field => field.1 == "tail") with
         | some _, some _ => (size,depth)
         | _, _ => (size,depth-1)
+      | .relationRows walk,.variant tag payload =>
+        if tag == "rows" then
+          match walk, storedItems state.heap[payload]? with
+          | .count _, some _ => (size+1,depth-1)
+          | .lookup _ _, some (_, rows) => searchSizes size depth 0 rows
+          | _, _ => (size,depth+1)
+        else (size,depth-1)
+      | .relationList walk,.variant tag _ =>
+        if tag == "nil" then match walk with
+          | .count _ => (size,depth-1)
+          | .lookup _ _ => (size+1,depth-1)
+        else if tag == "cons" then match walk with
+          | .count _ => (size,depth+1)
+          | .lookup _ _ => (size+1,depth+1)
+        else (size,depth-1)
+      | .relationProbe _ _ _,.natural 0 => (size,depth+1)
+      | .relationProbe _ _ _,.natural _ => (size+1,depth-1)
+      | .relationSearch _ _ _ low high,.natural 0 => searchSizes size depth ((low + high) / 2 + 1) high
+      | .relationSearch _ _ _ _ _,.natural 1 => (size+1,depth-1)
+      | .relationSearch _ _ _ low high,.natural _ => searchSizes size depth low ((low + high) / 2)
       | _,_ => (size,depth-1)
 
 theorem sizesAfter_eq (state : State) :
@@ -222,7 +249,28 @@ theorem sizesAfter_eq (state : State) :
         cases value with
         | natural n => cases n <;> simp [sizesAfter, stepRaw]
         | _ => simp [sizesAfter, stepRaw]
-      all_goals cases value <;> simp [sizesAfter, stepRaw, allocateFields_size]
+      case relationRows walk =>
+        cases value with
+        | variant tag payload =>
+          simp only [sizesAfter, stepRaw]
+          by_cases rows : (tag == "rows") = true
+          · simp only [rows, if_true]
+            rcases walk with counted | ⟨key, probe⟩ <;>
+              rcases found : storedItems heap[payload]? with _ | ⟨field, size⟩ <;>
+              simp [searchSizes, searchStep] <;> split <;> simp
+          · simp [rows]
+        | _ => simp [sizesAfter, stepRaw]
+      case relationProbe =>
+        cases value with
+        | natural n => rcases n with _ | _ | n <;> simp [sizesAfter, stepRaw]
+        | _ => simp [sizesAfter, stepRaw]
+      case relationSearch =>
+        cases value with
+        | natural n =>
+          rcases n with _ | _ | n <;> simp only [sizesAfter, stepRaw, searchSizes, searchStep] <;>
+            (repeat' split) <;> simp_all
+        | _ => simp [sizesAfter, stepRaw]
+      all_goals cases value <;> simp [sizesAfter, stepRaw, allocateFields_size, searchSizes, searchStep]
       all_goals (repeat' split) <;> simp_all
 
 /-! ## One step and the bounded run -/

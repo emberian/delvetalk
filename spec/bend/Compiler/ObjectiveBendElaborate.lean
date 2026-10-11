@@ -354,6 +354,11 @@ inductive ATerm where
   | toData (type : PTy) (value : ATerm)
   /-- `textJoin(list, separator)`. -/
   | textJoin (list separator : ATerm)
+  /-- `relationCount(relation)`. -/
+  | relationCount (relation : ATerm)
+  /-- `relationLookup(relation, key)`: the key's columns and the probe comparing a row's
+  projection onto them with the key (written by the elaborator). -/
+  | relationLookup (relation : ATerm) (key : List String) (probe : ATerm)
   /-- Refuse the turn, naming why; `type` is the activity type it stands in for. -/
   | refuse (type : PTy) (reason : String)
   deriving Inhabited
@@ -387,6 +392,8 @@ def ATerm.json : ATerm → Json
   | .done _ _ v => Json.mkObj [("tag", "done"), ("value", v.json)]
   | .toData _ v => Json.mkObj [("tag", "toData"), ("value", v.json)]
   | .textJoin l s => Json.mkObj [("tag", "textJoin"), ("list", l.json), ("separator", s.json)]
+  | .relationCount r => Json.mkObj [("tag", "relationCount"), ("relation", r.json)]
+  | .relationLookup r k p => Json.mkObj [("tag", "relationLookup"), ("relation", r.json), ("key", Json.arr (k.map Json.str).toArray), ("probe", p.json)]
   | .refuse _ r => Json.mkObj [("tag", "refuse"), ("reason", r)]
 def fieldsJson : List (String × ATerm) → Json
   | fs => Json.arr (fieldsArray fs).toArray
@@ -447,6 +454,8 @@ def ATerm.erase : ATerm → Except String CoreTerm
   | .done _ _ v => return .done (← v.erase)
   | .toData _ v => return .toData (← v.erase)
   | .textJoin l s => return .textJoin (← l.erase) (← s.erase)
+  | .relationCount r => return .relationCount (← r.erase)
+  | .relationLookup r k p => return .relationLookup (← r.erase) k (← p.erase)
   | .refuse _ r => return .refuse r
 def eraseFields : List (String × ATerm) → Except String (List (String × CoreTerm))
   | [] => .ok []
@@ -764,6 +773,19 @@ def variantRowOf (s : St) : Option PTy → Option PTy
     | _ => none
   | some (.variant row) => some row
   | _ => none
+
+/-- The row type `T` of a `Relation<T>` (`rows: {items: List<T>}`), as the elaborator reads it;
+the checker decides it exactly (`Ty.relationItem`). -/
+def relationItemOf (s : St) (t : Option PTy) : Option PTy := do
+  let row ← variantRowOf s t
+  let payload ← lookupRow (some row) "rows"
+  let items ← lookupRow (some payload) "items"
+  let list ← variantRowOf s (some items)
+  let cons ← lookupRow (some list) "cons"
+  lookupRow (some cons) "head"
+
+/-- `Maybe<T>` (the prelude's `none: {} | some: {value: T}`): what `relationLookup` answers. -/
+def maybeOf (item : PTy) : PTy := PTy.variant (PTy.row [("none", .emptyRow), ("some", PTy.row [("value", item)])])
 
 /-- A yield: the only one is a world call. -/
 def isPerform (_c : Ctx) (e : Expr) (_env : List Binding) (_m : Module) : Bool :=
@@ -1255,6 +1277,10 @@ def synth (c : Ctx) : Nat → Expr → List Binding → Module → M (Option PTy
           if ["textTake", "textDrop"].contains name && args.length == 2 then return some .label
           if name == "textSlice" && args.length == 3 then return some .label
           if name == "textJoin" && args.length == 2 then return some .label
+          if name == "relationCount" && args.length == 1 then return some .natural
+          if name == "relationLookup" && args.length == 2 then
+            if let [relation, _] := args then
+              return (relationItemOf (← get) (← synth c fuel relation env m)).map maybeOf
           if name == "refuse" && args.length == 1 then
             return match (← get).resultType with
               | some (.computation p r a) => some (.computation p r a)
@@ -1419,6 +1445,8 @@ def ATerm.mapTypes (f : PTy → PTy) : ATerm → ATerm
   | .done p r x => .done (f p) (f r) (x.mapTypes f)
   | .toData t x => .toData (f t) (x.mapTypes f)
   | .textJoin l s => .textJoin (l.mapTypes f) (s.mapTypes f)
+  | .relationCount r => .relationCount (r.mapTypes f)
+  | .relationLookup r k p => .relationLookup (r.mapTypes f) k (p.mapTypes f)
   | .refuse t r => .refuse (f t) r
 def ATerm.mapFieldTypes (f : PTy → PTy) : List (String × ATerm) → List (String × ATerm)
   | [] => []
@@ -2043,6 +2071,34 @@ def expression (c : Ctx) : Nat → Expr → List Binding → Module → M ATerm
         return .inject caseLabel type (if type.isSome then none else some ("sum " ++ key ++ " type unresolved")) payload
       if let .var name := callee then
         if !env.any (·.name == name) && (lookupGlobal c name m).isNone then
+          if ["relationCount", "relationLookup"].contains name then
+            for a in args do noActivity c fuel a env m "effect-in-relation" "a relation and its key are pure"
+            match name, args with
+            | "relationCount", [relation] =>
+              unless (relationItemOf (← get) (← synth c fuel relation env m)).isSome do
+                fail "refused (relation-count): relationCount takes a Relation<T>"
+              return .relationCount (← expression c fuel relation env m)
+            | "relationLookup", [relation, key] =>
+              let some item := relationItemOf (← get) (← synth c fuel relation env m)
+                | fail "refused (relation-lookup): relationLookup takes a Relation<T> first"
+              let some keyTy ← synth c fuel key env m
+                | fail "refused (relation-lookup): the key's type does not resolve; annotate it"
+              let columns := rowFields keyTy
+              if columns.isEmpty then
+                fail "refused (relation-lookup): the key is a record of the row's key columns, as {who: who}"
+              let bounds := (← get).sumBounds
+              for (column, type) in columns do
+                unless sameTy (lookupRowBounded bounds 64 (some item) column) (some type) do
+                  fail ("refused (relation-lookup): the key's column " ++ column ++
+                    " is not a column of the row type, of the same type")
+              -- `(λk. relationLookup relation columns (λx. canonicalCompare(x, k))) key`: the key is one
+              -- shared cell; the probe compares a row's projection (or a stored key) with it.
+              let cmp ← canonicalComparator keyTy
+              let relationTerm ← expression c fuel relation (⟨"#relationKey", some keyTy, "unrestricted"⟩ :: env) m
+              let probe := cmpLam keyTy .natural (.app (.app cmp (.bound 0)) (.bound 1))
+              return .app (cmpLam keyTy (maybeOf item) (.relationLookup relationTerm (columns.map (·.1)) probe))
+                (← expression c fuel key env m)
+            | _, _ => fail (name ++ " has wrong arity")
           if ["natText", "textLength", "sha256Text", "textConcat", "textSlice", "textSpan", "textBreak", "textHasAny", "canonicalCompare", "textTake", "textDrop", "textJoin"].contains name then
             for a in args do noActivity c fuel a env m "effect-in-text" "text operands are pure"
             match name, args with
@@ -2606,8 +2662,9 @@ partial def knotNames (t : ATerm) (acc : Array String) : Array String :=
   | .bound _ | .nat _ | .boolean _ | .label _ | .refuse _ _ => acc
   | .lam _ b | .reflect b | .metadata b | .project b | .unary _ b | .inject _ _ _ b | .perform _ _ b
   | .done _ _ b | .toData _ b => knotNames b acc
-  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b | .textJoin a b =>
-    knotNames b (knotNames a acc)
+  | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b | .textJoin a b
+  | .relationLookup a _ b => knotNames b (knotNames a acc)
+  | .relationCount a => knotNames a acc
   | .ifZero a b c | .ifBool a b c => knotNames c (knotNames b (knotNames a acc))
   | .extend i fs => fs.foldl (fun acc (_, v) => knotNames v acc) (knotNames i acc)
   | .record fs => fs.foldl (fun acc (_, v) => knotNames v acc) acc
@@ -2942,7 +2999,9 @@ def annotate (bounds : List (Nat × PTy)) : ATerm → List Nat → Except String
     return ⟨path, p, r, "unrestricted", "reusable"⟩ :: (← annotate bounds v (path ++ [0]))
   | .toData _ v, path => annotate bounds v (path ++ [0])
   | .refuse t _, path => return [⟨path, t, t, "unrestricted", "reusable"⟩]
-  | .textJoin l s, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds s (path ++ [1]))
+  | .textJoin l s, path | .relationLookup l _ s, path =>
+    return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds s (path ++ [1]))
+  | .relationCount r, path => annotate bounds r (path ++ [0])
   | .app f a, path => return (← annotate bounds f (path ++ [0])) ++ (← annotate bounds a (path ++ [1]))
   | .fix s i, path => return (← annotate bounds s (path ++ [0])) ++ (← annotate bounds i (path ++ [1]))
   | .mix l u, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds u (path ++ [1]))

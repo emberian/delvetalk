@@ -267,18 +267,46 @@ def Ty.closedRowCount : Ty → Option Nat
   | .field _ _ tail => tail.closedRowCount.map (· + 1)
   | _ => none
 
-/-- `List<String>`: a variable whose declared bound is the closed sum
-`nil: {} | cons: {head: String, tail: <the variable>}` (in either order). -/
-def Ty.isTextList (bounds : Bounds) : Ty → Bool
+/-- The item type of a list: a variable whose declared bound is the closed sum
+`nil: {} | cons: {head: T, tail: <the variable>}` (in either order). `List<String>` is the item
+type `.label` (`textJoin`). -/
+def Ty.listItem (bounds : Bounds) : Ty → Option Ty
   | .variable index => match bounds.lookup index with
     | some (.variant row) =>
-      row.closedRowCount == some 2 && row.rowMember "nil" == some .emptyRow &&
-      match row.rowMember "cons" with
-      | some cons => cons.closedRowCount == some 2 && cons.rowMember "head" == some .label &&
-          cons.rowMember "tail" == some (.variable index)
-      | none => false
-    | _ => false
-  | _ => false
+      if row.closedRowCount == some 2 && row.rowMember "nil" == some .emptyRow then
+        match row.rowMember "cons" with
+        | some cons =>
+          if cons.closedRowCount == some 2 && cons.rowMember "tail" == some (.variable index) then
+            cons.rowMember "head"
+          else none
+        | none => none
+      else none
+    | _ => none
+  | _ => none
+
+/-- The row type of a relation: `Relation<T>` is the closed one-case sum `rows: {items: List<T>}`
+(FOUNDATION §9). -/
+def Ty.relationItem (bounds : Bounds) : Ty → Option Ty
+  | .variant row =>
+    if row.closedRowCount == some 1 then
+      match row.rowMember "rows" with
+      | some payload =>
+        if payload.closedRowCount == some 1 then (payload.rowMember "items").bind (Ty.listItem bounds) else none
+      | none => none
+    else none
+  | _ => none
+
+/-- A row's projection onto `columns`, in their order: the record type of a lookup's key. -/
+def Ty.projection (bounds : Bounds) (fuel : Nat) (row : Ty) : List String → Option Ty
+  | [] => some .emptyRow
+  | column :: rest => do
+    let member ← row.lookup bounds fuel column
+    let tail ← row.projection bounds fuel rest
+    some (.field column member tail)
+
+/-- `Maybe<T>` (the prelude's `none: {} | some: {value: T}`): what a lookup answers. -/
+def Ty.maybe (item : Ty) : Ty :=
+  .variant (.field "none" .emptyRow (.field "some" (.field "value" item .emptyRow) .emptyRow))
 
 def Ty.isRow (bounds : Bounds) : Nat → Ty → Bool
   | 0, _ => false

@@ -363,10 +363,26 @@ inductive PartialTyping (assumptions : Assumptions) : Context → Term → Ty �
       PartialTyping assumptions context (.toData value) .data uses
   /-- Hosted extension: join a `List<String>` with a String separator. -/
   | textJoin {context : Context} {list separator : Term} {listType : Ty} {lu su : Uses} :
-      listType.isTextList assumptions.bounds = true →
+      listType.listItem assumptions.bounds = some .label →
       PartialTyping assumptions context list listType lu →
       PartialTyping assumptions context separator .label su →
       PartialTyping assumptions context (.textJoin list separator) .label (addUses lu su)
+  /-- Hosted extension: the row count of a `Relation<T>`. -/
+  | relationCount {context : Context} {relation : Term} {relationType item : Ty} {uses : Uses} :
+      relationType.relationItem assumptions.bounds = some item →
+      PartialTyping assumptions context relation relationType uses →
+      PartialTyping assumptions context (.relationCount relation) .natural uses
+  /-- Hosted extension: look a row of a `Relation<T>` up by `key`, its columns. The probe takes
+  the row's projection onto them (`Ty.projection`) to a natural; it is held in a shared cell and
+  applied once per row walked or key probed, so it is a reusable, shareable function. -/
+  | relationLookup {context : Context} {relation probe : Term} {key : List String}
+      {relationType item keyType : Ty} {quantity : Quantity} {ru pu : Uses} {fuel : Nat} :
+      relationType.relationItem assumptions.bounds = some item →
+      item.projection assumptions.bounds fuel key = some keyType →
+      PartialTyping assumptions context relation relationType ru →
+      PartialTyping assumptions context probe (.arrow .reusable quantity keyType .natural) pu →
+      argumentAllowed assumptions .unrestricted context (.arrow .reusable quantity keyType .natural) pu = true →
+      PartialTyping assumptions context (.relationLookup relation key probe) (Ty.maybe item) (addUses ru pu)
   /-- A pure value where an activity is expected. -/
   | done {context : Context} {value : Term} {planType response result : Ty} {uses : Uses} :
       PartialTyping assumptions context value result uses → result.isComputation = false →
@@ -667,11 +683,35 @@ def inferAt {α : Type} (assumptions : Assumptions) (here : α → Option Lambda
   | fuel + 1, .textJoin list separator => do
       let l ← inferAt assumptions here child context (child position 0) fuel list
       let s ← inferAt assumptions here child context (child position 1) fuel separator
-      if hl : l.type.isTextList assumptions.bounds = true then
+      if hl : l.type.listItem assumptions.bounds = some .label then
         if hs : s.type = .label then
           some ⟨.label, addUses l.uses s.uses, .textJoin hl l.derivation (hs ▸ s.derivation)⟩
         else none
       else none
+  | fuel + 1, .relationCount relation => do
+      let r ← inferAt assumptions here child context (child position 0) fuel relation
+      match hi : r.type.relationItem assumptions.bounds with
+      | some _ => some ⟨.natural, r.uses, .relationCount hi r.derivation⟩
+      | none => none
+  | fuel + 1, .relationLookup relation key probe => do
+      let r ← inferAt assumptions here child context (child position 0) fuel relation
+      let p ← inferAt assumptions here child context (child position 1) fuel probe
+      match hi : r.type.relationItem assumptions.bounds with
+      | none => none
+      | some item =>
+        match hk : item.projection assumptions.bounds (fuel + 1) key with
+        | none => none
+        | some keyType =>
+          match callable p.type with
+          | .arrow _ quantity _ _ =>
+            if ha : agree assumptions p.type (.arrow .reusable quantity keyType .natural) = true then
+              if hc : argumentAllowed assumptions .unrestricted context
+                  (.arrow .reusable quantity keyType .natural) p.uses = true then
+                some ⟨Ty.maybe item, addUses r.uses p.uses,
+                  .relationLookup hi hk r.derivation (.conversion p.derivation (agree_sameType ha)) hc⟩
+              else none
+            else none
+          | _ => none
   | fuel + 1, .toData inner => do
       let value ← inferAt assumptions here child context (child position 0) fuel inner
       if hd : value.type.isDataUnder assumptions.bounds assumptions.rigid Ty.dataFuel [] = true then
@@ -1409,6 +1449,20 @@ def decodeUnaryPrimitive (value : Json) : Except String UnaryPrimitive := do
   | "sha256Text" => pure .sha256Text
   | _ => .error "unknown Objective unary primitive"
 
+/-- An array of texts (a lookup's key columns). -/
+def decodeTexts (value : Json) : Except String (List String) := do
+  (← value.getArr?).toList.mapM (·.getStr?)
+
+theorem decodeTexts_arr (texts : List String) : decodeTexts (Json.arr (texts.map Json.str).toArray) = .ok texts := by
+  simp only [decodeTexts, Json.getArr?, bind, Except.bind, List.toList_toArray]
+  induction texts with
+  | nil => rfl
+  | cons t rest ih =>
+    simp only [List.map_cons, List.mapM_cons, Json.getStr?, bind, Except.bind, pure, Except.pure] at ih ⊢
+    rw [ih]
+
+#assert_axioms decodeTexts_arr inferAt_view
+
 /-- Decodes exactly the existing world lowerer's runtime core wire; no second
 source translator or alternate fixture term is introduced by the type checker. -/
 def decodeTerm : Nat → Json → Except String Term
@@ -1450,6 +1504,9 @@ def decodeTerm : Nat → Json → Except String Term
     | "done" => return .done (← sub "value")
     | "toData" => return .toData (← sub "value")
     | "textJoin" => return .textJoin (← sub "list") (← sub "separator")
+    | "relationCount" => return .relationCount (← sub "relation")
+    | "relationLookup" =>
+      return .relationLookup (← sub "relation") (← decodeTexts (← value.getObjVal? "key")) (← sub "probe")
     | "refuse" => return .refuse (← value.getObjValAs? String "reason")
     | _ => .error "unknown Objective runtime constructor"
 

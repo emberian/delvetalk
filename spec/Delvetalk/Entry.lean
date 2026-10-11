@@ -35,9 +35,9 @@ partial def performsOf (annotations : Annotations) (position : List Nat) (term :
   match term with
   | .perform plan => at_ 0 plan (acc.push (plan, (annotations position).map (·.codomain)))
   | .lam b | .reflect b | .metadata b | .project b | .unary _ b | .get b _ | .inject _ b
-  | .done b | .toData b => at_ 0 b acc
+  | .done b | .toData b | .relationCount b => at_ 0 b acc
   | .app a b | .mix a b | .fix a b | .specification a b | .prototype a b | .binary _ a b
-  | .textJoin a b => at_ 1 b (at_ 0 a acc)
+  | .textJoin a b | .relationLookup a _ b => at_ 1 b (at_ 0 a acc)
   | .ifZero a b c | .ifBool a b c => at_ 2 c (at_ 1 b (at_ 0 a acc))
   | .record fs => fields position fs acc
   | .extend a fs => fields (position ++ [1]) fs (at_ 0 a acc)

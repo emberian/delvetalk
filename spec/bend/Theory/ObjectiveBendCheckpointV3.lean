@@ -68,6 +68,8 @@ def termHash : Term → UInt64
   | .toData a => mix 25 (termHash a)
   | .textJoin a b => mix (mix 26 (termHash a)) (termHash b)
   | .refuse r => mix 27 (hash r)
+  | .relationCount a => mix 28 (termHash a)
+  | .relationLookup a k b => mix (mix (mix 29 (termHash a)) (hash k)) (termHash b)
 def fieldsHash : List (String × Term) → UInt64
   | [] => 7
   | (n, t) :: rest => mix (mix (hash n) (termHash t)) (fieldsHash rest)
@@ -136,6 +138,10 @@ partial def addTerm (d : Dictionary) : Term → Dictionary × UInt64
       | .toData a => let (d, x) := addTerm d a; (d, mix 25 x)
       | .textJoin a b => let (d, x) := addTerm d a; let (d, y) := addTerm d b; (d, mix (mix 26 x) y)
       | .refuse r => (d.addString r, mix 27 (hash r))
+      | .relationCount a => let (d, x) := addTerm d a; (d, mix 28 x)
+      | .relationLookup a k b =>
+        let (d, x) := addTerm (k.foldl Dictionary.addString d) a; let (d, y) := addTerm d b
+        (d, mix (mix (mix 29 x) (hash k)) y)
     ({ d with termHint := d.termHint.insert h (index :: d.termHint.getD h []) }, h)
 partial def addFields (d : Dictionary) : List (String × Term) → Dictionary × UInt64
   | [] => (d, 7)
@@ -198,11 +204,6 @@ def encodeNamesRef (lists : Array (List String)) (find : List String → Option 
   match find names with
   | some i => if lists[i]? == some names then [.nat (i + 1)] else .nat 0 :: .nat names.length :: names.map .text
   | none => .nat 0 :: .nat names.length :: names.map .text
-
-def decodeTexts : Nat → Tokens → Option (List String × Tokens)
-  | 0, rest => some ([], rest)
-  | n + 1, .text x :: rest => do let (others, rest) ← decodeTexts n rest; pure (x :: others, rest)
-  | _ + 1, _ => none
 
 def decodeNamesRef (lists : Array (List String)) : Tokens → Option (List String × Tokens)
   | .nat 0 :: .nat count :: rest => decodeTexts count rest
@@ -526,6 +527,10 @@ def mapCellAddresses : Cell → Cell
   | .nativeCached d v => .nativeCached d (mapValueAddresses f v)
   | .stored p v => .stored p (v.map (mapValueAddresses f))
 
+def mapWalkAddresses : Walk → Walk
+  | .count counted => .count counted
+  | .lookup key probe => .lookup key (f probe)
+
 def mapFrameAddresses : Frame → Frame
   | .argument t e => .argument t (e.map f)
   | .update a => .update (f a)
@@ -537,6 +542,10 @@ def mapFrameAddresses : Frame → Frame
   | .ifBool t u e => .ifBool t u (e.map f)
   | .joinSeparator l e => .joinSeparator l (e.map f)
   | .joinHead sep acc first tail => .joinHead sep acc first (f tail)
+  | .relationRows walk => .relationRows (mapWalkAddresses f walk)
+  | .relationList walk => .relationList (mapWalkAddresses f walk)
+  | .relationProbe key probe payload => .relationProbe key (f probe) (f payload)
+  | .relationSearch key probe field low high => .relationSearch key (f probe) field low high
   | other => other
 
 def mapControlAddresses : Control → Control

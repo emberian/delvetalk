@@ -45,6 +45,10 @@ def cellAddresses : Cell → List Nat
   | .stored _ (some value) => valueAddresses value
   | .stored _ none => []
 
+def walkAddresses : Walk → List Nat
+  | .count _ => []
+  | .lookup _ probe => [probe]
+
 def frameAddresses : Frame → List Nat
   | .argument _ environment | .extend _ environment | .condition _ _ environment
   | .binaryLeft _ _ environment | .case _ environment | .ifBool _ _ environment => environment
@@ -54,6 +58,9 @@ def frameAddresses : Frame → List Nat
   | .joinSeparator _ environment => environment
   | .joinList .. | .joinCons .. => []
   | .joinHead _ _ _ tail => [tail]
+  | .relationRows walk | .relationList walk => walkAddresses walk
+  | .relationProbe _ probe payload => [probe, payload]
+  | .relationSearch _ probe _ _ _ => [probe]
 
 def controlAddresses : Control → List Nat
   | .evaluate _ environment => environment
@@ -89,6 +96,10 @@ def renameCell (f : Nat → Nat) : Cell → Cell
   | .nativeCached origin value => .nativeCached origin (renameValue f value)
   | .stored part value => .stored part (value.map (renameValue f))
 
+def renameWalk (f : Nat → Nat) : Walk → Walk
+  | .count counted => .count counted
+  | .lookup key probe => .lookup key (f probe)
+
 def renameFrame (f : Nat → Nat) : Frame → Frame
   | .argument term environment => .argument term (environment.map f)
   | .update address => .update (f address)
@@ -108,6 +119,10 @@ def renameFrame (f : Nat → Nat) : Frame → Frame
   | .joinList separator accumulated first => .joinList separator accumulated first
   | .joinCons separator accumulated first => .joinCons separator accumulated first
   | .joinHead separator accumulated first tail => .joinHead separator accumulated first (f tail)
+  | .relationRows walk => .relationRows (renameWalk f walk)
+  | .relationList walk => .relationList (renameWalk f walk)
+  | .relationProbe key probe payload => .relationProbe key (f probe) (f payload)
+  | .relationSearch key probe field low high => .relationSearch key (f probe) field low high
 
 def renameControl (f : Nat → Nat) : Control → Control
   | .evaluate term environment => .evaluate term (environment.map f)
@@ -328,9 +343,9 @@ def Term.freeIn : Term → Nat → Bool
   | .bound i, j => i == j
   | .lam body, j => body.freeIn (j + 1)
   | .app a b, j | .mix a b, j | .fix a b, j | .specification a b, j | .prototype a b, j
-  | .binary _ a b, j | .textJoin a b, j => a.freeIn j || b.freeIn j
+  | .binary _ a b, j | .textJoin a b, j | .relationLookup a _ b, j => a.freeIn j || b.freeIn j
   | .reflect a, j | .metadata a, j | .project a, j | .unary _ a, j | .get a _, j
-  | .inject _ a, j | .perform a, j | .done a, j | .toData a, j => a.freeIn j
+  | .inject _ a, j | .perform a, j | .done a, j | .toData a, j | .relationCount a, j => a.freeIn j
   | .nat _, _ | .boolean _, _ | .label _, _ | .refuse _, _ => false
   | .extend a fields, j => a.freeIn j || Term.fieldsFreeIn fields j
   | .record fields, j => Term.fieldsFreeIn fields j
@@ -380,10 +395,12 @@ def Term.markFree : Term → Nat → Array Bool → Array Bool
   | .lam body, depth, marks => body.markFree (depth + 1) marks
   | .app a b, depth, marks | .mix a b, depth, marks | .fix a b, depth, marks
   | .specification a b, depth, marks | .prototype a b, depth, marks
-  | .binary _ a b, depth, marks | .textJoin a b, depth, marks => b.markFree depth (a.markFree depth marks)
+  | .binary _ a b, depth, marks | .textJoin a b, depth, marks
+  | .relationLookup a _ b, depth, marks => b.markFree depth (a.markFree depth marks)
   | .reflect a, depth, marks | .metadata a, depth, marks | .project a, depth, marks
   | .unary _ a, depth, marks | .get a _, depth, marks | .inject _ a, depth, marks
-  | .perform a, depth, marks | .done a, depth, marks | .toData a, depth, marks => a.markFree depth marks
+  | .perform a, depth, marks | .done a, depth, marks | .toData a, depth, marks
+  | .relationCount a, depth, marks => a.markFree depth marks
   | .nat _, _, marks | .boolean _, _, marks | .label _, _, marks | .refuse _, _, marks => marks
   | .extend a fields, depth, marks => Term.fieldsMarkFree fields depth (a.markFree depth marks)
   | .record fields, depth, marks => Term.fieldsMarkFree fields depth marks
@@ -420,12 +437,14 @@ theorem markFree_spec : ∀ (t : Term) (depth : Nat) (marks : Array Bool) (j : N
     simp only [Term.markFree, Term.freeIn]; rw [markFree_spec body]; simp [Nat.add_assoc]
   | .app a b, depth, marks, j | .mix a b, depth, marks, j | .fix a b, depth, marks, j
   | .specification a b, depth, marks, j | .prototype a b, depth, marks, j
-  | .binary _ a b, depth, marks, j | .textJoin a b, depth, marks, j => by
+  | .binary _ a b, depth, marks, j | .textJoin a b, depth, marks, j
+  | .relationLookup a _ b, depth, marks, j => by
     simp only [Term.markFree, Term.freeIn]; rw [markFree_spec b, markFree_spec a]
     cases marks[j]? <;> simp [Bool.or_assoc]
   | .reflect a, depth, marks, j | .metadata a, depth, marks, j | .project a, depth, marks, j
   | .unary _ a, depth, marks, j | .get a _, depth, marks, j | .inject _ a, depth, marks, j
-  | .perform a, depth, marks, j | .done a, depth, marks, j | .toData a, depth, marks, j => by
+  | .perform a, depth, marks, j | .done a, depth, marks, j | .toData a, depth, marks, j
+  | .relationCount a, depth, marks, j => by
     simp only [Term.markFree, Term.freeIn]; exact markFree_spec a depth marks j
   | .nat _, _, marks, j | .boolean _, _, marks, j | .label _, _, marks, j | .refuse _, _, marks, j => by
     simp [Term.markFree, Term.freeIn]

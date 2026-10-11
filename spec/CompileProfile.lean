@@ -184,6 +184,8 @@ partial def freeRows (t : Term) : Array (String × List Nat) :=
       | .done a => let (acc, x) := go acc a; (acc, "done", x)
       | .toData a => let (acc, x) := go acc a; (acc, "toData", x)
       | .textJoin a b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "textJoin", union x y)
+      | .relationCount a => let (acc, x) := go acc a; (acc, "relationCount", x)
+      | .relationLookup a _ b => let (acc, x) := go acc a; let (acc, y) := go acc b; (acc, "relationLookup", union x y)
       | .refuse _ => (acc, "refuse", [])
     (acc.set! index (tag, free), free)
   (go #[] t).1
