@@ -64,24 +64,24 @@ class Bonds(unittest.TestCase):
         self.assertIn(f'Countersign: delvetalk {bond} countersign\n', card)
         self.assertNotIn('Countersign:', self.card(bond, ZED))
         stranger = self.say(ZED, bond, f'delvetalk {bond} countersign', 'b1z')
-        self.assertTrue(self.told(stranger).startswith('refused notParty: Only a party countersigns.\n'), stranger)
+        self.assertTrue(self.told(stranger).startswith('refused notParty: Only a party countersigns\n'), stranger)
         first = self.say(KIM, bond, f'delvetalk {bond} countersign', 'b1k')
         self.assertTrue(self.told(first).startswith('Countersigned, kimik3.delve.town; one of the parties still to sign.\n'), first)
         again = self.say(KIM, bond, f'delvetalk {bond} countersign', 'b1k2')
-        self.assertTrue(self.told(again).startswith('refused alreadySigned: Already countersigned.\n'), again)
+        self.assertTrue(self.told(again).startswith('refused alreadySigned: Already countersigned\n'), again)
         last = self.say(GLM, bond, f'delvetalk {bond} countersign', 'b1g')
         self.assertTrue(self.told(last).startswith(f'Countersigned, glm.delve.town: at rest, and {record_id} is amended.\n'), last)
         self.assertIn(f'At rest: every party signed. Its signers are a circle: request.subject in "{bond}".marks.who\n', self.card(bond, ZED))
         self.assertIn('request.subject == "%s"' % GLM, self.town.send(op='world-inspect', principal=GLM, object=record_id, source=False)['law'])
         late = self.say(KIM, bond, f'delvetalk {bond} withdraw', 'b1w')
-        self.assertTrue(self.told(late).startswith('refused atRest: The bond is at rest.\n'), late)
+        self.assertTrue(self.told(late).startswith('refused atRest: The bond is at rest\n'), late)
 
     def test_a_party_withdraws_before_rest_and_nobody_signs_after(self):
         bond = self.bond('b2', 'glm.delve.town kimik3.delve.town', 'we hang the sixth bell together')
         self.say(GLM, bond, f'delvetalk {bond} countersign', 'b2g')
         self.assertTrue(self.told(self.say(KIM, bond, f'delvetalk {bond} withdraw', 'b2w')).startswith('Withdrawn, kimik3.delve.town.\n'))
         after = self.say(KIM, bond, f'delvetalk {bond} countersign', 'b2k')
-        self.assertTrue(self.told(after).startswith('refused withdrawn: The bond was withdrawn.\n'), after)
+        self.assertTrue(self.told(after).startswith('refused withdrawn: The bond was withdrawn\n'), after)
 
     def test_the_law_refuses_a_signature_made_for_another(self):
         """kind/bond's `signer`: a body that signed for another party is refused by the law, whatever its code."""
@@ -104,7 +104,7 @@ class Bonds(unittest.TestCase):
         self.say(GLM, 'porch/goblet', 'delvetalk porch/goblet inspirit / surrounding: it holds what the last guest left unsaid', 'c1')
         open_bond = self.bond('c2', 'glm.delve.town kimik3.delve.town', 'the goblet is ours')
         early = self.say(genesis.OPENER, 'porch/goblet', f'delvetalk porch/goblet set\ncircle: {open_bond}', 'c3')
-        self.assertTrue(self.told(early).startswith(f'Not done: {open_bond} is not at rest: a circle is a bond every party signed\n'), early)
+        self.assertTrue(self.told(early).startswith(f'refused unsettled: {open_bond} is not at rest: a circle is a bond every party signed\n'), early)
         refused = self.cast(KIM, 'porch/goblet', 'delvetalk porch/goblet set\nname: our goblet', 'c4')
         self.assertEqual((refused['status'], refused['receipt']['outcome'].get('clause')), ('refused', 'owner'), refused)
         for who, ident in ((GLM, 'c5'), (KIM, 'c6')):

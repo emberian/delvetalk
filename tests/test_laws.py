@@ -161,7 +161,7 @@ def record_variant():
     """Record whose admit skips the keeper check, so only the law text stands."""
     with open("world/objects/Record.obend") as handle:
         source = handle.read()
-    check = 'if state.keeper == "" || context.principal != state.keeper then refusedCard(state, context, {clause: "notKeeper", reading: keeperReading(state, context)}) else admitting(state, input.number, context)'
+    check = 'if state.keeper == "" || context.principal != state.keeper then refused({clause: "notKeeper", reading: keeperReading(state, context)}, context) else admitting(state, input.number, context)'
     assert check in source, "Record changed: the variant no longer skips its checks"
     return closure("Record", override={"Record": source.replace(check, "admitting(state, input.number, context)", 1)})
 

@@ -291,26 +291,26 @@ def turns(state: State, input: TurnsInput, context: Abi.Context) -> Activity<Don
 def rows(state: State, input: RowsInput, context: Abi.Context) -> Activity<Done>:
   match whereOf(input.where):
     case some(w): spelled(On.rows({object: input.object, field: input.field, where: w.value, atLeast: input.count}), context, state)
-    case none(_): refused(Why.badWhere({line: input.where}))
+    case none(_): declined(refused(Why.badWhere({line: input.where})), context)
 def remind(state: State, input: RemindInput, context: Abi.Context) -> Activity<Done>:
   match schedule(state, {at: input.at, every: input.every, action: Action.notify({})}, context):
     case watching(w): noted(Done.watching(w), On.schedule({at: input.at, every: input.every}))
-    case refused(r): declined(Done.refused(r))
+    case refused(r): declined(Done.refused(r), context)
     case fired(f): Done.fired(f)
 # A spell that sets a trigger notes the owner's avatar, answers the watch it made and how to end
 # it; a refusal says so with its reading.
 def spelled(event: On, context: Abi.Context, state: State) -> Activity<Done>:
   match watched(event, Action.notify({}), context, state):
     case watching(w): noted(Done.watching(w), event)
-    case refused(r): declined(Done.refused(r))
+    case refused(r): declined(Done.refused(r), context)
     case fired(f): Done.fired(f)
 def noted(done: Done, event: On) -> Activity<Done>:
   match done:
     case watching(w): Card.tell(done, Document.text("Watching {watchText(event)}. Stop: delvetalk wake unwatch / id: {natText(w.id)}.\n"))
     case _: done
-def declined(done: Done) -> Activity<Done>:
+def declined(done: Done, context: Abi.Context) -> Activity<Done>:
   match done:
-    case refused(r): Card.tell(done, Document.text("Not done: {r.reading}\n"))
+    case refused(r): Card.refusing(done, r, context)
     case _: done
 def watchText(event: On) -> String:
   match event:
@@ -354,10 +354,10 @@ def cellOf(value: String) -> Relations.Cell:
     case no(_): Relations.text(value)
 # Unwatch by id: the trigger is found here, in Bend, and removed by its bytes.
 def unwatch(state: State, input: {id: Nat}, context: Abi.Context) -> Activity<Done>:
-  if context.principal != state.owner then declined(notOwner(state)) else removing(Lists.find(state.triggers, fn(t: Trigger) -> Bool: t.id == input.id), input.id)
-def removing(found: Lists.Maybe<Trigger>, id: Nat) -> Activity<Done>:
+  if context.principal != state.owner then declined(notOwner(state), context) else removing(Lists.find(state.triggers, fn(t: Trigger) -> Bool: t.id == input.id), input.id, context)
+def removing(found: Lists.Maybe<Trigger>, id: Nat, context: Abi.Context) -> Activity<Done>:
   match found:
-    case none(_): declined(refused(Why.noTrigger({id: id})))
+    case none(_): declined(refused(Why.noTrigger({id: id})), context)
     case some(s): removed(s.value, id)
 def removed(trigger: Trigger, id: Nat) -> Activity<Done>:
   let written(_) = write {triggers: removeItem trigger}

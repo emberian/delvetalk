@@ -4,6 +4,7 @@ shows, the door pages are published, and the library it shelves answers by a wor
 Evidence for FOUNDATION §7, §11 (layer: transport).
 """
 import json
+import re
 import tempfile
 import unittest
 
@@ -115,11 +116,24 @@ class Genesis(unittest.TestCase):
         """LIBRARY (a), (e): genesis shelved capsules/pages/ as the opener; anyone reads a page by a word of what they said."""
         self.assertEqual(self.library('delvetalk library read / page: how do i read laws?', 1), genesis.page_body('laws'))
         miss = self.library('delvetalk library read / page: dragons', 2)
-        self.assertIn('no page called dragons', miss)
-        self.assertIn('laws', miss)
+        self.assertEqual(miss, 'refused noPage: No page called dragons. Pages: spells laws object relations protocol world.\n')
         refused = self.library('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine', 3)
-        self.assertTrue(refused.startswith('Not done:'), refused)
+        self.assertEqual(refused, 'refused notOwner: Only ember.delve.town shelves a page\n')
         self.assertNotIn('mine', self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text'])
+
+
+    def test_every_page_fits_a_reply_under_the_librarys_receipt_and_names_only_pages_shelved(self):
+        """Playtest 2's D8 (69090, 69096: the spells and laws pages drafted at 1,450 and 1,426) and D9 (69090: the spells
+        page named a walk `plant` the stacks did not hold). A page is what a reply leaves after the library's receipt
+        line (Card.limit: 1,400 less twice the id and 120), opens with hob's line, and every page it names is shelved."""
+        names = [name for name, _, _ in genesis.PAGES]
+        for name in names:
+            with self.subTest(page=name):
+                body = genesis.page_body(name)
+                self.assertLessEqual(len(body), 1400 - (2 * len('library') + 120), name)
+                self.assertTrue(body.startswith('hob: '), body[:40])
+                for named in re.findall(r'page: ([a-z]+)', body):
+                    self.assertIn(named, names, (name, named))
 
 
 class Rows(unittest.TestCase):
@@ -291,7 +305,7 @@ class Commonplace(unittest.TestCase):
         # A field line naming a door's action goes to that door, whose card answers.
         passed = self.say(reader, 'commonplace', 'choose: Open', 'by-field-line')
         self.assertEqual(passed['result']['label'], 'passed', passed)
-        self.assertTrue(passed['offers'][-1]['text'].startswith('The Moss Gate (0 here).'), passed)
+        self.assertEqual(passed['offers'][-1]['text'], 'refused notHere: Enter the room first.\n', passed)
 
 
 if __name__ == '__main__':

@@ -62,7 +62,7 @@ class Inspirit(unittest.TestCase):
         # A second resident's inspiriting is refused by name, and the law refuses the same write by `keeper`.
         again = self.say(KIM, 'porch/goblet', 'delvetalk porch/goblet inspirit / surrounding: mine now', 'g2')
         self.assertEqual((again['result']['label'], again['offers'][-1]['text']),
-                         ('refused', 'Not done: Inspirited already, by glm.delve.town, who keeps it\n'), again)
+                         ('refused', 'refused keeper: Inspirited already, by glm.delve.town, who keeps it\n'), again)
         self.assertNotIn('inspirit', self.town.send(op='world-inspect', principal=KIM, object='porch/goblet')['offered'])
         # The keeper redescribes it; the owner, who made it, no longer may.
         kept = self.say(GLM, 'porch/goblet', 'delvetalk porch/goblet set\ndescription: it is empty only when nobody looks', 'g3')

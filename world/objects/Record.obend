@@ -113,18 +113,18 @@ def lines(state: State, input: {from: Nat}, context: Abi.Context) -> Activity<Ca
   Card.tell(Card.Replied.done({action: "lines"}), renderFrom(state, context, input.from, 0n))
 # admit {number}: the keeper's alone (refused by name to anyone else, and by the law).
 def admit(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
-  if state.keeper == "" || context.principal != state.keeper then refusedCard(state, context, {clause: "notKeeper", reading: keeperReading(state, context)}) else admitting(state, input.number, context)
+  if state.keeper == "" || context.principal != state.keeper then refused({clause: "notKeeper", reading: keeperReading(state, context)}, context) else admitting(state, input.number, context)
 def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
   match lineNumbered(state, number):
-    case none(_): refusedCard(state, context, {clause: "noLine", reading: "No line numbered {natText(number)}"})
+    case none(_): refused({clause: "noLine", reading: "No line numbered {natText(number)}; the card numbers them"}, context)
     case some(l): admitted(state, l.value, context)
 def admitted(state: State, line: Line, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {admitted: insert {n: line.n, at: context.height}, keeperHandle: set context.handle}
   Card.tell(Card.Replied.done({action: "admit"}), Document.text("#{natText(line.n)} admitted: {line.text}\n"))
 def keeperReading(state: State, context: Abi.Context) -> String:
   if state.keeper == "" then "Nobody keeps this record; every line stands as written" else "Only the keeper, {Card.shown(state.keeper, state.keeperHandle, context)}, admits"
-def refusedCard(state: State, context: Abi.Context, refusal: Card.Refusal) -> Activity<Card.Replied>:
-  Card.tell(Card.Replied.refused(refusal), Document.concat(Document.text("refused {refusal.clause}: {refusal.reading}\n\n"), render(state, context)))
+def refused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.refusing(Card.Replied.refused(refusal), refusal, context)
 def lineNumbered(state: State, number: Nat) -> Lists.Maybe<Line>:
   Lists.find(Relations.rows(state.lines), fn(l: Line) -> Bool: l.n == number)
 def isAdmitted(state: State, n: Nat) -> Bool:
@@ -145,15 +145,15 @@ def field(state: State, name: String) -> String:
 # Doors on the card are the owner's: what the record cites.
 # Each answers what the card now cites.
 def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorAdd(state.cites, state.owner, {label: input.label, to: {world: context.world, object: input.to}, description: "", examples: Lists.List.nil()}, context), "door", "Door {input.label} hung: it opens {input.to}. delvetalk {input.to} ?\n")
+  doored(Card.doorAdd(state.cites, state.owner, {label: input.label, to: {world: context.world, object: input.to}, description: "", examples: Lists.List.nil()}, context), "door", "Door {input.label} hung: it opens {input.to}. delvetalk {input.to} ?\n", context)
 def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorRemove(state.cites, state.owner, input.label, context), "undoor", "Door {input.label} taken down.\n")
+  doored(Card.doorRemove(state.cites, state.owner, input.label, context), "undoor", "Door {input.label} taken down.\n", context)
 # A spell a door's card prints under it (a menu's), the owner's.
 def example(state: State, input: {label: String, spell: String, comes: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorExample(state.cites, state.owner, input.label, {example: input.spell, comes: input.comes}, context), "example", "Under {input.label}: {input.spell}\n")
-def doored(edit: Card.DoorEdit, action: String, said: String) -> Activity<Card.Replied>:
+  doored(Card.doorExample(state.cites, state.owner, input.label, {example: input.spell, comes: input.comes}, context), "example", "Under {input.label}: {input.spell}\n", context)
+def doored(edit: Card.DoorEdit, action: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
   match edit:
-    case refused(r): Card.tell(Card.Replied.refused(r), Document.text("refused {r.clause}: {r.reading}\n"))
+    case refused(r): refused(r, context)
     case edit(e): doorWritten(e.entries, action, said)
 def doorWritten(entries: Plans.Entries<Card.Doorway, Card.Doorway>, action: String, said: String) -> Activity<Card.Replied>:
   let written(_) = world.write(extend(keep(), {cites: entries}))
@@ -162,36 +162,34 @@ def doorWritten(entries: Plans.Entries<Card.Doorway, Card.Doorway>, action: Stri
 # the record makes (`makes`, or the record's own kind: a room makes rooms) and the fields its form
 # takes, as text; the kind judges them and makes <record>/<kind>/<n> with a door home, answering
 # quietly, and the record holds it among its `things` and answers the maker with the body's card
-# (`said`), the body's result (`as`). A kind the record does not make is refused by name; the
-# kind's refusal keeps its clause.
+# for what was made (`said`), the body's result (`as`). A kind the record does not make is refused
+# by name; the kind's refusal keeps its clause.
 sum Made:
   made: {object: String}
   refused: Card.Refusal
 def makes(state: State) -> Lists.List<String>:
   Lists.List.nil()
-def making<T>(state: State, kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
-  if kind == state.kind || Lists.any(makes(state), fn(k: String) -> Bool: k == kind) then calling(kind, fields, context, said, as) else notMade({clause: "notMade", reading: makesReading(state)}, said, as)
+def making<T>(state: State, kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context, said: String -> Document.Document, as: Made -> T) -> Activity<T>:
+  if kind == state.kind || Lists.any(makes(state), fn(k: String) -> Bool: k == kind) then calling(kind, fields, context, said, as) else notMade({clause: "notMade", reading: makesReading(state)}, context, as)
 def makesReading(state: State) -> String:
   if Lists.length(makes(state)) == 0n then "This record makes nothing." else "This record makes {textJoin(makes(state), \", \")}."
-def notMade<T>(refusal: Card.Refusal, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
-  Card.tell(as(Made.refused(refusal)), said(Made.refused(refusal)))
-def calling<T>(kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
+def notMade<T>(refusal: Card.Refusal, context: Abi.Context, as: Made -> T) -> Activity<T>:
+  Card.refusing(as(Made.refused(refusal)), refusal, context)
+def calling<T>(kind: String, fields: Lists.List<Rows.Field>, context: Abi.Context, said: String -> Document.Document, as: Made -> T) -> Activity<T>:
   match world.call::<Made>({object: {world: context.world, object: kind}, method: "makeUnder", argument: {under: context.object, fields: fields}}):
     case returned(r): madeHere(r.result, context, said, as)
-    case refused(r): notMade({clause: r.clause, reading: r.reading}, said, as)
-    case denied(_): notMade({clause: "denied", reading: "{kind} does not answer."}, said, as)
-def madeHere<T>(made: Made, context: Abi.Context, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
+    case refused(r): notMade({clause: r.clause, reading: r.reading}, context, as)
+    case denied(_): notMade({clause: "denied", reading: "{kind} does not answer."}, context, as)
+def madeHere<T>(made: Made, context: Abi.Context, said: String -> Document.Document, as: Made -> T) -> Activity<T>:
   match made:
     case made(m): holding(m.object, made, context, said, as)
-    case refused(r): notMade(r, said, as)
-def holding<T>(object: String, made: Made, context: Abi.Context, said: Made -> Document.Document, as: Made -> T) -> Activity<T>:
+    case refused(_): as(made)
+# The plain card for what was made, for a body that says nothing of its own.
+def madeLine(object: String) -> Document.Document:
+  Document.text("Made, at {object}.\n")
+def holding<T>(object: String, made: Made, context: Abi.Context, said: String -> Document.Document, as: Made -> T) -> Activity<T>:
   let written(_) = write {things: insert {world: context.world, object: object}}
-  Card.tellTo(as(made), context.principal, said(made))
-# The plain card for what was made, or why not.
-def madeLine(made: Made) -> Document.Document:
-  match made:
-    case made(m): Document.text("Made, at {m.object}.\n")
-    case refused(r): Document.text("Not done: {r.reading}\n")
+  Card.tellTo(as(made), context.principal, said(object))
 # What its kind does once the body is laid (Kind's `graft`, the kind as caller): nothing for a
 # plain record; a body that watches something (a weather, a lantern) subscribes here.
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
@@ -230,7 +228,10 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Card.Replied>:
   if input.misfit.clause != "" then misfitted(input.misfit, state, context) else Card.answer(Card.heard(input), context, forms(), render(state, context))
 def misfitted(misfit: Card.Misfit, state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  Card.answerRefused({clause: misfit.clause, reading: misfit.reason}, context, forms(), render(state, context), fn(r: Card.Replied) -> Card.Replied: r)
+  refused({clause: misfit.clause, reading: misfitReading(misfit.reason)}, context)
+# The host's reason, without the clause that leads into a usage list ("…; it has these:").
+def misfitReading(reason: String) -> String:
+  if Text.ends(reason, ":") then textTake(reason, Text.indexOf(reason, "; ")) else reason
 # At most eight lines and Card.budget() characters; when lines remain, the last row says how
 # many and the spell that shows them, and its characters are kept for it.
 def numbered(state: State, context: Abi.Context, lines: Lists.List<Line>, shown: Nat, room: Nat, id: String) -> Document.Documents:
