@@ -42,7 +42,7 @@ class Kinds(Chain):
         self.assertEqual(shaped["status"], "admitted", shaped)
 
     def kind(self, name, of, form, head="", law="", body_source=""):
-        r = self.turn("kinds", "make", record(name=label(name), of=label(of), form=label(form), head=label(head), law=label(law), body=label(body_source)))
+        r = self.turn("kinds", "make", record(name=label(name), of=label(of), form=label(form), head=label(head), voice=label(""), law=label(law), body=label(body_source)))
         self.assertEqual(r["status"], "admitted", r)
         return r
 
@@ -119,7 +119,7 @@ class Kinds(Chain):
         def refusals(reply):
             got = reply.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
             return [d for d in got if (d.get("receipt", d).get("outcome") or {}).get("class") not in (None, "", "admitted")]
-        made = self.turn("kinds", "make", record(name=label("cairn"), of=label("record"), form=label(""), head=label("A CAIRN"), law=label(genesis.RECORD_LAW),
+        made = self.turn("kinds", "make", record(name=label("cairn"), of=label("record"), form=label(""), head=label("A CAIRN"), voice=label(""), law=label(genesis.RECORD_LAW),
                                                 body=label(body("cistern"))), principal=KIM)
         self.assertEqual((made["status"], refusals(made)), ("admitted", []), made)
         thing = self.turn("kind/cairn", "make", record(), principal=GLM)

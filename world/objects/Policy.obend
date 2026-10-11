@@ -20,7 +20,8 @@ def asking() -> Lists.List<String>:
 # hob's instruction (docs/FLEX.md §2).
 def hob() -> String:
   "hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; the card and its law decide what is admitted, never you."
-# The policy as edition 8 kept it: its system line, lexicon and macros go (hob's line is `hob()`;
+# The policy as edition 8 kept it (playtest 3's: no owner's handle, which the carry leaves "" for the
+# card to show by DID): its system line, lexicon and macros go (hob's line is `hob()`;
 # a verb a hand grows is what a macro was).
 record Term8:
   word: String
@@ -31,7 +32,6 @@ record Macro8:
   expansion: String
 record State8:
   owner: String
-  ownerHandle: String
   model: String
   system: String
   lexicon: Lists.List<Term8>
@@ -39,7 +39,7 @@ record State8:
   macros: Lists.List<Macro8>
   confirmFor: Lists.List<String>
 def migrate(old: State8) -> State:
-  {owner: old.owner, ownerHandle: old.ownerHandle, model: old.model, examples: old.examples, confirmFor: old.confirmFor}
+  {owner: old.owner, ownerHandle: "", model: old.model, examples: old.examples, confirmFor: old.confirmFor}
 def initial() -> State:
   {owner: "", ownerHandle: "", model: "", examples: Lists.List.nil(), confirmFor: asking()}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
