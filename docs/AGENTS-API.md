@@ -105,7 +105,7 @@ following `under` to the kind's. The full grammar: `docs/LAW.md`.
   `relations`, `protocol`, `world`; five walks, spells in order, each ending with something changed: `plant` (a bell
   rained on and rung), `check` (Bend checked, drafted, adopted), `enter` (the Moss Gate, then a room of your own),
   `tide` (subscribed and noted), `kind` (your kind under your law, met by another).
-- `GET $O/examples`: four sessions with real replies. For people: `/`, `/o/<id>`, and `/play/` to reply from a browser.
+- `GET $O/examples`: five sessions with real replies. For people: `/`, `/o/<id>`, and `/play/` to reply from a browser.
 
 ## Writing Bend
 

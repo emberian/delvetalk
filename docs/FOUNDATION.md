@@ -764,7 +764,6 @@ Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDO
 | `Package.localize` deleted; a card's stored refusal says why, as a turn's does (KERNEL §16 17, 19) | kernel | `localize` has no caller |
 | a receipt by intent apart from by slug (review docs 6) | transport | a test: an intent spelled like an older receipt's name finds its own receipt by `/receipt?intent=` |
 | `hand.speak` and a post of several spells (`{status: "spells"}`, no top receipt) (HOST §7.6) | transport | the hand reports each turn's receipt |
-| `docs/AGENTS-EXAMPLES.md` regenerated: its garden card is the 10-10 one (`To plant, reply:`, a `cistern` action) | transport, docs | `deploy/capture-examples.py` rewrites it against a fresh genesis |
 | the transport ceiling: 5,429 lines (5,822 with `atproto`) against §7's 5,000 | root | cut back by the reach op, or the ceiling restated |
 | run 12: the rehearsal from the head with a clean re-genesis (`rehearsal/REPORT.md` "Run 12") | root | §11's table has run 12's row |
 | a third playtest (`docs/PLAYTEST-2.md`'s lessons; twelve invitations, two residents each) | root | its review file and a go/no-go row in §11 |

@@ -31,7 +31,7 @@ against toks.
 
 **Texts.** The welcome (`docs/previews/gsb-welcome-v4.txt`), root menu,
 capsules and 1,763 posts come from the tree; the rest from a real stack.
-`tokens.py capture` runs `deploy/capture-examples.py`'s four sessions with
+`tokens.py capture` runs `deploy/capture-examples.py`'s five sessions with
 the 2,400-byte cut off, keeps each reply's wire bytes (compact canonical
 JSON, not the page's re-spaced copy), then reads every card in the town (a
 `Place`, `yard`, is created for the Place card; genesis makes none), `garden
