@@ -76,6 +76,7 @@ sum Interpreted<R>:
   proposals: {items: Lists.List<Proposed<R>>}
   unclear: {needs: Document.Names}
   replied: {text: String}
+  said: {text: String}
   timedOut: {}
   denied: {}
   refused: {clause: String}
