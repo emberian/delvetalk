@@ -44,11 +44,14 @@ def refusing(context: Abi.Context) -> Activity<Nat>:
 """)
 
 # The strike awaits the receipt of one turn (its slot: principal and intent) and rings if that turn was
-# admitted; a rain counts, touching nothing the strike writes.
+# admitted; a rain counts, touching nothing the strike writes. Its card takes the host's spells.
 STRIKER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./World.obend as World
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Card.obend as Card
 record State:
   principal: String
   intent: String
@@ -70,6 +73,10 @@ def rang(context: Abi.Context) -> Activity<Bool>:
 def rain(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
   match world.write(extend(keep(), {rains: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case _: state.rains + 1n
+form rain:
+  text: text 1..120
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), Document.text("A striker."))
 """, "strike", "rain")
 
 
@@ -85,7 +92,7 @@ class Await(Chain):
 
     def bell(self, name="bell", intent="answer-1"):
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
-                           modules=closure("World") + [{"name": "Striker", "source": STRIKER}], entry="initial",
+                           modules=closure("Lantern")[:-1] + [{"name": "Striker", "source": STRIKER}], entry="initial",
                            seed=record(principal=label("glm"), intent=label(intent)))
         self.assertEqual(r["status"], "created", r)
 
@@ -213,6 +220,22 @@ class Suspend(Await):
         self.assertEqual((resumed["status"], resumed["result"]), ("admitted", boolean(True)), resumed)
         self.assertNotIn("rerunOf", resumed)
         self.assertEqual(self.rung(), boolean(True))
+
+    def test_a_rule_placed_on_a_waiting_turns_object_moves_no_version_and_the_turn_resumes(self):
+        # A placing is not a state move: the strike rooted on the bell at its version resumes after a rule is
+        # placed on the bell, and the rule is read back.
+        self.bell()
+        self.strike(who="glm")
+        version = self.host.send(op="world-view", principal="glm", object="bell")["version"]
+        spell = "delvetalk bell rule\nname: told\nwhen: request.method == \"rain\"\nthen: delvetalk bell rain / text: again"
+        placed = self.turn("bell", "receive", record(text=label(spell), post=label("")), principal="kimik3", identity="place-told")
+        self.assertEqual(placed["status"], "admitted", placed)
+        self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell")["version"], version)
+        self.assertEqual([(r["name"], r["from"]) for r in self.host.send(op="world-rules", principal="glm", object="bell")["rows"]],
+                         [("told", "bell")])
+        [resumed] = self.settle()["resumed"]
+        self.assertEqual((resumed["status"], resumed["result"]), ("admitted", boolean(True)), resumed)
+        self.assertEqual(self.host.send(op="world-view", principal="glm", object="bell")["version"], version + 1)
 
     def test_a_settling_turn_sees_another_principals_resumption_only_as_its_projection(self):
         # codex host 1: glm's turn releases gemini's strike; glm's reply carries gemini's receipt as
