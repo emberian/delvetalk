@@ -31,7 +31,8 @@ seven rains ring a bell; the bell keeps who rained.
 
 hob drafts its Bend, the checker reads it, and it is held as #n for you;
 reply
-    delvetalk workshop adopt / n: <n> and it lives under your law.
+    delvetalk workshop adopt / n: <n>
+and it lives under your law.
 
 4. a line that sticks
 @<handle> the anthology keeps lines with their writer's name:
