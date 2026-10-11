@@ -144,11 +144,11 @@ def makeUnder(state: State, input: {under: String, fields: Lists.List<Rows.Field
 # Grafts the kind's make: the owner's, for a kind created whole rather than made (genesis shapes
 # `kinds`); `kinds` lays each kind's make as it makes it.
 def shape(state: State, input: {object: String}, context: Abi.Context) -> Activity<Done>:
-  if context.principal != state.owner then Done.refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shapes this kind"}) else reshaped(state, context)
+  if context.principal != state.owner then refusedCard(state, context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shapes this kind"}) else reshaped(state, context)
 def reshaped(state: State, context: Abi.Context) -> Activity<Done>:
   match world.extend({object: Plans.self(context), package: layerSource(madeForm(state)), migration: ""}):
-    case reprogrammed(_): Done.made({object: context.object})
-    case refused(r): Done.refused({clause: r.clause, reading: r.reading})
+    case reprogrammed(_): Card.tell(Done.made({object: context.object}), Document.text("Shaped. Make one:\n  {spellLine(Card.called(context, kindId(state.name)), Forms.specs(madeForm(state)))}\n"))
+    case refused(r): refusedCard(state, context, {clause: r.clause, reading: r.reading})
 def methods() -> Lists.List<String>:
   Text.words("shape makeUnder")
 def forms() -> Card.Forms:

@@ -1,5 +1,76 @@
 # Objects handoff
 
+## lane/rewrite10 (2026-10-11): H1 cut, inspirit, the silent turns, the library follows `under`
+
+Inherited: the predecessor's tail (`cv show a0d74c0be27d3d607`, last 80 turns) adds nothing the section below lacks
+but the coordinator's two notes, both folded: a refused `sealed/1 write` still offers "#1 is written" (host18's first
+item: the host drops a refused turn's offers), and H1 (the Bend reader disagrees with the cast rule).
+
+persvati went down at 05:06 (no route, both addresses) and had not returned when this section was written; no
+suite ran on this lane. Every changed module compiles on hbox's older binary (`~/scratch/dt-rewrite10/cc.py`, the
+compile op only); behaviour is untested until persvati answers.
+
+Written here (in the worktree; see the commit list in git for what is committed):
+
+- **H1, as far as objects can go.** The host passes a spell it found missing fields to `receive` with the bound
+  fields and no action, so a card cannot tell `delvetalk anthology write` (no fields) from prose without reading the
+  spell line. `world/lib/Spell.obend`'s reader is cut to the host's cast rule (the last `delvetalk` line at the
+  margin; the quoted fallback, `isQuote` and the second candidate are gone); `test_spell.BendReading` asserts the
+  indented cases agree with `spell-parse`. **The rest is the host's** (fungus H1: "`Heard` carries card and
+  action"): `heardArgument` (TurnLoop ~995) fills `action` (and `card`) as it fills `fields` and `misfit`, from
+  `castSpell`'s `.unclear` arm (`receiveHeard w id target argument fields` gains the action); then `Card.unanswered`
+  reads `input.action`, Workshop's `completing` too, `Spell.parse` and every helper under it are deleted (Spell.obend
+  keeps `Binding`/`Bindings`/`valueOf`), and `test_spell.BendReading` goes. Host18's uncommitted `wholeSpell` (a post
+  that is one indented spell block is dedented and cast) is the one case the Bend reader still misses: such a spell
+  missing fields reaches the card as prose and is handed on to hob.
+- **inspirit** (pingwaves #5). THING gains `keeper`/`keeperHandle`; `form inspirit / surrounding: text 1..400`:
+  anyone, once, while `keeper` is ""; the surrounding becomes `description`, the caster `keeper`; lying in a room
+  (holder nobody, location set) the thing first calls the room's `~inspirited {line}`, which only a thing lying there
+  may call, writes the line under the caster ("<name>, inspirited by <handle>: <surrounding>", clipped at 280) and a
+  mark `inspirited <id>`. The room card lists unclaimed things first with the spell ("Unclaimed here: …. Inspirit
+  one: delvetalk <first> inspirit / surrounding: <1 to 400 characters>"), then "Lying here:" the claimed. Law:
+  `owner` (the owner stays and alone reprograms; name, description and copying are the keeper's once inspirited,
+  the owner's before: `request.subject == new.keeper or (request.subject == new.owner and old.keeper == "")`) and
+  `keeper` (`writeOnce(keeper) and (unchanged(keeper) or request.subject == new.keeper)`); `actions` offers
+  `inspirit` only while unclaimed, `acquire` while unheld, `offer`/`withdraw` to the holder, `set` to the keeper
+  (owner before). A thing lying nowhere (made, or a copy) is put down by its owner (`drop / at:`), and a room's
+  `put` admits its owner furnishing it. Genesis creates `porch/goblet`, `porch/ring`, `porch/gemstone` (THINGS, the
+  owner's words as names) and lays each on the porch; the lexicon gains `surrounding`, the examples an inspiriting.
+  The commonplace learns the first three cards under each door (was one), so hob is offered all three things'
+  `inspirit`. Tests: tests/test_inspirit.py (porch card, inspirit, the line, a second refused `keeper`, the
+  keeper's lens, the owner's refused, a proposed keeper refused); test_genesis's sequence gains the things.
+- **Silent turns**: Thing (`acquire`, `drop`, `offer`, `withdraw` answer the line and the card; refusals "Not
+  done: …"; a room's refusal told back), Deal (`countersign` "Countersigned, <handle>; N of the parties still to
+  sign." / "…: at rest." / "…, and <object> is amended.", `withdraw`, every refusal as `refused <clause>: <reading>`
+  over the card), Avatar (`note` by spell, `send`, `subscribe`, `watch`, `unsubscribe`, `accept`, `move`/`go`'s
+  refusals; a note an object leaves stays quiet), Env (`seen` "Read through #N; nothing before it is new again.",
+  `publish`, refusals), Kind `shape` ("Shaped. Make one:" and its spell; refusals over the card). Env's mention
+  (`write`) stays quiet by design: a post mentioning a resident is not a reply to the world.
+- **Library `laws` follows `under`**: a clause `under "<object>"` is followed to that object's `law` field (a made
+  thing's kind), whose clauses follow the card's own ("Under kind/bell's law:"), expressions dropped when the whole
+  passes the clip. The miss line names the commonplace, not the directory.
+
+Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded):
+
+1. Run what is written: narrow (`test_spell test_inspirit test_genesis test_rooms test_deal test_wakes test_kinds
+   test_library test_strangers test_lenses test_tending`), re-record pins, the full run once; fix; commit H1 alone,
+   then inspirit, then the silent turns with the library's `laws`, each with its cards verbatim in the message.
+2. THING `me`, `lend`, `circle`; BOND by spell. Design: `kind/bond` over RECORD (a body `bond.obend`; form `parties:`
+   handles, `terms:`, `amends:`, `law:`), a countersignature a `marks` row (`who` the signer: the circle reads
+   `request.subject in "bond/N".marks.who`, LAW §4 D), at rest `world.amend` as Deal does; Deal.obend and
+   test_deal's package path deleted in the same commit. A thing's `circle` lens amends its own law so the owner
+   clause's keeper disjunct reads the bond. `offer / to:` takes a handle the host cannot resolve in Bend: wait for
+   host18's `context.sender`/a handle read, or offer to `me`'s avatar id by the host's `me` resolution.
+3. O3 (one Sensed: `Event` gains `n`, `Rows.Sensed` goes; `Card.Reply` folds into `Heard`, `Card.heard` goes), the
+   `blurb()` sweep (delete `blurb()` and `Card.Door` everywhere, fixtures and automatafl included: the host reads
+   only `word` and falls back to the id; Workshop's page name is "workshop"; host's `blurbWord` then dead).
+4. The hand-on refused `capacity`: a wait inside a call is not supported (`mayWait`, depth > 0), so the hand-on
+   cannot join the card's turn; objects alone cannot fix it. Host: re-deliver a send refused transiently, or route
+   prose a card does not take to the commonplace itself.
+5. `kinds make / name / of` once host18's optional fields land.
+6. Step 4 as below.
+
+
 ## lane/rewrite9 (2026-10-11): hob's said; step 3, first part
 
 Inherited: the predecessor's tail (`cv show a0a66f925db192fbd`) adds only the `say:` decision, folded below. Its two
