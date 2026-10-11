@@ -406,14 +406,14 @@ class RandomHour(Property):
     def test_seed_3(self):
         self.hour(3)
 
-    @unittest.expectedFailure
-    def test_seed_18_a_bell_card_after_long_rains_passes_the_clip(self):
-        """Defect: garden/bell/1's card after archive-length rains is 1,410 characters (seeds 23, 29: up to 1,430)."""
+    def test_seed_18_a_bell_card_after_long_rains_stays_within_the_clip(self):
+        """garden/bell/1's answer to an archive-length rain was 1,410 characters (seeds 23, 29: up to 1,430): the
+        record's render now keeps one budget across what the answer said, the head, the rains and the doors."""
         self.hour(18)
 
-    @unittest.expectedFailure
-    def test_seed_30_the_garden_card_after_a_merge_shows_the_checkpoint_posts_did(self):
-        """Defect: after the owner's merge the garden card reads 'page checkpointed at at://did:plc:...'."""
+    def test_seed_30_the_garden_card_after_a_merge_shows_no_post_address(self):
+        """After the owner's merge the garden card read 'page checkpointed at at://did:plc:...'; it prints no
+        checkpoint line now, and the merge's answer is 'Page checkpointed.'."""
         self.hour(30)
 
     @unittest.skipUnless(EXPLORE, "DELVETALK_SEED names a seed to explore")

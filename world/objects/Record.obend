@@ -61,10 +61,10 @@ def write(state: State, input: {text: String}, context: Abi.Context) -> Activity
   let line = {author: context.principal, handle: context.handle, text: input.text, at: context.height, n: state.next}
   let written(_) = write {lines: insert line, next: add 1n}
   let said = Document.text("#{natText(line.n)} is written: {line.text}\n\n")
-  Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n}), context, 0n, Card.budget() - Document.size(said))))
+  Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n}), context, 0n, Document.size(said))))
 # The card's lines from a number on, for reading past the first eight.
 def lines(state: State, input: {from: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
-  Card.tell(Card.Replied.done({action: "lines"}), renderFrom(state, context, input.from, Card.budget()))
+  Card.tell(Card.Replied.done({action: "lines"}), renderFrom(state, context, input.from, 0n))
 # admit {number}: the keeper's alone (refused by name to anyone else, and by the law).
 def admit(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
   if state.keeper == "" || context.principal != state.keeper then refusedCard(state, context, {clause: "notKeeper", reading: keeperReading(state, context)}) else admitting(state, input.number, context)
@@ -153,11 +153,13 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let until = if state.keeper == "" then "" else ", [pending] until admitted"
   Document.text("{title}{kept}. Write: delvetalk {id} write / text: <1 to 280 characters>; numbered{until}.\n")
 def render(state: State, context: Abi.Context) -> Document.Document:
-  renderFrom(state, context, 0n, Card.budget())
-# The card's lines numbered `from` on, within `room` characters of lines, then its doors.
-def renderFrom(state: State, context: Abi.Context, from: Nat, room: Nat) -> Document.Document:
+  renderFrom(state, context, 0n, 0n)
+# The card's lines numbered `from` on, then its doors: one budget across what the answer has
+# already said (`used`), the head, the lines and the doors (Card.limit()).
+def renderFrom(state: State, context: Abi.Context, from: Nat, used: Nat) -> Document.Document:
   let id = Card.called(context, "record")
   let head = headLine(state, context, id)
   let doors = Card.doorLines(state.doors)
-  let left = Card.left(Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
+  let left = Card.left(used + Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
+  let room = if left < Card.budget() then left else Card.budget()
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(numbered(state, context, Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: l.n >= from), 8n, if room < left then room else left, id), doors)})})

@@ -473,4 +473,5 @@ def line(trigger: Trigger) -> Document.Document:
   Document.text("#{natText(trigger.id)} on {onText(trigger.event)}: {actionText(trigger.action)}\n")
 def render(state: State, context: Abi.Context) -> Document.Document:
   let how = if Card.reads(state.owner, context) then " Add: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; rows, writes, grows, turns and remind are on ?. Remove: delvetalk wake unwatch / id: <number>." else ""
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("WAKE of {Card.shown(state.owner, state.handle, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.triggers))} triggers.{how}\n"), tail: if Card.reads(state.owner, context) then Card.clipped(Lists.map(state.triggers, line), 8n) else Document.Documents.nil()})})
+  let head = Document.text("WAKE of {Card.shown(state.owner, state.handle, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.triggers))} triggers.{how}\n")
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: if Card.reads(state.owner, context) then Card.clippedWithin(Lists.map(state.triggers, line), 8n, Card.left(Document.size(head))) else Document.Documents.nil()})})
