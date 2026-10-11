@@ -8,6 +8,53 @@ import Delvetalk.Host.Store
 import Delvetalk.Canonical
 import Compiler.ObjectiveBendDataWire
 
+namespace Delvetalk.Host
+
+def renderLaw (law : Law) : String :=
+  "\n".intercalate (law.map fun (name, clause) => s!"law {name}: {clause.render}")
+
+/-- The `"reading"` after a law's name, as the compiler's grammar has it (`law NAME "reading": EXPR`,
+    a JSON string literal): the reading and the rest after it, or none when the line has none. -/
+def lawReading (rest : String) : Except String (Option (String × String)) := do
+  let chars := rest.toList
+  unless chars.head? == some '"' do return none
+  let rec close : List Char → Nat → Option Nat
+    | [], _ => none
+    | '\\' :: _ :: more, n => close more (n + 2)
+    | '"' :: _, n => some n
+    | _ :: more, n => close more (n + 1)
+  let some n := close (chars.drop 1) 1 | throw "a law reading is an unterminated string"
+  let literal := String.ofList (chars.take (n + 1))
+  let reading ← (Lean.Json.parse literal >>= (·.getStr?)).mapError fun _ => s!"a law reading must be a JSON string, found {literal}"
+  return some (reading, String.ofList (chars.drop (n + 1)))
+
+/-- Law text: one `law NAME: EXPR` or `law NAME "reading": EXPR` per line, the grammar the compiler
+    accepts at the top of a package; the readings beside the law, by clause name. -/
+def parseLawTextReadings (text : String) : Except String (Law × List (String × String)) := do
+  if text.utf8ByteSize > Limits.maxLawBytes then throw "law text exceeds its byte capacity"
+  let lines := (text.splitOn "\n").map String.trimAscii |>.filter (!·.isEmpty) |>.map (·.toString)
+  if lines.length > Limits.maxLawClauses then throw "law has too many clauses"
+  let parsed ← lines.mapM fun line => do
+    let some rest := line.dropPrefix? "law " | throw s!"expected `law NAME: EXPR`, found `{line}`"
+    let rest := rest.toString
+    let name := (rest.takeWhile fun c => c.isAlphanum || c == '_').toString
+    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name in `{line}`"
+    let after := (rest.drop name.length).toString.trimAsciiStart.toString
+    let (reading, after) ← match ← lawReading after with
+      | some (r, more) => pure (some r, more.trimAsciiStart.toString)
+      | none => pure (none, after)
+    let some expr := after.dropPrefix? ":" | throw s!"expected `law NAME: EXPR`, found `{line}`"
+    pure ((name, ← Delvetalk.Compiler.ObjectiveBendLaw.parse expr.toString), reading.map (name, ·))
+  let law := parsed.map (·.1)
+  Delvetalk.Compiler.ObjectiveBendLaw.checkNames law
+  return (law, parsed.filterMap (·.2) |>.filter (!·.2.isEmpty))
+
+/-- Law text: one `law NAME: EXPR` per line (a reading after the name allowed), as at the top of a package. -/
+def parseLawText (text : String) : Except String Law := do
+  return (← parseLawTextReadings text).1
+
+end Delvetalk.Host
+
 namespace Delvetalk.Host.Law
 open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 open Delvetalk.Compiler.ObjectiveBendLaw (LawExpr LawTerm)
@@ -30,6 +77,9 @@ structure Facts where
   clock : Nat := 0
   /-- The written object's id (`request.object`, LAW §4 H). -/
   object : String := ""
+  /-- The state of every object the law cites (`"O".F.COL`, `under "O"`), transitively through `under`,
+      at the version the write records as its root (`Ops.citedStates`). -/
+  reads : List (String × Data) := []
 
 /-- The kinds of change a law tells apart by `request.kind`, by name. `proposed` is a state write
     that does not come from the object's own method: a `world-propose`, or the state a reprogram's
@@ -137,7 +187,8 @@ def number (reading : Option Reading) : Option Int :=
   | some (.num n) => some n
   | _ => none
 
-def read (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option Reading
+mutual
+partial def read (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option Reading
   | .field name => fieldReading name new
   | .old name => match old with
     | some o => fieldReading name o
@@ -157,11 +208,14 @@ def read (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option R
   | .sum left right => match number (read facts old new left), number (read facts old new right) with
     | some x, some y => some (.num (x + y))
     | _, _ => none
-  -- The host lane denotes the filter (docs/LAW.md §4 C); until then it fails closed.
-  | .count _ (.eq _ _) => none
+  -- The rows whose column holds the value, by canonical bytes (docs/LAW.md §4 C).
+  | .count of (.eq col value) => do
+    let rows ← rowsAt old new of
+    let want := canon (← memberData facts old new value)
+    return .num (rows.filter fun r => (rawField col r).map canon == some want).length
 
 /-- The exact text a term reads as: a principal as given, a text field, a constant. -/
-def textOf (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option String
+partial def textOf (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option String
   | .fact .subject => some facts.subject
   | .fact .caller => some facts.caller
   | .fact .pin => some facts.pin
@@ -172,19 +226,46 @@ def textOf (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option
     | some (.text s) => some s
     | _ => none
 
-/-- The value a term stands for in a membership, compared by canonical bytes. -/
-def memberData (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option Data
+/-- The value a term stands for in a membership, a filter or `changed ... by`, compared by canonical
+    bytes: a field as it is, a numeric reading as a natural, text as a label. -/
+partial def memberData (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option Data
   | .field name => rawField name new
   | .old name => old.bind (rawField name)
-  | .int value => if value < 0 then none else some (.natural value.toNat)
-  | term => (textOf facts old new term).map .label
+  | term => match textOf facts old new term with
+    | some s => some (.label s)
+    | none => match read facts old new term with
+      | some (.num n) => if n < 0 then none else some (.natural n.toNat)
+      | some (.text s) => some (.label s)
+      | none => none
+end
 
 /-- Text form for comparing a numeral principal with a numeric reading. -/
 def Reading.render : Reading → String
   | .num n => toString n
   | .text s => s
 
-def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
+/-- The rows of `F` in `rows`'s column `C`, as `.column` reads them. -/
+def columnHas (rows : List Data) (col : String) (w : Data) : Bool :=
+  rows.any fun r => (rawField col r).map canon == some (canon w)
+
+/-- The rows a write changed in relation (or list) `field`: those of `old` gone from `new` by canonical
+    bytes, less the ones the declared retention dropped, and those of `new` not in `old`. -/
+def changedRows (facts : Facts) (old : Option Data) (new : Data) (field : String) : Option (List Data) := do
+  let after ← (rawField field new).bind rowsOf
+  let before ← match old with
+    | none => some []
+    | some o => (rawField field o).bind rowsOf
+  let now := after.map canon
+  let was := before.map canon
+  let gone := before.filter fun r => !now.contains (canon r) &&
+    !(facts.evicted.any fun (f, x) => f == field && canon x == canon r)
+  return gone ++ after.filter fun r => !was.contains (canon r)
+
+/-- The meaning of a clause. `under "O"` reads the `law` text of the cited object's state and judges
+    this write by each of its clauses at `depth - 1`; at depth 0 it is false, so a cycle of citations
+    ends (`Limits.lawDepth`). -/
+partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr) (depth : Nat := Limits.lawDepth) : Bool :=
+  match e with
   | .eq left right => match right with
     | .text text => textOf facts old new left == some text
     | .int value => number (read facts old new left) == some value
@@ -201,7 +282,7 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
     | some w, some items => items.contains (canon w)
     | _, _ => false
   | .member term (.column field col) => match memberData facts old new term, (rawField field new).bind rowsOf with
-    | some w, some rows => rows.any fun r => (rawField col r).map canon == some (canon w)
+    | some w, some rows => columnHas rows col w
     | _, _ => false
   | .rule .monotone field => match old.bind (fieldOf field), fieldOf field new with
     | some before, some after => decide (before ≤ after)
@@ -234,12 +315,25 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
           let now := after.map canon
           rows.all fun r => now.contains (canon r) || facts.evicted.any fun (f, x) => f == field && canon x == canon r
         | none => false
-  -- The host lane denotes them (docs/LAW.md §4 B, D, F); until then they fail closed.
-  | .changed _ _ _ | .member _ (.cited _ _ _) | .under _ => false
-  | .not body => !denote facts old new body
-  | .and left right => denote facts old new left && denote facts old new right
-  | .or left right => denote facts old new left || denote facts old new right
-  | .implies premise conclusion => !denote facts old new premise || denote facts old new conclusion
+  -- Every row the write changed carries `who` in its column (docs/LAW.md §4 B).
+  | .changed field col who => match changedRows facts old new field, memberData facts old new who with
+    | some rows, some w => rows.all fun r => (rawField col r).map canon == some (canon w)
+    | _, _ => false
+  -- Membership in a cited object's relation, as it stood at the root the write records (§4 D).
+  | .member term (.cited object field col) => match memberData facts old new term,
+      ((facts.reads.lookup object).bind (rawField field)).bind rowsOf with
+    | some w, some rows => columnHas rows col w
+    | _, _ => false
+  -- The cited object's law text judges this write too (§4 F).
+  | .under object => depth > 0 && match (facts.reads.lookup object).bind (rawField "law") with
+    | some (.label text) => match parseLawText text with
+      | .ok law => law.all fun (_, clause) => clause.fieldsPlain && denote facts old new clause (depth - 1)
+      | .error _ => false
+    | _ => false
+  | .not body => !denote facts old new body depth
+  | .and left right => denote facts old new left depth && denote facts old new right depth
+  | .or left right => denote facts old new left depth || denote facts old new right depth
+  | .implies premise conclusion => !denote facts old new premise depth || denote facts old new conclusion depth
 
 /-- A clause that reads a non-plain field name refuses every write. -/
 def admits (facts : Facts) (old : Option Data) (new : Data) (clause : LawExpr) : Bool :=
@@ -257,7 +351,7 @@ private def parsed (text : String) : LawExpr :=
   | .error _ => .or (.eq (.fact .height) (.int 0)) (.not (.eq (.fact .height) (.int 0)))
 
 private def rec1 (n : Nat) : Data := .record [("count", .natural n), ("open", .boolean true)]
-private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", [], 0, ""⟩
+private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", [], 0, "", []⟩
 
 #guard denote facts (some (rec1 3)) (rec1 4) (parsed "monotone(count)")
 #guard !denote facts (some (rec1 3)) (rec1 2) (parsed "monotone(count)")
@@ -274,18 +368,18 @@ private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", [], 0, ""⟩
 #guard !denote facts none (rec1 3) (parsed "new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count in [1, 3]")
 #guard denote facts none (rec1 3) (parsed "request.subject == request.caller")
-#guard !denote ⟨"a", "b", 1, 0, "", 0, "", [], 0, ""⟩ none (rec1 3) (parsed "request.subject == request.caller")
+#guard !denote ⟨"a", "b", 1, 0, "", 0, "", [], 0, "", []⟩ none (rec1 3) (parsed "request.subject == request.caller")
 #guard denote facts none (rec1 3) (parsed "request.height == 3")
-#guard denote ⟨"a", "a", 1, 0, "", 2, "", [], 0, ""⟩ none (rec1 3) (parsed "request.kind == 2")
+#guard denote ⟨"a", "a", 1, 0, "", 2, "", [], 0, "", []⟩ none (rec1 3) (parsed "request.kind == 2")
 #guard !denote facts none (rec1 3) (parsed "request.kind == 1")
-#guard !denote ⟨"a", "a", 1, 0, "", proposedKind, "", [], 0, ""⟩ none (rec1 3) (parsed "request.kind == 0 or request.subject == \"b\"")
-#guard denote ⟨"a", "a", 1, 0, "", proposedKind, "", [], 0, ""⟩ none (rec1 3) (parsed "request.kind == 3")
+#guard !denote ⟨"a", "a", 1, 0, "", proposedKind, "", [], 0, "", []⟩ none (rec1 3) (parsed "request.kind == 0 or request.subject == \"b\"")
+#guard denote ⟨"a", "a", 1, 0, "", proposedKind, "", [], 0, "", []⟩ none (rec1 3) (parsed "request.kind == 3")
 #guard denote facts none (rec1 3) (parsed "request.subject == \"7\"")
-#guard denote ⟨"ember", "ember", 1, 0, "abc", 0, "", [], 0, ""⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
-#guard !denote ⟨"kim", "kim", 1, 0, "abc", 0, "", [], 0, ""⟩ none (rec1 3) (parsed "request.subject == \"ember\"")
+#guard denote ⟨"ember", "ember", 1, 0, "abc", 0, "", [], 0, "", []⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
+#guard !denote ⟨"kim", "kim", 1, 0, "abc", 0, "", [], 0, "", []⟩ none (rec1 3) (parsed "request.subject == \"ember\"")
 #guard !denote facts none (rec1 3) (parsed "request.subject == \"ember\"")
 #guard denote facts none (rec1 3) (parsed "request.subject == 7")
-#guard !denote ⟨"ember", "ember", 1, 0, "", 0, "", [], 0, ""⟩ none (rec1 3) (parsed "request.subject == 7")
+#guard !denote ⟨"ember", "ember", 1, 0, "", 0, "", [], 0, "", []⟩ none (rec1 3) (parsed "request.subject == 7")
 #guard denote facts none (rec1 3) (parsed "new.open == 1 and not new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count <= 2 implies new.open == 0")
 #guard !denote facts none (rec1 3) (parsed "new.missing == 0")
@@ -294,10 +388,10 @@ private def lst (xs : List String) : Data :=
 private def withList (xs : List String) (by_ : String) : Data :=
   .record [("entries", lst xs), ("lastBy", .label by_), ("count", .natural 1)]
 
-#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, ""⟩ none (withList [] "kim") (parsed "new.lastBy == request.subject")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, ""⟩ none (withList [] "bob") (parsed "new.lastBy == request.subject")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, ""⟩ none (withList [] "kim") (parsed "new.entries == request.subject")
-#guard denote ⟨"7", "", 1, 0, "", 0, "", [], 0, ""⟩ none (.record [("n", .natural 7)]) (parsed "new.n == request.subject")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (withList [] "kim") (parsed "new.lastBy == request.subject")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (withList [] "bob") (parsed "new.lastBy == request.subject")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (withList [] "kim") (parsed "new.entries == request.subject")
+#guard denote ⟨"7", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (.record [("n", .natural 7)]) (parsed "new.n == request.subject")
 #guard denote facts (some (withList ["a"] "x")) (withList ["a", "b", "c"] "x") (parsed "appendOnly(entries)")
 #guard denote facts (some (withList ["a"] "x")) (withList ["a"] "x") (parsed "appendOnly(entries)")
 #guard !denote facts (some (withList ["a", "b"] "x")) (withList ["a", "c"] "x") (parsed "appendOnly(entries)")
@@ -307,12 +401,12 @@ private def withList (xs : List String) (by_ : String) : Data :=
 #guard !denote facts (some (withList ["a"] "x")) (withList ["a"] "y") (parsed "unchanged(lastBy)")
 #guard !denote facts (some (withList ["a"] "x")) (withList ["a", "b"] "x") (parsed "unchanged(entries)")
 #guard denote facts (some (rec1 3)) (.record [("open", .boolean true), ("count", .natural 3)]) (parsed "new.count == 3")
-#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, ""⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
-#guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, ""⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, ""⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.lastBy")
-#guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, ""⟩ none (withList ["forge"] "x") (parsed "request.caller in new.entries")
-#guard denote ⟨"a", "", 1, 0, "", 0, "ring", [], 0, ""⟩ none (rec1 1) (parsed "request.method == \"ring\"")
-#guard !denote ⟨"a", "", 1, 0, "", 0, "toll", [], 0, ""⟩ none (rec1 1) (parsed "request.method == \"ring\"")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
+#guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.lastBy")
+#guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, "", []⟩ none (withList ["forge"] "x") (parsed "request.caller in new.entries")
+#guard denote ⟨"a", "", 1, 0, "", 0, "ring", [], 0, "", []⟩ none (rec1 1) (parsed "request.method == \"ring\"")
+#guard !denote ⟨"a", "", 1, 0, "", 0, "toll", [], 0, "", []⟩ none (rec1 1) (parsed "request.method == \"ring\"")
 #guard (Delvetalk.Compiler.ObjectiveBendLaw.parse "request.height in new.entries").toBool == false
 #guard denote facts none (withList ["a", "x"] "x") (parsed "new.lastBy in new.entries")
 #guard !denote facts none (withList ["a"] "x") (parsed "new.lastBy in new.entries")
@@ -343,10 +437,10 @@ private def limited : Facts := { facts with evicted := [("rains", rain "ann" 1 "
 #guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
 #guard !denote facts (some (rel [])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
 #guard denote facts none (rel [rain "ann" 1 "a"]) (parsed "count(new.rains) <= count(old.rains) + 1")
-#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
-#guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, ""⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.text")
-#guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, ""⟩ none (rel [rain "forge" 1 "a"]) (parsed "request.caller in new.rains.author")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
+#guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.text")
+#guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, "", []⟩ none (rel [rain "forge" 1 "a"]) (parsed "request.caller in new.rains.author")
 
 -- The clock, the written object and `old.F` (LAW §4 A, E, H): METAPHYSICS's `alive` clause, admitted
 -- for a tend or within 1440 minutes of the last tending, refused past it; `old.F` at creation is the
@@ -368,5 +462,29 @@ private def alive : String := "request.method == \"tend\" or request.clock <= ol
 #guard denote (when 0 "" "x") (some (tended 5 0)) (tended 5 0) (parsed "old.name == new.name")
 #guard !denote (when 0 "" "x") none (tended 5 0) (parsed "old.name == new.name")
 #guard denote (when 0 "" "x") none (tended 5 0) (parsed "old.tended == 0")
+
+-- The relational atoms (docs/LAW.md §4 B, C, D, F): a filtered count and the quorum it makes, a
+-- change of rows by whom, membership in a cited object's relation, and a cited object's law.
+private def as (who : String) : Facts := { facts with subject := who }
+#guard denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b", rain "ann" 3 "c"]) (parsed "count(new.rains where author == \"ann\") <= 2")
+#guard !denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b", rain "ann" 3 "c"]) (parsed "count(new.rains where author == \"ann\") <= 1")
+#guard denote (as "kim") none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(new.rains where author == request.subject) + 1")
+#guard !denote (as "eve") none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(new.rains where author == request.subject) + 1")
+#guard denote (as "kim") (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "changed(new.rains.author) by request.subject")
+#guard !denote (as "ann") (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "changed(new.rains.author) by request.subject")
+#guard denote (as "kim") (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "ann" 1 "a"]) (parsed "changed(new.rains.author) by request.subject")
+#guard !denote (as "kim") (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "x"]) (parsed "changed(new.rains.author) by request.subject")
+#guard denote { as "kim" with evicted := [("rains", rain "ann" 1 "a")] } (some (rel [rain "ann" 1 "a"])) (rel [rain "kim" 2 "b"]) (parsed "changed(new.rains.author) by request.subject")
+private def roster : Facts := { as "kim" with reads := [("roster", rel [rain "kim" 1 "x"])] }
+#guard denote roster none (rec1 1) (parsed "request.subject in \"roster\".rains.author")
+#guard !denote { roster with subject := "eve" } none (rec1 1) (parsed "request.subject in \"roster\".rains.author")
+#guard !denote (as "kim") none (rec1 1) (parsed "request.subject in \"roster\".rains.author")
+private def kindOf (law : String) : Facts := { facts with reads := [("kind/x", .record [("law", .label law)])] }
+#guard denote (kindOf "law small: new.count <= 2") none (rec1 2) (parsed "under \"kind/x\"")
+#guard !denote (kindOf "law small: new.count <= 2") none (rec1 3) (parsed "under \"kind/x\"")
+#guard !denote (kindOf "law small: new.count <= 2") none (rec1 2) (parsed "under \"kind/x\"") 0
+#guard !denote (kindOf "law loop: under \"kind/x\"") none (rec1 2) (parsed "under \"kind/x\"")
+#guard !denote (kindOf "not a law") none (rec1 2) (parsed "under \"kind/x\"")
+#guard !denote facts none (rec1 2) (parsed "under \"kind/x\"")
 
 end Delvetalk.Host.Law

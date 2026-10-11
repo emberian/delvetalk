@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host17 from 5.137 to 5.138; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host17 from 5.137 to 5.139; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -133,8 +133,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ### 5.1 Authority and laws
 
-- `Facts {subject, caller, height, turn, pin, kind, method, relations}` (`relations`: the object's declarations, for `insertOnly`, 5.74). `caller` is the object whose method wrote ("" for the turn's own method and client proposals; for a delivered turn, the sending object). `method` is the method whose run made the change ("" for ops).
-- Fragment (grammar in `ObjectiveBendLaw.lean`): `and`, `or`, `not`, `implies`; `request.subject`, `request.caller`, `request.height`, `request.turn`, `request.pin`, `request.kind`, `request.method`, `request.clock` (the world clock the turn read, `Facts.clock`), `request.object` (the written object's id, `Facts.object`; text-comparable), `old.F` (the field before the write; at creation its kind's empty value, `emptyReading`), the three-slot bound `REF <= REF + REF` (`leRSum`), integer and text constants, `monotone(F)`, `writeOnce(F)`, `appendOnly(F)`, `unchanged(F)`, `x in new.F` (`member`), and for relations `insertOnly(F)`, `count(new.F) <= N`, `count(new.F) <= count(old.F) + N`, `x in new.F.COL`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
+- `Facts {subject, caller, height, turn, pin, kind, method, evicted, clock, object, reads}` (`reads`: the states of the objects the law cites, 5.139) (`relations`: the object's declarations, for `insertOnly`, 5.74). `caller` is the object whose method wrote ("" for the turn's own method and client proposals; for a delivered turn, the sending object). `method` is the method whose run made the change ("" for ops).
+- Fragment (grammar in `ObjectiveBendLaw.lean`): `and`, `or`, `not`, `implies`; `request.subject`, `request.caller`, `request.height`, `request.turn`, `request.pin`, `request.kind`, `request.method`, `request.clock` (the world clock the turn read, `Facts.clock`), `request.object` (the written object's id, `Facts.object`; text-comparable), `old.F` (the field before the write; at creation its kind's empty value, `emptyReading`), the three-slot bound `REF <= REF + REF` (`leRSum`), integer and text constants, `monotone(F)`, `writeOnce(F)`, `appendOnly(F)`, `unchanged(F)`, `x in new.F` (`member`), and for relations `insertOnly(F)`, `count(new.F) <= N`, `count(new.F) <= count(old.F) + N`, `x in new.F.COL`; and the relational atoms (5.139): `count(SIDE.F where COL == TERM)` as a reference, `changed(new.F.COL) by TERM`, `TERM in "O".F.COL`, `under "O"`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
 - `judge` judges every distinct (caller, kind) of an object's changes. Default law `owner: request.kind == 0 or request.subject == "<creator>"`: anyone may invoke methods, only the creator may reprogram or amend (`defaultLaw`). Metarule: an amendment must be admitted by the existing law for its proposer; message "law does not admit an amendment by its proposer <p>: <name>: <expr>".
 - `Object.readings` holds the package's law readings for clauses that are still the package's; `makeObject` keeps those the effective law leaves equal, an amendment keeps those it leaves equal, a reprogram keeps all. `parseLawTextReadings` reads `law NAME "reading": EXPR`; a malformed reading is `law syntax`.
 - Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin {kind, object, command, program, immediatelyPrevious, post}}` (`post`: 5.71). The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
@@ -1403,6 +1403,31 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    same-turn body's methods and forms equal a later extend's, a reopen); the objects lane's `Kind` with the
    body laid in the turn (its scratch `Kind-inturn.obend`) passes all of `test_kinds`.
 
+139. **The law's relational atoms (host17; KERNEL-HANDOFF §25 item M; LAW §4 B, C, D, F; edition 5).** The kernel's
+   grammar (lane/kernel14) is denoted in `Host/Law.lean`, the fail-closed arms gone:
+   - `count(SIDE.F where COL == TERM)`: the rows whose column canons to the term's value; a reference, so the
+     quorum `count(new.G) <= count(new.F where C == V) + N` is a comparison. `memberData` reads every term
+     (a numeric reading as a natural) and serves the filter, membership and `changed`.
+   - `changed(new.F.COL) by TERM`: every row the write changed (`changedRows`: gone by canonical bytes less
+     what retention evicted, and new) carries the term in its column.
+   - `TERM in "O".F.COL` and `under "O"` read `Facts.reads`, the states of the cited objects (`citedStates`,
+     closed under the citations of each cited object's `law` text, `lawCitations`, `Limits.lawDepth` 4).
+     `under "O"` judges the write by every clause of O's `law` field at depth − 1; depth 0, an absent object,
+     a non-text or unparsable law is false. The law-text parser (`parseLawText`, `renderLaw`) moved into
+     `Law.lean` beside `denote`.
+   - *Roots.* `withLawReads` adds every citation to the write's roots at the version read (so a cited
+     object moved since is `staleRoot`, and replay re-judges from them), within `maxRoots`; a cited object
+     the subject may not view refuses the write `lawRefused`, clause `lawReads`.
+   - *Acceptance* (creation in `makeObject`, amendment in `judge`): `citationRefusal` refuses an `under` of
+     a missing object, of one whose `law` does not parse, or a cycle within `lawDepth` ("under: a cycle of
+     citations: a -> b -> a"); the metarule (`amendable`) judges with the cited states. `world-inspect`
+     answers `cites`.
+   - Tests: `Law.lean`'s `#guard`s (filter, quorum, changed by with eviction, cited membership, under at
+     depth, a cycle, a non-law); `tests/test_law.py` `Atoms` (an instance judged by its kind's law as it
+     changes, the kind a root, a reopen; a missing citation refused; a private kind refusing `lawReads`;
+     rows changed by whom, a cited roster, a quorum, a reopen). The objects lane may now delete the Tide's
+     and Deal's predicates (KERNEL-HANDOFF §25 M, last item).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1415,7 +1440,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   (evictions and changes owed as facts, lineage, reservations, attempts); 3 is host14 (root, ignore and
   shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126); 4 is host16 (roots
   read by their cells, the per-cell bound and ledger; 5.136); 5 is host17 (a layered package's shape is
-  its stack's, 5.138). Test:
+  its stack's, 5.138; the relational atoms judged and their citations roots, 5.139). Test:
   `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -1441,8 +1466,6 @@ describes only what is.
 3. **FEDERATION** in its order: scratch worlds (§3, with the `expire` power and root act, now a request error),
    and in the same commit the `heap:` envelope, `world-fork` into heaps and every heap op go (`world:` the one
    way); `<world>:<object>` references (§2); `zulip:<realm>:<id>` principals (§1).
-4. **The law atoms of lane/kernel14** (changed-by, filtered counts, cross-object membership as a root, `under
-   "<object>"`) when the coordinator says its grammar is in foundation, as 5.133 took LAW §4 A, E, H.
 5. **Scar tissue to remove now:** `proposalShapes`' second shape and `proposedData`'s `spelled := false` (5.128:
    every object compiles from `world/lib`, so no call site has the older `Proposed`); `receiptReplies`' older
    `Receipt` shape (5.127) likewise; `misfitReason`'s fallback once `extraField` covers every input row.

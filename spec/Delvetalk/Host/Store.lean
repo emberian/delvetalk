@@ -30,7 +30,8 @@ def cardShownChars : Nat := 1400
     3: host14 (root entries, ignored and shadowed entries, moderation, the metarule widened to the opener,
     later settings, `unposted`); 4: host16 (roots read by their cells: `scalar`, `fields`, `rows`,
     `spans`; the per-cell bound and the storage ledger by changed cells); 5: host17 (a layered package's
-    shape is its stack's: public methods, relations and law shape kept from below, `compileObject`). -/
+    shape is its stack's: public methods, relations and law shape kept from below, `compileObject`; the
+    law's relational atoms judged, what a law cites recorded as roots). -/
 def replayEdition : Nat := 5
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
@@ -115,6 +116,9 @@ def maxPackageBytes : Nat := Bounds.maxPackageBytes
 /-- Law text of an `amend`, and the clauses in it. -/
 def maxLawBytes : Nat := 4096
 def maxLawClauses : Nat := 16
+/-- How deep `under "O"` citations are followed: a cited law's `under` is judged one level down, and at
+    depth 0 an `under` is false, so a cycle ends (docs/LAW.md §4 F). -/
+def lawDepth : Nat := 4
 /-- Compiled packages kept in memory (`World.builds`). -/
 def maxBuilds : Nat := 1024
 /-- Prepared reprograms kept in memory. -/

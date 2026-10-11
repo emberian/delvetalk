@@ -497,8 +497,8 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   let (relations, state) ← (relationsFor built state).mapError fun e =>
     (if e.startsWith "duplicateKey" then "duplicateKey" else "key", e)
   let lawText := if lawArg.startsWith "law " then some lawArg else none
-  let (object, sources) ← (makeObject built inputs state none none principal height lawText).mapError
-    (fun e => (if isAmendmentRefusal e then "law"
+  let (object, sources) ← (makeObject w built inputs state none none principal height lawText).mapError
+    (fun e => (if isAmendmentRefusal e || e.startsWith "under: " then "law"
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
   return ({ object := { object with relations }, sources, seed := dataJson state }, built)
 
@@ -519,7 +519,7 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
       ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
   | .ok (again, built) =>
     let o := again.object
-    let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", [], s.world.clock, id⟩
+    let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", [], s.world.clock, id, citedStates s.world o.law⟩
     if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
       return ← refusedReading bounds responseType clause s!"refused {clause}: the law of {id} does not admit this layer"
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
@@ -995,7 +995,7 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
     that reads the state is judged on it too (codex agent 11: `request.subject == new.owner or …`
     refuses a stranger whatever the method writes, unless the method moves the owner). -/
 def methodAdmits (w : World) (o : Object) (principal method : String) (id : String := "") : Json :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, [], w.clock, id⟩
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, [], w.clock, id, citedStates w o.law⟩
   match o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause with
   | none => Json.bool true
   | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
@@ -1134,7 +1134,7 @@ def cardPowers : List String := ["retire", "unretire", "hide", "show"]
 /-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
     it stands? As `methodAdmits` judges a method. -/
 def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : String := "") : Bool :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", [], w.clock, id⟩
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", [], w.clock, id, citedStates w o.law⟩
   (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
 
 /-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
@@ -3099,7 +3099,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
     return Json.mkObj ([("status", toJson "inspected"), ("object", toJson id), ("pin", toJson o.pin),
       ("pinSlug", toJson ((Slug.ofCid o.pin).getD "")), ("law", toJson o.lawText),
       -- The law's clauses with their readings, and whether a Bend `law(old, new, request)` judges after it.
-      ("laws", openerRow w (lawRows o)), ("bendLaw", toJson o.predicate)] ++
+      ("laws", openerRow w (lawRows o)), ("cites", toJson (lawCitations w o.law)), ("bendLaw", toJson o.predicate)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
       ("supervisor", toJson o.supervisor),
       -- Its canonical bytes, and its scalar part's, which `Bounds.maxCellBytes` bounds as it bounds each row.

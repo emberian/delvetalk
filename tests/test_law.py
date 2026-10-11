@@ -13,7 +13,7 @@ import os
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.wire import field, nat, record
+from tests.wire import field, label, nat, record
 from tests.bend import closure, declared
 
 GUARD = declared("""edition ObjectiveBend 1
@@ -383,6 +383,84 @@ def tend(state: State, context: Abi.Context) -> Activity<Nat>:
         self.assertEqual(self.turn("fern", "rain")["status"], "admitted")
         self.reopen()
         self.assertEqual(field(self.state("fern"), "rains"), nat(3))
+
+
+KIND_LAW = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  law: String
+def initial() -> State:
+  {law: ""}
+def setLaw(state: State, input: {law: String}, context: Abi.Context) -> Activity<String>:
+  match world.write(extend(keep(), {law: Plans.Edit::<String, {}>.set({value: input.law})})):
+    case _: input.law
+""", "setLaw")
+
+
+class Atoms(Reflection):
+    """LAW §4 B, C, D, F over real objects (KERNEL-HANDOFF §25 item M): `under "O"` judges a write by the
+    `law` text O holds now, read as a root and only by a subject who may view O; a missing citation is
+    refused at creation; `changed(...) by`, a cited relation's membership and a filtered count judge rows."""
+    OWNER = 'law owner: request.kind == 0 or request.subject == "ember"\n'
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+
+    def create(self, name, source, law, seed=None, **extra):
+        return self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name, source=source,
+                              entry="initial", seed=seed or record(), law=law, **extra)
+
+    def test_under_judges_by_the_cited_law_as_it_stands_and_reads_it_as_a_root(self):
+        self.assertEqual(self.create("kind/x", KIND_LAW, self.OWNER, record(law=label("law small: new.count <= 2")))["status"], "created")
+        made = self.create("g", PLAIN, 'law kind "as its kind says": under "kind/x"\n' + self.OWNER)
+        self.assertEqual(made["status"], "created", made)
+        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="g")["cites"], ["kind/x"])
+        for i in range(2):
+            ok = self.turn("g", "poke", identity=f"p{i}")
+            self.assertEqual(ok["status"], "admitted", ok)
+        self.assertIn({"object": "kind/x", "version": 0}, ok["receipt"]["roots"])
+        refused = self.turn("g", "poke", identity="p2")
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "kind"), refused)
+        # The kind's law changes, and its instances are judged by the new one.
+        self.assertEqual(self.turn("kind/x", "setLaw", record(law=label("law small: new.count <= 3")))["status"], "admitted")
+        self.assertEqual(self.turn("g", "poke", identity="p3")["status"], "admitted")
+        self.reopen()
+        self.assertEqual(field(self.state("g"), "count"), nat(3))
+        # A citation of nothing is refused at creation, by name.
+        bad = self.create("h", PLAIN, 'law kind: under "kind/none"\n' + self.OWNER)
+        self.assertEqual(bad["status"], "error", bad)
+        self.assertIn("under: no object kind/none", bad["message"])
+
+    def test_a_cited_object_its_subject_may_not_view_refuses_the_write(self):
+        self.assertEqual(self.create("kind/p", KIND_LAW, self.OWNER, record(law=label("law small: new.count <= 9")),
+                                     read={"principals": ["ember"]})["status"], "created")
+        self.assertEqual(self.create("g", PLAIN, 'law kind: under "kind/p"\n' + self.OWNER)["status"], "created")
+        self.assertEqual(self.turn("g", "poke", identity="mine")["status"], "admitted")
+        theirs = self.turn("g", "poke", identity="theirs", principal="kim")
+        self.assertEqual((theirs["status"], theirs["receipt"]["outcome"]["clause"]), ("refused", "lawReads"), theirs)
+
+    def test_rows_changed_by_whom_a_cited_roster_and_a_quorum(self):
+        from tests.test_relation import PACKAGE as RAINS, rain, relation
+        rains = RAINS.replace("LIMIT", "0n")
+        # Each clause leaves an amendment to the owner (the metarule judges the law at creation).
+        law = ('law mine "a writer changes only their own rows": request.kind == 2 or changed(new.rains.author) by request.subject\n'
+               'law listed: request.kind == 2 or request.subject in "roster".rains.author\n'
+               'law quorum: count(new.rains) <= count(new.rains where author == "ember") + 2\n' + self.OWNER)
+        self.assertEqual(self.create("roster", rains, self.OWNER, record(rains=relation(rain("ann", 1, "in"), rain("kim", 1, "in"))))["status"], "created")
+        made = self.create("b", rains, law, record(rains=relation(rain("ember", 0, "seed"))))
+        self.assertEqual(made["status"], "created", made)
+        put = lambda who, author, at: self.turn("b", "insert", rain(author, at, "x"), principal=who)
+        clause = lambda r: (r["status"], r["receipt"]["outcome"].get("clause"))
+        self.assertEqual(clause(put("ann", "ann", 1)), ("admitted", None))
+        self.assertEqual(clause(put("ann", "kim", 2)), ("refused", "mine"))
+        self.assertEqual(clause(put("eve", "eve", 3)), ("refused", "listed"))
+        self.assertEqual(clause(put("kim", "kim", 4)), ("admitted", None))
+        self.assertEqual(clause(put("kim", "kim", 5)), ("refused", "quorum"))
+        self.reopen()
+        self.assertEqual(clause(put("ann", "ann", 6)), ("refused", "quorum"))
 
 
 if __name__ == "__main__":
