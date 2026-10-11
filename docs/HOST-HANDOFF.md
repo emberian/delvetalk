@@ -414,7 +414,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 62. **Declared methods (host10; WORLD-REVIEW finding 1).** A State-first definition is public only when
    the package declares it: the `action` of a form its `forms()` lists, a name its `def methods() ->
    Lists.List<String>` returns, a `views()` entry, or a conventional name (`conventionalMethods`: receive,
-   render, blurb, forms, lenses, set, publishPage, page, relations, methods, law, lawReads, views,
+   render, forms, lenses, set, publishPage, page, relations, methods, law, lawReads, views,
    initial). Only the entry module's declarations count (as for `relations()`); each is compiled and run
    once per build (`publicMethods`, in `compileObject` and `prepareProgram`; a layer keeps what the code
    below declared and may add). A `methods()` that is not a `List<String>` refuses the package (`methods:`,
@@ -488,8 +488,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    whose package declares no `publishPage` is the host's (`defaultPublishPage`, chosen in `runTurnWith`):
    it publishes `Card.defaultPage`'s shape, `## Card` (the card rendered for nobody, as `world-card`
    renders it for "") and `## How to reply` (the host's usage of the card's forms and lenses,
-   `spellUsage`), joined by a line as `Card.pageText` joins sections, under `page`, else the word the
-   pure `blurb()` gives, else the object's id; the result is the post id. The turn writes nothing and
+   `spellUsage`), joined by a line as `Card.pageText` joins sections, under `page`, else the object's id; the result is the post id. The turn writes nothing and
    stages one publication. The five pasted `publishPage` methods (Anthology, Scene, Table, Tide,
    Workshop) may go (objects lane); Garden keeps its own. Test: `tests/test_publish.py` `DefaultPage`.
 
@@ -604,7 +603,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    grant lets this call run <m> on <id> (<clause>).". Test: `tests/test_call_reading.py`.
 
 78. **Declarations from the artifact (host11).** Whether an entry module declares `forms`, `views`,
-   `lenses`, `blurb` (and, for `publicMethods`, `methods`) is read only from the artifact's `declares:
+   `lenses` (and, for `publicMethods`, `methods`) is read only from the artifact's `declares:
    [names]` (the kernel's `declaredNames`, derived definitions included; `Object.declares`, in
    snapshots): a package with form blocks and no hand-written `forms()` has public, bounded actions.
    The source scan is gone. Test: `tests/test_form_bounds.py` `DerivedForms`.
@@ -1497,9 +1496,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    under a greeting; a margin spell; the same indented by two spaces, four, a tab, among other lines). A post that
    is one spell block and nothing else (`wholeSpell`: its non-blank lines a `delvetalk` line and field lines, each
    starting with the first's indent, bare or inside one ```` ``` ````/```` ```text ```` fence) is dedented and cast:
-   a Zulip code block, a spell pasted with its indent (`Margin`'s block cases). Still open: casting up to three
-   literal spells of one post in order (now the last at the margin is cast); Bend's reduced reader is the objects
-   lane's to delete (H1).
+   a Zulip code block, a spell pasted with its indent (`Margin`'s block cases). Several spells: 5.148; Bend's
+   reduced reader is the objects lane's to delete (H1).
 
 144. **A refused turn offers nothing (host18; the objects lane's `sealed/1 write`).** A turn's offers and publishes
    happen only if it is admitted: `commit` drops `offers` and `publishes` from a refused entry, so the resident
@@ -1523,6 +1521,25 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    empty text, so `delvetalk kinds make / name: lamp / of: record` makes a kind. The host's usage prints such a
    field `<optional text, up to N characters>` (`spellHint`; Bend's `Card` hint is the objects lane's). Tests:
    `Spell.lean`'s `#guard`; `test_host_spell.Clauses`.
+
+148. **Several spells in one post: a turn each (host18; the coordinator's decision).** A direct `receive` whose text
+   holds two or more spells at a line's start (`Spell.segments`, also hob's split; not a quotation) runs
+   `runSpells`: each spell, with the lines after it, is its own turn as if posted alone (identity the post's plus
+   `#1` .. `#3`, digest the post's and the ordinal), judged alone with its own receipt, so a law refusal of one
+   never sinks the others; a fourth and later are one refusal `#4`, `badSpell` clause `tooManySpells` naming how
+   many were not cast. The reply is `{status: "spells", turns: [...]}`, in order. The bridge drafts one reply
+   carrying every line (the last receipt the draft's); the play page and the agent route show each turn.
+   (`runTurn` dispatches; `runOne` is the single turn.) Tests: `test_spell_turns` (four turns, a misfit standing
+   alone, a retry), `test_bridge` (two spells, one draft).
+
+149. **`receive` hears the spell the host read (host18; fungus H1's host half).** When a card's `receive`
+   declares `spell: {card, action}`, the host fills it (`heardArgument`, `castData`): the spell as written when
+   it lacked fields (`castSpell`'s `unclear` arm), else what `Spell.parse` reads in the text, `{card: "",
+   action: ""}` for none; a card that does not declare it is unchanged (the shapes tried are fields, with spell,
+   with misfit, with both). So the objects lane can delete Bend's last spell reader (`world/lib/Spell.obend`
+   `parse`, `Card.spellMissing`, `spellAction`). `withFields` is gone. Note: a derived `String` field is `text
+   0..formTextMax`, so since 5.147 it may be left out; only choices and numbers are "missing". Test:
+   `test_spell_turns` (a missing colour reaches `receive` with `Cast plant`; prose with `" "`).
 
 ## 6. Gotchas
 

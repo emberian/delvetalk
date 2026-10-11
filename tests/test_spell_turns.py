@@ -92,6 +92,46 @@ class SpellTurns(Reflection):
         self.assertEqual(r["status"], "admitted", r)
         self.assertEqual((self.field("planted", "plot"), self.field("planted", "garden")), (label("amber:oak"), label("violet:rue")))
 
+    def test_several_spells_at_a_lines_start_are_a_turn_each_and_a_fourth_is_refused(self):
+        post = ("first the garden:\ndelvetalk garden plant / colour: amber / seed: a\n"
+                "delvetalk plot plant / colour: silver / seed: b\n\nand then:\ndelvetalk garden plant / colour: gold / seed: c\n"
+                "delvetalk plot plant / colour: violet / seed: d\ndelvetalk garden plant / colour: amber / seed: e")
+        r = self.say(post, identity="post-1")
+        self.assertEqual(r["status"], "spells", r)
+        turns = r["turns"]
+        intents = [t["receipt"]["identity"]["intent"] for t in turns]
+        self.assertEqual(intents, ["post-1#1", "post-1#2", "post-1#3", "post-1#4"])
+        # Each judged alone: the third misfits (gold is no colour) and the others stand.
+        self.assertEqual([t["status"] for t in turns], ["admitted", "admitted", "refused", "refused"], turns)
+        self.assertEqual(turns[2]["receipt"]["outcome"]["clause"], "badValue")
+        self.assertEqual(turns[3]["receipt"]["outcome"]["clause"], "tooManySpells")
+        self.assertIn("the 2 after them are not cast", turns[3]["receipt"]["outcome"]["reason"])
+        self.assertEqual((self.field("planted"), self.field("planted", "plot")), (label("amber:a"), label("silver:b")))
+        # A retry of the post is answered from each identity.
+        again = self.say(post, identity="post-1")
+        self.assertEqual([t["receipt"]["hash"] for t in again["turns"]], [t["receipt"]["hash"] for t in turns])
+        # One identity, one request: the post's identity is its spells', and a single turn's is its own.
+        self.assertEqual(self.say("delvetalk garden plant / colour: amber / seed: z", identity="post-1")["class"], "duplicateIdentity")
+        self.assertEqual(self.say("delvetalk garden plant / colour: amber / seed: y", identity="post-2")["status"], "admitted")
+        self.assertEqual(self.say(post, identity="post-2")["class"], "duplicateIdentity")
+
+    def test_a_spell_missing_fields_reaches_receive_with_its_card_and_action(self):
+        # The host's reading of the spell, so no card reads the spell line again (fungus H1).
+        source = declared(GARDEN.replace(
+            "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:\n"
+            "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: input.text}),",
+            "record Cast:\n  card: String\n  action: String\n"
+            "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>, spell: Cast}, context: Abi.Context) -> Activity<Nat>:\n"
+            "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: textConcat(input.spell.card, textConcat(\" \", input.spell.action))}),"))
+        made = self.host.send(op="world-create", principal="ember", identity="mk-cast", object="cast",
+                              modules=[{"name": "Garden", "source": source}], entry="initial", seed=record())
+        self.assertEqual(made["status"], "created", made)
+        r = self.say("delvetalk Cast plant\nseed: fern", card="cast")  # colour missing (a derived String field is text 0..N: optional)
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(2)), r)
+        self.assertEqual(self.field("heard", "cast"), label("Cast plant"))
+        self.say("just words", card="cast")
+        self.assertEqual(self.field("heard", "cast"), label(" "))
+
     def test_missing_fields_and_prose_reach_receive_with_the_bare_fields(self):
         r = self.say("delvetalk garden plant\nseed: fern")
         self.assertEqual(r["result"], nat(2), r)

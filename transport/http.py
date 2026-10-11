@@ -186,12 +186,12 @@ CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it
                'invalid_handle': '{handle} is not a handle this town knows. Check the spelling.'}
 
 
-def turn_line(r, addressed=None):
+def turn_line(r, addressed=None, handles=None):
     """A turn's receipt in one line: `admitted garden v3, entry 9, receipt <slug>`, `refused owner: <reading>`, `suspended, entry 9`."""
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
-        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, addressed)
+        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, addressed, handles)
     if r.get('status') == 'refused':
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
@@ -751,15 +751,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.answer(reply, links=receipt_links(base, reply))
         reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,  # asked on the card itself
                            'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct'})
+        turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]  # several spells: a turn each
         if not scratch:  # a scratch turn drafts nothing for the town
-            self.server.draft_turn(principal, data.get('intent'), reply)
+            for t in turns:
+                self.server.draft_turn(principal, (t.get('receipt') or {}).get('identity', {}).get('intent', data.get('intent')), t)
         links, acts = {**at(obj), **receipt_links(base, reply, data.get('intent'))}, None
         if reply.get('status') in ('refused', 'error'):  # the usage action: the method as the host's table shows it
             seen = host.send({'op': 'world-inspect', 'principal': principal, 'object': obj})
             acts = actions(base, obj, seen, only=tail) if seen.get('status') == 'inspected' else None
             links.setdefault('hint', links['source'])
-        if 'receipt' in reply and reply.get('status') in ('admitted', 'refused', 'suspended') and 'full' not in q:
-            reply = compact(reply) if q.get('compact') == '1' else turn_view(reply)
+        view = lambda t: (compact(t) if q.get('compact') == '1' else turn_view(t)) if 'receipt' in t and t.get('status') in ('admitted', 'refused', 'suspended') else t
+        if 'full' not in q:
+            reply = {'status': 'spells', 'turns': [view(t) for t in turns]} if reply.get('status') == 'spells' else view(reply)
         self.answer(reply, links=links, acts=acts)
 
     def xrpc(self, method, nsid):
@@ -909,12 +912,19 @@ class Handler(BaseHTTPRequestHandler):
             fields = {k[2:] if k[:2] in kinds else k: kinds[k[:2]](v) if k[:2] in kinds else v for k, v in data.items() if k != 'method'}
             r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent, 'reach': 'direct',
                            'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
-            self.server.draft_turn(did, intent, r)
-            offers = follow(host, did, intent, r, self.server.sleep) if 'receipt' in r else []
-            if r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
+            turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
+            for t in turns:
+                self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
+            offers = [o for t in turns if 'receipt' in t for o in follow(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)]
+            names = self.server.handles(pages.A_DID.findall(name))
+            if r.get('status') == 'spells':
+                said = ''.join(pages.T['said'].format(cls=html.escape(str(t.get('status'))), icon=pages.stamp(t.get('status'), word=False),
+                                                      line=html.escape(turn_line(t, None, names)), offers='') for t in turns) + (
+                    ''.join(pages.framed(t) for t in offers) or pages.T['quiet'])
+            elif r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
                 said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
             else:
-                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r, name)),
+                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r, name, names)),
                                               offers=''.join(pages.framed(t) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it

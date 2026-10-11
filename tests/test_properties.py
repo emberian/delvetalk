@@ -147,7 +147,7 @@ def malformed(t, rng):
 
 # Names the host answers on every card whatever the package declares (HOST-HANDOFF 5.62, 5.68: a
 # public card's `publishPage` is the host's default page), so a direct turn naming one is not a helper.
-CONVENTIONAL = {"receive", "render", "blurb", "forms", "lenses", "set", "publishPage", "page", "relations",
+CONVENTIONAL = {"receive", "render", "forms", "lenses", "set", "publishPage", "page", "relations",
                 "methods", "law", "lawReads", "views", "initial"}
 
 class Run:
@@ -199,7 +199,10 @@ class Run:
         reply = self.send(**request)
         status = reply.get("status")
         self.statuses[status] += 1
-        if status not in ("admitted", "refused", "suspended"):
+        if status == "spells":  # a post of several spells: a turn each, each its own receipt (HOST-HANDOFF 5.148)
+            if any(t.get("status") not in ("admitted", "refused", "suspended") for t in reply["turns"]):
+                self.fail("a spell's turn neither admitted, refused nor suspended", request, reply)
+        elif status not in ("admitted", "refused", "suspended"):
             self.fail("a turn neither admitted, refused nor suspended", request, reply)
         if status == "refused":
             out = reply["receipt"]["outcome"]
@@ -214,7 +217,8 @@ class Run:
         if retry and self.rng.random() < 0.3 and not (status == "refused" and reply["receipt"]["outcome"].get("class") in TRANSIENT):
             at = self.height()
             again = self.send(**request)
-            if again.get("receipt") != reply.get("receipt") or self.height() != at:
+            receipts = lambda r: [t.get("receipt") for t in r["turns"]] if "turns" in r else r.get("receipt")
+            if receipts(again) != receipts(reply) or self.height() != at:
                 self.fail("a retry did not return the retained receipt, journaling nothing", request, reply.get("receipt"), again.get("receipt"))
             other = self.send(**dict(request, argument=record(other=label("x"))))
             if (other.get("status"), other.get("class")) != ("refused", "duplicateIdentity") or self.height() != at:
