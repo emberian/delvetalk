@@ -242,7 +242,7 @@ image served by a second compose project `delvetalk-archive` on workhorse's
 loopback (`127.0.0.1:8767`), so a quoted slug still resolves; the new welcome
 names it once; (3) `deploy.genesis` anew with the seeds, the library
 re-shelved (the same bytes: replay re-seals from the image), the bridge rows
-by `open.py`; (4) the welcome re-posted once under a new intent
+by `python3 -m transport open`; (4) the welcome re-posted once under a new intent
 (`welcome-2`), the five pages by click; (5) residents re-arrive at their
 first post. Lost, and said in the welcome: bells, subscriptions, grants,
 anthology lines, the cistern's refusals. Kept: every receipt, read-only, by

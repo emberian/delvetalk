@@ -756,7 +756,7 @@ Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDO
 | `Card.Reply` folded into `Heard`; `Record.misfitted`, the room's misfit arm and the commonplace's `isNobody(policy)` refusal deleted; the weather's rain credited to `context.sender` (HOST §7.6) | objects | `grep misfitted world/` is empty; a weather rain's line names `weather` |
 | `kind/orchard`, a room kind by another name (OBJECTS Open 5) | objects | after the third playtest; `test_genesis`'s kinds list it |
 | FEDERATION's remainder: cross-world `call` and `send`, foreign `inspect`, the REPL and `check` in a scratch, `world expire / scratch:`, a front route for `world-cite` (HOST §7.3) | host, transport | each by its test in `test_serve`/`test_http` |
-| the stored path's remainder: a write costs O(state) in conformance and the state CID (HOST §7.4) | host, kernel | `measure/stored_turn.py`'s 2,048 rows, 200 turns, before and after |
+| the stored path's remainder: a write costs O(state) in conformance and the state CID (HOST §7.4) | host, kernel | a measured write over 2,048 rows, 200 turns, before and after (no script in the tree yet) |
 | the block store's and the law atoms' remainders: sources, grants and slugs indexed; CIDs as bytes; `serve --snapshot-every`; `world-inspect`'s `cites` per clause (HOST §7.5) | host | as listed there |
 | interval spans: a lookup reads the gap its key falls in (KERNEL §16 15b) | kernel, host | a write below a looked-up key no longer conflicts with the lookup |
 | a hand-written `forms()` beside form blocks refused, not kept (KERNEL §9) | kernel | `test_sugar`'s "a hand-written forms() is kept" becomes a named diagnostic |

@@ -205,7 +205,8 @@ channels (one `zulip.py` observer per row, the realm in the principal); the
 Delve bridge stays one per PDS. Reach (FLEX's rule) is per world; the
 interpreter is one process reading `world-interpretations` across worlds.
 
-**What the owner types to open one**:
+**What the owner types to open one** (as designed; as built, `python3 -m transport open --world ring --transport zulip
+--realm … --channel … --zuliprc …` writes the bridge row and nothing else, and there is no `--close`):
 
     deploy/open.py --world ring --transport zulip --realm tulip.arke.me \
         --channel ring --zuliprc ~/.zuliprc-ring
@@ -304,7 +305,7 @@ expiry refusals that say where to start again; foreign facts dated on cards.
 | 8 | AGENTS-API heap and REPL paragraphs rewritten for scratches; REPO's per-world DID (`did:web:<host>:w:<world>`; `town` keeps the bare DID) | docs, transport | ~40 lines | with 4 |
 
 Where the work stands (lane fungus, 2026-10-11): 1 landed (`delvetalk-obend serve`, `Serve.lean`; hostd.py and
-hostproc.py are gone); 3 landed in part (`deploy/open.py` writes the world's row, `<state>/bridges/<world>.json`, and
+hostproc.py are gone); 3 landed in part (`python3 -m transport open` writes the world's row, `deploy/open.py` gone into it; `<state>/bridges/<world>.json`, and
 prints its commands; genesis and the welcome stay the operator's step); of 4, the Zulip principal with its realm
 (`transport/zulip.py` `principal`) and the hand's `--world` landed. 2 landed (host17, HOST-HANDOFF 5.140):
 scratch worlds, their expiry, `world-cite`, the root act `expire`, and the front's `/AGENTS.md/scratch/<name>/`
