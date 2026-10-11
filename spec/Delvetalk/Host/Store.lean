@@ -23,8 +23,10 @@ def maxObjectIdBytes : Nat := 128
 def spellsPerReply : Nat := 3
 /-- The characters of a card an interpretation shows the model (docs/FLEX.md §2). -/
 def cardShownChars : Nat := 1400
-/-- The characters of hob's answer to a question (`say: <text>`, the verdict `said`). -/
-def sayChars : Nat := 600
+/-- hob's answer to a question (`say: <text>`, the verdict `said`): at most this many sentences and
+    characters, cut at a sentence end. -/
+def saySentences : Nat := 2
+def sayChars : Nat := 300
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
     with every change to what replay derives (judging, a derived field, an index replay checks).

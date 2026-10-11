@@ -3341,20 +3341,24 @@ def inputTypeOf : Ty → Except String (Option Ty)
 def unclearVerdict (needs : List String) : Json :=
   Json.mkObj [("tag", toJson "unclear"), ("needs", toJson needs)]
 
-/-- hob's answer clipped to `Limits.sayChars`: whole, or up to the last sentence end (`.`, `?`, `!`
-    before a space or a line end) inside the bound, else the bound's last word with `…`. -/
-def sayClip (text : String) : String :=
-  let t := text.trimAscii.toString
-  if t.length ≤ Limits.sayChars then t else
-  let cs := (t.take Limits.sayChars).toString.toList.toArray
-  let ends := (List.range cs.size).filter fun i =>
-    ['.', '?', '!'].contains cs[i]! && (i + 1 == cs.size || [' ', '\n'].contains cs[i + 1]!)
-  match ends.getLast? with
-  | some i => String.ofList (cs.toList.take (i + 1))
-  | none =>
-    let words := String.ofList (cs.toList.take (Limits.sayChars - 1))
-    let cut := (words.toList.reverse.dropWhile (· != ' ')).reverse
-    (String.ofList (if cut.isEmpty then words.toList else cut)).trimAsciiEnd.toString ++ "…"
+/-- hob's answer: at most `Limits.saySentences` sentences and `Limits.sayChars` characters, cut only at a
+    sentence end (`.`, `?`, `!` before a space or a line end) outside quotes and backticks, so never inside an
+    example; "" when its first sentence alone passes the bound. -/
+def sayClip (text : String) : String := Id.run do
+  let cs := text.trimAscii.toString.toList.toArray
+  let mut quoted := false
+  let mut ends : Array Nat := #[]
+  for i in [0:cs.size] do
+    let c := cs[i]!
+    if c == '"' || c == '`' then quoted := !quoted
+    else if !quoted && ['.', '?', '!'].contains c && (i + 1 == cs.size || [' ', '\n'].contains cs[i + 1]!) then
+      ends := ends.push i
+  -- A last sentence without its full stop still ends the text.
+  if ends.isEmpty || ends.back! + 1 < cs.size then ends := ends.push (cs.size - 1)
+  let fit := (ends.toList.take Limits.saySentences).filter (· < Limits.sayChars)
+  match fit.getLast? with
+  | some i => return String.ofList (cs.toList.take (i + 1))
+  | none => return ""
 
 /-- `said {text}`: hob's answer to a question, when the suspended object's Response carries it. -/
 def saidVerdict (bounds : DataBounds) (responseType : Ty) (text : String) : Json :=
@@ -3423,8 +3427,8 @@ def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (L
     conforms to the method's input type and fits the object's response type) or `unclear` with the
     reason. Any other reply is the model's text: `none`, `card` (`replied {text: "card"}`), `ask:`,
     `say:` (`said {text}`, `saidVerdict`), else it is fitted as a spell against the offered forms
-    (`spellVerdict`), and prose is `said {text}` too. An object whose Response cannot carry it hears
-    `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
+    (`spellVerdict`); prose that is none of these is `none` (silence). An object whose Response cannot
+    carry an answer hears `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
   let some i := interpretationOf w s | throw "not an interpretation"
   let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
@@ -3494,8 +3498,8 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
           let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
           return proposalVerdict w target object targetObj suspended.bounds responseType action argument card
         | some (.error needs) => return (w, unclearVerdict needs)
-        -- Prose with no answer's prefix and no spell is hob answering in words: an answer, not dropped.
-        | none => return (w, saidVerdict suspended.bounds responseType said)
+        -- Prose with no answer's prefix and no spell says nothing to the card: only `say:` is hob's answer.
+        | none => return (w, unclearVerdict ["not addressed"])
       | none => return (w, unclearVerdict ["the reply names no method"])
   let actions := forms.filterMap fun form =>
     match form with
