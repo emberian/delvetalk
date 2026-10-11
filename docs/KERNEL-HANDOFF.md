@@ -6,7 +6,7 @@ State on 2026-10-11 (lane/kernel14 after foundation 3c96c27d: the law grammar as
 
 The kernel is the Objective Bend edition: source text to a checked typed packet, a demand machine with a tick tariff, a checkpoint codec, and the wire and canonical forms. The host (HOST-HANDOFF) calls it through `Turn.lean` and `Package.lean`; JSON exists only at the process boundary.
 
-- Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV2, DemandCollect and the proofs). Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
+- Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV3, DemandCollect and the proofs). Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
 - Binary: `.lake/build/bin/delvetalk-obend` (`lake build`; `make build` also builds the proof-only modules in `PROOF_ONLY`). No `sorry` in `spec/`.
 - One dialect (§21): an activity is `Activity<A>` = `computation Message Data A`; its only yields are world calls `world.X(arg)` / `world.X::<T>(arg)` against `world/lib/World.obend`'s `protocol world` (§17), each resumed at its site's type. Surface `perform` and `Activity<P, R, A>` are refused by name.
 - The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`; a hand-written one beside blocks is not yet refused (§9).
@@ -43,7 +43,7 @@ Pipeline for `compile`: source -> (document templates, text) -> `ObjectiveBendPa
 | Typing | `Theory/ObjectiveBendTyping.lean` | `PartialTyping`, `infer`, `check`, `decodePacket`, `decodeTerm` (`termNestingCapacity` 4096), `Assumptions {bounds, shareableVariables, rigid}`. The `decide`d rule examples at the end are the regression suite for effect rules. |
 | Machine | `Theory/ObjectiveBendDemandMachine.lean`, `…MachineFast.lean` | `State {heap, control, stack}`, `Cell`, `Frame`, `Control` (incl. `yielded`, `nativeApplication`, `refused`), `stepRaw`, `runBounded`, `resume`. `Fast` is a proved-equal faster stepper. |
 | Data, tariff | `Theory/ObjectiveBendDemandData.lean` | `textStepCost`, `forceHostedFrom` (tick + byte admission before each step), `materializeWith`, `executeStateWith`, `yieldedPlanWith`, `Data.conformsFuel/conformsUnder/size`. `Data` is in `ObjectiveBendFiniteData.lean`. |
-| Checkpoint | `Theory/ObjectiveBendCheckpoint.lean` (v1), `…CheckpointV2.lean`, `…DemandCollect.lean` | See section 7. |
+| Checkpoint | `Theory/ObjectiveBendCheckpoint.lean` (the token codec), `…CheckpointV3.lean` (the written edition), `…DemandCollect.lean` | See section 7. |
 | Laws | `Compiler/ObjectiveBendLaw.lean`, `Delvetalk/Host/Law.lean` | `law NAME: EXPR` over declared state; the pure profile refuses laws ("host law adapter"). |
 | Typed data/schema | `Delvetalk/PackageData*.lean` | `run-data-v1`, compact codec, schema certificates. Depth is `Bounds.dataWireDepth`. |
 | Package, session | `Delvetalk/Package.lean`, `PackageSession.lean`, `spec/PackageMain.lean` | JSON-lines driver; section 2. |
@@ -57,7 +57,7 @@ Proof obligations by change:
 - Schema/compact codec: `PackageDataSchemaProofs.lean`. Native cells: `ObjectiveBendNativeDataSimulation.lean`, `ObjectiveBendFiniteDataTyping.lean`.
 
 Proved:
-- `plainV2_roundTrip` and `stateV3_roundTrip` for every dictionary and state (the v1 and v2 state codecs and their round trips are deleted, §21); the token codec round trips of terms, values, data, frames and controls (`ObjectiveBendCheckpointRoundTrip`); `refusal_roundTrip`; `encodeTerm_injective`.
+- `plainV3_roundTrip` and `stateV3_roundTrip` for every dictionary and state (the v1 and v2 state codecs and their round trips are deleted, §21); the token codec round trips of terms, values, data, frames and controls (`ObjectiveBendCheckpointRoundTrip`); `refusal_roundTrip`; `encodeTerm_injective`.
 - `settle_resume_segment` and the agreement lemmas on the hosted runner (`agree_forceHostedFrom`, `agree_materializeWith`, `agree_yieldedPlanWith`, `agree_completeWith`). `typed_settle` is not ported (no state-typing judgment).
 - Collector (`DemandCollectProofs`): `related_collect`, `related_stepRaw`, `related_forceHostedFrom` (exact under `ExactRoom`, which `limitsPast` gives), `checkpoint_resume_segment`: resuming `checkpoint s = collect (settle s)` decides the same verdict, spends the same ticks and extracts the same Plan/result Data as resuming `s`.
 - `conformsUnder_iff : d.conformsUnder bounds ty = true ↔ HasType bounds d ty` (`ObjectiveBendDataConformance.lean`); fuel is never a false negative.
@@ -148,7 +148,7 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 ## 7. Checkpoints
 
 - Tokens: `.nat n | .text s | .str i`, JSON bare (`3`, `"x"`, `-(i+1)`). Term tags 24 (`toData`), 25 (`textJoin`), 26 (`refuse`, `[26, text]`); join frames 14-17; a refusal is `encodeRefusal` (`[8, text]` for `program`). Only additions: a checkpoint using a new tag does not decode on an older binary.
-- Edition v3 (`ObjectiveBendCheckpointV2.lean`, `…checkpoint.v3`, §14): the dictionary encoding below of the state with every address relative to its holder. Written against a `Dictionary` rebuilt from the entry's term (`Dictionary.ofProgram entry.source.term`): a term is one token `i+1` for the program's `i`th subterm in preorder, environments of two or more addresses are a table listed once, strings are `Token.str` references. Every reference is emitted only after a check that it names exactly the value, so `stateV3_roundTrip` holds for every dictionary. `Dictionary.ofProgram` runs per start/resume.
+- Edition v3 (`ObjectiveBendCheckpointV3.lean`, `…checkpoint.v3`, §14): the dictionary encoding below of the state with every address relative to its holder. Written against a `Dictionary` rebuilt from the entry's term (`Dictionary.ofProgram entry.source.term`): a term is one token `i+1` for the program's `i`th subterm in preorder, environments of two or more addresses are a table listed once, strings are `Token.str` references. Every reference is emitted only after a check that it names exactly the value, so `stateV3_roundTrip` holds for every dictionary. `Dictionary.ofProgram` runs per start/resume.
 - Collector: `collect` numbers live cells by `canonicalOrder` (depth first from the roots; a list spine put off to the next round), so a reading that walks further does not renumber every later cell. `orderValid` checks the order; otherwise `collectByAddress` (the allocation-order collector) is used.
 - Host side: `resumeOne` rebuilds the `Checkpoint` from journaled tokens plus the activity's object/principal/intent/roots; changing `Checkpoint` fields stops older journals resuming. Block encoding of tokens is the host's (HOST-HANDOFF 5.6); v2 strings are bare or `str` references, so an utterance is no longer cut into its own leaf.
 - Measured at the kernel lane (Garden prose suspension, `tests.test_policy` scenario): v1 248,006 bytes, v2 6,984 bytes.
@@ -229,7 +229,7 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
   state) is written absolute from everywhere, data near its holder relative, so a region
   that moved as a whole encodes the same. Proofs: `ofRelative_toRelative`,
   `mapValue/Cell/Frame/Control_inverse`, `absolute_relative`, `stateV3_roundTrip`
-  (`ObjectiveBendCheckpointV2RoundTrip.lean`); v2 decoded beside it until day 4 (§21). Measured then:
+  (`ObjectiveBendCheckpointV3RoundTrip.lean`); v2 decoded beside it until day 4 (§21). Measured then:
   `tests.test_suspension_size` nine speakers median 11,440 -> 10,223 bytes, edit runs
   between consecutive checkpoints 21-107 -> 15-22; one speaker 7,101 -> 8,161 (the
   same 4-6 edits; checkpoints are 8% more tokens, so its fresh blocks are larger). The
@@ -402,7 +402,7 @@ onto them (objects lane).
 refusal code 9), `objectCell`/`allocateObjectFields`/`forceStored` (Machine); `storedChildren`,
 `forceStored_size` (Fast); `Fetch`, `fetchable`, `fetchStep`, `fetchCost`, `fetchable_spec`,
 `storedInitial`, `forcedRows`, `spineReach` and the fetch branch of `forceHostedFrom` (Data);
-`encodeStored`/`decodeStored`, `stored_roundTrip`, v3 cell tag 5 (`cellV2_roundTrip`); collector,
+`encodeStored`/`decodeStored`, `stored_roundTrip`, v3 cell tag 5 (`cellV3_roundTrip`); collector,
 trim and erase cases; `erase_forceStored`, `fetchable_agree`, `agree_fetchStep`,
 `forceStored_related`, `related_fetchable`, `related_fetchStep`; `agree_*`, `related_*`, the three
 `*_resume_segment` theorems and `checkpoint_resume_segment` take `{fetch}`. `yieldedPlan` and

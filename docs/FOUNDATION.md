@@ -57,7 +57,7 @@ Proved, and relied on:
 | Fact | Where |
 | --- | --- |
 | a yield is quiescent; resume preserves typing | from Mini |
-| `stateV3_roundTrip`: the checkpoint codec (v3, addresses relative to their holder) for every dictionary and state | `Theory/ObjectiveBendCheckpointV2RoundTrip.lean` |
+| `stateV3_roundTrip`: the checkpoint codec (v3, addresses relative to their holder) for every dictionary and state | `Theory/ObjectiveBendCheckpointV3RoundTrip.lean` |
 | `settle_resume_segment`, `trim_resume_segment` on the runner a turn uses | `Theory/ObjectiveBendDemandSettleProofs.lean` |
 | `checkpoint_resume_segment`: resuming `collect (trim (collect (settle s)))` gives the verdict, ticks and Data of resuming `s` | `Theory/ObjectiveBendDemandCollectProofs.lean` |
 | `conformsUnder_iff`: the runtime data check agrees with a declarative typing | `Theory/ObjectiveBendDataConformance.lean` |

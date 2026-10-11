@@ -9,8 +9,8 @@ import Theory.ObjectiveBendDemandData
 import Theory.ObjectiveBendFiniteDataTyping
 import Theory.ObjectiveBendCheckpoint
 import Theory.ObjectiveBendCheckpointRoundTrip
-import Theory.ObjectiveBendCheckpointV2
-import Theory.ObjectiveBendCheckpointV2RoundTrip
+import Theory.ObjectiveBendCheckpointV3
+import Theory.ObjectiveBendCheckpointV3RoundTrip
 import Theory.ObjectiveBendDemandCollect
 import Theory.ObjectiveBendDemandSettleProofs
 import Theory.ObjectiveBendDemandCollectProofs

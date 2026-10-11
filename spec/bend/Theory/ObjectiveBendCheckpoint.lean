@@ -6,7 +6,7 @@ core; it is the persistence half of an activity (Faré C20). It carries no
 authority, generation or custody: those belong to the kernel's activity record,
 which holds this checkpoint as one artifact. This module is the token codec of terms,
 values, data, frames and controls; the checkpoint format built on it is
-`ObjectiveBendCheckpointV2` (edition v3), whose round trip `stateV3_roundTrip` needs the
+`ObjectiveBendCheckpointV3` (edition v3), whose round trip `stateV3_roundTrip` needs the
 round trips of Theory.ObjectiveBendCheckpointRoundTrip. A new constructor here needs its
 case there, or the build fails. -/
 import Theory.ObjectiveBendDemandMachine
@@ -19,7 +19,7 @@ set_option autoImplicit false
 inductive Token where
   | nat (value : Nat)
   | text (value : String)
-  /-- A string by its index in a checkpoint's string table (`ObjectiveBendCheckpointV2`). -/
+  /-- A string by its index in a checkpoint's string table (`ObjectiveBendCheckpointV3`). -/
   | str (index : Nat)
   deriving Repr, BEq, DecidableEq
 

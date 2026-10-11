@@ -1,24 +1,26 @@
-/- Checkpoint codec, edition v2: a checkpoint that references its program.
+/- Checkpoint codec, edition v3: a checkpoint that references its program, every address
+relative to its holder.
 
 A suspended activity's heap is mostly closures over the program's own terms, identical in
 every checkpoint of the package (a Garden prose suspension was 20,338 tokens, 17,549 of them
-program terms). v2 encodes the same machine `State` against a `Dictionary` the decoder
+program terms). A checkpoint encodes the machine `State` against a `Dictionary` the decoder
 rebuilds from the program alone (the packet's term, which the host holds by pin):
 
 - a term is one token, `nat (i+1)` for the program's `i`th subterm (preorder), or `nat 0`
-  followed by the v1 term encoding when it is not one (an argument's or a response's
-  literal);
+  followed by the inline term encoding (`ObjectiveBendCheckpoint.encodeTerm`) when it is not
+  one (an argument's or a response's literal);
 - an environment is one token, `nat (i+1)` for the checkpoint's `i`th distinct
   environment, listed once in a header;
 - a string is `str i` for the dictionary's `i`th string (the program's strings, then the
   checkpoint's own, listed once after the edition): `internStrings` is a renaming of
-  tokens that `resolveStrings` inverts whatever the tokens.
+  tokens that `resolveStrings` inverts whatever the tokens;
+- before encoding, every address is written relative to its holder (`relativeState`, below),
+  so a region of the heap that moved as a whole encodes identically.
 
 Every reference is emitted only after checking that it names exactly the value (the hints
 that find candidates are unverified accelerators), so the round trip
-(`ObjectiveBendCheckpointV2RoundTrip.plainV2_roundTrip`, then `stateV3_roundTrip`) holds for
-every dictionary and every state. The written edition is v3 (below): this encoding of the
-state with every address relative to its holder; the v1 and v2 editions no longer decode. -/
+(`ObjectiveBendCheckpointV3RoundTrip.plainV3_roundTrip`, then `stateV3_roundTrip`) holds for
+every dictionary and every state. Earlier editions do not decode. -/
 import Theory.ObjectiveBendCheckpoint
 import Std.Data.HashMap
 namespace Minidregg.Theory.ObjectiveBendCheckpoint
@@ -71,7 +73,7 @@ def fieldsHash : List (String × Term) → UInt64
   | (n, t) :: rest => mix (mix (hash n) (termHash t)) (fieldsHash rest)
 end
 
-/-- What a v2 checkpoint is encoded against: the program's subterms in preorder and its
+/-- What a checkpoint is encoded against: the program's subterms in preorder and its
 strings in order of first appearance, with lookup hints for the encoder. The decoder uses
 only `terms` and `strings`. -/
 structure Dictionary where
@@ -186,8 +188,8 @@ def decodeSteps : Nat → Nat → Tokens → Option (List Address × Tokens)
       pure (a :: others, rest)
   | _, _ + 1, _ => none
 
-def encodeAddressesV2 (addresses : List Address) : Tokens := .nat addresses.length :: encodeSteps 0 addresses
-def decodeAddressesV2 : Tokens → Option (List Address × Tokens)
+def encodeAddressesV3 (addresses : List Address) : Tokens := .nat addresses.length :: encodeSteps 0 addresses
+def decodeAddressesV3 : Tokens → Option (List Address × Tokens)
   | .nat count :: rest => decodeSteps 0 count rest
   | _ => none
 
@@ -210,11 +212,11 @@ def decodeNamesRef (lists : Array (List String)) : Tokens → Option (List Strin
 /-- An environment as one reference into the checkpoint's environment table, else inline. -/
 def encodeEnvRef (envs : Array Environment) (find : Environment → Option Nat) (e : Environment) : Tokens :=
   match find e with
-  | some i => if envs[i]? == some e then [.nat (i + 1)] else .nat 0 :: encodeAddressesV2 e
-  | none => .nat 0 :: encodeAddressesV2 e
+  | some i => if envs[i]? == some e then [.nat (i + 1)] else .nat 0 :: encodeAddressesV3 e
+  | none => .nat 0 :: encodeAddressesV3 e
 
 def decodeEnvRef (envs : Array Environment) : Tokens → Option (Environment × Tokens)
-  | .nat 0 :: rest => decodeAddressesV2 rest
+  | .nat 0 :: rest => decodeAddressesV3 rest
   | .nat (i + 1) :: rest => (envs[i]?).map (·, rest)
   | _ => none
 
@@ -233,141 +235,141 @@ structure Refs where
 section
 variable (r : Refs)
 
-def encodeFieldsV2 : List (String × Term) → Tokens
+def encodeFieldsV3 : List (String × Term) → Tokens
   | [] => [.nat 0]
-  | (name, body) :: rest => .nat 1 :: .text name :: (encodeTermRef r.terms r.findTerm body ++ encodeFieldsV2 rest)
+  | (name, body) :: rest => .nat 1 :: .text name :: (encodeTermRef r.terms r.findTerm body ++ encodeFieldsV3 rest)
 
-def encodeClosureV2 (c : Closure) : Tokens :=
+def encodeClosureV3 (c : Closure) : Tokens :=
   encodeTermRef r.terms r.findTerm c.term ++ encodeEnvRef r.envs r.findEnv c.environment
 
-def encodeValueV2 : RuntimeValue → Tokens
-  | .closure body environment => .nat 0 :: encodeClosureV2 r ⟨body, environment⟩
+def encodeValueV3 : RuntimeValue → Tokens
+  | .closure body environment => .nat 0 :: encodeClosureV3 r ⟨body, environment⟩
   | .record fields => .nat 4 :: (encodeNamesRef r.nameLists r.findNames (fields.map (·.1)) ++
-      encodeAddressesV2 (fields.map (·.2)))
+      encodeAddressesV3 (fields.map (·.2)))
   | other => encodeValue other
 
-def encodeCellV2 : Cell → Tokens
-  | .suspended origin => .nat 0 :: encodeClosureV2 r origin
-  | .evaluating origin => .nat 1 :: encodeClosureV2 r origin
-  | .cached origin value => .nat 2 :: (encodeClosureV2 r origin ++ encodeValueV2 r value)
+def encodeCellV3 : Cell → Tokens
+  | .suspended origin => .nat 0 :: encodeClosureV3 r origin
+  | .evaluating origin => .nat 1 :: encodeClosureV3 r origin
+  | .cached origin value => .nat 2 :: (encodeClosureV3 r origin ++ encodeValueV3 r value)
   | .native origin => .nat 3 :: encodeData origin
-  | .nativeCached origin value => .nat 4 :: (encodeData origin ++ encodeValueV2 r value)
+  | .nativeCached origin value => .nat 4 :: (encodeData origin ++ encodeValueV3 r value)
   | .stored part none => .nat 5 :: (encodeStored part ++ [.nat 0])
-  | .stored part (some value) => .nat 5 :: (encodeStored part ++ .nat 1 :: encodeValueV2 r value)
+  | .stored part (some value) => .nat 5 :: (encodeStored part ++ .nat 1 :: encodeValueV3 r value)
 
-def encodeFrameV2 : Frame → Tokens
-  | .argument term environment => .nat 0 :: encodeClosureV2 r ⟨term, environment⟩
-  | .extend fields environment => .nat 6 :: (encodeFieldsV2 r fields ++ encodeEnvRef r.envs r.findEnv environment)
+def encodeFrameV3 : Frame → Tokens
+  | .argument term environment => .nat 0 :: encodeClosureV3 r ⟨term, environment⟩
+  | .extend fields environment => .nat 6 :: (encodeFieldsV3 r fields ++ encodeEnvRef r.envs r.findEnv environment)
   | .condition zero successorBody environment =>
-      .nat 7 :: (encodeTermRef r.terms r.findTerm zero ++ encodeClosureV2 r ⟨successorBody, environment⟩)
+      .nat 7 :: (encodeTermRef r.terms r.findTerm zero ++ encodeClosureV3 r ⟨successorBody, environment⟩)
   | .binaryLeft primitive right environment =>
-      .nat 8 :: .nat (primitiveCode primitive) :: encodeClosureV2 r ⟨right, environment⟩
-  | .binaryRight primitive left => .nat 9 :: .nat (primitiveCode primitive) :: encodeValueV2 r left
-  | .case arms environment => .nat 10 :: (encodeFieldsV2 r arms ++ encodeEnvRef r.envs r.findEnv environment)
+      .nat 8 :: .nat (primitiveCode primitive) :: encodeClosureV3 r ⟨right, environment⟩
+  | .binaryRight primitive left => .nat 9 :: .nat (primitiveCode primitive) :: encodeValueV3 r left
+  | .case arms environment => .nat 10 :: (encodeFieldsV3 r arms ++ encodeEnvRef r.envs r.findEnv environment)
   | .ifBool whenTrue whenFalse environment =>
-      .nat 11 :: (encodeTermRef r.terms r.findTerm whenTrue ++ encodeClosureV2 r ⟨whenFalse, environment⟩)
-  | .joinSeparator list environment => .nat 14 :: encodeClosureV2 r ⟨list, environment⟩
+      .nat 11 :: (encodeTermRef r.terms r.findTerm whenTrue ++ encodeClosureV3 r ⟨whenFalse, environment⟩)
+  | .joinSeparator list environment => .nat 14 :: encodeClosureV3 r ⟨list, environment⟩
   | other => encodeFrame other
 
-def encodeControlV2 : Control → Tokens
-  | .evaluate term environment => .nat 0 :: encodeClosureV2 r ⟨term, environment⟩
-  | .returned value => .nat 3 :: encodeValueV2 r value
-  | .complete value => .nat 4 :: encodeValueV2 r value
+def encodeControlV3 : Control → Tokens
+  | .evaluate term environment => .nat 0 :: encodeClosureV3 r ⟨term, environment⟩
+  | .returned value => .nat 3 :: encodeValueV3 r value
+  | .complete value => .nat 4 :: encodeValueV3 r value
   | .nativeApplication function argument remaining =>
       .nat 7 :: (encodeTermRef r.terms r.findTerm function ++ encodeData argument ++ [.nat remaining.length] ++
         remaining.flatMap encodeData)
   | other => encodeControl other
 
-/-- The body of a v2 checkpoint: heap, control, stack. -/
-def encodeBodyV2 (s : State) : Tokens :=
-  [.nat s.heap.size] ++ s.heap.toList.flatMap (encodeCellV2 r) ++ encodeControlV2 r s.control ++
-    [.nat s.stack.length] ++ s.stack.flatMap (encodeFrameV2 r)
+/-- The body of a checkpoint: heap, control, stack. -/
+def encodeBodyV3 (s : State) : Tokens :=
+  [.nat s.heap.size] ++ s.heap.toList.flatMap (encodeCellV3 r) ++ encodeControlV3 r s.control ++
+    [.nat s.stack.length] ++ s.stack.flatMap (encodeFrameV3 r)
 end
 
 section
 variable (terms : Array Term) (envs : Array Environment) (nameLists : Array (List String))
 
-def decodeFieldsV2 (fuel : Nat) : Nat → Tokens → Option (List (String × Term) × Tokens)
+def decodeFieldsV3 (fuel : Nat) : Nat → Tokens → Option (List (String × Term) × Tokens)
   | 0, _ => none
   | _ + 1, .nat 0 :: rest => some ([], rest)
   | n + 1, .nat 1 :: .text name :: rest => do
       let (body, rest) ← decodeTermRef terms fuel rest
-      let (others, rest) ← decodeFieldsV2 fuel n rest
+      let (others, rest) ← decodeFieldsV3 fuel n rest
       pure ((name, body) :: others, rest)
   | _ + 1, _ => none
 
-def decodeClosureV2 (fuel : Nat) (tokens : Tokens) : Option (Closure × Tokens) := do
+def decodeClosureV3 (fuel : Nat) (tokens : Tokens) : Option (Closure × Tokens) := do
   let (term, rest) ← decodeTermRef terms fuel tokens
   let (environment, rest) ← decodeEnvRef envs rest
   pure (⟨term, environment⟩, rest)
 
-def decodeValueV2 (fuel : Nat) : Tokens → Option (RuntimeValue × Tokens)
+def decodeValueV3 (fuel : Nat) : Tokens → Option (RuntimeValue × Tokens)
   | .nat 0 :: rest => do
-      let (c, rest) ← decodeClosureV2 terms envs fuel rest; pure (.closure c.term c.environment, rest)
+      let (c, rest) ← decodeClosureV3 terms envs fuel rest; pure (.closure c.term c.environment, rest)
   | .nat 4 :: rest => do
       let (names, rest) ← decodeNamesRef nameLists rest
-      let (addresses, rest) ← decodeAddressesV2 rest
+      let (addresses, rest) ← decodeAddressesV3 rest
       if names.length == addresses.length then pure (.record (names.zip addresses), rest) else none
   | tokens => decodeValue fuel tokens
 
-def decodeCellV2 (fuel : Nat) : Tokens → Option (Cell × Tokens)
-  | .nat 0 :: rest => do let (origin, rest) ← decodeClosureV2 terms envs fuel rest; pure (.suspended origin, rest)
-  | .nat 1 :: rest => do let (origin, rest) ← decodeClosureV2 terms envs fuel rest; pure (.evaluating origin, rest)
+def decodeCellV3 (fuel : Nat) : Tokens → Option (Cell × Tokens)
+  | .nat 0 :: rest => do let (origin, rest) ← decodeClosureV3 terms envs fuel rest; pure (.suspended origin, rest)
+  | .nat 1 :: rest => do let (origin, rest) ← decodeClosureV3 terms envs fuel rest; pure (.evaluating origin, rest)
   | .nat 2 :: rest => do
-      let (origin, rest) ← decodeClosureV2 terms envs fuel rest
-      let (value, rest) ← decodeValueV2 terms envs nameLists fuel rest
+      let (origin, rest) ← decodeClosureV3 terms envs fuel rest
+      let (value, rest) ← decodeValueV3 terms envs nameLists fuel rest
       pure (.cached origin value, rest)
   | .nat 3 :: rest => do let (origin, rest) ← decodeData fuel rest; pure (.native origin, rest)
   | .nat 4 :: rest => do
       let (origin, rest) ← decodeData fuel rest
-      let (value, rest) ← decodeValueV2 terms envs nameLists fuel rest
+      let (value, rest) ← decodeValueV3 terms envs nameLists fuel rest
       pure (.nativeCached origin value, rest)
   | .nat 5 :: rest => do
       let (part, rest) ← decodeStored fuel rest
       match rest with
       | .nat 0 :: rest => pure (.stored part none, rest)
       | .nat 1 :: rest => do
-        let (value, rest) ← decodeValueV2 terms envs nameLists fuel rest
+        let (value, rest) ← decodeValueV3 terms envs nameLists fuel rest
         pure (.stored part (some value), rest)
       | _ => none
   | _ => none
 
-def decodeFrameV2 (fuel : Nat) : Tokens → Option (Frame × Tokens)
+def decodeFrameV3 (fuel : Nat) : Tokens → Option (Frame × Tokens)
   | .nat 0 :: rest => do
-      let (c, rest) ← decodeClosureV2 terms envs fuel rest; pure (.argument c.term c.environment, rest)
+      let (c, rest) ← decodeClosureV3 terms envs fuel rest; pure (.argument c.term c.environment, rest)
   | .nat 6 :: rest => do
-      let (fields, rest) ← decodeFieldsV2 terms fuel fuel rest
+      let (fields, rest) ← decodeFieldsV3 terms fuel fuel rest
       let (environment, rest) ← decodeEnvRef envs rest
       pure (.extend fields environment, rest)
   | .nat 7 :: rest => do
       let (zero, rest) ← decodeTermRef terms fuel rest
-      let (c, rest) ← decodeClosureV2 terms envs fuel rest
+      let (c, rest) ← decodeClosureV3 terms envs fuel rest
       pure (.condition zero c.term c.environment, rest)
   | .nat 8 :: .nat code :: rest => do
       let primitive ← primitiveOf code
-      let (c, rest) ← decodeClosureV2 terms envs fuel rest
+      let (c, rest) ← decodeClosureV3 terms envs fuel rest
       pure (.binaryLeft primitive c.term c.environment, rest)
   | .nat 9 :: .nat code :: rest => do
       let primitive ← primitiveOf code
-      let (left, rest) ← decodeValueV2 terms envs nameLists fuel rest
+      let (left, rest) ← decodeValueV3 terms envs nameLists fuel rest
       pure (.binaryRight primitive left, rest)
   | .nat 10 :: rest => do
-      let (arms, rest) ← decodeFieldsV2 terms fuel fuel rest
+      let (arms, rest) ← decodeFieldsV3 terms fuel fuel rest
       let (environment, rest) ← decodeEnvRef envs rest
       pure (.case arms environment, rest)
   | .nat 11 :: rest => do
       let (whenTrue, rest) ← decodeTermRef terms fuel rest
-      let (c, rest) ← decodeClosureV2 terms envs fuel rest
+      let (c, rest) ← decodeClosureV3 terms envs fuel rest
       pure (.ifBool whenTrue c.term c.environment, rest)
   | .nat 14 :: rest => do
-      let (c, rest) ← decodeClosureV2 terms envs fuel rest; pure (.joinSeparator c.term c.environment, rest)
+      let (c, rest) ← decodeClosureV3 terms envs fuel rest; pure (.joinSeparator c.term c.environment, rest)
   | tokens => decodeFrame fuel tokens
 
-def decodeControlV2 (fuel : Nat) : Tokens → Option (Control × Tokens)
+def decodeControlV3 (fuel : Nat) : Tokens → Option (Control × Tokens)
   | .nat 0 :: rest => do
-      let (c, rest) ← decodeClosureV2 terms envs fuel rest; pure (.evaluate c.term c.environment, rest)
-  | .nat 3 :: rest => do let (value, rest) ← decodeValueV2 terms envs nameLists fuel rest; pure (.returned value, rest)
-  | .nat 4 :: rest => do let (value, rest) ← decodeValueV2 terms envs nameLists fuel rest; pure (.complete value, rest)
+      let (c, rest) ← decodeClosureV3 terms envs fuel rest; pure (.evaluate c.term c.environment, rest)
+  | .nat 3 :: rest => do let (value, rest) ← decodeValueV3 terms envs nameLists fuel rest; pure (.returned value, rest)
+  | .nat 4 :: rest => do let (value, rest) ← decodeValueV3 terms envs nameLists fuel rest; pure (.complete value, rest)
   | .nat 7 :: rest => do
       let (function, rest) ← decodeTermRef terms fuel rest; let (argument, rest) ← decodeData fuel rest
       match rest with
@@ -377,13 +379,13 @@ def decodeControlV2 (fuel : Nat) : Tokens → Option (Control × Tokens)
       | _ => none
   | tokens => decodeControl fuel tokens
 
-def decodeBodyV2 (fuel : Nat) : Tokens → Option State
+def decodeBodyV3 (fuel : Nat) : Tokens → Option State
   | .nat cells :: rest => do
-    let (heap, rest) ← decodeMany (decodeCellV2 terms envs nameLists fuel) cells rest
-    let (control, rest) ← decodeControlV2 terms envs nameLists fuel rest
+    let (heap, rest) ← decodeMany (decodeCellV3 terms envs nameLists fuel) cells rest
+    let (control, rest) ← decodeControlV3 terms envs nameLists fuel rest
     match rest with
     | .nat frames :: rest =>
-      let (stack, rest) ← decodeMany (decodeFrameV2 terms envs nameLists fuel) frames rest
+      let (stack, rest) ← decodeMany (decodeFrameV3 terms envs nameLists fuel) frames rest
       if rest.isEmpty then some ⟨heap.toArray, control, stack⟩ else none
     | _ => none
   | _ => none
@@ -440,12 +442,12 @@ def envTable (s : State) : Array Environment × Std.HashMap Environment Nat :=
 
 /-! ## The checkpoint -/
 
-/-- The tokens a v2 checkpoint holds before its strings are interned: the environment table
+/-- The tokens a checkpoint holds before its strings are interned: the environment table
 and the body. -/
-def encodePlainV2 (d : Dictionary) (s : State) : Tokens :=
+def encodePlainV3 (d : Dictionary) (s : State) : Tokens :=
   let (envs, envIndex) := envTable s
   let refs : Refs := ⟨d.terms, d.findTerm, envs, fun e => envIndex[e]?, d.nameLists, fun n => d.nameHint[n]?⟩
-  .nat envs.size :: envs.toList.flatMap encodeAddressesV2 ++ encodeBodyV2 refs s
+  .nat envs.size :: envs.toList.flatMap encodeAddressesV3 ++ encodeBodyV3 refs s
 
 /-- The strings of `plain` the dictionary does not hold, first appearance first. -/
 def localStrings (d : Dictionary) (plain : Tokens) : Array String :=
@@ -464,11 +466,11 @@ def internAll (d : Dictionary) (plain : Tokens) (edition : String) : Tokens :=
   .text edition :: .nat locals.size :: (locals.toList.map .text ++ plain.map (internString table find))
 
 /-- The environment table and the body, decoded. -/
-def decodePlainV2 (terms : Array Term) (nameLists : Array (List String)) (plain : Tokens) : Option State :=
+def decodePlainV3 (terms : Array Term) (nameLists : Array (List String)) (plain : Tokens) : Option State :=
   match plain with
   | .nat envCount :: rest => do
-    let (envs, rest) ← decodeMany decodeAddressesV2 envCount rest
-    decodeBodyV2 terms envs.toArray nameLists (plain.length + 1) rest
+    let (envs, rest) ← decodeMany decodeAddressesV3 envCount rest
+    decodeBodyV3 terms envs.toArray nameLists (plain.length + 1) rest
   | _ => none
 
 /-- A checkpoint's plain tokens: the edition checked, its strings resolved. -/
@@ -483,14 +485,14 @@ def decodeStrings (edition : String) (strings : Array String) (tokens : Tokens) 
     some ((rest.drop count).map (resolveString (strings ++ locals.toArray)))
   | _ => none
 
-/-! ## v3: addresses relative to their holders
+/-! ## Addresses relative to their holders
 
 A checkpoint's cells are numbered by the collector's canonical traversal, so a cell keeps
 its number only until a turn makes the part before it longer; then every later absolute
 address moves, and a journal's blocks stop matching between suspensions. v3 writes every
 address a cell holds relative to that cell's own number, and those the control and stack
 hold relative to the heap's end (`relativeState`, inverted by `absoluteState`), then
-encodes as v2: a region that moved as a whole encodes identically. -/
+encodes as above: a region that moved as a whole encodes identically. -/
 
 def checkpointEditionV3 : String := "dregg.objective-bend.checkpoint.v3"
 
@@ -558,12 +560,12 @@ def absoluteState (s : State) : State := mapStateAddresses ofRelative s
 
 /-- A v3 checkpoint. -/
 def encodeStateV3 (d : Dictionary) (s : State) : Tokens :=
-  internAll d (encodePlainV2 d (relativeState s)) checkpointEditionV3
+  internAll d (encodePlainV3 d (relativeState s)) checkpointEditionV3
 
 /-- Decode a v3 checkpoint. -/
 def decodeStateV3 (terms : Array Term) (strings : Array String) (nameLists : Array (List String))
     (tokens : Tokens) : Option State :=
-  ((decodeStrings checkpointEditionV3 strings tokens).bind (decodePlainV2 terms nameLists)).map absoluteState
+  ((decodeStrings checkpointEditionV3 strings tokens).bind (decodePlainV3 terms nameLists)).map absoluteState
 
 /-- Decode a checkpoint against the program's dictionary: edition v3 only. -/
 def decodeCheckpoint (d : Dictionary) (tokens : Tokens) : Option State :=

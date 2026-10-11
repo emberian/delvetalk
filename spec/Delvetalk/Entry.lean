@@ -2,7 +2,7 @@
 packet JSON. Running it applies checked arguments to the checked entry
 (`Checked.apply`) and never decodes or re-checks the packet. -/
 import Theory.ObjectiveBendTyping
-import Theory.ObjectiveBendCheckpointV2
+import Theory.ObjectiveBendCheckpointV3
 import Delvetalk.Canonical
 import Delvetalk.Limits
 

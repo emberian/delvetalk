@@ -3,7 +3,7 @@
    writer. Nothing here depends on an evaluator. -/
 import Delvetalk.Package
 import Delvetalk.Entry
-import Theory.ObjectiveBendCheckpointV2
+import Theory.ObjectiveBendCheckpointV3
 import Std.Data.HashMap
 
 namespace Delvetalk.Host
