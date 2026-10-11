@@ -3,6 +3,7 @@ import Delvetalk.Host.Ops
 import Delvetalk.Host.TurnLoop
 import Delvetalk.Host.Snapshot
 import Delvetalk.Host.Root
+import Delvetalk.Host.Enchant
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -441,6 +442,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-publications" => return (session, publicationsOp s.world request)
       | "world-objects" => return (session, objectsOp s.world request)
       | "world-offers" => return (session, offersOp s.world request)
+      | "world-strokes" => return (session, Enchant.strokesOp s.world request)
       | "world-card" => match cardOp s.world request with
         | .ok (w, r) => return (some { s with world := w }, .ok r)
         | .error e => return (session, .error e)
