@@ -289,7 +289,6 @@ def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activ
       let written(_) = world.write(extend(keep(), {planted: Plans.Edit.set({value: textConcat(colourText(p.argument.colour), textConcat(":", p.argument.seed))})}))
       "proposal"
     case unclear(u): textConcat("unclear", joined(u.needs))
-    case replied(r): textConcat("replied|", r.text)
     case _: "other"
 """).replace("import ./World.obend as World", "import ./Form.obend as Form\nimport ./World.obend as World")
 
@@ -353,7 +352,7 @@ class Misfits(Reflection):
 class Interpreted(Reflection):
     """The model's text fitted as a spell against the offered forms (WHOLENESS §2, "Interpretation"):
     a fitting spell is the form's proposal, a misfit or a spell missing fields is `unclear` naming why,
-    a bare field line naming an offered field is that form's spell, and prose is `replied`."""
+    a bare field line naming an offered field is that form's spell, and prose with no spell is `unclear: not addressed`."""
 
     def setUp(self):
         super().setUp()

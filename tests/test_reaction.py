@@ -150,26 +150,25 @@ class Record(Reaction):
 
 class Tide(Reaction):
     def advance(self, clock):
+        """Move the clock; the tide's own `awaitUntil` wakes and it ticks (once, however far the clock moved)."""
         reply = self.town.send(op="world-advance", principal="transport", height=clock)
         self.assertEqual(reply["status"], "advanced", reply)
+        self.town.send(op="world-deliver", principal="transport", limit=64)
 
     def test_the_tide_writes_the_weather_only_while_the_garden_was_tended_today(self):
-        """The weather has no `rain` verb (it rains on the garden's bells at each tick, by its own wake), so
-        the effect is a `write` on it; the condition reads the garden through a cited bell: `request.clock <=
-        "<bell>".tended + 1440`. Genesis gives the tide a wake that ticks it every 60 clock units, so moving
-        the clock is what ticks it (and the tide's law wants `gap` 1 between ticks, so a hand's tick right
-        after is refused `tooSoon`). A tick within a day of the bell's tending fires; one after a day
-        nobody tended it does not (`rules` keeps the earlier height, the weather gains no line); a tend and
-        a later tick fire again."""
+        """A rule on the tide reads the garden through a cited bell: `request.clock <= "<bell>".tended + 1440`,
+        and its effect is a `write` on the weather. The tide ticks itself every 60 clock minutes (genesis's
+        first tick starts it), so moving the clock is what ticks it, and a hand's tick is refused `itself`. A
+        tick within a day of the bell's tending fires; one after a day nobody tended it does not (`rules`
+        keeps the earlier height, the weather gains no line); a tend and a later tick fire again."""
         bell = self.plant(GLM)
         self.place(OPENER, "tide", "company / when: request.method == \"tick\" and request.clock <= \"%s\".tended + 1440 / then: delvetalk weather write / text: someone has been in the garden" % bell)
         said = "someone has been in the garden"
         self.advance(100)
         near = self.row("tide", "company")["fired"]
         self.assertIn(said, self.texts("weather"))
-        self.assertIn("tick 1: rain on 1", self.texts("weather"))
         refused = self.say(OPENER, "tide", "delvetalk tide tick")
-        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "tooSoon"), refused)
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "itself"), refused)
         count = self.texts("weather").count(said)
         self.advance(3000)
         self.assertEqual(self.row("tide", "company")["fired"], near)

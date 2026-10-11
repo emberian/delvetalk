@@ -12,6 +12,7 @@ model showing anything but the exact card.
 """
 import json
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -26,6 +27,9 @@ from transport.config import Config
 from transport.state import State
 
 GLM, KIM = 'did:plc:glm', 'did:plc:kim'
+# kind/bell's own rules, which every bell carries by `under` (deploy/genesis.py BELL_TEXT), owned by the kind's owner.
+KIND_RULES = [{'name': name, 'owner': genesis.HANDLE, 'reading': reading}
+              for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.BELL_TEXT, re.M)]
 YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
 
 
@@ -68,7 +72,7 @@ class Strokes(unittest.TestCase):
         self.assertEqual(rain['spell'], 'delvetalk garden/bell/1 rain / text: <text, 1 to 200 characters>')
         self.assertIn('owner', [l['name'] for l in s['laws']])
         self.assertTrue(all(l.get('reading') for l in s['laws']), s['laws'])
-        self.assertEqual((s['rules'], s['wants'], s['today']), ([], [], []))
+        self.assertEqual((s['rules'], s['wants'], s['today']), (KIND_RULES, [], []))
         # A read: nothing is journaled.
         self.assertEqual(self.town.send(op='world-status')['height'], height)
 
@@ -99,7 +103,7 @@ class Strokes(unittest.TestCase):
                      'want / name: third / reading: a third rain / when: count(new.lines) <= 2 / asks: delvetalk {request.object} rain / text: <a rain>'):
             self.say(GLM, bell, 'delvetalk %s %s' % (bell, line), line.split()[3])
         s = self.strokes(bell)['strokes']
-        self.assertEqual(s['rules'], [{'name': 'three', 'owner': 'glm.delve.town', 'reading': 'a third rain is noted'}])
+        self.assertEqual(s['rules'], [{'name': 'three', 'owner': 'glm.delve.town', 'reading': 'a third rain is noted'}] + KIND_RULES)
         self.assertEqual(s['wants'], [{'name': 'third', 'reading': 'a third rain', 'spell': 'delvetalk garden/bell/1 rain / text: <a rain>'}])
         check = lambda text: self.town.send(op='world-render-check', principal=KIM, object=bell, text=text)
         self.assertEqual(check('It wants a third rain.\ndelvetalk garden/bell/1 rain / text: <a rain>')['status'], 'verified')
