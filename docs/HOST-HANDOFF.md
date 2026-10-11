@@ -1532,6 +1532,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`runTurn` dispatches; `runOne` is the single turn.) Tests: `test_spell_turns` (four turns, a misfit standing
    alone, a retry), `test_bridge` (two spells, one draft).
 
+149. **`receive` hears the spell the host read (host18; fungus H1's host half).** When a card's `receive`
+   declares `spell: {card, action}`, the host fills it (`heardArgument`, `castData`): the spell as written when
+   it lacked fields (`castSpell`'s `unclear` arm), else what `Spell.parse` reads in the text, `{card: "",
+   action: ""}` for none; a card that does not declare it is unchanged (the shapes tried are fields, with spell,
+   with misfit, with both). So the objects lane can delete Bend's last spell reader (`world/lib/Spell.obend`
+   `parse`, `Card.spellMissing`, `spellAction`). `withFields` is gone. Note: a derived `String` field is `text
+   0..formTextMax`, so since 5.147 it may be left out; only choices and numbers are "missing". Test:
+   `test_spell_turns` (a missing colour reaches `receive` with `Cast plant`; prose with `" "`).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
