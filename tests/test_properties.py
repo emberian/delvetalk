@@ -32,17 +32,14 @@ import unittest
 from pathlib import Path
 
 from deploy import genesis
-from tests.host import card_texts
+from tests.host import bounds, card_texts
 from tests.town import Town
 from transport import model
 from tests.wire import label, nat, record
 
 ROOT = Path(__file__).resolve().parent.parent
-CLASSES = {"staleRoot", "typeMismatch", "capacity", "absentItem", "lawRefused", "unknownObject", "duplicateIdentity",
-           "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence", "keyTaken", "duplicateKey",
-           "badSpell", "quota", "noMethod"}  # refusalClasses, spec/Delvetalk/Host/Ops.lean
-TRANSIENT = {"staleRoot", "budget", "evaluation", "capacity", "quota"}
-CLIP = 1400  # cardShownChars, spec/Delvetalk/Host/Store.lean
+CLASSES, TRANSIENT = set(bounds()["refusalClasses"]), set(bounds()["transientClasses"])
+CLIP = bounds()["host"]["cardShownChars"]
 EXPLORE = os.environ.get("DELVETALK_SEED")  # an extra RandomHour run of this seed; never set in a committed run
 OPENER = genesis.OPENER
 STRANGERS = {"did:plc:" + c * 24: h for c, h in (("k", "kimik3.delve.town"), ("g", "glm.delve.town"))}

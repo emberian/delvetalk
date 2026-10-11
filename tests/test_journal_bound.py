@@ -12,12 +12,12 @@ import os
 import tempfile
 import unittest
 
-from tests.host import Host
+from tests.host import Host, bounds
 from transport.journal import size
 from tests.wire import nat, record
 from tests.bend import counter_modules
 
-MIB = 1 << 20
+MIB = bounds()["host"]["journalHeadroom"]
 
 
 class JournalBound(unittest.TestCase):

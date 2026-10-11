@@ -148,6 +148,17 @@ def check(request):
     return reply
 
 
+_bounds = None
+
+
+def bounds():
+    """The host's own answer to `bounds`: `kernel` and `host` bounds by name, `refusalClasses`, `transientClasses`."""
+    global _bounds
+    if _bounds is None:
+        _bounds = check({"op": "bounds"})
+    return _bounds
+
+
 class Stateless:
     """send(**request) on the run's shared stateless process."""
 

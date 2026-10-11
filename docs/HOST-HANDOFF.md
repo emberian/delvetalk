@@ -64,6 +64,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
 - `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
+- `bounds` (stateless): `{kernel, host, refusalClasses, transientClasses}`, every `Nat` definition of `Delvetalk.Bounds` (and `Generics.maxInstances`) and of `Limits` by its name (`natsIn%`, Ops), so the front's `limits`, its module checks and the tests read the bounds rather than restate them (`tests/host.py` `bounds()`).
 
 Rules:
 - `turn` is host-assigned on propose, amend and reprogram; a client-sent `turn` is a request error.
@@ -128,7 +129,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | interpret | `maxUtteranceBytes` 8192, `maxOffersBytes` 65536, `maxReplyBytes` 262144 |
 | forms | `formTextMax` 1400, `formNaturalMax` 1000000000 |
 
-A full count refuses the turn with class `capacity`, reason the limit's name.
+A full count refuses the turn with class `capacity`, reason the limit's name. The `bounds` op answers every one of them by name.
 
 ## 5. Subsystems
 

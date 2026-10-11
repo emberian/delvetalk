@@ -350,7 +350,7 @@
   "badModules": {
    "code": 400,
    "status": "error",
-   "when": "`modules` is not a list of at most 16 objects"
+   "when": "`modules` is not a list of at most `limits.modules` objects (the kernel's maxModules)"
   },
   "identity": {
    "code": 400,
@@ -415,7 +415,7 @@
   "moduleTooLarge": {
    "code": 413,
    "status": "error",
-   "when": "a module sent is over 131072 bytes, the kernel's maxPackageBytes, inside the 262144-byte body (the library is not sent)"
+   "when": "a module sent is over `limits.moduleBytes` (the kernel's maxPackageBytes), inside the `limits.bodyBytes` body (the library is not sent)"
   },
   "uriTooLong": {
    "code": 414,

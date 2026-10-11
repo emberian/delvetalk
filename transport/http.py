@@ -25,10 +25,10 @@ from transport.repo import PUBLIC, Repo
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 STATIC = Path(__file__).resolve().parent / 'static'
-MAX_BODY, MAX_SOURCE, MAX_MODULES = 256 * 1024, 128 * 1024, 16  # MAX_SOURCE: the kernel's Limits.maxPackageBytes
+MAX_BODY = 256 * 1024
 OPEN_BODY = 64 * 1024  # what an unauthenticated request (the challenge, verify) may send
 WAIT_MAX, WAIT_STEP = 30, 1  # seconds an offers long poll may hold a request, and how often it re-asks the host
-RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
+RATE, OPEN_RATE, WINDOW = 32, 16, 60
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
@@ -304,6 +304,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         info = host.send({'op': 'serve-status'})
         self.host_sha256, self.host_timeout = info.get('hostSha256', 'unknown'), getattr(host, 'timeout', HOST_TIMEOUT)
         self.library, self.serve_pid = info.get('library'), info.get('pid')  # the pin of the library serve sealed; the REPL compiles against it by name
+        self.bounds = host.send({'op': 'bounds'})  # the kernel's and the host's bounds: the front restates none
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):  # every worker is taken: say so at once rather than queue behind them
@@ -386,11 +387,11 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     def catalogue(self, here):
         """Every route, the error envelope, the error and refusal classes (static/catalogue.json) and the limits, as data."""
         return {'status': 'catalogue', 'origin': self.origin, **API,
-                'limits': {'bodyBytes': MAX_BODY, 'moduleBytes': MAX_SOURCE, 'modules': MAX_MODULES, 'bodyDepth': MAX_DEPTH,
+                'limits': {'bodyBytes': MAX_BODY, 'moduleBytes': self.bounds['kernel']['maxPackageBytes'], 'modules': self.bounds['kernel']['maxModules'], 'bodyDepth': MAX_DEPTH,
                            'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'workers': WORKERS, 'hostSeconds': self.host_timeout,
                            'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
                            'ratePerCredential': [RATE, WINDOW], 'ratePerAddressOnChallengeAndVerify': [OPEN_RATE, WINDOW],
-                           'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'ratePerAddressOnPagesWithoutLogin': [RATE, WINDOW], 'idsPerPage': 64, 'deliverPerCall': DELIVER_LIMIT},
+                           'ratePerAddressOnXrpcWithoutCredential': [RATE, WINDOW], 'ratePerAddressOnPagesWithoutLogin': [RATE, WINDOW], 'idsPerPage': self.bounds['host']['listPage'], 'deliverPerCall': self.bounds['host']['deliveriesPerCall']},
                 '_links': {'self': link(here), 'guide': link(PREFIX), 'examples': link(PREFIX + '/examples'),
                            'challenge': link(PREFIX + '/challenge')}}
 
@@ -717,7 +718,7 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:
             return
         if kind == 'deliver':
-            return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT}, {'pending': link(base + '/pending')})
+            return send({'op': 'world-deliver', 'limit': self.server.bounds['host']['deliveriesPerCall']}, {'pending': link(base + '/pending')})
         if kind == 'create':  # a name no spell can address would publish spells nobody can cast: the host's parser says
             name = data.get('object')
             read = self.server.host.send({'op': 'spell-parse', 'text': f'delvetalk {name} ?'}) if isinstance(name, str) else {}
@@ -826,10 +827,11 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:
             return
         modules = data['modules'] if 'modules' in data else [{'name': 'Package', 'source': data.get('source', '')}]
-        if not isinstance(modules, list) or len(modules) > MAX_MODULES:
+        kernel = self.server.bounds['kernel']
+        if not isinstance(modules, list) or len(modules) > kernel['maxModules']:
             return self.fail('badModules')
         for m in modules:
-            if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > MAX_SOURCE:
+            if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > kernel['maxPackageBytes']:
                 return self.fail('moduleTooLarge' if isinstance(m, dict) else 'badModules', hint='import the library by name (./Plan.obend); it is not sent')
         if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
             checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})

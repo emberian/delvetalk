@@ -19,9 +19,9 @@ from tests.wire import write_journal
 from tests.test_turn_world import TurnWorld
 from tests.wire import label, nat, record
 from tests.bend import closure, declared
+from tests.host import bounds
 
-MAX_DEPTH = 100          # Limits.maxDepth
-SENDS_PER_TURN = 32      # Limits.sendsPerTurn
+MAX_DEPTH, SENDS_PER_TURN = bounds()["host"]["maxDepth"], bounds()["host"]["sendsPerTurn"]
 
 SOURCE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
