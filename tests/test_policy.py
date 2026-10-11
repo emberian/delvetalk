@@ -25,7 +25,7 @@ import ./List.obend as Lists
 import ./Form.obend as Form
 import ./Policy.obend as Policy
 def sample() -> Policy.State:
-  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}
+  {owner: "ember", model: "claude-haiku", system: "You turn words into one spell.", lexicon: Lists.List::<Policy.Term>.cons({head: {word: "moth", meaning: "a seed"}, tail: Lists.List::<Policy.Term>.nil()}), examples: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern", spell: "delvetalk garden-1 plant seed: a fern, colour: silver"}, tail: Lists.List::<Policy.Example>.nil()}), macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}
 # The garden's plant form (world/bodies/garden.obend), written out.
 def plantForm(context: Abi.Context) -> Form.Form:
   {card: context.object, action: "plant", fields: Form.Fields.cons({head: {name: "colour", kind: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "amber"), "violet"), "silver")})}, tail: Form.Fields.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 80n})}, tail: Form.Fields.nil()})})}
@@ -40,7 +40,7 @@ def examples(n: Nat) -> Lists.List<Policy.Example>:
     case 0: Lists.List::<Policy.Example>.nil()
     case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
-  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}, {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", held: "", misfit: ""}))
+  textLength(Policy.prompt({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policy.Term>.nil(), examples: examples(n), macros: Lists.List::<Policy.Macro>.nil(), confirmFor: Lists.List::<String>.nil()}, {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", held: "", misfit: ""}))
 """)
 
 
@@ -67,18 +67,19 @@ HOB_ANSWERS = (
     "- the spell, up to three one after another; every value from their words, never invented, a choice never widened;\n"
     "- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n"
     "- card when they ask something the card already shows (a count, a rule, who is here);\n"
+    "- say: <answer> for a question about what a card is or does: answer in at most three sentences from the card, its forms and the library pages given, then the one spell that would act on it;\n"
     "- none when the words ask nothing of this card: talk among participants, a report, a note.\n")
 SPELL = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
 
 
 class PolicyObject(Chain):
-    def policy(self, name="policy", escalate="", escalate_to=""):
+    def policy(self, name="policy"):
         """world-create with the whole state: a creator cannot import Policy, whose source
         declares a law ("a law belongs to the package's entry module; Policy is imported")."""
         r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
                            modules=closure("Policy"), entry="initial",
                            seed=record(owner=label("ember"), model=label("claude-haiku"), system=label("S"),
-                                       lexicon=nil(), examples=nil(), escalate=label(escalate), escalateTo=label(escalate_to), macros=nil(),
+                                       lexicon=nil(), examples=nil(), macros=nil(),
                                        confirmFor={"tag": "list", "items": [label(a) for a in ("reprogram", "amend", "offer")]}))
         self.assertEqual(r["status"], "created", r)
 
@@ -87,15 +88,14 @@ class PolicyObject(Chain):
 
     def test_teach_define_and_set_model_edit_the_policy_in_order_and_a_stranger_is_offered_no_spell(self):
         self.policy()
-        for utterance, spell in (("a fern", "delvetalk garden-1 plant seed: fern, colour: silver"), ("a moth", "delvetalk garden-1 plant seed: moth, colour: amber")):
+        for utterance, spell in (("a fern", "delvetalk garden-1 plant seed: fern, colour: silver"), ("a moth", "delvetalk garden-1 plant seed: moth, colour: amber"),
+                                ("a long one", "delvetalk garden-1 plant seed: " + "x" * 230 + ", colour: amber")):
             reply = self.turn("policy", "teach", record(utterance=label(utterance), spell=label(spell)), principal="ember")
             self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "taught"), reply)
         reply = self.turn("policy", "define", record(word=label("moth"), meaning=label("a seed")), principal="ember")
         self.assertEqual(reply["status"], "admitted", reply)
-        for spell in ("delvetalk policy set\nmodel: claude-sonnet", "delvetalk policy set\nescalate: claude-opus",
-                      "delvetalk policy set\nescalate-to: did:plc:operator4keeper"):
-            reply = self.turn("policy", "receive", record(text=label(spell), post=label("")), principal="ember")
-            self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
+        reply = self.turn("policy", "receive", record(text=label("delvetalk policy set\nmodel: claude-sonnet"), post=label("")), principal="ember")
+        self.assertEqual((reply["status"], reply["result"]["label"]), ("admitted", "done"), reply)
         card = self.card("policy")
         owners = self.card("policy", "ember")
         for spell in ("teach", "define", "macro"):
@@ -105,7 +105,7 @@ class PolicyObject(Chain):
         self.assertTrue(owners.endswith("\nIts spells: delvetalk policy ?\n") and len(owners) <= 1400 - 132, owners)
         self.assertNotIn("Reply with a spell", card)  # a stranger is offered none of the owner's spells: no usage
         self.assertIn("Model: claude-sonnet", card)
-        self.assertIn("When unsure I escalate to claude-opus.\nWhat a card cannot fit twice goes to …r4keeper.\n", card)
+        self.assertIn("I only propose. A card asks the speaker first before: reprogram, amend, offer.\n", card)
         self.assertIn("- moth: a seed", card)
         self.assertLess(card.index("Said: a fern"), card.index("Said: a moth"))
 
@@ -123,8 +123,6 @@ class PolicyObject(Chain):
                                   roots=[{"object": "policy", "version": 0}],
                                   writes=[{"object": "policy", "edits": [record(
                                       model={"tag": "variant", "label": "set", "payload": record(value=label("evil"))},
-                                      escalate={"tag": "variant", "label": "keep", "payload": record()},
-                                      escalateTo={"tag": "variant", "label": "keep", "payload": record()},
                                       macros={"tag": "variant", "label": "keep", "payload": record()},
                                       confirmFor={"tag": "variant", "label": "keep", "payload": record()},
                                       system={"tag": "variant", "label": "keep", "payload": record()},

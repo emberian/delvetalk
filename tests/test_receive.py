@@ -102,7 +102,7 @@ class Cards(Chain):
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
         names = [f["name"] for f in state["fields"]]
-        self.assertEqual(names[-3:], ["policy", "greeted", "missed"])
+        self.assertEqual(names[-3:], ["missed", "tended", "tendedAt"])
         self.assertEqual(field(state, "cites"), cites)
         self.assertEqual(field(state, "greeted"), relation())
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state

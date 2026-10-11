@@ -16,13 +16,15 @@ import ./Scenes.obend as Scenes
 # `kind/bell` makes a record with the fields colour and seed and grafts this on it. The seventh
 # rain (SEEDING §4) rests on a rain's number, `ring` and `strike`: a watch on `lines` whose row
 # has n 7 calls `ring`; `strike` awaits the answer to the post that planted it and rings if
-# that turn was admitted.
+# that turn was admitted. A rain tends the bell; untended for `quietAfter()` minutes it goes quiet
+# and takes `tend` alone, as kind/bell's law says (`alive`), and its card says since which entry.
 type State = Super.State
 def relations() -> Relations.Decls:
   Super.relationsWith(768n)
 form rain:
   text: text 1..200
 form ring:
+form tend:
 form lines:
   from: natural 1..1000000000
 form door:
@@ -34,9 +36,30 @@ form example:
   label: text 1..32
   spell: text 1..280
   comes: text 0..200
-# A rain is a line on the bell; a write longer than a rain is refused by name.
+# A rain is a line on the bell and tends it; a write longer than a rain is refused by name, and a
+# quiet bell answers by its `alive` clause with the spell that wakes it, writing nothing.
 def write(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
-  if textLength(input.text) > 200n then refuse("A rain is 1 to 200 characters.") else Super.write(state, input, context)
+  if textLength(input.text) > 200n then refuse("A rain is 1 to 200 characters.") else if quiet(state, context) then hushed(context) else rained(state, input, context)
+def rained(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {tended: set context.clock, tendedAt: set context.height}
+  Super.write(extend(state, {tended: context.clock, tendedAt: context.height}), input, context)
+def hushed(context: Abi.Context) -> Activity<Nat>:
+  let id = Card.called(context, "bell")
+  Card.tell(0n, Document.text("refused alive: {aliveReading()}. Tend it:\n  delvetalk {id} tend\n"))
+# How long a bell answers untended, in clock minutes: the window kind/bell's `alive` clause names.
+def quietAfter() -> Nat:
+  1440n
+def aliveReading() -> String:
+  "answers while tended within {natText(quietAfter())} minutes"
+def quiet(state: State, context: Abi.Context) -> Bool:
+  context.clock > state.tended + quietAfter()
+# Since which entry a quiet bell has been untended; 0 while it answers.
+def quietSince(state: State, context: Abi.Context) -> Nat:
+  if quiet(state, context) then state.tendedAt else 0n
+def views() -> Lists.List<String>:
+  Text.words("quietSince")
+def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.tend(state, context)
 def rain(state: State, input: RainInput, context: Abi.Context) -> Activity<Nat>:
   write(state, {text: input.text}, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
@@ -70,7 +93,7 @@ def watchedBy(maker: String, context: Abi.Context) -> Activity<Bool>:
 def methods() -> Lists.List<String>:
   Text.words("strike write")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("rain ring strike lines door undoor example") else Text.words("rain ring strike lines")
+  if context.principal == state.owner then Text.words("rain tend ring strike lines door undoor example") else Text.words("rain tend ring strike lines")
 def blurb() -> Card.Door:
   {word: "bell", blurb: "A bell: rain on it; the seventh rain rings it."}
 # A rain on the card: who, and what (the record's number is the order, not shown).
@@ -79,6 +102,7 @@ def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Docum
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let colour = Super.field(state, "colour")
   let article = if colour == "amber" then "An" else "A"
-  let sound = if Super.marked(state, "rung") then "rung" else "silent"
+  let sound = if quiet(state, context) then "quiet, untended since entry {natText(state.tendedAt)}" else if Super.marked(state, "rung") then "rung" else "silent"
   let seed = Super.field(state, "seed")
-  Document.text("{article} {colour} bell, planted by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: “{seed}” — {sound}. Rain on it:\n  delvetalk {id} rain / text: <1 to 200 characters>\n")
+  let next = if quiet(state, context) then "Tend it:\n  delvetalk {id} tend\n" else "Rain on it:\n  delvetalk {id} rain / text: <1 to 200 characters>\n"
+  Document.text("{article} {colour} bell, planted by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: “{seed}” — {sound}. {next}")

@@ -22,7 +22,6 @@ import ./Text.obend as Text
 sum On:
   mention: {actor: String}
   keyword: {term: String}
-  reply: {card: String}
   schedule: {at: Nat, every: Nat}
   writes: {object: String, field: String, above: Nat}
   grows: {object: String, field: String}
@@ -42,10 +41,12 @@ sum Action:
   notify: {}
   observe: {}
   call: {card: String, method: String}
+# seen: the rows a rows trigger has counted toward its next firing (always below its count).
 record Trigger:
   id: Nat
   event: On
   action: Action
+  seen: Nat
 # handle: the owner's, as arrival seeds it, for the card.
 record State:
   owner: String
@@ -121,7 +122,7 @@ def watchedField(object: String, field: String, receiver: String, event: On, act
     case denied(_): refused(Why.unwatched({object: object, field: field, clause: "denied"}))
     case refused(r): refused(Why.unwatched({object: object, field: field, clause: r.clause}))
 def added(event: On, action: Action, state: State) -> Activity<Done>:
-  let written(_) = write {triggers: append {id: state.nextId, event: event, action: action}, nextId: add 1n}
+  let written(_) = write {triggers: append {id: state.nextId, event: event, action: action, seen: 0n}, nextId: add 1n}
   Done.watching({id: state.nextId})
 # What the host delivers after a watched scalar's write: its new value and its old. A trigger
 # on that object and field fires when the value passes `above` (it was at most `above`
@@ -168,9 +169,9 @@ def turnArgument(action: Action, object: String, field: String) -> Data:
     case call(_): Plans.nothing()
     case _: {text: "{object}.{field} turned true"}
 # What the host delivers after a watched relation's write, one receiver per row type: the
-# rows inserted, as columns. A rows trigger on that object and field fires once when at least
-# `atLeast` (at least one) of the rows match every pattern; a call action is sent with
-# nothing, any other the line. Rows the env took in are also events for the event triggers.
+# rows inserted, as columns. A rows trigger on that object and field counts the rows that
+# match every pattern across deliveries and fires when the count reaches `atLeast` (see
+# `tallied`); a call action is sent with nothing, any other the line. Rows the env took in are also events for the event triggers.
 def changedLines(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Line>, retracted: Lists.List<Rows.Line>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.lineColumns), Lists.List.nil(), context, state)
 def changedMarks(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Mark>, retracted: Lists.List<Rows.Mark>}, context: Abi.Context) -> Activity<Done>:
@@ -198,7 +199,20 @@ def ruled(triggers: Lists.List<Trigger>, object: String, field: String, rows: Li
     case nil(_): Done.fired({count: count})
     case cons(c): ruledBy(c.head, c.tail, object, field, rows, matched(c.head.event, object, field, rows), count, state)
 def ruledBy(trigger: Trigger, rest: Lists.List<Trigger>, object: String, field: String, rows: Lists.List<Rows.Columns>, hits: Nat, count: Nat, state: State) -> Activity<Done>:
-  if hits > 0n && hits >= least(trigger.event) then ruleFired(trigger.action, rest, object, field, rows, hits, count, state) else ruled(rest, object, field, rows, count, state)
+  if hits == 0n then ruled(rest, object, field, rows, count, state) else tallied(trigger, rest, object, field, rows, trigger.seen + hits, count, state)
+# The running count of a rows trigger: the rows matched across deliveries since it last fired.
+# At `atLeast` it fires once, with all it has counted, and keeps the remainder toward the next
+# firing, so a delivery that carries several counts' worth fires once and the rest carries over;
+# `atLeast` 1 fires on every matching delivery and keeps nothing.
+def tallied(trigger: Trigger, rest: Lists.List<Trigger>, object: String, field: String, rows: Lists.List<Rows.Columns>, total: Nat, count: Nat, state: State) -> Activity<Done>:
+  if carried(trigger.event, total) == trigger.seen then judged(trigger, rest, object, field, rows, total, count, state) else remembered(trigger, rest, object, field, rows, total, count, state)
+def remembered(trigger: Trigger, rest: Lists.List<Trigger>, object: String, field: String, rows: Lists.List<Rows.Columns>, total: Nat, count: Nat, state: State) -> Activity<Done>:
+  let written(_) = write {triggers: amend trigger with extend(trigger, {seen: carried(trigger.event, total)})}
+  judged(trigger, rest, object, field, rows, total, count, state)
+def judged(trigger: Trigger, rest: Lists.List<Trigger>, object: String, field: String, rows: Lists.List<Rows.Columns>, total: Nat, count: Nat, state: State) -> Activity<Done>:
+  if total >= least(trigger.event) then ruleFired(trigger.action, rest, object, field, rows, total, count, state) else ruled(rest, object, field, rows, count, state)
+def carried(on: On, total: Nat) -> Nat:
+  if total >= least(on) then total % least(on) else total
 def ruleFired(action: Action, rest: Lists.List<Trigger>, object: String, field: String, rows: Lists.List<Rows.Columns>, hits: Nat, count: Nat, state: State) -> Activity<Done>:
   match world.send({object: target(action, state), method: method(action), argument: ruleArgument(action, object, field, hits)}):
     case _: ruled(rest, object, field, rows, count + 1n, state)
@@ -208,7 +222,7 @@ def ruleArgument(action: Action, object: String, field: String, hits: Nat) -> Da
     case _: {text: "{object}.{field}: {natText(hits)} new {if hits == 1n then \"row\" else \"rows\"} matched"}
 def least(on: On) -> Nat:
   match on:
-    case rows(r): r.atLeast
+    case rows(r): if r.atLeast == 0n then 1n else r.atLeast
     case _: 1n
 # How many of the rows match a rows trigger on this object and field (0 for any other).
 def matched(on: On, object: String, field: String, rows: Lists.List<Rows.Columns>) -> Nat:
@@ -260,26 +274,55 @@ def watchBell(state: State, input: {bell: String}, context: Abi.Context) -> Acti
   watched(On.rows({object: input.bell, field: "marks", where: Lists.List.cons({head: Where.equals({column: "name", equals: Relations.text("rung")}), tail: Lists.List.nil()}), atLeast: 1n}), Action.notify({}), context, state)
 # From a post: watch a mention or a keyword (the action is a note to you), or unwatch.
 def mention(state: State, input: {actor: String}, context: Abi.Context) -> Activity<Done>:
-  watched(On.mention({actor: input.actor}), Action.notify({}), context, state)
+  spelled(On.mention({actor: input.actor}), context, state)
 def keyword(state: State, input: {term: String}, context: Abi.Context) -> Activity<Done>:
-  watched(On.keyword({term: input.term}), Action.notify({}), context, state)
+  spelled(On.keyword({term: input.term}), context, state)
 # From a post, on another card's field (docs/GROUND.md §6 change 5): a number passing a mark, a
 # number rising, a flag turning true, or rows arriving, those `where` one `column op value` line
 # admits (`name = rung`, `n > 6`, `n < 3`, `text has moth`; blank for every row), `count` of them
 # (field names are read folded, so a form's are lower case); a reminder at a
 # clock, and every so many minutes after (0: once). Each notes the owner's avatar.
 def writes(state: State, input: WritesInput, context: Abi.Context) -> Activity<Done>:
-  watched(On.writes({object: input.object, field: input.field, above: input.above}), Action.notify({}), context, state)
+  spelled(On.writes({object: input.object, field: input.field, above: input.above}), context, state)
 def grows(state: State, input: GrowsInput, context: Abi.Context) -> Activity<Done>:
-  watched(On.grows({object: input.object, field: input.field}), Action.notify({}), context, state)
+  spelled(On.grows({object: input.object, field: input.field}), context, state)
 def turns(state: State, input: TurnsInput, context: Abi.Context) -> Activity<Done>:
-  watched(On.turns({object: input.object, field: input.field}), Action.notify({}), context, state)
+  spelled(On.turns({object: input.object, field: input.field}), context, state)
 def rows(state: State, input: RowsInput, context: Abi.Context) -> Activity<Done>:
   match whereOf(input.where):
-    case some(w): watched(On.rows({object: input.object, field: input.field, where: w.value, atLeast: input.count}), Action.notify({}), context, state)
+    case some(w): spelled(On.rows({object: input.object, field: input.field, where: w.value, atLeast: input.count}), context, state)
     case none(_): refused(Why.badWhere({line: input.where}))
 def remind(state: State, input: RemindInput, context: Abi.Context) -> Activity<Done>:
-  schedule(state, {at: input.at, every: input.every, action: Action.notify({})}, context)
+  match schedule(state, {at: input.at, every: input.every, action: Action.notify({})}, context):
+    case watching(w): noted(Done.watching(w), On.schedule({at: input.at, every: input.every}))
+    case refused(r): declined(Done.refused(r))
+    case fired(f): Done.fired(f)
+# A spell that sets a trigger notes the owner's avatar, answers the watch it made and how to end
+# it; a refusal says so with its reading.
+def spelled(event: On, context: Abi.Context, state: State) -> Activity<Done>:
+  match watched(event, Action.notify({}), context, state):
+    case watching(w): noted(Done.watching(w), event)
+    case refused(r): declined(Done.refused(r))
+    case fired(f): Done.fired(f)
+def noted(done: Done, event: On) -> Activity<Done>:
+  match done:
+    case watching(w): Card.tell(done, Document.text("Watching {watchText(event)}. Stop: delvetalk wake unwatch / id: {natText(w.id)}.\n"))
+    case _: done
+def declined(done: Done) -> Activity<Done>:
+  match done:
+    case refused(r): Card.tell(done, Document.text("Not done: {r.reading}\n"))
+    case _: done
+def watchText(event: On) -> String:
+  match event:
+    case mention(m): "mentions by {Card.handle(m.actor)}: each notes your avatar"
+    case keyword(k): "the word {k.term}: each post with it notes your avatar"
+    case schedule(_): "the clock, {onText(event, 0n)}: each notes your avatar"
+    case writes(w): "{w.object}'s {w.field}: passing {natText(w.above)} notes your avatar"
+    case grows(g): "{g.object}'s {g.field}: each rise notes your avatar"
+    case turns(t): "{t.object}'s {t.field}: turning true notes your avatar"
+    case rows(r): "{r.object}'s {r.field}{wheres(r.where)}: {rowsWatch(r.atLeast)}"
+def rowsWatch(count: Nat) -> String:
+  if count <= 1n then "each new row notes your avatar" else "0 of {natText(count)} rows; at {natText(count)} your avatar is noted, then at every {natText(count)} more"
 # One `column op value` line as patterns: blank is none; `=` equals (digits a number, else a
 # text), `>` above and `<` below a number, `has` a whole word. Anything else is no pattern.
 def whereOf(line: String) -> Lists.Maybe<Lists.List<Where>>:
@@ -311,14 +354,14 @@ def cellOf(value: String) -> Relations.Cell:
     case no(_): Relations.text(value)
 # Unwatch by id: the trigger is found here, in Bend, and removed by its bytes.
 def unwatch(state: State, input: {id: Nat}, context: Abi.Context) -> Activity<Done>:
-  if context.principal != state.owner then notOwner(state) else removing(Lists.find(state.triggers, fn(t: Trigger) -> Bool: t.id == input.id), input.id)
+  if context.principal != state.owner then declined(notOwner(state)) else removing(Lists.find(state.triggers, fn(t: Trigger) -> Bool: t.id == input.id), input.id)
 def removing(found: Lists.Maybe<Trigger>, id: Nat) -> Activity<Done>:
   match found:
-    case none(_): refused(Why.noTrigger({id: id}))
+    case none(_): declined(refused(Why.noTrigger({id: id})))
     case some(s): removed(s.value, id)
 def removed(trigger: Trigger, id: Nat) -> Activity<Done>:
   let written(_) = write {triggers: removeItem trigger}
-  Done.watching({id: id})
+  Card.tell(Done.watching({id: id}), Document.text("Trigger {natText(id)} is gone. See what remains: delvetalk wake ?\n"))
 # A schedule fires at clock `at` (or `every` minutes from now when `at` is past) and again
 # every `every` minutes after (0: once). It stands as a trigger, at most eight of them, and
 # unwatch ends it. Each firing is its own turn: the wake sends itself `due {id, at}`, which
@@ -336,7 +379,7 @@ def isSchedule(on: On) -> Bool:
     case schedule(_): true
     case _: false
 def standing(at: Nat, every: Nat, action: Action, context: Abi.Context, state: State) -> Activity<Done>:
-  let written(_) = write {triggers: append {id: state.nextId, event: On.schedule({at: at, every: every}), action: action}, nextId: add 1n}
+  let written(_) = write {triggers: append {id: state.nextId, event: On.schedule({at: at, every: every}), action: action, seen: 0n}, nextId: add 1n}
   match world.send({object: Plans.self(context), method: "due", argument: {id: state.nextId, at: at}}):
     case _: Done.watching({id: state.nextId})
 def due(state: State, input: {id: Nat, at: Nat}, context: Abi.Context) -> Activity<Done>:
@@ -383,7 +426,6 @@ def matches(on: On, event: Rows.Sensed) -> Bool:
   match on:
     case mention(m): event.kind == "mention" && event.actor == m.actor
     case keyword(k): Text.contains(event.text, k.term)
-    case reply(r): event.kind == "reply" && event.replyTo == r.card
     case schedule(_): false
     case writes(_): false
     case grows(_): false
@@ -398,10 +440,6 @@ def fire(triggers: Lists.List<Trigger>, event: Rows.Sensed, events: Lists.List<R
 def acted(action: Action, rest: Lists.List<Trigger>, event: Rows.Sensed, events: Lists.List<Rows.Sensed>, object: String, field: String, rows: Lists.List<Rows.Columns>, count: Nat, state: State) -> Activity<Done>:
   match world.send({object: target(action, state), method: method(action), argument: {text: woke(event)}}):
     case _: fire(rest, event, events, object, field, rows, count + 1n, state)
-# Every send carries a line of text: a note's text, or what woke the trigger.
-def act(action: Action, text: String, state: State) -> Activity<Done>:
-  match world.send({object: target(action, state), method: method(action), argument: {text: text}}):
-    case _: Done.fired({count: 1n})
 def target(action: Action, state: State) -> Plans.Reference:
   match action:
     case notify(_): {world: "", object: state.owner}
@@ -442,19 +480,18 @@ form remind:
 def methods() -> Lists.List<String>:
   Text.words("watch sense schedule ~arrived ~watchBell ~due")
 def blurb() -> Card.Door:
-  {word: "wake", blurb: "Choose what wakes you: mentions, words, replies, a schedule."}
+  {word: "wake", blurb: "Choose what wakes you: mentions, words, rows, a schedule."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-def onText(on: On) -> String:
+def onText(on: On, seen: Nat) -> String:
   match on:
     case mention(m): "a mention by {Card.handle(m.actor)}"
     case keyword(k): "the word {k.term}"
-    case reply(r): "a reply to {r.card}"
     case schedule(s): if s.every == 0n then "once at {natText(s.at)}" else "every {natText(s.every)} from {natText(s.at)}"
     case writes(w): "{w.object}.{w.field} passing {natText(w.above)}"
     case grows(g): "each rise of {g.object}.{g.field}"
     case turns(t): "{t.object}.{t.field} turning true"
-    case rows(r): "{natText(r.atLeast)} new rows of {r.object}.{r.field}{wheres(r.where)}"
+    case rows(r): "{if r.atLeast > 1n then \"{natText(seen)} of \" else \"\"}{natText(r.atLeast)} new rows of {r.object}.{r.field}{wheres(r.where)}"
 def wheres(where: Lists.List<Where>) -> String:
   if Lists.length(where) == 0n then "" else textConcat(" where ", textJoin(Lists.map(where, whereText), ", "))
 def whereText(w: Where) -> String:
@@ -473,7 +510,7 @@ def actionText(action: Action) -> String:
     case observe(_): "show my env"
     case call(c): "call {c.card} {c.method}"
 def line(trigger: Trigger) -> Document.Document:
-  Document.text("#{natText(trigger.id)} on {onText(trigger.event)}: {actionText(trigger.action)}\n")
+  Document.text("#{natText(trigger.id)} on {onText(trigger.event, trigger.seen)}: {actionText(trigger.action)}\n")
 def render(state: State, context: Abi.Context) -> Document.Document:
   let how = if Card.reads(state.owner, context) then " Add: delvetalk wake mention / actor: <handle>, or delvetalk wake keyword / term: <word>; rows, writes, grows, turns and remind are on ?. Remove: delvetalk wake unwatch / id: <number>." else ""
   let head = Document.text("WAKE of {Card.shown(state.owner, state.handle, context)}{Card.mine(state.owner, context)}: {natText(Lists.length(state.triggers))} triggers.{how}\n")

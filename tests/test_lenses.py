@@ -7,7 +7,7 @@ Lenses: an object's exposed scalar fields, listed by `lenses()` as Form.Fields. 
 `delvetalk <card> set` with one `<field>: <value>` line by judging the value against the field's
 kind and running the object's `set {field, value}` (which refuses a stranger by name; the law
 judges the write); `delvetalk <card> ?` answers the usage card: every form, then every lens.
-Policy's model, escalate and system and an Avatar's handle are lenses; Policy.setModel is gone.
+Policy's model and system and an Avatar's handle are lenses; Policy.setModel is gone.
 
 Refuted by: a stranger's set changing the policy, a value outside its kind being written, a set of
 two fields, a field without a lens, or `?` omitting a lens.
@@ -50,12 +50,9 @@ class Lenses(test_chain.Chain):
         self.assertEqual(r["result"]["label"], "done")
         self.assertEqual(r["offers"][0]["text"], "Set model to claude-sonnet.\n")
         self.assertEqual(self.field("model"), "claude-sonnet")
-        self.assertEqual(self.say("delvetalk policy set escalate: claude-opus")["result"]["label"], "done")
-        self.assertEqual(self.field("escalate"), "claude-opus")
-        # escalate takes 0 characters: the empty value clears it.
-        self.assertEqual(self.say("delvetalk policy set\nescalate:")["result"]["label"], "done")
-        self.assertEqual(self.field("escalate"), "")
-        self.assertEqual(self.version(), 3)
+        self.assertEqual(self.say("delvetalk policy set system: Read the words.")["result"]["label"], "done")
+        self.assertEqual(self.field("system"), "Read the words.")
+        self.assertEqual(self.version(), 2)
 
     def test_the_longest_system_is_written_and_one_more_character_is_refused(self):
         self.policy()
@@ -75,7 +72,7 @@ class Lenses(test_chain.Chain):
         self.assertIn("refused notOwner: Only the policy's owner may teach it; that is ember", r["offers"][0]["text"])
         cases = [
             ("delvetalk policy set\nmodel: " + "m" * 65, "badValue"),
-            ("delvetalk policy set\nmodel: a\nescalate: b", "unknownField"),
+            ("delvetalk policy set\nmodel: a\nsystem: b", "unknownField"),
             ("delvetalk policy set\nowner: glm", "unknownField"),
         ]
         for text, clause in cases:

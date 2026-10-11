@@ -36,7 +36,7 @@ class Genesis(unittest.TestCase):
         hands = [dict(fields)['id'] for _, fields in genesis.HANDS]
         # world-create seeds the first objects; the hand's things are then admitted by spell on their kinds, and the garden's weather door after
         self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
-                         (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands] + [('garden', 'admitted')]), made)
+                         (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands] + [('garden', 'admitted'), ('porch', 'admitted')]), made)
         o = genesis.OPENER
         self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [o, 'env/' + o, 'wake/' + o]))
         # each hand's thing is a record of its kind whose maker is the opener, who alone named its id

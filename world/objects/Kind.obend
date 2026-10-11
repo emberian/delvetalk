@@ -15,7 +15,8 @@ import ./Spween.obend as Spween
 import ./Forms.obend as Forms
 # KIND (docs/CATALOGUE.md §3): a thing whose instances are things. It holds the form its `make`
 # takes (field lines, `colour: amber | violet | silver` / `seed: text 1..80`), the law its
-# instances are created under, the card head they start with (`{field}` and `{maker}` holes),
+# instances are created under (each cites it: `under "<kind>"`), the card head they start with
+# (`{field}` and `{maker}` holes),
 # the package they run (`of`: record or kind) and a body: a layer over that package, as source,
 # grafted on each instance as it is made ("" for none). `make` is create, then extend.
 #
@@ -68,7 +69,8 @@ def captures(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Card.Captu
 # package's initial(); a kind made by `kinds` takes its own fields from the form. An instance
 # made under a record cites it home, labelled by its last segment. A `spween` field (a room's,
 # handed by the room a block was posted to) is the instance's scene: its passages, start,
-# cooldown and requirements, and not kept among the fields.
+# cooldown and requirements, and not kept among the fields. A thing is made tended: at the clock and the
+# entry of its making.
 def seedOf(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
   if state.of == "kind" then kindSeed(fields, context) else instanceSeed(state, fields, under, context)
 def instanceSeed(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
@@ -78,9 +80,9 @@ def sceneSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context
     case parsed(p): withScene(state, kept, under, context, p.seed)
     case refused(_): plainSeed(state, kept, under, context)
 def plainSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
-  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context)}
+  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock, tendedAt: context.height}
 def withScene(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context, scene: Scenes.Seed) -> Data:
-  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), start: scene.start, passages: scene.passages, cooldown: scene.cooldown, requires: scene.requires}
+  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock, tendedAt: context.height, start: scene.start, passages: scene.passages, cooldown: scene.cooldown, requires: scene.requires}
 def homeDoor(under: String, context: Abi.Context) -> Card.Doorways:
   if under == "" then Card.Doorways.nil() else Card.Doorways.cons({head: {label: lastSegment(under), to: {world: context.world, object: under}, description: "", examples: Lists.List.nil()}, tail: Card.Doorways.nil()})
 def lastSegment(id: String) -> String:
@@ -88,8 +90,10 @@ def lastSegment(id: String) -> String:
   if at == textLength(id) then id else lastSegment(textDrop(id, at + 1n))
 def kindSeed(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Data:
   {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: valueOf(fields, "form"), law: valueOf(fields, "law"), head: valueOf(fields, "head"), body: valueOf(fields, "body")}
-def lawOf(state: State, fields: Lists.List<Rows.Field>, context: Abi.Context) -> String:
-  if state.of == "kind" then lawText() else Card.filled(state.law, captures(fields, context))
+# What a made thing is created under: its kind's `law`, cited (LAW §4 F), so the kind's owner
+# amends the law of every instance at once and a refusal reads the kind's clause.
+def lawOf(context: Abi.Context) -> String:
+  "law kind \"{context.object}'s law holds\": under \"{context.object}\""
 # A kind made by `kinds` is kind/<name>; an exact `id` is that id; anything else the first free
 # <under>/<name>/<n>, or <name>/<n> (the host mints past ids already held).
 def wanted(state: State, fields: Lists.List<Rows.Field>, under: String) -> String:
@@ -102,7 +106,7 @@ def kindId(name: String) -> String:
 def making(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
   if valueOf(fields, "id") != "" && context.principal != state.owner then refusedCard(state, context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} names what this kind makes; leave id blank"}) else creating(state, fields, under, context)
 def creating(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
-  match world.create({package: packageOf(state.of), seed: seedOf(state, fields, under, context), law: lawOf(state, fields, context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
+  match world.create({package: packageOf(state.of), seed: seedOf(state, fields, under, context), law: lawOf(context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
     case created(c): counted(state, c.object.object, under != "", layerOf(state, fields), context)
     case refused(r): refusedCard(state, context, {clause: r.clause, reading: if r.reading == "" then "{wanted(state, fields, under)} was not made" else r.reading})
 def counted(state: State, id: String, quiet: Bool, layer: String, context: Abi.Context) -> Activity<Done>:

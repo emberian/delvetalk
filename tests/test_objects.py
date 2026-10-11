@@ -98,7 +98,7 @@ def macros(n: Nat) -> Lists.List<Policies.Macro>:
     case 0: Lists.List::<Policies.Macro>.nil()
     case 1+previous: Lists.List::<Policies.Macro>.cons({head: {name: "m", pattern: long(20n), expansion: long(40n)}, tail: macros(previous)})
 def full(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policies.Term>.nil(), examples: examples(n), escalate: "", escalateTo: "", macros: macros(n), confirmFor: Lists.List::<String>.nil()}, extend(Card.stranger(), {principal: "ember"})))
+  Document.plain(O.render({owner: "ember", model: "m", system: "s", lexicon: Lists.List::<Policies.Term>.nil(), examples: examples(n), macros: macros(n), confirmFor: Lists.List::<String>.nil()}, extend(Card.stranger(), {principal: "ember"})))
 """
 
 

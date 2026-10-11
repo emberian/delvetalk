@@ -136,6 +136,19 @@ class Workshop(Chain):
         adopt = self.turn("workshop", "receive", record(text=label("delvetalk workshop adopt / n: 1"), post=label("at://x/a")), principal="glm")
         self.assertEqual(self.card(adopt), "Not done: #1 cannot be applied to bell-1: Its State is not bell-1's; name a migration from the old one.\n")
 
+    def test_a_described_thing_is_made_with_the_receipt_of_the_turn_that_held_its_draft(self):
+        self.make_workshop()
+        draft = self.turn("workshop", "receive", record(text=label("delvetalk workshop draft\nname: lamp\n```obend\n%s```\n" % BLOCK), post=label("")),
+                          principal="glm", identity="hold-lamp")
+        self.assertEqual((draft["status"], self.verdict(draft)), ("admitted", "held"), draft)
+        held = self.host.send(op="world-receipt", principal="glm", identity="hold-lamp")["receipt"]["hash"]
+        adopted = self.turn("workshop", "receive", record(text=label("delvetalk workshop adopt / n: 1"), post=label("")),
+                            principal="glm", identity="adopt-lamp")
+        self.assertEqual((adopted["status"], self.verdict(adopted)), ("admitted", "made"), adopted)
+        [made] = adopted["receipt"]["outcome"]["creates"]
+        self.assertEqual(made["madeFrom"]["receipt"], held)
+        self.assertEqual(made["madeFrom"]["object"], "workshop")
+
     def test_a_proposer_withdraws_a_held_proposal(self):
         self.make_workshop()
         self.counter()

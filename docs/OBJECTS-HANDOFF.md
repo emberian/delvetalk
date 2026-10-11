@@ -1,5 +1,93 @@
 # Objects handoff
 
+## lane/rewrite9 (2026-10-11): hob's said; step 3, first part
+
+Inherited: the predecessor's tail (`cv show a0a66f925db192fbd`) adds only the `say:` decision, folded below. Its two
+Sonnet helpers' step-2 test diffs (2568a20c, 8812c5a9, 0baf5bed) read whole: no assertion was weakened to hide a
+defect; what was dropped tested deleted mechanisms (held plantings, yes/no, confirm lens, merge, the escalateTo copy).
+Found and fixed or queued: test_hub imports `tests.wire` twice; test_archive carries a history comment ("70 while the
+garden read words itself"); test_properties reads `~` methods by regex over `Text.words(...)` lines for ids holding
+`did:`; test_interpret_text's docstring still names the escalateTo copy (gone with O5 here); test_policy's capacity
+test changed identity p64 -> p65 because a hand-on refused `capacity` is lost: the garden's turn is admitted and the
+words never reach hob (queued below); test_genesis's commonplace test undoors TIDE to fit BELL (eight doors).
+
+Done:
+
+- **efb81dc9, hob's `said`** (host18's fifth answer): the commonplace renders `hob: <text>` above the card the words
+  were for (`saidBeside`, by `world.card`) or above the menu; `Card.Hob.said`; `Policy.prompt`'s `say:` line;
+  test_http.Play asserts the line beside the kinds card.
+- **Step 3, first part** (the commit after efb81dc9):
+  - Law atoms: Tide's `tooSoon`, `self`, `methods` are text (`changed(new.subs.who) by request.subject`; the clock as
+    `request.clock == old.last + old.gap or not (request.clock <= old.last + old.gap)`, since a comparison must start
+    with a reference: LAW §4 E's `old.last + old.gap <= request.clock` does not parse); Deal's `signer` is
+    `changed(new.signatures.principal) by request.subject`; Thing, Workshop, Seat, Table: `law methods`; Avatar keeps an
+    inline predicate so the host's default law (its creator alone reprograms it) stands; Workshop and Seat gained
+    `owner` clauses (a text law replaces the default law). `Plans.unnamed`/`proposedRefused` are gone.
+  - Kind: every made thing is created under `law kind "<kind>'s law holds": under "<kind>"` (`lawOf`); `kinds`' own
+    `law` field holds KIND_LAW (genesis). The `{maker}` hole in laws is gone (heads keep it).
+  - Tending: Record `tended` (clock), `tendedAt` (entry read), `tend`; Kind seeds both at making; RECORD_LAW's
+    `methods` keeps `tended` from proposals. kind/bell's law adds genesis `ALIVE_LAW` (`QUIET_AFTER` 1440); the bell
+    body's write (a rain) tends, refuses a quiet bell's rain with `refused alive: answers while tended within 1440
+    minutes. Tend it:`, heads "— quiet, untended since entry N. Tend it:", and declares the view `quietSince`. The
+    weather's rain tends the garden's bells; the free arc is the porch's sixth bell (`bell/1`, outside the garden,
+    cited by the porch as `the sixth bell`), quiet a day after genesis.
+  - No silent admission: Record `door`/`undoor`/`example` answer a line; Wake's spells answer the watch made
+    ("Watching bell/1's lines: 0 of 7 rows; at 7 your avatar is noted, then at every 7 more. Stop: ..."), `unwatch`
+    answers; room `enter`/`choose`/`leave`/`whisper` answer the room as left. Wake `rows` counts across deliveries
+    (`Trigger.seen`, fires at the count and keeps the remainder). `On.reply`, `Wake.act` deleted.
+  - O5/O6/O7 (helper): Policy `escalate`/`escalateTo`, their lenses and card lines; Card `hobbed`, `escalated*`,
+    `macroUsage`, `one`, `defaultPage`, `handOn`, `Answer`/`answerOf`/yes-no words; `Plans.indexOf`; Workshop's adopt
+    cites the holding turn's receipt hash (`madeFrom.receipt`); Library's `card` bound 128.
+  - tests/test_tending.py (window in body and law, quiet, tend, the law refusing a forgetful body, the view, a kind's
+    law amended re-laws its instances).
+
+Host findings (for the coordinator):
+
+- **A refusal by `under` names the citing clause** (`refused kind: kind/garden's law holds`), not the cited one
+  (`level`, `alive`, `owner`): `refusedBy` should descend into `under` and report the inner clause and reading.
+  Until then cistern's `level` and the garden's `owner` read `kind` (test_wakes, test_strangers, test_tending assert it).
+- The law fragment needs `>=` or a sum on the left (LAW §4 E's own Tide example does not parse).
+- transport/interpret.py:24-28 (the `Participant:` cut) is dead: `Policy.prompt` appends no utterance;
+  tests/test_model.py:127-138 goes with it.
+- test_http.Play `test_plant_by_prose_shows_the_interpreters_offer` races (http.py's wait reads offers, then
+  receipts, and stops if the turn settled between): red 2 of 3 on pristine foundation.
+- The dt-host18 binary (00:54) carries host18's cast-guard ahead of foundation: test_host_spell.Recorded and
+  test_spell.Grammar are red on pristine foundation with it.
+- A hand-on refused `capacity` loses the words (the handing turn is admitted).
+- **A refused turn still offers what its methods told** (`sealed/1 write` refused `lawRefused` offers "#1 is
+  written: ..."): an object cannot see its turn's verdict (`written` is the staged write), so the host (or the
+  bridge) must drop a refused turn's offers and let the refusal line stand with the card as it was. The test the
+  coordinator asked for (a write refused by a resident's sealing law shows no "is written") belongs with that fix.
+- **test_archive red here**: now that `wake unwatch` answers a line, the bridge's draft carries the receipt line
+  `admitted wake/did:plc:... v2` and the page URL with the DID: the turn line should name a principal's own cards by
+  handle (or `wake`), not by id. Transport/host; the card itself names no DID.
+- H1 is now urgent: foundation 95e2274a casts only a `delvetalk` line at a line's start; Spell.obend's reduced reader
+  keeps the old indented fallback and disagrees. Delete it; its users read the host's answer.
+
+Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded):
+
+3. (rest)
+   - **inspirit** (the coordinator's, from the owner's outreach, docs/previews/pingwaves.txt #5): a THING may lie
+     unclaimed (`keeper` "") in a room; its card names it and offers `inspirit / surrounding: <text 1..400>`, cast
+     once by anyone: description = surrounding, keeper = caster, and the room's line "the goblet, inspirited by
+     <handle>: <surrounding>" (a room method the thing calls, caller checked against `things`, writing the line under
+     the caster and a mark per thing so the card lists unclaimed things first); after that the keeper alone sets it
+     (Thing's owner clause admits `new.keeper`; `law keeper ...: writeOnce(keeper)`). Genesis creates `porch/goblet`,
+     `porch/ring`, `porch/gemstone` (Thing, by world-create: a Kind makes only records) and puts them on the porch;
+     the lexicon gains `surrounding`, an example teaches `inspirit` from prose. Tests: a stranger inspirits the
+     goblet, a second resident's is refused `keeper`, the room carries the line.
+   - Silent admissions left: Thing (`acquire`, `drop`, `offer`, `withdraw` return `Done.done` untold), Deal
+     (`countersign`, `withdraw`, its refusals), Avatar, Env (`Done.done` paths), Kind `shape`.
+   - THING `me`, `lend` (`delvetalk <thing> lend / to / method / until` over `world.grant`), the `circle` lens
+     (`request.subject in "<circle>".members.principal`, LAW §4 D); BOND from Deal by spell (over RECORD).
+   - H1 (Spell.obend's parser: needs the host's Heard to carry card and action), O3 (Sensed = Event + n: Env and
+     Wake inputs), the `blurb()` sweep (every object), Library `laws` following `under` to a kind's `law` field,
+     `kinds make / name / of` alone (host optional fields not in foundation yet).
+4. As below (unchanged): genesis to §7's table, the walks, the door order KINDS, WORKSHOP, then the places;
+   previews re-cut; GENESIS.md (add the sixth bell and the under-law); this file rewritten; `git branch -D
+   lane/rewrite5-garden`. STUDIO's line says "scratch worlds and REPL" (genesis); test_genesis still expects
+   "heap and REPL" nowhere: check.
+
 ## lane/rewrite8 (2026-10-11): step 2 — the furniture as kinds
 
 Inherited (ClusterVision on lane/rewrite6's last 80 turns, `cv show a501e76149fbdf27e`): nothing the section below

@@ -710,6 +710,8 @@ class Play(FrontCase):
         self.assertFalse(t.is_alive())
         self.assertRegex(self.words(out['page']), r'admitted kinds v\d+, entry \d+')
         self.assertNotIn('admitted commonplace', self.words(out['page']))
+        # hob's answer stands beside the kinds card, above it, never inside its facts
+        self.assertIn('<span>hob: ' + answer + '</span></p><figure class="frame offer"><pre class="card">KIND kinds:', out['page'].decode())
 
     def test_a_suspended_turn_is_a_line_under_a_kilobyte_and_its_full_reply_elides_the_blocks(self):
         tok = self.cookie.split('=', 1)[1]

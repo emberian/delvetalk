@@ -71,7 +71,7 @@ class Bell(Arc):
     def test_a_made_bell_is_watched_rained_on_and_rung_by_its_seventh_rain(self):
         made = self.say(KIM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: a lamp for moths\nid:")
         self.assertEqual(made["status"], "admitted", made)
-        bell = [o for o in self.objects() if o.startswith("bell/")][0]
+        bell = made["receipt"]["outcome"]["creates"][0]["object"]  # genesis holds bell/1, the porch's sixth bell
         followed = self.say(GLM, GLM, "delvetalk %s watch\nto: %s\nfield: marks" % (GLM, bell))
         self.assertEqual(followed["result"]["label"], "followed", followed)
         nothing = self.say(KIM, KIM, "delvetalk %s watch\nto: %s\nfield: chimes" % (KIM, bell))  # a field the bell lacks
