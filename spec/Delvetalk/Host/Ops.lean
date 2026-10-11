@@ -945,55 +945,12 @@ def amendmentRefusal (proposer clause : String) : String :=
 def isAmendmentRefusal (message : String) : Bool :=
   message.startsWith "law does not admit an amendment by its proposer "
 
-def renderLaw (law : Law) : String :=
-  "\n".intercalate (law.map fun (name, clause) => s!"law {name}: {clause.render}")
-
-/-- The `"reading"` after a law's name, as the compiler's grammar has it (`law NAME "reading": EXPR`,
-    a JSON string literal): the reading and the rest after it, or none when the line has none. -/
-def lawReading (rest : String) : Except String (Option (String × String)) := do
-  let chars := rest.toList
-  unless chars.head? == some '"' do return none
-  let rec close : List Char → Nat → Option Nat
-    | [], _ => none
-    | '\\' :: _ :: more, n => close more (n + 2)
-    | '"' :: _, n => some n
-    | _ :: more, n => close more (n + 1)
-  let some n := close (chars.drop 1) 1 | throw "a law reading is an unterminated string"
-  let literal := String.ofList (chars.take (n + 1))
-  let reading ← (Lean.Json.parse literal >>= (·.getStr?)).mapError fun _ => s!"a law reading must be a JSON string, found {literal}"
-  return some (reading, String.ofList (chars.drop (n + 1)))
-
-/-- Law text: one `law NAME: EXPR` or `law NAME "reading": EXPR` per line, the grammar the compiler
-    accepts at the top of a package; the readings beside the law, by clause name. -/
-def parseLawTextReadings (text : String) : Except String (Law × List (String × String)) := do
-  if text.utf8ByteSize > Limits.maxLawBytes then throw "law text exceeds its byte capacity"
-  let lines := (text.splitOn "\n").map String.trimAscii |>.filter (!·.isEmpty) |>.map (·.toString)
-  if lines.length > Limits.maxLawClauses then throw "law has too many clauses"
-  let parsed ← lines.mapM fun line => do
-    let some rest := line.dropPrefix? "law " | throw s!"expected `law NAME: EXPR`, found `{line}`"
-    let rest := rest.toString
-    let name := (rest.takeWhile fun c => c.isAlphanum || c == '_').toString
-    unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw s!"invalid law name in `{line}`"
-    let after := (rest.drop name.length).toString.trimAsciiStart.toString
-    let (reading, after) ← match ← lawReading after with
-      | some (r, more) => pure (some r, more.trimAsciiStart.toString)
-      | none => pure (none, after)
-    let some expr := after.dropPrefix? ":" | throw s!"expected `law NAME: EXPR`, found `{line}`"
-    pure ((name, ← Delvetalk.Compiler.ObjectiveBendLaw.parse expr.toString), reading.map (name, ·))
-  let law := parsed.map (·.1)
-  Delvetalk.Compiler.ObjectiveBendLaw.checkNames law
-  return (law, parsed.filterMap (·.2) |>.filter (!·.2.isEmpty))
-
-/-- Law text: one `law NAME: EXPR` per line (a reading after the name allowed), as at the top of a package. -/
-def parseLawText (text : String) : Except String Law := do
-  return (← parseLawTextReadings text).1
-
 /-- The rule against a self-sealing law: a law is only accepted if it admits an
     amendment (the state unchanged) by the principal who proposes it. None when it does,
     else the refusal naming that principal and the clause (`name: expression`) that refused. -/
 def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data)
-    (clock : Nat := 0) (id : String := "") : Option String :=
-  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, "", [], clock, id⟩ (some state) state).map fun name =>
+    (clock : Nat := 0) (id : String := "") (reads : List (String × Data) := []) : Option String :=
+  (Law.refusedBy law ⟨principal, caller, height, turn, pin, 2, "", [], clock, id, reads⟩ (some state) state).map fun name =>
     amendmentRefusal principal (((law.lookup name).map fun e => s!"{name}: {e.render}").getD name)
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
@@ -1850,15 +1807,54 @@ def relationsFor (b : Built) (state : Data) : Except String (List RelDecl × Dat
   | .error "duplicateKey" => throw "duplicateKey: two rows of a relation share a key"
   | .error e => throw s!"{e}: a relation field does not hold rows"
 
-/-- The proposal with the objects the Bend laws of its written objects read added as roots. -/
+/-- The `law` text an object's state holds (what `under "O"` judges by), parsed; none when it holds
+    none or it does not parse. -/
+def citedLaw (w : World) (id : String) : Option Law := do
+  let .label text ← (w.objects[id]?).bind fun o => Law.rawField "law" o.state | none
+  (parseLawText text).toOption
+
+/-- The objects a law cites (`"O".F.COL`, `under "O"`), closed under the citations of each cited
+    object's own `law` text, `Limits.lawDepth` deep; each once, in the order met. -/
+def lawCitations (w : World) (law : Law) : List String := Id.run do
+  let mut out : List String := []
+  let mut frontier := (law.flatMap fun (_, c) => c.reads).eraseDups
+  for _ in [0:Limits.lawDepth] do
+    let fresh := frontier.filter (!out.contains ·)
+    if fresh.isEmpty then break
+    out := out ++ fresh
+    frontier := (fresh.flatMap fun id => ((citedLaw w id).getD []).flatMap fun (_, c) => c.reads).eraseDups
+  return out
+
+/-- The states a law reads beside the written object's (`Law.Facts.reads`), as the world holds them. -/
+def citedStates (w : World) (law : Law) : List (String × Data) :=
+  (lawCitations w law).filterMap fun id => (w.objects[id]?).map (id, ·.state)
+
+/-- Why a law's `under` citations cannot stand (create, amend, reprogram): a cited object that does
+    not exist or whose `law` does not parse, or a cycle of citations within `Limits.lawDepth`,
+    named. -/
+def citationRefusal (w : World) (self : String) (law : Law) : Option String := Id.run do
+  let unders := fun (l : Law) => (l.flatMap fun (_, c) => c.names.filterMap fun | .law o => some o | _ => none).eraseDups
+  let mut paths : List (List String) := (unders law).map ([·])
+  for _ in [0:Limits.lawDepth] do
+    let mut next : List (List String) := []
+    for path in paths do
+      let some last := path.getLast? | continue
+      if last == self || (path.dropLast.contains last) then
+        return some s!"under: a cycle of citations: {" -> ".intercalate ((if self.isEmpty then [] else [self]) ++ path)}"
+      unless w.objects.contains last do return some s!"under: no object {last} to cite"
+      let some cited := citedLaw w last | return some s!"under: {last} holds no law text that parses"
+      next := next ++ (unders cited).map (path ++ [·])
+    paths := next
+  return none
+
+/-- The proposal with the objects the laws of its written objects read added as roots: the Bend
+    law's `lawReads`, and every object the text law cites (`lawCitations`). -/
 def withLawReads (w : World) (p : Proposal) : Proposal :=
   p.writes.foldl (fun p (id, _) => match w.objects[id]? with
-    | some o => match lawReadsOf w o with
-      | .ok ids => ids.foldl (fun p r =>
+    | some o => ((lawReadsOf w o).toOption.getD [] ++ lawCitations w o.law).foldl (fun p r =>
           if p.roots.any (·.1 == r) then p else match w.objects[r]? with
           | some ro => { p with roots := p.roots ++ [(r, ro.version)] }
           | none => p) p
-      | .error _ => p
     | none => p) p
 
 /-- The display handle the principal registry holds for a principal, "" when unknown. -/
@@ -2292,8 +2288,14 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         match grantStands w via id method with
         | some g => pure g.grantor
         | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
+      -- What the law cites is read as the world holds it (the roots `withLawReads` records), and only
+      -- by a subject who may view it.
+      let cited := citedStates w o.law
+      if let some (r, _) := cited.find? fun (r, _) => !(((w.objects[r]?).map (·.read.permits subject)).getD true) then
+        throw { cls := "lawRefused", clause := some "lawReads", object := some id,
+                reason := some s!"the law of {id} cites {r}, which {subject} may not view" }
       let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method, evicted,
-                                 clock := w.clock, object := id }
+                                 clock := w.clock, object := id, reads := cited }
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
       unless kind == 2 && openerAmends w subject do
@@ -2316,8 +2318,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error _ => throw (refuse "law syntax")
       let amender := ((changes.find? (·.kind == 2)).map (·.caller)).getD ""
       -- The opener's amendment needs no clause for itself: the host admits it whatever the law (`openerAmends`).
+      if let some message := citationRefusal w id law then throw (refuse message)
       unless openerAmends w p.principal do
-        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id then throw (refuse message)
+        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id (citedStates w law) then throw (refuse message)
       -- A reading stays with its clause only while the amendment leaves that clause as it was.
       -- The amendment's own readings; a clause it leaves as it was without one keeps its reading.
       let given := ((parseLawTextReadings text).toOption.map (·.2)).getD []
@@ -2889,7 +2892,7 @@ def defaultLaw (creator : String) : Except String Law := do
 
 /-- Give a compiled package its first state and law. `lawText`, when given, is the law
     exactly as journaled; otherwise the package's laws, or the default owner law. -/
-def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json := none)
+def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Option Json := none)
     (chain : Option Json := none) (creator : String := "") (height : Nat := 1)
     (lawText : Option String := none) : Except String (Object × String) := do
   unless state.conformsUnder b.assumptions.bounds b.ty do throw "seed does not conform to the package state type"
@@ -2903,7 +2906,8 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
   let laws ← match lawText with
     | some text => parseLawText text
     | none => if b.laws.isEmpty then defaultLaw creator else pure b.laws
-  if let some message := amendable laws creator "" height 0 pin state then throw message
+  if let some message := citationRefusal w "" laws then throw message
+  if let some message := amendable laws creator "" height 0 pin state (reads := citedStates w laws) then throw message
   let (methods, predicate, predicateReads) := b.shape
   -- Readings belong to the package's clauses; a law given at creation keeps those it left alone.
   let given := (lawText.bind fun t => (parseLawTextReadings t).toOption.map (·.2)).getD []
@@ -2923,7 +2927,7 @@ def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) 
     Except String (Object × String × World) := do
   let built ← compileObject w inputs
   let (relations, state) ← relationsFor built (← decodeData Limits.dataDepth seed)
-  let (o, sources) ← makeObject built inputs state read chain creator height lawText
+  let (o, sources) ← makeObject w built inputs state read chain creator height lawText
   return ({ o with relations }, sources, cacheBuild w inputs built)
 
 def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
@@ -3045,7 +3049,7 @@ def libraryLawText (opener : String) : Except String String := do
 def libraryRefusal (lawText principal : String) (height : Nat) (pin : String) : Option String :=
   match parseLawText lawText with
   | .error _ => some "law syntax"
-  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, "", [], 0, ""⟩ (some (.record [])) (.record [])
+  | .ok law => Law.refusedBy law ⟨principal, "", height, height, pin, 1, "", [], 0, "", []⟩ (some (.record [])) (.record [])
 
 def installLibrary (w : World) (lib : Library) (lawText : String) : World :=
   { w with library := some lib, libraries := w.libraries.insert lib.pin lib, libraryLaw := lawText }
