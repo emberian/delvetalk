@@ -29,8 +29,9 @@ def cardShownChars : Nat := 1400
     1: before host12 (no field); 2: host12 (evictions and changes owed as facts, lineage, reservations);
     3: host14 (root entries, ignored and shadowed entries, moderation, the metarule widened to the opener,
     later settings, `unposted`); 4: host16 (roots read by their cells: `scalar`, `fields`, `rows`,
-    `spans`; the per-cell bound and the storage ledger by changed cells). -/
-def replayEdition : Nat := 4
+    `spans`; the per-cell bound and the storage ledger by changed cells); 5: host17 (a layered package's
+    shape is its stack's: public methods, relations and law shape kept from below, `compileObject`). -/
+def replayEdition : Nat := 5
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -364,8 +365,12 @@ structure Built where
   assumptions : Delvetalk.Theory.ObjectiveBendTyping.Assumptions
   /-- The relations its entry module's `relations()` declares, unchecked against the state type. -/
   relations : List RelDecl := []
-  /-- The methods it declares public (`publicMethods`); its table's other rows are protocol or helpers. -/
+  /-- The methods it declares public (`publicMethods`), with what each layer below declared: its table's
+      other rows are protocol or helpers. -/
   exposed : List String
+  /-- Whether it declares a Bend law, and whether that law reads (`lawReads`): the top layer's when it
+      declares one, else the code's below. -/
+  lawShape : Bool × Bool := (false, false)
 
 /-- A standing subscription (WHOLENESS §3): after every admitted write that touches `field` of
     `object`, `subscriber`'s receiver `method` (`changed` unless the subscription named another) is

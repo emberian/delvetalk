@@ -1265,6 +1265,76 @@ def checkRelations (decls : List RelDecl) (bounds : DataBounds) (stateType : Del
     for k in d.key do
       unless cols.contains k do throw s!"key: relation {d.field} names column {k}, which its rows lack"
 
+def buildKey (inputs : Json) : String := Journal.bodyHash inputs
+
+/-- The on-disk form of a compiled package: its artifact (with the packet), its laws as text, its
+    relations and the methods it declares public. -/
+def builtJson (key : String) (b : Built) : Json :=
+  Json.mkObj [("key", toJson key), ("artifact", b.artifact), ("laws", toJson (renderLaw b.laws)),
+    ("relations", Json.arr (b.relations.toArray.map fun d =>
+      Json.mkObj [("field", toJson d.field), ("key", toJson d.key), ("limit", toJson d.limit)])),
+    ("exposed", toJson b.exposed), ("lawShape", toJson [b.lawShape.1, b.lawShape.2])]
+
+/-- A compiled package from its on-disk form; the packet is decoded and re-checked by Mini. -/
+def builtOf (j : Json) : Option Built := do
+  let artifact ← (j.getObjVal? "artifact").toOption
+  let packet ← (artifact.getObjVal? "packet").toOption
+  let entry ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
+  let decoded ← (Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet).toOption
+  let laws ← match (j.getObjValAs? String "laws").toOption with
+    | some "" => some []
+    | some text => (parseLawText text).toOption
+    | none => none
+  let relations ← ((j.getObjVal? "relations").toOption.bind (·.getArr?.toOption)).map fun ds => ds.toList.filterMap fun d =>
+    match d.getObjValAs? String "field", d.getObjValAs? (List String) "key", d.getObjValAs? Nat "limit" with
+    | .ok field, .ok key, .ok limit => some ({ field, key, limit } : RelDecl)
+    | _, _, _ => none
+  let exposed ← (j.getObjValAs? (List String) "exposed").toOption
+  let [predicate, reads] ← (j.getObjValAs? (List Bool) "lawShape").toOption | none
+  return { artifact, ty := entry.type, laws, assumptions := decoded.source.assumptions, relations, exposed,
+           lawShape := (predicate, reads) }
+
+/-- The inputs of the code below a layered package's top layer: that module gone, `layers` one less. -/
+def lowerInputs (inputs : Json) : Option Json := do
+  let n := layersOf inputs
+  if n == 0 then none
+  let ms ← (inputs.getObjVal? "modules").toOption.bind (·.getArr?.toOption)
+  let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "modules" && k != "layers"
+  return Json.mkObj ([("modules", Json.arr ms.pop)] ++ (if n > 1 then [("layers", toJson (n - 1))] else []) ++ fields)
+
+/-- A package's compiled form. A layered package is a stack (HOST-HANDOFF 5.3): a layer keeps what the
+    code below it declared public and may declare more, keeps the relations below when it declares
+    none, and keeps the law shape below when it declares no Bend law; so whether an object was made
+    layered, extended later or rebuilt by replay, its stack has one shape. -/
+partial def compileObject (w : World) (inputs : Json) : Except String Built := do
+  if let some b := w.builds[buildKey inputs]? then return b
+  if let some b := ((DiskCache.read "build" (buildKey inputs)).bind builtOf).map DiskCache.hit then return b
+  let resolved ← resolveInputs w inputs
+  -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
+  let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
+  let c ← (Package.compileEntryFrom request (← resolved.getObjValAs? String "entry")).mapError
+    fun d => (Package.withHint resolved d).render
+  let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
+  let packet ← artifact.getObjVal? "packet"
+  let decoded ← Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet
+  unless stateTypeOk decoded.source.assumptions ty do
+    throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
+  let declared ← (declsOfArtifact artifact).mapError (s!"key: " ++ ·)
+  let exposed ← publicMethods (fun name =>
+    ((Package.compileEntryCore request name).mapError Package.Diagnostic.render).map (·.entry)) (declaresOf artifact)
+  let (_, predicate, reads) := artifactShape artifact
+  let below ← match lowerInputs inputs with
+    | some lower => some <$> compileObject w lower
+    | none => pure none
+  return { artifact, ty, laws, assumptions := decoded.source.assumptions,
+           relations := declared.getD ((below.map (·.relations)).getD []),
+           exposed := exposed ++ ((below.map (·.exposed)).getD []).filter (!exposed.contains ·),
+           lawShape := if predicate then (predicate, reads) else ((below.map (·.lawShape)).getD (false, false)) }
+
+/-- The method table and law shape an object of `b` runs with (`Object.methods`, `predicate`, `predicateReads`). -/
+def Built.shape (b : Built) : Json × Bool × Bool :=
+  (markHelpers (artifactShape b.artifact).1 b.exposed, b.lawShape)
+
 /-- Compile a replacement for an object's entry module (its imports stay as
     sealed at creation). Failures are `(clause, message)`. -/
 def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false) :
@@ -1278,22 +1348,16 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
         pure (replaced.setObjVal! "library" (toJson lib.pin)) else pure replaced
     | none => pure replaced)
   let resolved := fun (entry : String) => (resolveInputs w (inputs.setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
-  -- One prepared closure for the entry, its declared methods and (in the artifact) its relations.
-  let entryInputs ← resolved "initial"
-  let request ← (Package.prepareRequest entryInputs).mapError (("compile", ·.render))
-  let c ← (Package.compileEntryFrom request "initial").mapError fun d => ("compile", (Package.withHint entryInputs d).render)
-  let (artifact, ty) := (c.artifact, c.entry.type)
-  let decoded ← (do
-    Delvetalk.Theory.ObjectiveBendTyping.decodePacket (← artifact.getObjVal? "packet")).mapError (("compile", ·))
-  let assumptions := decoded.source.assumptions
-  unless stateTypeOk assumptions ty do
-    throw ("compile", "initial() must return a closed record of first-order data")
+  -- The new code compiled as any package is (`compileObject`: a stack keeps the shape below it).
+  let built ← (compileObject w (inputs.setObjVal! "entry" (toJson "initial"))).mapError fun e =>
+    if e.startsWith "methods: " then ("methods", (e.drop 9).toString)
+    else if e.startsWith "key: " then ("key", (e.drop 5).toString) else ("compile", e)
+  let (artifact, ty, assumptions) := (built.artifact, built.ty, built.assumptions)
   let packet ← (artifact.getObjValAs? String "packetSha256").mapError (("compile", ·))
-  let sourcePin ← (artifact.getObjValAs? String "sourcesSha256").mapError (("compile", ·))
   -- The pin is the sealed source closure's CID, an extension's too: its modules are the code it
   -- extends, the layer and the library it compiled against now (docs 2: the same layer under two
   -- libraries is two closures).
-  let pin := sourcePin
+  let pin ← (artifact.getObjValAs? String "sourcesSha256").mapError (("compile", ·))
   let same := (← (canonicalTy assumptions.bounds ty).mapError (("stateType", ·))) ==
     (← (canonicalTy o.bounds o.stateType).mapError (("stateType", ·)))
   let migrated : Option Compiled ← if migration.isEmpty then
@@ -1314,19 +1378,10 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
       | _ => throw ("migration", "the migration must be a function OldState -> NewState")
       pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid,
         (Delvetalk.CheckedEntry.ofPacket packet).toOption, none⟩)
-  -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its law shape
-  -- is the stack's when a layer declares a law, else the code's below.
-  let (methods, predicate, predicateReads) := artifactShape artifact
-  let exposed ← (publicMethods (fun name =>
-    ((Package.compileEntryCore request name).mapError (·.render)).map (·.entry)) (declaresOf artifact)).mapError fun e => if e.startsWith "methods: " then ("methods", (e.drop 9).toString) else ("compile", e)
-  -- A layer keeps what the code below it declared public and may declare more.
-  let methods := markHelpers methods (if extend then exposed ++ declaredRows o.methods else exposed)
-  let (predicate, predicateReads) := if !extend || predicate then (predicate, predicateReads)
-    else (o.predicate, o.predicateReads)
-  -- A layer that declares no relations keeps the relations of the code below it, as it keeps its law.
-  let relations ← match ← (declsOfArtifact artifact).mapError (("key", ·)) with
-    | some ds => pure ds
-    | none => pure (if extend then o.relations else [])
+  -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its shape is
+  -- the stack's (`Built.shape`).
+  let (methods, predicate, predicateReads) := built.shape
+  let relations := built.relations
   (checkRelations relations assumptions.bounds ty).mapError (("key", ·))
   return { inputs, pin, stateType := ty, bounds := assumptions.bounds, migration := migrated,
            methods, predicate, predicateReads, packet, relations, fixed := fixedOf artifact,
@@ -2831,50 +2886,6 @@ def defaultLaw (creator : String) : Except String Law := do
     s!"request.kind == 0 or request.subject == \"{creator}\""
   return [("owner", clause)]
 
-def buildKey (inputs : Json) : String := Journal.bodyHash inputs
-
-/-- The on-disk form of a compiled package: its artifact (with the packet), its laws as text, its
-    relations and the methods it declares public. -/
-def builtJson (key : String) (b : Built) : Json :=
-  Json.mkObj [("key", toJson key), ("artifact", b.artifact), ("laws", toJson (renderLaw b.laws)),
-    ("relations", Json.arr (b.relations.toArray.map fun d =>
-      Json.mkObj [("field", toJson d.field), ("key", toJson d.key), ("limit", toJson d.limit)])),
-    ("exposed", toJson b.exposed)]
-
-/-- A compiled package from its on-disk form; the packet is decoded and re-checked. -/
-def builtOf (j : Json) : Option Built := do
-  let artifact ← (j.getObjVal? "artifact").toOption
-  let packet ← (artifact.getObjVal? "packet").toOption
-  let entry ← (Delvetalk.CheckedEntry.ofPacket packet).toOption
-  let decoded ← (Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet).toOption
-  let laws ← match (j.getObjValAs? String "laws").toOption with
-    | some "" => some []
-    | some text => (parseLawText text).toOption
-    | none => none
-  let relations ← ((j.getObjVal? "relations").toOption.bind (·.getArr?.toOption)).map fun ds => ds.toList.filterMap fun d =>
-    match d.getObjValAs? String "field", d.getObjValAs? (List String) "key", d.getObjValAs? Nat "limit" with
-    | .ok field, .ok key, .ok limit => some ({ field, key, limit } : RelDecl)
-    | _, _, _ => none
-  let exposed ← (j.getObjValAs? (List String) "exposed").toOption
-  return { artifact, ty := entry.type, laws, assumptions := decoded.source.assumptions, relations, exposed }
-
-def compileObject (w : World) (inputs : Json) : Except String Built := do
-  if let some b := w.builds[buildKey inputs]? then return b
-  if let some b := ((DiskCache.read "build" (buildKey inputs)).bind builtOf).map DiskCache.hit then return b
-  let resolved ← resolveInputs w inputs
-  -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
-  let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
-  let c ← (Package.compileEntryFrom request (← resolved.getObjValAs? String "entry")).mapError
-    fun d => (Package.withHint resolved d).render
-  let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
-  let packet ← artifact.getObjVal? "packet"
-  let decoded ← Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet
-  unless stateTypeOk decoded.source.assumptions ty do
-    throw "package entry type must be a closed record of first-order data (a zero-argument definition returning the state record)"
-  let relations := ((← (declsOfArtifact artifact).mapError (s!"key: " ++ ·))).getD []
-  let exposed ← publicMethods (fun name =>
-    ((Package.compileEntryCore request name).mapError Package.Diagnostic.render).map (·.entry)) (declaresOf artifact)
-  return { artifact, ty, laws, assumptions := decoded.source.assumptions, relations, exposed }
 
 /-- Give a compiled package its first state and law. `lawText`, when given, is the law
     exactly as journaled; otherwise the package's laws, or the default owner law. -/
@@ -2893,8 +2904,7 @@ def makeObject (b : Built) (inputs : Json) (state : Data) (read : Option Json :=
     | some text => parseLawText text
     | none => if b.laws.isEmpty then defaultLaw creator else pure b.laws
   if let some message := amendable laws creator "" height 0 pin state then throw message
-  let (methods, predicate, predicateReads) := artifactShape b.artifact
-  let methods := markHelpers methods b.exposed
+  let (methods, predicate, predicateReads) := b.shape
   -- Readings belong to the package's clauses; a law given at creation keeps those it left alone.
   let given := (lawText.bind fun t => (parseLawTextReadings t).toOption.map (·.2)).getD []
   let readings := given ++ (artifactReadings b.artifact).filter fun (n, _) =>
@@ -3628,12 +3638,12 @@ def applyRoot (w : World) (outcome : Json) : Except String World := do
     | "law" => withLaw o (← after.getStr?)
     | "program" =>
       let built ← compileObject w after
-      let (methods, predicate, predicateReads) := artifactShape built.artifact
+      let (methods, predicate, predicateReads) := built.shape
       let w := cacheBuild w after built
       return { w with objects := w.objects.insert id { o with
         pin := ← built.artifact.getObjValAs? String "sourcesSha256", stateType := built.ty,
         bounds := built.assumptions.bounds, inputs := after, inputsKey := inputsKeyOf after,
-        methods := markHelpers methods built.exposed, predicate, predicateReads,
+        methods, predicate, predicateReads,
         packet := (built.artifact.getObjValAs? String "packetSha256").toOption.getD "",
         relations := built.relations, fixed := fixedOf built.artifact, declares := declaresOf built.artifact } }
     | "pin" => return put { o with pin := ← after.getStr? }
