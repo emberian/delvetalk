@@ -24,7 +24,12 @@
    new type; else the package's `migrate(old: State8) -> State` (a reprogram's migration, `Ops.runMigration`)
    converts it, the old state read through `migrate`'s argument type. The genesis lists each move (`moved
    [{object, from, to, migration, before, after}]`, pins and state CIDs) and the moved object's version moves
-   once; its suspensions (taken in the code before) are dropped, their supervisors told. An object whose
+   once; its suspensions (taken in the code before) are dropped, their supervisors told, and when its package
+   offers `carried` the genesis holds a delivery of `carried {}` to it (`rearmed`), as a kind sends what it makes
+   `made`: the first settling of the carried world runs it, and a self-ticking tide schedules its next `due`
+   there. A moved object holding its package's law as it was (unamended) takes the package's new law when it
+   changed (`law {before, after}` on its move); one whose law an owner amended keeps it, named (`kept`). An
+   object whose
    move refuses (its package does not compile against the image, or its state does not conform and it has
    no `migrate`, or `migrate` refuses) is carried retired at its old pin, the refusal its reading; so is one
    whose own package the image no longer ships (Wake, Env), and one the owner names with `--leave`. Only an
@@ -129,11 +134,14 @@ structure Moved where
   stateAfter : String
   /-- The image's body it took: as its layer (a thing of a kind, the commonplace) or as its `body` (a kind). -/
   body : Bool := false
+  /-- Its law text before and after, when it held its package's law and the image's package declares another. -/
+  law : Option (String × String) := none
 
 def Moved.json (m : Moved) : Json :=
   Json.mkObj ([("object", toJson m.object), ("from", toJson m.before), ("to", toJson m.after),
     ("migration", toJson m.migration), ("before", toJson m.stateBefore), ("after", toJson m.stateAfter)] ++
-    (if m.body then [("body", toJson true)] else []))
+    (if m.body then [("body", toJson true)] else []) ++
+    ((m.law.map fun (b, a) => [("law", Json.mkObj [("before", toJson b), ("after", toJson a)])]).getD []))
 
 /-- What a carry made of a world: the world as this binary holds it, the objects left (retired, with the
     reading), the objects moved to the image's packages, the suspensions dropped (the entry and why), and what
@@ -144,6 +152,25 @@ structure Carried where
   moved : List Moved := []
   dropped : List (Json × String) := []
   refused : List (String × String) := []
+  /-- Moved objects whose package's law changed but whose own law is not the package's as it was (an owner's
+      amendment): their law is kept, each named with it. -/
+  kept : List (String × String) := []
+
+/-- The method a package declares to be told it was carried (`carried(state, input: {}, context)`), as a kind
+    tells what it makes `made`: what the carry's move dropped (a self-ticking tide's waiting `due`) it starts
+    again from there. -/
+def rearmMethod : String := "carried"
+
+/-- The moved objects whose package offers `carried`, each told once, after the move. -/
+def Carried.rearmed (c : Carried) : List String :=
+  c.moved.filterMap fun m => (c.world.objects[m.object]?).bind fun o => if o.offers rearmMethod then some m.object else none
+
+/-- The delivery telling `id` it was carried: a pending send from no object (the carry, the opener's act), so it
+    runs as the first turn that settles the carried world, under the carry's principal and a fresh ledger. -/
+def rearm (principal id : String) : Json :=
+  Json.mkObj [("id", toJson s!"carried:{id}"), ("to", toJson id), ("method", toJson rearmMethod),
+    ("argument", Delvetalk.Compiler.ObjectiveBendDataWire.dataJson (.record [])), ("sender", toJson ""), ("from", identityJson principal "carry"),
+    ("principal", toJson principal), ("ledger", Ledger.start.json)]
 
 /-- The modules a source depends on: those it imports, and the one a layer is laid over. -/
 def dependsOn (source : String) : List String :=
@@ -188,9 +215,24 @@ def gone (w : World) (s : Shipped) (o : Object) : Option String := do
   if (lib.modules.lookup name).isSome && (s.library.modules.lookup name).isNone && (s.objects.lookup name).isNone then
     some name else none
 
+/-- The law a moved object holds under the image: its package's new law when it held its package's law as it
+    was (as made, unamended) and the package's law changed, with its readings; else its own, and
+    `amended` when the package's law changed and the object's is not the package's as it was. Only a
+    package-declared law is the carry's: a law given at creation is the maker's, and genesis's (`deploy.genesis
+    refresh`) lays the image's. -/
+def lawUnder (w : World) (id : String) (o : Object) (old new : Built) :
+    Except String (Law × String × List (String × String) × Bool) := do
+  let was := renderLaw old.laws
+  if old.laws.isEmpty || new.laws.isEmpty || renderLaw new.laws == was then return (o.law, o.lawText, o.readings, false)
+  if renderLaw o.law != was then return (o.law, o.lawText, o.readings, true)
+  if let some message := citationRefusal w id new.laws then throw s!"its package's law: {message}"
+  let readings := (artifactReadings new.artifact).filter fun (n, _) => (new.laws.lookup n).isSome
+  return (new.laws, renderLaw new.laws, readings, false)
+
 /-- `o` (built as `old` under its own pin) moved to the image's packages, or none when its closure there is
     its pin's; else why it cannot move. -/
-def moved (w : World) (s : Shipped) (id : String) (o : Object) : Except String (Option (Object × Built × Moved)) := do
+def moved (w : World) (s : Shipped) (id : String) (o : Object) (old : Built) :
+    Except String (Option (Object × Built × Moved × Bool)) := do
   -- Its body: a kind (holding a `body`) takes its own as that field; a thing of a kind takes its kind's, and
   -- the commonplace its own, laid as its first layer.
   let kind := match Law.rawField "kind" o.state with
@@ -226,12 +268,15 @@ def moved (w : World) (s : Shipped) (id : String) (o : Object) : Except String (
   if let some f := o.fixed.find? (!fixed.contains ·) then
     throw s!"{f} is fixed, and its package no longer fixes it"
   let (methods, predicate, predicateReads) := b.shape
+  let (law, lawText, readings, amended) ← lawUnder w id o old b
   let o' := { o with inputs, inputsKey := inputsKeyOf inputs, pin, state, version := o.version + 1, stateType := b.ty,
                      bounds := b.assumptions.bounds, methods, predicate, predicateReads, relations, fixed,
-                     packet := ← b.artifact.getObjValAs? String "packetSha256", declares := declaresOf b.artifact }
+                     packet := ← b.artifact.getObjValAs? String "packetSha256", declares := declaresOf b.artifact,
+                     law, lawText, readings }
   return some (o', b, { object := id, before := o.pin, after := pin, migration,
                         stateBefore := stateCid o.state, stateAfter := stateCid state,
-                        body := layer.isSome || relaid })
+                        body := layer.isSome || relaid,
+                        law := if lawText == o.lawText then none else some (o.lawText, lawText) }, amended)
 
 /-- Every object rebuilt and, with the image's packages, moved to them; every suspension checked. An
     object named in `leave` is carried retired whether or not it fails, at its own pin, and its suspensions
@@ -260,13 +305,14 @@ def carryWorld (w : World) (leave : List String) (reason : String) (shipped : Op
         c := { c with world := { c.world with objects := c.world.objects.insert id (retire o why) }, left := c.left ++ [(id, why)] }
       else c := { c with refused := c.refused ++ [(id, e)] }
     | .ok (o', b) =>
-      let step : Except String (Option (Object × Built × Moved)) := match named.lookup id, shipped with
+      let step : Except String (Option (Object × Built × Moved × Bool)) := match named.lookup id, shipped with
         | some why, _ => .error why
         | none, none => .ok none
-        | none, some s => (moved c.world s id o').mapError (s!"left at the carry: " ++ ·)
+        | none, some s => (moved c.world s id o' b).mapError (s!"left at the carry: " ++ ·)
       match step with
-      | .ok (some (o'', b', m)) =>
-        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o'' } o''.inputs b', moved := c.moved ++ [m] }
+      | .ok (some (o'', b', m, amended)) =>
+        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o'' } o''.inputs b', moved := c.moved ++ [m],
+                      kept := if amended then c.kept ++ [(id, o''.lawText)] else c.kept }
       | .ok none =>
         c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o' } o'.inputs b }
       | .error why =>
@@ -319,10 +365,10 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
     ("replay", toJson replay), ("reason", toJson reason), ("entries", entries)] ++
     (changed.map fun l => [("library", Json.mkObj [("from", toJson previous), ("to", toJson l.pin)])]).getD [] ++ earlier)
   let suspended ← w.suspended.mapM (Snapshot.wholeSuspension w)
-  let pending := w.pending ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray
+  let principal := if !w.opener.isEmpty then w.opener else if !w.clockPrincipal.isEmpty then w.clockPrincipal else "host"
+  let pending := w.pending ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray ++ (c.rearmed.map (rearm principal)).toArray
   let all := Snapshot.indexJson w
   let index := Json.mkObj (Snapshot.carriedKeys.filterMap fun k => (all.getObjVal? k).toOption.map (k, ·))
-  let principal := if !w.opener.isEmpty then w.opener else if !w.clockPrincipal.isEmpty then w.clockPrincipal else "host"
   Snapshot.genesisEntry w w "carried" principal "carry" cid ("carriedFrom", origin) pending suspended
     ([("index", index)] ++
      (if c.left.isEmpty then [] else [("left", Json.arr (c.left.toArray.map fun (id, why) =>
@@ -330,7 +376,10 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
      (if c.moved.isEmpty then [] else [("moved", Json.arr (c.moved.toArray.map (·.json)))]) ++
      (if c.dropped.isEmpty then [] else [("dropped", Json.arr (c.dropped.toArray.map fun (e, why) =>
         Json.mkObj [("hash", (e.getObjVal? "hash").toOption.getD Json.null), ("object", toJson (Snapshot.suspendedObject e)),
-          ("reason", toJson why)]))]))
+          ("reason", toJson why)]))]) ++
+     (if c.kept.isEmpty then [] else [("kept", Json.arr (c.kept.toArray.map fun (id, law) =>
+        Json.mkObj [("object", toJson id), ("law", toJson law)]))]) ++
+     (if c.rearmed.isEmpty then [] else [("rearmed", toJson c.rearmed)]))
 
 def fail (message : String) (code : UInt32 := 1) : IO UInt32 := do
   (← IO.getStderr).putStrLn s!"carry: {message}"
@@ -425,7 +474,9 @@ def main (args : List String) : IO UInt32 := do
     ("left", Json.arr (carried.left.toArray.map fun (id, why) => Json.mkObj [("object", toJson id), ("reading", toJson why)])),
     ("moved", Json.arr (carried.moved.toArray.map (·.json))),
     ("dropped", Json.arr (carried.dropped.toArray.map fun (e, why) => Json.mkObj [("hash", (e.getObjVal? "hash").toOption.getD Json.null),
-      ("object", toJson (Snapshot.suspendedObject e)), ("reason", toJson why)]))])
+      ("object", toJson (Snapshot.suspendedObject e)), ("reason", toJson why)])),
+    ("kept", Json.arr (carried.kept.toArray.map fun (id, law) => Json.mkObj [("object", toJson id), ("law", toJson law)])),
+    ("rearmed", toJson carried.rearmed)])
   return 0
 
 end Delvetalk.Host.Carry
