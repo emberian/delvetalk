@@ -20,11 +20,9 @@ def cache_path(st, request_id):
 
 
 def request(item):
-    """The model request: the host's policy text as the system, the utterance as the user turn, once. Policy.prompt still
-    ends with `Participant: <utterance>`; that tail is cut here so it is not sent twice (FLEX.md)."""
-    policy, tail = item['policy'], '\n\nParticipant: ' + item['utterance']
-    system = policy.get('system', '')
-    return {'model': policy.get('model'), 'system': system[:-len(tail)] if system.endswith(tail) else system, 'user': item['utterance']}
+    """The model request: the host's policy text as the system, the utterance as the user turn."""
+    policy = item['policy']
+    return {'model': policy.get('model'), 'system': policy.get('system', ''), 'user': item['utterance']}
 
 
 def run(st, host, ask=model.ask):

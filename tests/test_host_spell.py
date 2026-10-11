@@ -84,6 +84,11 @@ class Clauses(unittest.TestCase):
                 self.assertEqual(fit.get("refused", {}).get("clause"), clause, fit)
         self.assertEqual(host({"text": "delvetalk garden-1 plant\nseed: fern", "form": form})["fit"], {"unclear": {"needs": ["colour"]}})
         self.assertIs(host({"text": "plant: a fern"})["notASpell"]["fielded"], True)
+        # A field whose text bound starts at 0 may be left out: it reads as empty (`kinds make` with a name and an of).
+        make = {"card": "kinds", "action": "make", "fields": [{"name": "name", "kind": {"text": {"min": 1, "max": 80}}},
+                                                              {"name": "law", "kind": {"text": {"min": 0, "max": 4096}}}]}
+        self.assertEqual(show_fit(host({"text": "delvetalk kinds make / name: lamp", "form": make})["fit"]), "proposal kinds make name=lamp;law=;")
+        self.assertEqual(host({"text": "delvetalk kinds make / law: x", "form": make})["fit"], {"unclear": {"needs": ["name"]}})
         self.assertIs(host({"text": "just prose"})["notASpell"]["fielded"], False)
 
 
@@ -103,13 +108,27 @@ class Margin(unittest.TestCase):
         form = fixtures("fit")[0]["form"]
         self.assertEqual(host({"text": post, "form": form})["fit"]["refused"]["clause"], "quotation")
 
-    def test_a_spell_at_the_margin_casts_and_the_same_indented_does_not(self):
+    def test_a_spell_at_the_margin_casts_and_indented_among_other_lines_does_not(self):
         spell = "delvetalk garden plant / seed: x / colour: amber"
         self.assertEqual(show_parsed(host({"text": spell})), "spell garden plant seed=x;colour=amber;")
         for indent in ("  ", "    ", "\t"):
             with self.subTest(indent=repr(indent)):
-                self.assertIn("notASpell", host({"text": indent + spell}))
                 self.assertIn("notASpell", host({"text": "see:\n" + indent + spell + "\nnice"}))
+                self.assertIn("notASpell", host({"text": indent + spell + "\nthat is how it goes"}))
+
+    def test_a_post_that_is_one_spell_block_is_dedented_and_cast(self):
+        planted = "spell garden plant colour=amber;seed=x;"
+        for post in ("  delvetalk garden plant / colour: amber / seed: x",  # pasted with its indent
+                     "    delvetalk garden plant\n    colour: amber\n    seed: x\n",  # a Zulip code block
+                     "\t\tdelvetalk garden plant\n\t\tcolour: amber\n\n\t\tseed: x",
+                     "```\ndelvetalk garden plant\ncolour: amber\nseed: x\n```",  # one fence
+                     "```text\n  delvetalk garden plant\n  colour: amber\n  seed: x\n```"):
+            with self.subTest(post=post):
+                self.assertEqual(show_parsed(host({"text": post})), planted)
+        # Not uniform, or another line beside the block: an example.
+        for post in ("    delvetalk garden plant\ncolour: amber", "  delvetalk garden plant\n  colour: amber\n  I think so"):
+            with self.subTest(post=post):
+                self.assertIn("notASpell", host({"text": post}))
         # An indented example after a spell's fields neither ends nor replaces it.
         self.assertEqual(show_parsed(host({"text": "delvetalk garden plant\nseed: x\n  delvetalk tide tick\ncolour: amber"})),
                          "spell garden plant seed=x;colour=amber;")

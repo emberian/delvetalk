@@ -941,6 +941,7 @@ the host with the card's usage and journals nothing. -/
 
 /-- A form's field as the spell a reader copies (`Card.hint`). -/
 def spellHint : Spell.Kind → String
+  | .text 0 b => s!"<optional text, up to {b} characters>"
   | .text a b => s!"<text, {a} to {b} characters>"
   | .natural a b => s!"<a number from {a} to {b}>"
   | .choice options => s!"<{", ".intercalate options}>"
