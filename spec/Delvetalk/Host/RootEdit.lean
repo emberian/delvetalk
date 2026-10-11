@@ -289,8 +289,8 @@ def lineEntries (content : String) : Except String (Array Json) := do
     let entry ← match Json.parse line with
       | .ok e => pure e
       | .error _ => throw s!"journal broken at height {height}: unparsable line"
-    -- A fork's genesis chains to the forked world's entry, which it names.
-    if height == 1 && tagOf entry == "forked" then head := (entry.getObjValAs? String "previous").toOption.getD ""
+    -- A fork's or a carry's genesis chains to the entry it was taken at, which it names.
+    if height == 1 && installsStore entry then head := (entry.getObjValAs? String "previous").toOption.getD ""
     Journal.verify height head entry
     head := (entry.getObjValAs? String "hash").toOption.getD ""
     out := out.push entry

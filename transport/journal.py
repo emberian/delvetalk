@@ -6,7 +6,7 @@ at, bytes}`, and beside it `<journal>.blocks`, the block store, where each entry
 import json
 from pathlib import Path
 
-from transport.atproto.cbor import decode
+from transport.atproto.cbor import CID, decode
 
 
 def links(path):
@@ -82,3 +82,20 @@ def copy(src, dst, height=None):
         chain = chain[:height]
     Path(str(dst) + '.blocks').write_bytes(Path(str(src) + '.blocks').read_bytes() if Path(str(src) + '.blocks').exists() else b'')
     Path(dst).write_text(''.join(line + '\n' for line in chain))
+
+
+def snapshots(path):
+    """The snapshot files beside the journal at `path`, `<journal>.snapshot.<height>.cbor`, newest first: [(height, path)]."""
+    p = Path(path)
+    pre = p.name + '.snapshot.'
+    found = [(int(f.name[len(pre):-len('.cbor')]), f) for f in p.parent.glob(pre + '*.cbor') if f.name[len(pre):-len('.cbor')].isdigit()]
+    return sorted(found, reverse=True)
+
+
+def snapshot(path):
+    """The body of a snapshot file (HOST-HANDOFF 5.6): the DAG-CBOR `{cid, body: bytes}`, the CID checked over the body's
+    stored bytes before they are read."""
+    outer = decode(Path(path).read_bytes())
+    if not isinstance(outer, dict) or str(CID.of(outer.get('body', b''))) != outer.get('cid'):
+        raise ValueError(f'{path}: its bytes are not its CID\'s')
+    return _plain(decode(outer['body']))

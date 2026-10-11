@@ -1,12 +1,12 @@
 # Host handoff
 
-State on 2026-10-11 (lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
 The host is one Lean process holding a world of durable objects. Every state change is a journal entry naming the one before it (CID of canonical DAG-CBOR); memory is derived from the journal by `record`, and replay re-judges admitted entries. A reply exists only after its bytes are durable.
 
-- Files: `spec/Delvetalk/Host/` `Blocks` (the block store: `Entries`, `Link`, the pure record read), `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots and their indexes, opening, fork genesis), `Session` (journal IO, ops dispatch), `RootEdit` (the offline tools: `root-edit`, `migrate`). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
+- Files: `spec/Delvetalk/Host/` `Blocks` (the block store: `Entries`, `Link`, the pure record read), `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots and their indexes, opening, the store-installing geneses of a fork and a carry), `Session` (journal IO, ops dispatch), `RootEdit` (the offline tools: `root-edit`, `migrate`), `Carry` (the offline `carry`, 5.159). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
 - An activity yields `World.Message`s; `answer` dispatches on the method name against `worldMethods` (5.48). Write is self-only; cross-object change is `call`/`send`, judged by the callee's own law; `reprogram` and `amend` of another object are judged by the target's law.
 - Only declared methods run from outside (5.62). A direct `receive` is read as a spell by the host (5.49, 5.54, 5.63); a misfit is `badSpell` with `clause`, `reason`, `hint`, unless the card reads words (its state names a `policy`, 5.153).
 - Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); subscriptions deliver `changed` to typed receivers (5.50, 5.53); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
@@ -21,7 +21,7 @@ The host is one Lean process holding a world of durable objects. Every state cha
 
 ## 1. Module map
 
-Import order: Blocks, Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapshot, Root, Session; `Serve.lean` and `PackageSession.lean` sit above them. Blocks imports only `Canonical`; Snapshot imports Ops only; Spell imports only Store; Root imports TurnLoop.
+Import order: Blocks, Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapshot, Root, Session; `Serve.lean` and `PackageSession.lean` sit above them, and `RootEdit`, `Carry` (which seals a library as `Serve` does) above those, for `PackageMain`. Blocks imports only `Canonical`; Snapshot imports Ops only; Spell imports only Store; Root imports TurnLoop.
 
 - `Blocks.lean`: `Entries` (the chain in memory: every CID, each record's span, the step's unwritten entries; `get?` reads and CID-checks one record through `readAt`, a `pread` behind `implemented_by`, pure because a written record never changes), `Link` (one chain line, `Link.ofLine`), `recordBytes`.
 - `Store.lean`: `Limits`, `Law`, `Compiled`, `Ledger`, `ReadPolicy`, `Program`, `Object`, `World`, `identityKey` (compressed `[principal, intent]`). Pure data.
@@ -31,7 +31,8 @@ Import order: Blocks, Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop
 - `DiskCache.lean`: the on-disk compile cache's reads (5.66).
 - `Spell.lean`: `parse`, `bare`, `fit` and the `Clause`s of the spell grammar (5.49).
 - `TurnLoop.lean`: `M` monad (`ExceptT Abort (StateM TurnState)`), `runMethod`, `drive`, `answer`, `finishTurn`, `runTurnWith`, `resumeOne`, `settle`, `deliver`, `reprogramOp`, `amendOp`.
-- `Snapshot.lean`: snapshot bytes (`storeJson`, `indexJson`, `installIndex`), `openJournal`, `reopen`, `replayAll`, `resume`, `checkAnchors`, `writeJournal`, fork genesis. It does IO (the chain, the block store, snapshot files).
+- `Snapshot.lean`: snapshot bytes (`storeJson`, `indexJson`, `installIndex`), `openJournal`, `reopen`, `replayAll`, `resume`, `checkAnchors`, `writeJournal`, the store-installing geneses (`genesisEntry`, `forkGenesis`, `wholeSuspension`, `carriedKeys`, `installGenesis`). It does IO (the chain, the block store, snapshot files).
+- `Carry.lean`: `delvetalk-obend carry` (5.159): `readWorld` (a snapshot body under `readKeys` only), `rebuilt`, `resumable`, `carryWorld`, `carryGenesis`, `main`.
 - `Session.lean`: `Open {world, path, handle, store, report, sync, snapshotAt, every, bound}`, `openWorld`, `durableIO`/`durable`, `appendJournal`, `stepWorld`, `syncHandle` (extern, `spec/native/sync.c`).
 - `Root.lean`: `rootKinds`, `rootFieldsOf`, `rootOp`, `worldSettingsOp` (5.126).
 - `Serve.lean` and `spec/native/serve.c`: the directory of worlds and its two sockets (5.125, 5.131). `PackageSession.lean` is the per-process session above Session.
@@ -195,7 +196,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name. Th
 ### 5.7 Slugs, fork, repository reads
 
 - Slug (`Slug.lean` `ofCid`, `decode`): proquint of the first 32 bits of a CID's multihash digest (`lusab-babad`). Replies show receipts with `slug` beside `hash`; `world-inspect` shows `pinSlug`. `world-resolve {principal, slug}` answers `{status: "resolved", kind: receipt | pin | state, cid, receipt?}`, `{status: "ambiguous", matches, message}` or `{status: "unknown", message}` over `slugTargets`. Test: `test_slug`.
-- `world-fork {principal, height?, into}` (`Session.forkWorld`; `into` must not exist) writes a new journal whose one entry is a `forked` genesis (`Snapshot.forkGenesis`): the store at `height` (`Snapshot.reopen` over the chain's prefix) as `storeJson` with whole sources, only the objects `principal` may view (with grants, pending deliveries, suspended activities), the handle registry, `omitted [ids]`, `forkedFrom {world, height, cid}`. Opener, clock principal and library-law principal are `principal`. Height 1 chains to the forked entry's `cid` (`checkedEntry`); written by `writeJournal`; replay starts from the installed genesis (`installFork`). Answers `{status: "forked", into, forkedFrom, carried, omitted}`. Test: `test_fork`.
+- `world-fork {principal, height?, into}` (`Session.forkWorld`; `into` must not exist) writes a new journal whose one entry is a `forked` genesis (`Snapshot.forkGenesis`): the store at `height` (`Snapshot.reopen` over the chain's prefix) as `storeJson`, only the objects `principal` may view (with grants, pending deliveries, suspended activities written out whole), the handle registry, `omitted [ids]`, `forkedFrom {world, height, cid}`. Opener, clock principal and library-law principal are `principal`. Height 1 chains to the forked entry's `cid` (`checkedEntry`); written by `writeJournal`; replay starts from the installed genesis (`installGenesis`). Answers `{status: "forked", into, forkedFrom, carried, omitted}`. Test: `test_fork`.
+- A fork and a carry (5.159) are one mechanism, the store-installing genesis (`Ops.installsStore`, `genesisOrigin`, `genesisRow`; `Snapshot.genesisEntry`, `installGenesis`): the store, every source its objects compile from carried once in the entry's own `sources` and named by CID (as any entry carries the sources it is first to name; an older fork's whole sources still install), the pending deliveries and whole suspensions, the handles; `previous` the origin's `cid`. A carry adds the world's standing indexes (`carriedKeys`, as `indexJson` writes them, laid over an empty world's) and `carriedFrom` with the old chain's `entries {hash: height}`. `world-status` shows `forkedFrom` or `carriedFrom` from entry 1 (`originShown`, the entries left out); `World.forkedFrom` stays in the v3 snapshot index only until the next snapshot edition, which drops it. `world-resolve` answers a carried world's old receipts (`carriedEntries`, every generation) as `{kind: receipt, carried {world, height, at}}` and an installed object's pin and state.
 - `world-entry {principal, hash, bytes?}` (`bytes` = hex of the canonical DAG-CBOR, identity's own principal only); `world-entries {principal, after?, before?, reverse?, limit?}` (limit 1..100); `world-object {principal, object, version?}` -> `record {object, version, pin, pinSlug, law, readings, laws [{object, version, pin, name, clause, reading?}], stateCid, library?}` as of the version (`pinAndLawAt`); `world-source`/`world-sources` -> `{cid, name, text, height}` for sources of objects the reader may view and the libraries'; `world-grants`. Test: `test_reads`.
 
 ### 5.8 Arrival
@@ -1649,21 +1651,74 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    Pins re-recorded (World is in every closure). Test: `test_genesis.Checked` (bell/1 and the garden, each
    `layer over`, check clean; a missing card is named).
 
+159. **Carry and the no-wipe gate (host21; OVERHAUL steps 0 and 1; TENURE §1).** No replay edition change: a
+   `carried` genesis is a new tag, and every journal that exists replays as before.
+   - *The gate.* `deploy.genesis` lists every world journal under `--towns` (`DELVETALK_TOWNS`; compose mounts
+     `/var/lib/delvetalk` read-only into `delvetalk-ops` at `/towns`) other than its own and refuses, naming each
+     with its height, unless `--wipe-with-the-owners-word R`, which it writes on the commonplace and admits as
+     the town's first line. `deploy/carry-check.sh [--old-image I | --old-binary P] [--leave O]... BINARY BACKUP`
+     is the merge check the root runs on hbox: the newest pulled tarball replayed from genesis
+     (`verify.sh --full`) and carried (`transport carry`) under the candidate; green, green-breaking (the deploy
+     carries) or red. `backup.sh` writes each world's head snapshot into every tarball (`verify.sh --snapshot`).
+   - *The host.* `delvetalk-obend carry --from J --out J2 --reason R [--library DIR] [--leave OBJ]...`
+     (`Carry.lean`): J only read (a verified chain, its flock free), J2 must not exist. The world is read from
+     J's snapshot at its head (`verifiedBody`, then `readWorld`: the index keys in `readKeys` laid over an empty
+     world's, so an older binary's v3 body is a contract on those keys alone, then `install` and
+     `checkAnchors`), never from J's entries, which need not replay here. `carryWorld` rebuilds every object
+     under this binary (`rebuilt`: the sources seal to the pin, the state conforms to the type this compiler
+     makes, its rows are canonical under its relations; then this host's type, bounds, method table, law shape,
+     packet, relations, fixed and declared fields) and checks every suspension (`resumable`: the method compiled,
+     the checkpoint's packet this host's, its tokens decoding under this kernel's dictionary). Each failure
+     refuses the carry, all of them listed by name. `--leave OBJ` carries an object retired (`Ops.retiredLaw`,
+     now also the root `retire` and the card power's, one clause), its state as it was and its suspensions
+     dropped, each supervisor told `ended {how: broken}` as a pending delivery (`droppedEnd`, `endedField`).
+     `--library DIR` seals DIR as serve seals it (`Serve.sealLibrary` into J2's directory) and makes it the
+     current library when its pin differs (`carriedFrom.library {from, to}`); objects keep their pins.
+     `carryGenesis`: `carriedFrom {world, height, cid, replay, reason, entries, library?, carriedFrom?}` (the old
+     genesis's own when it was a carry), `index`, `left`, `dropped`. J2 is replayed from its genesis and every
+     object's state CID compared with the snapshot's before it is written. Prints `{status: carried, hash, slug,
+     replay, carriedFrom, library, objects, pending, suspended, grants, posts, receipts, left, dropped}`.
+   - *The transport.* `python3 -m transport carry --from OLD --to NEW --reason R [--leave [W=]OBJ]... [--obend B]`
+     (`transport/carry.py`): every world journal of OLD carried with the config's library; the transport's files
+     copied (serve's never: journals, snapshots, lock, `library/`, `root/`, `scratch/`, sockets, pid files);
+     `publications.after` and each `awaiting` turn's height set to 1; each carried world checked in a throwaway
+     copy beside it (every object's state CID against the old head snapshot and its card rendering for its
+     owner, every old receipt's slug resolving to its height, a `world-advance` admitted); the hand's line last.
+     `deploy/playtest.sh --from RUN` carries an earlier run instead of a genesis.
+   - *Size.* A carried genesis holds the store with its compiled types and method tables: playtest 3's (51
+     objects) is 1.4 MB of record, past `maxEntryBytes`, which bounds appends only (`writeJournal` writes a
+     genesis whole, as a fork's always was).
+   - Measured on hbox: playtest 3 (`run-20261011-084303`, edition 6, height 489, 51 objects, head snapshot by its
+     own binary) carried to edition 8 in 5 s with `--leave wake/did:plc:6amo7col5h4ciq2gpm5eur7b` (the one
+     suspension, the opener's wake's `due`, was checkpointed under a packet this compiler no longer emits);
+     transport's check: 51 objects at their state CIDs, 51 cards, 489 receipts, a new entry. The v7 town's
+     newest backup (`delvetalk-20261011T183505Z`, height 73, 28 objects) the same with nothing left.
+   - Tests: `tests/test_carry.py` (every object and receipt across, a carried suspension settling and a spell on a
+     carried thing after, a fresh process replaying it; an object left retired; the library shipped sealed and the
+     old pins compiling; refusals without the snapshot, over an open journal, into a journal, an unknown
+     `--leave`; a journal re-sealed as edition 7 refused on open and carried; a served town carried with its
+     transport and served again), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
-  derives; `Journal.sealEntry` writes it as `replay` on every journal's first entry (a fork's genesis
-  too), `world-status` answers it, and `Snapshot.openJournal` refuses a journal of another edition
-  before replaying anything: "journal replay edition 1; this host is 2; a world from another host's
-  edition does not reopen: make it again with a new genesis" (a journal without the field is
-  edition 1). **Bump it in the same commit as any change to what replay derives or checks** (a judging
-  rule, a derived index, a journaled field replay compares), and say so in the item. 2 is host12
-  (evictions and changes owed as facts, lineage, reservations, attempts); 3 is host14 (root, ignore and
-  shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126); 4 is host16 (roots
-  read by their cells, the per-cell bound and ledger; 5.136); 5 is host17 (a layered package's shape is
-  its stack's, 5.138; the relational atoms judged and their citations roots, 5.139); 6 is host18 (a send refused
-  transiently stays pending, 5.150); 7 is host19 (`context.sender`, 5.155); 8 is kernel16 (`cardRefused`, 5.157). Test:
-  `tests/test_replay_edition.py`.
+  derives; `Journal.sealEntry` writes it as `replay` on every journal's first entry (a fork's and a carry's genesis
+  too), `world-status` answers it, and `Snapshot.openJournal` refuses a journal of another edition before
+  replaying anything: "journal replay edition 1; this host is 2; a world from another host's edition does not
+  reopen here: carry it (`delvetalk-obend carry --from J --out NEW`, ...)" (a journal without the field is edition
+  1). The check stands: a world replayed under rules it was not judged by would lie. The policy is TENURE §1's:
+  an additive derived field is compared when present and derived when absent, with no bump; a bump is a breaking
+  change, which ships with `deploy/carry-check.sh` green on the newest town backup (the deploy then carries,
+  5.159) or does not merge; a world is never begun again for one. 2 is host12 (evictions and changes owed as
+  facts, lineage, reservations, attempts); 3 is host14 (root, ignore and shadowing, moderation, the opener's
+  amendments, later settings, `unposted`; 5.126); 4 is host16 (roots read by their cells, the per-cell bound and
+  ledger; 5.136); 5 is host17 (a layered package's shape is its stack's, 5.138; the relational atoms judged and
+  their citations roots, 5.139); 6 is host18 (a send refused transiently stays pending, 5.150); 7 is host19
+  (`context.sender`, 5.155); 8 is kernel16 (`cardRefused`, 5.157). OVERHAUL plans one more, 9, with step 3's
+  rules and wants, and snapshot `v4` with it; none after. Test: `tests/test_replay_edition.py`.
+- **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
+  `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
+  `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
 - `canonicalTy` (Ops): two state types are equal when their canonical forms agree (variables renamed in order of first use, at most 4096 steps, else "type too deep to compare"). Reprogram and extend depend on it.
@@ -1679,13 +1734,30 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host19 (5.153 to 5.156; of host18's queue, the misfit signal, the readings and `context.sender` are
-done, with the coordinator's D3, F2 and D10; D6, a card's refusal, is kernel16's 5.157), in order. The owner's standing order binds every item: "maturify and take
-forward everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
-together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things', no scar
-and growth tissue." So each replacement deletes what it replaces in the same commit, and this file describes only what
-is.
+The queue after host21 (5.159: the no-wipe gate and the carry, OVERHAUL steps 0 and 1), in order. The overhaul
+(docs/OVERHAUL.md section 5) is the order of work now: step 2 (the grammar, lane/kernel17) is in flight, step 3 (the
+host: rules, wants, the revealing reply, edition 9) follows it. The owner's standing order binds every item: "maturify
+and take forward everything that we've started and bring it to its full sophistication and make sure the code is all
+'fungused together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old
+things', no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
+describes only what is. A merge touching the host runs `deploy/carry-check.sh` on hbox first (5.159).
 
+0. **The carry's remainder (host21).**
+   - The first carry of the live town: ship `backup.sh`, `verify.sh` and `carry-check.sh` to the workhorse's
+     `/opt/delvetalk/deploy/` and hbox's `~/delvetalk-backups/`, so tarballs hold head snapshots; until one does,
+     carry-check takes `--old-image delvetalk-host:9790175f9dc0`. The deploy is DEPLOY "A new binary", *It carries*.
+   - Step 3's edition 9 and snapshot `v4`: `World.forkedFrom` leaves the index (`world-status` already reads the origin
+     from entry 1), `Object.rules`/`wants` enter `storeJson`, and `Carry.readKeys`/`install` read both v3 and v4
+     (the snapshot body is the carry's contract, section 6). carry-check on the newest backup is the gate.
+   - What a carried world does not yet keep: `world-receipt`/`world-entry` of a pre-carry hash answer unknown (the old
+     chain's block store is edition-independent: read it as the world before, by the `carriedFrom.world` path or a
+     copy beside the new journal); identity receipts (a retry of a pre-carry intent runs again); a client's offers
+     cursor (`http.py` `after`) past the carried height waits until the new chain passes it.
+   - A carried genesis's size: the store's compiled types and method tables (1 MB of playtest 3's 1.4 MB) are
+     derivable from the carried sources; carry them as blocks, or derive them at install, measured on the v7 town.
+   - `slugTargets` scans every entry (and now every carried hash) per `world-resolve`: index slugs (item 4 below).
+   - Wake: playtest 3's opener wake is carried retired by the fourth playtest's `--leave`; step 4 deletes Wake, and a
+     carry of a world holding Wake objects leaves each by name.
 1. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
    old path: T30 reach as a host op (`world-reach {text, replyTo, root, kind, author, chain: [{uri, author,
    replyTo}]}` answering `{object, slot, how}` or nothing: the host holds `posts` (the addressee walk), the spell
@@ -1721,7 +1793,6 @@ is.
    - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new `root:<n>`;
      `set pin` stores the pin alone; `as` runs the method as named; `root-edit` does not rewrite CIDs inside
      checkpoints and states. `openerActs`' interpret-quota exemption ignores `resident`: decide.
-   - Deploy: edition 8 (5.155, 5.157) needs a new genesis for every world.
    - The objects lane, after 5.153: fold `Card.Reply` into `Heard` and delete `Record.misfitted`, the room's
      `Super.misfitted` arm, the commonplace's `isNobody(state.policy)` misfit refusal; credit a delivered write to
      `context.sender` (the weather's rain, 5.155).

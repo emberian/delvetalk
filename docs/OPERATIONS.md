@@ -235,32 +235,29 @@ record it), load, set `.env`, `docker compose --profile town up -d --wait`,
 journaled sources; if the new compiler refuses an old object, `world-open`
 fails and the old tag goes back. Restart in place, ten minutes, no post.
 
-*A new edition.* The journal does not reopen ("make it again with a new
-genesis", HOST-HANDOFF 6). Order: (1) back up and verify with the old image;
-(2) the old world stays read-only for its receipts: its journal and old
-image served by a second compose project `delvetalk-archive` on workhorse's
-loopback (`127.0.0.1:8767`), so a quoted slug still resolves; the new welcome
-names it once; (3) `deploy.genesis` anew with the seeds, the library
-re-shelved (the same bytes: replay re-seals from the image), the bridge rows
-by `python3 -m transport open`; (4) the welcome re-posted once under a new intent
-(`welcome-2`), the five pages by click; (5) residents re-arrive at their
-first post. Lost, and said in the welcome: bells, subscriptions, grants,
-anthology lines, the cistern's refusals. Kept: every receipt, read-only, by
-its old slug. The ring's go/no-go on the new world is read before the
-welcome goes.
+*A new edition, or a new library.* The journal does not reopen ("carry
+it", HOST-HANDOFF 6), or serve refuses the library's bytes. The world is
+carried, never begun again (TENURE section 1): stack down, back up with the
+old image, the head snapshots written by the old image (`verify.sh
+--snapshot`), `python3 -m transport carry` into a new data directory under the
+new image, up, smoke, and the hand's one line in the channel (DEPLOY "A new
+binary", *It carries*). Kept: every object, name, receipt (by its old slug, in
+the carried world itself; no archive is served), post address, grant,
+suspension and setting. Lost: chain continuity (the carried genesis cites the
+old head; entries before it are not re-judged) and whatever the owner lists
+under `--leave`, which is carried retired. An hour, one post.
 
 *No wipe.* A genesis while a town journal lives under `/var/lib/delvetalk`
 is a wipe, and `deploy.genesis` refuses it, naming each journal, unless
 `--wipe-with-the-owners-word R`: the owner's word, the town's first line and
 the welcome's (DEPLOY "First start", TENURE section 1). A commit whose binary
-does not replay the newest town backup is a breaking change and does not
-merge: `deploy/carry-check.sh` on hbox before each merge touching the host
-(DEPLOY "Before a merge that touches the host").
+neither replays nor carries the newest town backup does not merge:
+`deploy/carry-check.sh` on hbox before each merge touching the host (DEPLOY
+"Before a merge that touches the host").
 
-**Decision:** same edition is a restart in place; a new edition is a new
-genesis with the old world archived on loopback and the loss named in the
-welcome, and only with the owner's word; no commit merges that does not
-replay the newest backup.
+**Decision:** same edition and library is a restart in place; anything else
+is a carry; a genesis over a living town only with the owner's word; no
+commit merges that does not carry the newest backup.
 
 ### Incident playbooks
 

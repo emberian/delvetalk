@@ -216,20 +216,11 @@ an open of the old one-file line format is refused naming it. Two cases, kept ap
   /j/town.journal.old --out /j/town.journal` (the old file renamed first; `--out` must not exist; without `--user` the
   pair belongs to the image's 65532) and checked with `verify.sh`. Rehearsed 2026-10-11: a 91-entry journal written out
   in the line format migrates back to the same two files, byte for byte.
-- *Another replay edition* ("journal replay edition 1; this host is 6"): nothing converts it, `migrate` included. It is
-  a new genesis into a fresh data directory (OPERATIONS section b, "The upgrade path"); the old directory is kept as it
-  is, served read-only by its own old image if its receipts are to resolve. Done 2026-10-11 (b14df72e into `v3`, the
-  edition-1 world left unserved in `v2`, so its receipts stop resolving): `docker compose --profile town down` on the
-  old files (a plain `down` leaves the exited `town` interpreter), one closing backup of the old directory with the old
-  unit, scripts and image, `mv /var/backups/delvetalk/mirror /var/backups/delvetalk/mirror.<old>-<stamp>` (backup.sh's
-  `rsync --delete` into `mirror/` would otherwise erase the old world's copy; backup.sh now records the mirror's
-  source in `mirror.source` and moves a mirror of another directory aside itself), the old `.env`, compose files, scripts
-  and units copied to `/opt/delvetalk/before-<sha12>/`, then the new files, `.env` with the new `DELVETALK_DATA`, and
-  this section from here. Done again the same day (6cd1f491 into `v4`, `v3` kept unserved with a closing backup at height
-  920, 225 objects): the repository key carries over in place (`DELVETALK_REPO_KEYS` is the same `/etc/delvetalk/repo`, so
-  `did:web` and its `#atproto` key are unchanged; never regenerate it), and the old mirror was moved aside by backup.sh's
-  `mirror.source` guard, written by hand once (`echo /var/lib/delvetalk/v3 > /var/backups/delvetalk/mirror.source`) since
-  the previous backup.sh predated it.
+- *Another replay edition* ("journal replay edition 6; this host is 8; ... carry it"): the world is carried into a
+  fresh data directory by the new binary, never begun again ("A new binary", *It carries*). The five fresh geneses of
+  2026-10-10 and 2026-10-11 (`v3` to `v7`) were the wipes the residents named; their directories stay unserved.
+
+This section is a first town's. A box whose `/var/lib/delvetalk` already holds a town carries it instead.
 
     docker compose up -d --wait delvetalk-host
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock
@@ -475,12 +466,19 @@ with no hourly cap (the host's `postQuota` is delve.town etiquette and does not 
 in this path reads Delve credentials.
 
     deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20] [--port 8765] [--dir DIR] [--no-welcome]
-                       [--wipe-with-the-owners-word R]
+                       [--from RUN [--from-binary PATH] [--leave OBJ]... | --wipe-with-the-owners-word R]
     deploy/playtest.sh --stop
 
+`--from RUN` carries an earlier run's world into the new run instead of a genesis: RUN's head snapshot is written by the
+binary RUN served (its `state/binary-pin`, or `--from-binary`), `transport carry` moves the world and its transport
+files, the run's own bridge row is opened, and the carry's one line is posted in place of the welcome (intent
+`carry-<slug>`). The fourth playtest starts `--dir ~/scratch/playtest --from ~/scratch/playtest/run-20261011-084303` (on hbox, its edition-6
+binary at `~/scratch/dt-playtest6`, and `--leave wake/did:plc:6amo7col5h4ciq2gpm5eur7b`, whose suspension that compiler
+checkpointed differently; DEPLOY "Before a merge" measured it).
+
 It starts `delvetalk-obend serve` over a fresh directory under `~/.delvetalk-playtest/run-<stamp>/state/` (`--dir`
-moves it; earlier runs are kept; their towns are the genesis guard's `--towns`, so a second run is refused unless the
-owner's word is given), writes the run's `delvetalk.toml` (origin, `http_port`, `poll`), opens the town on the
+moves it; earlier runs are kept; their towns are the genesis guard's `--towns`, so a second run without `--from` is
+refused unless the owner's word is given), writes the run's `delvetalk.toml` (origin, `http_port`, `poll`), opens the town on the
 stream with `transport open`, runs genesis, posts the config's `welcome` (default `docs/previews/zulip-welcome.txt`) to the stream's `welcome`
 topic and records it against `commonplace`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds), each under a PID file in the run directory that `--stop` reads. The
 `.zuliprc` is the bot's: its user must be subscribed to the stream (a guest cannot create one; check `users/me/subscriptions` first, since a stream the bot cannot see answers `Invalid channel name`). With `--topic NAME` the playtest joins an existing conversation: the welcome goes to that topic instead of `welcome`, and the observer reads only that topic (the Zulip narrow `channel` + `topic`), so the world never sees the stream's other topics; replies land in the same topic. A fresh bridge observes nothing posted before its start. The model credentials are as under "Model
@@ -563,7 +561,9 @@ file sharing on a Mac is for testing, not custody.
 
 It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
 copies SQLite through its backup API, replays every journal (`state/*.journal`; `state/scratch/` is not custody and is left out of the backup)
-in a throwaway host with no network, and only then writes a dated tarball
+in a throwaway host with no network and writes each world's snapshot at its head beside it in the mirror
+(`verify.sh --snapshot`: what a carry to a newer binary reads, by the binary that wrote the journal, so every tarball
+is a world the next binary can carry), and only then writes a dated tarball
 and its `.sha256`, and records `ok <stamp>` or `broken <stamp>` in `last-verify` (the watch reads it). Exit 1 means a
 journal is broken: the tarball is not made. The backup directory is root's, group 10425, mode 0750: the watch's probe runs
 as 10425 in the ops container and lists it and reads `last-verify` (under 0700 its one run by hand failed `hand: [Errno
@@ -697,25 +697,70 @@ The root runs, on hbox, before each merge touching `spec/Delvetalk/Host/`, `spec
 
     deploy/carry-check.sh <candidate>/.lake/build/bin/delvetalk-obend /tank/delvetalk-backups
 
-It untars the newest pulled tarball into a throwaway directory and replays every journal in it with the candidate
-(`verify.sh --binary`); the tarball is never written. Exit 0 is green. Exit 1 names the journal and why it does not
-replay: the commit does not merge.
+It untars the newest pulled tarball into a throwaway directory, replays every journal in it from its genesis with the
+candidate (`verify.sh --full --binary`), then carries the state to the candidate (`python3 -m transport carry`, below)
+and checks the carried world: every object at the state CID of the backup's head snapshot and rendering for its owner,
+every old receipt resolving by its slug, a new entry admitted. The tarball is never written. *green*: it replays and
+carries. *green, breaking*: it does not replay and carries, so the deploy carries ("A new binary"). *RED*: it does not
+carry; the commit does not merge. A tarball from before head snapshots takes `--old-image delvetalk-host:<sha12>` (the
+image that wrote it); an object the candidate cannot carry is refused by name, and only the owner adds `--leave OBJ`,
+which carries it retired. Run 2026-10-11 against `delvetalk-20261011T183505Z` (the v7 town, height 73, 28 objects) with
+`--old-image delvetalk-host:9790175f9dc0`: green; against playtest 3's run (`run-20261011-084303`, edition 6, height
+489, 51 objects) with its own binary and `--leave wake/did:plc:6amo7col5h4ciq2gpm5eur7b`: green, breaking (the
+opener's wake's suspension was checkpointed under a packet this compiler no longer emits).
 
 ## A new binary
 
-The journal is the world; the binary only replays it. `pin` is the SHA-256 of
-an object's sealed source closure, so existing objects keep their pins; replay
-recompiles each one under the new binary and checks that the pin and sources
-hash match the journal.
+The journal is the world; the binary only replays it. `pin` is the SHA-256 of an object's sealed source closure, so
+existing objects keep their pins; replay recompiles each one under the new binary and checks that the pin and sources
+hash match the journal. `deploy/carry-check.sh` on hbox ("Before a merge that touches the host") has said which of two
+cases the binary is, and the world is never begun again in either.
 
-    deploy/backup.sh --image delvetalk-host:<old> ...      # first
+*It replays* (green): the same replay edition and the same library. A restart in place:
+
+    deploy/backup.sh --image delvetalk-host:<old> /var/lib/delvetalk/v7 /var/backups/delvetalk      # first
     deploy/build.sh; docker save ... | ssh ... docker load  # new sha
     # .env: DELVETALK_IMAGE=delvetalk:<new sha12>, DELVETALK_HOST_IMAGE=delvetalk-host:<new sha12>
     docker compose --profile town up -d --wait
     deploy/smoke.sh https://gsb.fg-goose.online --pin <new sha256>
 
-If the new compiler refuses an old object, `world-open` fails, the healthcheck
-stays red and the journal is untouched: set the old tag back and `up` again.
+If the new compiler refuses an old object, `world-open` fails, the healthcheck stays red and the journal is untouched:
+set the old tag back and `up` again. If the image's `world/lib` differs from the library the world sealed, serve
+refuses the open ("library at ... has pin X but the journal records Y"): that binary carries.
+
+*It carries* (green, breaking): another replay edition, or another library. The world moves to a new data directory
+under the new binary: every object at its state, name, law and pin, every grant, pending delivery, suspension, post,
+handle and setting, the moderation and the quotas' counts, and every receipt of the world before resolving by its
+slug ("entry N of the world before the carry"). The carried genesis cites the old head; the old directory stays as it
+is, unserved and read-only.
+
+    docker compose --profile town down                       # nothing writes the old world from here
+    deploy/backup.sh --image delvetalk-host:<old> /var/lib/delvetalk/v7 /var/backups/delvetalk
+    deploy/verify.sh --snapshot --image delvetalk-host:<old> /var/lib/delvetalk/v7   # each world's head snapshot, by the old binary
+    install -d -o 10425 -g 10425 -m 0700 /var/lib/delvetalk/v8
+    # load the new images; .env: the new DELVETALK_IMAGE and DELVETALK_HOST_IMAGE, DELVETALK_DATA=/var/lib/delvetalk/v8
+    docker compose run --rm delvetalk-ops python3 -m transport carry --from /towns/v7/state --to /data/state \
+      --reason "<one line: why the host changed>"
+    docker compose --profile town up -d --wait
+    deploy/smoke.sh https://gsb.fg-goose.online --pin <new sha256>
+
+`transport carry` (run in the ops container, which mounts every data directory read-only at `/towns`) refuses while
+the old `journal.lock` is held and when the new state holds a journal. For each world journal it runs the new binary's
+`delvetalk-obend carry --from OLD --out NEW --reason R --library <the image's world/lib>` (HOST-HANDOFF 5.158), which
+reads the world from the snapshot at its head, rebuilds every object from its sources, checks every suspension decodes,
+seals the image's library as serve will, and writes the carried genesis. Then the transport's files move (the bridge
+rows, `identity.sqlite`, each world's observations, outbox, posting ledger, `since`), the cursors that named old heights
+set to the genesis (`publications.after`, each `awaiting` turn), and each carried world is checked in a throwaway copy as
+carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (TENURE section
+1, rule 5), posted once by the owner:
+
+    hob: the world was carried to a newer host at entry 73; everything is where it was, and the carry is receipt <slug>.
+
+An object the new binary cannot rebuild, or a suspension it cannot decode, refuses the carry by name. Only the owner
+lists such an object with `--leave OBJ` (`WORLD=OBJ` for a world other than the town): it is carried retired (the
+`retired` clause, the reason its reading), its state kept, its suspensions dropped with their supervisors told
+`ended {how: broken}`. After the carry, change hbox's `pull.env` to the new image (the tarballs' paths are unchanged:
+backup.sh moves the mirror of the old directory aside itself), and keep the old directory: it is the world before.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 

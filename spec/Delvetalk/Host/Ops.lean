@@ -2520,8 +2520,39 @@ def rowsNaming (outcome : Json) (k id : String) : Array Json :=
   (((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).filter fun x =>
     (x.getObjValAs? String "object").toOption == some id
 
-/-- The object rows of a fork's genesis state that name `id`. -/
-def forkedRow (outcome : Json) (id : String) : Option Json :=
+/-- Whether an entry is a genesis that installs a store (`Snapshot.installGenesis`): a fork's of a
+    principal's view, a carry's of a whole world. -/
+def installsStore (entry : Json) : Bool := tagOf entry == "forked" || tagOf entry == "carried"
+
+/-- A store-installing genesis's origin, under the name its tag gives it: `forkedFrom {world, height, cid}`
+    or `carriedFrom {world, height, cid, replay, reason, entries, carriedFrom?}`. The entry's `previous`
+    is the origin's `cid`. -/
+def genesisOrigin (entry : Json) : Option (String × Json) :=
+  let key := if tagOf entry == "carried" then "carriedFrom" else "forkedFrom"
+  if !installsStore entry then none else
+  ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? key |>.toOption)).map (key, ·)
+
+/-- An origin as `world-status` shows it: a carry's index of the old chain's entries left out, at every
+    generation (a carried world's origin names the origin of the world it carried, when that was a carry). -/
+partial def originShown (origin : Json) : Json :=
+  Json.mkObj (((origin.getObj?.toOption.map (·.toList)).getD []).filterMap fun (k, v) =>
+    if k == "entries" then none else if k == "carriedFrom" then some (k, originShown v) else some (k, v))
+
+/-- A carried genesis's old chains, newest generation first: each entry hash with its height in that
+    world and that world's origin (`carriedFrom`, which names the generation before when it was a carry). -/
+partial def carriedEntries (entry : Json) : Array (String × Nat × Json) :=
+  let rec walk (origin : Json) : Array (String × Nat × Json) :=
+    let mine := (((origin.getObjVal? "entries").toOption.bind (·.getObj?.toOption)).map fun m =>
+      m.toList.foldl (fun (acc : Array (String × Nat × Json)) (h, v) => match v.getNat? with
+        | .ok n => acc.push (h, n, origin)
+        | .error _ => acc) #[]).getD #[]
+    mine ++ (((origin.getObjVal? "carriedFrom").toOption.map walk).getD #[])
+  match genesisOrigin entry with
+  | some ("carriedFrom", origin) => walk origin
+  | _ => #[]
+
+/-- The object rows of a store-installing genesis that name `id`. -/
+def genesisRow (outcome : Json) (id : String) : Option Json :=
   ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).bind
     fun os => os.find? fun o => (o.getObjValAs? String "id").toOption == some id
 
@@ -2541,11 +2572,11 @@ def versionIn (entry : Json) (id : String) : Option Nat :=
     else if (outcome.getObjValAs? String "field").toOption == some "version" then
       (outcome.getObjVal? "after").toOption.bind (·.getNat?.toOption)
     else (outcome.getObjValAs? Nat "version").toOption
-  | "forked" => (forkedRow outcome id).bind (·.getObjValAs? Nat "version" |>.toOption)
+  | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjValAs? Nat "version" |>.toOption)
   | _ => none
 
 /-- The pin the entry gives `id`, when it sets one: a creation's, a reprogram's, a root `set` of the
-    pin or the program, a fork genesis's. -/
+    pin or the program, a store-installing genesis's. -/
 def pinIn (entry : Json) (id : String) : Option String :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let named := (outcome.getObjValAs? String "object").toOption == some id
@@ -2561,11 +2592,11 @@ def pinIn (entry : Json) (id : String) : Option String :=
     | some "pin" => (outcome.getObjVal? "after").toOption.bind (·.getStr?.toOption)
     | some "program" => (outcome.getObjValAs? String "pin").toOption
     | _ => none
-  | "forked" => (forkedRow outcome id).bind (·.getObjValAs? String "pin" |>.toOption)
+  | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjValAs? String "pin" |>.toOption)
   | _ => none
 
 /-- The law text the entry gives `id`, when it sets one: a creation's, an amendment's, a root `set` of
-    the law, a `retire` or `unretire`, a fork genesis's. -/
+    the law, a `retire` or `unretire`, a store-installing genesis's. -/
 def lawIn (entry : Json) (id : String) : Option String :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let named := (outcome.getObjValAs? String "object").toOption == some id
@@ -2582,11 +2613,11 @@ def lawIn (entry : Json) (id : String) : Option String :=
     | "set" => if (outcome.getObjValAs? String "field").toOption == some "law" then after else none
     | "retire" | "unretire" => after
     | _ => none
-  | "forked" => (forkedRow outcome id).bind (·.getObjValAs? String "law" |>.toOption)
+  | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjValAs? String "law" |>.toOption)
   | _ => none
 
 /-- The state CID the entry names for `id` at `version`: a created seed's, a write's `cid`, a root
-    `set`'s, a fork genesis's `stateCid`; none when it names none. -/
+    `set`'s, a store-installing genesis's `stateCid`; none when it names none. -/
 def stateCidIn (entry : Json) (id : String) (version : Nat) : Option String :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let named := (outcome.getObjValAs? String "object").toOption == some id
@@ -2599,7 +2630,7 @@ def stateCidIn (entry : Json) (id : String) (version : Nat) : Option String :=
       (rowsNaming outcome "creates" id).back?.bind fun c => (c.getObjVal? "seed").toOption.map Journal.bodyHash
   | "root" =>
     if named && (outcome.getObjValAs? Nat "version").toOption == some version then (outcome.getObjValAs? String "cid").toOption else none
-  | "forked" => (forkedRow outcome id).bind (·.getObjValAs? String "stateCid" |>.toOption)
+  | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjValAs? String "stateCid" |>.toOption)
   | _ => none
 
 /-- The objects an entry may say something of. -/
@@ -2607,10 +2638,10 @@ def objectsNamed (entry : Json) : List String :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let ids := fun (k : String) => (((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
     fun x => (x.getObjValAs? String "object").toOption
-  let forked := (((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
+  let installed := (((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
     fun o => (o.getObjValAs? String "id").toOption
   (((outcome.getObjValAs? String "object").toOption.toList ++ ids "writes" ++ ids "creates" ++ ids "reprograms" ++
-    ids "amendments" ++ forked)).eraseDups
+    ids "amendments" ++ installed)).eraseDups
 
 /-- `World.anchors` after the entry at `height`: each object it gives a version, a pin or a law is
     anchored there for that; a root `delete` forgets the object. -/
@@ -4293,6 +4324,18 @@ def lawClauses (text : String) : List (String × Option String × String) :=
     let expr ← after.dropPrefix? ":"
     return (name, reading, expr.toString.trimAscii.toString)
 
+/-- A law text with the `retired` clause (ROOT 2.2) appended, which admits only the opener's amendment:
+    the root `retire`, the card power `retire / reading:` and a carry's `--leave` write this one clause.
+    `none` when the text is retired already. -/
+def retiredLaw (text reading opener : String) : Option String :=
+  if (lawClauses text).any (·.1 == "retired") then none else
+  let clause := s!"law retired \"{reading}\": request.kind == 2 and request.subject == \"{opener}\""
+  some (if text.isEmpty then clause else s!"{text}\n{clause}")
+
+/-- A law text with its `retired` clause removed (`unretire`). -/
+def unretiredLaw (text : String) : String :=
+  "\n".intercalate ((text.splitOn "\n").filter fun l => !(l.trimAscii.toString.startsWith "law retired "))
+
 /-- The law's clauses as `(name, expression, reading)`, the reading the law text gives, else the
     package's while its clause stands ("" for none): the `inspect` Plan's `laws`. -/
 def lawRowsOf (o : Object) : List (String × String × String) :=
@@ -4550,6 +4593,15 @@ def slugTargets (w : World) (reader : String) : Array (String × String) := Id.r
       for x in arr "writes" do
         if seen (object x) then
           if let .ok c := x.getObjValAs? String "cid" then out := out.push (c, "state")
+    | "forked" | "carried" =>
+      -- The installed store: each object's pin and state as the genesis holds them.
+      let rows := ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]
+      for o in rows do
+        if seen ((o.getObjValAs? String "id").toOption.getD "") then
+          if let .ok p := o.getObjValAs? String "pin" then out := out.push (p, "pin")
+          if let .ok c := o.getObjValAs? String "stateCid" then out := out.push (c, "state")
+      -- A carry's old chains, every generation: their receipts resolve as entries of the world before.
+      for (h, _) in carriedEntries entry do out := out.push (h, "carried")
     | _ => pure ()
   return out
 
@@ -4566,6 +4618,13 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
   match hits.toList with
   | [] => return Json.mkObj [("status", toJson "unknown"), ("slug", toJson slug),
       ("message", toJson s!"unknown: no receipt, pin or state here is named {slug}")]
+  | [(cid, "carried")] =>
+    -- A receipt of a world this one was carried from: its height there, and that world.
+    let (height, origin) := (((w.entries.get? 0).map carriedEntries).getD #[] |>.find? (·.1 == cid) |>.map (·.2)).getD (0, Json.null)
+    let world := (origin.getObjValAs? String "world").toOption.getD ""
+    return Json.mkObj [("status", toJson "resolved"), ("slug", toJson slug), ("kind", toJson "receipt"), ("cid", toJson cid),
+      ("carried", Json.mkObj [("world", toJson world), ("height", toJson height), ("at", (origin.getObjVal? "height").toOption.getD Json.null)]),
+      ("message", toJson s!"entry {height} of the world before the carry ({world})")]
   | [(cid, kind)] =>
     let receipt := if kind != "receipt" then none else
       ((w.entries.indexOf? cid).bind w.entries.get?).map (projectEntry w reader)

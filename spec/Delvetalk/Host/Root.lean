@@ -102,14 +102,12 @@ def rootFieldsOf (w : World) (kind : String) (act : Json) (reason : String) : Ex
     return [("object", toJson id), ("after", prior)]
   | "retire" =>
     let (id, o) ← object ()
-    if (lawClauses o.lawText).any (·.1 == "retired") then throw s!"{id} is retired already"
+    let some after := retiredLaw o.lawText reason w.opener | throw s!"{id} is retired already"
     if reason.any (fun c => c == '"' || c == '\\' || c == '\n') then throw "a retiring reason is one line without quotes"
-    let clause := s!"law retired \"{reason}\": request.kind == 2 and request.subject == \"{w.opener}\""
-    return [("object", toJson id), ("after", toJson (if o.lawText.isEmpty then clause else s!"{o.lawText}\n{clause}"))]
+    return [("object", toJson id), ("after", toJson after)]
   | "unretire" =>
     let (id, o) ← object ()
-    let kept := (o.lawText.splitOn "\n").filter fun l => !(l.trimAscii.toString.startsWith "law retired ")
-    return [("object", toJson id), ("after", toJson ("\n".intercalate kept))]
+    return [("object", toJson id), ("after", toJson (unretiredLaw o.lawText))]
   | "revoke" =>
     let g ← text "grant"
     unless w.grants.contains g do throw s!"no grant {g}"

@@ -1,5 +1,5 @@
 """A journal names the replay edition it was written under, and a host of another edition refuses it by
-name before replaying (HOST-HANDOFF §6, "Replay edition").
+name before replaying, naming the carry (HOST-HANDOFF §6, "Replay edition"; tests.test_carry carries one).
 
 Evidence (layer: host). Refuted by a journal without the field reopening, an edition-1 journal failing
 somewhere inside replay instead of at its head, or `world-status` not naming the edition.
@@ -34,7 +34,7 @@ class ReplayEdition(HostCase):
         opened = self.host.send(op="world-open", path=self.path)
         self.assertEqual(opened["status"], "error", opened)
         self.assertIn(f"journal replay edition 1; this host is {edition}", opened["message"])
-        self.assertIn("new genesis", opened["message"])
+        self.assertIn("carry it", opened["message"])
 
 
 if __name__ == "__main__":

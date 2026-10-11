@@ -48,6 +48,8 @@ COMMANDS = {'serve': (__name__, 'serve'), 'bridge': ('transport.bridge', 'comman
             'post': ('transport.post', 'command'), 'hand': ('transport.hand', 'command'), 'http': ('transport.http', 'command'),
             'open': (__name__, 'open_world'), 'watch': ('transport.watch', 'watch'), 'repokey': (__name__, 'repokey'),
             'status': ('transport.watch', 'status')}
+# Commands over two state directories, not one world of one: they take their own arguments.
+WHOLE = {'carry': ('transport.carry', 'command')}
 
 
 def parser():
@@ -86,6 +88,13 @@ def parser():
     p.add_argument('--unhealthy', nargs='*', default=[], metavar='SERVICE', help='compose services not running or unhealthy')
     p.add_argument('--dry-run', action='store_true', help='print the lines; post nothing, remember nothing')
     add('repokey', "make the world's repository signing key").add_argument('--curve', default='secp256k1', choices=('secp256k1', 'secp256r1'))
+    p = sub.add_parser('carry', help='carry a state directory to the configured host binary: every world, no wipe',
+                       description='carry a state directory to the configured host binary: every world, no wipe')
+    p.add_argument('--from', dest='source', required=True, metavar='OLD', help="the old state directory (serve stopped); only read")
+    p.add_argument('--to', required=True, metavar='NEW', help='the new state directory; holds no journal')
+    p.add_argument('--reason', required=True, help='one line, journaled in each carried genesis')
+    p.add_argument('--leave', action='append', default=[], metavar='[WORLD=]OBJ', help='carry this object retired (the town when no WORLD)')
+    p.add_argument('--obend', help="the host binary (default the new state's config, DELVETALK_OBEND)")
     p = add('status', 'one probe of the world, as JSON')
     p.add_argument('--health', choices=('host', 'http', 'hand', 'bridge', 'interpret'), help='exit 0 if the service is healthy (a compose healthcheck)')
     p.add_argument('--playtest', action='store_true', help="the playtest's measures from the journal (docs/PLAYTEST-2.md section 4)")
@@ -96,6 +105,9 @@ def main(argv=None, out=None, **seams):
     """`seams` replace a command's network or host (a test's stubs)."""
     ap = parser()
     a = ap.parse_args(argv)
+    if a.command in WHOLE:
+        module, name = WHOLE[a.command]
+        return getattr(importlib.import_module(module), name)(a, out or sys.stdout) or 0
     if not a.state:
         ap.error('--state (or DELVETALK_STATE) is required')
     module, name = COMMANDS[a.command]

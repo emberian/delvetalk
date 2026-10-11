@@ -427,8 +427,9 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
           -- What this process holds compiled (carried from world to world it opens).
           ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
             ("methods", toJson s.world.compiled.size)])] |>
-          fun r => (match s.world.forkedFrom with
-            | some f => r.setObjVal! "forkedFrom" f
+          -- A fork or a carry names where it came from (its genesis's `forkedFrom` or `carriedFrom`).
+          fun r => (match (s.world.entries.get? 0).bind genesisOrigin with
+            | some (key, origin) => r.setObjVal! key (originShown origin)
             | none => r) |> fun r => interpretStatus s.world r (request.getObjValAs? String "principal").toOption))
       | "world-posted" => durable s reader (fun w => postedOp w request)
       | "world-cite" => durable s reader (fun w => citeOp w request)
