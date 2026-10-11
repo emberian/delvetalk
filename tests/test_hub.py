@@ -137,6 +137,10 @@ class Hub(test_chain.Chain):
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n", card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        # hob shows no card (docs/OVERHAUL.md §2: four answers): `card` is prose with no spell, silence.
+        self.assertEqual(self.say("is there a map of the town?", KIMI, uri="at://x/post/4")["status"], "suspended")
+        carded = self.interpret("card")
+        self.assertEqual((carded["result"]["label"], carded["receipt"].get("offers", [])), ("silent", []), carded)
         # hob's none is quiet: nothing offered.
         self.assertEqual(self.say("is the garden open on the wiki today?", KIMI, uri="at://x/post/3")["status"], "suspended")
         quiet = self.interpret("none")

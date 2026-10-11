@@ -9,7 +9,7 @@ The host is one Lean process holding a world of durable objects. Every state cha
 - Files: `spec/Delvetalk/Host/` `Blocks` (the block store: `Entries`, `Link`, the pure record read), `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots and their indexes, opening, the store-installing geneses of a fork and a carry), `Session` (journal IO, ops dispatch), `RootEdit` (the offline tools: `root-edit`, `migrate`), `Carry` (the offline `carry`, 5.159), `Enchant` (strokes, the paint check and the render cache, 5.161). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
 - An activity yields `World.Message`s; `answer` dispatches on the method name against `worldMethods` (5.48). Write is self-only; cross-object change is `call`/`send`, judged by the callee's own law; `reprogram` and `amend` of another object are judged by the target's law.
 - Only declared methods run from outside (5.62). A direct `receive` is read as a spell by the host (5.49, 5.54, 5.63); a misfit is `badSpell` with `clause`, `reason`, `hint`, unless the card reads words (its state names a `policy`, 5.153).
-- Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); subscriptions deliver `changed` to typed receivers (5.50, 5.53); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
+- Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
 - An object's pin is the CID of its sealed source closure, never a compiler output. A `fixed` State field is set at creation only (5.76).
 - Laws: a text law (`law NAME "reading": EXPR`) judges every change; `request.kind` is `write` 0, `reprogram` 1, `amend` 2 or `proposed` 3, a write no method of the object made (5.93); an optional Bend `law(old, new, request)` runs after it for kinds 0 and 3 and may give a reading (5.67).
 - Refusals are receipts with a class from `refusalClasses` (18, `quiet` the newest, 5.126); every `reason` is written by `Refusal.voiced` (5.75). `staleRoot`, `budget`, `evaluation`, `capacity` and `quota` are transient (a retry with the same identity runs again).
@@ -114,7 +114,7 @@ Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes`):
 - `sends`: ids derive from the ordinal at commit (`sendsJson`). A send's ledger is `{depth-1, work - used, storage - bytes added}` (saturating). Work is charged after the fact: a turn may overshoot `work` by one turn.
 - `creates`: built in-turn by `buildCreated` (compile, evaluate `initial()`, overlay the partial seed with `mergeSeed`, `makeObject`), installed by `commit`.
 - A `create` with `requireAbsent.object == ""` gets `<creator>/<package lowercased>/<n>` (`mintId`); every creation of an id of that shape raises its parent's `minted`.
-- `await` accepts `until` (absolute clock height) as well as `patience`; Plan `awaitUntil`. `awaitPost {post, patience}` / `awaitPostUntil` wait for the turn that replied to a recorded post.
+- `await` accepts `until` (absolute clock height) as well as `patience`; Plan `awaitUntil`.
 - Await inside a `call` is refused; only the top activity checkpoints.
 
 Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-HANDOFF):
@@ -262,8 +262,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    on, by method name: `write`'s argument is the running object's edits, `judge`'s the edits to judge,
    every other method's argument is that method's payload. A message whose
    `object` is not `{world: "", object: "world"}` is answered `refused {clause: notWorld}` (a message to an
-   object is a `call`), a method outside `worldMethods` `refused {clause: noMethod}`; `subscribe`
-   and `unsubscribe` are answered (5.50); `spell` is not a world method (5.53). The response is checked against the call
+   object is a `call`), a method outside `worldMethods` `refused {clause: noMethod}`; `spell` is not a world method. The response is checked against the call
    site's type the kernel reports (`responseType`): the result sum of that protocol method in World.obend
    (`Written`, `Returned<R>`, `Interpreted<R>`, ...). A handler (`run`) sees the Message as yielded. The world has no state
    and no law (WHOLENESS §5): who may call which method is the authority model as built (`write`
@@ -292,24 +291,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    that form's spell (the rule `Card.withBare` had in Bend). The interpretation fit and lens `set` are 5.54. Test:
    `tests/test_spell_turns.py`.
 
-50. **Subscriptions and `changed` (host8; WHOLENESS §3, host day 3).** Plan/world method `subscribe {object, field}`
-   stages `Subscription {subscriber: the running object, principal: the frame's subject, object, field}`:
-   `denied` unless the subject may view the object, `field` unless the object's state has that top-level
-   field, `subscribers` past `Limits.subscribersPerObject` 64; a repeat is idempotent; `unsubscribe` ends
-   the running object's own. The admitted entry journals `subscribes`/`unsubscribes` (also in the request
-   digest; `judge` re-counts the bound); `record` derives `World.subscriptions` (`subscriptionsAfter`), so
-   replay and snapshot resume rebuild it; a suspended activity carries its staged ones. After an admitted
-   write, `changesJson` owes each subscription to a field the turn's ordinary edits touched a delivery
-   `{id, to, object, field, version, principal, ledger, argument}` beside `sends` (ids continue the sends'
-   ordinals; ledger as a send's, `childLedger`), argument `{object: Reference, field, version, inserted,
-   retracted}`: for a relation the rows added and removed (an upsert that replaced a row is both), for a
-   list the items added and removed, for a scalar `[new]` and `[old]`. Sends and changes together are at
-   most `sendsPerTurn`; the subscribers past it are named in `unserved`. `record` queues them as pending
-   deliveries of method `changed` (sender the changed object, run under the subscription's principal).
-   Unlike WHOLENESS's "re-derived, never stored", the argument IS journaled: a scalar's old value is not in
-   `writes[].edits`; replay re-derives the whole `changes`/`unserved` from the states and requires them
-   equal, so it is checked, not trusted. `deliverOne` refuses a `changed` whose principal may no longer view
-   the object (`lawRefused`, clause `denied`) and `record` drops that subscription. Test: `tests/test_changes.py`.
+50. **Subscriptions and `changed`**: deleted with Wake (5.161); a rule on the thing is the reaction (5.160).
 
 51. **Field roots (host8; WHOLENESS §3a).** `viewField` reads one field: the root is journaled as
    `{object, version, fields: [f]}` (`recordFieldRoot`, now a `Cells` reading, 5.136), current while no write
@@ -327,19 +309,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    law's `request.argument`) is the read one; the request digest is of the argument as sent. Deliveries,
    `call` and `send` arguments are typed values and are not read so. Test: `tests/test_sum_words.py`.
 
-53. **Typed receivers (host9; WHOLENESS second root decisions, 3 and 5).** `subscribe {object, field,
-   method}` names the subscriber's receiver; "" or absent is `changed`. The receiver must be a method of
-   the subscriber (`refused {clause: method}`). One subscription per (subscriber, object, field): a
-   subscribe naming another receiver replaces the standing one (journaled as an unsubscribe of the old
-   and a subscribe of the new). `Subscription.method` is journaled in `subscribes`/`unsubscribes` and in
-   each `changes` item only when it is not `changed`; `record` queues the delivery to that method.
-   `inserted`/`retracted` are checked against the receiver's declared input at delivery as any
-   delivered argument is (`argumentFits`): rows that do not conform refuse the delivery `typeMismatch`
-   with `expected {method, type}`; the subscription stands. A change delivery is told apart from a send
-   by its `field` (the read-authority recheck and the `denied` drop use it). `spell` is not a world
-   method (`noMethod`): the host's spell path runs a card's methods directly. World.obend's
-   `subscribe` line gains `method: String` in the objects lane (tests replace the line in a library
-   copy until then). Test: `tests/test_changes.py` `Receivers`.
+53. **Typed receivers**: deleted with Wake (5.161); a rule on the thing is the reaction (5.160).
 
 54. **Spells, the rest (host9; WHOLENESS §2, second root decisions 2).** Interpretation: a model's text
    to an activity of the message dialect is fitted against the offered forms (`spellVerdict`): a spell
@@ -1818,6 +1788,42 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      (5) the paint is dry, a field-guide catalogue; once kinds carry `voice` read a dozen live paints and tune
      `Paint.contract()` (it is library text: a library change, not a host one).
 
+161. **Grown verbs, the chronicle, the world arms; Wake's host support deleted (lane/host23; OVERHAUL §5 steps
+   3 and 4's host half).** No edition bump: edition 9 is not deployed, and these change what it derives.
+   - *Verbs.* `Object.verbs : List Verb {name, by, at, reading, takes, does}` (≤ `verbsPerObject` 16; snapshot
+     `verbs`). Grown by a placing of kind `rule` (4): `Placement {object, what: rule | want | verb, name, line,
+     takes, does}` (journal `{object, verb, reading, takes, does?}`; removal has no reading), judged by the law
+     with `request.verb` `grow` (rule and want placings now carry `rule`/`want`), so `request.kind == rule`
+     admits all three and `request.verb == "grow" implies …` refuses grows alone. Refusals: `programRefused
+     verb` (name a word of a-z, digits, -, ≤ 32; reading one line ≤ 200), `nameTaken` (a declared method, a
+     host spell or read, `act`/`set`/`receive`/`?`, a grown verb), `noMethod act` (no `act`, no verbs),
+     `capacity verbsPerObject`, `notPlacer`. `does` names a rule placed in the same entry under the grower,
+     `rule NAME: request.verb == "NAME" then SPELL`; `ungrow` takes both off.
+   - *Spells.* `grow / name / reading / takes: text|nothing / does: <spell, last>`, `ungrow / name`, `verbs`
+     (declared then grown, with grower and entry). `formsOf` appends grown verbs as forms (the text field is
+     `act`'s own) and hides `act`; `offeredTo` judges a verb as `act` with the verb; `castSpell` runs a grown
+     verb as `act {verb, text}` (`grownAct`); a direct `act` naming no grown or staged verb is `noMethod`. A
+     spell naming no verb says how it grows.
+   - *Staging.* `placementsOf` is the one reading of a placing (spell, call, arm); `stagePlacements` judges at
+     once and stages on `TurnState.placements` (journaled on a suspension's activity). A `call` of a placing
+     spell on a card not declaring it, and a `call` naming a grown verb, are the host's.
+   - *hob.* Four answers: the spell, `grow: NAME "reading"` + the spell using it (`growVerdict`: `proposals
+     [{method: grow}, {method: act}]`, one turn runs both, the use seeing the staged verb), `ask:`, `none`.
+     `say:`, `card`, `saidVerdict`, `sayClip`, the said/replied verdicts are gone.
+   - *Chronicle.* `world-chronicle {principal, day?}` → `{status: chronicled, day, lines}` (`Ops.chronicle`):
+     `World.days` (`(day, height)`, derived by `record`, in the snapshot) bounds the day; lines for viewable
+     things: made, grew, fired/did not fire, came to want/stopped wanting; refusals by class; hands.
+     `Limits.clockDay` 1440 is the one day (the model's day reads it).
+   - *Arms* (TurnLoop `answer`): `rule`, `unrule`, `want`, `unwant`, `grow`, `ungrow` → `placed {}`;
+     `act {object, verb, text}` → `returned` (a call of `act`); `chronicle {day}` → `chronicled {day, lines}`.
+   - *Wake's host support* (commit 0a6ed761, merged only with lane/rewrite14): subscriptions, `changed`
+     deliveries, `awaitPost`, `World.replies`, the `subscriptions`/`replies` snapshot keys, `env`/`wake`
+     own cards and arrivals (the avatar alone), `arriveWith`. Mentions reach `<did>.receive` with the stated
+     reach `mentioned`, heard and never cast. A rule-fired delivery's `context.sender` is the rule's object
+     (`deliverOne`'s `caller`).
+   - *Tests.* `test_verbs`, `test_chronicle`; `test_changes` deleted; the four answers in
+     `test_interpret_object`, `test_interpret_text`, `test_hub`, `test_http`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1853,41 +1859,50 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host22 (5.160: rules fire, wants pose, replies reveal; edition 9, snapshot `v4`), in order. The
-overhaul (docs/OVERHAUL.md section 5) is the order of work: step 3's core is in; step 4 (objects) and 3b (enchantment,
-lane/enchant) build on 5.160's shapes. The owner's standing order binds every item: "maturify and take forward
-everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
-together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things', no scar
-and growth tissue." So each replacement deletes what it replaces in the same commit, and this file describes only
-what is. A merge touching the host runs `deploy/carry-check.sh` on hbox first (5.159).
+The queue after host23 (5.161), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
+standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
+sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
+called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
+replaces in the same commit, and this file describes only what is. A merge touching the host runs
+`deploy/carry-check.sh` on hbox first (5.159).
 
-0. **Wake's host support goes, with the objects lane's step 4, in one foundation merge** (host22 did not land it:
-   the town genesis builds still subscribes, so deleting the host's side first leaves every town test red). It
-   changes what replay derives, so it must merge before any edition-9 world is deployed, or it is edition 10 and a
-   carry. Delete, host: the `subscribe`/`unsubscribe` arms of `answer` and `worldMethods`; `Subscription`,
-   `World.subscriptions`, `Proposal.subscribes`/`unsubscribes` (digest, judge's `subscribersPerObject` check,
-   commit's outcome, replay's parse, `TurnState`, the suspension activity's fields), `Limits.subscribersPerObject`,
-   `subscriptionsAfter`; `changesJson`, its replay check and `unserved`, the `changed` rows `recordCore` queues,
-   `deliverOne`'s `field`/`denied` branch, `TurnMeta.receiver`/`TurnState.receiver`; `awaitPost`/`awaitPostUntil`
-   (`awaitPostPlan`, suspensions waiting on `post`, `pickResumable`'s post arm, `World.replies` where only they read
-   it); `saidVerdict` and the `said` verdict; the `subscriptions` snapshot key and `carriedKeys` entry (a carry from
-   `v4` drops it). Tests: `test_changes`, `test_wakes`, `test_mailbox`'s watch, `test_scenarios.Bell`'s watch,
-   `test_arrive`'s Wake. Bend stops calling (objects lane, the same merge): `Wake.obend` whole; Avatar's `watch`,
-   `subscribe`, `unsubscribe`, `news`, `following`; the lantern's and the weather's `subscribe` at `made` (rules
-   placed at `made`, or package `rule` lines, 5.160); bell `strike` (`awaitPost`); Tide `subs`, `subscribe`, `due`,
-   `woken`; Env's buffer; `Rows.obend`'s typed receivers and `*Columns`; `World.obend`'s `subscribe`, `unsubscribe`,
-   `Changed`, `Subscribed`, `awaitPost`, `awaitPostUntil`, `Interpreted.said`. In the same change World.obend gains
-   `rule`/`unrule`/`want`/`unwant`/`rules`/`wants` (one pin move) and the host its arms (as `amend`: `TurnState`
-   placements, `ensureWrite id proposer 4`); `Kind.lawOf` and every body's law gain `or request.kind == rule`.
-1. **5.160's remainder.** `offeredTo`'s diff for the speaker in `revealed` ("it now takes `ring`"); judging cost
-   (`ruleTicks`: neither text laws nor rules are metered; bounded by `rulesPerObject` × rows, measured on a bell of
-   768 rains and 32 rules before the playtest); `carried` parses each text per commit (keep parsed clauses on the
-   `Object`); placed rules are not anchored (`checkAnchors` checks version, pin and law, not `rules`/`wants`: a
-   forged snapshot could add one; `verify` replays and would see it); a want citing another thing is judged at
-   commit only when its own thing is written (a write to the cited thing does not flip it; the read is exact);
-   `maxLawClauses` 16 counts all three modalities (raise it when a kind needs it); OVERHAUL step 3's grown verbs in
-   `castSpell`, `grow:` in `interpretVerdict` and `chronicle {day}` are not built.
-2. **The carry's remainder (host21).**
+0. **The paired merge with lane/rewrite14 (step 4).** lane/host23 holds Wake's host deletion (0a6ed761) on top of
+   verbs, chronicle and arms; it merges into foundation only together with lane/rewrite14. To do: `git worktree add
+   ../pair -b pair/step4 lane/host23 && git -C ../pair merge lane/rewrite14`; resolve the test files both touched
+   (`test_hub`, `test_interpret_object`, `test_interpret_text`, `test_genesis`); sweep the remaining Wake cases
+   of the host's tests (`test_await`'s awaitPost cases, `test_outbound`'s `env/` and awaitPost cases,
+   `test_public_methods`' receiver case (now the supervisor's alone), `test_chain`'s subscription-wired chain (as
+   rules), `test_replay`'s strike, `test_serve`'s arrival list, `test_zulip`'s `env/` arrivals, `test_bridge`'s
+   mention route (now `<did>` `receive`, identity `#mention:<did>`, reach `mentioned`) and its awaitPost case,
+   `test_theme`'s env/wake kinds with the objects lane); test the Bend arms from a body (`world.rule` from a
+   `made`, `world.grow`, `world.act`, `world.chronicle`) and a rule-fired delivery's `context.sender`; the full run
+   green on hbox; then carry-check (item 1).
+   - **Carry applies migrations** (rewrite14's decision): every record's state type changes (Line gains `verb`,
+     Record loses greeted/missed, Tide subs, Avatar outbox/following, Policy system/lexicon/macros), and
+     rewrite14 writes `def migrate(old: State8) -> State` beside each changed module's `State`. `Carry.carryWorld`
+     must, with `--library DIR`, rebuild an object whose closure holds a library module whose source changed
+     against the new source (a new pin, layers kept), run the package's `migrate` over the old state (as
+     reprogram's migration runs, `Package.executeDataEntry`) before `rebuilt`'s conformance check, and journal
+     the pin move in the carried genesis; an object whose module has no `migrate` and does not conform is
+     refused by name, as now. Test on the playtest-3 copy (bell/2 carried live, its four rains with verb "").
+   - `Enchant.strokes` reads grown verbs from the state's `verbs` field; it must read `Object.verbs` (lane/enchant's
+     file: route it there). Its declared list now includes grown forms (`spellForms`), with no grower.
+1. **Edition and carry.** Edition 9 is not deployed; 5.161 and the pair change what it derives, so they need no
+   bump if they merge before any edition-9 world is. If one is deployed first, the pair is edition 10 and ships
+   `carry-check.sh` green on the newest v7 backup and the playtest-3 copy, as OVERHAUL plans.
+2. **5.160's remainder.** `offeredTo`'s diff for the speaker in `revealed` ("it now takes `ring`", and "it now
+   takes `water`" after a grow); judging cost (`ruleTicks`: neither text laws nor rules are metered; bounded by
+   `rulesPerObject` × rows, measured on a bell of 768 rains and 32 rules before the playtest); `carried` parses
+   each text per commit (keep parsed clauses on the `Object`); placed rules, wants and verbs are not anchored
+   (`checkAnchors` checks version, pin and law; a forged snapshot could add one; `verify` replays and would see
+   it); a want citing another thing flips only when its own thing is written (a write to the cited thing should
+   re-judge the wants citing it: an index of citers by object, judged in `reactions`); `maxLawClauses` 16 counts
+   all three modalities.
+3. **Verbs' remainder.** `retire` of a verb is `ungrow` (the host spell `retire` is the card power); a
+   carried world's things grow only once their pin has an `act` (item 0's migration); the strokes and the
+   card's `Grown here:` line read `Object.verbs` (objects lane: Bend has no read of it, so Card renders it only if
+   a `world.verbs` arm is added; decide with the objects lane); `grow` in a policy's `confirmFor`.
+4. **The carry's remainder (host21).**
    - The first carry of the live town: ship `backup.sh`, `verify.sh` and `carry-check.sh` to the workhorse's
      `/opt/delvetalk/deploy/` and hbox's `~/delvetalk-backups/`, so tarballs hold head snapshots; until one does,
      carry-check takes `--old-image delvetalk-host:9790175f9dc0`. The deploy is DEPLOY "A new binary", *It carries*.
@@ -1897,10 +1912,10 @@ what is. A merge touching the host runs `deploy/carry-check.sh` on hbox first (5
      cursor (`http.py` `after`) past the carried height waits until the new chain passes it.
    - A carried genesis's size: the store's compiled types and method tables (1 MB of playtest 3's 1.4 MB) are
      derivable from the carried sources; carry them as blocks, or derive them at install, measured on the v7 town.
-   - `slugTargets` scans every entry (and now every carried hash) per `world-resolve`: index slugs (item 6 below).
+   - `slugTargets` scans every entry (and now every carried hash) per `world-resolve`: index slugs (item 8 below).
    - Wake: playtest 3's opener wake is carried retired by the fourth playtest's `--leave`; step 4 deletes Wake, and a
      carry of a world holding Wake objects leaves each by name.
-3. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
+5. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
    old path: T30 reach as a host op (`world-reach {text, replyTo, root, kind, author, chain: [{uri, author,
    replyTo}]}` answering `{object, slot, how}` or nothing: the host holds `posts` (the addressee walk), the spell
    parse (`Parsed.spell`'s card), the commonplace's doors (`named_door`) and the summon rule; the bridge passes only
@@ -1917,14 +1932,14 @@ what is. A merge touching the host runs `deploy/carry-check.sh` on hbox first (5
    frame bound checked once; H12 `Store.lean`'s `Limits` referencing `Bounds` (`maxTurnTicks` = `ticksMax`,
    `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
    (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls.
-4. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
+6. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
    `inspect` and `viewField` of a foreign object; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
    `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the
    hand's SCRATCHES page.
-5. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
+7. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
    the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
    per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).
-6. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
+8. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
    sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; held worlds never closed;
    `world-inspect`'s `cites` per clause.
 7. Smaller, standing:

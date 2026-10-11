@@ -679,8 +679,8 @@ private def plant : Form :=
   .spell "garden-1" "plant" [⟨"seed", "fern"⟩, ⟨"colour", "silver"⟩]
 #guard fit (parse "delvetalk garden-1 plant\nseed: fern\ncolour: silver\n") plant ==
   .proposal "garden-1" "plant" [⟨"colour", .choice "silver"⟩, ⟨"seed", .text "fern"⟩]
-#guard parse "delvetalk tide subscribe / every: 1 / note: WC-01, first light" ==
-  .spell "tide" "subscribe" [⟨"every", "1"⟩, ⟨"note", "WC-01, first light"⟩]
+#guard parse "delvetalk garden/bell/2 water / text: WC-01, first light" ==
+  .spell "garden/bell/2" "water" [⟨"text", "WC-01, first light"⟩]
 #guard parse "delvetalk w c\nsource: <<BEND\nline\n" ==
   .notASpell "The block <<BEND for source needs a last line that is exactly BEND." true
 #guard fit (parse "delvetalk garden-1 plant\nplant: a fern") plant == .unclear ["colour"]

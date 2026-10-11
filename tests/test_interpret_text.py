@@ -15,6 +15,7 @@ doors, and `none` with silence, still one attempt.
 Refuted by: a spell in the model's text not planting, `none` offering a card, an `ask` asked
 again or answered without its question, or a second interpretation being requested.
 """
+import json
 import unittest
 
 from tests.host import as_owner
@@ -70,6 +71,16 @@ class Resumed(test_chain.Chain):
         self.assertEqual(settled["status"], "interpreted", settled)
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed
+
+    def test_hob_states_nothing_a_say_is_silence(self):
+        """hob has no `say:` (docs/OVERHAUL.md §2; 69275, a `say:` that stated a falsehood and was believed): an
+        answer so headed is prose with no spell, silence, and no line of hob's stands beside the garden's card."""
+        self.policy()
+        self.garden()
+        self.say("What makes you think anyone needs a portal?")
+        item, said = self.settle("say: A portal here is a door; the garden has none of its own.")
+        self.assertNotIn("hob: A portal", json.dumps(said))
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_an_ask_is_one_attempt_whose_question_stands_over_the_doors(self):
         self.policy()

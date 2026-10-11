@@ -97,12 +97,15 @@ class ProposalForAnotherCard(Chain):
         self.assertEqual((state["planted"]["value"], state["last"]["value"]), ("1", "a fern"))
 
     def test_hobs_answers_that_are_no_spell(self):
-        # docs/FLEX.md §4 host 6: `none` and `ask: <question>` beside the spells; prose with no prefix
-        # and no spell is silence (the second playtest's stop, 69158, verbatim below).
+        # docs/OVERHAUL.md §2: hob answers the spell meant, `grow:` with its spell, `ask: <question>` or `none`, and
+        # states no fact: `say:` and `card` are gone, read as any prose with no spell is, silence (the second
+        # playtest's stop, 69158, verbatim below; 69275, hob's `say:` stating a falsehood that was believed).
         answer = "A kind is a template for a made thing. The make form takes a name and an of."
         for said, verdict in (("none", {"tag": "unclear", "needs": ["not addressed"]}),
                               ("  None\n", {"tag": "unclear", "needs": ["not addressed"]}),
+                              ("card", {"tag": "unclear", "needs": ["not addressed"]}),
                               ("ask: which seed, 1 to 140 characters?", {"tag": "unclear", "needs": ["which seed, 1 to 140 characters?"]}),
+                              ("say: " + answer, {"tag": "unclear", "needs": ["not addressed"]}),
                               (answer, {"tag": "unclear", "needs": ["not addressed"]}),
                               (PLAYTEST_69158, {"tag": "unclear", "needs": ["not addressed"]})):
             settled, _ = self.ask(said)

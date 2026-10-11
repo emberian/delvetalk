@@ -58,7 +58,6 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_await` (§3): Objects are born in turns by create, and a turn suspended on another turn's receipt or a post resumes when it lands, times out by the clock, and survives restart.
 - `test_call_reading` (§3): A refused `call` carries the refusal's reading, so a directory handing a reply on can say why.
 - `test_chain` (§3 Delivery): Sends ring a bell that opens a door that lights a lantern, delivered in the settling pass.
-- `test_changes` (§10): `subscribe` records a standing subscription; every admitted write touching the field delivers `changed` to the receiver the subscriber named.
 - `test_changed` (`changed`, `delvetalk objects ?`): `world.changed {since, prefix, after}` answers the newest change of each readable object, newest first, 64 a page; `delvetalk objects ?` lists the readable cards by prefix.
 - `test_commute` (§2 Turn, §8): Commutative edits (keep, add, append) commit against a moved root and are judged on the state as it is now; any other change of a moved root is stale.
 - `test_compile_cache` (§2 Journal): The compile caches are content-addressed, so a world opened after another in one process reuses what it compiled.
