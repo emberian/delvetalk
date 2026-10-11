@@ -1,4 +1,4 @@
-<!-- shell: every page of the hand; {css} is the stylesheet inlined (the hand's listener serves /hand/ and nothing else), {refresh} a meta refresh or nothing -->
+<!-- shell: every page of the hand; {css} is style.css and hand.css inlined (the hand's listener serves /hand/ and nothing else), {refresh} a meta refresh or nothing -->
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{refresh}
 <title>{title} · the hand</title><style>{css}</style></head><body>
 <header><a class="mark" href="/hand/">the hand</a><nav>{nav}</nav><span class="who">{world}</span></header>
@@ -11,11 +11,11 @@
 <section><h2>Worlds</h2><ol class="receipts">{worlds}</ol></section>
 <section><h2>Scratch worlds</h2><p>A scratch world expires six hours of {home}'s clock after its last turn; nothing in it is custody. Expire discards one now, a line in the hand's log and nothing in any journal.</p><ol class="receipts">{scratches}</ol></section>
 <!-- world: one world, its counts, its pages -->
-<li class="slip admitted"><span class="stamp">{name}</span><span class="code">entry {height}</span><span class="name">{objects} cards</span><span class="by">clock {clock} · {bridge} · {waiting} waiting for Post · replay edition {replay}{resumed}</span><p class="doors line"><a class="door" href="/hand/{name}/">OUTBOX</a><a class="door" href="/hand/{name}/speak">SPEAK</a><a class="door" href="/hand/{name}/watch">WATCH</a><a class="door" href="/hand/{name}/measure">MEASURE</a><a class="door" href="/hand/{name}/root/">ROOT</a></p></li>
+<li class="slip admitted"><span class="stamp">{name}</span><span class="code">entry {height}</span><span class="name">{objects}</span><span class="by">clock {clock} · {bridge} · {waiting} waiting for Post · replay edition {replay}{resumed}</span><p class="doors foot"><a class="door" href="/hand/{name}/">OUTBOX</a><a class="door" href="/hand/{name}/speak">SPEAK</a><a class="door" href="/hand/{name}/watch">WATCH</a><a class="door" href="/hand/{name}/measure">MEASURE</a><a class="door" href="/hand/{name}/root/">ROOT</a></p></li>
 <!-- scratch: one scratch world, its owner and its hours, and expire -->
-<li class="slip suspended"><span class="stamp">{world}</span><span class="code">entry {height}</span><span class="name">{owner}</span><span class="by">{objects} cards · last turn {idle} minutes ago · expires at clock {expires}, in {left} minutes</span><form class="line" method="post" action="{base}/root/expire"><input type="hidden" name="principal" value="{principal}"><input type="hidden" name="scratch" value="{name}"><input name="reason" required placeholder="reason (required)"><button class="door">expire</button></form></li>
+<li class="slip suspended"><span class="stamp">{world}</span><span class="code">entry {height}</span><span class="name">{owner}</span><span class="by">{objects} · last turn {idle} minutes ago · expires at clock {expires}, in {left} minutes</span><form class="foot" method="post" action="{base}/root/expire"><input type="hidden" name="principal" value="{principal}"><input type="hidden" name="scratch" value="{name}"><input name="reason" required placeholder="reason (required)"><button class="door">expire</button></form></li>
 <!-- console: one world's outbox and inbox -->
-<h1 class="title">{world}<small>the outbox and the inbox; nothing is posted without a click</small></h1>{note}
+<h1 class="title">{world}<small>what the world drafted, waiting for Post, and what it heard; nothing leaves without a click</small></h1>{note}
 <p class="codes">{codes}</p>
 <section><h2>Search</h2><form method="get" action="{base}/"><label>Receipt slug <input name="slug" placeholder="bofab-lukid"></label><button class="door">Resolve</button></form>{found}</section>
 <section id="outbox"><h2>Outbox</h2>{outbox}</section>
@@ -30,11 +30,11 @@
 <!-- where_delve: a Delve world's post starts a thread, or answers one -->
 <label>In reply to <small>an at:// post; empty starts a thread</small><input name="replyTo" value=""></label>
 <!-- seed: one of the plan's spells, cast or not -->
-<li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">seed {n}</span><span class="line">{spell}</span><span class="by">{done}</span>{cast}</li>
+<li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">seed {n}</span><span class="line">{spell}</span><span class="foot">{done}{cast}</span></li>
 <!-- seed_cast: the seed's own form -->
 <form method="post" action="{base}/speak"><input type="hidden" name="intent" value="{intent}"><input type="hidden" name="spell" value="{spell}">{where}<button class="door">Cast</button></form>
 <!-- invitation: one row of the plan's table, drafted or not -->
-<li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">T+{minute}</span><span class="line">{text}</span><span class="by">answered when {answered}{done}</span>{draft}</li>
+<li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">T+{minute}</span><span class="line">{text}</span><span class="foot">answered when {answered}{draft}</span></li>
 <!-- invitation_draft: the invitation's own form -->
 <form method="post" action="{base}/invite"><input type="hidden" name="minute" value="{minute}">{where}<button class="door">Draft</button></form>
 <!-- spoken: what a cast came back with -->
@@ -46,26 +46,27 @@
 <ol class="receipts">{rows}</ol>
 <!-- watched: one entry, or one draft of the hand's own -->
 <li class="slip {tag}"><span class="stamp">{stamp}</span><span class="code">{height}</span><span class="name">{who}</span><span class="line">{turn}
-{first}</span><span class="by">{links}</span></li>
+{first}</span><span class="foot">{links}</span></li>
 <!-- measure: the playtest's measures, from the journal -->
 <h1 class="title">Measures<small>{plan} §4, counted from the journal of {world} at entry {height}; <code>status --playtest</code> and the harvest print these same numbers</small></h1>
 <p class="codes">{codes}</p>
 <ol class="receipts">{rows}</ol>
 <!-- measured: one measure, the number first, the ids behind it folded -->
-<li class="slip {fate}"><span class="stamp">{count}</span><span class="name">{name}</span><span class="by">{of}</span><details class="line"><summary>{behind}</summary><pre class="listing">{ids}</pre></details></li>
+<li class="slip {fate}"><span class="stamp">{count}</span><span class="name">{name}</span><span class="by">{of}</span><details class="foot"><summary>{behind}</summary><pre class="listing">{ids}</pre></details></li>
 <!-- root: root, one click past moderation: every form one request on the root socket, every form a reason -->
-<hr class="root"><h1 class="title">Root<small>journaled, marked root, public; the reason is on the entry</small></h1>{note}
+<hr class="root"><h1 class="title">Root<small>one click past moderation: every act an entry marked root, public, its reason on it</small></h1>{note}
 <p class="codes">{codes}</p>
 <section><h2>Object</h2><form method="get" action="{base}/root/"><label>Edit <input name="object" placeholder="garden"></label><button class="door">Open</button></form>{editor}</section>
-<section><h2>Journal</h2>{entries}<p class="doors"><a class="door" href="{base}/root/?before={before}">OLDER</a></p></section>
+<section><h2>Journal</h2><ol class="receipts">{entries}</ol><p class="doors"><a class="door" href="{base}/root/?before={before}">OLDER</a></p></section>
 <section><h2>Moderation</h2>{mod}</section>
 <section><h2>Root acts</h2>{acts}</section>
 <!-- editor: an object's fields as the opener reads them, each editable; Save sets those that changed -->
 <form method="post" action="{base}/root/save"><input type="hidden" name="object" value="{object}"><input type="hidden" name="shown" value="{shown}">{fields}<input name="reason" required placeholder="reason (required)"><button class="door">Save</button></form>
 <!-- form: one verb; the reason or the reading is required -->
 <details class="action"><summary><span class="code">{face}</span> {verb}</summary><form method="post" action="{base}/{face}/{verb}">{inputs}<input name="{why}" required placeholder="{why} (required)"><button class="door">{verb}</button></form></details>
-<!-- entry: a journal entry raw, with ignore and unignore -->
-<li class="slip {tag}"><span class="code">entry {height}</span><span class="line">{line}</span><details><summary>raw</summary><pre class="listing">{raw}</pre></details><form method="post" action="{base}/root/{verb}"><input type="hidden" name="height" value="{height}"><input name="reason" required placeholder="reason (required)"><button class="door">{verb}</button></form></li>
+<!-- entry: a journal entry as the watch shows it, its raw record folded, with ignore or unignore -->
+<li class="slip {tag}"><span class="stamp">{stamp}</span><span class="code">entry {height}</span><span class="name">{who}</span><span class="line">{turn}
+{first}</span><span class="foot">{links}<details><summary>the entry, raw</summary><pre class="listing">{raw}</pre></details><form method="post" action="{base}/root/{verb}"><input type="hidden" name="height" value="{height}"><input name="reason" required placeholder="reason (required)"><button class="door">{verb}</button></form></span></li>
 <!-- code -->
 <span class="code">{text}</span>
 <!-- note -->
@@ -82,4 +83,4 @@
 <!-- retry: a skipped row's quiet line -->
 <p class="quiet">— skipped: nobody was addressed —</p><form method="post" action="{base}/retry"><input type="hidden" name="uri" value="{uri}"><button class="door">Retry</button></form>
 <!-- missing -->
-<h1 class="title">Not here<small>{text}</small></h1>
+<h1 class="title">Not here<small>{text}</small></h1><p class="doors"><a class="door" href="/hand/">THE WORLDS</a></p>

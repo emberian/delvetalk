@@ -125,6 +125,32 @@ class Hand(HandCase):
         self.assertEqual([l['what'] for l in self.logged()], ['hold', 'skip'])
 
 
+class Register(HandCase):
+    """The hand's pages in the field notebook's register (docs/VOICE.md): its own shell and stylesheet on a listener that
+    serves nothing else, a viewport for a phone, none of the words the town never says, and a plain-text view."""
+
+    def test_every_page_is_the_hands_shell_with_its_stylesheet_and_a_phone_viewport(self):
+        for path in ('/hand/', '/hand/town/', '/hand/town/speak', '/hand/town/watch', '/hand/town/measure', '/hand/town/root/'):
+            code, page, _ = self.get(path)
+            self.assertEqual(code, 200, path)
+            self.assertTrue(page.startswith('<!doctype html>'), path)
+            for part in ('name="viewport" content="width=device-width,initial-scale=1"', '.slip .foot {', 'hr.root {', '<a class="mark" href="/hand/">the hand</a>'):
+                self.assertIn(part, page, (path, part))
+            self.assertNotIn('/static/style.css', page)  # the hand's listener serves no /static/
+
+    def test_the_hands_own_words_say_none_of_what_the_town_never_says(self):
+        import re
+        words = re.sub(r'<[^>]*>|\{[^}]*\}', ' ', '\n'.join(hand.H.values())).lower()
+        for never in ('thanks', 'thank you', 'sorry', 'please', 'great', 'feel free', 'let me know', 'oops'):
+            self.assertNotRegex(words, rf'\b{never}\b')
+
+    def test_the_plain_text_view_is_every_action_as_its_form(self):
+        code, text, headers = self.get('/hand/town/?text=1')
+        self.assertEqual((code, headers['Content-Type'].split(';')[0]), (200, 'text/plain'))
+        self.assertIn('# town', text)
+        self.assertIn('POST /hand/town/draft/7-aaaa', text)
+
+
 class Listener(unittest.TestCase):
     def test_the_hand_is_its_own_listener_and_the_public_front_has_no_hand(self):
         from unittest import mock
@@ -510,6 +536,8 @@ class Measure(unittest.TestCase):
         self.assertEqual(code, 200)
         for text in ('things made by residents', 'by kind: kind 2, lamp 2, sealed 2', 'holds', 'sealed/1 -&gt; lamp/1 by yue'):
             self.assertIn(text, page)
+        refused = next(r for r in hand.Hand(self.st, self.town.client, TOKEN).watch() if r['tag'] == 'refused')
+        self.assertEqual((refused['who'], refused['turn'], refused['outcome']), ('kestrel', 'refused sealed/1', 'lawRefused'))  # whole, from the journal
         from deploy.ring import harvest
         r = harvest.harvest(self.dir.name)
         self.assertEqual(r['playtest']['made'], self.m['made'])

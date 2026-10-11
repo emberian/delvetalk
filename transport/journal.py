@@ -35,20 +35,30 @@ def records(path):
     return [(link, store[link['at']:link['at'] + link['bytes']]) for link in chain]
 
 
-def tail(path, n):
-    """The newest `n` entries, whole, read from the end of the chain and only their records from the store."""
+def tail(path, n, before=None):
+    """The newest `n` entries (below height `before`, when given), whole, oldest first: read from the end of the chain,
+    and only their records from the store."""
     p = Path(path)
     if not p.exists():
         return []
-    size, window = p.stat().st_size, n * 512  # a link is under 300 bytes
-    with open(p, 'rb') as f:
-        f.seek(max(0, size - window))
-        lines = f.read().split(b'\n')[:-1]
-    if size > window:
-        lines = lines[1:]  # the first may be a link cut by the seek
+    if before is None:
+        size, window = p.stat().st_size, n * 512  # a link is under 300 bytes
+        with open(p, 'rb') as f:
+            f.seek(max(0, size - window))
+            lines = f.read().split(b'\n')[:-1]
+        if size > window:
+            lines = lines[1:]  # the first may be a link cut by the seek
+        chosen = [json.loads(l) for l in lines[-n:]]
+    else:
+        chosen = [l for l in links(p) if l['height'] < before][-n:]
+    return read(path, chosen)
+
+
+def read(path, chosen):
+    """The entries `chosen` (links of the chain at `path`), whole, each record read from the store alone."""
     out = []
     with open(str(path) + '.blocks', 'rb') as store:
-        for link in map(json.loads, lines[-n:]):
+        for link in chosen:
             store.seek(link['at'])
             out.append(dict(_plain(decode(store.read(link['bytes']))), hash=link['hash'], bytes=link['bytes']))
     return out

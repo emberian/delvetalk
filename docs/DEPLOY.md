@@ -337,6 +337,8 @@ the public reads (`world-view` as `anonymous` answers it) is drafted here as a t
 `http: {intent}`, no `replyTo`, the turn's offers or else its receipt line), once per receipt, so the owner chooses
 whether the town hears of it; a scratch turn, a refusal and a write to a private object draft nothing. On Zulip the bridge
 never posts such a draft itself (it answers no message); Post sends it to Delve.
+Every page of the hand is its own field notebook (its shell and stylesheet inlined, read at phone width over the
+forward), and `?text=1` reads any of them as plain text, each form as its method, action and fields.
 The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport hand <verb>
 [--state S] [--world W] [--json]` (`DELVETALK_STATE` stands in for `--state`, and every compose service sets it to
 `/data/state`; the root socket and the credentials are config, `DELVETALK_ROOT_SOCKET` and `DELVETALK_CREDENTIALS`;

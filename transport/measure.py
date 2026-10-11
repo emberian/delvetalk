@@ -18,6 +18,11 @@ from transport.bridge import plain
 GENESIS = re.compile(r'^(?:did:|zulip:|env/|wake/)')  # a principal's own objects, made at its arrival
 
 
+def counted(n, word, plural=None):
+    """The count before the thing (docs/VOICE.md): `1 door`, `3 doors`."""
+    return f"{n} {word if n == 1 else plural or word + 's'}"
+
+
 def when(stamp):
     return datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
 
@@ -180,13 +185,13 @@ def table(m):
     return [
         ('things made by residents', made['count'], f"by kind: {split(made['byKind']) or 'none'}; by maker: {split(made['byMaker']) or 'none'}",
          [f"{r['object']} by {r['maker']}, entry {r['height']}" for r in made['rows']]),
-        ('things used by someone other than their maker', used['count'], f"{used['residentMade']} of them residents' things, by {used['makers']} makers",
+        ('things used by someone other than their maker', used['count'], f"{used['residentMade']} of them residents' things, by {counted(used['makers'], 'maker')}",
          [f"{r['object']} ({r['maker']}'s) by {r['by']}, entry {r['height']}" for r in used['rows']]),
         ('laws written or adopted by residents', len(laws['written']) + len(laws['adopted']), f"{len(laws['written'])} written, {len(laws['adopted'])} adopted",
          [f"{r['object']} by {r['maker']}: {r['law']}" for r in laws['written']] + [f"{r['object']} adopted by {r['by']}, entry {r['height']}" for r in laws['adopted']]),
-        ("citations between residents' things", len(cit['doors']) + len(cit['named']), f"{len(cit['doors'])} doors, {len(cit['named'])} lines naming another's thing",
+        ("citations between residents' things", len(cit['doors']) + len(cit['named']), f"{counted(len(cit['doors']), 'door')}, {counted(len(cit['named']), 'line')} naming another's thing",
          [f"{r['from']} -> {r['to']} by {r['by']}, entry {r['height']}" for r in cit['doors']] + [f"{r['in']} names {r['names']}, by {r['by']}" for r in cit['named']]),
-        ('rain that fell with nobody posting', rain['count'], f"{rain['notes']} notes on avatars", [f"entry {r['height']}: {', '.join(r['objects'])}" for r in rain['rows']]),
+        ('rain that fell with nobody posting', rain['count'], f"{counted(rain['notes'], 'note')} on avatars", [f"entry {r['height']}: {', '.join(r['objects'])}" for r in rain['rows']]),
         ('interpretations', i['count'], split(i['byVerdict']) or 'none', [f"{r['object']}: {r['said']}" for r in i['toJudge']]),
         ('refusals by class', ref['count'], split(ref['byClass']) or 'none', [f"{r['class']} by {r['by']}, entry {r['height']}: {r['reason']}" for r in ref['rows']]),
         ('minutes to the first resident-made thing', first['minutesFromT0'], f"T0 {m['T0'] or 'not yet'}",

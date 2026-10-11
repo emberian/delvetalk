@@ -22,10 +22,11 @@ from transport.bridge import all_observations, awaiting_path, uri_hash
 from transport.delve import Failure, canonical
 from transport.host import CLOCK
 from transport.http import typed
+from transport.measure import counted
 from transport.state import State
 
 CLIP, HAND_COOKIE = 400, 'dt_hand'
-H, CSS = pages.sections('hand.html'), (pages.STATIC / 'style.css').read_text()
+H, CSS = pages.sections('hand.html'), (pages.STATIC / 'style.css').read_text() + (pages.STATIC / 'hand.css').read_text()
 
 
 class HandError(Exception):
@@ -129,10 +130,10 @@ class Hand:
         spent = model.spent(self.st).get(month, {})
         waiting = self.host.send({'op': 'world-interpretations'}).get('pending') or []
         retrying = [p for p in waiting if p.get('next') is not None]  # the host's backoff
-        return {'journal height': st.get('height'), 'posts this hour': f'{delve.get("used", 0)} of {delve.get("quota", "?")}',
-                f'model spend {month}': f'${spent.get("dollars", 0):.4f} ({spent.get("calls", 0)} calls)',
-                'interpretations pending': f'{len(waiting)} ({len(retrying)} retrying)',
-                'host pid': self.host.send({'op': 'serve-status'}).get('pid', 'none'), 'shadowed': len(st.get('shadowed') or [])}
+        return {'entry': f"entry {st.get('height')}", 'posts': f'{delve.get("used", 0)} of {delve.get("quota", "?")} posts this hour',
+                'model': f'${spent.get("dollars", 0):.4f} of model spend in {month}, {counted(spent.get("calls", 0), "call")}',
+                'interpretations': f'{counted(len(waiting), "interpretation")} waiting, {len(retrying)} retrying',
+                'host': f"host pid {self.host.send({'op': 'serve-status'}).get('pid', 'none')}", 'shadowed': f"{len(st.get('shadowed') or [])} shadowed"}
 
     def spend(self, month=None):
         """The model's spend by UTC month, every world's, and `month`'s (default this one) against the monthly grant."""
@@ -306,14 +307,14 @@ class Hand:
 
     def worlds_page(self, query):
         q, w = lambda t: e(str(t)), self.worlds()
-        rows = ''.join(H['world'].format(name=q(r['name']), height=q(r['height']), objects=q(r['objects']), clock=q(r['clock']), bridge=q(r['bridge']),
+        rows = ''.join(H['world'].format(name=q(r['name']), height=q(r['height']), objects=q(counted(r['objects'] or 0, 'card')), clock=q(r['clock']), bridge=q(r['bridge']),
                                          waiting=q(r['waiting']), replay=q(r['replay']), resumed=q(f", reopened at entry {r['resumed']}" if r['resumed'] else ''))
                        for r in w['worlds']) or '<li class="quiet">— serve holds no world —</li>'
         scratches = ''.join(H['scratch'].format(world=q(r['world']), owner=q(r['owner']), principal=q(r['principal']), name=q(r['name']),
-                                                height=q(r['height']), objects=q(r['objects']), idle=q(r['idle']), left=q(r['left']),
+                                                height=q(r['height']), objects=q(counted(r['objects'] or 0, 'card')), idle=q(r['idle']), left=q(r['left']),
                                                 expires=q(r['expires']), base=f"/hand/{q(w['home'])}")
                             for r in w['scratches']) or '<li class="quiet">— no scratch world is open —</li>'
-        codes = self.codes([f"{len(w['worlds'])} worlds", f"{len(w['scratches'])} scratch worlds", f"host pid {w['pid']}", f"replay edition {w['replay']}",
+        codes = self.codes([counted(len(w['worlds']), 'world'), counted(len(w['scratches']), 'scratch world'), f"host pid {w['pid']}", f"replay edition {w['replay']}",
                             f"{w['home']} clock {w['clock']}"])
         return shell('the worlds', None, H['worlds'].format(note=self.note(query), codes=codes, worlds=rows, scratches=scratches, home=q(w['home'])))
 
@@ -334,7 +335,7 @@ class Hand:
     def entries(self, object=None, limit=30):
         """The newest `limit` entries as the opener reads them: the world's journal, or one object's `world-history`."""
         if not object:
-            return self.host.send({'op': 'world-entries', 'principal': self.owner, 'reverse': True, 'limit': limit}).get('entries') or []
+            return root.entries(self.st, limit=limit)
         got, after = [], 0
         while True:
             page = self.host.send({'op': 'world-history', 'principal': self.owner, 'object': object, 'after': after})
@@ -357,7 +358,17 @@ class Hand:
             elif row['state'] == 'waiting' and d['text']:
                 loose.append(dict(row, who='the hand', turn=(d.get('speak') or {}).get('invitation') is not None and f"invitation T+{d['speak']['invitation']}" or 'by hand',
                                   object=d.get('object'), outcome='drafted', tag='', height=None, slug=None, drafts=[]))
-        return loose[::-1] + [self.watched(x, seen, spells, by_height) for x in self.entries(object, limit)]
+        return loose[::-1] + self.rows(self.entries(object, limit), seen, spells, by_height)
+
+    def rows(self, entries, seen=None, spells=None, by_height=None):
+        """Journal entries as the watch shows them (`watched`), each keeping its raw entry."""
+        if seen is None:
+            seen, spells, by_height = self.observed(), {}, {}
+            for i, _, d in self.drafts():
+                spells.update({d['speak']['intent']: d['speak']['spell']} if (d.get('speak') or {}).get('spell') else {})
+                height = next((x['height'] for x in (d.get('receipt'), d.get('offer'), d.get('publication')) if x and x.get('height')), None)
+                by_height.setdefault(height, []).append({'id': i, 'state': self.summary(i, d)['state'], 'first': first_line(d['text'])})
+        return [dict(self.watched(x, seen, spells, by_height), raw=x) for x in entries]
 
     def watched(self, x, seen, spells, by_height):
         ident, out = x.get('identity') or {}, x.get('outcome') or {}
@@ -369,8 +380,8 @@ class Hand:
             turn = next((l.strip() for l in text.split('\n') if l.strip().startswith('delvetalk')), first_line(text))
         elif intent in spells:
             turn = spells[intent]
-        elif x.get('root'):
-            turn = f"root {out.get('kind')} {out.get('object') or ''}".strip()
+        elif x.get('root') is True:
+            turn = f"root {out.get('kind')} {out.get('object') or ''}: {x.get('reason')}"
         else:
             turn = ('↳ ' if x.get('delivery') else '') + ' '.join(str(t) for t in (out.get('tag') or x.get('status'), obj) if t)
         offered = next((o.get('text') for o in x.get('offers') or [] if o.get('text')), None)
@@ -543,7 +554,7 @@ class Hand:
 
     def page(self, query):
         q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
-        codes = self.codes(f'entry {v}' if k == 'journal height' else f'{k} {v}' for k, v in self.status().items())
+        codes = self.codes(self.status().values())
         found = H['card'].format(text=q(json.dumps(self.search(query['slug']), indent=1, sort_keys=True)[:3000])) if query.get('slug') else ''
         outbox = ''.join(H['group'].format(
             original=H['card'].format(text=q(f'{g["original"]["handle"]}\n{g["original"]["text"]}')) if g['original'] else H['note'].format(text=q(g['post'])),
@@ -568,7 +579,7 @@ class Hand:
             or '<li class="quiet">— the plan names no seeds —</li>'
         invitations = ''.join(H['invitation'].format(
             fate='admitted' if r['draft'] else '', stamp=q(f"● {r['draft']['state']}" if r['draft'] else '◦ not drafted'), minute=r['minute'],
-            text=q(r['words'] + ''.join('\n    ' + s for s in r['spells'])), answered=q(r['answered']), done='',
+            text=q(r['words'] + ''.join('\n    ' + s for s in r['spells'])), answered=q(r['answered']),
             draft='' if r['draft'] else H['invitation_draft'].format(base=base, minute=r['minute'], where=where)) for r in said['invitations']) \
             or '<li class="quiet">— the plan names no invitations —</li>'
         spoken = ''
@@ -584,6 +595,14 @@ class Hand:
                                                                intent=q(f'hand:speak:{int(self.clock() * 1000)}'), where=where,
                                                                plan=q(Path(self.plan['path']).name), seeds=seeds, invitations=invitations))
 
+    def links(self, r):
+        """A row's foot: its receipt, its object in the root editor, the drafts it made."""
+        q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
+        return ' · '.join(([f'<a href="{base}/?{urllib.parse.urlencode({"slug": r["slug"]})}">receipt {q(r["slug"])}</a>'] if r['slug'] else []) +
+                          ([f'<a href="{base}/root/?{urllib.parse.urlencode({"object": r["object"]})}">{q(r["object"])}</a>'] if r['object'] else []) +
+                          [f'<a href="{base}/#outbox">draft {q(d["id"])}</a> {q(d["state"])}' for d in r['drafts']] +
+                          ([f'<a href="{base}/#outbox">{q(r["id"])}</a> waiting for Post'] if r.get('id') else []))
+
     def watch_page(self, query, every=5):
         """The watch, refreshed every `every` seconds by the page itself (a meta refresh; `still` holds it)."""
         q, base, obj, still = lambda t: e(str(t)), f'/hand/{self.st.world}', query.get('object', '').strip(), query.get('still') == '1'
@@ -591,10 +610,7 @@ class Hand:
         rows = ''.join(H['watched'].format(
             tag=q(r['tag']), stamp=q(pages.stamp(r['outcome']) if r['tag'] else '◦ drafted'), height=q(f"entry {r['height']}" if r['height'] else 'outbox'),
             who=q(r['who']), turn=q(r['turn']), first=q(r['first']),
-            links=' · '.join(([f'<a href="{base}/?{urllib.parse.urlencode({"slug": r["slug"]})}">receipt {q(r["slug"])}</a>'] if r['slug'] else []) +
-                             ([f'<a href="{base}/root/?{urllib.parse.urlencode({"object": r["object"]})}">{q(r["object"])}</a>'] if r['object'] else []) +
-                             [f'<a href="{base}/#outbox">draft {q(d["id"])}</a> {q(d["state"])}' for d in r['drafts']] +
-                             ([f'<a href="{base}/#outbox">{q(r["id"])}</a> waiting for Post'] if r.get('id') else [])))
+            links=self.links(r))
             for r in self.watch(obj or None)) or '<li class="quiet">— nothing journaled —</li>'
         st = self.host.send({'op': 'world-status'})
         codes = self.codes((f"entry {st.get('height')}", f"clock {st.get('clock')}", f"{sum(1 for _ in self.st.unposted())} waiting in the outbox"))
@@ -618,7 +634,11 @@ class Hand:
     def root_page(self, query):
         q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
         st = self.host.send({'op': 'world-status'})
-        codes = self.codes((f"entry {st.get('height')}", f"shadowed {len(st.get('shadowed') or [])}", f"this hour {json.dumps(st.get('hour') or {}, sort_keys=True)}"))
+        hour = st.get('hour') or {}
+        refused = hour.get('refused') or {}
+        codes = self.codes((f"entry {st.get('height')}", f"{len(st.get('shadowed') or [])} shadowed", f"{counted(hour.get('turns', 0), 'turn')} this hour",
+                            f"{sum(refused.values())} refused" + (f" ({', '.join(f'{k} {v}' for k, v in sorted(refused.items()))})" if refused else ''),
+                            f"{counted(hour.get('interpretations', 0), 'reading')}, {counted(hour.get('attempts', 0), 'retry', 'retries')}"))
         editor = ''
         if query.get('object'):
             d = root.dump(self.host, self.owner, query['object'])
@@ -627,13 +647,12 @@ class Hand:
                 base=base, object=q(query['object']), shown=q(json.dumps(fields)),
                 fields=''.join(f'<label>{k} <textarea name="{k}" rows="6">{q(json.dumps(v, indent=1))}</textarea></label>' for k, v in fields.items()))
         before = int(query['before']) if query.get('before', '').isdigit() else None
-        rows = root.entries(self.host, self.owner, limit=20) if before is None else \
-            self.host.send({'op': 'world-entries', 'principal': self.owner, 'reverse': True, 'before': before, 'limit': 20}).get('entries') or []
+        rows = root.entries(self.st, limit=20, before=before)
         ignored = set(st.get('ignored') or [])
-        entries = '<ol class="receipts">' + ''.join(H['entry'].format(
-            base=base, tag=q((r.get('outcome') or {}).get('tag')), height=q(r.get('height')), raw=q(json.dumps(r, indent=1, sort_keys=True)),
-            line=q(f"{outcome_of(r)} · {(r.get('identity') or {}).get('principal')} · {(r.get('identity') or {}).get('intent')}" + (' · root' if r.get('root') else '')),
-            verb='unignore' if r.get('height') in ignored else 'ignore') for r in rows) + '</ol>'
+        entries = ''.join(H['entry'].format(
+            base=base, tag=q(r['tag']), stamp=q(pages.stamp(r['outcome'])), height=q(r['height']), who=q(r['who']), turn=q(r['turn']), first=q(r['first']),
+            links=self.links(r), raw=q(json.dumps(r['raw'], indent=1, sort_keys=True)), verb='unignore' if r['height'] in ignored else 'ignore')
+            for r in self.rows(rows)) or '<li class="quiet">— nothing journaled —</li>'
         form = lambda face, verb, spec, why: H['form'].format(base=base, face=face, verb=verb, why=why, inputs=''.join(
             f'<label>{n} <textarea name="{n}" rows="3"></textarea></label>' if k == 'json' else f'<label>{n} <input name="{n}"></label>' for n, k in spec))
         mod = ''.join(form('mod', v, spec, 'reading') for v, (_, spec) in root.POWERS.items()) + form('mod', 'settings', root.MOD_SETTINGS, 'reading')
@@ -664,9 +683,9 @@ def cli_root(h, a):
     if a.rverb == 'dump':
         return root.dump(h.host, h.owner, a.object)
     if a.rverb == 'entries':
-        return root.entries(h.host, h.owner, a.after, a.limit, a.object, a.principal)
+        return root.entries(h.st, a.after, a.limit, a.object, a.principal)
     if a.rverb == 'edit':
-        found = h.host.send({'op': 'world-entries', 'principal': h.owner, 'after': a.height - 1, 'limit': 1}).get('entries') or []
+        found = root.entries(h.st, a.height - 1, 1)
         if not found:
             raise HandError(f'no entry {a.height}')
         return {'saved': a.out, 'run': root.edit_command(found[0], a.height, h.st.journal, a.out)}
