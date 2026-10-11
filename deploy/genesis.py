@@ -188,15 +188,42 @@ def existing(host, opener):
         after = got['ids'][-1]
 
 
-def said(host, opener, card, action, fields, identity):
-    """The hand's spell to a card, as a reply with no post: the host reads it as any spell."""
+def said(host, opener, card, action, fields, identity, made=None):
+    """The hand's spell to a card, as a reply with no post: the host reads it as any spell. `made`: the id it makes."""
     reply = host.send({'op': 'world-turn', 'principal': opener, 'object': card, 'method': 'receive', 'identity': identity,
                        'argument': rec(text=lab(spell(card, action, fields)), post=lab(''))})
-    return {'object': card, 'module': action, 'status': reply.get('status'), 'creator': opener, 'reply': reply}
+    return {'object': made or card, 'module': f'{card} {action}', 'status': reply.get('status'), 'creator': opener, 'reply': reply}
+
+
+class Stopped(Exception):
+    """A genesis turn that was not admitted: genesis stops there, naming it."""
+
+
+def inputs():
+    """Every file genesis reads, read before the first op, so a missing one spends nothing: the bodies, the pages."""
+    bodies = {b: body_of(b) for b in {'commonplace'} | {k[5] for k in KINDS if k[5]}}
+    pages = {name: page_body(name) for name, _, _ in PAGES}
+    for name, text in {**bodies, **pages}.items():
+        if not text.strip():
+            raise OSError(f'genesis input {name} is empty')
+    return bodies, pages
+
+
+def turned(step, reply, want='admitted'):
+    """A turn's status, which must be `want`; anything else stops genesis by the step's name and the host's reason."""
+    if reply.get('status') != want:
+        outcome = (reply.get('receipt') or {}).get('outcome') or {}
+        raise Stopped(f"genesis stopped at {step}: {reply.get('status')} {outcome.get('class') or ''} {outcome.get('reason') or reply.get('message') or ''}".strip())
+    return reply.get('status')
 
 
 def run(host, opener=OPENER):
-    """-> (made, refusal). made: [{object, module, status, creator, reply}], refusal: text if genesis already ran."""
+    """-> (made, refusal). made: [{object, module, status, creator, reply}]; refusal: why genesis did not run (it ran
+    already, an input is missing) or where it stopped (a turn not admitted, named)."""
+    try:
+        bodies, pages = inputs()
+    except OSError as e:
+        return [], f'genesis cannot read its inputs: {e}'
     have = set(existing(host, opener))
     taken = [name for name, _, _ in seeds(opener) if name in have]
     if taken:
@@ -206,44 +233,47 @@ def run(host, opener=OPENER):
     if arrived.get('status') == 'error':
         return [], 'the opener could not arrive: ' + str(arrived.get('message'))
     made = []
-    for name, package, seed in seeds(opener):
-        reply = create(host, opener, name, package, 'genesis-' + name, seed, LAWS.get(package, lambda _: None)(opener))
-        made.append({'object': name, 'module': package, 'status': reply.get('status'),
-                     'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal'), 'reply': reply})
-        if reply.get('status') != 'created':
-            return made, None
-    # `kinds` is given its make (`shape`), then makes the root kinds and the town's (docs/CATALOGUE.md §5).
-    kinds = next(m for m in made if m['object'] == 'kinds')
-    kinds['shape'] = host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'shape', 'argument': rec(object=lab('kinds')),
-                                'identity': 'genesis-kinds-shape'}).get('status')
-    kinds['made'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'make', 'identity': 'genesis-kind-' + name,
-                                'argument': rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), law=lab(law), body=lab(body_of(body)))}).get('status')
-                     for name, of, form, head, law, body in KINDS]
-    commonplace_ = next(m for m in made if m['object'] == 'commonplace')
-    commonplace_['body'] = host.send({'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body',
-                                      'object': 'commonplace', 'version': 0, 'package': body_of('commonplace'), 'mode': 'extend'}).get('status')
-    # The hand's things, each by its spell; then the garden cites its weather.
-    for kind, fields in HANDS:
-        made.append(said(host, opener, kind, 'make', fields, 'genesis-' + dict(fields)['id']))
-    made.append(said(host, opener, 'garden', 'door', [('label', 'weather'), ('to', 'weather')], 'genesis-garden-weather'))
-    # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
-    # garden existed, hears each thing the garden grows now, and ticks the tide every 60 clock minutes.
-    wake = 'wake/' + opener
-    tide = next(m for m in made if m['object'] == 'tide')
-    tide['wake'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': wake, 'method': method, 'argument': argument,
-                               'identity': 'genesis-' + method}).get('status')
-                    for method, argument in (('arrived', rec()),
-                                             ('schedule', rec(at=nat(0), every=nat(60), action={'tag': 'variant', 'label': 'call', 'payload': rec(card=lab('tide'), method=lab('tick'))})))]
-    library = next(m for m in made if m['object'] == 'library')
-    library['pages'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'shelve', 'identity': 'genesis-shelve-' + name,
-                                   'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
-                                                   body=lab(page_body(name)))}).get('status') for name, kind, title in PAGES]
-    # One card per door: each door's object publishes its page(), which the bridge drafts as `wiki: <Door>` for the hand to post.
-    for label, to, _ in DOORS:
-        if to and any(m['object'] == to for m in made):
-            page = host.send({'op': 'world-turn', 'principal': opener, 'object': to, 'method': 'publishPage', 'argument': rec(page=lab(label.capitalize())),
-                              'identity': 'genesis-page-' + to})
+    try:
+        for name, package, seed in seeds(opener):
+            reply = create(host, opener, name, package, 'genesis-' + name, seed, LAWS.get(package, lambda _: None)(opener))
+            made.append({'object': name, 'module': package, 'status': reply.get('status'),
+                         'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal'), 'reply': reply})
+            turned('create ' + name, reply, 'created')
+        turn = lambda obj, method, argument, identity: host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': method,
+                                                                  'argument': argument, 'identity': identity})
+        # `kinds` is given its make (`shape`), then makes the root kinds and the town's (docs/CATALOGUE.md §5).
+        kinds = next(m for m in made if m['object'] == 'kinds')
+        kinds['shape'] = turned('kinds shape', turn('kinds', 'shape', rec(object=lab('kinds')), 'genesis-kinds-shape'))
+        kinds['made'] = [turned('kinds make ' + name, turn('kinds', 'make', rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), law=lab(law),
+                                                                                    body=lab(bodies[body] if body else '')), 'genesis-kind-' + name))
+                         for name, of, form, head, law, body in KINDS]
+        next(m for m in made if m['object'] == 'commonplace')['body'] = turned('the commonplace body', host.send({
+            'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body', 'object': 'commonplace', 'version': 0,
+            'package': bodies['commonplace'], 'mode': 'extend'}))
+        # The hand's things, each by its spell; then the garden cites its weather.
+        for kind, fields in HANDS:
+            made.append(said(host, opener, kind, 'make', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id']))
+            turned(f"{kind} make {dict(fields)['id']}", made[-1]['reply'])
+        made.append(said(host, opener, 'garden', 'door', [('label', 'weather'), ('to', 'weather')], 'genesis-garden-weather'))
+        turned('garden door weather', made[-1]['reply'])
+        # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
+        # garden existed, hears each thing the garden grows now, and ticks the tide every 60 clock minutes.
+        wake = 'wake/' + opener
+        next(m for m in made if m['object'] == 'tide')['wake'] = [
+            turned('wake ' + method, turn(wake, method, argument, 'genesis-' + method))
+            for method, argument in (('arrived', rec()),
+                                     ('schedule', rec(at=nat(0), every=nat(60), action={'tag': 'variant', 'label': 'call', 'payload': rec(card=lab('tide'), method=lab('tick'))})))]
+        next(m for m in made if m['object'] == 'library')['pages'] = [
+            turned('library shelve ' + name, turn('library', 'shelve', rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
+                                                                      body=lab(pages[name])), 'genesis-shelve-' + name))
+            for name, kind, title in PAGES]
+        # One card per door: each door's object publishes its page, which the bridge drafts as `wiki: <Door>` for the hand to post.
+        for label, to, _ in DOORS:
+            page = turn(to, 'publishPage', rec(page=lab(label.capitalize())), 'genesis-page-' + to)
             next(m for m in made if m['object'] == to)['page'] = {'door': label, 'status': page.get('status'), 'reply': page}
+            turned(f'{to} publishPage', page)
+    except Stopped as e:
+        return made, str(e)
     return made, None
 
 
@@ -263,10 +293,6 @@ def main(argv=None):
         return 1
     for m in made:
         print(json.dumps({k: m[k] for k in ('object', 'module', 'status')} | ({} if m['status'] in ('created', 'admitted') else {'reply': m['reply']})))
-    for m in made:
-        page = m.get('page')
-        if page and page['status'] != 'admitted':
-            print(f"genesis: the {page['door']} page was not published ({m['object']}.publishPage: {json.dumps(page['reply'])[:300]})", file=sys.stderr)
     return 0 if made and all(m['status'] in ('created', 'admitted') for m in made) else 1
 
 

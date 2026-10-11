@@ -7,6 +7,7 @@ Evidence for FOUNDATION's scale rule (layer: objects). Refuted by a full object'
 """
 import unittest
 
+from deploy import genesis
 from tests.test_chain import Chain, town_kinds
 from tests.test_receive import commonplace
 from tests.wire import label, nat, record, reference, relation
@@ -51,12 +52,14 @@ class FullRelations(Chain):
         refused = self.turn("bell", "receive", record(text=label("delvetalk bell rain / text: " + "r" * 121), post=label("at://x/long")), principal=did(7), identity="long")
         self.assertEqual(refused["receipt"]["outcome"]["class"], "badSpell", refused)
 
-    def test_a_garden_full_of_children_plants_another(self):
-        n = limit("Garden", "children")
-        silver = {"tag": "variant", "label": "silver", "payload": record()}
-        children = [record(world=label(""), object=label("garden/bell/%d" % (10000 + i)), colour=silver) for i in range(n)]
-        self.full("garden", "Garden", record(owner=label("ember"), policy=reference(""), children=relation(*children), planted=nat(n)))
-        town_kinds(self.host.send)
+    def test_a_garden_full_of_things_plants_another(self):
+        n = limit("Record", "things")
+        things = [record(world=label(""), object=label("garden/bell/%d" % (10000 + i))) for i in range(n)]
+        self.full("garden", "Record", record(owner=label("ember"), things=relation(*things)), law=genesis.RECORD_LAW)
+        body = self.host.send(op="world-reprogram", principal="ember", identity="body-garden", object="garden", version=0,
+                              package=genesis.body_of("garden"), mode="extend")
+        self.assertEqual(body["status"], "admitted", body)
+        town_kinds(self.host.send, names=("bell", "cistern"))
         self.say("garden", "delvetalk garden plant / seed: %s / colour: amber" % ("s" * 80), did(7), "plant")
 
     def test_a_commonplace_full_of_greetings_greets_another(self):

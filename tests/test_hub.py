@@ -28,7 +28,7 @@ from deploy.genesis import STUDIO
 from tests.host import as_owner
 
 from tests import test_chain, test_policy
-from tests.test_chain import garden_seed, town_kinds
+from tests.test_chain import town_garden
 from tests.test_laws import anthology_seed
 from tests.test_receive import commonplace as make_commonplace, door
 from tests.test_rooms import make_room, room_seed
@@ -49,13 +49,21 @@ def post(rkey):
         return [p for p in json.load(handle) if p["uri"].endswith(rkey)][0]["record"]["text"]
 
 
+def plant_bell(chain, who=GLM, seed="a bell", colour="silver"):
+    """A bell as the garden grows it (garden/bell/N under the town garden): `who` plants it, so who is its maker and owner."""
+    town_garden(chain.host.send)
+    planted = chain.turn("garden", "plant", record(colour=label(colour), seed=label(seed)), principal=who)
+    chain.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "made"), planted)
+    chain.deliver_all()
+    return planted["result"]["payload"]["fields"][0]["value"]["value"]
+
+
 class Hub(test_chain.Chain):
     policy = test_policy.PolicyObject.policy
 
     def commonplace(self, policy=""):
         # The garden is made first, so the commonplace learns its forms when a reply reaches a door.
-        self.make("garden", closure("Garden"), garden_seed(""))
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
         make_commonplace(self, policy)
 
     def say(self, text, who, uri="at://x/post/1"):
@@ -74,7 +82,7 @@ class Hub(test_chain.Chain):
                 self.assertEqual(first["result"]["label"], "usage", first)
 
     def children(self):
-        return [field(c, "object")["value"] for c in rows(field(self.state("garden"), "children"))]
+        return [field(c, "object")["value"] for c in rows(field(self.state("garden"), "things"))]
 
     def seed_of(self, bell):
         """A bell's seed and colour: the values kind/bell's form took when it was made."""
@@ -83,20 +91,20 @@ class Hub(test_chain.Chain):
 
 
     def test_a_cistern_line_digs_a_cistern_and_one_past_a_taken_id_is_the_next_free(self):
-        """Run 5, finding 3: the garden offers a `cistern` form; a `cistern:` line through the hub
+        """Run 5, finding 3: the garden offers a `dig` form; a `dig:` line through the hub
         digs garden/cistern/1 through kind/cistern, and the host mints the next past an id already taken."""
         self.commonplace()
         self.greet(KIMI, GLM)
-        first = self.say("the basin first:\n\ncistern: a stone cistern for refused proposals", KIMI)
+        first = self.say("the basin first:\n\ndig: a stone cistern for refused proposals", KIMI)
         self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "passed"), first)
         self.assertEqual(first["offers"][0]["text"], "The cistern is dug at garden/cistern/1; it takes refusals.\n")
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="garden/cistern/1")["status"], "viewed")
         self.make("garden/cistern/2", closure("Counter"), record())
-        second = self.say("cistern: a cistern for refused proposals (by discovery, Kimi)", GLM)
+        second = self.say("dig: a cistern for refused proposals (by discovery, Kimi)", GLM)
         self.assertEqual(second["status"], "admitted", second)
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="garden/cistern/3")["status"], "viewed")
         usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)
-        self.assertIn("delvetalk garden cistern\nname: <text, 0 to 120 characters>\n", usage["text"])
+        self.assertIn("delvetalk garden dig\nname: <text, 0 to 120 characters>\n", usage["text"])
 
     def interpret(self, raw, first="plant"):
         [pending] = self.host.send(op="world-interpretations")["pending"]
@@ -120,7 +128,7 @@ class Hub(test_chain.Chain):
         # on the door the proposal went through.
         texts = [o["text"] for o in resumed["receipt"]["offers"]]
         self.assertIn("Planted, ", texts[0])
-        self.assertTrue(texts[-1].startswith(GREETING + "✾ DELVETALK · THE COMMONPLACE\n\nSeven doors. "), texts)
+        self.assertTrue(texts[-1].startswith(GREETING + "✾ DELVETALK · THE COMMONPLACE\n\nEight doors. "), texts)
         self.assertIn("\nWhat changed, newest first:\n", texts[-1])  # the card as the turn read it
         self.assertIn("\nGARDEN\n  delvetalk garden plant", texts[-1])
         [bell] = self.children()
@@ -142,7 +150,8 @@ class Hub(test_chain.Chain):
         self.commonplace("policy")
         self.greet(GLM, KIMI)
         planted = self.turn("garden", "receive", record(text=label("delvetalk garden plant / colour: silver / seed: a fern"), post=label("at://x/p")), principal=GLM)
-        self.assertEqual(planted["result"]["label"], "planted", planted)
+        self.assertEqual(planted["result"]["label"], "made", planted)
+        self.deliver_all()
         self.assertEqual(self.say(post("3mxghh4qis22f"), KIMI)["status"], "suspended")
         asked = self.interpret("ask: which bell should the rain fall on?")
         self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "unclear"), asked)
@@ -157,7 +166,7 @@ class Hub(test_chain.Chain):
         self.assertEqual(self.say("is there a map of the town?", KIMI, uri="at://x/post/4")["status"], "suspended")
         carded = self.interpret("card")
         self.assertEqual(carded["result"]["label"], "usage", carded)
-        self.assertTrue(carded["receipt"]["offers"][0]["text"].startswith("✾ DELVETALK · THE COMMONPLACE\n\nSeven doors. "), carded)
+        self.assertTrue(carded["receipt"]["offers"][0]["text"].startswith("✾ DELVETALK · THE COMMONPLACE\n\nEight doors. "), carded)
         # hob's none is quiet: nothing offered.
         self.assertEqual(self.say("is the garden open on the wiki today?", KIMI, uri="at://x/post/3")["status"], "suspended")
         quiet = self.interpret("none")
@@ -180,6 +189,8 @@ class Hub(test_chain.Chain):
         self.policy()
         self.commonplace("policy")
         self.greet(KIMI)
+        self.turn("garden", "plant", record(colour=label("silver"), seed=label("a fern")), principal=GLM)  # the bell whose rain the post names
+        self.deliver_all()
         self.assertEqual(self.say(post("3mxghh4qis22f"), KIMI)["status"], "suspended")
         missed = self.interpret("delvetalk garden rain\ntext: a fine gray drizzle")
         self.assertEqual((missed["status"], missed["result"]["label"]), ("admitted", "unclear"), missed)
@@ -253,15 +264,20 @@ class Hub(test_chain.Chain):
         self.assertEqual(len(self.children()), 1)
         self.assertEqual([field(p, "text")["value"] for p in rows(field(self.state("anthology"), "lines"))], ["the bell kept both of us"])
 
-    def test_the_garden_hears_the_first_of_several_spells(self):
+    def test_prose_at_the_garden_is_handed_on_and_hob_reads_several_spells_against_the_gardens_forms(self):
+        """The garden reads no words: prose to it is handed on to the commonplace, whose hob is offered the
+        garden's forms alone, and a reply of several spells runs each in order."""
         self.policy()
-        self.make("garden", closure("Garden"), garden_seed("policy", confirm=False))
-        town_kinds(self.host.send)
+        self.commonplace("policy")
+        self.greet(KIMI)
         asked = self.turn("garden", "receive", record(text=label("plant a fern and a moss"), post=label("at://x/p")), principal=KIMI, reach="mention")
-        self.assertEqual(asked["status"], "suspended", asked)
+        self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "silent"), asked)
+        self.deliver_all()
+        [pending] = self.host.send(op="world-interpretations")["pending"]
+        self.assertEqual({o["card"] for o in pending["offers"]}, {"garden"}, pending["offers"])
         r = self.interpret("delvetalk garden plant\nseed: a fern\ncolour: silver\ndelvetalk garden plant\nseed: a moss\ncolour: amber")
-        self.assertEqual(r["result"]["label"], "planted", r)
-        self.assertEqual([self.seed_of(b) for b in self.children()], [("a fern", "silver")])
+        self.assertEqual(r["result"]["label"], "several", r)
+        self.assertEqual([self.seed_of(b) for b in self.children()], [("a fern", "silver"), ("a moss", "amber")])
 
     def test_a_direct_replys_none_is_one_pruned_menu_an_hour_per_speaker(self):
         """The play page: words typed to the commonplace itself (no post). Every such reply reaches
@@ -323,8 +339,7 @@ class LinkDoors(test_chain.Chain):
 
     def test_studio_answers_with_its_url_and_field_lines_pass_it_by(self):
         make_commonplace(self, doors=[("GARDEN", "garden", [])])  # the seed cites STUDIO as genesis does: a door with no object
-        self.make("garden", closure("Garden"), garden_seed(""))
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
         say = lambda text: self.turn("commonplace", "receive", record(text=label(text), post=label("at://x/1")), principal=KIMI)
         self.assertEqual(say("hello")["result"]["label"], "usage")
         studio = say("STUDIO")
@@ -481,8 +496,7 @@ class HandedOnToHob(test_chain.Chain):
         """Run 8: 21 hand-ons were "garden" and "cistern" in the garden's own planting threads.
         FLEX §2 drops the family exclusion: hob is offered the bell's own forms and nothing else;
         the same words under the hub are offered every door's forms (the garden's plant too)."""
-        self.make("garden", closure("Garden"), garden_seed(""))
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
         self.add("GARDEN", "garden")
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("garden/bell/1", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
@@ -500,7 +514,7 @@ class HandedOnToHob(test_chain.Chain):
         hub = self.root("Could I rain on the lighthouse bell?", "h2")
         self.assertEqual(hub["status"], "suspended", hub)
         [pending] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual({(o["card"], o["action"]) for o in pending["offers"]}, {("garden", "plant"), ("garden", "cistern"), ("garden", "byColour"),
+        self.assertEqual({(o["card"], o["action"]) for o in pending["offers"]}, {("garden", "plant"), ("garden", "dig"), ("garden", "lines"),
                                                                                  ("garden/bell/1", "rain"), ("garden/bell/1", "strike"), ("garden/bell/1", "ring")}, pending["offers"])
 
     def test_the_owners_door_actions_are_offered_to_the_planter_alone(self):
@@ -508,8 +522,7 @@ class HandedOnToHob(test_chain.Chain):
         trigger for 8 of 49 interpretations. hob is offered only what inspect's `offered` gives the
         speaker: a stranger's reading of a bell has rain, ring and strike; the planter's adds
         door and undoor."""
-        self.make("garden", closure("Garden"), garden_seed(""))
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
         self.add("GARDEN", "garden")
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("garden/bell/1", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))

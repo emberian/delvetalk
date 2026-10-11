@@ -3,7 +3,7 @@ menu once per principal, door words, spells passed on.
 
 Evidence for FOUNDATION §5 (layer: objects).
 
-The cards the town sees first: Garden.receive and the commonplace's receive.
+The cards the town sees first: the garden's receive (a record's) and the commonplace's receive.
 
 Every observed spell reaches `<card>.receive {text, post}`; who wrote it is the turn's
 principal, and the reply card is what the turn offers.
@@ -12,8 +12,8 @@ import unittest
 
 from deploy import genesis
 from deploy.genesis import DOORS, STUDIO
-from tests.test_chain import Chain, garden_seed, town_kinds
-from tests.wire import field, label, listing, nat, record, reference, relation, rows
+from tests.test_chain import Chain, town_garden
+from tests.wire import field, label, listing, nat, record, reference, relation
 from tests.bend import closure
 
 ROOT_DOORS = DOORS  # (label, object, [(spell, what comes back)])
@@ -41,8 +41,7 @@ def commonplace(chain, policy="", doors=ROOT_DOORS, studio=True, owner="ember", 
 
 class Cards(Chain):
     def garden(self):
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
 
     def say(self, text, who="glm", post="at://glm/post/1", obj="garden", method="receive"):
         return self.turn(obj, method, record(text=label(text), post=label(post)), principal=who)
@@ -53,25 +52,12 @@ class Cards(Chain):
         return reply["offers"][0]["text"]
 
 
-    def test_a_completed_seed_keeps_the_forms_eighty_characters(self):
-        """Completing a held planting is held to the plant form's bounds: an 81-character seed is
-        refused by name and what was held is dropped (codex objects 11; the direct 81-character
-        planting is test_scenarios.Garden)."""
-        self.garden()
-        long = "x" * 81
-        # Completing a held planting the same way: refused, and what was held is dropped.
-        self.assertIn("I still need: seed.", self.card(self.say("delvetalk garden plant\ncolour: silver")))
-        held = self.say("smell: sweet\nseed: %s" % long)
-        self.assertEqual(self.card(held), "Not planted, refused seedLength: A seed is 1 to 80 characters; this one is 81.\n")
-        self.assertEqual(rows(field(self.state("garden"), "pending")), [])
-        self.assertEqual(field(self.state("garden"), "planted"), nat(0))
-
-
     def test_a_misfit_spell_is_the_gardens_to_answer_and_a_plain_card_still_refuses_badSpell(self):
         """The garden's receive takes a direct turn's misfit (HOST-HANDOFF 121): with no policy it
         answers by a refusal card naming the clause, an admitted turn that writes nothing. A card
         whose receive takes a plain Card.Reply (a bell) still has the host refuse it badSpell."""
         self.garden()
+        laid = self.version("garden")
         cases = {
             "delvetalk garden plant\nseed: a fern\ncolour: green": ("badValue", "colour is one of: amber, violet, silver"),
             "delvetalk garden plant\nseed: a fern\ncolour: silver\nsmell: sweet": ("unknownField", "No field smell in this spell; it takes colour, seed."),
@@ -84,7 +70,7 @@ class Cards(Chain):
                 self.assertEqual(reply["result"]["label"], "refused", reply)
                 self.assertEqual([f["value"]["value"] for f in reply["result"]["payload"]["fields"]], [clause, reason], reply)
                 self.assertIn("refused %s: %s\n" % (clause, reason), self.card(reply))
-        self.assertEqual(self.version("garden"), 0)
+        self.assertEqual(self.version("garden"), laid)
         self.say("delvetalk garden plant\nseed: a fern\ncolour: silver")
         # A record (a bell) answers a misfit itself, admitted and refused by the clause (FLEX section 2).
         for spell, clause in (("delvetalk garden/bell/1 rain\ntext: x\nsmell: sweet", "unknownField"), ("delvetalk orchard rain\ntext: x", "otherCard")):
@@ -164,11 +150,12 @@ class Cards(Chain):
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
         self.garden()
+        laid = self.version("garden")
         r = self.say("quoting the hub post\ndelvetalk garden plant / colour: silver / seed: a fern", obj="commonplace")
         # The host runs the spell on the card it names, as this turn: the result is the garden's.
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
+        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "made"), r)
         self.assertIn("Planted, glm: a silver bell", r["offers"][0]["text"])
-        self.assertEqual(self.version("garden"), 1)
+        self.assertEqual(self.version("garden"), laid + 1)
         self.assertEqual({w["object"] for w in r["receipt"]["outcome"]["writes"]}, {"garden", "kind/bell"})
         # No card forge: the commonplace is the answering card and takes the misfit; with no policy it
         # refuses by the clause (an admitted turn, no greeting written), never badSpell.

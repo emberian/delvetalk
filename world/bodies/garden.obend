@@ -23,6 +23,8 @@ form plant:
   seed: text 1..80
 form dig:
   name: text 0..120
+form write:
+  text: text 1..280
 form lines:
   from: natural 1..1000000000
 form door:
@@ -59,6 +61,8 @@ def dug(made: Super.Made) -> Document.Document:
     case refused(r): Document.text("Not dug, refused {r.clause}: {r.reading}\n")
 def plantSpell(id: String) -> String:
   "    delvetalk {id} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n"
+def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
+  Super.write(state, {text: input.text}, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.lines(state, {from: input.from}, context)
 def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:

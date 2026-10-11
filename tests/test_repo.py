@@ -28,7 +28,7 @@ import urllib.parse
 from pathlib import Path
 
 from tests.host import serve, served
-from tests.test_chain import garden_state, town_kinds
+from tests.test_chain import town_garden
 from tests.test_http import DID, Provider
 from transport import delve, identity
 from deploy.serve import LIBRARY
@@ -40,7 +40,7 @@ from transport.host import HostClient
 from transport.http import Front
 from transport.identity import ORIGIN
 from tests.wire import label, nat, record
-from tests.bend import closure, counter_modules
+from tests.bend import counter_modules
 
 # Signing is ECDSA with RFC 6979 nonces (`deterministic_signing`), which cryptography has from 43.0.0.
 CRYPTOGRAPHY = tuple(int(x) for x in __import__('cryptography').__version__.split('.')[:2])
@@ -121,17 +121,15 @@ class Repository(unittest.TestCase):
         cls.port = cls.front.server_address[1]
         serve(cls.front)
         send = cls.host.send
-        town_kinds(lambda **q: send(q))
         seeded = [
-            send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
-                  'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)}),
+            town_garden(lambda **q: send(q)),
             send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'plant', 'identity': 'plant-1',
                   'argument': record(colour=label('amber'), seed=label('a moth bell'))}),
             send({'op': 'world-turn', 'principal': DID, 'object': 'nope', 'method': 'receive', 'argument': record(), 'identity': 'miss'}),
             send({'op': 'world-turn', 'principal': DID, 'object': 'garden', 'method': 'publishPage', 'argument': record(page=label('')), 'identity': 'pub-1'}),
             send({'op': 'world-create', 'principal': DID, 'identity': 'mk-d', 'object': 'diary', 'modules': counter_modules(),
                   'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}})]
-        assert [r['status'] for r in seeded] == ['created', 'admitted', 'refused', 'admitted', 'created'], seeded
+        assert [r['status'] for r in seeded] == ['admitted', 'admitted', 'refused', 'admitted', 'created'], seeded
         cls.receipts = {r['receipt']['identity']['intent']: r['receipt'] for r in seeded}
 
     @classmethod

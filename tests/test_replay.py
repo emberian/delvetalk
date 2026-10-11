@@ -3,15 +3,14 @@ it is admitted.
 
 Evidence for FOUNDATION §11 (layer: rehearsal).
 
-Garden creates the bell; the strike awaits the planting turn's receipt. Authors and planters are
+The garden plants the bell through kind/bell; the strike awaits the planting turn's receipt. Authors and planters are
 the turns' principals.
 """
 import unittest
 
 from tests.host import posted
 
-from tests.test_chain import Chain, garden_seed, town_kinds
-from tests.bend import closure
+from tests.test_chain import Chain, town_garden
 from tests.wire import field, label, record, rows
 
 PLANTING = "at://glm.delve.town/app.bsky.feed.post/3m-plant"
@@ -22,7 +21,7 @@ def silver():
 
 
 def bell_seed():
-    """A Bell Seed: the planting post and its planter."""
+    """A Bell fixture's Seed (tests/fixtures/objects/Bell.obend): the planting post and its planter."""
     return record(colour=silver(), seed=label("a bell for lost moths"), planting=label(PLANTING), planter=label("glm"), planterHandle=label(""))
 
 
@@ -38,8 +37,7 @@ class Replay(Chain):
         # The bell remembers the post that planted it; gemini's strike awaits the reply that
         # answers that post (awaitPost), and rings when that reply's turn is admitted.
         self.assertEqual(self.host.send(op="world-open", path=self.path, clock="transport")["status"], "opened")
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
+        town_garden(self.host.send, owner="glm")
         planted = self.turn("garden", "receive", self.heard(
             "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver", PLANTING), principal="glm", identity=PLANTING)
         self.assertEqual(planted["status"], "admitted", planted)

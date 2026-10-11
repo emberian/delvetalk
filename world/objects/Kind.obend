@@ -19,7 +19,8 @@ import ./Forms.obend as Forms
 # the package they run (`of`: record or kind) and a body: a layer over that package, as source,
 # grafted on each instance as it is made ("" for none). `make` is create, then extend.
 #
-# A kind's `make` is its own: `shape` grafts on the kind a layer generated from its form, whose
+# A kind's `make` is its own: a layer generated from its form (laid as `kinds` makes it, or by its
+# owner's `shape` for a kind created whole), whose
 # `make` takes exactly those fields (and `id`, blank to be named, an exact id the kind's owner's
 # alone: the hand's own things, `garden`, `porch`) and hands them to `making` as rows. So the host
 # reads a make spell's fields and bounds as it reads any form's, and `?` on a kind prints its own
@@ -96,36 +97,33 @@ def wanted(state: State, fields: Lists.List<Rows.Field>, under: String) -> Strin
 def kindId(name: String) -> String:
   "kind/{name}"
 # Makes one: creates it from the package `of` names with the fields as its seed under the kind's
-# law, then lays its body over it (a made kind, the make its form generates). The body goes by a
-# message the kind sends itself, delivered in the same settling, before the maker's reply returns:
-# an `extend` in the creating turn (HOST-HANDOFF 5.122) leaves a made kind refusing its own later
-# writes and a record's body refused by its law (docs/OBJECTS-HANDOFF.md, open). Made under a
-# record, the record answers the maker and the kind says nothing.
+# law, then lays its body over it in the same turn (a made kind, the make its form generates).
+# Made under a record, the record answers the maker and the kind says nothing.
 def making(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
   if valueOf(fields, "id") != "" && context.principal != state.owner then refusedCard(state, context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} names what this kind makes; leave id blank"}) else creating(state, fields, under, context)
 def creating(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
   match world.create({package: packageOf(state.of), seed: seedOf(state, fields, under, context), law: lawOf(state, fields, context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
-    case created(c): counted(state, c.object.object, under != "", context)
+    case created(c): counted(state, c.object.object, under != "", layerOf(state, fields), context)
     case refused(r): refusedCard(state, context, {clause: r.clause, reading: if r.reading == "" then "{wanted(state, fields, under)} was not made" else r.reading})
-def counted(state: State, id: String, quiet: Bool, context: Abi.Context) -> Activity<Done>:
+def counted(state: State, id: String, quiet: Bool, layer: String, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {made: insert {object: id, n: state.count + 1n}, count: add 1n}
-  if state.of == "kind" then grafting(state, id, "shape", quiet, context) else if state.body == "" then toldUnless(quiet, state, id, context) else grafting(state, id, "graft", quiet, context)
+  if layer == "" then toldUnless(quiet, state, id, context) else laid(state, id, quiet, layer, context)
 def toldUnless(quiet: Bool, state: State, id: String, context: Abi.Context) -> Activity<Done>:
   if quiet then Done.made({object: id}) else told(state, id, context)
-def grafting(state: State, id: String, method: String, quiet: Bool, context: Abi.Context) -> Activity<Done>:
-  match world.send({object: if method == "shape" then {world: context.world, object: id} else Plans.self(context), method: method, argument: if method == "shape" then {object: id} else {object: id, quiet: quiet}}):
-    case delivery(_): toldUnless(quiet, state, id, context)
+# The layer laid into the making, in the same turn (HOST-HANDOFF 5.122): a made kind's make, or a
+# thing's body, judged by the made thing's law; refused, nothing is made. Then the made thing's
+# `made`, sent so it runs once the turn is committed (a body that watches something subscribes
+# there, which needs its receiver in place).
+def laid(state: State, id: String, quiet: Bool, layer: String, context: Abi.Context) -> Activity<Done>:
+  match world.extend({object: {world: context.world, object: id}, package: layer, migration: ""}):
+    case reprogrammed(_): finished(state, id, quiet, context)
     case refused(_): refuse("what was made could not be given its body, so nothing was made")
-# The body, on what this kind made: an extend judged by the made thing's law; then the made
-# thing's `made`, sent so it runs once the body is laid (a body that watches something
-# subscribes there, which needs its receiver in place).
-def graft(state: State, input: {object: String, quiet: Bool}, context: Abi.Context) -> Activity<Done>:
-  match world.extend({object: {world: context.world, object: input.object}, package: state.body, migration: ""}):
-    case reprogrammed(_): finished(input.object, context)
-    case refused(r): Done.refused({clause: r.clause, reading: r.reading})
-def finished(object: String, context: Abi.Context) -> Activity<Done>:
-  match world.send({object: {world: context.world, object: object}, method: "made", argument: {}}):
-    case _: Done.made({object: object})
+def finished(state: State, id: String, quiet: Bool, context: Abi.Context) -> Activity<Done>:
+  match world.send({object: {world: context.world, object: id}, method: "made", argument: {}}):
+    case _: toldUnless(quiet, state, id, context)
+# What is laid on what this kind makes: a kind's make from the form it is made with, a thing's body.
+def layerOf(state: State, fields: Lists.List<Rows.Field>) -> String:
+  if state.of == "kind" then layerSource(formFor(valueOf(fields, "of"), valueOf(fields, "form"))) else state.body
 def told(state: State, id: String, context: Abi.Context) -> Activity<Done>:
   Card.tellTo(Done.made({object: id}), context.principal, Document.text("Made, at {id}; {natText(state.count + 1n)} made. Its card: delvetalk {id} ?\n"))
 def refusedCard(state: State, context: Abi.Context, refusal: Card.Refusal) -> Activity<Done>:
@@ -139,8 +137,8 @@ def makeUnder(state: State, input: {under: String, fields: Lists.List<Rows.Field
   match Forms.fault(state.form, input.fields):
     case some(f): Card.tell(Done.refused({clause: f.value.clause, reading: f.value.reading}), Document.text("Not done: {f.value.reading}\n"))
     case none(_): making(state, input.fields, input.under, context)
-# Grafts the kind's make: the owner's, once its form is set (genesis shapes `kinds`; `kinds`
-# shapes each kind it makes).
+# Grafts the kind's make: the owner's, for a kind created whole rather than made (genesis shapes
+# `kinds`); `kinds` lays each kind's make as it makes it.
 def shape(state: State, input: {object: String}, context: Abi.Context) -> Activity<Done>:
   if context.principal != state.owner then Done.refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shapes this kind"}) else reshaped(state, context)
 def reshaped(state: State, context: Abi.Context) -> Activity<Done>:
@@ -148,7 +146,7 @@ def reshaped(state: State, context: Abi.Context) -> Activity<Done>:
     case reprogrammed(_): Done.made({object: context.object})
     case refused(r): Done.refused({clause: r.clause, reading: r.reading})
 def methods() -> Lists.List<String>:
-  Text.words("shape graft makeUnder")
+  Text.words("shape makeUnder")
 def forms() -> Card.Forms:
   Card.Forms.nil()
 def blurb() -> Card.Door:
@@ -157,8 +155,10 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
   Card.answer(input, context, forms(), render(state, context))
 # What a kind's make takes: its form, and for a thing (not a kind) the `id` it may be given.
 def madeForm(state: State) -> String:
-  if state.of == "kind" then state.form else "{state.form}\nid: text 0..64"
-# The layer `shape` grafts: the kind's make, with exactly its form's fields.
+  formFor(state.of, state.form)
+def formFor(of: String, form: String) -> String:
+  if of == "kind" then form else "{form}\nid: text 0..64"
+# The kind's make layer, with exactly its form's fields.
 def layerSource(form: String) -> String:
   let items = Forms.specs(form)
   let formLines = textJoin(Lists.map(items, Forms.formLine), "")

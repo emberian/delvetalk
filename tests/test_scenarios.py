@@ -5,8 +5,8 @@ Evidence for FOUNDATION §3, §5, §8 and the voice (layer: scenarios).
 
 - Bell: a kind makes a bell, its maker watches its seventh rain, three people rain on it, the seventh
   rings it, and an avatar watching its marks is told; a rain past its bound is refused by name.
-- Garden: a planting spell grows a bell in the garden and the card names where to rain; the page's
-  owner checkpoints its page with `merge`, and nobody else does.
+- Garden: a planting spell grows a bell in the garden (held among its `things`) and the card names where
+  to rain; a planting that misfits the form is refused by its clause and plants nothing.
 - Workshop: a flawed block is checked with a located diagnostic; a proposal to another's card is held
   for its owner; a stranger cannot adopt it; the owner adopts and the target runs the new source.
 - Room: a reader enters, chooses, and moves; a stranger's card shows the room but not the reader's
@@ -69,7 +69,7 @@ class Arc(unittest.TestCase):
 
 class Bell(Arc):
     def test_a_made_bell_is_watched_rained_on_and_rung_by_its_seventh_rain(self):
-        made = self.say(KIM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: a lamp for moths")
+        made = self.say(KIM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: a lamp for moths\nid:")
         self.assertEqual(made["status"], "admitted", made)
         bell = [o for o in self.objects() if o.startswith("bell/")][0]
         followed = self.say(GLM, GLM, "delvetalk %s watch\nto: %s\nfield: marks" % (GLM, bell))
@@ -100,27 +100,20 @@ class Bell(Arc):
 class Garden(Arc):
     def test_a_planting_spell_grows_a_bell_and_its_card_says_where_to_rain(self):
         planted = self.say(GLM, "garden", "delvetalk garden plant\nseed: a bell for lost moths\ncolour: silver")
-        self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "planted"), planted)
+        self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "made"), planted)
         self.assertIn("garden/bell/1", self.objects())
         card = self.card(planted)
         self.assertIn("glm.delve.town", card)
         self.assertIn("delvetalk garden/bell/1 rain", card)
-        self.assertEqual(self.field("garden", "planted"), nat(1))
+        self.assertEqual(self.things(), ["garden/bell/1"])
         again = self.say(KIM, "garden", "delvetalk garden plant\nseed: %s\ncolour: silver" % ("y" * 81))
-        # A misfit is the garden's to answer (HOST-HANDOFF 121): with the town's policy hob reads it;
-        # nothing is planted.
-        self.assertEqual(again["status"], "suspended", again)
-        self.assertEqual(self.field("garden", "planted"), nat(1))
-        # The page's owner checkpoints it with `merge` under the page post; anyone else's merge,
-        # an owner's naming no post, and prose containing the word are refused or not a merge.
-        page = "at://%s/town.delve.feed.post/page1" % OPENER
-        for who, text, post in ((GLM, "merge", page), (OPENER, "merge", ""), (OPENER, "merge this please", page)):
-            r = self.turn(who, "garden", "receive", record(text=label(text), post=label(post)))
-            self.assertNotEqual(r.get("result", {}).get("label"), "merged", r)
-        self.assertEqual(self.field("garden", "pageCheckpoint"), label(""))
-        merged = self.turn(OPENER, "garden", "receive", record(text=label("merge"), post=label(page)))
-        self.assertEqual(merged["result"]["label"], "merged", merged)
-        self.assertEqual(self.field("garden", "pageCheckpoint"), label(page))
+        # A misfit is the garden's to answer (a record answers it itself, admitted and refused by its clause):
+        # nothing is planted. Prose, which is no spell, goes on to the commonplace, where hob reads it.
+        self.assertEqual((again["status"], again["result"]["label"], again["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), again)
+        self.assertEqual(self.things(), ["garden/bell/1"])
+
+    def things(self):
+        return [next(f["value"]["value"] for f in row["fields"] if f["name"] == "object") for row in self.field("garden", "things")["payload"]["fields"][0]["value"]["items"]]
 
 
 class Workshop(Arc):

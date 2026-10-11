@@ -139,7 +139,7 @@ def malformed(t, rng):
         pick = 2
     if pick == 2:
         return dict(good, fields=good["fields"] + [{"name": "zz", "value": nat(1)}])
-    typed = [i for i, (_, m) in enumerate(fields) if m.get("tag") in ("label", "natural", "boolean", "field", "variant", "list")]
+    typed = [i for i, (name, m) in enumerate(fields) if name not in ("fields", "misfit") and m.get("tag") in ("label", "natural", "boolean", "field", "variant", "list")]
     if not typed:
         return label("x")
     i = rng.choice(typed)
@@ -268,11 +268,12 @@ class Run:
             where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": record(column=label("n"), equals={
                 "tag": "variant", "label": "natural", "payload": record(value=nat(r.choice([1, 3, 7])))})}]}
             return self.turn(who, "wake/" + who, "watch", record(
-                event={"tag": "variant", "label": "rows", "payload": record(object=label(bell), field=label(r.choice(["rains", "lines"])), where=where, atLeast=nat(1))},
+                event={"tag": "variant", "label": "rows", "payload": record(object=label(bell), field=label("lines"), where=where, atLeast=nat(1))},
                 action={"tag": "variant", "label": "call", "payload": record(card=label(bell), method=label("ring"))}))
         if pick == 5:  # a proposal through the workshop: the target's own source, re-proposed
             target = r.choice(["anthology", "library", "garden"])
-            src = (ROOT / "world" / "objects" / {"anthology": "Record", "library": "Library", "garden": "Garden"}[target]).with_suffix(".obend").read_text() + "# again\n"
+            home = {"anthology": "objects/Record", "library": "objects/Library", "garden": "bodies/garden"}[target]  # the garden's own source is its body
+            src = (ROOT / "world" / home).with_suffix(".obend").read_text() + "# again\n"
             return self.turn(who, "workshop", r.choice(["check", "propose"]), record(target=label(target), source=label(src[:16000]), migration=label("")))
         if pick == 6:  # an amendment of a law, by its owner or a stranger
             obj = r.choice(["anthology", "garden", "library"])
@@ -409,11 +410,6 @@ class RandomHour(Property):
         """garden/bell/1's answer to an archive-length rain was 1,410 characters (seeds 23, 29: up to 1,430): the
         record's render now keeps one budget across what the answer said, the head, the rains and the doors."""
         self.hour(18)
-
-    def test_seed_30_the_garden_card_after_a_merge_shows_no_post_address(self):
-        """After the owner's merge the garden card read 'page checkpointed at at://did:plc:...'; it prints no
-        checkpoint line now, and the merge's answer is 'Page checkpointed.'."""
-        self.hour(30)
 
     @unittest.skipUnless(EXPLORE, "DELVETALK_SEED names a seed to explore")
     def test_the_seed_in_the_environment(self):

@@ -1,34 +1,31 @@
-"""A published page reaches the outbox as a draft, is recorded when posted, and a merge reply to it
+"""A published page reaches the outbox as a draft, is recorded when posted, and a reply to it
 routes back to its object.
 
 Evidence for FOUNDATION §5, §7 (layer: transport).
 
 publish end to end: an object's published page reaches the outbox as a
 draft marked like a reply draft and never posted by the bridge; post.py --object records the post's
-page and section; a `merge` reply to the recorded page post routes to the object by reply-is-address.
+page and section; a reply to the recorded page post routes to the object by reply-is-address.
 
-Refuted by: a Garden page draft without its eighteen sections in order; the bridge drafting a
-publication twice; a merge reply to the page post going anywhere but the garden.
+Refuted by: a garden's page draft (the host's default page: its card and how to reply) without those two sections in order; the bridge drafting a
+publication twice; a reply to the page post going anywhere but the garden.
 """
 import unittest
 
 from tests.test_bridge import BridgeCase
-from tests.test_chain import garden_state, town_kinds
+from tests.test_chain import town_garden
 from tests.test_transport import DID, mk
 from tests.test_turn_world import closure, label, record
 from transport import bridge, observe, post
 
 
 class Publishing(BridgeCase):
-    def test_a_gardens_page_is_drafted_recorded_and_a_merge_reply_routes_to_the_garden(self):
-        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-garden', 'object': 'garden',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state()})
-        self.assertEqual(r['status'], 'created', r)
-        town_kinds(lambda **q: self.host.send(q))
+    def test_a_gardens_page_is_drafted_recorded_and_a_reply_routes_to_the_garden(self):
+        town_garden(lambda **q: self.host.send(q))
         for i in range(20):
             r = self.host.send({'op': 'world-turn', 'principal': 'glm', 'object': 'garden', 'method': 'plant',
                                 'argument': record(colour=label('silver'), seed=label('bell %02d' % i)), 'identity': f'plant-{i}'})
-            self.assertEqual(r['result']['label'], 'planted', r)
+            self.assertEqual(r['result']['label'], 'made', r)
         r = self.host.send({'op': 'world-turn', 'principal': 'glm', 'object': 'garden', 'method': 'publishPage',
                             'argument': record(page=label('')), 'identity': 'publish-1'})
         self.assertEqual(r['status'], 'admitted', r)
@@ -40,8 +37,7 @@ class Publishing(BridgeCase):
         self.assertEqual(header, 'wiki: garden\n')
         titles = [s.split('\n', 1)[0] for s in sections]
         self.assertTrue(all(len(s) < 2000 for s in sections), [len(s) for s in sections])
-        self.assertIn('… and 4 more bells', sections[0])
-        self.assertEqual(titles, ['Card', 'How to reply'] + [f'garden/bell/{n}' for n in range(20, 4, -1)])
+        self.assertEqual(titles, ['Card', 'How to reply'])
         self.assertNotIn('published', self.run_bridge())               # drafted once
         self.assertEqual(len([d for d in self.drafts() if 'publication' in d]), 1)
         # A human posts it with post.py --text-file ... --object garden; the record carries page and section.
@@ -54,7 +50,7 @@ class Publishing(BridgeCase):
         self.assertEqual(recorded['status'], 'posted', recorded)
         self.assertEqual(recorded['receipt']['outcome']['page'], 'garden')
         bridge.mark_posted(next((self.state / 'outbox').glob('*-pub-*.json')))
-        self.observe([mk(9, 'merge', parent=page_uri)])
+        self.observe([mk(9, 'thank you for the page', parent=page_uri)])
         ran = self.run_bridge()
         self.assertEqual(ran['turns'], [mk(9, '')['uri']], ran)
         receipt = self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': mk(9, '')['uri']})['receipt']

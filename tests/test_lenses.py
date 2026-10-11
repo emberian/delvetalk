@@ -12,11 +12,9 @@ Policy's model, escalate and system and an Avatar's handle are lenses; Policy.se
 Refuted by: a stranger's set changing the policy, a value outside its kind being written, a set of
 two fields, a field without a lens, or `?` omitting a lens.
 """
-import json
 import unittest
 
 from tests import test_chain, test_policy
-from tests.test_chain import town_kinds
 from tests.test_rooms import avatar_seed
 from tests.wire import label, record
 from tests.bend import closure
@@ -99,9 +97,9 @@ class Lenses(test_chain.Chain):
 
 
 class OwnedLenses(test_chain.Chain):
-    """Lenses on the objects that had no owner: Garden (confirm) and Thing (name, description);
-    Workshop has nothing to set and says so. Garden and Thing declare a law that refuses the same
-    write from anyone but the owner. A room is a record and has no lenses."""
+    """Lenses on the objects that had no owner: Thing (name, description);
+    Workshop has nothing to set and says so. Thing declares a law that refuses the same
+    write from anyone but the owner. A room and the garden are records and have no lenses."""
 
     def say(self, obj, text, who):
         r = self.turn(obj, "receive", heard(text), principal=who)
@@ -121,31 +119,6 @@ class OwnedLenses(test_chain.Chain):
         fields.update(edits[1])
         return self.host.send(op="world-propose", principal="did:plc:mallory", identity="forged-" + obj,
                               roots=[{"object": obj, "version": version}], writes=[{"object": obj, "edits": [record(**fields)]}])
-
-    def test_the_gardens_owner_sets_confirm(self):
-        from tests.test_chain import garden_seed
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
-        usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal="glm")
-        self.assertEqual(usage["status"], "usage", usage)
-        self.assertIn("delvetalk garden set\nconfirm: <yes, no>\n", usage["text"])
-        r = self.say("garden", "delvetalk garden set\nconfirm: no", "glm")
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the garden's owner sets it; that is ember"))
-        r = self.say("garden", "delvetalk garden set\nconfirm: no", "ember")
-        self.assertEqual(r["result"]["label"], "changed", r)
-        # A real owner is named by the handle the seed gave, never a fragment of its DID.
-        owner = "did:plc:6amo7col5h4ciq2gpm5eur7b"
-        self.make("garden2", closure("Garden"), record(owner=label(owner), ownerHandle=label("ember.delve.town")))
-        r = self.say("garden2", "delvetalk garden2 set\nconfirm: no", "glm")
-        self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the garden's owner sets it; that is ember.delve.town"))
-        merge = self.turn("garden2", "receive", record(text=label("merge"), post=label("at://glm/m")), principal="glm")
-        self.assertIn("Only the page's owner, ember.delve.town, merges it.", json.dumps(merge))
-        self.assertEqual(self.listed("garden", "confirmFor"), [])
-        r = self.say("garden", "delvetalk garden set\nconfirm: yes", "ember")
-        self.assertEqual(self.listed("garden", "confirmFor"), ["plant"])
-        append = {"tag": "variant", "label": "append", "payload": record(item=label("give"))}
-        r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint"], {"confirmFor": append}))
-        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
     def test_a_things_owner_sets_its_fields_and_the_law_keeps_others_out(self):
         from tests.test_rooms import thing_seed

@@ -15,6 +15,8 @@ import ./Scenes.obend as Scenes
 # door's marks from the moment its kind finishes it (`door`, fixed) and is lit, once, when that
 # door's `open` mark comes: its own mark `lit`, by the door's change, which no turn can forge.
 type State = Super.State
+form write:
+  text: text 1..280
 form lines:
   from: natural 1..1000000000
 form door:
@@ -26,6 +28,8 @@ form example:
   label: text 1..32
   spell: text 1..280
   comes: text 0..200
+def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
+  Super.write(state, {text: input.text}, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.lines(state, {from: input.from}, context)
 def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:

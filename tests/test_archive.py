@@ -70,7 +70,7 @@ class Archive(unittest.TestCase):
     def test_a_second_cistern_line_digs_a_second_cistern_named_by_its_receipt(self):
         first, second = [g for g in self.r['grammar'] if 'cistern: line' in g['what']]
         self.assertEqual((first['status'], second['status']), ('admitted', 'admitted'), (first, second))
-        named = lambda g: next(f['value']['fields'][1]['value']['value'] for f in g['result']['payload']['fields'] if f['name'] == 'object')
+        named = lambda g: next(f['value']['value'] for f in g['result']['payload']['fields'] if f['name'] == 'object')
         self.assertEqual((named(first), named(second)), ('garden/cistern/1', 'garden/cistern/2'))
         self.assertIn('garden/cistern/2', second['offers'][0])
 

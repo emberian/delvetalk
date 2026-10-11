@@ -17,10 +17,10 @@ import unittest
 from tests.host import whole
 
 from tests import test_policy
-from tests.test_chain import garden_seed, town_kinds
+from tests.test_chain import town_garden
+from tests.test_receive import commonplace
 from tests.test_reflection import PACKAGE, Reflection, source_seed
 from tests.wire import field, label, record, rows
-from tests.bend import closure
 
 PLANT = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
 
@@ -29,10 +29,7 @@ class Fork(Reflection):
     def setUp(self):
         super().setUp()
         self.open_library()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden",
-                           modules=closure("Garden"), entry="initial", seed=garden_seed("", confirm=False))
-        self.assertEqual(r["status"], "created", r)
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
         self.make("c", PACKAGE, source_seed())
 
     def fork(self, principal="ember", **extra):
@@ -46,7 +43,7 @@ class Fork(Reflection):
 
     def children(self, host):
         state = host.send(op="world-view", principal="ember", object="garden")["state"]
-        return [field(c, "object")["value"] for c in rows(field(state, "children"))]
+        return [field(c, "object")["value"] for c in rows(field(state, "things"))]
 
     def plant(self, host):
         return host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="what-if",
@@ -102,19 +99,19 @@ class Fork(Reflection):
 
     def test_a_suspended_reading_is_carried_and_settles_in_the_fork_only(self):
         self.policy()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-g2", object="g2",
-                           modules=closure("Garden"), entry="initial", seed=garden_seed("policy", confirm=False))
-        self.assertEqual(r["status"], "created", r)
-        asked = self.host.send(op="world-turn", principal="glm", object="g2", method="receive", identity="prose",
+        commonplace(self, "policy", doors=[("GARDEN", "garden", [])])
+        asked = self.host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="prose",
                                argument=record(text=label("Could we plant a silver fern that remembers?"), post=label("at://x/p/2")), reach="mention")
-        self.assertEqual(asked["status"], "suspended", asked)
+        self.assertEqual([d["status"] for d in asked["delivered"]], ["suspended"], asked)  # the garden hands the words on; hob is asked
         _, fork = self.fork()
         [pending] = fork.send(op="world-interpretations")["pending"]
         settled = fork.send(op="world-interpretation", id=pending["id"],
                             reply={"status": "replied", "json": None, "model": "m",
-                                   "raw": "delvetalk g2 plant / colour: silver / seed: a fern that remembers"})
+                                   "raw": "delvetalk garden plant / colour: silver / seed: a fern that remembers"})
         [resumed] = settled["resumed"]
-        self.assertEqual((resumed["status"], whole(fork, resumed)["result"]["label"]), ("admitted", "planted"), resumed)
+        self.assertEqual((resumed["status"], whole(fork, resumed)["result"]["label"]), ("admitted", "passed"), resumed)
+        self.assertEqual(self.children(fork), ["garden/bell/1"])
+        self.assertEqual(self.children(self.host), [])
         self.assertEqual(len(self.host.send(op="world-interpretations")["pending"]), 1)
 
 if __name__ == "__main__":

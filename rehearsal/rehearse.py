@@ -119,7 +119,7 @@ class Run:
         if refusal:
             self.errors.append({'kind': 'seed', 'reply': refusal})
         for m in made:
-            if m['status'] != 'created':
+            if m['status'] not in ('created', 'admitted'):
                 self.errors.append({'kind': 'seed', 'object': m['object'], 'principal': OWNER, 'reply': m['reply']})
         return [{'object': m['object'], 'module': m['module'], 'status': m['status'], 'owner': None, 'creator': m['creator']} for m in made]
 
@@ -159,11 +159,11 @@ class Run:
         return next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == name), None)
 
     def made(self, kind='kind/bell'):
-        """What a kind has made, in order: its `made` rows {object, n} (Kind.obend). The garden plants through
-        kind/bell and digs through kind/cistern, so this is the planted set whatever the garden itself keeps."""
-        made = sorted(rows(self.field(kind, 'made') or {'items': []}),
-                      key=lambda m: int(next(x['value']['value'] for x in m['fields'] if x['name'] == 'n')))
-        return [next(x['value']['value'] for x in m['fields'] if x['name'] == 'object') for m in made]
+        """What the garden holds of a kind, in the order it grew: its `things` rows {world, object} (Record.obend)
+        that are garden/<kind>/<n>, the garden planting through kind/bell and digging through kind/cistern."""
+        word = '/' + kind.split('/')[-1] + '/'
+        things = [next(x['value']['value'] for x in t['fields'] if x['name'] == 'object') for t in rows(self.field('garden', 'things') or {'items': []})]
+        return sorted((o for o in things if word in o), key=lambda o: int(o.rsplit('/', 1)[1]))
 
     def record_plantings(self, posts, before):
         """Every bell grown since `before` has its planting post recorded for it, so replies to that post reach
@@ -242,9 +242,9 @@ GRAMMAR = [
     ('commonplace', 'a door word, as the commonplace card invites', 'garden'),
     ('tide', 'subscribe', 'delvetalk tide subscribe\nevery: 60\nnote: wake me hourly'),
     ('tide', 'tick', 'delvetalk tide tick'),
-    # FOUNDATION section 10 step 3 in the Garden's own grammar, which the archive never wrote: the second is refused.
-    ('garden', 'a cistern: line digs garden/cistern', 'cistern: a stone cistern for refused proposals'),
-    ('garden', 'a second cistern: line', 'cistern: a cistern for refused proposals (by discovery, Kimi)'),
+    # FOUNDATION section 10 step 3 in the Garden's own grammar, which the archive never wrote: each digs the next cistern.
+    ('garden', 'a cistern: line digs garden/cistern (the dig form)', 'dig: a stone cistern for refused proposals'),
+    ('garden', 'a second cistern: line (the dig form)', 'dig: a cistern for refused proposals (by discovery, Kimi)'),
 ]
 
 
@@ -279,7 +279,7 @@ def turn_text(host, who, obj, intent, text, reach=None):
 
 
 def burst_probe(host, n=9):
-    """Nine prose plantings reach the garden in one poll, before the interpreter runs: each must suspend
+    """Nine prose plantings reach the commonplace (the garden hands prose on to it) in one poll, before the interpreter runs: each must suspend
     (pendingInterpretationsPerObject is counted apart from pendingActivitiesPerObject = 8), settle, and
     resume admitted. A turn refused `capacity` is transient: the same identity is retried after settling."""
     who = [f'did:plc:rehearsalburst{i:011d}' for i in range(n)]
@@ -287,7 +287,7 @@ def burst_probe(host, n=9):
     said = {f'could you plant me a silver fern that remembers hour {i}?': i for i in range(n)}
     first = []
     for (text, i) in said.items():
-        r = turn_text(host, who[i], 'garden', intent[i], text, reach='mention')
+        r = turn_text(host, who[i], 'commonplace', intent[i], text, reach='mention')
         first.append({'i': i, 'status': r.get('status'), 'class': ((r.get('receipt') or {}).get('outcome') or {}).get('class'),
                       'reason': ((r.get('receipt') or {}).get('outcome') or {}).get('reason') or r.get('message')})
     settled, retried = [], []
@@ -305,7 +305,7 @@ def burst_probe(host, n=9):
             break
         for f in again:
             retried.append(f['i'])
-            r = turn_text(host, who[f['i']], 'garden', intent[f['i']], next(t for t, j in said.items() if j == f['i']), reach='mention')
+            r = turn_text(host, who[f['i']], 'commonplace', intent[f['i']], next(t for t, j in said.items() if j == f['i']), reach='mention')
             f['retry'] = r.get('status')
     final = []
     for i in range(n):

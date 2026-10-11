@@ -1,5 +1,82 @@
 # Objects handoff
 
+## lane/rewrite8 (2026-10-11): step 2 — the furniture as kinds
+
+Inherited (ClusterVision on lane/rewrite6's last 80 turns, `cv show a501e76149fbdf27e`): nothing the section below
+lacked; its create-then-extend Kind (the session scratchpad's `Kind-inturn.obend`) became Kind's `making` once
+host17's atomic make reached foundation (7884a972, merged here).
+
+Done (each commit's message quotes the cards it changed):
+
+- **One budget per reply** (6f8c60fb): a drafted reply is the card plus the receipt line the bridge stamps under it
+  (`receipt_line`), so `Card.limit(context)` is 1,400 less `Card.receipt(id)` (2 x the id + 120) and every renderer
+  clips with `Card.left(context, used)`; the policy's owner card names `?` instead of its full usage.
+- **Step 2.** `world/objects/Garden.obend` is deleted. Every piece of furniture is a record kind with a body in
+  `world/bodies/`: `garden` (`plant`/`dig` are make by another word; what it makes lies in its `things`; the
+  `byKind` view; no hob, no held planting, no confirm, no page of its own: prose goes on to the commonplace),
+  `weather` (subscribes to its tide's `ticks` when made; each tick rains on the first 32 bells its garden holds and
+  writes the garden's `weather` line through `Record.forecast`, which only a record's cited door may call),
+  `porch` (the room body by another name), `door` (`knock`; the first knock marks `open` with the knocker, a
+  calling object's id when an object knocks), `lantern` (subscribes to its door's `marks` when made; `open` marks
+  it `lit`). `Record.making` is the one making path (a garden's plant, a room's carved block): the kind is the
+  record's own or one its body's `makes(state)` names (the `makes` field and its law clause are gone), the made
+  thing is inserted into `things`, and the body's card (`said`) and result (`as`) answer. Kind: a make takes
+  `id` (blank mints; exact is the kind owner's alone), and after grafting a body it sends the made thing `made`
+  (Record's is a no-op; the bell's asks its planter's wake to watch for `rung`, which the garden used to send).
+  Wake `arrived` watches the garden's `things` (`changedThings`). Genesis makes the kinds, then the hand's
+  `garden`, `rooms` (The Moss Gate, by its `spween` field), `porch` and `weather` by spell (`HANDS`), then cites
+  the weather from the garden; PORCH is a door. docs/GENESIS.md is current.
+
+Decided here, against the plan's letter (the coordinator should confirm or overrule):
+
+- **Every kind is over RECORD.** A Kind can create only a package in its own sealed closure, and a lawful module
+  (Wake, Thing, Deal, Tide) can be neither imported nor named (`lowerElaborated`: "a law belongs to the package's
+  entry module"). So `kind/weather` and `kind/lantern` are record bodies with a subscription made in `made`, and
+  `kind/door` is a record whose `open` is a mark, not a THING; METAPHYSICS §7.2's "Over" column should say RECORD
+  for them. A tide by spell (`kind/tide`) needs the Tide as a record body (ticks as lines, `last` as `tended`, the
+  gap a law hole, subscriptions as a relation Record lacks): not done; `tide` is still created by world-create.
+- A bell's colour stays in its fixed `fields` (the head reads it).
+- A rain a weather sends is the ticker's line (the delivery's principal) and says whose weather it is; making an
+  object a line's author needs the host to tell a delivery from a call (a hub's `call` must stay the speaker's).
+
+Found with the garden gone (for step 3's seams): nothing calls `Card.hobbed`, `Card.escalated`/`escalatedTo` or
+`Card.macroUsage` now (the commonplace answers hob itself), so an ask is never copied to the policy's
+`escalateTo` while the Policy card still says "What a card cannot fit twice goes to …": delete them with O5.
+
+Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded):
+
+2. (rest) `kind/tide` as above, or the coordinator's call that the tide stays created; the sluice and lantern and
+   the porch's clapper in `deploy/seed.py`.
+   From the PLAYTEST-2 dry run (foundation 2f0e25f4), to fold here: (1) `kinds make / name / of` alone must make a
+   kind: today the host asks for every field of a form ("Almost. I still need: form, head, law, body", admitted
+   `unclear`, nothing made, which the bridge counts as admitted); defaults (empty form, the name as head, the
+   kind's own law, no body) need either optional form fields (a host question: a field with a default is not
+   asked for) or `kinds`' form cut to name and of with the rest set by the kind's owner after; (2) every admitted
+   turn answers a line (`door`, `wake rows`, a first `enter` draft nothing); (3) `wake rows / object:
+   garden/bell/1 / field: lines / where: / count: 7` subscribed and never fired after seven rows: Wake `rows` with
+   an empty `where` and `count` above 1 counts the rows of one delivery only (`matched` per `changedLines`), so
+   seven rains in seven turns never reach 7: it needs a running count per trigger (or `count` read as "the n-th
+   row", `n >= count`); (4) a kind instance's `write` takes `text`, not the kind's form fields: decide (the plan
+   assumed the form's fields; the honest cut is that a record's write is a line, and the form is the make's).
+3. Tending: `tended` and `tend` as a RECORD option, the bell body's rain writing `tended`, the `alive` clause in
+   kind/bell's law (`request.method == "tend" or request.clock <= old.tended + 1440`), "quiet since entry N" from a
+   pure view, the free arc; THING with `me`, `lend`, `circle` (LAW §4 D is now in foundation: kernel14); BOND from
+   Deal by spell (over RECORD, per the decision above); the fungus seams (H1 Spell.obend's parser, O3 one
+   Names/Forms record, O5 `Policy.escalate`, the Participant tail). **The law atoms are denoted in foundation**
+   (head "Merge lane/host17: the law atoms denoted…"; KERNEL-HANDOFF §25 item M has the exact lines): the Tide's
+   `ownRows` family and `tooSoon` become text (`changed(new.subs.who) by request.subject`, `request.clock <= …`),
+   Deal's `signer` becomes `changed(new.signatures.who) by request.subject`, Kind's `lawOf` with `{maker}` holes
+   becomes `under "<kind id>"` cited by each instance, the library's law pages objects a law may cite; every Bend
+   predicate deleted, the readings kept.
+4. As the brief: genesis to §7's table with the library's walks and the seed posts' spells, `Policy.prompt` per
+   FLEX, every card in VOICE's register, the welcome and root-menu previews from a real genesis, seed posts, this
+   file rewritten as the surface, `git branch -D lane/rewrite5-garden`. From the deploy rehearsal (foundation
+   2f0e25f4): a door's published page lists only the forms the reader is offered, as a card does (the Rooms page
+   showed door, undoor, example, admit, take, put to the public: the host's default page, or a page each record
+   renders); the Workshop page needs its "How to reply"; `capsules/pages/world.txt`'s STUDIO line ("scratch worlds
+   and a REPL") stays. The library's walks (plant, check, enter, tide, submit: LIBRARY.md (d)) as
+   `capsules/pages/<walk>.txt` in PAGES; the commonplace's doors ordered KINDS, WORKSHOP, then the places (DOORS).
+
 ## lane/rewrite6, continued (2026-10-11): steps 1a and 1b — the commonplace is the first card
 
 Inherited (ClusterVision on lane/rewrite6's last ~100 turns): nothing the section below lacks; its helper had

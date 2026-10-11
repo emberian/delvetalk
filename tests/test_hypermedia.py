@@ -17,13 +17,12 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.test_chain import garden_state, town_kinds
+from tests.test_chain import town_garden
 from tests.test_http import PEOPLE, REPL_COUNTER, FrontCase, StubHost
 import transport.http
 from transport import delve, identity
 from transport.host import HostClient
 from transport.http import CATALOGUE, ERRORS, EXAMPLES, GUIDE, REFUSALS, Front
-from tests.bend import closure
 
 LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 implies request.subject == "ember"\n'
 
@@ -75,10 +74,7 @@ class Controls(FrontCase):
 
     def setUp(self):
         super().setUp()
-        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-g', 'object': 'garden',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
-        self.assertEqual(r['status'], 'created', r)
-        town_kinds(lambda **q: self.host.send(q))
+        town_garden(lambda **q: self.host.send(q))
         self.tok = self.login()
 
     def get(self, href):
