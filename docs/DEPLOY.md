@@ -247,10 +247,20 @@ prints one line per created or spell-made object (`created`, `admitted`) and not
 was not published is named on stderr. Deployed on foundation 89abbd8d: seventeen lines, 19 s, height 73 and 28 objects
 at the bridge's first poll; on 103837ce the same seventeen lines in 22 s, height 73 and 28 objects. The rehearsal seeds the same way. `deploy.seed` creates one further object by hand.
 
+**No wipe.** The world is never begun again while one lives (docs/TENURE.md section 1). `deploy.genesis` lists every
+world journal under `/var/lib/delvetalk` (`DELVETALK_TOWNS`, mounted read-only into `delvetalk-ops` at `/towns`): a data
+directory's `state/*.journal`, an older layout's, a playtest run's, but not scratch worlds and not the journal it is about
+to write. If any holds an entry, genesis creates nothing and exits 1, naming each journal and its height: a world
+changing hosts is carried ("A new binary"), never begun again. Only the owner's word begins one anyway:
+`--wipe-with-the-owners-word R`, one line, which genesis writes on the commonplace and admits as the town's first line
+before anything else is said there, and which is the first line of the welcome. A first town on a new box has nothing
+under `/var/lib/delvetalk` and needs no word. Without `--towns` (and no `DELVETALK_TOWNS`) genesis refuses to guess and
+exits 64.
+
 Genesis is not one transaction: if it stops partway (a traceback, a refused create), the objects it made stay and a
 second run refuses ("genesis has already run here: ..."). Before anything is posted, start again: `docker compose down`,
-move `state/` aside (`mv /var/lib/delvetalk/v7/state /var/lib/delvetalk/v7/state.failed-<stamp>`), fix the cause, and
-run this section from `up -d --wait delvetalk-host`.
+move `state/` aside (`mv /var/lib/delvetalk/v7/state /var/lib/delvetalk/v7/state.failed-<stamp>`; a `state.failed-*`
+directory is not a town to the guard above), fix the cause, and run this section from `up -d --wait delvetalk-host`.
 
 The commonplace cites eight doors: GARDEN, ROOMS, WORKSHOP, TIDE, PORCH, ANTHOLOGY, KINDS and STUDIO (a link to
 `<origin>/AGENTS.md`, with no object). Genesis then has each door's object publish its page (`publishPage {page}`, the
@@ -465,10 +475,12 @@ with no hourly cap (the host's `postQuota` is delve.town etiquette and does not 
 in this path reads Delve credentials.
 
     deploy/playtest.sh --zuliprc PATH [--stream delvetalk] [--topic NAME] [--poll 20] [--port 8765] [--dir DIR] [--no-welcome]
+                       [--wipe-with-the-owners-word R]
     deploy/playtest.sh --stop
 
 It starts `delvetalk-obend serve` over a fresh directory under `~/.delvetalk-playtest/run-<stamp>/state/` (`--dir`
-moves it; earlier runs are kept), writes the run's `delvetalk.toml` (origin, `http_port`, `poll`), opens the town on the
+moves it; earlier runs are kept; their towns are the genesis guard's `--towns`, so a second run is refused unless the
+owner's word is given), writes the run's `delvetalk.toml` (origin, `http_port`, `poll`), opens the town on the
 stream with `transport open`, runs genesis, posts the config's `welcome` (default `docs/previews/zulip-welcome.txt`) to the stream's `welcome`
 topic and records it against `commonplace`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds), each under a PID file in the run directory that `--stop` reads. The
 `.zuliprc` is the bot's: its user must be subscribed to the stream (a guest cannot create one; check `users/me/subscriptions` first, since a stream the bot cannot see answers `Invalid channel name`). With `--topic NAME` the playtest joins an existing conversation: the welcome goes to that topic instead of `welcome`, and the observer reads only that topic (the Zulip narrow `channel` + `topic`), so the world never sees the stream's other topics; replies land in the same topic. A fresh bridge observes nothing posted before its start. The model credentials are as under "Model
@@ -677,6 +689,17 @@ The healthcheck goes red and every host reply is "host unavailable".
 4. Everything at height N and after is lost to the world; the broken directory
    stays under `v7.before-<stamp>` as evidence. Find the second writer before
    starting again.
+
+## Before a merge that touches the host
+
+A commit whose binary does not replay the newest town backup is a *breaking change* (docs/TENURE.md section 1, rule 2).
+The root runs, on hbox, before each merge touching `spec/Delvetalk/Host/`, `spec/bend/` or the binary's build:
+
+    deploy/carry-check.sh <candidate>/.lake/build/bin/delvetalk-obend /tank/delvetalk-backups
+
+It untars the newest pulled tarball into a throwaway directory and replays every journal in it with the candidate
+(`verify.sh --binary`); the tarball is never written. Exit 0 is green. Exit 1 names the journal and why it does not
+replay: the commit does not merge.
 
 ## A new binary
 

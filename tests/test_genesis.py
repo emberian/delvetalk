@@ -3,14 +3,18 @@ shows, the door pages are published, and the library it shelves answers by a wor
 
 Evidence for FOUNDATION §7, §11 (layer: transport).
 """
+import contextlib
+import io
 import json
+import os
 import re
 import tempfile
 import unittest
+import unittest.mock
 
 from deploy import genesis
 from tests.town import Town
-from tests.wire import cast_refusal, label, nat, record, result_label
+from tests.wire import cast_refusal, field, label, nat, record, result_label, rows
 from transport.config import ORIGIN
 
 
@@ -137,6 +141,52 @@ class Genesis(unittest.TestCase):
                 self.assertTrue(body.startswith('hob: '), body[:40])
                 for named in re.findall(r'page: ([a-z]+)', body):
                     self.assertIn(named, names, (name, named))
+
+
+class NoWipe(unittest.TestCase):
+    """TENURE section 1 rule 1: a genesis while a town lives under `--towns` is refused, naming it, and creates nothing;
+    with the owner's word it runs, and the word is the town's first line, admitted. Refuted by a genesis that runs
+    over a living town without the word, one that creates anything before refusing, or a word not on the commonplace."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.towns = tmp.name
+        # A town that lives: another data directory's journal with entries (the guard reads only its chain's lines).
+        os.makedirs(os.path.join(self.towns, 'v1', 'state'))
+        with open(os.path.join(self.towns, 'v1', 'state', 'town.journal'), 'w') as f:
+            f.write('{"height":1}\n{"height":2}\n')
+        os.makedirs(os.path.join(self.towns, 'v1', 'state', 'scratch'))
+        self.town = Town(os.path.join(self.towns, 'v2'), run_genesis=False)
+        self.addCleanup(self.town.close)
+
+    def genesis(self, *more):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = genesis.main(['--root-socket', self.town.process.root, '--towns', self.towns, '--state', self.town.state, *more])
+        return code, err.getvalue()
+
+    def test_a_genesis_over_a_living_town_is_refused_by_name_and_runs_only_with_the_owners_word(self):
+        code, err = self.genesis()
+        self.assertEqual(code, 1, err)
+        self.assertIn('v1/state/town.journal (height 2)', err)
+        self.assertNotIn('v2', err)  # its own journal is not a town it would abandon
+        self.assertEqual(genesis.existing(self.town.client, genesis.OPENER), [])
+        self.assertEqual(self.genesis('--wipe-with-the-owners-word', 'two\nlines')[0], 64)
+        word = 'the town begins again by the owner\'s word'
+        code, err = self.genesis('--wipe-with-the-owners-word', word)
+        self.assertEqual(code, 0, err)
+        state = self.town.send(op='world-view', principal=genesis.OPENER, object='commonplace')['state']
+        [first] = rows(field(state, 'lines'))
+        self.assertEqual((field(first, 'n')['value'], field(first, 'text')['value'], field(first, 'author')['value']),
+                         ('1', word, genesis.OPENER))
+        self.assertEqual([field(a, 'n')['value'] for a in rows(field(state, 'admitted'))], ['1'])
+
+    def test_without_towns_genesis_refuses_to_guess(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), unittest.mock.patch.dict(os.environ, {'DELVETALK_TOWNS': ''}):
+            self.assertEqual(genesis.main(['--root-socket', self.town.process.root]), 64)
+        self.assertIn('--towns', err.getvalue())
 
 
 class Rows(unittest.TestCase):

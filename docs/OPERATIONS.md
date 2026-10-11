@@ -249,9 +249,18 @@ anthology lines, the cistern's refusals. Kept: every receipt, read-only, by
 its old slug. The ring's go/no-go on the new world is read before the
 welcome goes.
 
+*No wipe.* A genesis while a town journal lives under `/var/lib/delvetalk`
+is a wipe, and `deploy.genesis` refuses it, naming each journal, unless
+`--wipe-with-the-owners-word R`: the owner's word, the town's first line and
+the welcome's (DEPLOY "First start", TENURE section 1). A commit whose binary
+does not replay the newest town backup is a breaking change and does not
+merge: `deploy/carry-check.sh` on hbox before each merge touching the host
+(DEPLOY "Before a merge that touches the host").
+
 **Decision:** same edition is a restart in place; a new edition is a new
 genesis with the old world archived on loopback and the loss named in the
-welcome.
+welcome, and only with the owner's word; no commit merges that does not
+replay the newest backup.
 
 ### Incident playbooks
 
