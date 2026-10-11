@@ -26,6 +26,8 @@ def relations() -> Relations.Decls:
   Super.relationsWith(768n)
 form rain:
   text: text 1..200
+form write:
+  text: text 1..200
 form ring:
 form tend:
 form lines:
@@ -37,6 +39,10 @@ form undoor:
   label: text 1..32
 def rain(state: State, input: RainInput, context: Abi.Context) -> Activity<Nat>:
   if context.sender != "" then sent(state, input.text, context) else if quiet(state, context) then hushed(context) else Super.inscribe(state, "rain", input.text, context)
+# A bell's lines are its rains: a write on it is a rain, under the same bound and the same tending
+# (Record's own `write` would take a line of any length that tends nothing).
+def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
+  rain(state, {text: input.text}, context)
 def sent(state: State, text: String, context: Abi.Context) -> Activity<Nat>:
   if quiet(state, context) then 0n else sentWritten(state, text, context)
 def sentWritten(state: State, text: String, context: Abi.Context) -> Activity<Nat>:

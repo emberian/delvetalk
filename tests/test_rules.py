@@ -37,7 +37,8 @@ class Bell(Arc):
         return self.town.send(op="world-entry", principal=who, hash=reply["receipt"]["hash"])["receipt"]
 
     def rules(self, who=GLM):
-        return {r["name"]: r for r in self.town.send(op="world-rules", principal=who, object=self.bell)["rows"]}
+        """The rules placed on the bell itself (`from` the bell); kind/bell's own (`seven`, `rang`) are `from` the kind."""
+        return {r["name"]: r for r in self.town.send(op="world-rules", principal=who, object=self.bell)["rows"] if r["from"] == self.bell}
 
 
 class Firing(Bell):

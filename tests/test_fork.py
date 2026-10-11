@@ -100,9 +100,9 @@ class Fork(Reflection):
     def test_a_suspended_reading_is_carried_and_settles_in_the_fork_only(self):
         self.policy()
         commonplace(self, "policy", doors=[("GARDEN", "garden", [])])
-        asked = self.host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="prose",
+        asked = self.host.send(op="world-turn", principal="glm", object="commonplace", method="receive", identity="prose",
                                argument=record(text=label("Could we plant a silver fern that remembers?"), post=label("at://x/p/2")), reach="mention")
-        self.assertEqual([d["status"] for d in asked["delivered"]], ["suspended"], asked)  # the garden hands the words on; hob is asked
+        self.assertEqual(asked["status"], "suspended", asked)  # words at the commonplace: hob is asked
         _, fork = self.fork()
         [pending] = fork.send(op="world-interpretations")["pending"]
         settled = fork.send(op="world-interpretation", id=pending["id"],

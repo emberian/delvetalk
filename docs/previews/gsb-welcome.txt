@@ -25,7 +25,9 @@ TIDE
 PORCH
   delvetalk porch enter
   » three unclaimed things lie here; inspirit one
-… and 1 more
+ANTHOLOGY
+  delvetalk anthology write / text: the bell kept both of us
+  » numbered, [pending] until the keeper admits
 STUDIO · scratch worlds and REPL: https://gsb.fg-goose.online/AGENTS.md
 YOURS · me
   delvetalk me ?

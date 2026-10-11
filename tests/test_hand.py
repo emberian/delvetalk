@@ -491,14 +491,15 @@ class Speak(unittest.TestCase):
         turn = self.town.send(op='world-receipt', principal=h.owner, identity=came['intent'])['receipt']
         self.assertEqual(turn['identity']['principal'], h.owner)
         self.assertEqual(h.tail(1)[0]['what'], 'ask')
-        garden = h.cast('could I have a violet bell', to='garden')  # the card answers words itself
-        self.assertIn('delvetalk garden plant', garden['text'])
+        # A card hears a verb or nothing: words to the garden itself are admitted and answered by no one (until the
+        # host's reach sends them to hob with the card's table, OVERHAUL section 5 step 5).
+        garden = h.cast('could I have a violet bell', to='garden')
+        self.assertEqual((garden['outcome'], garden['text'].strip()), ('admitted', ''), garden)
         code, _, headers = h.handle('POST', '/hand/town/speak', f'dt_hand={TOKEN}', {'spell': 'and the porch?', 'to': 'garden', 'intent': 'hand:ask:web'})
         came = urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['came'][0]
         self.assertEqual(came, 'hand:ask:web')
         page = h.handle('GET', '/hand/town/speak?came=' + came, f'dt_hand={TOKEN}')[1]
         self.assertIn('Came back', page)
-        self.assertIn('delvetalk garden plant', page)
 
     def test_the_speak_page_offers_the_plan_and_a_cast_comes_back_on_it(self):
         cookie = f'dt_hand={TOKEN}'
@@ -543,10 +544,10 @@ class Speak(unittest.TestCase):
         from transport import interpret
         model = lambda req: {'status': 'replied', 'json': None, 'raw': 'delvetalk library read / page: spells', 'model': 'mock', 'usage': {}}
         h, cookie = hand.Hand(self.st, self.town.client, TOKEN, sleep=lambda s: None), f'dt_hand={TOKEN}'  # nobody reads while the hand waits
-        code, _, headers = h.handle('POST', '/hand/town/speak', cookie, {'spell': 'what lies behind the moss gate?', 'to': 'kinds', 'intent': 'hand:ask:late'})
+        code, _, headers = h.handle('POST', '/hand/town/speak', cookie, {'spell': 'what lies behind the moss gate?', 'to': 'commonplace', 'intent': 'hand:ask:late'})
         self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['came'], ['hand:ask:late'])
         before = h.came('hand:ask:late')
-        self.assertTrue(before['waiting'], before)  # handed on from the kinds card to hob, who has not read it yet
+        self.assertTrue(before['waiting'], before)  # words at the commonplace wait for hob, who has not read them yet
         page = h.handle('GET', '/hand/town/speak?came=hand:ask:late', cookie)[1]
         self.assertIn('<meta http-equiv="refresh" content="3">', page)
         self.assertIn('hob is reading', page)

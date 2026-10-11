@@ -73,9 +73,9 @@ class Carry(Reflection):
     def test_every_object_and_receipt_crosses_and_the_world_goes_on(self):
         self.policy()
         commonplace(self, "policy", doors=[("GARDEN", "garden", [])])
-        asked = self.host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="prose",
+        asked = self.host.send(op="world-turn", principal="glm", object="commonplace", method="receive", identity="prose",
                                argument=record(text=label("Could we plant a silver fern that remembers?"), post=label("at://x/p/2")), reach="mention")
-        self.assertEqual([d["status"] for d in asked["delivered"]], ["suspended"], asked)
+        self.assertEqual(asked["status"], "suspended", asked)  # words at the commonplace: hob is asked
         before, old = self.objects(self.host), journal_entries(self.path)
         p, out = self.carry()
         self.assertEqual(p.returncode, 0, p.stderr)

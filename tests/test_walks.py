@@ -115,8 +115,7 @@ class Walks(unittest.TestCase):
         self.assertIn("Planted, walker.test", text)
         _, text = self.say(W, self.fill(rain, bell=bell))
         self.assertIn("#1 is written: it rained here first", text)
-        _, text = self.say(W, self.fill(rule, bell=bell))
-        self.assertIn("second", text)
+        self.say(W, self.fill(rule, bell=bell))
         self.assertEqual([r["name"] for r in self.rules(bell) if r["name"] == "second"], ["second"])
         self.assertNotIn("a second rain", self.avatar(W))  # one hand's rain does not fire it
         _, text = self.say(O, self.fill(theirs, bell=bell))
@@ -180,8 +179,10 @@ class Walks(unittest.TestCase):
     def test_tide_rules_place_one_refuse_a_hands_tick_and_hear_it_fire_after_the_clock(self):
         W = WALKER
         (_, rules, _), (_, turned, _), (_, tick, _), (_, after, _) = self.steps("tide")
-        _, text = self.say(W, rules)
-        self.assertIn("weather", text)
+        reply, _ = self.cast(W, rules)  # a read: the host answers it with the rules, no turn
+        self.assertEqual(reply["status"], "usage", reply)
+        text = reply["text"]
+        self.assertIn("» weather (", text)
         self.assertNotIn("turned", text)
         self.say(W, turned)
         self.assertIn("turned", [r["name"] for r in self.rules("tide")])
@@ -192,8 +193,8 @@ class Walks(unittest.TestCase):
         clock = self.host.send({"op": "world-status"})["clock"]
         got = self.host.send({"op": "world-advance", "principal": "transport", "height": clock + 61})
         self.assertEqual(got["status"], "advanced", got)
-        _, text = self.say(W, after)
-        self.assertIn("turned", text)
+        reply, _ = self.cast(W, after)
+        self.assertIn("» turned (", reply["text"])
         self.assertTrue(self.rules("tide", "turned")["fired"], self.rules("tide"))
         self.assertIn("the tide turned", self.avatar(W))
 
