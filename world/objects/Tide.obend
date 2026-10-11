@@ -55,23 +55,22 @@ def refusal(w: Why) -> Card.Refusal:
   match w:
     case everyZero(_): {clause: "everyZero", reading: "every is at least 1."}
     case full(_): {clause: "full", reading: "The tide holds {natText(subsMax())} subscribers."}
-def refused(w: Why) -> Done:
-  Done.refused(refusal(w))
+def refused(w: Why, context: Abi.Context) -> Activity<Done>:
+  Card.refusing(Done.refused(refusal(w)), refusal(w), context)
 # One subscription per principal (the key): subscribing again replaces it.
 # Every subscribe and tick ends by offering what happened and the Tide's card as the
-# write leaves it (a refusal shows the card as read), refusals included.
+# write leaves it; a refusal is answered by name (Card.refusing).
 def told(done: Done, card: Document.Document) -> Activity<Done>:
   Card.tell(done, Document.concat(Document.text(doneLine(done)), card))
 def doneLine(done: Done) -> String:
   match done:
     case subscribed(s): "Subscribed, from tick {natText(s.since)}.\n\n"
     case ticked(t): "Tick {natText(t.tick)}: {natText(t.sent)} {if t.sent == 1n then \"note\" else \"notes\"} sent.\n\n"
-    case tooSoon(t): "Too soon: the next tick may come at clock {natText(t.next)}.\n\n"
-    case refused(r): "refused {r.clause}: {r.reading}\n\n"
+    case _: ""
 def subscribe(state: State, input: {every: Nat, note: String}, context: Abi.Context) -> Activity<Done>:
-  if input.every == 0n then told(refused(Why.everyZero({})), render(state, context)) else subscribing({who: context.principal, every: input.every, note: input.note, since: state.ticks, handle: context.handle}, state, context)
+  if input.every == 0n then refused(Why.everyZero({}), context) else subscribing({who: context.principal, every: input.every, note: input.note, since: state.ticks, handle: context.handle}, state, context)
 def subscribing(sub: Sub, state: State, context: Abi.Context) -> Activity<Done>:
-  if Relations.count(state.subs) < subsMax() || Relations.has(state.subs, {who: sub.who}) then subWritten(sub, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context)) else told(refused(Why.full({})), render(state, context))
+  if Relations.count(state.subs) < subsMax() || Relations.has(state.subs, {who: sub.who}) then subWritten(sub, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context)) else refused(Why.full({}), context)
 def subWritten(sub: Sub, card: Document.Document) -> Activity<Done>:
   let written(_) = write {subs: upsert sub}
   told(Done.subscribed({since: sub.since}), card)
@@ -79,7 +78,7 @@ def due(sub: Sub, tick: Nat) -> Bool:
   (tick - sub.since) % sub.every == 0n
 # The first tick may come at once; after it, not before last + gap.
 def tick(state: State, context: Abi.Context) -> Activity<Done>:
-  if state.ticks > 0n && context.clock < state.last + state.gap then told(Done.tooSoon({next: state.last + state.gap}), render(state, context)) else tickWritten(context, state)
+  if state.ticks > 0n && context.clock < state.last + state.gap then Card.refusing(Done.tooSoon({next: state.last + state.gap}), {clause: "tooSoon", reading: "the next tick may come at clock {natText(state.last + state.gap)}"}, context) else tickWritten(context, state)
 def tickWritten(context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {ticks: add 1n, last: set context.clock}
   woken(Relations.rows(state.subs), state.ticks + 1n, 0n, render(extend(state, {ticks: state.ticks + 1n, last: context.clock}), context))

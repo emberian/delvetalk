@@ -79,6 +79,7 @@ record Departure:
 # Who is in a room and at which passage ("" for a room without passages), keyed {who}.
 record Presence:
   who: String
+  handle: String
   at: String
 def presenceKey(p: Presence) -> {who: String}:
   {who: p.who}

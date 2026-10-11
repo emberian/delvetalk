@@ -48,17 +48,13 @@ def fieldOf(name: String, value: String) -> Rows.Field:
 # The planter is the turn's principal and its post the one the bell's strike awaits (the kind
 # seeds both); the card says where it grew and how to rain on it.
 def plant(state: State, input: PlantInput, context: Abi.Context) -> Activity<Super.Made>:
-  Super.making(state, "kind/bell", Lists.append(Lists.append(Lists.List.nil(), fieldOf("colour", colourName(input.colour))), fieldOf("seed", input.seed)), context, fn(m: Super.Made) -> Document.Document: planted(m, colourName(input.colour), input.seed, Relations.count(state.things) + 1n, context), fn(m: Super.Made) -> Super.Made: m)
+  Super.making(state, "kind/bell", Lists.append(Lists.append(Lists.List.nil(), fieldOf("colour", colourName(input.colour))), fieldOf("seed", input.seed)), context, fn(object: String) -> Document.Document: planted(object, colourName(input.colour), input.seed, Relations.count(state.things) + 1n, context), fn(m: Super.Made) -> Super.Made: m)
 def dig(state: State, input: DigInput, context: Abi.Context) -> Activity<Super.Made>:
   Super.making(state, "kind/cistern", Lists.List.nil(), context, dug, fn(m: Super.Made) -> Super.Made: m)
-def planted(made: Super.Made, colour: String, seed: String, count: Nat, context: Abi.Context) -> Document.Document:
-  match made:
-    case made(m): Document.text("Planted, {Card.name(context.principal, context)}: {if colour == \"amber\" then \"an\" else \"a\"} {colour} bell, “{seed}”, at {m.object}; {natText(count)} planted.\nRain on it:\n\n    delvetalk {m.object} rain\n    text: <1 to 200 characters>\n\nAnother:\n\n{plantSpell(Card.called(context, \"garden\"))}")
-    case refused(r): Document.text("Not planted, refused {r.clause}: {r.reading}\n")
-def dug(made: Super.Made) -> Document.Document:
-  match made:
-    case made(m): Document.text("The cistern is dug at {m.object}; it takes refusals.\n")
-    case refused(r): Document.text("Not dug, refused {r.clause}: {r.reading}\n")
+def planted(object: String, colour: String, seed: String, count: Nat, context: Abi.Context) -> Document.Document:
+  Document.text("Planted, {Card.name(context.principal, context)}: {if colour == \"amber\" then \"an\" else \"a\"} {colour} bell, “{seed}”, at {object}; {natText(count)} planted.\nRain on it:\n\n    delvetalk {object} rain\n    text: <1 to 200 characters>\n\nAnother:\n\n{plantSpell(Card.called(context, \"garden\"))}")
+def dug(object: String) -> Document.Document:
+  Document.text("The cistern is dug at {object}; it takes refusals.\n")
 def plantSpell(id: String) -> String:
   "    delvetalk {id} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n"
 def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:

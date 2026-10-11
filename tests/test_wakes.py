@@ -286,7 +286,7 @@ class Wakes(Chain):
         """SEEDING §4, the flood: the town pours refusals into a cistern (kind/cistern's: a record whose level is
         its count of lines, `next` less one, which only rises), and a wake watching `next` pass a mark acts once."""
         town_kinds(self.host.send)
-        self.assertEqual(self.turn("kind/cistern", "make", record(id=label("")), principal=OWNER)["status"], "admitted")
+        self.assertEqual(self.turn("kind/cistern", "make", record(), principal=OWNER)["status"], "admitted")
         wake = self.wake()
         self.avatar(OWNER)
         w = self.turn(wake, "watch", record(event=variant("writes", object=label("cistern/1"), field=label("next"), above=nat(4)), action=variant("notify")), principal=OWNER)
@@ -338,7 +338,7 @@ class Wakes(Chain):
         The wake subscribes to the bell's lines; the host delivers each rain to its typed receiver."""
         self.tide()
         town_kinds(self.host.send, names=("bell",))
-        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell"), id=label("")), principal=OWNER)
+        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell")), principal=OWNER)
         self.assertEqual(made["status"], "admitted", made)
         wake = self.wake()
         where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": record(column=label("author"), equals={"tag": "variant", "label": "text", "payload": record(value=label(OTHER))})}]}
@@ -360,7 +360,7 @@ class Wakes(Chain):
         """`rows / count: 3` keeps a running count of the matching rows across deliveries: it answers its progress, fires
         when the count reaches 3 (once for a delivery however many counts it carries), and counts on from the remainder."""
         town_kinds(self.host.send, names=("bell",))
-        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell"), id=label("")), principal=OWNER)
+        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell")), principal=OWNER)
         self.assertEqual(made["status"], "admitted", made)
         wake = self.wake()
         self.avatar(OWNER)
@@ -379,7 +379,7 @@ class Wakes(Chain):
 
     def test_every_spell_that_sets_or_ends_a_trigger_answers_a_line(self):
         town_kinds(self.host.send, names=("bell",))
-        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell"), id=label("")), principal=OWNER)
+        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell")), principal=OWNER)
         self.assertEqual(made["status"], "admitted", made)
         wake = self.wake()
         said = lambda text, who=OWNER: [o["text"] for o in self.turn(wake, "receive", heard("delvetalk %s %s" % (wake, text)), principal=who)["offers"]]
@@ -390,8 +390,8 @@ class Wakes(Chain):
         self.assertEqual(said("keyword / term: moth"), ["Watching the word moth: each post with it notes your avatar. Stop: delvetalk wake unwatch / id: 4.\n"])
         self.assertEqual(said("remind / at: 600 / every: 60"), ["Watching the clock, every 60 from 600: each notes your avatar. Stop: delvetalk wake unwatch / id: 5.\n"])
         self.assertEqual(said("unwatch / id: 2"), ["Trigger 2 is gone. See what remains: delvetalk wake ?\n"])
-        self.assertEqual(said("unwatch / id: 2"), ["Not done: No trigger 2\n"])
-        self.assertEqual(said("keyword / term: x", OTHER), ["Not done: Only its owner sets these triggers; that is inkling\n"])
+        self.assertEqual(said("unwatch / id: 2"), ["refused noTrigger: No trigger 2\n"])
+        self.assertEqual(said("keyword / term: x", OTHER), ["refused notOwner: Only its owner sets these triggers; that is inkling\n"])
 
     def test_every_subscriber_a_tide_holds_is_woken_in_one_tick(self):
         """A tick sends to every due subscriber in one turn, and a turn sends at most 32, so the tide

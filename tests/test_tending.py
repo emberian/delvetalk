@@ -20,7 +20,7 @@ class Tending(Chain):
     def setUp(self):
         super().setUp()
         town_kinds(self.host.send, names=("bell",))
-        made = self.turn("kind/bell", "make", record(colour=label("silver"), seed=label("a bell nobody tends"), id=label("")), principal=GLM)
+        made = self.turn("kind/bell", "make", record(colour=label("silver"), seed=label("a bell nobody tends")), principal=GLM)
         self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)
         self.made_at = made["receipt"]["height"] - 1  # the entry the making turn read, as `context.height` is
 
@@ -57,7 +57,7 @@ class Tending(Chain):
         self.assertIn("— quiet, untended since entry %d. Tend it:\n  delvetalk bell/1 tend\n" % tended_at, card)
         hushed = self.rain("too late")
         self.assertEqual(hushed["status"], "admitted", hushed)
-        self.assertEqual(self.card(hushed), "refused alive: answers while tended within %d minutes. Tend it:\n  delvetalk bell/1 tend\n" % genesis.QUIET_AFTER)
+        self.assertEqual(self.card(hushed), "refused alive: answers while tended within %d minutes; tend it: delvetalk bell/1 tend\n" % genesis.QUIET_AFTER)
         self.assertEqual(hushed["receipt"]["outcome"]["writes"], [], hushed)
         rung = self.turn("bell/1", "ring", principal=KIM)
         self.assertEqual(rung["receipt"]["outcome"]["class"], "lawRefused", rung)
@@ -110,7 +110,7 @@ class KindLaw(Chain):
 
     def test_amending_the_kinds_law_re_laws_its_instances(self):
         town_kinds(self.host.send, names=("bell",))
-        self.assertEqual(self.turn("kind/bell", "make", record(colour=label("amber"), seed=label("a"), id=label("")), principal=GLM)["status"], "admitted")
+        self.assertEqual(self.turn("kind/bell", "make", record(colour=label("amber"), seed=label("a")), principal=GLM)["status"], "admitted")
         sealed = genesis.RECORD_LAW + '\nlaw sealed "only its maker rains": request.subject == new.maker'
         v = self.host.send(op="world-view", principal="ember", object="kind/bell")["version"]
         proposed = self.host.send(op="world-propose", principal="ember", identity="relaw", roots=[{"object": "kind/bell", "version": v}],

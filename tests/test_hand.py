@@ -519,11 +519,11 @@ class Measure(unittest.TestCase):
         t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 3)
         kind = lambda name, law='': f'delvetalk kinds make / name: {name} / of: record / form: text: text 1..80 / head: {name}: {{text}} / law: {law} / body:'
         for n, (who, text) in enumerate([
-                (cls.A, kind('lamp')), (cls.A, 'delvetalk kind/lamp make / text: a small light / id:'), (cls.B, 'delvetalk lamp/1 write / text: brighter'),
-                (cls.B, kind('sealed', 'law maker "only its maker writes": request.subject == new.maker')), (cls.B, 'delvetalk kind/sealed make / text: mine / id:'),
+                (cls.A, kind('lamp')), (cls.A, 'delvetalk kind/lamp make / text: a small light'), (cls.B, 'delvetalk lamp/1 write / text: brighter'),
+                (cls.B, kind('sealed', 'law maker "only its maker writes": request.subject == new.maker')), (cls.B, 'delvetalk kind/sealed make / text: mine'),
                 (cls.A, 'delvetalk sealed/1 write / text: yours?'), (cls.B, 'delvetalk sealed/1 door / label: lamp / to: lamp/1'),
-                (cls.A, 'delvetalk anthology write / text: seal: what sealed/1 keeps'), (cls.A, 'delvetalk kind/sealed make / text: hers / id:'),
-                (cls.B, 'delvetalk kind/lamp make / text: a second light / id:'), (cls.OWNER, kind('hyphae'))]):
+                (cls.A, 'delvetalk anthology write / text: seal: what sealed/1 keeps'), (cls.A, 'delvetalk kind/sealed make / text: hers'),
+                (cls.B, 'delvetalk kind/lamp make / text: a second light'), (cls.OWNER, kind('hyphae'))]):
             cast(t, who, text, f'post-{n}')
         t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 130)  # the tide's hour: the opener's wake ticks it
         cls.st.interpretations.mkdir(parents=True, exist_ok=True)

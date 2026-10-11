@@ -145,7 +145,7 @@ class Cards(Chain):
         missing = self.turn("commonplace", "receive", record(text=label("delvetalk wake watch / event: mention / actor: ember.delve.town"), post=label("")), principal=did)
         self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
         self.assertEqual([f["value"]["value"] for f in missing["result"]["payload"]["fields"]], ["otherCard", "There is no card wake; the directory lists the doors."], missing)
-        self.assertEqual(missing["offers"][0]["text"], "✾ DELVETALK · THE COMMONPLACE\n\nrefused otherCard: There is no card wake; the directory lists the doors.\n")
+        self.assertEqual(missing["offers"][0]["text"], "refused otherCard: There is no card wake; the directory lists the doors.\n")
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
@@ -162,7 +162,7 @@ class Cards(Chain):
         ghost = self.turn("commonplace", "receive", record(text=label("delvetalk forge make / name: sentry"), post=label("")), principal="glm")
         self.assertEqual((ghost["status"], ghost["result"]["label"], ghost["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), ghost)
         self.assertEqual([f["value"]["value"] for f in ghost["result"]["payload"]["fields"]], ["otherCard", "There is no card forge; the directory lists the doors."], ghost)
-        self.assertEqual(self.card(ghost), "✾ DELVETALK · THE COMMONPLACE\n\nrefused otherCard: There is no card forge; the directory lists the doors.\n")
+        self.assertEqual(self.card(ghost), "refused otherCard: There is no card forge; the directory lists the doors.\n")
 
     def test_doors_are_hung_removed_and_labels_are_unique(self):
         self.directory()

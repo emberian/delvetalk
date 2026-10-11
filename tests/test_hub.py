@@ -569,7 +569,7 @@ class AnthologyReachable(test_chain.Chain):
             self.assertEqual(submitted["receipt"]["offers"][0]["to"], who)  # the anthology as it now stands, to its author
         refused = self.say("anthology", "delvetalk anthology admit / number: 2", GLM)
         self.assertEqual((refused["status"], refused["result"]["label"]), ("admitted", "refused"), refused)
-        self.assertTrue(refused["offers"][0]["text"].startswith("refused notKeeper: Only the keeper, ember, admits\n\n"), refused)
+        self.assertTrue(refused["offers"][0]["text"].startswith("refused notKeeper: Only the keeper, ember, admits\n"), refused)
         self.assertEqual(self.host.send(op="world-principal", principal="transport", did="ember", handle="ember.delve.town")["status"], "principal")
         admitted = self.say("anthology", "delvetalk anthology admit / number: 2", "ember")
         self.assertEqual(admitted["offers"][0]["text"], "#2 admitted: a splash for every refusal\n")

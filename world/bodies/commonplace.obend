@@ -76,21 +76,21 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("since write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor example") else Text.words("")))
 def methods() -> Lists.List<String>:
   Text.words("due")
-def refusing(clause: String, reading: String, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
-  toldThen(Document.text("{Menu.title()}\n\nrefused {clause}: {reading}\n"), Card.Replied.refused({clause: clause, reading: reading}), greet, context, state)
+def refusing(clause: String, reading: String, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.refusing(Card.Replied.refused({clause: clause, reading: reading}), {clause: clause, reading: reading}, context)
 # The hub's reply (a spell naming another card never reaches here: the host runs it there). A
 # door word gets that door's card; the menu goes to each principal once, under hob's greeting.
 # A misfit spell addressed here comes with its clause and reason, which hob is shown; with no
 # policy it is refused by its clause.
 def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Card.Replied>:
-  if Text.blank(input.text) && Lists.length(input.fields) == 0n then withChanges(Card.Replied.usage({}), "", 0n, "", context, state) else if input.misfit.clause != "" && Plans.isNobody(state.policy) then refusing(input.misfit.clause, input.misfit.reason, false, context, state) else worded(input, doorFor(doors(state), Mentions.doorWord(input.text)), context, state)
+  if Text.blank(input.text) && Lists.length(input.fields) == 0n then withChanges(Card.Replied.usage({}), "", 0n, "", context, state) else if input.misfit.clause != "" && Plans.isNobody(state.policy) then Super.misfitted(input.misfit, state, context) else worded(input, doorFor(doors(state), Mentions.doorWord(input.text)), context, state)
 # Calls a door's receive with a reply, as this turn; the door reads it as its own. `greet`: the
 # reply is a principal's first (`greeting`), whose menu follows whatever the reply drew.
 def passOn(card: String, input: {text: String, post: String}, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.call::<Data>({object: {world: context.world, object: card}, method: "receive", argument: input}):
     case returned(_): visited(card, Card.Replied.passed({card: card}), greet, context, state)
-    case denied(_): refusing("notVisible", "The card {card} is not visible to you.", greet, context, state)
-    case refused(r): refusing(r.clause, if r.reading == "" then "Not passed to {card}." else r.reading, greet, context, state)
+    case denied(_): refusing("notVisible", "The card {card} is not visible to you", context)
+    case refused(r): refusing(r.clause, if r.reading == "" then "Not passed to {card}" else r.reading, context)
 # The door a reply went through leads the card a first reply gets (an arc's, its parent door).
 def visited(card: String, result: Card.Replied, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match topDoorOf(card, state):
@@ -207,7 +207,7 @@ def interpreting(input: Card.Heard, read: Reading, policy: Policies.State, greet
     case unclear(u): hobbed(Card.hobNeeds(u.needs, read.forms), input, read, policy, greet, context, state)
     case replied(r): hobbed(Card.hobSaid(r.text), input, read, policy, greet, context, state)
     case said(r): hobbed(Card.Hob.said({text: r.text}), input, read, policy, greet, context, state)
-    case denied(_): refusing("policy", "The policy is not visible to you.", greet, context, state)
+    case denied(_): refusing("policy", "The policy is not visible to you", context)
     case _: welcomed(greet, "", Card.Replied.silent({}), context, state)
 # hob's answer that is no spell: none is quiet (the hourly menu for a reply to the root itself),
 # card the card answered (the menu at the root), ask hob's question over the nearest doors
@@ -239,8 +239,8 @@ def proposed(object: String, method: String, argument: Data, forms: Lists.List<F
 def callingDoor(object: String, method: String, argument: Data, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.call::<Data>({object: {world: context.world, object: object}, method: method, argument: argument}):
     case returned(_): visited(object, Card.Replied.passed({card: object}), greet, context, state)
-    case denied(_): refusing("notVisible", "The card {object} is not visible to you.", greet, context, state)
-    case refused(r): refusing(r.clause, if r.reading == "" then "Not done at {object}." else r.reading, greet, context, state)
+    case denied(_): refusing("notVisible", "The card {object} is not visible to you", context)
+    case refused(r): refusing(r.clause, if r.reading == "" then "Not done at {object}" else r.reading, context)
 # Several spells (docs/MENU.md §2.2): each item in order, as this turn, its call admitted or
 # refused on its own (one the policy confirms is not run); the card lists each spell with what
 # came of it, and the reader's door is the first admitted one's.
@@ -291,7 +291,7 @@ def linkDoor(door: Door) -> Activity<Card.Replied>:
 def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Card.Replied>:
   match world.card({object: to}):
     case carded(c): Card.tell(Card.Replied.usage({}), c.document)
-    case _: Card.tell(Card.Replied.refused({clause: "noCard", reading: "No card at {to.object}"}), Document.text("The door to {to.object} opens on nothing yet.\n"))
+    case _: refusing("noCard", "The door to {to.object} opens on nothing yet", context)
 # The menu once per principal (the newest 2,048), under hob's greeting: with no policy at once;
 # with one, after hob read the words.
 def greeting(input: Card.Heard, context: Abi.Context, state: State) -> Activity<Card.Replied>:

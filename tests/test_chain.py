@@ -35,10 +35,10 @@ def town_kinds(send, owner="ember", names=("bell", "cistern")):
 
 def town_garden(send, owner="ember", id="garden", name="THE NIGHT GARDEN"):
     """The garden as genesis makes it (deploy/genesis.py HANDS): kind/bell, kind/cistern and kind/garden as genesis
-    makes them, then the owner's `kind/garden make` at an exact id; the body (world/bodies/garden.obend) is laid in the
+    makes them, then the owner's `kind/garden place` at an exact id; the body (world/bodies/garden.obend) is laid in the
     settling of that turn. Returns the make's reply."""
     town_kinds(send, owner, names=("bell", "cistern", "garden"))
-    made = send(op="world-turn", principal=owner, object="kind/garden", method="make", identity="mk-" + id,
+    made = send(op="world-turn", principal=owner, object="kind/garden", method="place", identity="mk-" + id,
                 argument=record(id=label(id), name=label(name)))
     assert made["status"] == "admitted" and made["result"]["label"] == "made", made
     return made

@@ -62,7 +62,7 @@ def refusal(w: Why) -> Card.Refusal:
     case alreadySigned(_): {clause: "alreadySigned", reading: "Already countersigned"}
     case atRest(_): {clause: "atRest", reading: "The bond is at rest"}
 def told(w: Why, state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  Card.tell(Card.Replied.refused(refusal(w)), Document.concat(Document.text("refused {refusal(w).clause}: {refusal(w).reading}.\n\n"), Super.render(state, context)))
+  Super.refused(refusal(w), context)
 def answered(done: Card.Replied, line: String, after: State, context: Abi.Context) -> Activity<Card.Replied>:
   Card.tell(done, Document.concat(Document.text("{line}\n\n"), Super.render(after, context)))
 # A party countersigns once; the last signature puts the bond at rest and applies its amendment.

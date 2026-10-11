@@ -4,7 +4,6 @@ import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Relation.obend as Relations
-import ./Card.obend as Card
 import ./Text.obend as Text
 record Coin:
   n: Nat
@@ -25,6 +24,6 @@ def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<
   Relations.count(state.coins) + 1n
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("{natText(Relations.count(state.coins))} coins\n")
-METHODS  a form's action, a name methods() lists, or receive, set, publishPage; any other def is a helper.
+METHODS  a form's action, a name in methods(), receive or set; any other def is a helper.
 Check: delvetalk workshop check, the block under it.
 Next: delvetalk library read / page: relations

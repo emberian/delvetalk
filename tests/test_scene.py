@@ -122,8 +122,7 @@ class Scenes(test_chain.Chain):
                 self.assertTrue(why(r).startswith("notOffered: gate does not offer"), why(r))
                 self.assertEqual(self.view(), before)
         r = self.say("delvetalk scene choose\nchoice: Knock")
-        self.assertIn("The Moss Gate (1 here), you are at gate:\nA moss gate, ajar.\nChoices:\n  * Open\n  * Wait\n", r["offers"][0]["text"])
-        self.assertIn("refused notOffered: gate does not offer Knock\n", r["offers"][0]["text"])
+        self.assertEqual(r["offers"][0]["text"], "refused notOffered: gate does not offer Knock\n")
         # A principal who never entered has no passage to choose from.
         r = self.say("delvetalk scene choose\nchoice: Open", principal=KIM)
         self.assertEqual(why(r), "notHere: Enter the room first.")
@@ -137,7 +136,7 @@ class Scenes(test_chain.Chain):
         self.say("delvetalk scene enter", KIM)
         self.say("delvetalk scene choose\nchoice: Open", GLM)
         _, state = self.view()
-        self.assertEqual(state["presence"], [{"who": GLM, "at": "yard"}, {"who": KIM, "at": "gate"}])
+        self.assertEqual(state["presence"], [{"who": GLM, "handle": "", "at": "yard"}, {"who": KIM, "handle": "", "at": "gate"}])
         self.assertIn("you are at gate", self.card(KIM))
         self.assertIn("you are at yard", self.card(GLM))
         self.assertIn("(2 here)", self.card(KIM))
@@ -145,7 +144,7 @@ class Scenes(test_chain.Chain):
         r = self.say("delvetalk scene choose\nchoice: Knock", KIM)
         self.assertTrue(why(r).startswith("notOffered"), why(r))
         self.say("delvetalk scene leave", GLM)
-        self.assertEqual(self.view()[1]["presence"], [{"who": KIM, "at": "gate"}])
+        self.assertEqual(self.view()[1]["presence"], [{"who": KIM, "handle": "", "at": "gate"}])
 
 
     def test_the_largest_scene_fills_every_bound_and_the_next_is_refused(self):
@@ -197,7 +196,7 @@ class Scenes(test_chain.Chain):
         self.scene([], start="")
         entered = self.say("delvetalk scene enter")
         self.assertEqual(entered["result"]["label"], "entered")
-        self.assertEqual(self.view()[1]["presence"], [{"who": GLM, "at": ""}])
+        self.assertEqual(self.view()[1]["presence"], [{"who": GLM, "handle": "", "at": ""}])
         self.assertIn("The Moss Gate (1 here), you are here.\nSay: delvetalk scene say / line: <text>. Leave: delvetalk scene leave.\n", self.card(GLM))
         before = self.view()
         self.assertEqual(why(self.say("delvetalk scene choose\nchoice: Open")), "noPassage: This room has no passage to choose from.")
@@ -211,7 +210,7 @@ class Scenes(test_chain.Chain):
         self.scene(cooldown=1000)
         self.say("delvetalk scene enter", GLM)
         before = self.view()
-        forged = {"presence": {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(KIM), at=label("yard")))}}
+        forged = {"presence": {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(KIM), handle=label(""), at=label("yard")))}}
         for field, edit in (("presence", forged["presence"]), ("cooldown", {"tag": "variant", "label": "set", "payload": record(value={"tag": "natural", "value": "0"})})):
             reply = self.host.send(op="world-propose", principal=KIM, identity="forged-" + field, roots=[{"object": "scene", "version": before[0]}],
                                    writes=[{"object": "scene", "edits": [record(**{field: edit})]}])
