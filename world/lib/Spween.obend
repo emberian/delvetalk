@@ -216,7 +216,7 @@ sum Header:
 def header(t: String) -> Header:
   if Text.starts(t, "[") == false || Text.contains(t, "]") == false then Header.bad({reason: "a choice is * [label]: {textTake(t, 40n)}"}) else labelled(Text.trim(textTake(textDrop(t, 1n), textBreak(textDrop(t, 1n), "]"))), Text.trim(textDrop(t, textBreak(t, "]") + 1n)))
 def labelled(label: String, after: String) -> Header:
-  if after == "" then Header.ok({choice: {label: label, to: Scenes.ending(), effects: Lists.List.nil({}), guard: Lists.List.nil({})}}) else if Text.starts(after, "{{") && Text.contains(after, "}}") then guarded(label, conditions(textTake(textDrop(after, 1n), textBreak(textDrop(after, 1n), "}}")))) else if Text.starts(after, "when ") then guarded(label, conditions(textDrop(after, 5n))) else Header.bad({reason: "after a choice's [label] comes {{ condition }} or when condition: {textTake(after, 40n)}"})
+  if after == "" then Header.ok({choice: {label: label, to: Scenes.ending(), effects: Lists.List.nil({}), guard: Lists.List.nil({})}}) else if Text.starts(after, "->") then Header.ok({choice: {label: label, to: Text.trim(textDrop(after, 2n)), effects: Lists.List.nil({}), guard: Lists.List.nil({})}}) else if Text.starts(after, "{{") && Text.contains(after, "}}") then guarded(label, conditions(textTake(textDrop(after, 1n), textBreak(textDrop(after, 1n), "}}")))) else if Text.starts(after, "when ") then guarded(label, conditions(textDrop(after, 5n))) else Header.bad({reason: "after a choice's [label] comes -> target, {{ condition }} or when condition: {textTake(after, 40n)}"})
 def guarded(label: String, read: GuardRead) -> Header:
   match read:
     case bad(b): Header.bad({reason: b.reason})

@@ -12,8 +12,7 @@ import unittest
 from deploy import genesis
 from tests.host import ROOT
 from tests.test_chain import Chain, town_kinds
-from tests.test_places import keyed, make_place
-from tests.wire import field, label, listing, nat, record, reference, relation
+from tests.wire import field, label, listing, record, reference, relation
 from tests.bend import closure
 
 KIM, GLM = "did:plc:kimik3", "did:plc:glm"
@@ -81,138 +80,107 @@ class Kinds(Chain):
         poured = self.turn("cistern/1", "pour", record(text=label("refused tooSoon: the next tick from clock 480")), principal=KIM)
         self.assertEqual(poured["status"], "admitted", poured)
         self.assertIn("CISTERN, dug by glm; level 1. Pour a refusal in:\n  delvetalk cistern/1 pour / text: <the refusal, 1 to 280 characters>\n", text(poured))
-    # --- PLACE: a place makes the kinds in `makes` under itself ------------------------------
-
-    def yard(self, makes=("kind/bell",), keep=None):
-        town_kinds(self.host.send)
-        fields = dict(owner=label("ember"), name=label("Yard"), description=label("a yard"),
-                      makes=listing([reference(k) for k in makes]))
-        if keep is not None:
-            fields["keep"] = nat(keep)
-        make_place(self, "yard", record(**fields))
+    # --- ROOM and making under a record ---------------------------------------------------------
 
     def card(self, obj, principal="visitor"):
         return text(self.turn(obj, "receive", record(text=label(""), post=label("")), principal=principal))
 
-    def test_kind_place_makes_a_place_under_the_place_law_whose_maker_keeps_no_traces_by_a_lens(self):
-        self.kind("place", "place", "name: text 1..64", law=genesis.PLACE_LAW)
-        state = self.state("kind/place")
-        self.assertEqual((field(state, "of")["value"], field(state, "law")["value"]), ("place", genesis.PLACE_LAW))
-        # docs/CATALOGUE.md section 4: the Reading Room, attention without record.
-        made = self.turn("kind/place", "make", record(name=label("The Reading Room")), principal=KIM)
+    def test_kind_room_makes_a_room_whose_body_is_laid_in_the_turn_that_makes_it(self):
+        self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
+        made = self.turn("kind/room", "make", record(name=label("The Reading Room")), principal=KIM)
         self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)
-        room = self.state("place/1")
-        self.assertEqual((field(room, "owner")["value"], field(room, "name")["value"], field(room, "keep")["value"]), (KIM, "The Reading Room", "64"))
-        laws = self.host.send(op="world-inspect", principal=KIM, object="place/1")["laws"]
-        self.assertEqual([(l["name"], l.get("reading")) for l in laws], [("owner", genesis.PLACE_LAW.split('"')[1])])
-        quiet = self.turn("place/1", "receive", record(text=label("delvetalk place/1 set\ntraces: 0"), post=label("")), principal=KIM)
-        self.assertEqual(quiet["status"], "admitted", quiet)
-        self.assertEqual(field(self.state("place/1"), "keep")["value"], "0")
-        self.assertEqual(self.turn("place/1", "enter", principal=GLM)["status"], "admitted")
-        self.assertNotIn("Traces", self.card("place/1"))
-        # A stranger's set is refused by name; the law refuses the same write any other way.
-        other = self.turn("place/1", "receive", record(text=label("delvetalk place/1 set\ntraces: 9"), post=label("")), principal=GLM)
-        self.assertIn("Only the room's owner changes it", text(other))
-        self.assertEqual(field(self.state("place/1"), "keep")["value"], "0")
+        self.deliver_all()
+        room = self.state("room/1")
+        self.assertEqual((field(room, "head")["value"], field(room, "owner")["value"]), ("The Reading Room", KIM))
+        laws = self.host.send(op="world-inspect", principal=KIM, object="room/1")["laws"]
+        self.assertEqual([l["name"] for l in laws], ["owner", "kept", "methods"])
+        self.assertEqual(self.turn("room/1", "enter", principal=GLM)["result"]["label"], "entered")
+        self.assertIn("The Reading Room (1 here), you are here.\n", self.card("room/1", GLM))
+        self.assertIn("The Reading Room (1 here). Enter: delvetalk room/1 enter.\n", self.card("room/1"))
+        said = self.turn("room/1", "say", record(line=label("attention without record")), principal=GLM)
+        self.assertEqual([(o["to"], o["text"]) for o in said["receipt"]["offers"]], [(GLM, "glm: attention without record\n")])
+        # the record's write stays: a visit is a line the visitor writes
+        self.assertEqual(self.turn("room/1", "write", record(text=label("Visit: glm / Took: nothing / Left: a margin line")), principal=GLM)["status"], "admitted")
 
-    def test_a_place_that_makes_bells_is_shaped_by_its_owner_and_a_bell_hangs_under_it(self):
-        self.yard()
-        self.assertNotIn("Make one", self.card("yard"))
-        refused = self.turn("yard", "shape", record(object=label("yard")), principal=KIM)
-        self.assertEqual(refused["result"]["payload"]["fields"][0]["value"]["value"], "notOwner", refused)
-        shaped = self.turn("yard", "shape", record(object=label("yard")))
-        self.assertEqual(shaped["status"], "admitted", shaped)
-        self.assertEqual(shaped["result"]["label"], "done", shaped)
-        self.assertIn("Make one: delvetalk yard make / kind: <bell> / colour: <amber | violet | silver> / seed: <text 1..80>\n", self.card("yard"))
-        made = self.turn("yard", "make", record(kind=choice("bell"), colour=choice("silver"), seed=label("moths")), principal=KIM)
-        self.assertEqual(made["status"], "admitted", made)
+    def test_a_room_mints_past_an_id_already_held(self):
+        """The host takes the first free <prefix><n> (HOST-HANDOFF 5.127), so a squatted id stops no kind."""
+        self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
+        squat = self.host.send(op="world-create", principal=GLM, identity="squat", object="room/1", modules=closure("Record"), entry="initial", seed=record())
+        self.assertEqual(squat["status"], "created", squat)
+        made = self.turn("kind/room", "make", record(name=label("The Porch")), principal=KIM)
         self.assertEqual(made["result"]["label"], "made", made)
-        self.assertEqual(text(made), "Made, at yard/bell/1; 1 made here.\n")
-        bell = self.state("yard/bell/1")
-        self.assertEqual(field(bell, "kind")["value"], "kind/bell")
-        self.assertEqual(field(bell, "owner")["value"], KIM)
-        [door] = field(bell, "doors")["items"]
-        self.assertEqual([f["value"]["value"] for f in door["fields"] if f["name"] == "label"], ["yard"])
-        yard = self.state("yard")
-        self.assertEqual(field(yard, "count")["value"], "1")
-        [row] = field(yard, "made")["payload"]["fields"][0]["value"]["items"]
-        self.assertEqual({f["name"]: f["value"]["value"] for f in row["fields"]}, {"object": "yard/bell/1", "kind": "kind/bell", "n": "1"})
-        self.assertIn("1 made here, newest first:\n- yard/bell/1\n", self.card("yard"))
-        self.assertIn("A silver bell, planted by kimik3", self.card("yard/bell/1"))
-        offered = self.host.send(op="world-inspect", principal="visitor", object="yard")["offered"]
-        self.assertEqual(sorted(offered), ["emote", "make", "say", "whisper"])
-        self.assertEqual(sorted(self.host.send(op="world-inspect", principal="ember", object="yard")["offered"]),
-                         ["door", "emote", "make", "say", "shape", "undoor", "whisper"])
-        # the layer re-declares the base forms: the room still talks and keeps doors
-        self.assertEqual(self.turn("yard", "enter", record(), principal=KIM)["result"]["label"], "done")
-        self.assertEqual(self.turn("yard", "say", record(line=label("hello")), principal=KIM)["result"]["label"], "done")
-        doored = self.turn("yard", "door", record(label=label("gate"), to=label("garden")))
-        self.assertEqual((doored["status"], doored["result"]["label"]), ("admitted", "done"), doored)
-        self.assertIn("Doors: gate\n", self.card("yard"))
-        self.assertEqual(self.turn("yard", "undoor", record(label=label("gate")))["result"]["label"], "done")
+        self.deliver_all()
+        self.assertIn("Made, at room/2; 1 made.", text(made))
 
-    def test_a_kind_the_place_does_not_make_is_refused_by_name(self):
-        self.yard()
-        rogue = ("layer over ./Place.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Rows.obend as Rows\nimport ./Form.obend as Form\n"
-                 "type State = Super.State\nform rogue:\n  seed: text 1..80\n"
-                 "def rogue(state: State, input: RogueInput, context: Abi.Context) -> Activity<Super.Result>:\n"
-                 "  Super.making(state, \"kind/cistern\", Lists.List::<Rows.Field>.nil(), context)\n")
-        r = self.host.send(op="world-reprogram", principal="ember", identity="rogue", object="yard", version=0, package=rogue, mode="extend")
+    def test_a_spween_block_posted_to_a_room_makes_a_room_under_it(self):
+        self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
+        self.turn("kind/room", "make", record(name=label("The Porch")), principal=KIM)
+        spween = "a tube between porch and ledger:\n\n```spween\n---\nid: tube\ntitle: The Tube\n---\n=== mouth\nA scratch comes down the tube.\n* [Listen] -> END\n```"
+        self.deliver_all()
+        r = self.turn("room/1", "receive", record(text=label(spween), post=label("at://x/1")), principal=GLM)
         self.assertEqual(r["status"], "admitted", r)
-        made = self.turn("yard", "rogue", record(seed=label("x")), principal=KIM)
-        self.assertEqual(made["result"]["label"], "refused", made)
-        self.assertEqual([f["value"]["value"] for f in made["result"]["payload"]["fields"]], ["notMade", "This place makes bell."])
-        self.assertEqual(field(self.state("yard"), "count")["value"], "0")
+        self.deliver_all()
+        self.assertEqual(text(r), "ROOM The Tube is at room/1/room/1. Enter: delvetalk room/1/room/1 enter\n")
+        tube = self.state("room/1/room/1")
+        self.assertEqual((field(tube, "head")["value"], field(tube, "start")["value"], field(tube, "owner")["value"]), ("The Tube", "mouth", GLM))
+        self.assertEqual(self.turn("room/1/room/1", "enter", principal=KIM)["result"]["label"], "entered")
+        self.assertIn("you are at mouth:\nA scratch comes down the tube.\nChoices:\n  * Listen\n", self.card("room/1/room/1", KIM))
+        self.assertEqual(self.turn("room/1/room/1", "choose", record(choice=label("Listen")), principal=KIM)["result"]["label"], "left")
 
-    def test_a_place_that_makes_nothing_cannot_be_shaped(self):
-        self.yard(makes=())
-        shaped = self.turn("yard", "shape", record(object=label("yard")))
-        self.assertEqual([f["value"]["value"] for f in shaped["result"]["payload"]["fields"]], ["notMade", "This place makes nothing."])
-
-    def test_a_place_kept_at_zero_writes_no_trace(self):
-        self.yard(makes=(), keep=0)
-        self.assertEqual(self.turn("yard", "enter", record(), principal=KIM)["result"]["label"], "done")
-        self.assertEqual(self.turn("yard", "enter", record(), principal=KIM)["result"]["label"], "refused")
-        self.assertEqual(field(self.state("yard"), "traces")["payload"]["fields"][0]["value"]["items"], [])
-        self.assertNotIn("Traces", self.card("yard", KIM))
-        self.assertIn("You are here.\n", self.card("yard", KIM))
-
-    def test_a_full_place_card_stays_under_the_limit(self):
-        self.yard()
-        self.turn("yard", "shape", record(object=label("yard")))
-        for i in range(3):
-            self.turn("yard", "make", record(kind=choice("bell"), colour=choice("amber"), seed=label("s%d" % i)), principal=KIM)
-        card = self.card("yard", KIM)
-        self.assertIn("3 made here, newest first:\n- yard/bell/3\n- yard/bell/2\n- yard/bell/1\n", card)
-        self.assertLess(len(card), 1400)
-
-    def test_the_fullest_place_card_stays_under_the_limit(self):
-        """Longest name, description and doors; a full make line; 64 present and 64 lying; ten made; a trace on top."""
+    def yard(self, makes=("kind/bell",)):
+        """A record that makes bells, with a body whose `plant` names the kind, as a garden's does."""
         town_kinds(self.host.send)
-        people = ["did:plc:" + ("%02d" % i) * 12 for i in range(64)]
+        r = self.host.send(op="world-create", principal="ember", identity="mk-yard", object="yard", modules=closure("Record"), entry="initial",
+                           seed=record(owner=label("ember"), head=label("THE YARD"), makes=listing([reference(k) for k in makes])), law=genesis.RECORD_LAW)
+        self.assertEqual(r["status"], "created", r)
+        plant = ("layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Rows.obend as Rows\nimport ./Form.obend as Form\n"
+                 "type State = Super.State\nform plant:\n  colour: amber | violet | silver\n  seed: text 1..80\n"
+                 "def plant(state: State, input: PlantInput, context: Abi.Context) -> Activity<Super.Made>:\n"
+                 "  Super.making(state, \"kind/bell\", Lists.List.cons({head: {name: \"colour\", value: plantColourText(input.colour)}, tail: Lists.List.cons({head: {name: \"seed\", value: input.seed}, tail: Lists.List.nil()})}), context)\n"
+                 "def plantColourText(c: PlantColour) -> String:\n  match c:\n    case amber(_): \"amber\"\n    case violet(_): \"violet\"\n    case silver(_): \"silver\"\n")
+        r = self.host.send(op="world-reprogram", principal="ember", identity="plant", object="yard", version=0, package=plant, mode="extend")
+        self.assertEqual(r["status"], "admitted", r)
+
+    def test_a_record_that_makes_bells_makes_one_under_itself_citing_it_home(self):
+        self.yard()
+        made = self.turn("yard", "plant", record(colour=choice("silver"), seed=label("moths")), principal=KIM)
+        self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)
+        self.assertEqual(text(made), "Made, at yard/bell/1.\n")
+        bell = self.state("yard/bell/1")
+        self.assertEqual((field(bell, "kind")["value"], field(bell, "owner")["value"]), ("kind/bell", KIM))
+        [door] = field(bell, "cites")["items"]
+        self.assertEqual([f["value"]["value"] for f in door["fields"] if f["name"] == "label"], ["yard"])
+        self.assertIn("A silver bell, planted by kimik3", self.card("yard/bell/1"))
+        refused = self.turn("yard", "plant", record(colour=choice("silver"), seed=label("x" * 81)), principal=KIM)
+        self.assertEqual(refused["status"], "refused", refused)
+
+    def test_a_kind_the_record_does_not_make_is_refused_by_name(self):
+        self.yard(makes=())
+        made = self.turn("yard", "plant", record(colour=choice("amber"), seed=label("x")), principal=KIM)
+        self.assertEqual(made["result"]["label"], "refused", made)
+        self.assertEqual([f["value"]["value"] for f in made["result"]["payload"]["fields"]], ["notMade", "This record makes nothing."])
+        self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
+
+    def test_the_fullest_room_card_stays_under_the_limit(self):
+        """Longest name and doors; 32 present and 64 lying; eight lines; the reader in the room at a long passage."""
+        from tests.test_rooms import make_room
+        people = ["did:plc:" + ("%02d" % i) * 12 for i in range(32)]
         things = ["thing-%02d-" % i + "x" * 100 for i in range(64)]
         doors = [record(label=label(("door%d-" % i).ljust(32, "d")), to=reference("elsewhere/" + "y" * 100)) for i in range(8)]
-        make_place(self, "yard", record(owner=label("ember"), name=label("N" * 64), description=label("d" * 280), exits=listing(doors),
-                                        makes=listing([reference("kind/bell")]),
-                                        present=relation(*[reference(p) for p in keyed(people)]),
-                                        things=relation(*[reference(t) for t in keyed(things)])))
-        self.turn("yard", "shape", record(object=label("yard")))
-        for i in range(10):
-            made = self.turn("yard", "make", record(kind=choice("bell"), colour=choice("amber"), seed=label("s%d" % i)), principal=KIM)
-            self.assertEqual(made["status"], "admitted", made)
-        self.turn("yard", "enter", record(), principal=KIM)
-        self.turn("yard", "enter", record(), principal=KIM)
+        make_room(self, "yard", head=label("N" * 120), cites=listing(doors), presence=relation(*[record(who=label(p), at=label("")) for p in sorted(people, key=lambda i: (len(i), i))]),
+                  things=relation(*[reference(t) for t in sorted(things, key=lambda i: (len(i), i))]))
+        for i in range(8):
+            self.turn("yard", "write", record(text=label("w" * 280)), principal=people[i])
         reply = self.turn("yard", "receive", record(text=label(""), post=label("")), principal=people[0])
         card = reply["offers"][0]["text"].split("\nReply with a spell:")[0]
         self.assertLess(len(card), 1400, card)
-        self.assertIn("… and ", card)
-        print("\n  fullest place: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(card)))
+        print("\n  fullest room: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(card)))
         self.assertLess(reply["ticksUsed"], 1000000)
 
     def test_a_kinds_law_is_the_package_s_own(self):
         from tests.test_objects import run_pure
         self.assertEqual(run_pure("Kind", "lawText")["value"]["value"], genesis.KIND_LAW)
-        self.assertEqual(run_pure("Place", "lawText")["value"]["value"], genesis.PLACE_LAW)
+        self.assertEqual(run_pure("Record", "lawText")["value"]["value"], genesis.RECORD_LAW)
 
 
 if __name__ == "__main__":

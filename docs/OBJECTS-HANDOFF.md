@@ -1,5 +1,101 @@
 # Objects handoff
 
+## lane/rewrite6 (2026-10-11): step 1, first half — PLACE folded into RECORD; checkpoint, not yet green
+
+Standing order (the owner, verbatim): "we can adopt these things. we need to maturify and take forward
+everything that we've started and bring it to its full sophistication and make sure the code is all
+'fungused together' (no seams or welds where rich semantic braiding is called for). approved, and let's not
+leave behind 'old things', no scar and growth tissue." The plan is METAPHYSICS §7 (§7.5, §7.6); the steps are
+the brief's: (1) the commonplace underneath, (2) the furniture as kinds by spell at genesis, (3) tending, THING
+with `me`/`go`/`lend`/`circle`, BOND from Deal, (4) genesis to §7's table, voice, GENESIS.md, previews, seed
+posts, this file rewritten, the parked branch `lane/rewrite5-garden` deleted.
+
+Inherited from lane/rewrite5 (its last turns, read with ClusterVision): it landed afee930 (one budget per
+card; `me`/`env`/`wake` on one's own cards; no DID or post address on cards) and b349587 (the policy card in
+one budget), both merged in foundation; it idled on the metaphysics decision with `lane/rewrite5-garden`
+(3a12ac9, red) untouched. Its parked garden-as-PLACE design (verbs/head on Place, the layer generator, held
+spells on Place) is superseded by this lane's shape: a garden is `kind/garden`, a RECORD with a body whose
+`plant` calls `Record.making` (below), so nothing of that branch is to be merged; delete it in step 4.
+
+Done here (commit "RECORD absorbs PLACE"):
+
+- **RECORD carries what PLACE and Scene had** (`world/objects/Record.obend`): `cites` (the doors: the field
+  renamed, the card's word stays *door*), `makes` (kinds a body makes under the record through
+  `Record.making(state, kind, fields, context)`: <record>/<kind>/<n>, citing it home, answered "Made, at
+  <id>."), and a room's `start`, `passages`, `cooldown`, `requires`, `presence` {who, at} (32), `vars`,
+  `left` (`Rows.Departure`, 64), `things` (256). `relationsWith(lines)` lets a body keep more lines (bell 768).
+  The record law's owner clause holds `cites`, `makes` and the scene unchanged for anyone but the owner, so a
+  room is revisable by its owner's reprogram (GROUND change 7) and a stranger's proposal is refused `owner`.
+  Traces are gone: a visit is a line the visitor writes (`write`), or none.
+- **`kind/room`** (`world/bodies/room.obend`, over RECORD): Scene's verdicts unchanged in substance (enter,
+  choose, leave, guards, effects, END, requires, cooldown and `crowded` as method refusals), Place's talk
+  (`say`, `emote`, `whisper` to those present) and floor (`take`, `put`); a room without passages is entered
+  at "". A ```spween block posted to a room makes a room under it by its kind (`makeUnder` with a `spween`
+  field the kind's seed reads into the scene). Results are `Scenes.Done` (world/lib/Scenes.obend), shared by
+  the avatar and the thing. Deleted: `Place.obend`, `Places.obend`, `Scene.obend`, `PLACE_LAW`, `Rows.Trace`,
+  Place's lenses and its generated `shape` layer.
+- **KIND**: ids minted past held ones (`requireAbsent` `<under>/<name>/`, HOST-HANDOFF 5.127; the await test
+  that waited on it now passes); `kind/place` is `kind/room` (`of: record`, body `room`, head `{name}`); the
+  kinds form's `body` bound is the package bound (131,072).
+- **Avatar** `go / to: <room>` is that room's `enter`; `move / exit:` reads the room's `cites` by
+  `viewField`; scoped resolution reads the room's `things` by `viewField` (arrival's sealed library no longer
+  needs a state mirror in world/lib). **Thing** takes itself from a room by calling its `take`.
+- **Wake** watches a room's `presence` where it watched traces. **genesis**: `rooms` is a Record seeded with
+  the Moss Gate and given the room's body by an extend; KINDS make record, bell, cistern, room.
+- Tests: test_places is test_rooms; test_scene, test_spween, test_kinds, test_strangers, test_lenses (the
+  place lenses deleted with them), test_hub, test_await, test_objects and the rest migrated.
+
+Step 1a (green: 787 tests, 0 failed on persvati), the checkpoint's reds closed:
+
+1. The spween block in `test_kinds` was not spween this dialect read (`* [Listen] -> END`); Spween now takes a
+   divert after a choice's label (`* [label] -> target`), as ink does, and its reading names it.
+2. A field line at the root goes to the first door whose card takes it: `write:` reaches ROOMS (a room is a
+   record) before ANTHOLOGY; test_genesis says so. The commonplace replaces this routing in 1b.
+3. `publishPage` is the host's on every public card (HOST-HANDOFF 5.62, 5.68): test_properties' helper probe
+   skips the conventional names.
+4. RECORD's law has `law methods`: `request.kind == proposed implies` lines, admissions, marks, presence,
+   departures, vars and things unchanged, the owner's proposal included; test_strangers' creator assertion is
+   back. `next` stays out, so a cistern's drained level is its own `level` clause's.
+
+Routed here by docs/review/fungus-2026-10-11.md §3 (on foundation; merge it into this lane first), each folded
+into the step that touches the same object:
+
+- **H1** (step 1, second half, with Card): delete the reduced spell parser in `world/lib/Spell.obend`; the
+  Garden's macros and `Card.unanswered` read the host's `spell-parse` answer through the existing Plan, or the
+  one remaining use is declared and only that kept.
+- **O1**: done here (Place and its five unused garden-as-place fields are deleted with it).
+- **O2**: the half-done cut is this lane's steps.
+- **O4** (step 1, second half): one door record, one `Names`, one `Forms`, each in one library.
+- **O5** (step 4, with `Policy.prompt`): delete the unused `Policy.escalate` (field, lens, card line).
+- **T31** (step 4): drop the `Participant:` tail `Policy.prompt` appends; the transport lane then sends the
+  utterance once, with no cut, in `interpret.py`.
+- `capsules/world.txt` is gone; the library page `capsules/pages/world.txt` is the one text.
+
+Host findings for the host lane (repros above in this lane's history):
+
+- **Create-then-extend in one turn (5.122) is not usable by KIND yet**, so Kind keeps the self-sent graft.
+  (a) A kind made by `kinds` (itself a layered Kind) and extended in the creating turn refuses every later
+  write of its own with `typeMismatch` naming it (make, makeUnder), and a later `shape` lays nothing
+  (`writes: []`); the same kind shaped in a later turn works. (b) A record made by a kind and extended with the
+  bell body in the creating turn is refused (the turn refuses "could not be given its body"): the made thing's
+  law judges the extend with the running kind as proposer, which the record law's `request.subject ==
+  new.owner` refuses. Repro: Kind.making with `world.extend` after `created` (this lane's first version).
+- A layer may import only modules its base's closure supplies, and a layer that imports Plan derives Edits
+  for every State field, so Record imports Spween (for the room) and the bell body imports Scenes.
+
+Transport finding (not this lane's files): the bridge routes a summons to `directory` and reads door words
+from its `doors`; when the commonplace replaces the directory (step 1, second half) `transport/bridge.py`
+`route` and `named_door` and `transport/http.py`'s play default must name `commonplace` and read `cites`.
+
+Remaining of step 1 (next): the `commonplace` RECORD as the first card, its blank-reply card rendering over
+`world.changed` (eight items `<id> v<n> by <handle>, entry N`, then `delvetalk kinds make / name: <a thing> /
+of: record` and `delvetalk <id> ?`), its `cites` the door-menu of the hand's named things; the Directory's
+hub (greeting, hob at the root, macros, several proposals, `missed`/`Card.owed`) moved onto the commonplace's
+body (a layer cannot add state: `greeted` and the hourly `missed` join RECORD's state), Directory.obend,
+Menu's news/visits and `Card.directory` deleted; the Wake's head "WAKE of {handle}". Then steps 2 to 4 as the
+brief lists them. Tide's `ownRows` family and Deal's `signer` wait on `changed(new.F.COL) by` in a binary
+(not in foundation cd35a4c).
+
 ## lane/rewrite5 (2026-10-11): the neutral half of 4b; the garden as a seed parked
 
 The owner put the town picture on hold ("when we reconsidered the metaobjects we should also reconsider the

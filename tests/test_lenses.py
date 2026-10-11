@@ -17,7 +17,7 @@ import unittest
 
 from tests import test_chain, test_policy
 from tests.test_chain import town_kinds
-from tests.test_places import avatar_seed
+from tests.test_rooms import avatar_seed
 from tests.wire import label, record
 from tests.bend import closure
 
@@ -99,9 +99,9 @@ class Lenses(test_chain.Chain):
 
 
 class OwnedLenses(test_chain.Chain):
-    """Lenses on the objects that had no owner: Garden (confirm), Place and Thing (name,
-    description); Workshop has nothing to set and says so. Garden, Place and Thing declare a law
-    that refuses the same write from anyone but the owner."""
+    """Lenses on the objects that had no owner: Garden (confirm) and Thing (name, description);
+    Workshop has nothing to set and says so. Garden and Thing declare a law that refuses the same
+    write from anyone but the owner. A room is a record and has no lenses."""
 
     def say(self, obj, text, who):
         r = self.turn(obj, "receive", heard(text), principal=who)
@@ -147,13 +147,11 @@ class OwnedLenses(test_chain.Chain):
         r = self.forged("garden", (["planted", "confirmFor", "pending", "children", "pageCheckpoint"], {"confirmFor": append}))
         self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"].get("clause")), ("refused", "lawRefused", "owner"), r)
 
-    def test_a_rooms_and_a_things_owner_sets_their_fields_and_the_law_keeps_others_out(self):
-        from tests.test_places import make_place, place_seed, thing_seed
-        make_place(self, "porch", place_seed("Porch"))
+    def test_a_things_owner_sets_its_fields_and_the_law_keeps_others_out(self):
+        from tests.test_rooms import thing_seed
         self.make("stone", closure("Thing"), thing_seed("stone"))
         set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
-        for obj, kind, fields in (("porch", "room", ["name", "description", "present", "things", "traces"]),
-                                  ("stone", "thing", ["name", "description", "holder", "location"])):
+        for obj, kind, fields in (("stone", "thing", ["name", "description", "holder", "location"]),):
             r = self.say(obj, "delvetalk %s set\nname: renamed" % obj, "glm")
             self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the %s's owner changes it; that is ember" % kind))
             self.assertEqual(self.say(obj, "delvetalk %s set\ndescription: moths" % obj, "ember")["result"]["label"], "done")

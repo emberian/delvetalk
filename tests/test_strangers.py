@@ -10,7 +10,7 @@ default law refuses a stranger's proposal (`owner`). The objects keep a belt: ev
 `unchanged(owner)`, so a migration cannot write the authority that admits it; Deal guards every
 change by party and admits only its two methods' writes, and its new signatures are the
 requester's (`signer`); Tide has an owner who alone reprograms or amends it; Workshop, Avatar,
-Table, Seat, Thing, Scene and Tide refuse a write no method made in their Bend law (`methods`),
+Table, Seat, Thing and Tide refuse a write no method made in their Bend law (`methods`),
 which is what stops their creator's or owner's own proposal.
 
 Refuted by: any of the forged writes, reprograms or amendments below being admitted.
@@ -18,14 +18,16 @@ Refuted by: any of the forged writes, reprograms or amendments below being admit
 import unittest
 
 from tests.test_chain import Chain, garden_state
-from tests.test_places import make_place, avatar_seed, place_seed, thing_seed
-from tests.test_scene import GATE, choice, passage, scene_state
+from tests.wire import field, nil, reference, rows
+from tests.bend import MODULES, closure
+from tests.test_rooms import make_room, avatar_seed, room_seed, thing_seed
+from tests.test_scene import GATE, choice, passage, scene_fields
 from tests.test_table import NORTH, OPENING, SOUTH
 from tests.wire import field, label, nat, nil, record, reference, relation, rows, variant
 from tests.bend import MODULES, closure
 
 OWNER, STRANGER, ALICE, BOB = "did:plc:inkling", "did:plc:kimik3", "did:plc:glm", "did:plc:gemini"
-CREATOR = "ember"  # who made the lawless objects and the Thing and Scene below
+CREATOR = "ember"  # who made the lawless objects and the Thing below
 
 
 DEAL = record(amendment=record(object=label(""), law=label("")), parties={"tag": "list", "items": [label(ALICE), label(BOB)]},
@@ -136,7 +138,7 @@ class Strangers(Forging):
 
     # 6. Custody moves only by the Thing's methods.
     def test_a_stranger_cannot_drop_or_take_a_held_thing(self):
-        make_place(self, "porch", place_seed("porch"))
+        make_room(self, "porch", **room_seed("porch"))
         self.make("stone", closure("Thing"), thing_seed("stone", holder=ALICE, location="porch"))
         self.refused(self.propose("stone", {"holder": setting(reference(""))}), "owner")
         self.refused(self.propose("stone", {"holder": setting(reference(STRANGER))}), "owner")
@@ -160,25 +162,26 @@ class Strangers(Forging):
         r = self.turn("deal2", "receive", record(text=label("delvetalk deal2 countersign"), post=label("at://glm/p/2")), principal=ALICE)
         self.refused(r, "signer")
 
-    # 8. Nobody enters a scene's passage but by entering and choosing.
-    def test_a_stranger_cannot_place_themselves_in_a_scene(self):
+    # 8. Nobody enters a room's passage but by entering and choosing: the record's law refuses a
+    # stranger's proposal (`owner`), and the room's methods write presence only for the principal.
+    def test_a_stranger_cannot_place_themselves_in_a_room(self):
         secret = GATE + [passage("vault", "The vault.", [choice("Out", "gate")])]
-        self.create("scene", "Scene", scene_state(secret), by="ember")
+        make_room(self, "scene", **scene_fields(secret))
         here = record(who=label(STRANGER), at=label("vault"))
         self.refused(self.propose("scene", {"presence": inserting(here)}), "owner")
         self.refused(self.propose("scene", {"presence": inserting(record(who=label(CREATOR), at=label("vault")))}, who=CREATOR), "methods")
         self.assertEqual(rows(field(self.view("scene")["state"], "presence")), [])
 
     # And a law that admits anyone's kind-0 write, or a lawless object's default law, admits only its methods' writes.
-    def test_a_stranger_cannot_forge_a_gardens_children_a_places_traces_or_a_bells_rain(self):
+    def test_a_stranger_cannot_forge_a_gardens_children_a_rooms_presence_or_a_bells_rain(self):
         self.create("garden", "Garden", garden_state(owner=OWNER))
-        make_place(self, "porch", place_seed("porch"))
+        make_room(self, "porch", **room_seed("porch"))
         self.make("bell", closure("Bell"), record(colour=variant("silver"), seed=label("s"), planting=label(""), planter=label(ALICE), planterHandle=label("glm")))
         child = record(world=label(""), object=label("garden/bell/forged"), colour=variant("silver"))
-        trace = record(who=label(ALICE), handle=label("glm"), action=label("say"), clause=label(""), at=nat(0), n=nat(0))
+        presence = record(who=label(ALICE), at=label(""))
         rain = record(author=label(ALICE), handle=label("glm"), text=label("forged"), at=nat(0), n=nat(0))
         for obj, edits in (("garden", {"children": inserting(child), "planted": variant("add", delta=nat(1))}),
-                           ("porch", {"traces": inserting(trace)}), ("bell", {"rains": inserting(rain)})):
+                           ("porch", {"presence": inserting(presence)}), ("bell", {"rains": inserting(rain)})):
             self.refused(self.propose(obj, edits), "owner")
 
 

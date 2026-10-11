@@ -103,18 +103,18 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 
 - `test_artifact_pins` (§2 Store): Every entry of every world module keeps its source pin and still compiles, and every object activity yields over the Plan library and hears its silences.
 - `test_deal` (§8 governance): A Deal at rest, countersigned by every party, applies its amendment under the target's own law; its own law keeps signatures append-only and a withdrawal final.
-- `test_derived_views` (§9): Garden's `byColour` and Place's `affordances`, read by another object with `viewDerived`.
+- `test_derived_views` (§9): Garden's `byColour`, read by another object with `viewDerived`.
 - `test_interpret_text` (§6): The garden fits the model's own words with Spell: a spell plants, `unclear: not addressed` is silence, a miss is asked once more and then answered with what is still needed.
 - `test_laws` (§4): The world's objects carry their laws in source: only owners change directories and admit anthology lines, and Tide's and Wake's predicates refuse what their code would.
 - `test_kinds` (§8 extend): `kinds` makes a kind, a kind makes an instance of its package under its law, and a kind with a body grafts it on each instance.
 - `test_lenses` (§5 Spell grammar): An object's exposed fields are lenses: `set` writes one through its kind and its owner, `?` lists every form and lens.
 - `test_mailbox` (§8 claims): An avatar subscribes to an object and is told of its news; its principal's send reaches up to 32 observers, and the inbox keeps the newest 64.
 - `test_objects` (§5): The library holds one Context and no dynamic universe; objects claim the Plans they perform; cards render in under 1,400 characters at their fullest.
-- `test_places` (§8 MUD floor): Places, things and avatars are ordinary objects: moving, taking, offering and accepting, scoped commands, talk, copies and traces, each refused by name where it should be.
+- `test_rooms` (§8 MUD floor): Rooms, things and avatars are ordinary objects (a room is a record with the room's body, world/bodies/room.obend): entering, leaving, choosing, talking, taking and putting down, offering and accepting, scoped commands and copies, each refused by name where it should be.
 - `test_policy` (§6): The interpretation policy is an object its owner teaches; prose to the garden suspends on it, and the model's answer plants, asks first, or is refused by name.
 - `test_principal` (§3 Context): Who acted is the turn's principal: no argument can name another author, planter or sender.
 - `test_receive` (§5): The garden and the root directory answer spells with cards: needs named, refusals in one line, the menu once per principal, door words, spells passed on.
-- `test_scene` (§8): A Scene keeps passages, presence and variables per reader: only an offered choice moves its reader, a refusal writes nothing, every bound is refused at its edge.
+- `test_scene` (§8): A room with passages keeps presence and variables per reader: only an offered choice moves its reader, a refusal writes nothing, every bound is refused at its edge.
 - `test_spell` (§5 Spell grammar): The spell grammar as the host's `spell-parse` reads it: the last unquoted delvetalk line, field lines, slash forms, blocks, fences skipped, fitted to a form or refused by name, within budget at 4 KB.
 - `test_spween` (§8): A spween scene parses to a Scene's seed and is made by posting one; guards, effects, END and the cooldown law hold.
 - `test_strangers` (§4): The review's objects findings 1 to 8: a stranger's proposed write, reprogram or amendment does none of what the object's own methods refuse them.
